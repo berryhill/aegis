@@ -614,15 +614,15 @@ For credential protection, detection is defense in depth, not the boundary. The 
 Materially informing this report:
 
 - `AGENTS.md`
-- `BIG_IDEA.md`
-- `MVP_FEATURE_SET.md`
-- `GO_RESEARCH.md`
-- `DEPLOYMENT_PROJECTION_ARCHITECTURE.md`
+- `docs/product/BIG_IDEA.md`
+- `specs/MVP.md`
+- `research/GO_RESEARCH.md`
+- `specs/DEPLOYMENT_PROJECTION.md`
 - `research/HERMES_RUNTIME_RESEARCH.md`
 - `research/SECURITY_CONTROL_PLANE_RESEARCH.md`
 - `specs/README.md`
-- `specs/charter.go`
-- `specs/runtime.go`
+- `specs/CHARTER.md`
+- `specs/RUNTIME_AND_SESSIONS.md`
 - `internal/core/model.go`
 - `internal/app/service.go`
 - `internal/config/config.go`

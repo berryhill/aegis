@@ -44,7 +44,7 @@ The default meaning of “give the agent this secret” is **permit brokered use
 
 ### Verified repository decisions
 
-The following are already decided in `DEPLOYMENT_PROJECTION_ARCHITECTURE.md`:
+The following are already decided in `specs/DEPLOYMENT_PROJECTION.md`:
 
 1. Canonical secret versions are independently envelope-encrypted before bbolt persistence.
 2. bbolt provides embedded transactional NoSQL persistence; Aegis provides exact RBAC and encryption.
@@ -530,19 +530,19 @@ The feature is not complete until tests demonstrate:
 
 ## Repository files reviewed
 
-- `DEPLOYMENT_PROJECTION_ARCHITECTURE.md` — authoritative decision for the embedded credential authority, selective projections, disposable Hermes homes, credential broker, deployment binding, revocation, and audit.
+- `specs/DEPLOYMENT_PROJECTION.md` — authoritative decision for the embedded credential authority, selective projections, disposable Hermes homes, credential broker, deployment binding, revocation, and audit.
 - `research/2026-07-17-embedded-bbolt-credential-authority.md` — normative bbolt, encryption, key-custody, host broker, synchronization, recovery, and Infisical migration specification.
-- `BIG_IDEA.md` — logical-agent, trust-stanza, mandate, session, isolation, and disclosure model.
-- `MVP_FEATURE_SET.md` — current MVP authority and security invariants.
+- `docs/product/BIG_IDEA.md` — logical-agent, trust-stanza, mandate, session, isolation, and disclosure model.
+- `specs/MVP.md` — current MVP authority and security invariants.
 - `AGENTS.md` — trust-stanza invariants and contribution constraints.
-- `GO_RESEARCH.md` — separation of operational configuration, charters, and secret references.
+- `research/GO_RESEARCH.md` — separation of operational configuration, charters, and secret references.
 - `research/SECURITY_CONTROL_PLANE_RESEARCH.md` — non-bypassable enforcement and separation of trusted control inputs from untrusted model/data inputs.
 - `research/2026-07-17-frontier-models-local-inference-hermes-secret-protection-research.md` — ingress/egress scanning and credential-broker recommendations.
 - `internal/core/model.go` — current credential-scope representation and MVP provider-only constraint.
 - `internal/config/config.go` — current environment-backed credential mappings.
 - `internal/runtime/hermes/hermes.go` — minimal environment and output-discard behavior.
 - `internal/store/store.go` — current audit metadata redaction.
-- `specs/session.go`, `specs/runtime.go`, and `specs/types.go` — session isolation and abstract credential scopes.
+- `specs/IDENTITY_AND_AUTHORIZATION.md` and `specs/RUNTIME_AND_SESSIONS.md` — current session isolation and scope contracts. Historical Go contracts are archived under `docs/archive/go-contracts/`.
 - The original version of this report selected SOPS/age canonical files. That storage decision is superseded by the embedded bbolt authority report; the non-model intake and brokered-use decisions remain in force.
 
 ## Conclusion

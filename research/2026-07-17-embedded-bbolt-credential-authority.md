@@ -3,7 +3,7 @@
 - Status: Architecture decision and implementation specification
 - Date: 2026-07-17
 - Prepared for: Aegis
-- Supersedes: The SOPS/age canonical-store portions of `DEPLOYMENT_PROJECTION_ARCHITECTURE.md` and `research/2026-07-17-secure-prompt-ingress-and-secret-intake-mvp.md`
+- Supersedes: The SOPS/age canonical-store portions of `specs/DEPLOYMENT_PROJECTION.md` and `research/2026-07-17-secure-prompt-ingress-and-secret-intake-mvp.md`
 - Does not supersede: Prompt ingress/egress scanning, exact trust-stanza binding, selective deployment projections, or brokered-use requirements
 
 ## Executive decision

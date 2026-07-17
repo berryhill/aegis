@@ -117,12 +117,11 @@ Prove this vertical slice:
 
 ## Authoritative project reports
 
-- `BIG_IDEA.md` — product thesis, conceptual model, and long-term direction.
-- `MVP_FEATURE_SET.md` — minimum viable feature set, invariants, and deferred scope.
-- `GO_RESEARCH.md` — consolidated Go, Cobra, Viper, Echo, and runtime-integration recommendations.
-- `specs/README.md` — feature-to-contract map for the MVP Go specification.
-- `specs/*.go` — normative domain types, service contracts, and executable security invariants.
-- `DEPLOYMENT_PROJECTION_ARCHITECTURE.md` — selective per-deployment projection and fleet synchronization architecture.
+- `docs/product/BIG_IDEA.md` — product thesis, conceptual model, and long-term direction.
+- `specs/MVP.md` — minimum viable feature set, invariants, and deferred scope.
+- `specs/*.md` — normative, implementation-independent product and security specifications.
+- `research/GO_RESEARCH.md` — consolidated Go, Cobra, Viper, Echo, and runtime-integration recommendations.
+- `specs/DEPLOYMENT_PROJECTION.md` — selective per-deployment projection and fleet synchronization architecture.
 - `research/2026-07-17-embedded-bbolt-credential-authority.md` — normative host-native bbolt credential authority, encryption, key-custody, broker, and Infisical migration specification.
 
 Detailed retained research is under `research/`.
