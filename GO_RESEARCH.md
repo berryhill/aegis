@@ -106,7 +106,7 @@ Avoid:
 - Heavy shared initialization in persistent pre-run hooks
 - Reusing a mutated command tree between tests
 
-The command layer should translate a request into an application call. It should not decide whether a caller is Matt, whether a stanza is authorized, or whether a charter approval is valid.
+The command layer should translate a request into an application call. It should not decide whether a caller is the configured principal, whether a stanza is authorized, or whether a charter approval is valid.
 
 Primary sources:
 

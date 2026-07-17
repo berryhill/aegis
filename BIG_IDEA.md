@@ -53,9 +53,9 @@ Runtime adapters translate Aegis artifacts into runtime-specific configuration a
 
 ### Principal
 
-The principal is the root human authority for a logical agent. For the initial Aegis deployment, that principal is Matt.
+The principal is the root human authority for a logical agent. Each Aegis deployment explicitly configures that principal.
 
-The principal identity is established by an authentication mechanism outside the model. A prompt saying "I am Matt" is never authentication. Only the principal may create or expand foundational authority, approve sensitive provisioning, and authorize protected cross-stanza disclosure.
+The principal identity is established by an authentication mechanism outside the model. A prompt claiming to be the principal is never authentication. Only the principal may create or expand foundational authority, approve sensitive provisioning, and authorize protected cross-stanza disclosure.
 
 ### Trust stanza
 
@@ -121,7 +121,7 @@ Aegis should provide a dedicated design session rather than injecting design aut
 
 The intended flow is:
 
-1. Authenticate Matt as the principal.
+1. Authenticate the configured principal.
 2. Resolve and visibly display the target runtime.
 3. Start a dedicated design session using that runtime and its Aegis adapter.
 4. Load runtime-neutral trust-design guidance plus runtime-specific expertise.
@@ -151,7 +151,7 @@ The operational flow is:
 9. Record runtime, identity, stanza, mandate, and charter provenance.
 10. Expire or revoke the session when required.
 
-On Matt's private workstation, the default stanza may be `principal` only when the local environment has authenticated Matt. On shared, remote, fleet, or unauthenticated surfaces, Aegis should default to deny or to a lower-trust stanza—not silently to `principal`.
+On the principal's private workstation, the default stanza may be `principal` only when the local environment has authenticated that principal. On shared, remote, fleet, or unauthenticated surfaces, Aegis should default to deny or to a lower-trust stanza—not silently to `principal`.
 
 ## Trust and enforcement
 

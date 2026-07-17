@@ -1,0 +1,172 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
+)
+
+type Config struct {
+	StateDir         string      `mapstructure:"state_dir" json:"state_dir"`
+	RuntimeDefault   string      `mapstructure:"runtime_default" json:"runtime_default"`
+	HermesExecutable string      `mapstructure:"hermes_executable" json:"hermes_executable"`
+	Principal        Principal   `mapstructure:"principal" json:"principal"`
+	API              API         `mapstructure:"api" json:"api"`
+	Retention        Retention   `mapstructure:"retention" json:"retention"`
+	Audit            Audit       `mapstructure:"audit" json:"audit"`
+	Credentials      Credentials `mapstructure:"credentials" json:"credentials"`
+}
+type Principal struct {
+	ID      string        `mapstructure:"id" json:"id"`
+	Name    string        `mapstructure:"name" json:"name"`
+	UID     string        `mapstructure:"uid" json:"uid"`
+	User    string        `mapstructure:"user" json:"user"`
+	AuthTTL time.Duration `mapstructure:"auth_ttl" json:"auth_ttl"`
+}
+type API struct {
+	Listen          string        `mapstructure:"listen" json:"listen"`
+	UnixSocket      string        `mapstructure:"unix_socket" json:"unix_socket,omitempty"`
+	Token           string        `mapstructure:"token" json:"token"`
+	TLSCertFile     string        `mapstructure:"tls_cert_file" json:"tls_cert_file,omitempty"`
+	TLSKeyFile      string        `mapstructure:"tls_key_file" json:"tls_key_file,omitempty"`
+	ReadTimeout     time.Duration `mapstructure:"read_timeout" json:"read_timeout"`
+	WriteTimeout    time.Duration `mapstructure:"write_timeout" json:"write_timeout"`
+	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout" json:"shutdown_timeout"`
+	MaxBodyBytes    int64         `mapstructure:"max_body_bytes" json:"max_body_bytes"`
+}
+type Retention struct {
+	DesignHomes  bool `mapstructure:"design_homes" json:"design_homes"`
+	SessionHomes bool `mapstructure:"session_homes" json:"session_homes"`
+}
+type Audit struct {
+	CheckpointDir string `mapstructure:"checkpoint_dir" json:"checkpoint_dir"`
+}
+type CredentialBinding struct {
+	Type      string `mapstructure:"type" json:"type"`
+	SourceEnv string `mapstructure:"source_env" json:"source_env"`
+	TargetEnv string `mapstructure:"target_env" json:"target_env"`
+}
+type Credentials struct {
+	References     map[string]CredentialBinding `mapstructure:"references" json:"references"`
+	ProviderAuth   map[string]CredentialBinding `mapstructure:"provider_auth" json:"provider_auth"`
+	DesignProvider string                       `mapstructure:"design_provider" json:"design_provider,omitempty"`
+}
+
+func validEnvironmentName(name string) bool {
+	if name == "" || !(name[0] == '_' || name[0] >= 'A' && name[0] <= 'Z') {
+		return false
+	}
+	for i := 1; i < len(name); i++ {
+		if !(name[i] == '_' || name[i] >= 'A' && name[i] <= 'Z' || name[i] >= '0' && name[i] <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func Defaults() Config {
+	h, _ := os.UserHomeDir()
+	return Config{StateDir: filepath.Join(h, ".local", "state", "aegis"), RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 5 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: filepath.Join(h, ".local", "state", "aegis-checkpoints")}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}}
+}
+func (c Config) Validate() error {
+	var es []error
+	if c.StateDir == "" {
+		es = append(es, errors.New("state_dir is required"))
+	}
+	if c.RuntimeDefault != "hermes" {
+		es = append(es, errors.New("runtime_default must be hermes"))
+	}
+	if c.HermesExecutable == "" {
+		es = append(es, errors.New("hermes_executable is required"))
+	}
+	if strings.TrimSpace(c.Principal.ID) == "" || strings.TrimSpace(c.Principal.Name) == "" || strings.TrimSpace(c.Principal.UID) == "" || strings.TrimSpace(c.Principal.User) == "" {
+		es = append(es, errors.New("principal must explicitly define id, name, uid, and user"))
+	}
+	if c.Principal.AuthTTL <= 0 || c.Principal.AuthTTL > 15*time.Minute {
+		es = append(es, errors.New("principal.auth_ttl must be positive and at most 15m"))
+	}
+	if c.API.Listen == "" || c.API.ReadTimeout <= 0 || c.API.WriteTimeout <= 0 || c.API.ShutdownTimeout <= 0 || c.API.MaxBodyBytes < 1024 {
+		es = append(es, errors.New("API limits and timeouts must be explicit and positive"))
+	}
+	if (c.API.TLSCertFile == "") != (c.API.TLSKeyFile == "") {
+		es = append(es, errors.New("api.tls_cert_file and api.tls_key_file must be configured together"))
+	}
+	if c.API.UnixSocket != "" && c.API.TLSCertFile != "" {
+		es = append(es, errors.New("API TLS is only supported for TCP listeners"))
+	}
+	if c.Audit.CheckpointDir == "" {
+		es = append(es, errors.New("audit.checkpoint_dir is required"))
+	}
+	validateBinding := func(name string, binding CredentialBinding) {
+		reserved := map[string]bool{"PATH": true, "HOME": true, "HERMES_HOME": true, "HERMES_PYTHON_SRC_ROOT": true, "HERMES_TUI_TOOLSETS": true, "HERMES_TUI_SKILLS": true, "LD_PRELOAD": true, "PYTHONPATH": true}
+		if binding.Type != "environment" || !validEnvironmentName(binding.SourceEnv) || !validEnvironmentName(binding.TargetEnv) || reserved[binding.TargetEnv] {
+			es = append(es, fmt.Errorf("credential %q must use type environment with source_env and target_env", name))
+		}
+	}
+	for name, binding := range c.Credentials.References {
+		validateBinding(name, binding)
+	}
+	for provider, binding := range c.Credentials.ProviderAuth {
+		validateBinding("provider_auth."+provider, binding)
+	}
+	if c.Credentials.DesignProvider != "" {
+		if _, ok := c.Credentials.ProviderAuth[c.Credentials.DesignProvider]; !ok {
+			es = append(es, fmt.Errorf("credentials.design_provider %q has no provider_auth binding", c.Credentials.DesignProvider))
+		}
+	}
+	return errors.Join(es...)
+}
+
+// Load implements: flags > environment > config file > defaults. It creates an isolated Viper instance and returns an immutable typed snapshot.
+func Load(path string, flags *pflag.FlagSet) (Config, error) {
+	v := viper.New()
+	d := Defaults()
+	v.SetDefault("state_dir", d.StateDir)
+	v.SetDefault("runtime_default", d.RuntimeDefault)
+	v.SetDefault("hermes_executable", d.HermesExecutable)
+	v.SetDefault("principal.id", d.Principal.ID)
+	v.SetDefault("principal.name", d.Principal.Name)
+	v.SetDefault("principal.auth_ttl", d.Principal.AuthTTL)
+	v.SetDefault("api.listen", d.API.Listen)
+	v.SetDefault("api.read_timeout", d.API.ReadTimeout)
+	v.SetDefault("api.write_timeout", d.API.WriteTimeout)
+	v.SetDefault("api.shutdown_timeout", d.API.ShutdownTimeout)
+	v.SetDefault("api.max_body_bytes", d.API.MaxBodyBytes)
+	v.SetDefault("audit.checkpoint_dir", d.Audit.CheckpointDir)
+	v.SetEnvPrefix("AEGIS")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir"} {
+		_ = v.BindEnv(k)
+	}
+	if flags != nil {
+		if err := v.BindPFlags(flags); err != nil {
+			return Config{}, err
+		}
+	}
+	if path != "" {
+		v.SetConfigFile(path)
+		if err := v.ReadInConfig(); err != nil {
+			return Config{}, fmt.Errorf("read config: %w", err)
+		}
+	}
+	var c Config
+	if err := v.UnmarshalExact(&c); err != nil {
+		return Config{}, fmt.Errorf("strict config decode: %w", err)
+	}
+	if err := c.Validate(); err != nil {
+		return Config{}, fmt.Errorf("invalid configuration: %w", err)
+	}
+	return c, nil
+}
+func Redacted(c Config) Config {
+	if c.API.Token != "" {
+		c.API.Token = "[REDACTED]"
+	}
+	return c
+}

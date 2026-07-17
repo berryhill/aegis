@@ -12,7 +12,7 @@ Aegis must not abstract away or disguise the underlying runtime.
 
 ## Principal
 
-- The initial principal is Matt.
+- The initial principal is an explicitly configured operator.
 - Principal authority must be established through authentication outside the model.
 - A prompt, display name, CLI stanza flag, or model inference is never authentication.
 - Only an authenticated principal may approve foundational authority or exact provisioning artifacts.
@@ -52,11 +52,11 @@ Aegis must not abstract away or disguise the underlying runtime.
 
 ## Design and provisioning boundary
 
-- A dedicated principal-only design session helps Matt produce a charter.
+- A dedicated principal-only design session helps the authenticated operator produce a charter.
 - The design runtime may propose artifacts but must not provision them.
 - Design sessions must not receive arbitrary shell, file-write, profile-management, plugin, MCP, credential, or provisioning authority.
 - Aegis validates and renders the charter and runtime-specific plan.
-- Matt approves the exact canonical charter digest.
+- The authenticated principal approves the exact canonical charter digest.
 - Any change invalidates approval.
 - A separate deterministic provisioner applies the exact approved revision.
 - The resulting runtime configuration must be verified before activation.
@@ -68,9 +68,9 @@ Discussion, ideation, and design requests are not authorization to modify Hermes
 Before consequential project actions:
 
 - Distinguish clearly between discussion, artifact writing, provisioning, and activation.
-- Do not provision or activate anything unless Matt explicitly requests it.
+- Do not provision or activate anything unless the authenticated principal explicitly requests it.
 - Show the intended scope before applying runtime or system changes.
-- Keep project artifacts inside `/home/javi/code/aegis` unless Matt explicitly directs otherwise.
+- Keep project artifacts inside the repository unless the user explicitly directs otherwise.
 - Do not place retained Aegis research or reports in `/tmp`.
 
 ## Go engineering decisions
@@ -104,11 +104,11 @@ Before consequential project actions:
 
 Prove this vertical slice:
 
-1. Matt authenticates.
+1. The configured principal authenticates.
 2. Aegis visibly selects Hermes.
 3. A dedicated design session defines one logical agent with 1–N stanzas.
 4. The design session produces but cannot provision a canonical charter.
-5. Matt approves the exact charter digest.
+5. The configured principal approves the exact charter digest.
 6. Aegis deterministically provisions and verifies the Hermes mapping.
 7. Aegis starts clean principal and teamwide sessions with different effective authority.
 8. Unauthorized escalation and cross-stanza state access fail closed.
@@ -120,5 +120,39 @@ Prove this vertical slice:
 - `BIG_IDEA.md` — product thesis, conceptual model, and long-term direction.
 - `MVP_FEATURE_SET.md` — minimum viable feature set, invariants, and deferred scope.
 - `GO_RESEARCH.md` — consolidated Go, Cobra, Viper, Echo, and runtime-integration recommendations.
+- `specs/README.md` — feature-to-contract map for the MVP Go specification.
+- `specs/*.go` — normative domain types, service contracts, and executable security invariants.
+- `DEPLOYMENT_PROJECTION_ARCHITECTURE.md` — selective per-deployment projection and fleet synchronization architecture.
+- `research/2026-07-17-embedded-bbolt-credential-authority.md` — normative host-native bbolt credential authority, encryption, key-custody, broker, and Infisical migration specification.
 
 Detailed retained research is under `research/`.
+
+## Launch-asset synchronization rule
+
+Every implementation change must include a launch-asset impact review. Before declaring the change complete, inspect every asset below, update each affected asset in the same change, and verify that every retained statement still matches the implemented and tested behavior:
+
+- Clear root `README.md`.
+- `LICENSE`.
+- `SECURITY.md`.
+- `CONTRIBUTING.md`.
+- `CODE_OF_CONDUCT.md`.
+- `CHANGELOG.md`.
+- Threat model.
+- Architecture diagram.
+- Five-minute quickstart.
+- No-key demonstration.
+- Short terminal recording.
+- GitHub release binaries and checksums.
+- Several focused issues suitable for early contributors.
+
+This review is required even when no asset needs an edit. Do not perform unrelated rewrites merely to touch every file; instead, record or report which assets changed and which were reviewed as unaffected. Documentation, diagrams, demonstrations, recordings, release artifacts, checksums, and contributor issues must describe the current code rather than planned or aspirational behavior.
+
+Treat missing required assets, stale commands, unverified examples, inaccurate security claims, obsolete diagrams, recordings that no longer reproduce, and release checksums that do not match their binaries as launch blockers. Run every documented command or workflow that can be exercised locally. Never fabricate command output, demonstrations, recordings, release artifacts, checksums, issue links, or verification results. Creating GitHub releases or issues is an external action and requires the repository owner's explicit authorization; when authorization is absent, prepare accurate repository-local release/issue material and report the remaining external action clearly.
+
+When behavior, command syntax, configuration, architecture, trust boundaries, dependencies, supported Hermes versions, installation, build, testing, security posture, or release packaging changes, update all corresponding launch assets as part of that implementation. Keep the root `README.md` concise and route detailed material to focused documents while preserving a genuine five-minute path to a successful no-key demonstration.
+
+## Implemented MVP command surface
+
+The working Go implementation is under `cmd/aegis` and `internal/`. Build with `go build -o aegis ./cmd/aegis`. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, and `serve`. See `README.md` and `examples/` for the executable workflow.
+
+The Hermes adapter supports `>=0.18.0,<0.19.0`, uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.

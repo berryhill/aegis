@@ -4,15 +4,15 @@
 
 The first Aegis release should prove one coherent vertical slice:
 
-> Matt can design one logical agent for an explicit Hermes runtime, define one or more authenticated trust stanzas, approve an exact charter, and start a clean Hermes session bound to exactly one authorized stanza without creating a persistent Hermes profile during design.
+> A configured principal can design one logical agent for an explicit Hermes runtime, define one or more authenticated trust stanzas, approve an exact charter, and start a clean Hermes session bound to exactly one authorized stanza without creating a persistent Hermes profile during design.
 
 The MVP should not claim to solve all agent security. It should establish a trustworthy session boundary and a deterministic design-to-launch workflow.
 
 ## 1. Principal authentication
 
-- Support one principal: Matt.
+- Support one explicitly configured principal.
 - Authenticate outside the model before a principal design or operational session starts.
-- Initially support a local authentication mechanism tied to Matt's OS account, with a pluggable interface for stronger authentication.
+- Initially support a local authentication mechanism tied to the principal's OS account, with a pluggable interface for stronger authentication.
 - Never accept a CLI flag, display name, prompt statement, or model conclusion as authentication.
 - Fail closed when principal authentication is absent, expired, or ambiguous.
 
@@ -186,7 +186,7 @@ The MVP should not claim to solve all agent security. It should establish a trus
 
 The release is not complete unless tests demonstrate:
 
-- A prompt cannot authenticate Matt.
+- A prompt cannot authenticate the principal.
 - A CLI stanza flag cannot bypass authorization.
 - An unauthorized identity cannot enter `principal`.
 - A session can bind to only one stanza.
@@ -226,17 +226,17 @@ The following are not required for the first release:
 
 A successful MVP demonstration should show:
 
-1. Matt authenticates and starts an Aegis design session.
+1. The configured principal authenticates and starts an Aegis design session.
 2. Aegis visibly selects Hermes as the runtime.
-3. Matt designs one logical agent with `principal` and `teamwide` stanzas.
+3. The principal designs one logical agent with `principal` and `teamwide` stanzas.
 4. The design session produces a validated charter but cannot modify Hermes.
-5. Matt reviews and approves the exact charter digest.
+5. The principal reviews and approves the exact charter digest.
 6. Aegis provisions the approved Hermes mapping and verifies it.
-7. Matt starts a `principal` session and receives principal-only capabilities.
+7. The principal starts a `principal` session and receives principal-only capabilities.
 8. A separately authenticated team identity starts a clean `teamwide` session.
 9. The teamwide session cannot access principal memory, credentials, or tools.
 10. An attempted stanza escalation is denied and recorded.
-11. Matt revokes a session and Aegis terminates its authority.
+11. The principal revokes a session and Aegis terminates its authority.
 12. The audit trail reconstructs the full identity-to-runtime-to-stanza chain.
 
 That vertical slice proves the defining Aegis concept without pretending the first release is a complete agent-security platform.

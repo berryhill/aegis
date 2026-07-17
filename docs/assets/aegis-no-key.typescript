@@ -1,0 +1,66 @@
+Script started on 2026-07-17 18:24:30-05:00 [COMMAND="./scripts/demo-no-key.sh" <not executed on terminal>]
+== Explicit Hermes discovery ==
+{
+  "resolved_runtime": {
+    "name": "Hermes Agent",
+    "runtime": "hermes-agent",
+    "version": "0.18.2",
+    "executable": "<HOME>/.local/bin/hermes",
+    "installation": "<HOME>/.hermes/hermes-agent",
+    "adapter_version": "dev",
+    "capabilities": [
+      "design-stdio",
+      "process-isolation",
+      "disposable-home",
+      "lifecycle-termination",
+      "toolset-selection",
+      "safe-mode",
+      "no-ambient-mcp",
+      "no-ambient-plugins"
+    ]
+  },
+  "selection_source": "configured_default",
+  "visible": true
+}
+== Strict charter validation ==
+Strict validation passed.
+== Redacted effective configuration ==
+{
+  "state_dir": "./.aegis/state",
+  "runtime_default": "hermes",
+  "hermes_executable": "hermes",
+  "principal": {
+    "id": "principal-1",
+    "name": "Example Principal",
+    "uid": "<LOCAL_UID>",
+    "user": "<LOCAL_USER>",
+    "auth_ttl": 300000000000
+  },
+  "api": {
+    "listen": "127.0.0.1:8443",
+    "token": "[REDACTED]",
+    "read_timeout": 15000000000,
+    "write_timeout": 30000000000,
+    "shutdown_timeout": 10000000000,
+    "max_body_bytes": 1048576
+  },
+  "retention": {
+    "design_homes": false,
+    "session_homes": false
+  },
+  "audit": {
+    "checkpoint_dir": "./.aegis/checkpoints"
+  },
+  "credentials": {
+    "references": null,
+    "provider_auth": null
+  }
+}
+== Real no-key design boundary (failure is expected) ==
+Runtime: Hermes Agent
+Design mode: no provisioning capability
+Isolation: disposable HERMES_HOME (not a host filesystem sandbox)
+aegis: Hermes design turn failed: agent init failed: No inference provider configured. Run 'hermes model' to choose a provider and model, or set an API key (OPENROUTER_API_KEY, OPENAI_API_KEY, etc.) in ~/.hermes/.env.
+Design stopped at an authentic unavailable-runtime/provider boundary (exit 1); no model success is claimed.
+
+Script done on 2026-07-17 18:24:40-05:00 [COMMAND_EXIT_CODE="0"]

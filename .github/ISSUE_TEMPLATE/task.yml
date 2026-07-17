@@ -1,0 +1,33 @@
+name: Focused implementation task
+description: Propose a bounded Aegis implementation change
+title: "[Task]: "
+labels: ["help wanted"]
+body:
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Describe one bounded change and the relevant files.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and trust-boundary impact
+      description: Identify affected identity, stanza, mandate, credential, provisioning, runtime, or audit invariants.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable behavior and adversarial tests.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification
+      description: List exact focused and full commands.
+    validations:
+      required: true

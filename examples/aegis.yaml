@@ -1,0 +1,35 @@
+state_dir: ./.aegis/state
+runtime_default: hermes
+hermes_executable: hermes
+principal:
+  id: principal-1
+  name: Example Principal
+  uid: "REPLACE_WITH_LOCAL_UID"
+  user: REPLACE_WITH_LOCAL_USERNAME
+  auth_ttl: 5m
+api:
+  listen: 127.0.0.1:8443
+  # Set for kernel-authenticated local API callers. TCP bearer tokens only
+  # authenticate transport and cannot grant principal authority.
+  unix_socket: ""
+  token: CHANGE-ME-TO-A-LONG-RANDOM-SECRET
+  # Optional TCP TLS identity; configure both files together. Not used for Unix sockets.
+  tls_cert_file: ""
+  tls_key_file: ""
+  read_timeout: 15s
+  write_timeout: 30s
+  shutdown_timeout: 10s
+  max_body_bytes: 1048576
+retention:
+  design_homes: false
+  session_homes: false
+audit:
+  # Put this on a separately protected retention boundary in production.
+  checkpoint_dir: ./.aegis/checkpoints
+credentials:
+  references: {}
+  # Provider authentication is separate from caller authentication.
+  # design_provider: openai
+  # provider_auth:
+  #   openai: {type: environment, source_env: OPENAI_API_KEY, target_env: OPENAI_API_KEY}
+  provider_auth: {}

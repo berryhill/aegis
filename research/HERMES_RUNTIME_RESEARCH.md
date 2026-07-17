@@ -32,7 +32,7 @@ Important distinctions:
 
 The local Hermes checkout inspected was:
 
-- Repository: `/home/javi/.hermes/hermes-agent`
+- Repository: a local Hermes Agent checkout (operator-specific path omitted)
 - Commit: `594308d4bbe95548c9fe418bb10c449099426f93`
 - Commit subject: `fix(credential-pool): throttle "no available entries" log to stop Windows log-lock storm (contributes to #62698) (#66338)`
 - Commit date reported by Git: `2026-07-17 13:08:46 -0400`
@@ -41,7 +41,7 @@ The checkout already contained an untracked `.install_method` marker. No files w
 
 The current official documentation site was reachable. All principal URLs cited below returned HTTP 200 when checked.
 
-No Aegis repository matching “Aegis” was found under `/home/javi/Downloads`; consequently, this report is based on Hermes’ integration contracts and does not assume undocumented Aegis internals. The Aegis repository was not modified.
+This report originated before the Aegis implementation existed and records the Hermes integration contracts used during design. Aegis now implements the selected TUI-gateway and process-launch integrations; current behavior is documented in the repository `README.md` and `internal/runtime/hermes`.
 
 ---
 
@@ -59,8 +59,8 @@ Hermes documents three external protocols plus direct Python embedding.
 Official overview:
 
 - https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/programmatic-integration.md:7-17`
-- Core constructor: `/home/javi/.hermes/hermes-agent/run_agent.py:418-567`
+- Local: `<hermes-checkout>/website/docs/developer-guide/programmatic-integration.md:7-17`
+- Core constructor: `<hermes-checkout>/run_agent.py:418-567`
 
 ### 1.1 TUI gateway JSON-RPC
 
@@ -108,9 +108,9 @@ gateway.ready
 
 References:
 
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/programmatic-integration.md:36-60`
-- Source: `/home/javi/.hermes/hermes-agent/tui_gateway/server.py`
-- WebSocket wrapper: `/home/javi/.hermes/hermes-agent/tui_gateway/ws.py`
+- Local: `<hermes-checkout>/website/docs/developer-guide/programmatic-integration.md:36-60`
+- Source: `<hermes-checkout>/tui_gateway/server.py`
+- WebSocket wrapper: `<hermes-checkout>/tui_gateway/ws.py`
 
 This is the strongest candidate if Aegis wants:
 
@@ -139,8 +139,8 @@ The HTTP API offers:
 Official documentation:
 
 - https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/user-guide/features/api-server.md`
-- Source: `/home/javi/.hermes/hermes-agent/gateway/platforms/api_server.py`
+- Local: `<hermes-checkout>/website/docs/user-guide/features/api-server.md`
+- Source: `<hermes-checkout>/gateway/platforms/api_server.py`
 
 Particularly useful endpoints for Aegis are:
 
@@ -186,11 +186,11 @@ Authorization: Bearer <API_SERVER_KEY>
 
 The official documentation says `API_SERVER_KEY` is required even for loopback deployments:
 
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/user-guide/features/api-server.md:400-424`
+- Local: `<hermes-checkout>/website/docs/user-guide/features/api-server.md:400-424`
 
 The source uses a timing-safe comparison:
 
-- `/home/javi/.hermes/hermes-agent/gateway/platforms/api_server.py:1234-1264`
+- `<hermes-checkout>/gateway/platforms/api_server.py:1234-1264`
 - `hmac.compare_digest()` is used at line 1254.
 
 This is a real transport-level enforcement point.
@@ -217,17 +217,17 @@ ACP offers:
 References:
 
 - https://hermes-agent.nousresearch.com/docs/developer-guide/acp-internals
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/acp-internals.md`
+- Local: `<hermes-checkout>/website/docs/developer-guide/acp-internals.md`
 - Source:
-  - `/home/javi/.hermes/hermes-agent/acp_adapter/server.py`
-  - `/home/javi/.hermes/hermes-agent/acp_adapter/session.py`
-  - `/home/javi/.hermes/hermes-agent/acp_adapter/permissions.py`
-  - `/home/javi/.hermes/hermes-agent/acp_adapter/auth.py`
+  - `<hermes-checkout>/acp_adapter/server.py`
+  - `<hermes-checkout>/acp_adapter/session.py`
+  - `<hermes-checkout>/acp_adapter/permissions.py`
+  - `<hermes-checkout>/acp_adapter/auth.py`
 
 ACP sessions create an agent with the `hermes-acp` toolset:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/acp-internals.md:114-129`
-- `/home/javi/.hermes/hermes-agent/acp_adapter/session.py:623-629`
+- `<hermes-checkout>/website/docs/developer-guide/acp-internals.md:114-129`
+- `<hermes-checkout>/acp_adapter/session.py:623-629`
 
 Dangerous terminal approvals are bridged into ACP permissions. Timeouts and bridge failures deny by default:
 
@@ -237,18 +237,18 @@ Dangerous terminal approvals are bridged into ACP permissions. Timeouts and brid
 
 ACP reuses the active Hermes provider credentials rather than implementing a separate authentication store:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/acp-internals.md:143-152`
+- `<hermes-checkout>/website/docs/developer-guide/acp-internals.md:143-152`
 
 The source confirms that:
 
 - `detect_provider()` succeeds when runtime provider credentials exist:
-  `/home/javi/.hermes/hermes-agent/acp_adapter/auth.py:11-38`
+  `<hermes-checkout>/acp_adapter/auth.py:11-38`
 - ACP advertises the provider and a terminal `hermes-setup` method:
-  `/home/javi/.hermes/hermes-agent/acp_adapter/auth.py:41-79`
+  `<hermes-checkout>/acp_adapter/auth.py:41-79`
 - `authenticate()` merely checks that the requested method corresponds to the configured provider:
-  `/home/javi/.hermes/hermes-agent/acp_adapter/server.py:899-919`
+  `<hermes-checkout>/acp_adapter/server.py:899-919`
 - The source comment describes ACP as “stdio-only, local-trust”:
-  `/home/javi/.hermes/hermes-agent/acp_adapter/server.py:900-905`
+  `<hermes-checkout>/acp_adapter/server.py:900-905`
 
 Therefore, ACP authentication answers:
 
@@ -289,13 +289,13 @@ result = agent.run_conversation(
 Official guide:
 
 - https://hermes-agent.nousresearch.com/docs/guides/python-library
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/guides/python-library.md`
+- Local: `<hermes-checkout>/website/docs/guides/python-library.md`
 
 Exact source signatures:
 
-- `AIAgent.__init__`: `/home/javi/.hermes/hermes-agent/run_agent.py:418-491`
-- `run_conversation`: `/home/javi/.hermes/hermes-agent/run_agent.py:6171-6223`
-- `chat`: `/home/javi/.hermes/hermes-agent/run_agent.py:6228-6240`
+- `AIAgent.__init__`: `<hermes-checkout>/run_agent.py:418-491`
+- `run_conversation`: `<hermes-checkout>/run_agent.py:6171-6223`
+- `chat`: `<hermes-checkout>/run_agent.py:6228-6240`
 
 Useful constructor controls include:
 
@@ -316,7 +316,7 @@ This is convenient, but it couples Aegis to internal Python APIs more tightly th
 
 A further caveat: even with `session_db=None`, initialization creates the active Hermes home’s `sessions/` directory:
 
-- `/home/javi/.hermes/hermes-agent/agent/agent_init.py:1272-1299`
+- `<hermes-checkout>/agent/agent_init.py:1272-1299`
 
 Therefore, an in-process design session is not guaranteed to leave the normal Hermes home untouched unless Aegis sets a disposable `HERMES_HOME` before Hermes modules are imported.
 
@@ -342,13 +342,13 @@ A profile is a separate `HERMES_HOME` with its own:
 Official documentation:
 
 - https://hermes-agent.nousresearch.com/docs/user-guide/profiles
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/user-guide/profiles.md:5-12`
+- Local: `<hermes-checkout>/website/docs/user-guide/profiles.md:5-12`
 
 The default profile is simply the root Hermes home, normally `~/.hermes`:
 
 - Local profile docs: lines 270-302
-- Source: `/home/javi/.hermes/hermes-agent/hermes_cli/profiles.py:1-19`
-- Profile resolution: `/home/javi/.hermes/hermes-agent/hermes_cli/profiles.py:264-291,367-380`
+- Source: `<hermes-checkout>/hermes_cli/profiles.py:1-19`
+- Profile resolution: `<hermes-checkout>/hermes_cli/profiles.py:264-291,367-380`
 
 A named profile normally lives under:
 
@@ -372,7 +372,7 @@ The official profile documentation states:
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/user-guide/profiles.md:125-149`
+- `<hermes-checkout>/website/docs/user-guide/profiles.md:125-149`
 
 Therefore:
 
@@ -424,7 +424,7 @@ Advantages:
 
 Important implementation detail: set `HERMES_HOME` before importing Hermes. Some modules bind paths at import time. The local profile-builder design document records a concrete case where the skills hub captures `SKILLS_DIR` at module import:
 
-- `/home/javi/.hermes/hermes-agent/docs/design/profile-builder.md:42-61`
+- `<hermes-checkout>/docs/design/profile-builder.md:42-61`
 
 For that reason, a fresh subprocess per disposable home is safer than changing `HERMES_HOME` inside a long-running Python process.
 
@@ -485,11 +485,11 @@ This cleanly separates design from provisioning.
 Official documentation:
 
 - https://hermes-agent.nousresearch.com/docs/developer-guide/prompt-assembly
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/prompt-assembly.md`
+- Local: `<hermes-checkout>/website/docs/developer-guide/prompt-assembly.md`
 - Main source:
-  - `/home/javi/.hermes/hermes-agent/agent/system_prompt.py`
-  - `/home/javi/.hermes/hermes-agent/agent/prompt_builder.py`
-  - `/home/javi/.hermes/hermes-agent/run_agent.py`
+  - `<hermes-checkout>/agent/system_prompt.py`
+  - `<hermes-checkout>/agent/prompt_builder.py`
+  - `<hermes-checkout>/run_agent.py`
 
 ### 3.1 Prompt tiers
 
@@ -511,7 +511,7 @@ Hermes assembles the cached prompt in three tiers:
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/prompt-assembly.md:27-42`
+- `<hermes-checkout>/website/docs/developer-guide/prompt-assembly.md:27-42`
 
 API-call-time additions include:
 
@@ -535,7 +535,7 @@ Project instructions are loaded in priority order, first match wins:
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/prompt-assembly.md:186-236`
+- `<hermes-checkout>/website/docs/developer-guide/prompt-assembly.md:186-236`
 
 For an Aegis-controlled design session, use:
 
@@ -552,8 +552,8 @@ When context files are skipped, Hermes uses the hardcoded default identity unles
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/prompt-assembly.md:156-184`
-- Constructor controls: `/home/javi/.hermes/hermes-agent/run_agent.py:478-480`
+- `<hermes-checkout>/website/docs/developer-guide/prompt-assembly.md:156-184`
+- Constructor controls: `<hermes-checkout>/run_agent.py:478-480`
 
 ### 3.3 “Keep Hermes explicit”
 
@@ -581,7 +581,7 @@ Mode: Design only — no provisioning capability
 Where possible, obtain this from protocol metadata:
 
 - ACP advertises `agent_info.name="hermes-agent"`:
-  `/home/javi/.hermes/hermes-agent/acp_adapter/server.py:884-897`
+  `<hermes-checkout>/acp_adapter/server.py:884-897`
 - API `/v1/capabilities` reports the Hermes platform and supported features.
 - API `/v1/models` advertises `hermes-agent` for the default home or the profile name for a named profile.
 
@@ -604,8 +604,8 @@ The messaging gateway uses multiple authorization sources:
 Official reference:
 
 - https://hermes-agent.nousresearch.com/docs/developer-guide/gateway-internals
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/gateway-internals.md:90-109`
-- Source: `/home/javi/.hermes/hermes-agent/gateway/authz_mixin.py:279-288`
+- Local: `<hermes-checkout>/website/docs/developer-guide/gateway-internals.md:90-109`
+- Source: `<hermes-checkout>/gateway/authz_mixin.py:279-288`
 
 The implementation also has specialized trusted-upstream and adapter-auth cases:
 
@@ -616,7 +616,7 @@ The implementation also has specialized trusted-upstream and adapter-auth cases:
 
 See:
 
-- `/home/javi/.hermes/hermes-agent/gateway/authz_mixin.py:290-378`
+- `<hermes-checkout>/gateway/authz_mixin.py:290-378`
 
 ### 4.2 Pairing storage and security
 
@@ -628,7 +628,7 @@ Pairing records:
 
 Source:
 
-- `/home/javi/.hermes/hermes-agent/gateway/pairing.py`
+- `<hermes-checkout>/gateway/pairing.py`
 
 Notable hard properties in the local implementation:
 
@@ -644,15 +644,15 @@ Notable hard properties in the local implementation:
 Exact references:
 
 - Store layout and profile scoping:
-  `/home/javi/.hermes/hermes-agent/gateway/pairing.py:235-282`
+  `<hermes-checkout>/gateway/pairing.py:235-282`
 - Approval lookup:
-  `/home/javi/.hermes/hermes-agent/gateway/pairing.py:344-406`
+  `<hermes-checkout>/gateway/pairing.py:344-406`
 - Code generation and hashing:
-  `/home/javi/.hermes/hermes-agent/gateway/pairing.py:408-469`
+  `<hermes-checkout>/gateway/pairing.py:408-469`
 - Constant-time verification:
-  `/home/javi/.hermes/hermes-agent/gateway/pairing.py:471-537`
+  `<hermes-checkout>/gateway/pairing.py:471-537`
 - Rate limiting and lockout:
-  `/home/javi/.hermes/hermes-agent/gateway/pairing.py:583-623`
+  `<hermes-checkout>/gateway/pairing.py:583-623`
 
 In multiplex mode, pairing can be profile-scoped:
 
@@ -680,7 +680,7 @@ Recommended boundary:
 Official documentation:
 
 - https://hermes-agent.nousresearch.com/docs/reference/toolsets-reference
-- Local: `/home/javi/.hermes/hermes-agent/website/docs/reference/toolsets-reference.md`
+- Local: `<hermes-checkout>/website/docs/reference/toolsets-reference.md`
 
 Toolsets are named groups of tools. Hermes supports:
 
@@ -693,7 +693,7 @@ Toolsets are named groups of tools. Hermes supports:
 
 The hard runtime tool list is generated during agent initialization:
 
-- `/home/javi/.hermes/hermes-agent/agent/agent_init.py:1206-1233`
+- `<hermes-checkout>/agent/agent_init.py:1206-1233`
 
 The model can call only tools registered in that list. This is substantially stronger than a prompt saying not to use a tool.
 
@@ -707,7 +707,7 @@ Documented defaults include:
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/reference/toolsets-reference.md:89-118`
+- `<hermes-checkout>/website/docs/reference/toolsets-reference.md:89-118`
 
 Neither `hermes-acp` nor `hermes-api-server` should be accepted unchanged for a pre-approval design phase.
 
@@ -762,8 +762,8 @@ Also apply OS-level restrictions. Tool filtering reduces the callable surface, b
 
 Source:
 
-- `/home/javi/.hermes/hermes-agent/hermes_cli/oneshot.py:1-20`
-- YOLO setup: `/home/javi/.hermes/hermes-agent/hermes_cli/oneshot.py:218-221`
+- `<hermes-checkout>/hermes_cli/oneshot.py:1-20`
+- YOLO setup: `<hermes-checkout>/hermes_cli/oneshot.py:218-221`
 
 Therefore:
 
@@ -779,7 +779,7 @@ Official references:
 - https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
 - https://hermes-agent.nousresearch.com/docs/guides/use-mcp-with-hermes
 - Local config reference:
-  `/home/javi/.hermes/hermes-agent/website/docs/reference/mcp-config-reference.md`
+  `<hermes-checkout>/website/docs/reference/mcp-config-reference.md`
 
 Hermes supports:
 
@@ -808,9 +808,9 @@ mcp_<server>_<tool>
 References:
 
 - Toolset generation:
-  `/home/javi/.hermes/hermes-agent/website/docs/reference/toolsets-reference.md:120-138`
+  `<hermes-checkout>/website/docs/reference/toolsets-reference.md:120-138`
 - Tool naming:
-  `/home/javi/.hermes/hermes-agent/website/docs/reference/mcp-config-reference.md:245-274`
+  `<hermes-checkout>/website/docs/reference/mcp-config-reference.md:245-274`
 
 ### 6.1 MCP defaults are broader than Aegis should assume
 
@@ -821,11 +821,11 @@ Hermes’ platform configuration normally makes all globally enabled MCP servers
 
 Source:
 
-- `/home/javi/.hermes/hermes-agent/hermes_cli/tools_config.py:1888-1916`
+- `<hermes-checkout>/hermes_cli/tools_config.py:1888-1916`
 
 ACP also explicitly expands configured MCP servers into the session’s enabled toolsets:
 
-- `/home/javi/.hermes/hermes-agent/acp_adapter/session.py:129-133,623-629`
+- `<hermes-checkout>/acp_adapter/session.py:129-133,623-629`
 
 Therefore, merely selecting `hermes-acp` is not a guarantee that no MCP tools will appear.
 
@@ -859,7 +859,7 @@ OAuth tokens are persisted under:
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/reference/mcp-config-reference.md:276-292`
+- `<hermes-checkout>/website/docs/reference/mcp-config-reference.md:276-292`
 
 A disposable `HERMES_HOME` ensures design-time tests do not write OAuth state into the user’s real Hermes home.
 
@@ -872,7 +872,7 @@ Official references:
 - https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins
 - https://hermes-agent.nousresearch.com/docs/developer-guide/plugins
 - Local:
-  `/home/javi/.hermes/hermes-agent/website/docs/user-guide/features/plugins.md`
+  `<hermes-checkout>/website/docs/user-guide/features/plugins.md`
 
 Plugins can:
 
@@ -906,7 +906,7 @@ HERMES_ENABLE_PROJECT_PLUGINS=true
 References:
 
 - Project plugins:
-  `/home/javi/.hermes/hermes-agent/website/docs/user-guide/features/plugins.md:90-93`
+  `<hermes-checkout>/website/docs/user-guide/features/plugins.md:90-93`
 - General plugin opt-in:
   lines 145-182.
 
@@ -925,9 +925,9 @@ Therefore, for a strong Aegis design boundary:
 A `pre_llm_call` plugin can add context to the current user message:
 
 - Prompt assembly reference:
-  `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/prompt-assembly.md:238-249`
+  `<hermes-checkout>/website/docs/developer-guide/prompt-assembly.md:238-249`
 - Plugin hook catalog:
-  `/home/javi/.hermes/hermes-agent/website/docs/user-guide/features/plugins.md:188-203`
+  `<hermes-checkout>/website/docs/user-guide/features/plugins.md:188-203`
 
 This means prompt provenance is not controlled solely by `system_message` or `ephemeral_system_prompt`. Loading untrusted plugins can alter design behavior even if their tools are not selected.
 
@@ -940,8 +940,8 @@ Official references:
 - https://hermes-agent.nousresearch.com/docs/user-guide/sessions
 - https://hermes-agent.nousresearch.com/docs/developer-guide/session-storage
 - Local:
-  - `/home/javi/.hermes/hermes-agent/website/docs/user-guide/sessions.md`
-  - `/home/javi/.hermes/hermes-agent/website/docs/developer-guide/session-storage.md`
+  - `<hermes-checkout>/website/docs/user-guide/sessions.md`
+  - `<hermes-checkout>/website/docs/developer-guide/session-storage.md`
 
 Hermes stores:
 
@@ -961,7 +961,7 @@ The canonical store is:
 
 Source:
 
-- `/home/javi/.hermes/hermes-agent/hermes_state.py`
+- `<hermes-checkout>/hermes_state.py`
 
 ### 8.1 Implications for Aegis
 
@@ -988,7 +988,7 @@ Recommended default:
 
 The sessions documentation explicitly notes that compression is not privacy deletion:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/user-guide/sessions.md:60-66`
+- `<hermes-checkout>/website/docs/user-guide/sessions.md:60-66`
 
 ### 8.2 Session IDs versus stable memory scopes
 
@@ -999,7 +999,7 @@ The API supports:
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/website/docs/user-guide/features/api-server.md:379-390`
+- `<hermes-checkout>/website/docs/user-guide/features/api-server.md:379-390`
 
 For a design-only session with `skip_memory=True`, Aegis generally should not supply a durable memory key. If long-term memory is intentionally enabled later, bind the key to the authenticated Aegis tenant/user—not to user-controlled input.
 
@@ -1204,7 +1204,7 @@ The local design proposal for the dashboard profile builder is explicitly marked
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/docs/design/profile-builder.md:1-5`
+- `<hermes-checkout>/docs/design/profile-builder.md:1-5`
 
 It also documents that profile creation plus hub-skill installation is not fully atomic:
 
@@ -1214,7 +1214,7 @@ It also documents that profile creation plus hub-skill installation is not fully
 
 Reference:
 
-- `/home/javi/.hermes/hermes-agent/docs/design/profile-builder.md:63-79,81-107`
+- `<hermes-checkout>/docs/design/profile-builder.md:63-79,81-107`
 
 Aegis should not assume a future Hermes builder provides transactionality. If Aegis needs all-or-nothing semantics, use staging and rollback outside the current profile-create flow.
 
@@ -1250,11 +1250,11 @@ Hermes has a substantial dangerous-command approval system, including:
 
 Source:
 
-- `/home/javi/.hermes/hermes-agent/tools/approval.py`
+- `<hermes-checkout>/tools/approval.py`
 
 Some catastrophic commands are blocked even under YOLO or `approvals.mode=off`:
 
-- `/home/javi/.hermes/hermes-agent/tools/approval.py:333-349`
+- `<hermes-checkout>/tools/approval.py:333-349`
 
 This is useful defense in depth, not a general transaction boundary:
 

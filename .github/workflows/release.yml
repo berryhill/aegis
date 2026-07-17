@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26.x"
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Test source
+        run: go test ./...
+      - name: Build release archives
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          set -eu
+          mkdir dist
+          version=${GITHUB_REF_NAME#v}
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os=${target%/*}; arch=${target#*/}; name="aegis_${GITHUB_REF_NAME}_${os}_${arch}"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version" -o "dist/$name/aegis" ./cmd/aegis
+            tar -C "dist/$name" -czf "dist/$name.tar.gz" aegis
+            rm -rf "dist/$name"
+          done
+          (cd dist && sha256sum *.tar.gz > SHA256SUMS)
+          sha256sum -c dist/SHA256SUMS
+      - name: Publish GitHub release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes

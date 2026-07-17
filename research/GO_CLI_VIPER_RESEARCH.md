@@ -24,7 +24,7 @@ The upstream Cobra guide still demonstrates globals and `init()` registration, b
 
 ## 1. Research scope and current versions
 
-No Aegis repository or Go module was present in the supplied working directory, so this report is architecture-level rather than a repository-specific audit. In particular, I could not compare these recommendations with Aegis’s current `go.mod`, package tree, or command implementation.
+This document began as architecture-level research before the implementation existed. Aegis now has a Go module, a constructor-built Cobra CLI, strict Viper configuration, shared application services, and executable tests; current behavior is documented in the repository `README.md` and source tree.
 
 ### Sourced facts
 

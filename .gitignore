@@ -1,0 +1,32 @@
+# Local toolchains and downloaded tooling
+/.tools/
+go.tar.gz
+govulncheck
+
+# Go build and test outputs
+/aegis
+/aegis-*
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+*.coverprofile
+coverage.out
+
+# Local runtime state and configuration
+.env
+*.local.yaml
+*.local.yml
+.aegis/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+*~

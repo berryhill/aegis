@@ -1,0 +1,50 @@
+{
+  "schema_version": "aegis.dev/v1alpha1",
+  "agent_id": "office",
+  "name": "Office Agent",
+  "revision": 1,
+  "runtime": {
+    "adapter": "hermes",
+    "runtime": "hermes-agent",
+    "version_constraint": ">=0.18.0,<0.19.0",
+    "target": "aegis-owned-ephemeral"
+  },
+  "stanzas": [
+    {
+      "id": "principal",
+      "name": "Principal",
+      "enabled": true,
+      "authentication": {
+        "methods": ["local-os"],
+        "selectors": [{"kinds": ["human"], "subject_ids": ["local-uid:REPLACE_WITH_LOCAL_UID"], "principal_ids": ["principal-1"], "issuers": ["local-os"], "claims": {}, "environments": ["local"]}],
+        "require_fresh": true,
+        "max_auth_age_seconds": 300
+      },
+      "grant": {"capabilities": ["interactive-chat", "local-file-access"], "tools": ["file"]},
+      "scopes": {"memory": ["office-principal"], "credentials": ["provider:openai"]},
+      "session": {"maximum_lifetime_seconds": 1800, "idle_timeout_seconds": 600, "require_reauth": true, "delegation": false},
+      "approval": {"required_operations": ["provision"], "maximum_lifetime_seconds": 300, "single_use": true},
+      "information_flow": {"cross_stanza": "deny"},
+      "hermes": {"profile": "", "persistent_home": false, "mcp_servers": [], "plugins": [], "toolsets": ["file"], "model": "gpt-5.2", "provider": "openai"}
+    },
+    {
+      "id": "teamwide",
+      "name": "Teamwide",
+      "enabled": true,
+      "authentication": {
+        "methods": ["local-os"],
+        "selectors": [{"kinds": ["human"], "subject_ids": ["local-uid:2000"], "principal_ids": [], "issuers": ["local-os"], "claims": {}, "environments": ["local"]}],
+        "require_fresh": true,
+        "max_auth_age_seconds": 300
+      },
+      "grant": {"capabilities": ["interactive-chat", "web-research"], "tools": ["web"]},
+      "scopes": {"memory": ["office-team"], "credentials": ["provider:openai"]},
+      "session": {"maximum_lifetime_seconds": 900, "idle_timeout_seconds": 300, "require_reauth": true, "delegation": false},
+      "approval": {"required_operations": ["provision"], "maximum_lifetime_seconds": 300, "single_use": true},
+      "information_flow": {"cross_stanza": "deny"},
+      "hermes": {"profile": "", "persistent_home": false, "mcp_servers": [], "plugins": [], "toolsets": ["web"], "model": "gpt-5.2", "provider": "openai"}
+    }
+  ],
+  "created_by": "principal-1",
+  "created_at": "2026-07-17T12:00:00Z"
+}
