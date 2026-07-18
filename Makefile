@@ -8,6 +8,7 @@ GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 verify:
 	go mod tidy
 	git diff --exit-code -- go.mod go.sum
+	sh scripts/release_test.sh
 	test -z "$$(gofmt -l ./cmd ./internal)"
 	go build ./cmd/aegis
 	go test ./...

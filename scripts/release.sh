@@ -85,6 +85,14 @@ mv "$verify_root/repo/release.sh" "$verify_root/repo/scripts/release.sh"
 (
     cd "$verify_root/repo"
     sh -n scripts/release.sh
+    if [ "${RELEASE_DRY_RUN:-0}" != 1 ]; then
+        preflight_tag="aegis-signing-preflight-$$"
+        if ! git tag -s "$preflight_tag" -m "Aegis release signing preflight"; then
+            printf 'signed-tag preflight failed; no release commit, tag, or push was performed\n' >&2
+            exit 1
+        fi
+        git tag -d "$preflight_tag" >/dev/null
+    fi
     make verify
     make release-review VERSION="$version"
     git diff --check
