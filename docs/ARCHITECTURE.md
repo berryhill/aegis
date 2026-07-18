@@ -23,6 +23,7 @@ flowchart TB
   Broker -->|SO_PEERCRED + capability; sanitized result| Bridge[Future verified Hermes bridge]
   Bridge -. Hermes 0.18 safe-mode gate .-> Adapter
   Updater[CLI self-updater] -->|GitHub release + SHA256SUMS| Binary[Aegis executable]
+  Init[Deterministic first-run initializer] -->|host UID/user + confirmation; atomic 0600| Config[(Aegis configuration)]
   Terminal[Principal terminal] --> Manager[Built-in secrets-manager shell]
   Manager --> Ingress[Source-aware secret guard]
   Manager --> ManagerGateway[Structured multi-turn Hermes client]
@@ -48,4 +49,6 @@ Provisioning intent is persisted before approval consumption. Startup recovery f
 
 Self-update is an installation operation outside the application service and agent authority model. It accepts only stable SemVer releases from the fixed Aegis GitHub repository, bounds and validates the single-file archive, verifies its published SHA-256 checksum, and atomically replaces the current executable when its directory is writable.
 
-The manager components are currently fail-closed building blocks rather than a completed activated route. Bare command dispatch, local directives, strict contracts, scanner, proxy, Ollama discovery/digest fixture, and reusable gateway client are exercised hermetically. No real candidate has been downloaded or certified, and managed Ollama supervision plus end-to-end Hermes/proxy startup and protected-intake mutations remain gated; ordinary manager prose therefore reports deterministic alternatives instead of simulating a model response.
+Root dispatch inspects configuration before constructing operational services. Help, version, update, and initialization do not require principal configuration. A genuinely absent interactive installation enters the deterministic initializer and then the manager; non-TTY absence returns structured remediation without reading input. Malformed, insecure, partial, and ambiguous artifacts remain distinct fail-closed states. The initializer authenticates through host account APIs, previews exact paths/content, and uses a synced no-replace atomic publication rather than model, Hermes, Ollama, credential, provisioning, or profile authority.
+
+The manager orchestrator now owns one rollback-safe transaction: authenticate the principal, verify exact certification and route identity, establish managed or external-local Ollama, load the pinned artifact, start an expiring authenticated proxy, launch a disposable safe-mode Hermes stdio gateway with no ambient extensions, execute closed typed proposals through shared credential services, and clean up in reverse order. Hermetic fake-process tests exercise managed readiness/shutdown, multi-turn gateway behavior, proposal confirmation, protected intake, capability replay/expiry, model unload, receipt finalization, and disposable-state removal. No real candidate has been downloaded or certified, so no default exists and unconfigured or drifted hosts remain in deterministic degraded mode.

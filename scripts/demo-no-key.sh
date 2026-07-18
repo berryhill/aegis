@@ -10,6 +10,7 @@ cd "$repo"
 go build -o "$work/aegis" ./cmd/aegis
 cp examples/aegis.yaml "$work/aegis.yaml"
 cp examples/office-charter.json "$work/office-charter.json"
+chmod 0600 "$work/aegis.yaml" "$work/office-charter.json"
 uid=$(id -u)
 user=$(id -un)
 sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" "$work/aegis.yaml" "$work/office-charter.json"

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/berryhill/aegis/internal/api"
@@ -16,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
 	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
+	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
@@ -24,13 +26,48 @@ import (
 )
 
 type Dependencies struct {
-	In         io.Reader
-	Out, Err   io.Writer
-	Logger     *slog.Logger
-	Version    string
-	IsTerminal func(io.Reader, io.Writer) bool
+	In          io.Reader
+	Out, Err    io.Writer
+	Logger      *slog.Logger
+	Version     string
+	IsTerminal  func(io.Reader, io.Writer) bool
+	Updater     UpdateService
+	Initializer *initialize.Service
 }
 type rootOptions struct{ configFile, stateDir, hermesExecutable, runtime string }
+
+type UpdateService interface {
+	Run(context.Context, bool) (selfupdate.Result, error)
+}
+
+type rootActionValue struct {
+	name     string
+	value    *bool
+	selected *string
+}
+
+func (v *rootActionValue) Set(raw string) error {
+	enabled, err := strconv.ParseBool(raw)
+	if err != nil {
+		return err
+	}
+	if enabled && *v.selected != "" && *v.selected != v.name {
+		return fmt.Errorf("conflicting root actions --%s and --%s", *v.selected, v.name)
+	}
+	*v.value = enabled
+	if enabled {
+		*v.selected = v.name
+	}
+	return nil
+}
+func (v *rootActionValue) String() string {
+	if v.value != nil && *v.value {
+		return "true"
+	}
+	return "false"
+}
+func (*rootActionValue) Type() string     { return "bool" }
+func (*rootActionValue) IsBoolFlag() bool { return true }
 
 func NewRoot(deps Dependencies) *cobra.Command {
 	if deps.In == nil {
@@ -48,8 +85,16 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	if deps.IsTerminal == nil {
 		deps.IsTerminal = terminalPair
 	}
+	if deps.Updater == nil {
+		deps.Updater = selfupdate.New(deps.Version)
+	}
+	if deps.Initializer == nil {
+		deps.Initializer = initialize.New()
+	}
 	o := &rootOptions{}
-	root := &cobra.Command{Use: "aegis", Short: "Authenticated trust-stanza sessions over explicit Hermes Agent runtimes", Version: deps.Version, SilenceErrors: true, SilenceUsage: true}
+	var updateAlias, helpAction, versionAction bool
+	var selectedAction string
+	root := &cobra.Command{Use: "aegis", Short: "Authenticated trust-stanza sessions over explicit Hermes Agent runtimes", Version: deps.Version, Args: cobra.NoArgs, SilenceErrors: true, SilenceUsage: true}
 	root.SetIn(deps.In)
 	root.SetOut(deps.Out)
 	root.SetErr(deps.Err)
@@ -58,6 +103,18 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	f.StringVar(&o.stateDir, "state-dir", "", "Aegis state directory")
 	f.StringVar(&o.hermesExecutable, "hermes-executable", "", "Hermes executable")
 	f.StringVar(&o.runtime, "runtime", "", "explicit runtime (hermes)")
+	f.Var(&rootActionValue{name: "update", value: &updateAlias, selected: &selectedAction}, "update", "update Aegis from the latest verified GitHub release")
+	f.VarP(&rootActionValue{name: "help", value: &helpAction, selected: &selectedAction}, "help", "h", "help for aegis")
+	f.Var(&rootActionValue{name: "version", value: &versionAction, selected: &selectedAction}, "version", "version for aegis")
+	for _, name := range []string{"update", "help", "version"} {
+		f.Lookup(name).NoOptDefVal = "true"
+	}
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		if strings.Contains(err.Error(), "conflicting root actions") {
+			return usage(err)
+		}
+		return err
+	})
 	build := func(cmd *cobra.Command) (*app.Service, error) {
 		cfg, err := config.Load(o.configFile, nil)
 		if err != nil {
@@ -86,28 +143,57 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return service, nil
 	}
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if updateAlias && cmd != root {
+			return usage(errors.New("--update is valid only as a root action without a positional command"))
+		}
+		return nil
+	}
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		if updateAlias {
+			return runUpdate(cmd, deps.Updater, false)
+		}
+		inspection := config.Inspect(o.configFile)
+		if inspection.State != config.StateValid && inspection.State != config.StateAbsent && inspection.State != config.StatePartial {
+			return usage(inspection.Failure())
+		}
 		if !deps.IsTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+			if inspection.State == config.StateAbsent || inspection.State == config.StatePartial {
+				if err := output(cmd, map[string]any{"state": inspection.State, "initialized": false, "reason": inspection.ReasonCode, "next_command": "aegis init", "exit_status": 2}); err != nil {
+					return err
+				}
+				return usage(fmt.Errorf("%s: Aegis is uninitialized; run: aegis init", managerdomain.ReasonNotInitialized))
+			}
 			return usage(fmt.Errorf("%s: interactive manager mode requires stdin and stdout terminals; use deterministic subcommands such as aegis secret, aegis audit, or aegis config", managerdomain.ReasonRequiresTTY))
+		}
+		if inspection.State != config.StateValid {
+			initialized, err := runFirstInitialization(cmd, deps.Initializer, o.configFile, o.stateDir)
+			if err != nil || !initialized {
+				return err
+			}
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal), initCmd(build, deps.IsTerminal), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Version))
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o), initCmd(build, deps.IsTerminal, deps.Initializer, o), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater))
 	return root
 }
 
-func updateCmd(version string) *cobra.Command {
+func runUpdate(cmd *cobra.Command, updater UpdateService, checkOnly bool) error {
+	result, err := updater.Run(cmd.Context(), checkOnly)
+	if err != nil {
+		return err
+	}
+	return output(cmd, result)
+}
+
+func updateCmd(updater UpdateService) *cobra.Command {
 	var checkOnly bool
 	command := &cobra.Command{
 		Use:   "update",
 		Short: "Update Aegis from the latest verified GitHub release",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			result, err := selfupdate.New(version).Run(cmd.Context(), checkOnly)
-			if err != nil {
-				return err
-			}
-			return output(cmd, result)
+			return runUpdate(cmd, updater, checkOnly)
 		},
 	}
 	command.Flags().BoolVar(&checkOnly, "check", false, "check for an update without installing it")

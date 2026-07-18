@@ -77,6 +77,16 @@ type ResolvedSecret struct {
 	Binding CredentialBinding
 }
 
+type SecretVersionMetadata struct {
+	RecordID       string    `json:"record_id"`
+	Version        uint64    `json:"version"`
+	FormatVersion  uint16    `json:"format_version"`
+	Algorithm      string    `json:"algorithm"`
+	KEKVersion     uint64    `json:"kek_version"`
+	CreatedAt      time.Time `json:"created_at"`
+	CiphertextHash string    `json:"ciphertext_hash"`
+}
+
 type Repository interface {
 	StoreID() string
 	DeploymentID() string
@@ -85,6 +95,7 @@ type Repository interface {
 	Metadata(context.Context, string) (SecretRecord, error)
 	List(context.Context, string, int) ([]SecretRecord, error)
 	Version(context.Context, string, uint64) (EncryptedSecretVersion, error)
+	History(context.Context, string, int) ([]SecretVersionMetadata, error)
 	Bind(context.Context, CredentialBinding) error
 	Resolve(context.Context, CredentialBindingKey) (ResolvedSecret, error)
 	Revoke(context.Context, string, uint64, string, time.Time) error

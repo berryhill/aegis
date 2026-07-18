@@ -118,6 +118,14 @@ func (s *Service) AuditCredentialOperation(ctx context.Context, subject core.Sub
 	return s.audit(ctx, core.AuditEvent{Type: eventType, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: metadata})
 }
 
+// AuditManagerSession appends one metadata-only manager lifecycle event.
+func (s *Service) AuditManagerSession(ctx context.Context, subject core.Subject, outcome, reason string, metadata map[string]string) error {
+	if subject.PrincipalID == "" || subject.PrincipalID != s.Config.Principal.ID || (outcome != "ok" && outcome != "denied") || strings.TrimSpace(reason) == "" {
+		return ErrDenied
+	}
+	return s.audit(ctx, core.AuditEvent{Type: "manager_session_closed", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: metadata})
+}
+
 // Authenticate uses only the kernel-backed process account mapping. No prompt,
 // display name, requested stanza, or CLI authority flag is accepted as evidence.
 func (s *Service) Authenticate(ctx context.Context) (core.Subject, error) {

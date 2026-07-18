@@ -1,6 +1,6 @@
 # Terminal Recording
 
-The recording source is `scripts/demo-no-key.sh`. It uses temporary paths, derives only the local UID/username, prints no credential values, and removes its workspace.
+The recording source is `scripts/demo-no-key.sh`. It uses temporary paths, derives only the local UID/username, sets the copied configuration to mode `0600`, prints no credential values, and removes its workspace.
 
 The retained recording is:
 

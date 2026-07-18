@@ -7,11 +7,136 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
+
+const InitializationTemporaryPrefix = ".aegis.yaml.init-"
+
+type State string
+
+const (
+	StateAbsent    State = "uninitialized"
+	StateValid     State = "valid"
+	StateMalformed State = "malformed"
+	StateInsecure  State = "insecure_permissions"
+	StatePartial   State = "partially_initialized"
+	StateAmbiguous State = "ambiguous"
+)
+
+type Inspection struct {
+	Path        string
+	State       State
+	Config      Config
+	FilePresent bool
+	ReasonCode  string
+	Err         error
+	Partials    []string
+}
+
+func (inspection Inspection) Failure() error {
+	if inspection.Err == nil {
+		return fmt.Errorf("%s: configuration %s is in state %s", inspection.ReasonCode, inspection.Path, inspection.State)
+	}
+	return fmt.Errorf("%s: %w", inspection.ReasonCode, inspection.Err)
+}
+
+func DefaultPath() (string, error) {
+	directory, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user configuration directory: %w", err)
+	}
+	return filepath.Join(directory, "aegis", "aegis.yaml"), nil
+}
+
+func ResolvePath(path string) (string, error) {
+	if path != "" {
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("resolve configuration path %q: %w", path, err)
+		}
+		return absolute, nil
+	}
+	return DefaultPath()
+}
+
+// Inspect distinguishes absence from every unsafe existing-artifact state.
+func Inspect(path string) Inspection {
+	resolved, err := ResolvePath(path)
+	if err != nil {
+		return Inspection{Path: path, State: StateAmbiguous, ReasonCode: "configuration_path_ambiguous", Err: err}
+	}
+	inspection := Inspection{Path: resolved}
+	entries, globErr := filepath.Glob(filepath.Join(filepath.Dir(resolved), InitializationTemporaryPrefix+"*"))
+	if globErr != nil {
+		inspection.State, inspection.ReasonCode, inspection.Err = StateAmbiguous, "configuration_path_ambiguous", fmt.Errorf("inspect initialization artifacts for %s: %w", resolved, globErr)
+		return inspection
+	}
+	inspection.Partials = entries
+	info, statErr := os.Lstat(resolved)
+	if errors.Is(statErr, os.ErrNotExist) {
+		if len(entries) != 0 {
+			inspection.State, inspection.ReasonCode = StatePartial, "configuration_initialization_partial"
+			inspection.Err = fmt.Errorf("configuration initialization is incomplete at %s", resolved)
+			return inspection
+		}
+		if path == "" {
+			_, uidConfigured := os.LookupEnv("AEGIS_PRINCIPAL_UID")
+			_, userConfigured := os.LookupEnv("AEGIS_PRINCIPAL_USER")
+			if uidConfigured || userConfigured {
+				if !uidConfigured || !userConfigured {
+					inspection.State, inspection.ReasonCode = StateAmbiguous, "configuration_environment_ambiguous"
+					inspection.Err = errors.New("environment configuration must define both AEGIS_PRINCIPAL_UID and AEGIS_PRINCIPAL_USER")
+					return inspection
+				}
+				configured, environmentErr := load("", nil)
+				if environmentErr != nil {
+					inspection.State, inspection.ReasonCode = StateMalformed, "configuration_invalid"
+					inspection.Err = fmt.Errorf("environment configuration is invalid: %w", environmentErr)
+					return inspection
+				}
+				inspection.State, inspection.ReasonCode, inspection.Config = StateValid, "configuration_valid", configured
+				return inspection
+			}
+		}
+		inspection.State, inspection.ReasonCode = StateAbsent, "manager_not_initialized"
+		return inspection
+	}
+	if statErr != nil {
+		inspection.State, inspection.ReasonCode, inspection.Err = StateAmbiguous, "configuration_path_ambiguous", fmt.Errorf("inspect configuration %s: %w", resolved, statErr)
+		return inspection
+	}
+	if !info.Mode().IsRegular() {
+		inspection.State, inspection.ReasonCode = StateAmbiguous, "configuration_path_ambiguous"
+		inspection.Err = fmt.Errorf("configuration path %s must be one regular file, not %s", resolved, info.Mode().Type())
+		return inspection
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		inspection.State, inspection.ReasonCode = StateInsecure, "configuration_permissions_insecure"
+		inspection.Err = fmt.Errorf("configuration %s has insecure mode %04o; run: chmod 600 %s", resolved, info.Mode().Perm(), resolved)
+		return inspection
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && int(stat.Uid) != os.Geteuid() {
+		inspection.State, inspection.ReasonCode = StateInsecure, "configuration_owner_insecure"
+		inspection.Err = fmt.Errorf("configuration %s is not owned by the current effective UID; correct its ownership before retrying", resolved)
+		return inspection
+	}
+	c, loadErr := load(resolved, nil)
+	if loadErr != nil {
+		inspection.State, inspection.ReasonCode, inspection.Err = StateMalformed, "configuration_invalid", fmt.Errorf("configuration %s is malformed: %w", resolved, loadErr)
+		return inspection
+	}
+	if len(entries) != 0 {
+		inspection.State, inspection.ReasonCode = StateAmbiguous, "configuration_path_ambiguous"
+		inspection.Err = fmt.Errorf("configuration %s exists alongside incomplete initialization artifacts; verify it and remove the stale artifacts before retrying", resolved)
+		return inspection
+	}
+	inspection.State, inspection.ReasonCode, inspection.Config, inspection.FilePresent = StateValid, "configuration_valid", c, true
+	return inspection
+}
 
 type Config struct {
 	StateDir         string      `mapstructure:"state_dir" json:"state_dir"`
@@ -47,6 +172,7 @@ type ManagerInference struct {
 	Endpoint             string        `mapstructure:"endpoint" json:"endpoint,omitempty"`
 	Model                string        `mapstructure:"model" json:"model,omitempty"`
 	ModelDigest          string        `mapstructure:"model_digest" json:"model_digest,omitempty"`
+	Certification        string        `mapstructure:"certification" json:"certification,omitempty"`
 	KeepAlive            time.Duration `mapstructure:"keep_alive" json:"keep_alive"`
 	StartTimeout         time.Duration `mapstructure:"start_timeout" json:"start_timeout"`
 	RequestTimeout       time.Duration `mapstructure:"request_timeout" json:"request_timeout"`
@@ -193,8 +319,16 @@ func (c Config) Validate() error {
 	if manager.Inference.Mode == "managed" && manager.Inference.Endpoint != "" {
 		es = append(es, errors.New("managed Ollama mode forbids a configured endpoint"))
 	}
-	if (manager.Inference.Model == "") != (manager.Inference.ModelDigest == "") || (manager.Inference.ModelDigest != "" && (!strings.HasPrefix(manager.Inference.ModelDigest, "sha256:") || len(manager.Inference.ModelDigest) != 71)) {
+	if (manager.Inference.Model == "") != (manager.Inference.ModelDigest == "") || (manager.Inference.Model == "") != (manager.Inference.Certification == "") || (manager.Inference.ModelDigest != "" && (!strings.HasPrefix(manager.Inference.ModelDigest, "sha256:") || len(manager.Inference.ModelDigest) != 71)) {
 		es = append(es, errors.New("manager model name and exact sha256 digest must be configured together"))
+	}
+	if manager.Inference.Certification != "" {
+		state, stateErr := filepath.Abs(c.StateDir)
+		certification, certErr := filepath.Abs(manager.Inference.Certification)
+		relative, relErr := filepath.Rel(state, certification)
+		if stateErr != nil || certErr != nil || relErr != nil || relative == "." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+			es = append(es, errors.New("manager certification must be a file below the Aegis state directory"))
+		}
 	}
 	if manager.Ingress.MaximumMessageBytes < 1024 || manager.Ingress.MaximumMessageBytes > 4<<20 || manager.Ingress.MaximumMessageRunes < 1024 || manager.Ingress.MaximumMessageRunes > 4<<20 || manager.Ingress.ScanTimeout <= 0 || manager.Ingress.ScanTimeout > time.Second || manager.Ingress.BoundedDecodeDepth < 0 || manager.Ingress.BoundedDecodeDepth > 3 || manager.Transcript.Retention != "session" {
 		es = append(es, errors.New("manager ingress or transcript configuration is invalid"))
@@ -256,6 +390,23 @@ func (c Config) Validate() error {
 
 // Load implements: flags > environment > config file > defaults. It creates an isolated Viper instance and returns an immutable typed snapshot.
 func Load(path string, flags *pflag.FlagSet) (Config, error) {
+	inspection := Inspect(path)
+	if inspection.State != StateValid {
+		if inspection.Err != nil {
+			return Config{}, inspection.Failure()
+		}
+		return Config{}, fmt.Errorf("configuration is uninitialized at %s; run: aegis init", inspection.Path)
+	}
+	if flags == nil {
+		return inspection.Config, nil
+	}
+	if !inspection.FilePresent {
+		return load("", flags)
+	}
+	return load(inspection.Path, flags)
+}
+
+func load(path string, flags *pflag.FlagSet) (Config, error) {
 	v := viper.New()
 	d := Defaults()
 	v.SetDefault("state_dir", d.StateDir)
@@ -273,7 +424,7 @@ func Load(path string, flags *pflag.FlagSet) (Config, error) {
 	v.SetDefault("manager", d.Manager)
 	v.SetEnvPrefix("AEGIS")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest"} {
+	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
 		_ = v.BindEnv(k)
 	}
 	if flags != nil {

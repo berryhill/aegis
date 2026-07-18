@@ -42,6 +42,7 @@ manager:
     # Empty until an exact local artifact passes the opt-in conformance suite.
     model: ""
     model_digest: ""
+    certification: ""
     keep_alive: 5m
     start_timeout: 30s
     request_timeout: 120s

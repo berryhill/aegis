@@ -70,6 +70,13 @@ func (a *Authority) List(ctx context.Context, query string, limit int) ([]Secret
 	return a.repository.List(ctx, query, limit)
 }
 
+func (a *Authority) History(ctx context.Context, recordID string, limit int) ([]SecretVersionMetadata, error) {
+	if !ValidateIdentifier(recordID) || limit < 1 || limit > 100 {
+		return nil, errors.New("credential history request is invalid")
+	}
+	return a.repository.History(ctx, recordID, limit)
+}
+
 func (a *Authority) Bind(ctx context.Context, binding CredentialBinding) error {
 	if err := ValidateBinding(binding, a.repository.DeploymentID()); err != nil {
 		return err

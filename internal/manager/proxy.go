@@ -25,6 +25,8 @@ type ProxyConfig struct {
 	Timeout              time.Duration
 	Guard                *Guard
 	SessionActive        func() bool
+	CapabilityExpires    time.Time
+	ConsumeCapability    func() bool
 }
 
 type Proxy struct {
@@ -55,6 +57,23 @@ type openAIMessage struct {
 	Name       string `json:"name,omitempty"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	ToolCalls  []any  `json:"tool_calls,omitempty"`
+}
+type openAIChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index        int           `json:"index"`
+		Message      openAIMessage `json:"message"`
+		FinishReason string        `json:"finish_reason"`
+		Logprobs     any           `json:"logprobs,omitempty"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func StartProxy(ctx context.Context, config ProxyConfig) (*Proxy, error) {
@@ -97,7 +116,8 @@ func (p *Proxy) Close(ctx context.Context) error {
 
 func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
-	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || request.Header.Get("Content-Type") != "application/json" || !p.config.SessionActive() || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.token) || request.Header.Get("X-Aegis-Route") != p.config.RouteDigest {
+	capabilityValid := p.config.CapabilityExpires.IsZero() || time.Now().Before(p.config.CapabilityExpires)
+	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || request.Header.Get("Content-Type") != "application/json" || !p.config.SessionActive() || !capabilityValid || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.token) {
 		http.Error(writer, "route denied", http.StatusForbidden)
 		return
 	}
@@ -111,8 +131,12 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "request denied", http.StatusForbidden)
 		return
 	}
-	if err = strictDecode(body, &envelope); err != nil || envelope.Model != p.config.Model {
+	if err = strictDecode(body, &envelope); err != nil || envelope.Model != p.config.Model || envelope.Stream || len(envelope.Tools) != 0 || envelope.ToolChoice != nil || envelope.User != "" || !validMessages(envelope.Messages) {
 		http.Error(writer, "request denied", http.StatusForbidden)
+		return
+	}
+	if p.config.ConsumeCapability != nil && !p.config.ConsumeCapability() {
+		http.Error(writer, "route denied", http.StatusForbidden)
 		return
 	}
 	finding := p.config.Guard.Inspect(request.Context(), ContentEnvelope{Source: SourceOperation, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "application/json", ProvenanceID: "serialized-request", RouteClass: "local", Content: body})
@@ -143,6 +167,10 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "local inference response denied", http.StatusBadGateway)
 		return
 	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 || !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "application/json") || !validChatResponse(responseBody, p.config.Model) {
+		http.Error(writer, "local inference response denied", http.StatusBadGateway)
+		return
+	}
 	finding = p.config.Guard.Inspect(request.Context(), ContentEnvelope{Source: SourceModelOutput, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: response.Header.Get("Content-Type"), ProvenanceID: "serialized-response", RouteClass: "local", Content: responseBody})
 	if finding.Decision != AllowLocal {
 		http.Error(writer, "local inference response denied", http.StatusBadGateway)
@@ -163,4 +191,32 @@ func loopbackHost(host string) bool {
 	}
 	address := net.ParseIP(host)
 	return address != nil && address.IsLoopback()
+}
+
+func validMessages(messages []openAIMessage) bool {
+	if len(messages) == 0 || len(messages) > 256 {
+		return false
+	}
+	for _, message := range messages {
+		if message.Role != "system" && message.Role != "user" && message.Role != "assistant" {
+			return false
+		}
+		if _, ok := message.Content.(string); !ok || message.Name != "" || message.ToolCallID != "" || len(message.ToolCalls) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func validChatResponse(body []byte, model string) bool {
+	if validateJSONObject(body, 16) != nil {
+		return false
+	}
+	var response openAIChatResponse
+	if strictDecode(body, &response) != nil || response.Model != model || len(response.Choices) != 1 {
+		return false
+	}
+	message := response.Choices[0].Message
+	content, ok := message.Content.(string)
+	return ok && content != "" && message.Role == "assistant" && message.Name == "" && message.ToolCallID == "" && len(message.ToolCalls) == 0
 }

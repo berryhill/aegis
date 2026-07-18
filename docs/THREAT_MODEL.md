@@ -31,7 +31,7 @@ flowchart LR
   Manager --> Guard[Deterministic ingress guard]
   Guard --> Gateway[Structured Hermes gateway]
   Gateway --> Proxy[Session-bound exact-model proxy]
-  Proxy --> Ollama[Loopback Ollama fixture/target]
+  Proxy --> Ollama[Exact pinned loopback Ollama artifact]
 ```
 
 The CLI/API transport boundary authenticates callers outside the model. Charter validation and stanza selection form the authorization boundary. Approval separates proposal from deterministic provisioning. Each Hermes process/home is a stanza-state boundary. The host kernel, filesystem, and network remain outside Aegis confinement.
@@ -53,14 +53,16 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
 | API token grants principal | Unix peer identity required | TCP principal identity is unavailable without a future mapper |
 | Self-update installs a corrupted archive | Fixed repository URLs, stable SemVer tags, bounded archive parsing, release checksum verification, atomic replacement | GitHub release metadata and checksum delivery are one trust domain; no independent signature/transparency verification |
+| First run guesses identity or overwrites unsafe configuration | Host-native current-user plus UID lookup, exact preview, literal confirmation, no-replace atomic mode-0600 publication, and distinct absent/malformed/insecure/partial/ambiguous states | The authenticated local account, root, or kernel can still authorize or replace same-account configuration |
 | Database theft exposes stored values | Fresh per-version DEK/nonces, XChaCha20-Poly1305, separately wrapped DEKs, KEK outside database | Metadata is sensitive; host-file KEK plus database theft defeats separation; root on an active host can inspect plaintext |
 | Ciphertext/version/context is swapped | Canonical AAD binds store, record, version, kind, KEK, algorithm, format, and purpose; startup key check | No TPM monotonic anti-rollback protection; whole-host backup rollback needs external detection |
 | Wrong stanza or destination resolves a secret | Broker requires exact peer + session capability + active session/mandate + charter + agent + stanza + local deployment + `github/read` scope + `github-api` destination + active binding/version on every use | No host/network confinement; a compromised authorized runtime may misuse its permitted read action |
 | Prompt turns the broker into secret retrieval or SSRF | One strict `github.get_repository.v1` schema; caller cannot select URL, header, scope, record, version, deployment, stanza, or destination; redirects/proxy environment disabled; sanitized response allowlist | Configured downstream and DNS remain operator/network trust; Hermes bridge registration is not implemented |
 | Capability or request is replayed by another local process | 256-bit short-lived capability digest plus exact SO_PEERCRED UID/GID and runtime PID/start-token ancestry; fresh bounded request IDs/deadlines reject duplicate or stale actions; termination/failure/expiry removes capability material | Same-host root/kernel can inspect process memory/files; production needs distinct service/runtime identities |
 | Secret leaks through administration | No argv value, confirmed no-echo intake or protected stdin, metadata-only output/audit, bounded buffers and best-effort overwrite | Go/runtime/OS may retain memory copies; protected-pipe hygiene is operator responsibility |
-| Credential is pasted into manager chat | Aegis owns terminal input; bounded deterministic scanning blocks before gateway/proxy and records no content | False negatives remain possible; protected-intake UI integration is incomplete |
-| Hermes changes model or a same-host process calls the inference proxy | Ephemeral bearer, exact route digest, active-session check, fixed path/method/content type/model, loopback-only target, and no redirects | Host root can inspect process memory; complete process/network confinement is not implemented |
+| Credential is pasted into manager chat | Aegis owns terminal input; bounded deterministic scanning blocks before gateway/proxy and records no content; intentional create/rotate values use confirmed no-echo intake outside the model path | False negatives and Go/runtime memory copies remain possible |
+| Hermes changes model or a same-host process calls the inference proxy | Expiring bearer capability consumed once per armed turn, exact route/model identity, active-session check, fixed path/method/content type, loopback-only target, complete response scan, and no redirects | Host root can inspect process memory; complete process/network confinement is not implemented |
+| A same-UID process inspects the manager Hermes environment | Hermes 0.18.x receives its OpenAI-compatible proxy key through the provider environment because its gateway exposes no inherited-FD provider-key contract; the capability expires with principal authentication, is route-bound, and is consumed only while Aegis arms one turn | On hosts whose `/proc` policy permits same-UID environment inspection, another local process may steal the short-lived capability; production should use distinct runtime identity and restrictive procfs until Hermes supports inherited credential handles |
 
 ## Non-goals
 

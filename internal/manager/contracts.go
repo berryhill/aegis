@@ -323,5 +323,7 @@ const (
 	ReasonScannerFailed        = "manager_scanner_failed"
 	ReasonRequestOversize      = "manager_request_oversize"
 	ReasonTurnTimeout          = "manager_turn_timeout"
+	ReasonSessionExpired       = "manager_session_expired"
+	ReasonSessionRevoked       = "manager_session_revoked"
 	ReasonCleanupIncomplete    = "manager_cleanup_incomplete"
 )

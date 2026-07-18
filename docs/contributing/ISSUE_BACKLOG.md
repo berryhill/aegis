@@ -26,10 +26,10 @@ Scope: run `docs/RECORDING.md`, sanitize, replay, and verify against current CLI
 
 Scope: prove that pinned Hermes can register exactly one Aegis-owned `github.get_repository.v1` bridge from a disposable home without enabling inherited MCP, plugins, tokens, skills, or profiles. Relevant files: `internal/runtime/hermes`, `internal/credentials/broker`, `docs/CREDENTIAL_BROKER.md`. Acceptance: effective tool registration is verified before prompts; capability arrives through an inherited channel where supported; a stanza without the exact operation cannot call it; safe-mode invariants remain tested; no terminal/curl fallback. Dependency: a supported Hermes bridge-injection contract or an upstream change.
 
-## 7. Complete managed Ollama process supervision and certification
+## 7. Run and review an exact real manager-model certification
 
-Scope: connect the implemented manager route, proxy, local Ollama client, and structured gateway under one rollback-safe startup/cleanup transaction. Acceptance: hermetic child-process readiness/crash/unload/termination tests, persisted exact certification and content-free receipts, then an explicitly authorized real 64K-context conformance run. Security: no model download in default tests, no global Ollama changes, no cloud fallback, and no weakening of the proxy boundary.
+Scope: against an already-installed official candidate and with explicit operator authorization, run the live 64K-context corpus through the complete Hermes/proxy/Ollama path and review every result. Acceptance: persist the exact artifact/Hermes/Ollama/instruction/schema/corpus identity only when every critical case genuinely passes; document measured hardware and latency. Security: do not download or select an artifact implicitly, fabricate results, use mutable identity, enable cloud fallback, or alter the normal model store during default verification.
 
-## 8. Complete interactive protected-intake manager operations
+## 8. Add OS-specific terminal interruption campaigns
 
-Scope: expose list/search/show/create/rotate/revoke/binding/history through shared authority services in the Aegis-owned UI. Acceptance: exact non-secret previews, principal confirmation, no-echo PTY tests, cancellation at every state, and random-canary absence across gateway/proxy/store/audit/output. Security: never pass values through proposal arguments or invoke the Aegis CLI as a subprocess.
+Scope: expand pseudo-terminal campaigns for SIGINT, EOF, resize, intake cancellation, and forced child failure on each supported OS. Acceptance: terminal echo is restored, capabilities are invalidated, children are gone, disposable state is removed, and one metadata-only receipt remains. Security: generated canaries must remain absent from captures, errors, audit, database metadata, and temporary files.

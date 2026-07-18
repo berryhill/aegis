@@ -19,11 +19,12 @@ Alternatively, download the matching archive and `SHA256SUMS` from the GitHub re
 ```sh
 aegis update --check
 aegis update
+aegis --update
 ```
 
-`aegis update` verifies the archive against the release checksum before replacing the current executable. Package-manager-owned or non-writable executables should be updated through their original installation method.
+`aegis --update` is a strict root-only alias for `aegis update`; ambiguous combinations with subcommands or other root actions are rejected. Both forms use the same checksum-verifying updater before atomically replacing the exact current executable. Package-manager-owned or non-writable executables should be updated through their original installation method.
 
-Release deployment status: the public repository currently has the `v0.1.0` tag but no published GitHub release. [Workflow run 29627074637](https://github.com/berryhill/aegis/actions/runs/29627074637) failed in the test step before building or publishing assets; the release-tag E2E defect was fixed on `main` afterward. Consequently, `aegis update --check` honestly reports that no published release is visible. A maintainer must publish a new fixed release tag (without moving `v0.1.0`) before self-update can succeed; this repository does not claim that the missing release or assets exist.
+The updater selects only the latest exact stable GitHub release and fails closed if its metadata, archive, or matching `SHA256SUMS` entry is unavailable or invalid.
 
 ## Build
 
@@ -35,7 +36,16 @@ Go 1.26.5 or newer is required. The application uses Cobra, isolated Viper insta
 
 ## Configure
 
-Copy `examples/aegis.yaml`, replace the principal UID and username placeholders with the designated operator's local account, and make the matching replacement in `examples/office-charter.json`. The binding is mandatory. Precedence is:
+For a new local installation, run bare `aegis` in a terminal or run `aegis init`. Aegis verifies the current UID/username through host-native account APIs, displays the exact configuration and state paths plus complete configuration content, and writes only after the operator types `yes`. The configuration is published atomically with mode `0600` under an Aegis mode-`0700` configuration directory. Initialization does not invoke Hermes, Ollama, a model, cloud service, credential creation, provisioning, or profile modification.
+
+For an explicit example configuration, copy it, set restrictive permissions, replace the principal placeholders, and make the matching replacement in `examples/office-charter.json`:
+
+```sh
+cp examples/aegis.yaml .aegis.yaml
+chmod 600 .aegis.yaml
+```
+
+The binding is mandatory. Precedence is:
 
 1. CLI flags
 2. `AEGIS_*` environment variables
@@ -46,30 +56,32 @@ The API token is redacted by `aegis config`. It authenticates API transport; it 
 
 ## End-to-end workflow
 
-Bare `aegis` now reserves terminal input for the built-in manager and fails with `manager_requires_tty` when stdin or stdout is not a terminal. The current manager shell authenticates the configured OS principal, displays the fixed `secrets-manager`/Hermes/Ollama/local-only/no-fallback boundary, consumes local slash directives, and blocks high-confidence credential pastes before any model path. `aegis init` reports resumable initialization state without downloading a model. A certified real local model has **not** been selected or downloaded, so ordinary conversation fails honestly to deterministic administration alternatives; the release does not yet claim the complete model-backed manager workflow in `specs/AEGIS_MANAGER.md`.
+Bare interactive `aegis` initializes a genuinely absent installation and then enters the built-in manager. Bare non-TTY use never prompts: an absent installation returns structured `manager_not_initialized` output with `aegis init` and exit status 2; an initialized installation returns `manager_requires_tty`. Existing malformed, insecurely permissioned, partial, or ambiguous configuration is never treated as absent or silently overwritten. The manager authenticates the configured OS principal, displays the fixed `secrets-manager`/Hermes/Ollama/local-only/no-fallback boundary, consumes local slash directives, and blocks high-confidence credential pastes before any model path. When configuration names an exact installed model and matching mode-`0600` certification record, startup verifies Hermes/Ollama versions, artifact digest, certification identity and 64K context, then starts the authenticated proxy and disposable safe-mode Hermes gateway. Startup failures roll back and degrade to deterministic administration without cloud or model fallback. No real artifact was downloaded or certified by this repository change, so the example remains deliberately unconfigured.
+
+Live certification is deliberately opt-in and is never part of default tests or startup. After independently installing one exact official candidate, configure its immutable Ollama name, `/api/show` digest, and a mode-`0600` certification destination, then explicitly run `aegis manager certify CANDIDATE_ID`. The command exercises the complete Hermes → authenticated proxy → Ollama path at the configured 64K context and publishes the certification only if every semantic case passes. It does not pull a model or accept fixture results.
 
 ```sh
-./aegis --config examples/aegis.yaml runtime
-./aegis --config examples/aegis.yaml charter validate examples/office-charter.json
+./aegis --config .aegis.yaml runtime
+./aegis --config .aegis.yaml charter validate examples/office-charter.json
 
 # Structured Hermes gateway design turn, safe mode, disposable HERMES_HOME,
 # no provisioning authority. The file supplies principal requirements.
-./aegis --config examples/aegis.yaml design --draft examples/office-charter.json
+./aegis --config .aegis.yaml design --draft examples/office-charter.json
 
 # Non-interactive minimal design turn; without configured provider credentials
 # this reaches the provider boundary and fails honestly.
-./aegis --config examples/aegis.yaml design --smoke
+./aegis --config .aegis.yaml design --smoke
 
-./aegis --config examples/aegis.yaml charter import examples/office-charter.json
-./aegis --config examples/aegis.yaml plan preview office --revision 1
-./aegis --config examples/aegis.yaml approval request PLAN_ID --ttl 5m
-./aegis --config examples/aegis.yaml approval approve APPROVAL_ID
-./aegis --config examples/aegis.yaml provision PLAN_ID APPROVAL_ID
-./aegis --config examples/aegis.yaml session preview office --revision 1 --stanza principal
-./aegis --config examples/aegis.yaml session start MANDATE_ID
-./aegis --config examples/aegis.yaml session show SESSION_ID
-./aegis --config examples/aegis.yaml session revoke SESSION_ID --reason operator_request
-./aegis --config examples/aegis.yaml audit verify
+./aegis --config .aegis.yaml charter import examples/office-charter.json
+./aegis --config .aegis.yaml plan preview office --revision 1
+./aegis --config .aegis.yaml approval request PLAN_ID --ttl 5m
+./aegis --config .aegis.yaml approval approve APPROVAL_ID
+./aegis --config .aegis.yaml provision PLAN_ID APPROVAL_ID
+./aegis --config .aegis.yaml session preview office --revision 1 --stanza principal
+./aegis --config .aegis.yaml session start MANDATE_ID
+./aegis --config .aegis.yaml session show SESSION_ID
+./aegis --config .aegis.yaml session revoke SESSION_ID --reason operator_request
+./aegis --config .aegis.yaml audit verify
 ```
 
 All command results are JSON on stdout. Diagnostics and the explicit design-mode warning go to stderr. A stanza flag is only a narrowing request and never identity evidence. `charter explain` and denied session previews retain the shared machine-readable decision on stdout; `charter effective` authenticates and authorizes the caller before returning only the selected stanza's capabilities, tools, memory and credential scopes, session/approval limits, and Hermes mapping.
@@ -84,7 +96,7 @@ In the MVP, a charter `grant.tools` entry is a Hermes toolset ID because toolset
 
 Aegis now includes the local administrative foundation for storing reusable secrets without persisting plaintext values. The optional `credentials.authority` configuration selects one deployment-bound bbolt database and either an encrypted systemd service credential or an explicitly weaker host-file KEK. Each immutable secret version is encrypted with a fresh DEK and XChaCha20-Poly1305 nonce; the DEK is independently wrapped by a versioned KEK. The database is mode `0600`, uses fixed schema buckets and a finite writer-lock timeout, performs startup schema/structural/key checks, and supports exact bindings, rotation, logical revocation, and consistent ciphertext backups.
 
-Principal-only administration is available through `aegis secret initialize|put|metadata|list|rotate|bind|revoke|backup`. The authority repository also has bounded metadata list/search support used by the manager domain; the current interactive shell still directs protected mutations to deterministic `aegis secret` subcommands rather than pretending model integration exists. `put` and `rotate` default to confirmed no-echo terminal intake; `--stdin` reads exact bytes from a protected pipe. Values are never accepted in argv or returned by the CLI. `metadata` does not decrypt. Host-file initialization is intended for development and is explicitly reported as weaker; production service configuration should use `LoadCredentialEncrypted` and `custody: systemd`. Keep KEK/recovery material separate from database backups.
+Principal-only administration is available through `aegis secret initialize|put|metadata|list|rotate|bind|revoke|backup`. The shared authority service also supplies bounded metadata list/search/history and the model-backed manager's closed proposal flow for create, rotate, revoke, and binding. Aegis renders the exact metadata-only preview, requires operator confirmation, and collects create/rotate values through confirmed no-echo intake outside Hermes and Ollama. `put` and `rotate` retain deterministic CLI operation and protected `--stdin` support. Values are never accepted in argv or returned by the CLI. `metadata` and history do not decrypt. Host-file initialization is intended for development and is explicitly reported as weaker; production service configuration should use `LoadCredentialEncrypted` and `custody: systemd`. Keep KEK/recovery material separate from database backups.
 
 The optional Linux [session credential broker](docs/CREDENTIAL_BROKER.md) now proves one narrow downstream path: `github.get_repository.v1`. It combines pathname-socket `SO_PEERCRED`, a short-lived exact-session capability, live mandate/runtime checks, and one `github/read` authority binding; it applies the credential inside Aegis and returns only sanitized repository metadata. It is not GetSecret, a generic proxy, or a claim that all credentials are brokered. Existing Hermes provider authentication remains environment-backed, and the broker is not model-visible until an exact Aegis-owned bridge can be verified under Hermes safe-mode constraints. Fleet projections, production unit/identity provisioning, TPM recovery, and Infisical migration remain separate boundaries.
 

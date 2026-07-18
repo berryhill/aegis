@@ -133,7 +133,7 @@ func (c *OllamaClient) Load(ctx context.Context, model string, contextLength int
 		return errors.New("invalid model load policy")
 	}
 	body, _ := json.Marshal(map[string]any{"model": model, "keep_alive": keepAlive.String(), "options": map[string]int{"num_ctx": contextLength}})
-	return c.request(ctx, http.MethodPost, "/api/generate", body, &struct{}{})
+	return c.request(ctx, http.MethodPost, "/api/generate", body, nil)
 }
 
 func (c *OllamaClient) Unload(ctx context.Context, model string) error {
@@ -141,7 +141,7 @@ func (c *OllamaClient) Unload(ctx context.Context, model string) error {
 		return errors.New("model is required")
 	}
 	body, _ := json.Marshal(map[string]any{"model": model, "keep_alive": 0})
-	return c.request(ctx, http.MethodPost, "/api/generate", body, &struct{}{})
+	return c.request(ctx, http.MethodPost, "/api/generate", body, nil)
 }
 
 func parseVersion(value string) ([3]int, error) {

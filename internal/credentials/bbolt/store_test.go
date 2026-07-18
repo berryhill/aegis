@@ -87,7 +87,11 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	secondSecret := []byte("second-secret-value-never-persist-plaintext")
 	record, err = authority.Rotate(ctx, record.ID, secondSecret)
 	if err != nil || record.CurrentVersion != 2 {
-		t.Fatalf("rotate: record=%+v err=%v", record, err)
+		t.Fatalf("rotate record=%+v err=%v", record, err)
+	}
+	history, err := authority.History(ctx, record.ID, 10)
+	if err != nil || len(history) != 2 || history[0].Version != 1 || history[1].Version != 2 || history[0].CiphertextHash == "" {
+		t.Fatalf("metadata history=%+v err=%v", history, err)
 	}
 	if err = authority.Use(ctx, binding.Key, "api.example.test", func(value []byte) error { used = string(value); return nil }); err != nil || used != string(secondSecret) {
 		t.Fatalf("current binding did not resolve rotated value: %v", err)

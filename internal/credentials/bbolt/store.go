@@ -413,6 +413,35 @@ func (s *Store) Version(ctx context.Context, recordID string, version uint64) (c
 	return encrypted, err
 }
 
+func (s *Store) History(ctx context.Context, recordID string, limit int) ([]credentials.SecretVersionMetadata, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if !credentials.ValidateIdentifier(recordID) || limit < 1 || limit > 100 {
+		return nil, errors.New("invalid credential history bounds")
+	}
+	prefix := append([]byte(recordID), 0)
+	result := make([]credentials.SecretVersionMetadata, 0, limit)
+	err := s.db.View(func(tx *bolt.Tx) error {
+		if tx.Bucket(recordBucket).Get([]byte(recordID)) == nil {
+			return credentials.ErrNotFound
+		}
+		cursor := tx.Bucket(versionBucket).Cursor()
+		for key, value := cursor.Seek(prefix); key != nil && bytes.HasPrefix(key, prefix) && len(result) < limit; key, value = cursor.Next() {
+			var version credentials.EncryptedSecretVersion
+			if err := decode(value, &version); err != nil {
+				return err
+			}
+			if err := credentials.ValidateEncryptedVersion(version); err != nil {
+				return err
+			}
+			result = append(result, credentials.SecretVersionMetadata{RecordID: version.RecordID, Version: version.Version, FormatVersion: version.FormatVersion, Algorithm: version.Algorithm, KEKVersion: version.KEKVersion, CreatedAt: version.CreatedAt, CiphertextHash: version.CiphertextHash})
+		}
+		return nil
+	})
+	return result, err
+}
+
 func (s *Store) Bind(ctx context.Context, binding credentials.CredentialBinding) error {
 	if err := ctx.Err(); err != nil {
 		return err

@@ -948,6 +948,12 @@ At minimum:
 manager_requires_tty
 manager_not_initialized
 manager_authentication_failed
+configuration_invalid
+configuration_permissions_insecure
+configuration_owner_insecure
+configuration_initialization_partial
+configuration_path_ambiguous
+configuration_environment_ambiguous
 manager_runtime_unsupported
 manager_ollama_unavailable
 manager_ollama_not_local

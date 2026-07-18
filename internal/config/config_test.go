@@ -35,6 +35,30 @@ func TestLoadRejectsUnknownField(t *testing.T) {
 	}
 }
 
+func TestLoadPreservesValidEnvironmentOnlyConfiguration(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	t.Setenv("AEGIS_PRINCIPAL_UID", "4242")
+	t.Setenv("AEGIS_PRINCIPAL_USER", "operator")
+	configuration, err := Load("", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.Principal.UID != "4242" || configuration.Principal.User != "operator" {
+		t.Fatalf("environment principal not preserved: %#v", configuration.Principal)
+	}
+}
+
+func TestInspectRejectsPartialEnvironmentConfigurationAsAmbiguous(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	t.Setenv("AEGIS_PRINCIPAL_UID", "4242")
+	inspection := Inspect("")
+	if inspection.State != StateAmbiguous || inspection.ReasonCode != "configuration_environment_ambiguous" {
+		t.Fatalf("inspection=%+v", inspection)
+	}
+}
+
 func TestCredentialBindingsFailClosed(t *testing.T) {
 	tests := []struct {
 		name string
@@ -127,6 +151,7 @@ func TestManagerConfigurationFailsClosed(t *testing.T) {
 	configuration.Principal = Principal{ID: "principal", Name: "Principal", UID: "1000", User: "operator", AuthTTL: configuration.Principal.AuthTTL}
 	configuration.Manager.Inference.Model = "exact:1"
 	configuration.Manager.Inference.ModelDigest = "sha256:" + strings.Repeat("a", 64)
+	configuration.Manager.Inference.Certification = filepath.Join(configuration.StateDir, "manager", "exact-1.certification.json")
 	if err := configuration.Validate(); err != nil {
 		t.Fatalf("valid pinned manager config rejected: %v", err)
 	}
