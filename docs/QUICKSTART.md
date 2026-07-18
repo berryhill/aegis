@@ -3,8 +3,10 @@
 ## Prerequisites
 
 - Linux
-- Go 1.26+
+- Go 1.26.5+
 - Hermes Agent `>=0.18.0,<0.19.0` on `PATH`
+
+Install the latest tagged Aegis release with `go install github.com/berryhill/aegis/cmd/aegis@latest`, or continue below to build a checkout. Release builds can subsequently use `aegis update --check` and `aegis update`.
 
 ## Build and configure
 

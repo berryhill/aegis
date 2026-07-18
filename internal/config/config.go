@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -56,6 +57,30 @@ type Credentials struct {
 	References     map[string]CredentialBinding `mapstructure:"references" json:"references"`
 	ProviderAuth   map[string]CredentialBinding `mapstructure:"provider_auth" json:"provider_auth"`
 	DesignProvider string                       `mapstructure:"design_provider" json:"design_provider,omitempty"`
+	Authority      CredentialAuthority          `mapstructure:"authority" json:"authority"`
+}
+
+type CredentialAuthority struct {
+	Database      string `mapstructure:"database" json:"database,omitempty"`
+	DeploymentID  string `mapstructure:"deployment_id" json:"deployment_id,omitempty"`
+	Custody       string `mapstructure:"custody" json:"custody,omitempty"`
+	KEKCredential string `mapstructure:"kek_credential" json:"kek_credential,omitempty"`
+	KEKFile       string `mapstructure:"kek_file" json:"kek_file,omitempty"`
+}
+
+func (c Credentials) MarshalJSON() ([]byte, error) {
+	type credentialOutput struct {
+		References     map[string]CredentialBinding `json:"references"`
+		ProviderAuth   map[string]CredentialBinding `json:"provider_auth"`
+		DesignProvider string                       `json:"design_provider,omitempty"`
+		Authority      *CredentialAuthority         `json:"authority,omitempty"`
+	}
+	var authority *CredentialAuthority
+	if c.Authority != (CredentialAuthority{}) {
+		copy := c.Authority
+		authority = &copy
+	}
+	return json.Marshal(credentialOutput{References: c.References, ProviderAuth: c.ProviderAuth, DesignProvider: c.DesignProvider, Authority: authority})
 }
 
 func validEnvironmentName(name string) bool {
@@ -120,6 +145,24 @@ func (c Config) Validate() error {
 			es = append(es, fmt.Errorf("credentials.design_provider %q has no provider_auth binding", c.Credentials.DesignProvider))
 		}
 	}
+	authority := c.Credentials.Authority
+	if authority.Database != "" || authority.DeploymentID != "" || authority.Custody != "" || authority.KEKCredential != "" || authority.KEKFile != "" {
+		if authority.Database == "" || authority.DeploymentID == "" {
+			es = append(es, errors.New("credentials.authority.database and deployment_id are required when credential authority is configured"))
+		}
+		switch authority.Custody {
+		case "systemd":
+			if authority.KEKCredential == "" || authority.KEKCredential == "." || authority.KEKCredential == ".." || authority.KEKFile != "" || filepath.IsAbs(authority.KEKCredential) || filepath.Base(authority.KEKCredential) != authority.KEKCredential {
+				es = append(es, errors.New("systemd credential custody requires one simple kek_credential name and no kek_file"))
+			}
+		case "host-file":
+			if authority.KEKFile == "" || authority.KEKCredential != "" {
+				es = append(es, errors.New("host-file credential custody requires kek_file and no kek_credential"))
+			}
+		default:
+			es = append(es, errors.New("credentials.authority.custody must be systemd or host-file"))
+		}
+	}
 	return errors.Join(es...)
 }
 
@@ -167,6 +210,9 @@ func Load(path string, flags *pflag.FlagSet) (Config, error) {
 func Redacted(c Config) Config {
 	if c.API.Token != "" {
 		c.API.Token = "[REDACTED]"
+	}
+	if c.Credentials.Authority.KEKFile != "" {
+		c.Credentials.Authority.KEKFile = "[REDACTED]"
 	}
 	return c
 }

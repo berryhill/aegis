@@ -19,7 +19,10 @@ flowchart LR
   Caller -->|OS identity or SO_PEERCRED| Aegis
   Token[Bearer token] -->|transport only| Aegis
   Aegis --> Store[(Aegis state)]
-  Aegis -->|explicit credential binding| Hermes[Disposable Hermes process]
+  Env[Environment-backed provider binding] --> Hermes[Disposable Hermes process]
+  Principal -->|no-echo administrative intake| Authority[(Encrypted bbolt authority)]
+  KEK[External KEK custody] --> Authority
+  Authority -. broker not implemented .-> Hermes
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
   Hermes -. untrusted output .-> Aegis
@@ -42,11 +45,16 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Provisioning escapes state or crashes | Typed effects, containment, symlink rejection, atomic create, durable intent recovery | Same-account filesystem races are not a separate-user sandbox; mismatching recovery artifacts require manual review |
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
 | API token grants principal | Unix peer identity required | TCP principal identity is unavailable without a future mapper |
+| Self-update installs a corrupted archive | Fixed repository URLs, stable SemVer tags, bounded archive parsing, release checksum verification, atomic replacement | GitHub release metadata and checksum delivery are one trust domain; no independent signature/transparency verification |
+| Database theft exposes stored values | Fresh per-version DEK/nonces, XChaCha20-Poly1305, separately wrapped DEKs, KEK outside database | Metadata is sensitive; host-file KEK plus database theft defeats separation; root on an active host can inspect plaintext |
+| Ciphertext/version/context is swapped | Canonical AAD binds store, record, version, kind, KEK, algorithm, format, and purpose; startup key check | No TPM monotonic anti-rollback protection; whole-host backup rollback needs external detection |
+| Wrong stanza or destination resolves a secret | Exact agent + stanza + deployment + scope key and destination allowlist; missing/duplicate/revoked deny | Runtime broker and session capability enforcement are not implemented yet, so stored values are not exposed to Hermes |
+| Secret leaks through administration | No argv value, confirmed no-echo intake or protected stdin, metadata-only output/audit, bounded buffers and best-effort overwrite | Go/runtime/OS may retain memory copies; protected-pipe hygiene is operator responsibility |
 
 ## Non-goals
 
-The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, or protection from a fully compromised kernel/operator account.
+The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a completed credential broker or projection system, or protection from a fully compromised kernel/operator account.
 
 ## Deployment requirements
 
-Protect Aegis state with mode 0700, keep API tokens/TLS keys outside source control, use Unix sockets for principal operations, place the audit-authority interface behind a separately supervised process/account, retain audit checkpoints on a separately protected boundary, supervise Aegis externally, and review any stanza granting `terminal` or `file` as broad host-facing authority.
+Protect Aegis state with mode 0700, keep API tokens/TLS keys outside source control, use Unix sockets for principal operations, place the audit-authority interface behind a separately supervised process/account, retain audit checkpoints on a separately protected boundary, supervise Aegis externally, and review any stanza granting `terminal` or `file` as broad host-facing authority. Keep the authority database on a local filesystem, keep KEK/recovery material out of its backup set, prefer encrypted systemd credential custody over host-file mode, disable core dumps, and encrypt ciphertext backups to offline recovery recipients before they leave the host.

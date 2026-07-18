@@ -680,7 +680,9 @@ Sources were fetched and checked on 2026-07-17. Implementation must recheck vers
 
 ## Repository status
 
-At the time of this report, Aegis does not implement the bbolt credential authority, record encryption, systemd key custody, deployment secret projections, Infisical import, or credential broker. The current Go implementation still resolves configured environment-backed provider credentials and injects the selected provider environment into Hermes. This report is an approved implementation target only after principal review; it is not evidence that the controls exist.
+The current Go implementation now includes the storage-neutral record, encrypted-version, exact-binding, custody, repository, and authority contracts; a fixed-schema deployment-bound bbolt store; strict bounded codecs; startup ownership/mode/schema/structural/key-sentinel validation; XChaCha20-Poly1305 per-version envelope encryption; systemd service-credential file loading; an explicitly weaker host-file development custodian; principal-only no-echo/stdin administration; immutable rotation, logical revocation, metadata-only inspection/audit, and consistent bbolt backup. Unit, race, fuzz-smoke, and exercised CLI workflows cover context/key mutation, exact destination binding, concurrent reads/rotation, backup/restore, and plaintext absence from the database.
+
+This remains a partial implementation of the report. Aegis does not yet provide the native `aegisd` service/unit, TPM-backed and recovery-tested `LoadCredentialEncrypted` provisioning workflow, Unix-socket credential broker, session capabilities and peer authorization, downstream credential application, KEK rotation/rewrap, encrypted offline backup wrapper, signed selective deployment projections, edge reconciliation, Tailscale pull, Infisical import/cutover, filesystem/power-loss acceptance matrix, or full external `govulncheck`/deployment gates. Operational Hermes sessions still resolve configured environment-backed provider credentials; stored authority records are deliberately unavailable to Hermes until the broker boundary exists.
 
 ## Conclusion
 

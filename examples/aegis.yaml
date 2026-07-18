@@ -33,3 +33,10 @@ credentials:
   # provider_auth:
   #   openai: {type: environment, source_env: OPENAI_API_KEY, target_env: OPENAI_API_KEY}
   provider_auth: {}
+  # Optional encrypted bbolt credential authority. Production services should
+  # use custody: systemd with LoadCredentialEncrypted and kek_credential.
+  # authority:
+  #   database: ./.aegis/state/authority.db
+  #   deployment_id: workstation-1
+  #   custody: systemd
+  #   kek_credential: aegis-kek

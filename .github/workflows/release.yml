@@ -20,7 +20,20 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
       - name: Test source
-        run: go test ./...
+        run: |
+          set -eu
+          case "$GITHUB_REF_NAME" in
+            v0.0.0) ;;
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "release tag must be vMAJOR.MINOR.PATCH" >&2; exit 1 ;;
+          esac
+          version=${GITHUB_REF_NAME#v}
+          [ "v$version" = "$GITHUB_REF_NAME" ]
+          printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go test ./...
+          go vet ./...
       - name: Build release archives
         env:
           CGO_ENABLED: "0"
@@ -36,6 +49,9 @@ jobs:
           done
           (cd dist && sha256sum *.tar.gz > SHA256SUMS)
           sha256sum -c dist/SHA256SUMS
+          tar -xzf "dist/aegis_${GITHUB_REF_NAME}_linux_amd64.tar.gz" -C dist
+          test "$(dist/aegis --version)" = "aegis version $version"
+          rm dist/aegis
       - name: Publish GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}

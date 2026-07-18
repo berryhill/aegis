@@ -1,6 +1,6 @@
 # No-Key Demonstration
 
-Run from a clean checkout with Go 1.26+ and supported Hermes installed:
+Run from a clean checkout with Go 1.26.5+ and supported Hermes installed:
 
 ```sh
 ./scripts/demo-no-key.sh

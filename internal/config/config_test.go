@@ -52,6 +52,15 @@ func TestCredentialBindingsFailClosed(t *testing.T) {
 		{"TLS on Unix socket", func(c *Config) {
 			c.API.UnixSocket, c.API.TLSCertFile, c.API.TLSKeyFile = "aegis.sock", "server.crt", "server.key"
 		}},
+		{"incomplete credential authority", func(c *Config) {
+			c.Credentials.Authority = CredentialAuthority{Database: "authority.db", Custody: "systemd", KEKCredential: "aegis-kek"}
+		}},
+		{"mixed credential custody", func(c *Config) {
+			c.Credentials.Authority = CredentialAuthority{Database: "authority.db", DeploymentID: "node-1", Custody: "systemd", KEKCredential: "aegis-kek", KEKFile: "kek.json"}
+		}},
+		{"systemd credential traversal", func(c *Config) {
+			c.Credentials.Authority = CredentialAuthority{Database: "authority.db", DeploymentID: "node-1", Custody: "systemd", KEKCredential: "../aegis-kek"}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -62,5 +71,28 @@ func TestCredentialBindingsFailClosed(t *testing.T) {
 				t.Fatal("unsafe credential configuration accepted")
 			}
 		})
+	}
+}
+
+func TestCredentialAuthorityCustodyModesValidate(t *testing.T) {
+	for _, authority := range []CredentialAuthority{
+		{Database: "authority.db", DeploymentID: "node-1", Custody: "systemd", KEKCredential: "aegis-kek"},
+		{Database: "authority.db", DeploymentID: "node-1", Custody: "host-file", KEKFile: "aegis-kek.json"},
+	} {
+		configuration := Defaults()
+		configuration.Principal = Principal{ID: "principal", Name: "Principal", UID: "1000", User: "operator", AuthTTL: configuration.Principal.AuthTTL}
+		configuration.Credentials.Authority = authority
+		if err := configuration.Validate(); err != nil {
+			t.Fatalf("valid authority configuration rejected: %v", err)
+		}
+	}
+}
+
+func TestRedactedHidesCredentialKeyPath(t *testing.T) {
+	configuration := Defaults()
+	configuration.Credentials.Authority.KEKFile = "/private/aegis-kek.json"
+	redacted := Redacted(configuration)
+	if redacted.Credentials.Authority.KEKFile != "[REDACTED]" {
+		t.Fatal("credential key path was not redacted")
 	}
 }

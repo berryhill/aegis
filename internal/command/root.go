@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
+	selfupdate "github.com/berryhill/aegis/internal/update"
 	"github.com/spf13/cobra"
 )
 
@@ -79,8 +80,26 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return service, nil
 	}
-	root.AddCommand(runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), auditCmd(build), serveCmd(build))
+	root.AddCommand(runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Version))
 	return root
+}
+
+func updateCmd(version string) *cobra.Command {
+	var checkOnly bool
+	command := &cobra.Command{
+		Use:   "update",
+		Short: "Update Aegis from the latest verified GitHub release",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			result, err := selfupdate.New(version).Run(cmd.Context(), checkOnly)
+			if err != nil {
+				return err
+			}
+			return output(cmd, result)
+		},
+	}
+	command.Flags().BoolVar(&checkOnly, "check", false, "check for an update without installing it")
+	return command
 }
 
 type usageError struct{ error }

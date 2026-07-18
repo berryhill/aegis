@@ -85,6 +85,31 @@ func (s *Service) audit(ctx context.Context, e core.AuditEvent) error {
 	return s.Audit.AppendAudit(ctx, e)
 }
 
+// AuditCredentialOperation records metadata-only administrative credential
+// events. Credential values, references, destinations, and key material are
+// intentionally excluded from this boundary.
+func (s *Service) AuditCredentialOperation(ctx context.Context, subject core.Subject, eventType, outcome, reason, recordID string) error {
+	if subject.PrincipalID == "" || subject.PrincipalID != s.Config.Principal.ID {
+		return ErrDenied
+	}
+	allowed := map[string]bool{
+		"credential_authority_initialized": true,
+		"credential_created":               true,
+		"credential_rotated":               true,
+		"credential_revoked":               true,
+		"credential_bound":                 true,
+		"credential_backup_created":        true,
+	}
+	if !allowed[eventType] || (outcome != "ok" && outcome != "denied") || strings.TrimSpace(reason) == "" {
+		return errors.New("invalid credential audit event")
+	}
+	metadata := map[string]string{}
+	if recordID != "" {
+		metadata["record_id"] = recordID
+	}
+	return s.audit(ctx, core.AuditEvent{Type: eventType, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: metadata})
+}
+
 // Authenticate uses only the kernel-backed process account mapping. No prompt,
 // display name, requested stanza, or CLI authority flag is accepted as evidence.
 func (s *Service) Authenticate(ctx context.Context) (core.Subject, error) {

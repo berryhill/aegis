@@ -111,6 +111,8 @@ The current specification already establishes most of the security model needed 
 - `RuntimeLaunchSpec` binds one launch to one agent, one stanza, one charter digest, concrete capabilities, and isolated state.
 - `Mandate` binds an authenticated subject to one stanza and one charter revision.
 
+Implementation status: the repository now contains the local encrypted-authority foundation: storage-neutral credential contracts, independently encrypted immutable versions, a deployment-bound fixed-schema bbolt repository, exact credential bindings, external file-delivered KEK custody, no-echo principal administration, rotation/revocation, metadata-only inspection/audit, and consistent local snapshots. It does not yet contain deployment enrollment/bindings/projection objects, age transport, signed generations, edge reconciliation, a runtime credential broker, downstream action integration, the production `aegisd`/systemd deployment, TPM/recovery operations, or Infisical migration. Existing Hermes provider authentication remains environment-backed and separate from stored authority records.
+
 The missing architectural objects are:
 
 1. A stable deployment identity.
