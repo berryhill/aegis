@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.10] - 2026-07-18
+
 ### Fixed
 
 - Accepted the documented Ollama 0.32 model-inventory metadata during strict installed-candidate discovery, while retaining rejection of unknown response fields.
