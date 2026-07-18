@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,10 +23,11 @@ import (
 )
 
 const (
-	defaultAPIURL      = "https://api.github.com/repos/berryhill/aegis/releases/latest"
-	defaultDownloadURL = "https://github.com/berryhill/aegis/releases/download"
-	maxArchiveSize     = 128 << 20
-	maxBinarySize      = 256 << 20
+	defaultAPIURL        = "https://api.github.com/repos/berryhill/aegis/releases/latest"
+	defaultDownloadURL   = "https://github.com/berryhill/aegis/releases/download"
+	defaultRepositoryURL = "https://github.com/berryhill/aegis"
+	maxArchiveSize       = 128 << 20
+	maxBinarySize        = 256 << 20
 )
 
 type Result struct {
@@ -40,6 +42,7 @@ type Updater struct {
 	CurrentVersion string
 	APIURL         string
 	DownloadURL    string
+	RepositoryURL  string
 	Client         *http.Client
 	Executable     func() (string, error)
 	GOOS           string
@@ -58,6 +61,7 @@ func New(currentVersion string) *Updater {
 		CurrentVersion: currentVersion,
 		APIURL:         defaultAPIURL,
 		DownloadURL:    defaultDownloadURL,
+		RepositoryURL:  defaultRepositoryURL,
 		Client:         &http.Client{Timeout: 2 * time.Minute},
 		Executable:     os.Executable,
 		GOOS:           runtime.GOOS,
@@ -66,6 +70,9 @@ func New(currentVersion string) *Updater {
 }
 
 func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
+	if err := u.validateEndpoints(); err != nil {
+		return Result{}, err
+	}
 	if u.GOOS != "linux" && u.GOOS != "darwin" {
 		return Result{}, fmt.Errorf("self-update is unsupported on %s; install the new release manually", u.GOOS)
 	}
@@ -78,6 +85,9 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 	}
 	result := Result{CurrentVersion: normalize(u.CurrentVersion), LatestVersion: latest}
 	comparison, comparable := compare(result.CurrentVersion, latest)
+	if comparable && comparison > 0 {
+		return Result{}, fmt.Errorf("latest published release %s is older than current version %s; refusing downgrade", latest, result.CurrentVersion)
+	}
 	result.UpdateAvailable = !comparable || comparison < 0
 	if !result.UpdateAvailable || checkOnly {
 		return result, nil
@@ -126,7 +136,11 @@ func (u *Updater) latest(ctx context.Context) (tag, version string, err error) {
 		return "", "", fmt.Errorf("discover latest release: %w", err)
 	}
 	var release struct {
-		TagName string `json:"tag_name"`
+		TagName     string `json:"tag_name"`
+		HTMLURL     string `json:"html_url"`
+		PublishedAt string `json:"published_at"`
+		Draft       bool   `json:"draft"`
+		Prerelease  bool   `json:"prerelease"`
 	}
 	if err = json.Unmarshal(body, &release); err != nil {
 		return "", "", fmt.Errorf("decode latest release: %w", err)
@@ -138,6 +152,16 @@ func (u *Updater) latest(ctx context.Context) (tag, version string, err error) {
 	if _, ok := parse(version); !ok {
 		return "", "", fmt.Errorf("latest release tag %q is not vMAJOR.MINOR.PATCH", release.TagName)
 	}
+	if release.Draft || release.Prerelease {
+		return "", "", fmt.Errorf("latest release %s is draft or prerelease; refusing non-stable update", release.TagName)
+	}
+	if _, parseErr := time.Parse(time.RFC3339, release.PublishedAt); parseErr != nil {
+		return "", "", fmt.Errorf("latest release %s has invalid publication metadata", release.TagName)
+	}
+	expectedReleaseURL := u.RepositoryURL + "/releases/tag/" + release.TagName
+	if release.HTMLURL != expectedReleaseURL {
+		return "", "", fmt.Errorf("latest release repository identity mismatch: got %q, want %q", release.HTMLURL, expectedReleaseURL)
+	}
 	return release.TagName, version, nil
 }
 
@@ -148,7 +172,9 @@ func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "aegis/"+normalize(u.CurrentVersion))
-	response, err := u.Client.Do(req)
+	client := *u.Client
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +191,33 @@ func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte
 		return nil, errors.New("response exceeds size limit")
 	}
 	return body, nil
+}
+
+func (u *Updater) validateEndpoints() error {
+	if u.Client == nil {
+		return errors.New("update HTTP client is not configured")
+	}
+	endpoints := []struct{ name, raw string }{
+		{name: "release API", raw: u.APIURL},
+		{name: "release download", raw: u.DownloadURL},
+		{name: "official repository", raw: u.RepositoryURL},
+	}
+	for _, endpoint := range endpoints {
+		name, raw := endpoint.name, endpoint.raw
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "https" && !isLoopbackHTTP(parsed)) {
+			return fmt.Errorf("%s URL is not an allowed HTTPS endpoint", name)
+		}
+	}
+	return nil
+}
+
+func isLoopbackHTTP(parsed *url.URL) bool {
+	if parsed.Scheme != "http" {
+		return false
+	}
+	host := parsed.Hostname()
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
 func checksumFor(data []byte, asset string) (string, error) {

@@ -24,7 +24,7 @@ aegis --update
 
 `aegis --update` is a strict root-only alias for `aegis update`; ambiguous combinations with subcommands or other root actions are rejected. Both forms use the same checksum-verifying updater before atomically replacing the exact current executable. Package-manager-owned or non-writable executables should be updated through their original installation method.
 
-The updater selects only the latest exact stable GitHub release and fails closed if its metadata, archive, or matching `SHA256SUMS` entry is unavailable or invalid.
+The updater selects only the latest exact published stable GitHub release and fails closed if its repository identity, publication metadata, archive, or matching `SHA256SUMS` entry is unavailable or invalid. A local or remote Git tag alone is not an available update; the tag-triggered workflow must finish publishing the GitHub release.
 
 ## Build
 

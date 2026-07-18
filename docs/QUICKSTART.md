@@ -6,7 +6,7 @@
 - Go 1.26.5+
 - Hermes Agent `>=0.18.0,<0.19.0` on `PATH`
 
-Install the latest tagged Aegis source with `go install github.com/berryhill/aegis/cmd/aegis@latest`, or continue below to build a checkout. Self-update requires a published GitHub release, not merely a Git tag. `aegis --update` is the strict root-only alias for `aegis update`; both use the same checksum-verifying service.
+Install the latest tagged Aegis source with `go install github.com/berryhill/aegis/cmd/aegis@latest`, or continue below to build a checkout. Self-update requires a published, non-draft stable GitHub release with assets, not merely a local or remote Git tag; until publication completes it correctly reports the previous published stable version. `aegis --update` is the strict root-only alias for `aegis update`; both use the same checksum-verifying service.
 
 ## Build and configure
 
