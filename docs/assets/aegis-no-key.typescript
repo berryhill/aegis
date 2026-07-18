@@ -1,4 +1,4 @@
-Script started on 2026-07-17 18:24:30-05:00 [COMMAND="./scripts/demo-no-key.sh" <not executed on terminal>]
+Script started on 2026-07-17 22:43:51-05:00 [COMMAND="./scripts/demo-no-key.sh" <not executed on terminal>]
 == Explicit Hermes discovery ==
 {
   "resolved_runtime": {
@@ -54,6 +54,36 @@ Strict validation passed.
   "credentials": {
     "references": null,
     "provider_auth": null
+  },
+  "manager": {
+    "enabled": true,
+    "runtime": "hermes",
+    "security_context": "secrets-manager",
+    "hermes": {
+      "context_length": 65536,
+      "gateway_start_timeout": 20000000000,
+      "turn_timeout": 120000000000,
+      "maximum_response_bytes": 1048576
+    },
+    "inference": {
+      "runtime": "ollama",
+      "mode": "managed",
+      "executable": "ollama",
+      "keep_alive": 300000000000,
+      "start_timeout": 30000000000,
+      "request_timeout": 120000000000,
+      "maximum_request_bytes": 4194304,
+      "maximum_response_bytes": 4194304
+    },
+    "ingress": {
+      "maximum_message_bytes": 262144,
+      "maximum_message_runes": 262144,
+      "scan_timeout": 250000000,
+      "bounded_decode_depth": 2
+    },
+    "transcript": {
+      "retention": "session"
+    }
   }
 }
 == Real no-key design boundary (failure is expected) ==
@@ -63,4 +93,4 @@ Isolation: disposable HERMES_HOME (not a host filesystem sandbox)
 aegis: Hermes design turn failed: agent init failed: No inference provider configured. Run 'hermes model' to choose a provider and model, or set an API key (OPENROUTER_API_KEY, OPENAI_API_KEY, etc.) in ~/.hermes/.env.
 Design stopped at an authentic unavailable-runtime/provider boundary (exit 1); no model success is claimed.
 
-Script done on 2026-07-17 18:24:40-05:00 [COMMAND_EXIT_CODE="0"]
+Script done on 2026-07-17 22:44:01-05:00 [COMMAND_EXIT_CODE="0"]

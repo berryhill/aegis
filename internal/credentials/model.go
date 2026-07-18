@@ -83,6 +83,7 @@ type Repository interface {
 	Create(context.Context, SecretRecord, EncryptedSecretVersion) error
 	AddVersion(context.Context, EncryptedSecretVersion) error
 	Metadata(context.Context, string) (SecretRecord, error)
+	List(context.Context, string, int) ([]SecretRecord, error)
 	Version(context.Context, string, uint64) (EncryptedSecretVersion, error)
 	Bind(context.Context, CredentialBinding) error
 	Resolve(context.Context, CredentialBindingKey) (ResolvedSecret, error)

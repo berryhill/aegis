@@ -25,3 +25,11 @@ Scope: run `docs/RECORDING.md`, sanitize, replay, and verify against current CLI
 ## 6. Verify the Aegis-owned Hermes broker bridge
 
 Scope: prove that pinned Hermes can register exactly one Aegis-owned `github.get_repository.v1` bridge from a disposable home without enabling inherited MCP, plugins, tokens, skills, or profiles. Relevant files: `internal/runtime/hermes`, `internal/credentials/broker`, `docs/CREDENTIAL_BROKER.md`. Acceptance: effective tool registration is verified before prompts; capability arrives through an inherited channel where supported; a stanza without the exact operation cannot call it; safe-mode invariants remain tested; no terminal/curl fallback. Dependency: a supported Hermes bridge-injection contract or an upstream change.
+
+## 7. Complete managed Ollama process supervision and certification
+
+Scope: connect the implemented manager route, proxy, local Ollama client, and structured gateway under one rollback-safe startup/cleanup transaction. Acceptance: hermetic child-process readiness/crash/unload/termination tests, persisted exact certification and content-free receipts, then an explicitly authorized real 64K-context conformance run. Security: no model download in default tests, no global Ollama changes, no cloud fallback, and no weakening of the proxy boundary.
+
+## 8. Complete interactive protected-intake manager operations
+
+Scope: expose list/search/show/create/rotate/revoke/binding/history through shared authority services in the Aegis-owned UI. Acceptance: exact non-secret previews, principal confirmation, no-echo PTY tests, cancellation at every state, and random-canary absence across gateway/proxy/store/audit/output. Security: never pass values through proposal arguments or invoke the Aegis CLI as a subprocess.

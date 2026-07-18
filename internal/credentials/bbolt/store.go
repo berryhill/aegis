@@ -364,6 +364,37 @@ func (s *Store) Metadata(ctx context.Context, recordID string) (credentials.Secr
 	return record, err
 }
 
+func (s *Store) List(ctx context.Context, query string, limit int) ([]credentials.SecretRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if limit < 1 || limit > 100 || len(query) > 255 {
+		return nil, errors.New("invalid credential list bounds")
+	}
+	query = strings.ToLower(query)
+	result := make([]credentials.SecretRecord, 0, limit)
+	err := s.db.View(func(tx *bolt.Tx) error {
+		cursor := tx.Bucket(recordBucket).Cursor()
+		for key, value := cursor.First(); key != nil && len(result) < limit; key, value = cursor.Next() {
+			if bytes.HasPrefix(key, []byte("ref\x00")) {
+				continue
+			}
+			var record credentials.SecretRecord
+			if err := decode(value, &record); err != nil {
+				return err
+			}
+			if err := credentials.ValidateRecord(record); err != nil {
+				return err
+			}
+			if query == "" || strings.Contains(strings.ToLower(record.Reference), query) || strings.Contains(strings.ToLower(record.Kind), query) || strings.Contains(strings.ToLower(record.ID), query) {
+				result = append(result, record)
+			}
+		}
+		return nil
+	})
+	return result, err
+}
+
 func (s *Store) Version(ctx context.Context, recordID string, version uint64) (credentials.EncryptedSecretVersion, error) {
 	var encrypted credentials.EncryptedSecretVersion
 	if err := ctx.Err(); err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
 	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
+	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 	selfupdate "github.com/berryhill/aegis/internal/update"
@@ -23,10 +24,11 @@ import (
 )
 
 type Dependencies struct {
-	In       io.Reader
-	Out, Err io.Writer
-	Logger   *slog.Logger
-	Version  string
+	In         io.Reader
+	Out, Err   io.Writer
+	Logger     *slog.Logger
+	Version    string
+	IsTerminal func(io.Reader, io.Writer) bool
 }
 type rootOptions struct{ configFile, stateDir, hermesExecutable, runtime string }
 
@@ -42,6 +44,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	if deps.Logger == nil {
 		deps.Logger = slog.New(slog.NewTextHandler(deps.Err, nil))
+	}
+	if deps.IsTerminal == nil {
+		deps.IsTerminal = terminalPair
 	}
 	o := &rootOptions{}
 	root := &cobra.Command{Use: "aegis", Short: "Authenticated trust-stanza sessions over explicit Hermes Agent runtimes", Version: deps.Version, SilenceErrors: true, SilenceUsage: true}
@@ -81,7 +86,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return service, nil
 	}
-	root.AddCommand(runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Version))
+	root.RunE = func(cmd *cobra.Command, _ []string) error {
+		if !deps.IsTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+			return usage(fmt.Errorf("%s: interactive manager mode requires stdin and stdout terminals; use deterministic subcommands such as aegis secret, aegis audit, or aegis config", managerdomain.ReasonRequiresTTY))
+		}
+		return runManager(cmd, build)
+	}
+	root.AddCommand(managerCmd(build, deps.IsTerminal), initCmd(build, deps.IsTerminal), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Version))
 	return root
 }
 

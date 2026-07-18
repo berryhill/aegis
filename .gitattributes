@@ -1,0 +1,2 @@
+# Terminal recordings intentionally retain carriage returns emitted by PTYs.
+docs/assets/*.typescript -text -diff

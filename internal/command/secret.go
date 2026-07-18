@@ -116,6 +116,25 @@ func secretCmd(build builder) *cobra.Command {
 		return output(cmd, record)
 	}}
 
+	var listLimit int
+	list := &cobra.Command{Use: "list [QUERY]", Short: "List or search bounded credential metadata without decrypting values", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		_, _, authority, closeAuthority, err := openCredentialAuthority(cmd, build)
+		if err != nil {
+			return err
+		}
+		defer closeAuthority()
+		query := ""
+		if len(args) == 1 {
+			query = args[0]
+		}
+		records, err := authority.List(cmd.Context(), query, listLimit)
+		if err != nil {
+			return err
+		}
+		return output(cmd, map[string]any{"records": records, "count": len(records), "limit": listLimit})
+	}}
+	list.Flags().IntVar(&listLimit, "limit", 50, "maximum metadata records (1-100)")
+
 	rotate := &cobra.Command{Use: "rotate RECORD_ID", Short: "Store a new independently encrypted immutable version", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		service, subject, authority, closeAuthority, err := openCredentialAuthority(cmd, build)
 		if err != nil {
@@ -204,7 +223,7 @@ func secretCmd(build builder) *cobra.Command {
 		return output(cmd, map[string]any{"status": "created", "path": args[0], "warning": "metadata remains sensitive; encrypt the backup to offline recovery recipients before it leaves the host"})
 	}}
 
-	command.AddCommand(initialize, put, metadata, rotate, revoke, bind, backup)
+	command.AddCommand(initialize, put, metadata, list, rotate, revoke, bind, backup)
 	return command
 }
 

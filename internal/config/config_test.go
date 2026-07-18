@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadStrictAndEnvironmentPrecedence(t *testing.T) {
@@ -94,5 +96,38 @@ func TestRedactedHidesCredentialKeyPath(t *testing.T) {
 	redacted := Redacted(configuration)
 	if redacted.Credentials.Authority.KEKFile != "[REDACTED]" {
 		t.Fatal("credential key path was not redacted")
+	}
+}
+
+func TestManagerConfigurationFailsClosed(t *testing.T) {
+	tests := []func(*Config){
+		func(c *Config) { c.Manager.Runtime = "other" },
+		func(c *Config) { c.Manager.SecurityContext = "principal" },
+		func(c *Config) { c.Manager.Hermes.ContextLength = 4096 },
+		func(c *Config) { c.Manager.Inference.Runtime = "cloud" },
+		func(c *Config) {
+			c.Manager.Inference.Mode = "managed"
+			c.Manager.Inference.Endpoint = "http://127.0.0.1:11434"
+		},
+		func(c *Config) { c.Manager.Inference.KeepAlive = -time.Second },
+		func(c *Config) { c.Manager.Inference.Model = "mutable:latest" },
+		func(c *Config) { c.Manager.Inference.Model = "exact:1"; c.Manager.Inference.ModelDigest = "sha256:bad" },
+		func(c *Config) { c.Manager.Ingress.BoundedDecodeDepth = 100 },
+		func(c *Config) { c.Manager.Transcript.Retention = "forever" },
+	}
+	for index, edit := range tests {
+		configuration := Defaults()
+		configuration.Principal = Principal{ID: "principal", Name: "Principal", UID: "1000", User: "operator", AuthTTL: configuration.Principal.AuthTTL}
+		edit(&configuration)
+		if err := configuration.Validate(); err == nil {
+			t.Fatalf("unsafe manager case %d accepted", index)
+		}
+	}
+	configuration := Defaults()
+	configuration.Principal = Principal{ID: "principal", Name: "Principal", UID: "1000", User: "operator", AuthTTL: configuration.Principal.AuthTTL}
+	configuration.Manager.Inference.Model = "exact:1"
+	configuration.Manager.Inference.ModelDigest = "sha256:" + strings.Repeat("a", 64)
+	if err := configuration.Validate(); err != nil {
+		t.Fatalf("valid pinned manager config rejected: %v", err)
 	}
 }

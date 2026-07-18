@@ -26,6 +26,34 @@ retention:
 audit:
   # Put this on a separately protected retention boundary in production.
   checkpoint_dir: ./.aegis/checkpoints
+manager:
+  enabled: true
+  runtime: hermes
+  security_context: secrets-manager
+  hermes:
+    context_length: 65536
+    gateway_start_timeout: 20s
+    turn_timeout: 120s
+    maximum_response_bytes: 1048576
+  inference:
+    runtime: ollama
+    mode: managed
+    executable: ollama
+    # Empty until an exact local artifact passes the opt-in conformance suite.
+    model: ""
+    model_digest: ""
+    keep_alive: 5m
+    start_timeout: 30s
+    request_timeout: 120s
+    maximum_request_bytes: 4194304
+    maximum_response_bytes: 4194304
+  ingress:
+    maximum_message_bytes: 262144
+    maximum_message_runes: 262144
+    scan_timeout: 250ms
+    bounded_decode_depth: 2
+  transcript:
+    retention: session
 credentials:
   references: {}
   # Provider authentication is separate from caller authentication.

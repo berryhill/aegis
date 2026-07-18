@@ -32,6 +32,15 @@ The copied files are local working files and should not be committed.
 
 Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the API token is shown as `[REDACTED]`.
 
+Verify the non-interactive manager boundary without starting Hermes or Ollama:
+
+```sh
+printf 'not chat' | ./aegis --config .aegis.yaml
+# exits with manager_requires_tty and names deterministic subcommands
+```
+
+Run `./aegis --config .aegis.yaml` in a real terminal to inspect the built-in manager shell. It does not download a model. Until an exact local artifact has passed the opt-in conformance suite, ordinary prose reports that no cloud fallback was attempted; `/status`, `/audit verify`, `/help`, and `/quit` remain local.
+
 ## Provider boundary
 
 ```sh

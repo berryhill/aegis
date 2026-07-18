@@ -59,6 +59,13 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	records, err := authority.List(ctx, "provider", 10)
+	if err != nil || len(records) != 1 || records[0].ID != record.ID {
+		t.Fatalf("metadata list/search mismatch: %#v %v", records, err)
+	}
+	if records, err = authority.List(ctx, "not-present", 10); err != nil || len(records) != 0 {
+		t.Fatalf("metadata search should be empty: %#v %v", records, err)
+	}
 	binding := credentials.CredentialBinding{Key: credentials.CredentialBindingKey{AgentID: "agent-1", StanzaID: "principal", DeploymentID: "deployment-test", Scope: "provider:test"}, SecretRecord: record.ID, VersionPolicy: credentials.VersionCurrent, Mode: "brokered", Destinations: []string{"api.example.test"}, Enabled: true}
 	if err = authority.Bind(ctx, binding); err != nil {
 		t.Fatal(err)

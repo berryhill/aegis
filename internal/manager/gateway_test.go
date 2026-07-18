@@ -1,0 +1,84 @@
+package manager
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestGatewayFixtureMultiTurn(t *testing.T) {
+	gatewayOutputReader, gatewayOutputWriter := io.Pipe()
+	gatewayInputReader, gatewayInputWriter := io.Pipe()
+	client, err := NewGatewayClient(gatewayOutputReader, gatewayInputWriter, 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		defer gatewayOutputWriter.Close()
+		defer gatewayInputReader.Close()
+		encoder := json.NewEncoder(gatewayOutputWriter)
+		_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "gateway.ready", "payload": map[string]any{}}})
+		scanner := bufio.NewScanner(gatewayInputReader)
+		for scanner.Scan() {
+			var request map[string]any
+			_ = json.Unmarshal(scanner.Bytes(), &request)
+			id := request["id"]
+			switch request["method"] {
+			case "session.create":
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"session_id": "session-1"}})
+			case "prompt.submit":
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.start", "payload": map[string]any{}}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.delta", "payload": map[string]any{"delta": `{"schema_version":"aegis.manager.response.v1","kind":"message","message":"ok","proposal":null}`}}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "payload": map[string]any{}}})
+			}
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.CreateSession(ctx, "aegis-manager")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 2; index++ {
+		response, err := client.Turn(ctx, session, "hello", 4096)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := DecodeResponse(response, 4096); err != nil {
+			t.Fatalf("turn %d response invalid: %s: %v", index, response, err)
+		}
+	}
+}
+
+func TestGatewayMalformedOversizedAndTimeoutFailClosed(t *testing.T) {
+	for name, input := range map[string]string{"malformed": "not-json\n", "duplicate": "{\"jsonrpc\":\"2.0\",\"jsonrpc\":\"2.0\"}\n", "oversized": strings.Repeat("x", 2048) + "\n"} {
+		t.Run(name, func(t *testing.T) {
+			client, err := NewGatewayClient(strings.NewReader(input), io.Discard, 1024)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := client.WaitReady(ctx); err == nil {
+				t.Fatal("bad gateway input accepted")
+			}
+		})
+	}
+	client, err := NewGatewayClient(bytes.NewBuffer(nil), io.Discard, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := client.WaitReady(ctx); err == nil {
+		t.Fatal("closed gateway accepted")
+	}
+}

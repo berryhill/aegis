@@ -63,6 +63,13 @@ func (a *Authority) Metadata(ctx context.Context, recordID string) (SecretRecord
 	return a.repository.Metadata(ctx, recordID)
 }
 
+func (a *Authority) List(ctx context.Context, query string, limit int) ([]SecretRecord, error) {
+	if limit < 1 || limit > 100 || len(query) > 255 {
+		return nil, errors.New("credential list query or limit is invalid")
+	}
+	return a.repository.List(ctx, query, limit)
+}
+
 func (a *Authority) Bind(ctx context.Context, binding CredentialBinding) error {
 	if err := ValidateBinding(binding, a.repository.DeploymentID()); err != nil {
 		return err

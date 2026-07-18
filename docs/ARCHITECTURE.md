@@ -23,6 +23,11 @@ flowchart TB
   Broker -->|SO_PEERCRED + capability; sanitized result| Bridge[Future verified Hermes bridge]
   Bridge -. Hermes 0.18 safe-mode gate .-> Adapter
   Updater[CLI self-updater] -->|GitHub release + SHA256SUMS| Binary[Aegis executable]
+  Terminal[Principal terminal] --> Manager[Built-in secrets-manager shell]
+  Manager --> Ingress[Source-aware secret guard]
+  Manager --> ManagerGateway[Structured multi-turn Hermes client]
+  ManagerGateway --> Proxy[Ephemeral authenticated inference proxy]
+  Proxy --> Ollama[Exact loopback Ollama model]
 ```
 
 The model proposes; it never authenticates, approves, or provisions. Design uses a disposable Hermes gateway process and returns an enveloped charter proposal. Aegis strictly decodes, validates, canonicalizes, digests, and persists it.
@@ -42,3 +47,5 @@ Application services depend on a narrow audit-authority interface for append, in
 Provisioning intent is persisted before approval consumption. Startup recovery finalizes interrupted receipts and removes only artifacts whose decoded content still matches the approved effect digest; mismatching files are retained and reported for manual intervention.
 
 Self-update is an installation operation outside the application service and agent authority model. It accepts only stable SemVer releases from the fixed Aegis GitHub repository, bounds and validates the single-file archive, verifies its published SHA-256 checksum, and atomically replaces the current executable when its directory is writable.
+
+The manager components are currently fail-closed building blocks rather than a completed activated route. Bare command dispatch, local directives, strict contracts, scanner, proxy, Ollama discovery/digest fixture, and reusable gateway client are exercised hermetically. No real candidate has been downloaded or certified, and managed Ollama supervision plus end-to-end Hermes/proxy startup and protected-intake mutations remain gated; ordinary manager prose therefore reports deterministic alternatives instead of simulating a model response.

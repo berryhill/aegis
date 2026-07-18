@@ -27,6 +27,11 @@ flowchart LR
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
   Hermes -. untrusted output .-> Aegis
+  Terminal -->|Aegis-owned bounded input| Manager[Built-in secrets-manager]
+  Manager --> Guard[Deterministic ingress guard]
+  Guard --> Gateway[Structured Hermes gateway]
+  Gateway --> Proxy[Session-bound exact-model proxy]
+  Proxy --> Ollama[Loopback Ollama fixture/target]
 ```
 
 The CLI/API transport boundary authenticates callers outside the model. Charter validation and stanza selection form the authorization boundary. Approval separates proposal from deterministic provisioning. Each Hermes process/home is a stanza-state boundary. The host kernel, filesystem, and network remain outside Aegis confinement.
@@ -54,6 +59,8 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Prompt turns the broker into secret retrieval or SSRF | One strict `github.get_repository.v1` schema; caller cannot select URL, header, scope, record, version, deployment, stanza, or destination; redirects/proxy environment disabled; sanitized response allowlist | Configured downstream and DNS remain operator/network trust; Hermes bridge registration is not implemented |
 | Capability or request is replayed by another local process | 256-bit short-lived capability digest plus exact SO_PEERCRED UID/GID and runtime PID/start-token ancestry; fresh bounded request IDs/deadlines reject duplicate or stale actions; termination/failure/expiry removes capability material | Same-host root/kernel can inspect process memory/files; production needs distinct service/runtime identities |
 | Secret leaks through administration | No argv value, confirmed no-echo intake or protected stdin, metadata-only output/audit, bounded buffers and best-effort overwrite | Go/runtime/OS may retain memory copies; protected-pipe hygiene is operator responsibility |
+| Credential is pasted into manager chat | Aegis owns terminal input; bounded deterministic scanning blocks before gateway/proxy and records no content | False negatives remain possible; protected-intake UI integration is incomplete |
+| Hermes changes model or a same-host process calls the inference proxy | Ephemeral bearer, exact route digest, active-session check, fixed path/method/content type/model, loopback-only target, and no redirects | Host root can inspect process memory; complete process/network confinement is not implemented |
 
 ## Non-goals
 
