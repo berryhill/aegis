@@ -23,6 +23,8 @@ aegis update
 
 `aegis update` verifies the archive against the release checksum before replacing the current executable. Package-manager-owned or non-writable executables should be updated through their original installation method.
 
+Release deployment status: the public repository currently has the `v0.1.0` tag but no published GitHub release. [Workflow run 29627074637](https://github.com/berryhill/aegis/actions/runs/29627074637) failed in the test step before building or publishing assets; the release-tag E2E defect was fixed on `main` afterward. Consequently, `aegis update --check` honestly reports that no published release is visible. A maintainer must publish a new fixed release tag (without moving `v0.1.0`) before self-update can succeed; this repository does not claim that the missing release or assets exist.
+
 ## Build
 
 ```sh

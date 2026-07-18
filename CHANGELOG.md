@@ -7,6 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ### Fixed
 
 - Release-tag CI now compares the built CLI and adapter versions directly instead of comparing a tagged child binary with the `dev` test-process version.
+- Self-update now distinguishes a missing published GitHub release from a generic HTTP failure and explains the required fail-closed remediation; installation and release documentation records the current failed `v0.1.0` deployment instead of implying that release assets exist.
 
 ## [0.1.0] - 2026-07-17
 

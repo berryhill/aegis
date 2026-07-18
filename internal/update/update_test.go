@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -75,6 +76,20 @@ func TestUpdateCheckDoesNotReplaceExecutable(t *testing.T) {
 	contents, _ := os.ReadFile(executable)
 	if string(contents) != "unchanged" {
 		t.Fatal("check-only mode modified the executable")
+	}
+}
+
+func TestUpdateCheckExplainsMissingPublishedRelease(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+	u := testUpdater(server, filepath.Join(t.TempDir(), "aegis"), "1.0.0")
+	_, err := u.Run(context.Background(), true)
+	if err == nil {
+		t.Fatal("missing release was accepted")
+	}
+	want := "no published release is visible at " + server.URL + "/latest (HTTP 404 Not Found); publish a non-draft GitHub release before using self-update"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("missing-release error = %q; want it to contain %q", err, want)
 	}
 }
 

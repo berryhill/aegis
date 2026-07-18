@@ -46,6 +46,13 @@ type Updater struct {
 	GOARCH         string
 }
 
+type httpStatusError struct {
+	Status string
+	Code   int
+}
+
+func (e *httpStatusError) Error() string { return "HTTP " + e.Status }
+
 func New(currentVersion string) *Updater {
 	return &Updater{
 		CurrentVersion: currentVersion,
@@ -112,6 +119,10 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 func (u *Updater) latest(ctx context.Context) (tag, version string, err error) {
 	body, err := u.download(ctx, u.APIURL, 1<<20)
 	if err != nil {
+		var statusErr *httpStatusError
+		if errors.As(err, &statusErr) && statusErr.Code == http.StatusNotFound {
+			return "", "", fmt.Errorf("discover latest release: no published release is visible at %s (HTTP %s); publish a non-draft GitHub release before using self-update", u.APIURL, statusErr.Status)
+		}
 		return "", "", fmt.Errorf("discover latest release: %w", err)
 	}
 	var release struct {
@@ -143,7 +154,7 @@ func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %s", response.Status)
+		return nil, &httpStatusError{Status: response.Status, Code: response.StatusCode}
 	}
 	reader := io.LimitReader(response.Body, limit+1)
 	body, err := io.ReadAll(reader)
