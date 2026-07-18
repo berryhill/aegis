@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.7] - 2026-07-18
+
 ### Fixed
 
 - Added `aegis version` as a configuration-free equivalent of `aegis --version`.
