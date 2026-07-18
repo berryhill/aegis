@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.0] - 2026-07-17
+
 ### Added
 
 - Go/Cobra CLI and Echo v5 control-plane API over an explicit Hermes Agent adapter.
