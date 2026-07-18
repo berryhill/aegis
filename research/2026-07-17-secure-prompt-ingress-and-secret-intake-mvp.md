@@ -63,21 +63,21 @@ The broader Aegis model adds these invariants:
 
 - A prompt cannot authenticate a principal or select a privileged stanza.
 - A session cannot union credential scopes from multiple stanzas.
-- Changing stanza creates a clean session.
+- Changing stanza requires a new mandate and clean session.
 - Secrets, memory, transcripts, and tool handles do not cross stanzas unless an explicit disclosure contract permits it.
 - Model/runtime output is untrusted and is not copied into Aegis logs.
 
 ### Current implementation status
 
-The current Go implementation is earlier than the deployment architecture:
+The current Go implementation remains narrower than the deployment architecture:
 
 - `internal/core/model.go` represents credential scopes as strings.
-- MVP charter validation currently permits exactly the selected provider credential scope.
+- MVP charter validation permits the selected provider credential scope plus the fixed `github/read` scope only when paired with `github.get_repository.v1`.
 - `internal/config/config.go` supports environment-backed credential references and provider authentication mappings.
 - `internal/runtime/hermes/hermes.go` constructs a minimal child environment and injects the selected provider environment.
-- No bbolt credential authority, envelope-encrypted record store, secret-intake service, deployment credential binding, projection encryption, or local credential broker is implemented yet.
+- A deployment-bound encrypted bbolt authority, principal secret intake, exact local bindings, and one Linux session-bound GitHub metadata broker action are implemented. Signed selective deployment projections and a verified model-visible Hermes bridge are not.
 
-The report therefore specifies an implementation target, not current production behavior.
+The broader projection and bridge sections therefore remain implementation targets; the narrow local authority-and-broker slice is current behavior.
 
 ## Product semantics
 

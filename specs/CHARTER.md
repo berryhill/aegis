@@ -22,7 +22,7 @@ Aegis MUST:
 
 - decode strict JSON and reject unknown fields or trailing input;
 - reject empty, duplicate, wildcard, unsupported, inherited, delegated, or ambiguous authority;
-- require explicit authentication selectors and a supported authentication method;
+- require explicit authentication selectors, a supported authentication method, an exact identity/claim anchor, issuer, and environment for every selector;
 - require `grant.tools` to match the Hermes toolset mapping exactly;
 - deny cross-stanza information flow in the MVP;
 - reject persistent homes, ambient MCP/plugins, unsupported runtime extensions, and unsafe implicit defaults;

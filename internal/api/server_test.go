@@ -320,11 +320,22 @@ func TestUnixAPICompleteOperationalWorkflow(t *testing.T) {
 	if !decision.Allowed || decision.Selected == nil || decision.Selected.ID != "principal" {
 		t.Fatalf("peer-authenticated authorization decision=%+v", decision)
 	}
+	var denied core.Decision
+	apiRequest(t, client, http.MethodPost, "/v1/authorization/explain", map[string]any{"agent": "api-agent", "revision": 1, "stanza": "model-requested-admin", "environment": core.Environment{Name: "local"}}, &denied, http.StatusForbidden)
+	if denied.Allowed || denied.Selected != nil || denied.Reason != "requested_stanza_unauthorized" {
+		t.Fatalf("API denial did not return shared safe decision: %+v", denied)
+	}
+	apiRequest(t, client, http.MethodPost, "/v1/authorization/explain", map[string]any{"agent": "api-agent", "revision": 1, "stanza": "principal", "environment": core.Environment{Name: "production"}}, &denied, http.StatusForbidden)
+	if denied.Allowed || denied.Reason != "invalid_environment" {
+		t.Fatalf("API request environment broadened authority: %+v", denied)
+	}
 	var effective struct {
-		AuthorityNotUnioned bool `json:"authority_not_unioned"`
+		AuthorityNotUnioned bool                    `json:"authority_not_unioned"`
+		Authority           core.EffectiveAuthority `json:"authority"`
+		Decision            core.Decision           `json:"decision"`
 	}
 	apiRequest(t, client, http.MethodGet, "/v1/charters/api-agent/1/stanzas/principal", nil, &effective, http.StatusOK)
-	if !effective.AuthorityNotUnioned {
+	if !effective.AuthorityNotUnioned || effective.Authority.StanzaID != "principal" || len(effective.Authority.Tools) != 1 || effective.Authority.Tools[0] != "no_mcp" || !effective.Decision.Allowed {
 		t.Fatal("effective stanza response did not preserve no-union invariant")
 	}
 	var review core.Review

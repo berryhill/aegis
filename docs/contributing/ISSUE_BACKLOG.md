@@ -22,6 +22,6 @@ Scope: define a narrow checkpoint sink and verification contract for separately 
 
 Scope: run `docs/RECORDING.md`, sanitize, replay, and verify against current CLI. Acceptance: no secrets/personal paths, authentic provider failure, script and cast agree. Dependency: maintainer approval to publish generated recording.
 
-## 6. Implement the first mandate-bound credential broker action
+## 6. Verify the Aegis-owned Hermes broker bridge
 
-Scope: add a pathname Unix-socket broker that combines `SO_PEERCRED`, an unforgeable short-lived session capability, an active mandate, and one exact authority binding before applying a credential to one reviewed downstream action. Relevant files: `internal/credentials`, `internal/api`, `internal/app`, `internal/runtime/hermes`. Acceptance: no generic `GetSecret`; no plaintext response to Hermes; wrong UID, capability, agent, stanza, deployment, scope, operation, destination, expiry, or revocation denies on every use; bounded protocol and race tests pass. Dependency: select and review the first downstream provider and its sanitized result contract.
+Scope: prove that pinned Hermes can register exactly one Aegis-owned `github.get_repository.v1` bridge from a disposable home without enabling inherited MCP, plugins, tokens, skills, or profiles. Relevant files: `internal/runtime/hermes`, `internal/credentials/broker`, `docs/CREDENTIAL_BROKER.md`. Acceptance: effective tool registration is verified before prompts; capability arrives through an inherited channel where supported; a stanza without the exact operation cannot call it; safe-mode invariants remain tested; no terminal/curl fallback. Dependency: a supported Hermes bridge-injection contract or an upstream change.

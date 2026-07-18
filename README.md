@@ -2,6 +2,8 @@
 
 Aegis is a Go control plane for authenticated, trust-stanza-bound sessions over an explicit Hermes Agent runtime. It does not hide Hermes, infer authority from prompts, or treat the model as an approver or provisioner.
 
+Its security contract is: identity and authority are established outside the model; prompts, profile names, model conclusions, and stanza requests are not authentication. Each runtime session binds to exactly one authenticated trust stanza. Trust stanzas are security contexts, not personalities: zero or multiple authorized matches deny, grants are never unioned, and a stanza or material-authority change requires a new mandate and clean session.
+
 Start with the [five-minute quickstart](docs/QUICKSTART.md) or executable [no-key demonstration](docs/DEMO_NO_KEY.md). Normative behavior is defined in the [Markdown specifications](specs/README.md). Security boundaries are detailed in the [security policy](SECURITY.md), [threat model](docs/THREAT_MODEL.md), and [architecture](docs/ARCHITECTURE.md). See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and the repository-local [early contributor backlog](docs/contributing/ISSUE_BACKLOG.md).
 
 ## Install and update
@@ -66,13 +68,13 @@ The API token is redacted by `aegis config`. It authenticates API transport; it 
 ./aegis --config examples/aegis.yaml audit verify
 ```
 
-All command results are JSON on stdout. Diagnostics and the explicit design-mode warning go to stderr. A stanza flag is only a requested stanza and never identity evidence.
+All command results are JSON on stdout. Diagnostics and the explicit design-mode warning go to stderr. A stanza flag is only a narrowing request and never identity evidence. `charter explain` and denied session previews retain the shared machine-readable decision on stdout; `charter effective` authenticates and authorizes the caller before returning only the selected stanza's capabilities, tools, memory and credential scopes, session/approval limits, and Hermes mapping.
 
 ## Charter representation
 
-Charters are strict JSON. Unknown fields and trailing data are rejected. Approval binds SHA-256 over deterministic Go JSON serialization of the typed charter and complete typed provisioning plan; stored plan digests are recomputed before use. Review explicitly shows charter/plan digests, runtime details, complete effects, per-stanza toolsets, memory and credential scopes, approval semantics, warnings, and the full previous-revision diff. Revisions are immutable on disk. Duplicate stanza IDs, implicit wildcard identity selectors, identical enabled selectors, wildcard authority/scope, delegation, cross-stanza flow, unsupported runtime extensions, and mismatched Hermes tool grants/toolsets are rejected.
+Charters are strict JSON. Unknown fields, trailing data, and omitted policy blocks or nested policy fields are rejected. Every selector must explicitly constrain issuer and the MVP's trusted `local` control-plane environment and anchor a subject, principal, or exact claim; unsupported authentication methods and wildcard/duplicate selector values fail validation. Approval binds SHA-256 over deterministic Go JSON serialization of the typed charter and complete typed provisioning plan; stored charter bytes/digests and plan digests are recomputed before use. Review explicitly shows charter/plan digests, runtime details, complete effects, per-stanza toolsets, memory and credential scopes, approval semantics, warnings, and the full previous-revision diff. Revisions are immutable on disk. Duplicate stanza IDs, overlapping enabled selectors, wildcard authority/scope, delegation, cross-stanza flow, persistent profiles/homes, runtime extensions, and mismatched Hermes tool grants/toolsets are rejected.
 
-In the MVP, a charter `grant.tools` entry is a Hermes toolset ID because toolsets are the hard runtime-registration boundary Hermes exposes. `grant.tools` and `hermes.toolsets` must match exactly. MCP and plugin provisioning is rejected. Credential scope currently supports exactly the selected model-provider credential (`provider:<provider>`); operational launches still pass only that provider's configured environment binding.
+In the MVP, a charter `grant.tools` entry is a Hermes toolset ID because toolsets are the hard runtime-registration boundary Hermes exposes. `grant.tools` and `hermes.toolsets` must match exactly. MCP and plugin provisioning is rejected. Operational launches pass only the selected model-provider environment binding (`provider:<provider>`). The separately enforced `github/read` scope is accepted only with `github.get_repository.v1` and is consumed by the optional local broker; it is not injected as a Hermes environment credential.
 
 ## Encrypted credential authority
 
@@ -80,7 +82,7 @@ Aegis now includes the local administrative foundation for storing reusable secr
 
 Principal-only administration is available through `aegis secret initialize|put|metadata|rotate|bind|revoke|backup`. `put` and `rotate` default to confirmed no-echo terminal intake; `--stdin` reads exact bytes from a protected pipe. Values are never accepted in argv or returned by the CLI. `metadata` does not decrypt. Host-file initialization is intended for development and is explicitly reported as weaker; production service configuration should use `LoadCredentialEncrypted` and `custody: systemd`. Keep KEK/recovery material separate from database backups.
 
-This is not yet the runtime credential broker or fleet projection system. Existing Hermes launches continue to use configured environment-backed provider bindings, and the new authority does not make stored credentials available to Hermes. The local broker, session capabilities, downstream credential application, systemd unit, TPM/recovery workflow, signed selective projections, and Infisical migration remain unimplemented acceptance gates. bbolt supplies persistence only; Aegis supplies encryption and policy, and neither protects values from fully compromised root while they are in use.
+The optional Linux [session credential broker](docs/CREDENTIAL_BROKER.md) now proves one narrow downstream path: `github.get_repository.v1`. It combines pathname-socket `SO_PEERCRED`, a short-lived exact-session capability, live mandate/runtime checks, and one `github/read` authority binding; it applies the credential inside Aegis and returns only sanitized repository metadata. It is not GetSecret, a generic proxy, or a claim that all credentials are brokered. Existing Hermes provider authentication remains environment-backed, and the broker is not model-visible until an exact Aegis-owned bridge can be verified under Hermes safe-mode constraints. Fleet projections, production unit/identity provisioning, TPM recovery, and Infisical migration remain separate boundaries.
 
 ## Runtime behavior and limits
 
@@ -90,11 +92,12 @@ This is not yet the runtime credential broker or fleet projection system. Existi
 - Safe mode disables inherited user config, project rules, memories, plugins, and MCP.
 - Aegis resolves and records the exact Hermes toolset IDs placed in the launched process arguments and fails closed if those arguments differ from the approved mandate. Hermes 0.18.x does not expose a stable post-launch API for enumerating the fully registered individual-tool surface, so `toolset_verification: launch_arguments` must not be interpreted as individual-tool runtime attestation.
 - Revocation updates the mandate and terminates the recorded runtime PID.
+- Stanza changes and material authority changes require a newly issued mandate and a clean runtime session; Aegis does not switch or expand authority inside a running session.
 - Hermes-home/process isolation is not a host filesystem, network, container, or VM sandbox. A charter granting `terminal` or `file` intentionally grants broad host-facing authority and must be reviewed accordingly.
 - Persistent named Hermes profiles, gateways, services, cron, arbitrary plugins/MCP, and external provisioning actions are denied by the MVP provisioner.
 - Provisioning creates only new deterministic Aegis-owned mapping files atomically. Durable in-progress receipts are recovered on the next command: matching owned artifacts are removed and the receipt is finalized as failed; non-matching artifacts are preserved for manual review.
 - Operational provider authentication must be named by the stanza as `provider:<provider>`, configured under `credentials.provider_auth.<provider>`, and present in its configured source environment variable. Aegis injects only that resolved binding into Hermes; ambient provider keys are not inherited. Design receives no provider credential unless `credentials.design_provider` explicitly selects a configured provider binding. Credential values are not persisted or included in command output, receipts, audit events, errors, or model prompts.
-- The optional bbolt credential authority is an administrative store and exact-binding foundation only. It is not consulted by operational Hermes launches until the separately authorized local broker is implemented.
+- The optional bbolt credential authority is an administrative store plus the backing authority for the implemented local broker's one typed GitHub action. It is not a generic operational secret source and does not replace environment-backed model-provider authentication.
 - A live design turn requires an explicitly selected provider credential available to the disposable Hermes process. Discovery and expected provider-authentication failure remain testable without a key.
 
 ## API
@@ -114,7 +117,7 @@ go vet ./...
 govulncheck ./...
 ```
 
-Tests cover OS principal mapping, prompt/stanza non-authentication, zero and ambiguous selection, no authority union, exact approval mutation/expiry/replay, clean runtime homes, revocation/termination, design non-provisioning, secret redaction, audit tamper detection, strict config, credential envelope-context mutation, wrong keys, exact binding and destination denial, concurrent authority reads/rotation, backup/restore, and bounded credential codecs. `cmd/aegis/e2e_test.go` builds and exercises the real CLI against an isolated Hermes fixture without using the installed Hermes profile or external services. GitHub Actions runs formatting, build, tests, race tests, vet, and `govulncheck`.
+Tests cover OS principal mapping, prompt/profile/flag non-authentication, successful/zero/ambiguous/requested/disabled/stale/wrong-method/wrong-issuer/wrong-environment selection, selector-overlap rejection, no authority union, authority-relevant digest mutation, CLI/API decision parity, exact approval mutation/expiry/replay, clean runtime homes, revocation/termination, design non-provisioning, secret redaction, audit tamper detection, strict config, credential envelope-context mutation, wrong keys, exact binding and destination denial, concurrent authority reads/rotation, backup/restore, and bounded credential codecs. `cmd/aegis/e2e_test.go` builds and exercises the real CLI against an isolated Hermes fixture without using the installed Hermes profile or external services. GitHub Actions runs formatting, build, tests, race tests, vet, and `govulncheck`.
 
 ## License
 

@@ -39,10 +39,10 @@ func testCharter(now time.Time) core.Charter {
 		return core.TrustStanza{ID: id, Name: id, Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{Kinds: []string{"human"}}}}, Grant: core.Grant{Capabilities: []string{"chat"}, Tools: []string{"no_mcp"}}, Session: core.SessionPolicy{MaximumLifetimeSec: 60}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 60, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Scopes: core.Scopes{Credentials: []string{"provider:test"}}, Hermes: core.HermesConfig{Toolsets: []string{"no_mcp"}, Model: "test-model", Provider: "test"}}
 	}
 	principal := base("principal")
-	principal.Authentication.Selectors = []core.IdentitySelector{{SubjectIDs: []string{"local-uid:4242"}, PrincipalIDs: []string{"principal-1"}}}
+	principal.Authentication.Selectors = []core.IdentitySelector{{SubjectIDs: []string{"local-uid:4242"}, PrincipalIDs: []string{"principal-1"}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}
 	principal.Scopes = core.Scopes{Memory: []string{"principal-memory"}, Credentials: []string{"provider:test"}}
 	team := base("teamwide")
-	team.Authentication.Selectors = []core.IdentitySelector{{SubjectIDs: []string{"team-user"}}}
+	team.Authentication.Selectors = []core.IdentitySelector{{SubjectIDs: []string{"team-user"}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}
 	team.Grant.Tools = []string{"web"}
 	team.Hermes.Toolsets = []string{"web"}
 	team.Scopes = core.Scopes{Memory: []string{"team-memory"}, Credentials: []string{"provider:test"}}
@@ -128,7 +128,7 @@ func TestSelectionZeroAmbiguousAndNoUnion(t *testing.T) {
 	if _, err := s.Select(cc, unknown, "", core.Environment{Name: "local"}); !errors.Is(err, ErrDenied) {
 		t.Fatalf("zero match=%v", err)
 	}
-	c.Stanzas[1].Authentication.Selectors = []core.IdentitySelector{{PrincipalIDs: []string{"principal-1"}}}
+	c.Stanzas[1].Authentication.Selectors = []core.IdentitySelector{{PrincipalIDs: []string{"principal-1"}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}
 	cc = core.CanonicalCharter{Charter: c, Digest: "sha256:ambiguous-test"}
 	principalSubject := core.Subject{ID: "local-uid:4242", Kind: "human", PrincipalID: "principal-1", Issuer: "local-os", Method: "local-os", AuthenticatedAt: s.Now(), ExpiresAt: s.Now().Add(time.Minute)}
 	d, err := s.Select(cc, principalSubject, "", core.Environment{Name: "local"})

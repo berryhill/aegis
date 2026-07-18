@@ -111,7 +111,7 @@ The model cannot create, alter, or extend its mandate.
 
 A session is the actual execution of a runtime under a mandate. Its trust stanza remains fixed for its lifetime.
 
-Changing stanza, runtime, principal, or material authority creates a new session. It must not carry over private transcript, loaded secrets, tool handles, or memory unless an explicit policy permits a controlled transfer.
+Changing stanza, runtime, principal, or material authority requires a new mandate and creates a new session. It must not carry over private transcript, loaded secrets, tool handles, or memory unless an explicit policy permits a controlled transfer.
 
 ## User experience
 

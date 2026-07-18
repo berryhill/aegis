@@ -15,6 +15,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 	selfupdate "github.com/berryhill/aegis/internal/update"
@@ -267,13 +268,17 @@ func charterCmd(build builder) *cobra.Command {
 				return usage(e)
 			}
 		}
-		cc, st, e := s.EffectiveStanza(a[0], rev, stanza)
+		digest, authority, decision, e := s.EffectiveAuthority(cmd.Context(), a[0], rev, stanza, coreEnvironment(environmentName))
 		if e != nil {
+			if outErr := output(cmd, map[string]any{"charter_digest": digest, "authority": authority, "decision": decision, "authority_not_unioned": true}); outErr != nil {
+				return outErr
+			}
 			return e
 		}
-		return output(cmd, map[string]any{"charter_digest": cc.Digest, "stanza": st, "authority_not_unioned": true})
+		return output(cmd, map[string]any{"charter_digest": digest, "authority": authority, "decision": decision, "authority_not_unioned": true})
 	}}
 	effective.Flags().StringVar(&stanza, "stanza", "", "stanza ID")
+	effective.Flags().StringVar(&environmentName, "environment", "local", "trusted environment name")
 	_ = effective.MarkFlagRequired("stanza")
 	c.AddCommand(validate, imp, list, show, explain, effective)
 	return c
@@ -420,10 +425,11 @@ func sessionCmd(build builder) *cobra.Command {
 			return e
 		}
 		m, d, e := s.PreviewSession(cmd.Context(), a[0], rev, stanza, coreEnvironment(envName))
-		if e != nil {
-			return e
+		response := map[string]any{"authenticated_identity": m.Subject, "logical_agent": m.AgentID, "selected_stanza": m.StanzaID, "charter_revision": m.CharterRevision, "charter_digest": m.CharterDigest, "runtime": m.Runtime, "selection_source": "charter", "target": m.Target, "capabilities": m.Capabilities, "tools": m.Tools, "memory_scope": m.Scopes.Memory, "credential_scope": m.Scopes.Credentials, "expires_at": m.ExpiresAt, "warnings": []string{"Hermes state isolation is not host filesystem sandboxing"}, "mandate": m, "decision": d}
+		if outErr := output(cmd, response); outErr != nil {
+			return outErr
 		}
-		return output(cmd, map[string]any{"authenticated_identity": m.Subject, "logical_agent": m.AgentID, "selected_stanza": m.StanzaID, "charter_revision": m.CharterRevision, "charter_digest": m.CharterDigest, "runtime": m.Runtime, "selection_source": "charter", "target": m.Target, "capabilities": m.Capabilities, "tools": m.Tools, "memory_scope": m.Scopes.Memory, "credential_scope": m.Scopes.Credentials, "expires_at": m.ExpiresAt, "warnings": []string{"Hermes state isolation is not host filesystem sandboxing"}, "mandate": m, "decision": d})
+		return e
 	}}
 	preview.Flags().Uint64Var(&rev, "revision", 0, "revision (0 latest)")
 	preview.Flags().StringVar(&stanza, "stanza", "", "requested stanza; authorization still required")
@@ -515,12 +521,43 @@ func auditCmd(build builder) *cobra.Command {
 	return c
 }
 func serveCmd(build builder) *cobra.Command {
-	return &cobra.Command{Use: "serve", Short: "Run the Echo v5 control-plane API in the foreground", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	return &cobra.Command{Use: "serve", Short: "Run the control plane and configured local credential broker in the foreground", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, e := build(cmd)
 		if e != nil {
 			return e
 		}
-		return api.Serve(cmd.Context(), s)
+		brokerConfig := s.Config.Credentials.Authority.Broker
+		if brokerConfig.Socket == "" {
+			return api.Serve(cmd.Context(), s)
+		}
+		authority, closeAuthority, e := openAuthorityForService(cmd.Context(), s)
+		if e != nil {
+			return e
+		}
+		defer closeAuthority()
+		s.CredentialAuthority = authority
+		destinations := make(map[string]string, len(brokerConfig.Destinations))
+		var repositories []string
+		for id, destination := range brokerConfig.Destinations {
+			destinations[id] = destination.URL
+			if id == credentialbroker.GitHubDestination {
+				repositories = append([]string(nil), destination.Repositories...)
+			}
+		}
+		ctx, cancel := context.WithCancel(cmd.Context())
+		defer cancel()
+		errorsOut := make(chan error, 2)
+		go func() { errorsOut <- api.Serve(ctx, s) }()
+		go func() {
+			errorsOut <- credentialbroker.Serve(ctx, s, credentialbroker.ServerConfig{Socket: brokerConfig.Socket, AllowedUID: brokerConfig.AllowedUID, AllowedGID: brokerConfig.AllowedGID, MaxBodyBytes: brokerConfig.MaxBodyBytes, Timeout: brokerConfig.Timeout, Destinations: destinations, Repositories: repositories})
+		}()
+		e = <-errorsOut
+		cancel()
+		second := <-errorsOut
+		if e != nil {
+			return e
+		}
+		return second
 	}}
 }
 

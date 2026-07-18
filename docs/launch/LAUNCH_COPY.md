@@ -10,6 +10,10 @@ Short form:
 
 > One authenticated identity. One trust stanza. One clean runtime session.
 
+Key distinction:
+
+> Trust stanzas are not personalities; they are security contexts.
+
 ## GitHub description
 
 Identity and session control for authenticated, trust-stanza-bound Hermes Agent runtimes.
@@ -86,7 +90,7 @@ A stanza is a security context rather than a personality. It declares authentica
 
 Aegis binds provisioning approval to exact charter and plan digests, issues a short-lived mandate, launches Hermes in a disposable `HERMES_HOME`, records the runtime provenance, and can revoke the session and terminate the process. The repository includes a no-provider-key demonstration and a threat model.
 
-This is an alpha, not a claim of complete agent security. Disposable Hermes state is not host, container, VM, or network confinement; broad Hermes toolsets remain broad host-facing authority. The encrypted credential authority is currently administrative storage and is not yet a runtime credential broker.
+This is an alpha, not a claim of complete agent security. Disposable Hermes state is not host, container, VM, or network confinement; broad Hermes toolsets remain broad host-facing authority. The optional Linux broker proves only one typed GitHub repository-metadata action and is not model-visible until Hermes can verify an exact generated bridge under safe-mode constraints.
 
 I would especially value feedback on the identity-to-stanza model, the stated security boundaries, and whether the quickstart reproduces cleanly.
 
@@ -136,7 +140,7 @@ Aegis VERSION is the first open-source technical preview of authenticated, trust
 - No host filesystem, container, VM, or network sandbox.
 - No stable post-launch attestation of every individual Hermes tool.
 - No production remote multi-tenant identity boundary.
-- No runtime credential broker; encrypted credential authority remains administrative storage.
+- The broker supports only typed GitHub repository metadata and has no verified model-visible Hermes bridge; provider credentials remain environment-backed.
 - Audit tamper resistance depends on the documented checkpoint-retention boundary.
 
 #### Try it

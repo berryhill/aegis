@@ -15,11 +15,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
+	"github.com/berryhill/aegis/internal/credentials/broker"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -41,6 +44,11 @@ type Service struct {
 	Now       func() time.Time
 	Current   func() (*user.User, error)
 	LookupEnv func(string) (string, bool)
+
+	CredentialAuthority *credentials.Authority
+	capMu               sync.RWMutex
+	capabilities        map[[32]byte]broker.Capability
+	brokerRequests      map[[32]byte]map[[32]byte]struct{}
 }
 
 // AuditAuthority is the narrow append and verification boundary that hardened
@@ -53,13 +61,13 @@ type AuditAuthority interface {
 }
 
 func New(cfg config.Config, st *store.Store, h *hermes.Adapter, log *slog.Logger) *Service {
-	return &Service{Config: cfg, Store: st, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv}
+	return &Service{Config: cfg, Store: st, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
 }
 
 func (s *Service) resolveProviderCredential(provider string, scopes []string) ([]hermes.Credential, error) {
 	reference := "provider:" + provider
-	if provider == "" || len(scopes) != 1 || scopes[0] != reference {
-		return nil, fmt.Errorf("credential scope must select exactly %q", reference)
+	if provider == "" || !contains(scopes, reference) {
+		return nil, fmt.Errorf("credential scope must include %q", reference)
 	}
 	binding, ok := s.Config.Credentials.ProviderAuth[provider]
 	if !ok || binding.Type != "environment" {
@@ -265,32 +273,78 @@ func selectorMatches(sel core.IdentitySelector, sub core.Subject, env core.Envir
 func (s *Service) Select(c core.CanonicalCharter, sub core.Subject, requested string, env core.Environment) (core.Decision, error) {
 	now := s.Now()
 	trusted := map[string]any{"subject_id": sub.ID, "principal_id": sub.PrincipalID, "issuer": sub.Issuer, "method": sub.Method, "environment": env, "requested_stanza": requested, "charter_digest": c.Digest}
-	matches := make([]core.TrustStanza, 0)
+	d := core.Decision{TrustedInputs: trusted}
+	deny := func(reason string, err error) (core.Decision, error) {
+		d.Reason = reason
+		return d, err
+	}
+	if env.Name != "local" || env.Host != "" || env.Tenant != "" {
+		return deny("invalid_environment", fmt.Errorf("%w: trusted environment must be the local control-plane environment", ErrDenied))
+	}
+	if sub.ID == "" || sub.Kind == "" || sub.Issuer == "" || sub.Method == "" || sub.AuthenticatedAt.IsZero() || sub.ExpiresAt.IsZero() || !sub.AuthenticatedAt.Before(sub.ExpiresAt) || now.Before(sub.AuthenticatedAt) {
+		return deny("invalid_authenticated_subject", fmt.Errorf("%w: authenticated subject is incomplete or invalid", ErrUnauthenticated))
+	}
+	if !now.Before(sub.ExpiresAt) {
+		return deny("expired_authentication", fmt.Errorf("%w: authenticated subject expired", ErrUnauthenticated))
+	}
+	// Validate every stanza independently while deliberately excluding overlap
+	// analysis. Imported/stored charters reject overlap; this runtime check still
+	// permits legacy policy to reach the required multiple-match denial.
+	for i := range c.Charter.Stanzas {
+		check := c.Charter
+		check.Stanzas = append([]core.TrustStanza(nil), c.Charter.Stanzas...)
+		for j := range check.Stanzas {
+			check.Stanzas[j].Enabled = check.Stanzas[j].Enabled && i == j
+		}
+		if err := core.ValidateCharter(check); err != nil {
+			return deny("invalid_charter", fmt.Errorf("%w: malformed trust stanza policy", ErrDenied))
+		}
+	}
+
+	authorized := make([]core.TrustStanza, 0, 1)
+	staleMatch := false
 	for _, st := range c.Charter.Stanzas {
-		if !st.Enabled || (requested != "" && st.ID != requested) || !contains(st.Authentication.Methods, sub.Method) {
+		if !st.Enabled || !contains(st.Authentication.Methods, sub.Method) {
 			continue
 		}
-		if now.Before(sub.AuthenticatedAt) || !now.Before(sub.ExpiresAt) {
-			continue
-		}
-		if st.Authentication.RequireFresh && (st.Authentication.MaxAuthAgeSec <= 0 || now.Sub(sub.AuthenticatedAt) > time.Duration(st.Authentication.MaxAuthAgeSec)*time.Second) {
-			continue
-		}
+		selectorMatch := false
 		for _, sel := range st.Authentication.Selectors {
 			if selectorMatches(sel, sub, env) {
-				matches = append(matches, st)
+				selectorMatch = true
 				break
 			}
 		}
+		if !selectorMatch {
+			continue
+		}
+		if st.Authentication.RequireFresh && now.Sub(sub.AuthenticatedAt) > time.Duration(st.Authentication.MaxAuthAgeSec)*time.Second {
+			staleMatch = true
+			continue
+		}
+		authorized = append(authorized, st)
 	}
-	d := core.Decision{MatchingCount: len(matches), TrustedInputs: trusted}
+
+	matches := authorized
+	if requested != "" {
+		matches = matches[:0]
+		for _, st := range authorized {
+			if st.ID == requested {
+				matches = append(matches, st)
+			}
+		}
+	}
+	d.MatchingCount = len(matches)
 	if len(matches) == 0 {
-		d.Reason = "zero_authorized_matches"
-		return d, fmt.Errorf("%w: no authorized stanza", ErrDenied)
+		if requested != "" {
+			return deny("requested_stanza_unauthorized", fmt.Errorf("%w: requested stanza is not authorized", ErrDenied))
+		}
+		if staleMatch {
+			return deny("stale_authentication", fmt.Errorf("%w: authentication is not fresh enough", ErrDenied))
+		}
+		return deny("zero_authorized_matches", fmt.Errorf("%w: no authorized stanza", ErrDenied))
 	}
 	if len(matches) > 1 {
-		d.Reason = "multiple_authorized_matches"
-		return d, fmt.Errorf("%w: %d stanzas match", ErrAmbiguous, len(matches))
+		return deny("multiple_authorized_matches", fmt.Errorf("%w: %d stanzas match", ErrAmbiguous, len(matches)))
 	}
 	d.Allowed, d.Selected, d.Reason = true, &matches[0], "exactly_one_authorized_match"
 	return d, nil
@@ -340,20 +394,40 @@ func effectiveTools(st core.TrustStanza) ([]string, error) {
 	return requested, nil
 }
 
-func (s *Service) EffectiveStanza(agent string, rev uint64, stanza string) (core.CanonicalCharter, core.TrustStanza, error) {
+func authorityProjection(st core.TrustStanza) core.EffectiveAuthority {
+	return core.EffectiveAuthority{
+		StanzaID:     st.ID,
+		Capabilities: append([]string(nil), st.Grant.Capabilities...),
+		Tools:        append([]string(nil), st.Grant.Tools...),
+		Memory:       append([]string(nil), st.Scopes.Memory...),
+		Credentials:  append([]string(nil), st.Scopes.Credentials...),
+		Session:      st.Session,
+		Approval:     st.Approval,
+		Hermes:       st.Hermes,
+	}
+}
+
+func (s *Service) EffectiveAuthority(ctx context.Context, agent string, rev uint64, requested string, env core.Environment) (string, core.EffectiveAuthority, core.Decision, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return "", core.EffectiveAuthority{}, core.Decision{}, err
+	}
+	return s.EffectiveAuthorityAs(subject, agent, rev, requested, env)
+}
+
+func (s *Service) EffectiveAuthorityAs(subject core.Subject, agent string, rev uint64, requested string, env core.Environment) (string, core.EffectiveAuthority, core.Decision, error) {
 	c, err := s.GetCharter(agent, rev)
 	if err != nil {
-		return core.CanonicalCharter{}, core.TrustStanza{}, err
+		return "", core.EffectiveAuthority{}, core.Decision{}, err
 	}
-	for _, candidate := range c.Charter.Stanzas {
-		if candidate.ID == stanza {
-			if _, err = effectiveTools(candidate); err != nil {
-				return core.CanonicalCharter{}, core.TrustStanza{}, err
-			}
-			return c, candidate, nil
-		}
+	decision, err := s.Select(c, subject, requested, env)
+	if err != nil {
+		return c.Digest, core.EffectiveAuthority{}, decision, err
 	}
-	return core.CanonicalCharter{}, core.TrustStanza{}, fmt.Errorf("stanza %q not found", stanza)
+	if _, err = effectiveTools(*decision.Selected); err != nil {
+		return c.Digest, core.EffectiveAuthority{}, decision, err
+	}
+	return c.Digest, authorityProjection(*decision.Selected), decision, nil
 }
 
 func versionTuple(v string) ([3]int, error) {
@@ -877,7 +951,11 @@ func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent 
 	}
 	now := s.Now()
 	lifetime := time.Duration(st.Session.MaximumLifetimeSec) * time.Second
-	m := core.Mandate{ID: store.ID("mandate"), Subject: sub, AgentID: agent, StanzaID: st.ID, CharterRevision: c.Charter.Revision, CharterDigest: c.Digest, Runtime: rt, Target: c.Charter.Runtime.Target, Capabilities: append([]string(nil), st.Grant.Capabilities...), Tools: append([]string(nil), st.Grant.Tools...), Scopes: st.Scopes, Hermes: st.Hermes, IssuedAt: now, ExpiresAt: now.Add(lifetime)}
+	expires := now.Add(lifetime)
+	if sub.ExpiresAt.Before(expires) {
+		expires = sub.ExpiresAt
+	}
+	m := core.Mandate{ID: store.ID("mandate"), Subject: sub, AgentID: agent, StanzaID: st.ID, CharterRevision: c.Charter.Revision, CharterDigest: c.Digest, Runtime: rt, Target: c.Charter.Runtime.Target, DeploymentID: s.Config.Credentials.Authority.DeploymentID, Environment: env, Capabilities: append([]string(nil), st.Grant.Capabilities...), Tools: append([]string(nil), st.Grant.Tools...), Scopes: st.Scopes, Hermes: st.Hermes, IssuedAt: now, ExpiresAt: expires}
 	m.Hermes.Toolsets = toolsets
 	if err = s.Store.Save("mandates", m.ID, m); err != nil {
 		return m, d, err
@@ -902,9 +980,37 @@ func (s *Service) validateMandate(m core.Mandate) error {
 		return fmt.Errorf("%w: charter binding is no longer valid", ErrConflict)
 	}
 	for _, st := range c.Charter.Stanzas {
-		if st.ID == m.StanzaID && st.Enabled {
-			return nil
+		if st.ID != m.StanzaID || !st.Enabled {
+			continue
 		}
+		authorizedSubject := contains(st.Authentication.Methods, m.Subject.Method) && !m.IssuedAt.Before(m.Subject.AuthenticatedAt) && m.IssuedAt.Before(m.Subject.ExpiresAt)
+		if authorizedSubject {
+			authorizedSubject = false
+			for _, selector := range st.Authentication.Selectors {
+				if selectorMatches(selector, m.Subject, m.Environment) {
+					authorizedSubject = true
+					break
+				}
+			}
+		}
+		if st.Authentication.RequireFresh && m.IssuedAt.Sub(m.Subject.AuthenticatedAt) > time.Duration(st.Authentication.MaxAuthAgeSec)*time.Second {
+			authorizedSubject = false
+		}
+		toolsets, toolErr := effectiveTools(st)
+		if toolErr != nil {
+			return fmt.Errorf("%w: selected stanza tools are invalid", ErrConflict)
+		}
+		expectedHermes := st.Hermes
+		expectedHermes.Toolsets = toolsets
+		maximumExpiry := m.IssuedAt.Add(time.Duration(st.Session.MaximumLifetimeSec) * time.Second)
+		if m.Subject.ExpiresAt.Before(maximumExpiry) {
+			maximumExpiry = m.Subject.ExpiresAt
+		}
+		if !authorizedSubject || m.ExpiresAt.After(maximumExpiry) || m.Target != c.Charter.Runtime.Target || m.Environment != (core.Environment{Name: "local"}) || m.DeploymentID != s.Config.Credentials.Authority.DeploymentID ||
+			core.Digest(m.Capabilities) != core.Digest(st.Grant.Capabilities) || core.Digest(m.Tools) != core.Digest(st.Grant.Tools) || core.Digest(m.Scopes) != core.Digest(st.Scopes) || core.Digest(m.Hermes) != core.Digest(expectedHermes) {
+			return fmt.Errorf("%w: mandate authority does not exactly match selected stanza", ErrConflict)
+		}
+		return nil
 	}
 	return fmt.Errorf("%w: stanza disabled or absent", ErrDenied)
 }
@@ -920,7 +1026,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err != nil {
 		return core.Session{}, err
 	}
-	if sub.ID != m.Subject.ID && sub.PrincipalID != s.Config.Principal.ID {
+	if sub.ID != m.Subject.ID {
 		return core.Session{}, fmt.Errorf("%w: mandate belongs to another subject", ErrDenied)
 	}
 	if err = s.validateMandate(m); err != nil {
@@ -955,6 +1061,12 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		defer cancel()
 		_ = s.Hermes.Terminate(stop, id, !s.Config.Retention.SessionHomes)
 		return sess, err
+	}
+	if s.CredentialAuthority != nil && s.Config.Credentials.Authority.Broker.Socket != "" {
+		if err = s.issueBrokerCapability(&sess); err != nil {
+			_ = s.endSession(context.Background(), sess.ID, "failed", "broker_capability_materialization_failed", true)
+			return sess, err
+		}
 	}
 	_ = s.audit(ctx, core.AuditEvent{Type: "session", SubjectID: m.Subject.ID, PrincipalID: m.Subject.PrincipalID, AgentID: m.AgentID, StanzaID: m.StanzaID, SessionID: sess.ID, MandateID: m.ID, Runtime: m.Runtime.Runtime, CharterRevision: m.CharterRevision, CharterDigest: m.CharterDigest, Outcome: "running", Reason: "clean_runtime_started", Metadata: map[string]string{"pid": strconv.Itoa(pid)}})
 	return sess, nil
@@ -1071,6 +1183,7 @@ func (s *Service) endSession(ctx context.Context, id, status, reason string, rev
 			return m, nil
 		})
 	}
+	s.revokeBrokerCapabilities(sess.ID)
 	stop, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_ = s.Hermes.Terminate(stop, sess.RuntimeSessionID, !s.Config.Retention.SessionHomes)

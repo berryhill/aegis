@@ -128,6 +128,20 @@ type Decision struct {
 	Reason        string         `json:"reason"`
 	TrustedInputs map[string]any `json:"trusted_inputs"`
 }
+
+// EffectiveAuthority is the complete authority projection for one selected
+// stanza. It intentionally contains no other stanza and no authentication
+// selector data.
+type EffectiveAuthority struct {
+	StanzaID     string         `json:"stanza_id"`
+	Capabilities []string       `json:"capabilities"`
+	Tools        []string       `json:"tools"`
+	Memory       []string       `json:"memory"`
+	Credentials  []string       `json:"credentials"`
+	Session      SessionPolicy  `json:"session"`
+	Approval     ApprovalPolicy `json:"approval"`
+	Hermes       HermesConfig   `json:"hermes"`
+}
 type Mandate struct {
 	ID               string            `json:"id"`
 	Subject          Subject           `json:"subject"`
@@ -137,6 +151,8 @@ type Mandate struct {
 	CharterDigest    string            `json:"charter_digest"`
 	Runtime          RuntimeDescriptor `json:"runtime"`
 	Target           string            `json:"target"`
+	DeploymentID     string            `json:"deployment_id,omitempty"`
+	Environment      Environment       `json:"environment"`
 	Capabilities     []string          `json:"capabilities"`
 	Tools            []string          `json:"tools"`
 	Scopes           Scopes            `json:"scopes"`
@@ -264,8 +280,15 @@ type AuditEvent struct {
 }
 
 func DecodeCharter(r io.Reader) (Charter, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return Charter{}, fmt.Errorf("decode charter: %w", err)
+	}
+	if err = validateRequiredCharterFields(data); err != nil {
+		return Charter{}, err
+	}
 	var c Charter
-	d := json.NewDecoder(r)
+	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&c); err != nil {
 		return c, fmt.Errorf("decode charter: %w", err)
@@ -274,6 +297,53 @@ func DecodeCharter(r io.Reader) (Charter, error) {
 		return c, errors.New("decode charter: trailing data")
 	}
 	return c, ValidateCharter(c)
+}
+
+func validateRequiredCharterFields(data []byte) error {
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("decode charter: %w", err)
+	}
+	require := func(object map[string]json.RawMessage, path string, fields ...string) error {
+		for _, field := range fields {
+			if _, ok := object[field]; !ok {
+				return fmt.Errorf("decode charter: %s.%s is required", path, field)
+			}
+		}
+		return nil
+	}
+	if err := require(document, "charter", "schema_version", "agent_id", "name", "revision", "runtime", "stanzas", "created_by", "created_at"); err != nil {
+		return err
+	}
+	var stanzas []map[string]json.RawMessage
+	if err := json.Unmarshal(document["stanzas"], &stanzas); err != nil {
+		return fmt.Errorf("decode charter: stanzas must be an array: %w", err)
+	}
+	for i, stanza := range stanzas {
+		path := fmt.Sprintf("stanzas[%d]", i)
+		if err := require(stanza, path, "id", "name", "enabled", "authentication", "grant", "scopes", "session", "approval", "information_flow", "hermes"); err != nil {
+			return err
+		}
+		nested := map[string][]string{
+			"authentication":   {"methods", "selectors", "require_fresh", "max_auth_age_seconds"},
+			"grant":            {"capabilities", "tools"},
+			"scopes":           {"memory", "credentials"},
+			"session":          {"maximum_lifetime_seconds", "idle_timeout_seconds", "require_reauth", "delegation"},
+			"approval":         {"required_operations", "maximum_lifetime_seconds", "single_use"},
+			"information_flow": {"cross_stanza"},
+			"hermes":           {"profile", "persistent_home", "mcp_servers", "plugins", "toolsets", "model", "provider"},
+		}
+		for field, required := range nested {
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal(stanza[field], &object); err != nil {
+				return fmt.Errorf("decode charter: %s.%s must be an object", path, field)
+			}
+			if err := require(object, path+"."+field, required...); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func Canonicalize(c Charter) (CanonicalCharter, error) {
 	if err := ValidateCharter(c); err != nil {
@@ -334,9 +404,31 @@ func ValidateCharter(c Charter) error {
 		if len(s.Authentication.Methods) == 0 || len(s.Authentication.Selectors) == 0 {
 			add(p + " authentication must be explicit")
 		}
+		if invalidList(s.Authentication.Methods, map[string]bool{"local-os": true}) {
+			add(p + " contains an empty, wildcard, duplicate, or unsupported authentication method")
+		}
 		for _, selector := range s.Authentication.Selectors {
+			if len(selector.SubjectIDs) == 0 && len(selector.PrincipalIDs) == 0 && len(selector.Claims) == 0 {
+				add(p + " selector requires an explicit subject, principal, or claim anchor")
+			}
+			if len(selector.Issuers) == 0 || len(selector.Environments) == 0 {
+				add(p + " selector must explicitly constrain issuer and environment")
+			}
 			if len(selector.Kinds) == 0 && len(selector.SubjectIDs) == 0 && len(selector.PrincipalIDs) == 0 && len(selector.Issuers) == 0 && len(selector.Claims) == 0 && len(selector.Environments) == 0 {
 				add(p + " contains an implicit wildcard identity selector")
+			}
+			for _, values := range [][]string{selector.Kinds, selector.SubjectIDs, selector.PrincipalIDs, selector.Issuers, selector.Environments} {
+				if invalidList(values, nil) {
+					add(p + " contains an empty, wildcard, or duplicate selector value")
+				}
+			}
+			if invalidList(selector.Environments, map[string]bool{"local": true}) {
+				add(p + " contains an unsupported trusted environment")
+			}
+			for key, value := range selector.Claims {
+				if invalidPolicyValue(key) || invalidPolicyValue(value) {
+					add(p + " contains an empty or wildcard selector claim")
+				}
 			}
 			if s.Enabled {
 				for _, previous := range enabledSelectors {
@@ -353,6 +445,9 @@ func ValidateCharter(c Charter) error {
 		if s.Session.MaximumLifetimeSec <= 0 || s.Session.MaximumLifetimeSec > 86400 || s.Session.Delegation {
 			add(p + " session lifetime invalid or delegation enabled")
 		}
+		if s.Session.IdleTimeoutSec < 0 || s.Session.IdleTimeoutSec > s.Session.MaximumLifetimeSec {
+			add(p + " idle timeout must be zero or no greater than maximum lifetime")
+		}
 		if s.InformationFlow.CrossStanza != "deny" {
 			add(p + " cross-stanza flow must be deny")
 		}
@@ -362,14 +457,20 @@ func ValidateCharter(c Charter) error {
 		if strings.TrimSpace(s.Hermes.Provider) == "" || strings.TrimSpace(s.Hermes.Model) == "" {
 			add(p + " Hermes provider and model must be explicit")
 		}
+		if s.Hermes.Profile != "" || s.Hermes.PersistentHome || len(s.Hermes.MCPServers) != 0 || len(s.Hermes.Plugins) != 0 {
+			add(p + " persistent profiles, homes, MCP servers, and plugins are unsupported")
+		}
 		expectedCredential := "provider:" + s.Hermes.Provider
-		if len(s.Scopes.Credentials) != 1 || s.Scopes.Credentials[0] != expectedCredential {
-			add(p + " credential scope must contain only " + expectedCredential + " in the MVP")
+		if len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential) {
+			add(p + " credential scopes must include " + expectedCredential)
 		}
 		for _, x := range append(append([]string{}, s.Grant.Tools...), s.Grant.Capabilities...) {
-			if strings.TrimSpace(x) == "" || x == "*" || strings.EqualFold(x, "all") {
+			if invalidPolicyValue(x) {
 				add(p + " contains empty or wildcard authority")
 			}
+		}
+		if invalidList(s.Grant.Tools, nil) || invalidList(s.Grant.Capabilities, nil) {
+			add(p + " contains duplicate grant authority")
 		}
 		grantTools, runtimeTools := append([]string(nil), s.Grant.Tools...), append([]string(nil), s.Hermes.Toolsets...)
 		sort.Strings(grantTools)
@@ -378,9 +479,12 @@ func ValidateCharter(c Charter) error {
 			add(p + " Hermes toolsets must exactly equal granted tools")
 		}
 		for _, x := range append(append([]string{}, s.Scopes.Memory...), s.Scopes.Credentials...) {
-			if strings.TrimSpace(x) == "" || x == "*" || strings.EqualFold(x, "all") {
+			if invalidPolicyValue(x) {
 				add(p + " contains empty or wildcard scope")
 			}
+		}
+		if invalidList(s.Scopes.Memory, nil) || invalidList(s.Scopes.Credentials, nil) || invalidList(s.Approval.RequiredOperations, nil) || invalidList(s.Hermes.Toolsets, nil) {
+			add(p + " contains duplicate or invalid authority-relevant values")
 		}
 		for _, x := range append(append([]string{}, s.Hermes.MCPServers...), s.Hermes.Plugins...) {
 			if strings.TrimSpace(x) == "" || strings.Contains(x, "*") {
@@ -396,6 +500,48 @@ func ValidateCharter(c Charter) error {
 }
 func EqualCanonical(a, b CanonicalCharter) bool {
 	return a.Digest == b.Digest && bytes.Equal(a.Canonical, b.Canonical)
+}
+
+// VerifyCanonical rejects corrupt, stale, or non-canonical stored policy before
+// any authority decision is made.
+func VerifyCanonical(c CanonicalCharter) error {
+	canonical, err := Canonicalize(c.Charter)
+	if err != nil {
+		return err
+	}
+	var compact bytes.Buffer
+	if err = json.Compact(&compact, c.Canonical); err != nil {
+		return errors.New("canonical charter bytes are invalid")
+	}
+	if c.Digest != canonical.Digest || !bytes.Equal(compact.Bytes(), canonical.Canonical) {
+		return errors.New("canonical charter digest or bytes mismatch")
+	}
+	return nil
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func invalidPolicyValue(value string) bool {
+	value = strings.TrimSpace(value)
+	return value == "" || strings.Contains(value, "*") || strings.EqualFold(value, "all")
+}
+
+func invalidList(values []string, supported map[string]bool) bool {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if invalidPolicyValue(value) || seen[value] || supported != nil && !supported[value] {
+			return true
+		}
+		seen[value] = true
+	}
+	return false
 }
 
 // selectorsOverlap reports overlaps determinable from finite equality

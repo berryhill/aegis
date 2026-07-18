@@ -5,6 +5,7 @@
 - [Five-minute quickstart](QUICKSTART.md)
 - [No-key demonstration](DEMO_NO_KEY.md)
 - [Architecture](ARCHITECTURE.md)
+- [Local session credential broker](CREDENTIAL_BROKER.md)
 - [Threat model](THREAT_MODEL.md)
 - [Terminal recording](RECORDING.md)
 
@@ -15,6 +16,7 @@ Normative behavior lives under [`specs/`](../specs/README.md), including the MVP
 ## Product and contribution material
 
 - [Product thesis](product/BIG_IDEA.md)
+- [Host endpoint monitoring, enforcement, and response report](../research/2026-07-17-host-endpoint-monitoring-enforcement-response.md)
 - [Open-source launch and organic growth plan](launch/OPEN_SOURCE_LAUNCH_AND_GROWTH_PLAN.md)
 - [Draft launch copy](launch/LAUNCH_COPY.md)
 - [Early contributor backlog](contributing/ISSUE_BACKLOG.md)

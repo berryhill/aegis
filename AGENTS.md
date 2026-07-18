@@ -4,9 +4,17 @@
 
 Aegis is an open-source identity, trust, and session-control layer for agents running on explicit existing AI runtimes.
 
-Core statement:
+Core value:
 
-> Aegis starts authenticated, trust-stanza-bound sessions over explicitly selected agent runtimes.
+> Agent identity and authority must be established outside the model, and every runtime session should receive exactly one authenticated, reviewable trust context.
+
+Short version:
+
+> One authenticated identity. One trust stanza. One clean runtime session.
+
+Key distinction:
+
+> Trust stanzas are not personalities; they are security contexts.
 
 Aegis must not abstract away or disguise the underlying runtime.
 
@@ -36,7 +44,7 @@ Aegis must not abstract away or disguise the underlying runtime.
 - Zero authorized stanza matches means deny.
 - Multiple matches mean deny as ambiguous.
 - Permissions from different stanzas are never unioned.
-- Changing stanzas creates a clean new session.
+- Changing stanzas or materially changing authority requires a new mandate and clean session.
 - Prompt content cannot select or change a stanza.
 - Stanzas independently scope tools, capabilities, memory, credentials, approvals, and session lifetime.
 

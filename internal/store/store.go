@@ -223,6 +223,9 @@ func read(path string, v any) error {
 	return nil
 }
 func (s *Store) SaveCharter(c core.CanonicalCharter) error {
+	if err := core.VerifyCanonical(c); err != nil {
+		return fmt.Errorf("invalid canonical charter: %w", err)
+	}
 	if !validComponent(c.Charter.AgentID) {
 		return errors.New("invalid charter agent ID")
 	}
@@ -252,7 +255,13 @@ func (s *Store) GetCharter(agent string, rev uint64) (core.CanonicalCharter, err
 	if len(ms) == 0 {
 		return c, os.ErrNotExist
 	}
-	return c, read(ms[len(ms)-1], &c)
+	if err := read(ms[len(ms)-1], &c); err != nil {
+		return c, err
+	}
+	if err := core.VerifyCanonical(c); err != nil {
+		return core.CanonicalCharter{}, fmt.Errorf("stored charter verification failed: %w", err)
+	}
+	return c, nil
 }
 func (s *Store) ListCharters(agent string) ([]core.CanonicalCharter, error) {
 	if !validComponent(agent) {
@@ -265,6 +274,9 @@ func (s *Store) ListCharters(agent string) ([]core.CanonicalCharter, error) {
 		var c core.CanonicalCharter
 		if err := read(p, &c); err != nil {
 			return nil, err
+		}
+		if err := core.VerifyCanonical(c); err != nil {
+			return nil, fmt.Errorf("stored charter verification failed: %w", err)
 		}
 		out = append(out, c)
 	}

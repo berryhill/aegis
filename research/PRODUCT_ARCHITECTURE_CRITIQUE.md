@@ -1,5 +1,7 @@
 # Aegis Architecture Critique
 
+**Status:** Retained pre-implementation critique. Its open questions and illustrative recommendations are historical analysis, not current guidance; current requirements are defined by `AGENTS.md` and `specs/`.
+
 ## Overall assessment
 
 Aegis has a promising core: separate **design-time intent** from **runtime authority**, make trust configuration explicit, and require review before provisioning. The concept is not yet precise enough to support strong security claims. Its key terms—agent, session, principal, trust stanza, authentication, and provisioning—need operational definitions and enforceable invariants.

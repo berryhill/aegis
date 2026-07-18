@@ -20,4 +20,4 @@ This is process and Hermes-state isolation, not host filesystem, network, contai
 
 ## Lifecycle
 
-Session records bind the mandate, process identity, clean runtime home, start time, status, and termination reason. Expired, revoked, invalid, missing, or PID-reused runtimes are terminated and fail closed through Aegis. Stanza changes and downshifts require a new clean session.
+Session records bind the mandate, process identity, clean runtime home, start time, status, and termination reason. Expired, revoked, invalid, missing, or PID-reused runtimes are terminated and fail closed through Aegis. Stanza changes, downshifts, and all other material authority changes require a newly issued mandate and a clean session; authority is never switched or expanded in place.

@@ -61,11 +61,27 @@ type Credentials struct {
 }
 
 type CredentialAuthority struct {
-	Database      string `mapstructure:"database" json:"database,omitempty"`
-	DeploymentID  string `mapstructure:"deployment_id" json:"deployment_id,omitempty"`
-	Custody       string `mapstructure:"custody" json:"custody,omitempty"`
-	KEKCredential string `mapstructure:"kek_credential" json:"kek_credential,omitempty"`
-	KEKFile       string `mapstructure:"kek_file" json:"kek_file,omitempty"`
+	Database      string           `mapstructure:"database" json:"database,omitempty"`
+	DeploymentID  string           `mapstructure:"deployment_id" json:"deployment_id,omitempty"`
+	Custody       string           `mapstructure:"custody" json:"custody,omitempty"`
+	KEKCredential string           `mapstructure:"kek_credential" json:"kek_credential,omitempty"`
+	KEKFile       string           `mapstructure:"kek_file" json:"kek_file,omitempty"`
+	Broker        CredentialBroker `mapstructure:"broker" json:"broker,omitempty"`
+}
+
+type CredentialBroker struct {
+	Socket        string                       `mapstructure:"socket" json:"socket,omitempty"`
+	AllowedUID    uint32                       `mapstructure:"allowed_uid" json:"allowed_uid,omitempty"`
+	AllowedGID    uint32                       `mapstructure:"allowed_gid" json:"allowed_gid,omitempty"`
+	CapabilityTTL time.Duration                `mapstructure:"capability_ttl" json:"capability_ttl,omitempty"`
+	MaxBodyBytes  int64                        `mapstructure:"max_body_bytes" json:"max_body_bytes,omitempty"`
+	Timeout       time.Duration                `mapstructure:"timeout" json:"timeout,omitempty"`
+	Destinations  map[string]BrokerDestination `mapstructure:"destinations" json:"destinations,omitempty"`
+}
+
+type BrokerDestination struct {
+	URL          string   `mapstructure:"url" json:"url"`
+	Repositories []string `mapstructure:"repositories" json:"repositories"`
 }
 
 func (c Credentials) MarshalJSON() ([]byte, error) {
@@ -76,7 +92,7 @@ func (c Credentials) MarshalJSON() ([]byte, error) {
 		Authority      *CredentialAuthority         `json:"authority,omitempty"`
 	}
 	var authority *CredentialAuthority
-	if c.Authority != (CredentialAuthority{}) {
+	if c.Authority.Database != "" || c.Authority.DeploymentID != "" || c.Authority.Custody != "" || c.Authority.KEKCredential != "" || c.Authority.KEKFile != "" || c.Authority.Broker.Socket != "" || len(c.Authority.Broker.Destinations) != 0 {
 		copy := c.Authority
 		authority = &copy
 	}
@@ -161,6 +177,23 @@ func (c Config) Validate() error {
 			}
 		default:
 			es = append(es, errors.New("credentials.authority.custody must be systemd or host-file"))
+		}
+		broker := authority.Broker
+		if broker.Socket != "" {
+			if !filepath.IsAbs(broker.Socket) || strings.HasPrefix(broker.Socket, "@") || broker.CapabilityTTL <= 0 || broker.CapabilityTTL > 15*time.Minute || broker.MaxBodyBytes < 256 || broker.MaxBodyBytes > 1<<20 || broker.Timeout <= 0 || broker.Timeout > 30*time.Second || len(broker.Destinations) != 1 {
+				es = append(es, errors.New("credential broker requires an absolute pathname socket, bounded positive limits, and exactly one github-api destination"))
+			}
+			for id, destination := range broker.Destinations {
+				if id != "github-api" || strings.TrimSpace(destination.URL) == "" || len(destination.Repositories) == 0 {
+					es = append(es, errors.New("credential broker requires the github-api URL and at least one exact repository"))
+				}
+				for _, repository := range destination.Repositories {
+					parts := strings.Split(repository, "/")
+					if len(parts) != 2 || strings.TrimSpace(parts[0]) != parts[0] || strings.TrimSpace(parts[1]) != parts[1] || parts[0] == "" || parts[1] == "" || strings.Contains(repository, "..") {
+						es = append(es, errors.New("credential broker repositories must be exact owner/repository identifiers"))
+					}
+				}
+			}
 		}
 	}
 	return errors.Join(es...)

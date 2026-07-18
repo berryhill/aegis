@@ -71,6 +71,12 @@ func (a *Authority) Bind(ctx context.Context, binding CredentialBinding) error {
 }
 
 func (a *Authority) Use(ctx context.Context, key CredentialBindingKey, destination string, fn func([]byte) error) error {
+	return a.UseResolved(ctx, key, destination, func(_ ResolvedSecret, plaintext []byte) error { return fn(plaintext) })
+}
+
+// UseResolved copies and resolves authority state in a short repository read,
+// closes that read transaction, and only then decrypts and invokes fn.
+func (a *Authority) UseResolved(ctx context.Context, key CredentialBindingKey, destination string, fn func(ResolvedSecret, []byte) error) error {
 	if err := key.Validate(); err != nil || key.DeploymentID != a.repository.DeploymentID() || !ValidateIdentifier(destination) {
 		return errors.New("credential use context is invalid")
 	}
@@ -81,7 +87,7 @@ func (a *Authority) Use(ctx context.Context, key CredentialBindingKey, destinati
 	if !resolved.Binding.Enabled || resolved.Record.Status != StatusActive || !contains(resolved.Binding.Destinations, destination) {
 		return ErrRevoked
 	}
-	return Decrypt(ctx, a.custodian, a.repository.StoreID(), resolved.Record.Kind, resolved.Version, fn)
+	return Decrypt(ctx, a.custodian, a.repository.StoreID(), resolved.Record.Kind, resolved.Version, func(plaintext []byte) error { return fn(resolved, plaintext) })
 }
 
 func (a *Authority) Revoke(ctx context.Context, recordID string, version uint64, reason string) error {

@@ -149,6 +149,21 @@ credentials:
 		}
 		return result
 	}
+	runDenied := func(arguments ...string) map[string]any {
+		t.Helper()
+		command := exec.Command(binary, append([]string{"--config", configPath}, arguments...)...)
+		command.Env = append(os.Environ(), "HOME="+filepath.Join(root, "home"), "AEGIS_E2E_PROVIDER_KEY=e2e-fixture-secret")
+		var stdout, stderr strings.Builder
+		command.Stdout, command.Stderr = &stdout, &stderr
+		if runErr := command.Run(); runErr == nil {
+			t.Fatalf("aegis %s unexpectedly allowed", strings.Join(arguments, " "))
+		}
+		var result map[string]any
+		if err := json.Unmarshal([]byte(stdout.String()), &result); err != nil {
+			t.Fatalf("decode denied aegis %s output: %v stdout=%s stderr=%s", strings.Join(arguments, " "), err, stdout.String(), stderr.String())
+		}
+		return result
+	}
 	id := func(value any, field string) string {
 		t.Helper()
 		object, ok := value.(map[string]any)
@@ -173,6 +188,19 @@ credentials:
 	}
 	run("charter", "validate", charterPath)
 	run("charter", "import", charterPath)
+	effective := run("charter", "effective", "example-agent", "1", "--stanza", "principal")
+	authority := effective["authority"].(map[string]any)
+	if authority["stanza_id"] != "principal" || len(authority["tools"].([]any)) != 1 {
+		t.Fatalf("effective authority was not exactly one stanza: %#v", effective)
+	}
+	denied := runDenied("charter", "explain", "example-agent", "1", "--stanza", "model-requested-admin")
+	if denied["reason"] != "requested_stanza_unauthorized" || denied["allowed"] != false {
+		t.Fatalf("CLI stanza flag broadened authority: %#v", denied)
+	}
+	denied = runDenied("charter", "explain", "example-agent", "1", "--stanza", "principal", "--environment", "production")
+	if denied["reason"] != "invalid_environment" || denied["allowed"] != false {
+		t.Fatalf("CLI environment flag broadened authority: %#v", denied)
+	}
 	review := run("plan", "preview", "example-agent", "--revision", "1")
 	planID := id(review["plan"], "id")
 	approval := run("approval", "request", planID, "--ttl", "1m")

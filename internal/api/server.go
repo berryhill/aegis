@@ -56,6 +56,8 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
 	case errors.Is(err, app.ErrDenied):
 		return http.StatusForbidden, "denied", "authorization denied"
+	case errors.Is(err, app.ErrAmbiguous):
+		return http.StatusConflict, "ambiguous", "authorization is ambiguous"
 	case errors.Is(err, app.ErrConflict):
 		return http.StatusConflict, "conflict", "state conflict"
 	case errors.Is(err, app.ErrExpired):
@@ -296,11 +298,20 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid revision")
 		}
-		charter, stanza, err := svc.EffectiveStanza(c.Param("agent"), revision, c.Param("stanza"))
+		subject, err := requestSubject(c)
 		if err != nil {
 			return err
 		}
-		return c.JSON(http.StatusOK, map[string]any{"charter_digest": charter.Digest, "stanza": stanza, "authority_not_unioned": true})
+		environmentName := c.QueryParam("environment")
+		if environmentName == "" {
+			environmentName = "local"
+		}
+		digest, authority, decision, err := svc.EffectiveAuthorityAs(subject, c.Param("agent"), revision, c.Param("stanza"), core.Environment{Name: environmentName})
+		if err != nil {
+			status, _, _ := classifyError(err)
+			return c.JSON(status, map[string]any{"charter_digest": digest, "authority": authority, "decision": decision, "authority_not_unioned": true})
+		}
+		return c.JSON(http.StatusOK, map[string]any{"charter_digest": digest, "authority": authority, "decision": decision, "authority_not_unioned": true})
 	})
 	g.POST("/design", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
@@ -449,7 +460,8 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		mandate, decision, err := svc.PreviewSessionAs(c.Request().Context(), subject, input.Agent, input.Revision, input.Stanza, input.Environment)
 		if err != nil {
-			return err
+			status, _, _ := classifyError(err)
+			return c.JSON(status, map[string]any{"mandate": mandate, "decision": decision})
 		}
 		return c.JSON(http.StatusCreated, map[string]any{"mandate": mandate, "decision": decision})
 	})
@@ -559,7 +571,8 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		d, err := svc.ExplainAs(c.Request().Context(), subject, in.Agent, in.Revision, in.Stanza, in.Environment)
 		if err != nil {
-			return err
+			status, _, _ := classifyError(err)
+			return c.JSON(status, d)
 		}
 		return c.JSON(http.StatusOK, d)
 	})

@@ -22,7 +22,8 @@ flowchart LR
   Env[Environment-backed provider binding] --> Hermes[Disposable Hermes process]
   Principal -->|no-echo administrative intake| Authority[(Encrypted bbolt authority)]
   KEK[External KEK custody] --> Authority
-  Authority -. broker not implemented .-> Hermes
+  Authority --> Broker[Typed GitHub repository broker]
+  Broker -. verified bridge not implemented .-> Hermes
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
   Hermes -. untrusted output .-> Aegis
@@ -35,7 +36,8 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Abuse case | Control | Residual risk |
 |---|---|---|
 | Prompt claims principal identity | OS identity/SO_PEERCRED only | Compromised OS account remains authoritative |
-| Stanza flag escalates authority | Selector evaluation; zero/multiple deny; no grant union | Bad charter selectors can authorize too broadly |
+| Stanza flag, profile, display name, or prompt escalates authority | Only verified subject/method/issuer/environment selectors authorize; a request only narrows; zero/multiple deny; no grant union | A legitimately trusted issuer or administrator can still configure an overly broad exact selector |
+| Malformed, overlapping, disabled, or stale stanza policy is used | Strict required-field validation, overlap rejection, stored canonical digest verification, mandate-to-stanza equality, and runtime zero/multiple denial | Same-account state replacement remains possible without a stronger deployment boundary |
 | Model provisions its proposal | Design has no provisioning service; strict Aegis import | Hermes process is not a host sandbox |
 | Changed plan reuses approval | Complete typed plan digest is recomputed before use; atomic single use | Host admin can rewrite plan and approval state together |
 | Team session receives principal key | Exact `provider:<provider>` scope and typed binding | Granted terminal/file tools can access ambient host resources |
@@ -48,12 +50,14 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Self-update installs a corrupted archive | Fixed repository URLs, stable SemVer tags, bounded archive parsing, release checksum verification, atomic replacement | GitHub release metadata and checksum delivery are one trust domain; no independent signature/transparency verification |
 | Database theft exposes stored values | Fresh per-version DEK/nonces, XChaCha20-Poly1305, separately wrapped DEKs, KEK outside database | Metadata is sensitive; host-file KEK plus database theft defeats separation; root on an active host can inspect plaintext |
 | Ciphertext/version/context is swapped | Canonical AAD binds store, record, version, kind, KEK, algorithm, format, and purpose; startup key check | No TPM monotonic anti-rollback protection; whole-host backup rollback needs external detection |
-| Wrong stanza or destination resolves a secret | Exact agent + stanza + deployment + scope key and destination allowlist; missing/duplicate/revoked deny | Runtime broker and session capability enforcement are not implemented yet, so stored values are not exposed to Hermes |
+| Wrong stanza or destination resolves a secret | Broker requires exact peer + session capability + active session/mandate + charter + agent + stanza + local deployment + `github/read` scope + `github-api` destination + active binding/version on every use | No host/network confinement; a compromised authorized runtime may misuse its permitted read action |
+| Prompt turns the broker into secret retrieval or SSRF | One strict `github.get_repository.v1` schema; caller cannot select URL, header, scope, record, version, deployment, stanza, or destination; redirects/proxy environment disabled; sanitized response allowlist | Configured downstream and DNS remain operator/network trust; Hermes bridge registration is not implemented |
+| Capability or request is replayed by another local process | 256-bit short-lived capability digest plus exact SO_PEERCRED UID/GID and runtime PID/start-token ancestry; fresh bounded request IDs/deadlines reject duplicate or stale actions; termination/failure/expiry removes capability material | Same-host root/kernel can inspect process memory/files; production needs distinct service/runtime identities |
 | Secret leaks through administration | No argv value, confirmed no-echo intake or protected stdin, metadata-only output/audit, bounded buffers and best-effort overwrite | Go/runtime/OS may retain memory copies; protected-pipe hygiene is operator responsibility |
 
 ## Non-goals
 
-The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a completed credential broker or projection system, or protection from a fully compromised kernel/operator account.
+The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a model-visible verified Hermes broker bridge, a fleet projection system, or protection from a fully compromised kernel/operator account. The implemented broker supports only typed GitHub repository metadata.
 
 ## Deployment requirements
 

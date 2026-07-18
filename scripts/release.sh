@@ -15,8 +15,12 @@ if [ "$(git branch --show-current)" != main ]; then
     printf 'release must run from main\n' >&2
     exit 1
 fi
-if [ -n "$(git status --porcelain)" ]; then
-    printf 'release requires a clean worktree; commit the release automation first\n' >&2
+if ! git diff --cached --quiet; then
+    printf 'release refuses pre-staged changes; unstage them and retry\n' >&2
+    exit 1
+fi
+if ! git diff --quiet -- CHANGELOG.md; then
+    printf 'release refuses a pre-existing CHANGELOG.md edit\n' >&2
     exit 1
 fi
 if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
@@ -63,16 +67,28 @@ else:
 '
 
 committed=false
+verify_root=
 cleanup() {
+    if [ -n "$verify_root" ]; then
+        rm -rf "$verify_root"
+    fi
     if [ "$committed" = false ]; then
         git restore -- CHANGELOG.md
     fi
 }
 trap cleanup EXIT HUP INT TERM
 
-make verify
-make release-review VERSION="$version"
-git diff --check
+verify_root=$(mktemp -d "${TMPDIR:-/tmp}/aegis-release-verify-XXXXXXXX")
+git clone --quiet --no-hardlinks "$(pwd -P)" "$verify_root/repo"
+cp CHANGELOG.md scripts/release.sh "$verify_root/repo/"
+mv "$verify_root/repo/release.sh" "$verify_root/repo/scripts/release.sh"
+(
+    cd "$verify_root/repo"
+    sh -n scripts/release.sh
+    make verify
+    make release-review VERSION="$version"
+    git diff --check
+)
 git diff -- CHANGELOG.md
 
 if [ "${RELEASE_DRY_RUN:-0}" = 1 ]; then
@@ -80,9 +96,8 @@ if [ "${RELEASE_DRY_RUN:-0}" = 1 ]; then
     exit 0
 fi
 
-if ! git diff --quiet -- CHANGELOG.md; then
-    git add CHANGELOG.md
-    git commit -m "Prepare $tag release"
+if ! git diff --quiet -- CHANGELOG.md scripts/release.sh; then
+    git commit --only CHANGELOG.md scripts/release.sh -m "Prepare $tag release"
 fi
 committed=true
 git tag -s "$tag" -m "Aegis $tag"

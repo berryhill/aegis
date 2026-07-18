@@ -73,7 +73,7 @@ The MVP should not claim to solve all agent security. It should establish a trus
 - More than one valid match means deny as ambiguous.
 - Never union permissions from multiple stanzas.
 - Never allow a model message to change the active stanza.
-- Require a new session to change stanzas.
+- Require a new mandate and clean session to change stanzas or materially change authority.
 
 ## 7. Authenticated session mandate
 

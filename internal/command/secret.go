@@ -2,7 +2,7 @@ package command
 
 import (
 	"bytes"
-
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -244,6 +244,25 @@ func openCredentialAuthority(cmd *cobra.Command, build builder) (*app.Service, c
 	}
 	authority := credentials.NewAuthority(repository, custodian)
 	return service, subject, authority, func() { _ = authority.Close(); custodian.Close() }, nil
+}
+
+func openAuthorityForService(ctx context.Context, service *app.Service) (*credentials.Authority, func(), error) {
+	configured := service.Config.Credentials.Authority
+	custodianPath, err := custodyPath(configured)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	custodian, err := credentials.LoadFileCustodian(custodianPath)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	repository, err := credentialbolt.Open(ctx, configured.Database, configured.DeploymentID, custodian)
+	if err != nil {
+		custodian.Close()
+		return nil, func() {}, err
+	}
+	authority := credentials.NewAuthority(repository, custodian)
+	return authority, func() { _ = authority.Close(); custodian.Close() }, nil
 }
 
 func custodyPath(configured config.CredentialAuthority) (string, error) {

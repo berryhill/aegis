@@ -12,8 +12,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Hermetic CLI and complete Unix-socket API workflow tests, in-flight graceful-shutdown coverage, short sanitized no-key terminal recording, and bounded fuzz campaigns.
 - Explicit review fields for all approval-relevant scope, complete stored-plan digest verification, injectable audit authority, and interrupted-provisioning recovery.
 - Stable Semantic Versioning release enforcement, module-version detection for `go install`, and a checksum-verifying atomic `aegis update` command for supported release platforms.
-- Deterministic `make release` preparation, verification, signed-tag publication, and capability-restricted advisory Hermes review; invoking the target is the explicit operator authorization.
+- Deterministic `make release` preparation from a dirty checkout via isolated committed-source verification, signed-tag publication, and capability-restricted advisory Hermes review; invoking the target is the explicit operator authorization.
 - Deployment-bound embedded bbolt credential authority with per-version envelope encryption, versioned external KEK custody, strict codecs and startup checks, no-echo principal intake, exact credential bindings, rotation, logical revocation, metadata-only inspection/audit, and consistent ciphertext backups.
+- Linux pathname-socket credential broker with pre-body `SO_PEERCRED`, digest-only session capabilities, bounded deadline/request-ID replay state, exact mandate/runtime/binding reauthorization, immediate lifecycle revocation, and one bounded `github.get_repository.v1` action that applies authentication internally and returns sanitized metadata.
 
 ### Security
 
@@ -21,6 +22,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Ambient provider credentials are excluded from Hermes launches.
 - Unknown provisioning effects, wildcard authority, ambiguous stanza matches, any mutated stored plan field, replayed approvals, unsupported Hermes versions, interrupted publication, and bearer-only principal claims fail closed.
 - Credential ciphertext/context mutation, wrong KEKs, unsafe authority/key-file ownership or modes, duplicate exact bindings, wrong destinations, and revoked records/versions fail closed.
+- Trust stanzas now require complete policy blocks plus issuer/environment-bound identity selectors; stored canonical policy and mandate authority are rechecked, effective inspection is authenticated, narrowing requests have safe reason codes, and CLI/API denials preserve the same shared decision.
 
 ### Known limitations
 
@@ -28,4 +30,4 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Hermes 0.18.x has no stable post-launch individual-tool enumeration used by Aegis.
 - Audit append/checkpoint authority needs a separately protected deployment boundary for stronger tamper resistance.
 - TCP TLS has no certificate-to-subject mapper; principal API operations require Unix peer credentials.
-- The embedded authority is not yet connected to a local runtime broker, systemd unit/TPM recovery workflow, selective fleet projections, downstream action integration, or Infisical migration. Operational Hermes provider credentials remain environment-backed.
+- The broker is not yet exposed as a verified model-visible Hermes tool because Hermes 0.18.x safe-mode bridge registration remains unresolved. Production service/runtime user provisioning, systemd unit/TPM recovery, selective fleet projections, network confinement, and Infisical migration remain external work. Operational Hermes provider credentials remain environment-backed.
