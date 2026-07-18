@@ -319,9 +319,7 @@ func readSecret(cmd *cobra.Command, fromStdin bool, prompt, confirmation string)
 	if !ok || !term.IsTerminal(int(file.Fd())) {
 		return nil, errors.New("no terminal is available for no-echo intake; use --stdin with a protected pipe")
 	}
-	fmt.Fprint(cmd.ErrOrStderr(), prompt)
-	first, err := term.ReadPassword(int(file.Fd()))
-	fmt.Fprintln(cmd.ErrOrStderr())
+	first, err := readTerminalSecret(file, cmd.ErrOrStderr(), prompt)
 	if err != nil {
 		return nil, errors.New("read secret value")
 	}
@@ -329,9 +327,7 @@ func readSecret(cmd *cobra.Command, fromStdin bool, prompt, confirmation string)
 		wipeSecret(first)
 		return nil, errors.New("secret value must be between 1 byte and 1 MiB")
 	}
-	fmt.Fprint(cmd.ErrOrStderr(), confirmation)
-	second, err := term.ReadPassword(int(file.Fd()))
-	fmt.Fprintln(cmd.ErrOrStderr())
+	second, err := readTerminalSecret(file, cmd.ErrOrStderr(), confirmation)
 	if err != nil {
 		wipeSecret(first)
 		return nil, errors.New("read secret confirmation")
@@ -342,6 +338,32 @@ func readSecret(cmd *cobra.Command, fromStdin bool, prompt, confirmation string)
 		return nil, errors.New("secret confirmation does not match")
 	}
 	return first, nil
+}
+
+func readTerminalSecret(file *os.File, output io.Writer, prompt string) (value []byte, err error) {
+	restore, err := disableTerminalEcho(int(file.Fd()))
+	if err != nil {
+		return nil, err
+	}
+	restored := false
+	defer func() {
+		if !restored {
+			_ = restore()
+		}
+	}()
+	fmt.Fprint(output, prompt)
+	value, err = term.ReadPassword(int(file.Fd()))
+	restoreErr := restore()
+	restored = true
+	fmt.Fprintln(output)
+	if err != nil {
+		return nil, err
+	}
+	if restoreErr != nil {
+		wipeSecret(value)
+		return nil, restoreErr
+	}
+	return value, nil
 }
 
 func wipeSecret(value []byte) {

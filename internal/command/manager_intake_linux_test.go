@@ -35,6 +35,10 @@ func TestProtectedManagerIntakeDoesNotEchoOnPTY(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer slave.Close()
+	initialState, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cmd := &cobra.Command{}
 	cmd.SetIn(slave)
 	cmd.SetOut(slave)
@@ -93,5 +97,12 @@ func TestProtectedManagerIntakeDoesNotEchoOnPTY(t *testing.T) {
 	capture.Write(buffer[:n])
 	if strings.Contains(capture.String(), canary) {
 		t.Fatal("protected value appeared in PTY capture")
+	}
+	finalState, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalState.Lflag&unix.ECHO != initialState.Lflag&unix.ECHO {
+		t.Fatal("protected intake did not restore terminal echo state")
 	}
 }
