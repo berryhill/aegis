@@ -51,7 +51,7 @@ jobs:
             rm -rf "dist/$name"
           done
           (cd dist && sha256sum *.tar.gz > SHA256SUMS)
-          sha256sum -c dist/SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
           tar -xzf "dist/aegis_${GITHUB_REF_NAME}_linux_amd64.tar.gz" -C dist
           test "$(dist/aegis --version)" = "aegis version $version"
           rm dist/aegis

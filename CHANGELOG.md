@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Release packaging now verifies `SHA256SUMS` from the archive directory, preventing valid archives from being reported missing before publication.
+
 ## [0.1.1] - 2026-07-17
 
 ### Added
