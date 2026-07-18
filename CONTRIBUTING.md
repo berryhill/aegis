@@ -34,11 +34,16 @@ Use a focused issue from `docs/contributing/ISSUE_BACKLOG.md` or describe scope,
 
 ## Releases
 
-Releases use stable Semantic Versioning. After the intended release commit passes CI, an authorized maintainer creates and pushes a `vMAJOR.MINOR.PATCH` tag, for example:
+Releases use stable Semantic Versioning. Commit the release automation first, ensure `main` is clean and already matches `origin/main`, and run:
 
 ```sh
-git tag -s v0.1.0 -m "Aegis v0.1.0"
-git push origin v0.1.0
+make release
+# Later versions:
+make release VERSION=0.1.1
+# Exercise preparation/review without committing or publishing:
+RELEASE_DRY_RUN=1 make release VERSION=0.1.1
 ```
 
-The tag-triggered release workflow rejects non-SemVer tags, reruns tests and vet, cross-builds Linux/macOS archives for amd64/arm64, verifies the embedded version and checksums, and creates the GitHub release. Tag creation and pushing are maintainer authorization and are never performed by the application or a pull-request workflow.
+The target validates exact stable SemVer, rejects dirty/non-`main`/unsynchronized/already-tagged state, moves pending changelog entries into the release, runs the complete local verification target, and asks Hermes one-shot for an advisory review with only the in-session `todo` toolset. Hermes cannot approve or publish the release. The script shows the changelog diff and requires the operator to type the exact tag on `/dev/tty` before it commits, creates a signed tag, and atomically pushes `main` with that tag.
+
+The tag-triggered release workflow reruns formatting, tests, race tests, vet, and vulnerability checks; cross-builds Linux/macOS archives for amd64/arm64; verifies the embedded version and checksums; and creates the GitHub release. The explicit terminal confirmation is the release authorization; tag creation and pushing are never delegated to Hermes.

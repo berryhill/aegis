@@ -15,6 +15,8 @@ Normative behavior lives under [`specs/`](../specs/README.md), including the MVP
 ## Product and contribution material
 
 - [Product thesis](product/BIG_IDEA.md)
+- [Open-source launch and organic growth plan](launch/OPEN_SOURCE_LAUNCH_AND_GROWTH_PLAN.md)
+- [Draft launch copy](launch/LAUNCH_COPY.md)
 - [Early contributor backlog](contributing/ISSUE_BACKLOG.md)
 
 ## Historical material
