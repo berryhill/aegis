@@ -94,7 +94,7 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 	}
 
 	asset := fmt.Sprintf("aegis_%s_%s_%s.tar.gz", tag, u.GOOS, u.GOARCH)
-	checksums, err := u.download(ctx, u.DownloadURL+"/"+tag+"/SHA256SUMS", 1<<20)
+	checksums, err := u.download(ctx, u.DownloadURL+"/"+tag+"/SHA256SUMS", 1<<20, true)
 	if err != nil {
 		return Result{}, fmt.Errorf("download checksums: %w", err)
 	}
@@ -102,7 +102,7 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	archive, err := u.download(ctx, u.DownloadURL+"/"+tag+"/"+asset, maxArchiveSize)
+	archive, err := u.download(ctx, u.DownloadURL+"/"+tag+"/"+asset, maxArchiveSize, true)
 	if err != nil {
 		return Result{}, fmt.Errorf("download release archive: %w", err)
 	}
@@ -127,7 +127,7 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 }
 
 func (u *Updater) latest(ctx context.Context) (tag, version string, err error) {
-	body, err := u.download(ctx, u.APIURL, 1<<20)
+	body, err := u.download(ctx, u.APIURL, 1<<20, false)
 	if err != nil {
 		var statusErr *httpStatusError
 		if errors.As(err, &statusErr) && statusErr.Code == http.StatusNotFound {
@@ -165,7 +165,7 @@ func (u *Updater) latest(ctx context.Context) (tag, version string, err error) {
 	return release.TagName, version, nil
 }
 
-func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte, error) {
+func (u *Updater) download(ctx context.Context, url string, limit int64, allowReleaseRedirect bool) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -173,7 +173,15 @@ func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "aegis/"+normalize(u.CurrentVersion))
 	client := *u.Client
-	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	client.CheckRedirect = func(redirect *http.Request, via []*http.Request) error {
+		if !allowReleaseRedirect {
+			return http.ErrUseLastResponse
+		}
+		if len(via) != 1 || !allowedReleaseRedirectURL(redirect.URL) {
+			return errors.New("release download redirect target is not allowed")
+		}
+		return nil
+	}
 	response, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -191,6 +199,21 @@ func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte
 		return nil, errors.New("response exceeds size limit")
 	}
 	return body, nil
+}
+
+func allowedReleaseRedirectURL(target *url.URL) bool {
+	if isLoopbackHTTP(target) {
+		return true
+	}
+	if target.Scheme != "https" || target.User != nil {
+		return false
+	}
+	switch target.Hostname() {
+	case "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+		return true
+	default:
+		return false
+	}
 }
 
 func (u *Updater) validateEndpoints() error {

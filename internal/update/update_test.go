@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -215,6 +216,102 @@ func TestUpdateRejectsRedirectWithoutFollowing(t *testing.T) {
 	}
 	if contacted {
 		t.Fatal("updater followed a redirect")
+	}
+}
+
+func TestUpdateFollowsAllowedReleaseAssetRedirects(t *testing.T) {
+	archive := testArchive(t, []byte("redirected-aegis"))
+	digest := sha256.Sum256(archive)
+	assets := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/SHA256SUMS":
+			fmt.Fprintf(response, "%x  aegis_v1.2.0_linux_amd64.tar.gz\n", digest)
+		case "/archive":
+			_, _ = response.Write(archive)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer assets.Close()
+	releases := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/latest":
+			fmt.Fprint(response, testReleaseJSON(request, "v1.2.0", false, false))
+		case "/v1.2.0/SHA256SUMS":
+			http.Redirect(response, request, assets.URL+"/SHA256SUMS", http.StatusFound)
+		case "/v1.2.0/aegis_v1.2.0_linux_amd64.tar.gz":
+			http.Redirect(response, request, assets.URL+"/archive", http.StatusFound)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer releases.Close()
+	executable := filepath.Join(t.TempDir(), "aegis")
+	if err := os.WriteFile(executable, []byte("old-aegis"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	updater := testUpdater(releases, executable, "1.1.0")
+	updater.Client = releases.Client()
+	result, err := updater.Run(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Updated {
+		t.Fatalf("redirected release was not installed: %#v", result)
+	}
+	contents, err := os.ReadFile(executable)
+	if err != nil || string(contents) != "redirected-aegis" {
+		t.Fatalf("redirected executable = %q, %v", contents, err)
+	}
+}
+
+func TestUpdateRejectsUntrustedReleaseAssetRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/latest":
+			fmt.Fprint(response, testReleaseJSON(request, "v1.2.0", false, false))
+		default:
+			response.Header().Set("Location", "https://attacker.invalid/release")
+			response.WriteHeader(http.StatusFound)
+		}
+	}))
+	defer server.Close()
+	executable := filepath.Join(t.TempDir(), "aegis")
+	if err := os.WriteFile(executable, []byte("unchanged"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := testUpdater(server, executable, "1.1.0").Run(context.Background(), false)
+	if err == nil || !strings.Contains(err.Error(), "redirect target is not allowed") {
+		t.Fatalf("untrusted redirect error = %v", err)
+	}
+	contents, readErr := os.ReadFile(executable)
+	if readErr != nil || string(contents) != "unchanged" {
+		t.Fatalf("untrusted redirect modified executable: %q, %v", contents, readErr)
+	}
+}
+
+func TestAllowedReleaseRedirectURL(t *testing.T) {
+	tests := []struct {
+		raw     string
+		allowed bool
+	}{
+		{raw: "https://release-assets.githubusercontent.com/asset?signature=value", allowed: true},
+		{raw: "https://objects.githubusercontent.com/asset", allowed: true},
+		{raw: "http://release-assets.githubusercontent.com/asset", allowed: false},
+		{raw: "https://user@release-assets.githubusercontent.com/asset", allowed: false},
+		{raw: "https://release-assets.githubusercontent.com.attacker.invalid/asset", allowed: false},
+		{raw: "https://github.com/berryhill/aegis/releases/download/v1.2.0/asset", allowed: false},
+	}
+	for _, test := range tests {
+		t.Run(test.raw, func(t *testing.T) {
+			target, err := url.Parse(test.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := allowedReleaseRedirectURL(target); got != test.allowed {
+				t.Fatalf("allowedReleaseRedirectURL(%q) = %t, want %t", test.raw, got, test.allowed)
+			}
+		})
 	}
 }
 
