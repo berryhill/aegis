@@ -174,8 +174,20 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o), initCmd(build, deps.IsTerminal, deps.Initializer, o), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater))
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o), initCmd(build, deps.IsTerminal, deps.Initializer, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater))
 	return root
+}
+
+func versionCmd(version string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the Aegis version",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "aegis version %s\n", version)
+			return err
+		},
+	}
 }
 
 func runUpdate(cmd *cobra.Command, updater UpdateService, checkOnly bool) error {

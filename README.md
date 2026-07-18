@@ -32,7 +32,7 @@ The updater selects only the latest exact published stable GitHub release and fa
 go build -o aegis ./cmd/aegis
 ```
 
-Go 1.26.5 or newer is required. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Development builds and the Hermes adapter report `dev`; tagged release builds inject and share the tag version, and versioned `go install` builds recover the stable module version from embedded Go build information.
+Go 1.26.5 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Development builds and the Hermes adapter report `dev`; tagged release builds inject and share the tag version, and versioned `go install` builds recover the stable module version from embedded Go build information.
 
 ## Configure
 

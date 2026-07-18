@@ -60,7 +60,7 @@ func TestBareRootNonTTYUninitializedReturnsStructuredAction(t *testing.T) {
 
 func TestHelpAndVersionDoNotRequireConfiguration(t *testing.T) {
 	isolatedPaths(t)
-	for _, args := range [][]string{{"--help"}, {"help"}, {"--version"}} {
+	for _, args := range [][]string{{"--help"}, {"help"}, {"--version"}, {"version"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var out bytes.Buffer
 			root := NewRoot(Dependencies{In: strings.NewReader(""), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
@@ -72,6 +72,23 @@ func TestHelpAndVersionDoNotRequireConfiguration(t *testing.T) {
 				t.Fatal("expected command output")
 			}
 		})
+	}
+}
+
+func TestVersionCommandMatchesVersionFlag(t *testing.T) {
+	isolatedPaths(t)
+	var outputs []string
+	for _, args := range [][]string{{"--version"}, {"version"}} {
+		var out bytes.Buffer
+		root := NewRoot(Dependencies{In: strings.NewReader(""), Out: &out, Err: io.Discard, Version: "1.2.3", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
+		root.SetArgs(args)
+		if err := root.Execute(); err != nil {
+			t.Fatal(err)
+		}
+		outputs = append(outputs, out.String())
+	}
+	if outputs[0] != outputs[1] || outputs[0] != "aegis version 1.2.3\n" {
+		t.Fatalf("version outputs differ: %q", outputs)
 	}
 }
 
