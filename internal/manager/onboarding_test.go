@@ -27,7 +27,7 @@ func TestExternalLocalOnboardingDiscoveryAndAtomicConfiguration(t *testing.T) {
 		case "/api/version":
 			_, _ = writer.Write([]byte(`{"version":"0.32.0"}`))
 		case "/api/tags":
-			_, _ = fmt.Fprintf(writer, `{"models":[{"name":%q,"model":%q,"digest":%q,"details":{"family":"qwen","parameter_size":"4B","quantization_level":"Q4"}}]}`, candidate.OllamaName, candidate.OllamaName, digest)
+			_, _ = fmt.Fprintf(writer, `{"models":[{"name":%q,"model":%q,"modified_at":"2026-07-18T12:24:35Z","size":3389983735,"digest":%q,"details":{"parent_model":"","format":"gguf","family":"qwen35","families":["qwen35"],"parameter_size":"4.7B","quantization_level":"Q4_K_M","context_length":262144,"embedding_length":2560},"capabilities":["vision","completion","tools","thinking"]}]}`, candidate.OllamaName, candidate.OllamaName, digest)
 		default:
 			t.Errorf("unexpected onboarding request %s %s", request.Method, request.URL.Path)
 			http.Error(writer, "unexpected", http.StatusNotFound)

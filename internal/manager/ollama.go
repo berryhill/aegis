@@ -22,14 +22,22 @@ type OllamaClient struct {
 }
 
 type OllamaModel struct {
-	Name    string `json:"name"`
-	Model   string `json:"model"`
-	Digest  string `json:"digest"`
-	Details struct {
-		Family            string `json:"family"`
-		ParameterSize     string `json:"parameter_size"`
-		QuantizationLevel string `json:"quantization_level"`
+	Name       string `json:"name"`
+	Model      string `json:"model"`
+	ModifiedAt string `json:"modified_at"`
+	Size       int64  `json:"size"`
+	Digest     string `json:"digest"`
+	Details    struct {
+		Family            string   `json:"family"`
+		Families          []string `json:"families"`
+		ParentModel       string   `json:"parent_model"`
+		Format            string   `json:"format"`
+		ParameterSize     string   `json:"parameter_size"`
+		QuantizationLevel string   `json:"quantization_level"`
+		ContextLength     int      `json:"context_length"`
+		EmbeddingLength   int      `json:"embedding_length"`
 	} `json:"details"`
+	Capabilities []string `json:"capabilities"`
 }
 
 func NewOllamaClient(endpoint string, timeout time.Duration) (*OllamaClient, error) {
