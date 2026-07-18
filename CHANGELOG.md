@@ -12,7 +12,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Hermetic CLI and complete Unix-socket API workflow tests, in-flight graceful-shutdown coverage, short sanitized no-key terminal recording, and bounded fuzz campaigns.
 - Explicit review fields for all approval-relevant scope, complete stored-plan digest verification, injectable audit authority, and interrupted-provisioning recovery.
 - Stable Semantic Versioning release enforcement, module-version detection for `go install`, and a checksum-verifying atomic `aegis update` command for supported release platforms.
-- Deterministic `make release` preparation, verification, signed-tag publication, and explicit operator confirmation with a capability-restricted advisory Hermes review.
+- Deterministic `make release` preparation, verification, signed-tag publication, and capability-restricted advisory Hermes review; invoking the target is the explicit operator authorization.
 - Deployment-bound embedded bbolt credential authority with per-version envelope encryption, versioned external KEK custody, strict codecs and startup checks, no-echo principal intake, exact credential bindings, rotation, logical revocation, metadata-only inspection/audit, and consistent ciphertext backups.
 
 ### Security

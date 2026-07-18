@@ -80,13 +80,6 @@ if [ "${RELEASE_DRY_RUN:-0}" = 1 ]; then
     exit 0
 fi
 
-printf 'Type %s to commit, tag, and publish this release: ' "$tag" >/dev/tty
-IFS= read -r confirmation </dev/tty
-if [ "$confirmation" != "$tag" ]; then
-    printf 'release cancelled\n' >&2
-    exit 1
-fi
-
 if ! git diff --quiet -- CHANGELOG.md; then
     git add CHANGELOG.md
     git commit -m "Prepare $tag release"
