@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/berryhill/aegis/internal/buildinfo"
 	"github.com/berryhill/aegis/internal/core"
 )
 
@@ -178,12 +177,14 @@ credentials:
 	}
 
 	versionOutput, err := exec.Command(binary, "--version").CombinedOutput()
-	if err != nil || !strings.Contains(string(versionOutput), buildinfo.Version) {
-		t.Fatalf("CLI version is not %s: %v %s", buildinfo.Version, err, versionOutput)
+	const versionPrefix = "aegis version "
+	cliVersion := strings.TrimSpace(strings.TrimPrefix(string(versionOutput), versionPrefix))
+	if err != nil || !strings.HasPrefix(string(versionOutput), versionPrefix) || cliVersion == "" {
+		t.Fatalf("invalid CLI version: %v %s", err, versionOutput)
 	}
 	runtimeResult := run("runtime")
 	resolved := runtimeResult["resolved_runtime"].(map[string]any)
-	if resolved["adapter_version"] != buildinfo.Version {
+	if resolved["adapter_version"] != cliVersion {
 		t.Fatalf("CLI/adapter version mismatch: %#v", runtimeResult)
 	}
 	run("charter", "validate", charterPath)
