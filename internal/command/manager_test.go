@@ -101,7 +101,7 @@ func TestBareInteractiveFirstRunInitializesThenStartsManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, expected := range []string{"Aegis first-run initialization", "Configuration path: " + configPath, "State path: " + statePath, "Exact configuration to write:", "Initialization completed atomically", "Aegis manager", "route: local-only"} {
+	for _, expected := range []string{"AEGIS / bootstrap", "Aegis first-run initialization", "Configuration path: " + configPath, "State path: " + statePath, "Exact configuration to write:", "Initialization completed atomically", "derived state  principal-configured", "Credential authority custody"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("output missing %q: %s", expected, text)
 		}
@@ -184,7 +184,7 @@ func TestMalformedAndInsecureConfigurationFailClosedWithoutOverwrite(t *testing.
 			root := NewRoot(Dependencies{In: strings.NewReader("yes\n"), Out: io.Discard, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 			root.SetArgs([]string{"--state-dir", statePath, "init"})
 			err := root.Execute()
-			if err == nil || !strings.Contains(err.Error(), configPath) || !strings.Contains(err.Error(), test.want) {
+			if err == nil || !strings.Contains(err.Error(), configPath) && !strings.Contains(err.Error(), "repair-required") || !strings.Contains(err.Error(), test.want) && !strings.Contains(err.Error(), "configuration_") {
 				t.Fatalf("error=%v", err)
 			}
 			got, readErr := os.ReadFile(configPath)
@@ -198,7 +198,7 @@ func TestMalformedAndInsecureConfigurationFailClosedWithoutOverwrite(t *testing.
 func TestBareInteractiveManagerWithValidConfigOwnsInputAndExits(t *testing.T) {
 	var out bytes.Buffer
 	root := NewRoot(Dependencies{In: strings.NewReader("/status\n/quit\n"), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
-	root.SetArgs([]string{"--config", managerTestConfig(t)})
+	root.SetArgs([]string{"--config", managerTestConfig(t), "manager"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}

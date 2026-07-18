@@ -31,6 +31,10 @@ flowchart TB
   Proxy --> Ollama[Exact loopback Ollama model]
   Onboarding[Authenticated installed-only onboarding] -->|preview + yes; atomic config| Config
   Onboarding -->|version/tags only; no pull| Ollama
+  Reset[Authenticated deterministic reset] -->|inventory + exact phrase; config last| Config
+  Reset -->|recognized owned local artifacts only| State
+  Reset -. preserve .-> Hermes
+  Reset -. preserve daemon and models .-> Ollama
 ```
 
 The model proposes; it never authenticates, approves, or provisions. Design uses a disposable Hermes gateway process and returns an enveloped charter proposal. Aegis strictly decodes, validates, canonicalizes, digests, and persists it.
@@ -58,3 +62,5 @@ Root dispatch inspects configuration before constructing operational services. H
 The manager orchestrator owns one explicit lifecycle transaction: authenticate the principal; inspect authority/model/certification/Hermes readiness; verify exact certification and route identity; establish managed or external-local Ollama; load the pinned artifact; start an expiring authenticated proxy; launch a disposable safe-mode Hermes stdio gateway with no ambient extensions; execute closed typed proposals through shared credential services; and clean up in reverse order. Terminal cancellation, expiry, runtime failure, EOF, and operator exit all transition through bounded idempotent cleanup. The executable boundary gives the first termination signal to that lifecycle and restores default handling so a second signal cannot be trapped. Hermetic fake-process and PTY tests exercise managed readiness/shutdown, multi-turn gateway behavior, proposal confirmation, protected-intake restoration, signal/EOF behavior, capability replay/expiry, model unload, receipt finalization, and disposable-state removal.
 
 Candidate onboarding is separate deterministic application code, not a model turn. It lists a closed no-default registry, compares only local Ollama `/api/version` and `/api/tags` metadata at a loopback endpoint, previews managed versus external-local ownership, and applies an exact digest-bound external-local route only after principal authentication and literal confirmation. Atomic validated configuration publication does not pull/copy an artifact and does not certify or activate it. No real candidate has been downloaded or certified, so unconfigured or drifted hosts remain in truthful deterministic degraded mode.
+
+Reset is also constructed outside the normal application service because it must safely remediate absent, partial, or malformed configuration. It derives deletion authority only from the resolved config artifact, a valid exact-principal configuration, recognized ownership/schema evidence, and a closed state-layout inventory below the authenticated operator home. Preview identities are re-collected immediately before mutation; files precede empty directories and configuration is last. Unknown content or changed identity denies. External/systemd custody, normal Hermes profiles, executable/source, operator Ollama state, and all downloaded models remain outside reset authority.

@@ -40,6 +40,13 @@ type OllamaModel struct {
 	Capabilities []string `json:"capabilities"`
 }
 
+type PullProgress struct {
+	Status    string `json:"status"`
+	Digest    string `json:"digest,omitempty"`
+	Total     int64  `json:"total,omitempty"`
+	Completed int64  `json:"completed,omitempty"`
+}
+
 func NewOllamaClient(endpoint string, timeout time.Duration) (*OllamaClient, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Scheme != "http" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || !loopbackHost(parsed.Hostname()) || timeout <= 0 || timeout > 5*time.Minute {
@@ -145,6 +152,62 @@ func (c *OllamaClient) ListModels(ctx context.Context) ([]OllamaModel, error) {
 		return nil, errors.New("Ollama model inventory is oversized")
 	}
 	return result.Models, nil
+}
+
+// Pull performs the network mutation permitted only by an explicit onboarding
+// plan. The mutable registry name is not identity; callers must rediscover and
+// bind the exact resulting digest after completion.
+func (c *OllamaClient) Pull(ctx context.Context, model string, progress func(PullProgress)) error {
+	if model == "" || len(model) > 256 {
+		return errors.New("Ollama pull model is invalid")
+	}
+	body, err := json.Marshal(map[string]any{"model": model, "stream": true})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Endpoint+"/api/pull", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	// Pulls routinely exceed the ordinary inference request timeout. The caller's
+	// context is the explicit cancellation/deadline authority for this mutation.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return fmt.Errorf("Ollama pull returned status %d", response.StatusCode)
+	}
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 16<<20))
+	succeeded := false
+	for count := 0; ; count++ {
+		if count > 100000 {
+			return errors.New("Ollama pull progress exceeds event limit")
+		}
+		var event PullProgress
+		if err = decoder.Decode(&event); errors.Is(err, io.EOF) {
+			if !succeeded {
+				return errors.New("Ollama pull ended without a success event")
+			}
+			return nil
+		}
+		if err != nil {
+			return errors.New("Ollama pull progress is malformed")
+		}
+		if len(event.Status) > 512 || len(event.Digest) > 128 || event.Total < 0 || event.Completed < 0 || (event.Total > 0 && event.Completed > event.Total) {
+			return errors.New("Ollama pull progress is invalid")
+		}
+		if progress != nil {
+			progress(event)
+		}
+		if event.Status == "success" {
+			succeeded = true
+		}
+	}
 }
 
 func NormalizeModelDigest(value string) (string, error) {

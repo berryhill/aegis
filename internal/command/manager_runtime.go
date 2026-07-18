@@ -2,6 +2,8 @@ package command
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -100,7 +102,10 @@ type conversationalRuntime struct {
 	testFinalize   func(context.Context, string, string) error
 }
 
-func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command) (runtime *conversationalRuntime, err error) {
+func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command, input *terminalInput, stage func(string)) (runtime *conversationalRuntime, err error) {
+	if stage == nil {
+		stage = func(string) {}
+	}
 	cfg := service.Config.Manager
 	if !protectedIntakeCancellationSafe {
 		return nil, errors.New(managerdomain.ReasonRuntimeUnsupported + ": cancellation-safe protected terminal intake is unavailable on this operating system")
@@ -130,22 +135,26 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 			}
 		}
 	}()
+	stage("validating credential authority")
 	authority, closeAuthority, err := openAuthorityForService(ctx, service)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonAuthorityInvalid, err)
 	}
 	runtime.authorityClose = closeAuthority
+	stage("discovering Hermes Agent")
 	descriptor, err := service.Hermes.Discover(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRuntimeUnsupported, err)
 	}
 	if cfg.Inference.Mode == "managed" {
+		stage("starting Aegis-managed Ollama")
 		runtime.managed, err = managerdomain.StartManagedOllama(ctx, cfg.Inference.Executable, service.Config.StateDir, cfg.Inference.StartTimeout)
 		if err != nil {
 			return nil, err
 		}
 		endpoint = runtime.managed.Endpoint()
 	}
+	stage("verifying local Ollama route")
 	runtime.ollama, err = managerdomain.NewOllamaClient(endpoint, cfg.Inference.RequestTimeout)
 	if err != nil {
 		return nil, err
@@ -154,12 +163,14 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonOllamaUnavailable, err)
 	}
+	stage("verifying exact model artifact")
 	if _, err = runtime.ollama.VerifyModel(ctx, cfg.Inference.Model, cfg.Inference.ModelDigest); err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (!strings.Contains(err.Error(), managerdomain.ReasonModelAbsent) && !strings.Contains(err.Error(), managerdomain.ReasonDigestMismatch)) {
 			return nil, fmt.Errorf("%s: %w", managerdomain.ReasonOllamaUnavailable, err)
 		}
 		return nil, err
 	}
+	stage("validating certification")
 	certification, err := managerdomain.LoadCertification(cfg.Inference.Certification, cfg.Inference.Model, cfg.Inference.ModelDigest, descriptor.Version, ollamaVersion, cfg.Hermes.ContextLength)
 	if err != nil {
 		return nil, err
@@ -175,6 +186,7 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	}
 	armed := &armedGateway{}
 	runtime.active.Store(true)
+	stage("opening authenticated inference route")
 	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
@@ -183,6 +195,7 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	if python == "" {
 		return nil, errors.New(managerdomain.ReasonRuntimeUnsupported + ": Hermes gateway Python executable not found")
 	}
+	stage("starting disposable Hermes runtime")
 	runtime.hermes, err = managerdomain.StartHermesProcess(ctx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), ProxyToken: runtime.proxy.Token(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
@@ -197,13 +210,14 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		return nil, err
 	}
 	runtime.session, err = managerdomain.NewSession(ctx, managerdomain.SessionConfig{SessionID: sessionID, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Route: route, Gateway: armed, GatewaySessionID: gatewaySession, Guard: guard, Operations: managerOperations{service: service, subject: subject, authority: authority}, Confirm: func(confirmCtx context.Context, preview string) (bool, error) {
-		fmt.Fprintf(cmd.OutOrStdout(), "Aegis proposal: %s\nType yes to authorize: ", preview)
-		input := newTerminalInput(cmd.InOrStdin())
+		sum := sha256.Sum256([]byte(preview))
+		phrase := "approve " + hex.EncodeToString(sum[:8])
+		fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS / authoritative approval]\nOperation and exact target: %s\nAuthenticated actor: %s\nScope: built-in %s session only\nSecurity consequence: an Aegis-controlled mutation may persist in credential authority state\nAuthority expires: %s\nAllowed choices: exact phrase or cancel\nSafe default: cancel\nType exactly %q to authorize: ", preview, subject.PrincipalID, managerdomain.SecurityContext, subject.ExpiresAt.Format(time.RFC3339), phrase)
 		answer, eof, e := input.ReadLine(confirmCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
 		if e == nil && eof {
 			e = io.EOF
 		}
-		return answer == "yes", e
+		return answer == phrase, e
 	}, Intake: func(ctx context.Context, _ string) ([]byte, error) {
 		return readSecretContext(ctx, cmd, false, "Secret value: ", "Confirm secret value: ")
 	}, Receipt: func(ctx context.Context, r managerdomain.SessionReceipt) error {

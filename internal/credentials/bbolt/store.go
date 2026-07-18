@@ -93,6 +93,29 @@ func Open(ctx context.Context, path, deploymentID string, custodian credentials.
 	return store, nil
 }
 
+// Inspect opens an existing authority read-only and validates its schema,
+// deployment binding, encrypted key sentinel, ownership, and permissions. It is
+// deliberately separate from Open: readiness inspection must never initialize
+// a missing database or update last_clean_shutdown.
+func Inspect(ctx context.Context, path, deploymentID string, custodian credentials.KeyCustodian) error {
+	if !credentials.ValidateIdentifier(deploymentID) || custodian == nil {
+		return errors.New("invalid credential authority inspection")
+	}
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if err = validateFile(path); err != nil {
+		return err
+	}
+	db, err := bolt.Open(path, 0600, &bolt.Options{ReadOnly: true, Timeout: 2 * time.Second})
+	if err != nil {
+		return fmt.Errorf("inspect credential authority: %w", err)
+	}
+	defer db.Close()
+	return (&Store{db: db, path: path}).validate(ctx, deploymentID, custodian)
+}
+
 func initialize(ctx context.Context, path, deploymentID string, custodian credentials.KeyCustodian) error {
 	staging := path + ".initialize"
 	if err := os.Remove(staging); err != nil && !errors.Is(err, os.ErrNotExist) {

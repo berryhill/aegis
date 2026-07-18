@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,18 +25,14 @@ func terminalPair(in io.Reader, out io.Writer) bool {
 	return inputOK && outputOK && term.IsTerminal(int(input.Fd())) && term.IsTerminal(int(output.Fd()))
 }
 
-func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions) *cobra.Command {
+func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
 	command := &cobra.Command{Use: "manager", Short: "Start the built-in local Aegis secrets manager", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": interactive manager mode requires stdin and stdout terminals"))
 		}
-		inspection := config.Inspect(options.configFile)
-		if inspection.State != config.StateValid {
-			if inspection.State != config.StateAbsent && inspection.State != config.StatePartial {
-				return usage(inspection.Failure())
-			}
-			initialized, err := runFirstInitialization(cmd, initializer, options.configFile, options.stateDir)
-			if err != nil || !initialized {
+		if config.Inspect(options.configFile).State != config.StateValid {
+			launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
+			if err != nil || !launch {
 				return err
 			}
 		}
@@ -45,40 +42,24 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 	return command
 }
 
-func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions) *cobra.Command {
+func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
 	return &cobra.Command{Use: "init", Short: "Inspect or resume deterministic manager initialization", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": initialization requires an interactive terminal"))
 		}
-		inspection := config.Inspect(options.configFile)
-		if inspection.State != config.StateValid {
-			if inspection.State != config.StateAbsent && inspection.State != config.StatePartial {
-				return usage(inspection.Failure())
-			}
-			_, err := runFirstInitialization(cmd, initializer, options.configFile, options.stateDir)
+		launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
+		if err != nil || !launch {
 			return err
 		}
-		service, subject, err := authenticatedService(cmd, build)
-		if err != nil {
-			return err
-		}
-		state := "principal-configured"
-		authority := service.Config.Credentials.Authority
-		if authority.Database != "" && authority.Custody != "" {
-			state = "authority-configured"
-		}
-		if service.Config.Manager.Inference.Model != "" {
-			state = "runtime-configured"
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Aegis manager initialization\nAuthenticated principal: %s\nState: %s\nEffects: none (inspection only)\n", subject.PrincipalID, state)
-		if state != "runtime-configured" {
-			fmt.Fprintln(cmd.OutOrStdout(), "Next: configure credential authority and a locally present, certified Ollama model. No model was downloaded.")
-		}
-		return nil
+		return runManager(cmd, build)
 	}}
 }
 
 func runFirstInitialization(cmd *cobra.Command, initializer *initialize.Service, configPath, statePath string) (bool, error) {
+	return runFirstInitializationWithInput(cmd, initializer, configPath, statePath, newTerminalInput(cmd.InOrStdin()))
+}
+
+func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize.Service, configPath, statePath string, input *terminalInput) (bool, error) {
 	plan, err := initializer.Plan(configPath, statePath)
 	if err != nil {
 		return false, usage(err)
@@ -89,7 +70,7 @@ func runFirstInitialization(cmd *cobra.Command, initializer *initialize.Service,
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "No Hermes profile, model, credential, agent, Ollama service, or external system will be created or modified.")
 	fmt.Fprint(cmd.OutOrStdout(), "Type yes to create this configuration, or anything else to decline: ")
-	confirmation, eof, err := newTerminalInput(cmd.InOrStdin()).ReadLine(cmd.Context(), 16)
+	confirmation, eof, err := input.ReadLine(cmd.Context(), 16)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
 			fmt.Fprintln(cmd.OutOrStdout(), "\nInitialization declined; no writes were performed.")
@@ -113,12 +94,20 @@ func runFirstInitialization(cmd *cobra.Command, initializer *initialize.Service,
 }
 
 func runManager(cmd *cobra.Command, build builder) error {
+	return runManagerWithInput(cmd, build, newTerminalInput(cmd.InOrStdin()))
+}
+
+func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput) error {
+	fmt.Fprintln(cmd.OutOrStdout(), "AEGIS / manager")
+	fmt.Fprintln(cmd.OutOrStdout(), "[startup] authenticating principal")
 	lifecycle := managerdomain.NewLifecycle()
 	_ = lifecycle.Advance(managerdomain.LifecyclePreflighting)
 	service, subject, err := authenticatedService(cmd, build)
 	if err != nil {
 		return err
 	}
+	fmt.Fprintln(cmd.OutOrStdout(), "[startup] validating fixed manager authority")
+	fmt.Fprintln(cmd.OutOrStdout(), "[startup] verifying security context")
 	guard, err := managerdomain.NewGuard(int(service.Config.Manager.Ingress.MaximumMessageBytes), service.Config.Manager.Ingress.MaximumMessageRunes, service.Config.Manager.Ingress.BoundedDecodeDepth, service.Config.Manager.Ingress.ScanTimeout)
 	if err != nil {
 		return err
@@ -129,11 +118,12 @@ func runManager(cmd *cobra.Command, build builder) error {
 	if model == "" {
 		model, digest = "not configured", "not certified"
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Aegis manager\nPrincipal: %s (authenticated)\nCredential authority: %s\nRuntime: Hermes Agent\nInference: Ollama local / %s@%s\nSecurity context: %s\nManager route: local-only\nCloud fallback: disabled\nModel switching: disabled\nRuntime-state isolation is not host sandboxing.\nType /help for local commands.\n", subject.PrincipalID, readiness.authority, model, digest, managerdomain.SecurityContext)
+	fmt.Fprintf(cmd.OutOrStdout(), "Aegis manager\nPrincipal: %s (authenticated)\nLogical agent: %s\nTrust stanza: built-in %s (security context; not a personality)\nSecurity context: %s\nAuthority session: %s (expires %s)\nCharter/policy revision: %s / %s\nCredential authority: %s\nRuntime: Hermes Agent\nInference: Ollama local / %s@%s\nManager route: local-only\nCloud fallback: disabled\nModel switching: disabled\nRuntime-state isolation is not host sandboxing.\nType /help for local commands.\n", subject.PrincipalID, managerdomain.LogicalAgentID, managerdomain.SecurityContext, managerdomain.SecurityContext, subject.ID, subject.ExpiresAt.Format(time.RFC3339), managerdomain.PolicyVersion, managerdomain.PolicyDigest(), readiness.authority, model, digest)
 	_ = lifecycle.Advance(managerdomain.LifecycleStarting)
 	sessionCtx, cancelSession := context.WithCancelCause(cmd.Context())
 	defer cancelSession(nil)
-	conversation, startupErr := startConversationalManager(sessionCtx, service, subject, guard, cmd)
+	conversation, startupErr, queued, cancelStartup := startManagerWithQueue(sessionCtx, service, subject, guard, cmd, input)
+	defer cancelStartup(nil)
 	startupReason := ""
 	if startupErr != nil {
 		_ = lifecycle.Advance(managerdomain.LifecycleDegraded)
@@ -164,6 +154,7 @@ func runManager(cmd *cobra.Command, build builder) error {
 		}
 		auditCancel()
 		fmt.Fprintln(cmd.OutOrStdout(), "Conversational session: active; route: authenticated loopback proxy to exact certified model")
+		fmt.Fprintln(cmd.OutOrStdout(), "[startup] ready")
 	}
 	go func() {
 		select {
@@ -181,15 +172,22 @@ func runManager(cmd *cobra.Command, build builder) error {
 			}
 		}()
 	}
-	input := newTerminalInput(cmd.InOrStdin())
 	endReason := ""
 	for {
 		if sessionCtx.Err() != nil {
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
 			break
 		}
-		fmt.Fprint(cmd.OutOrStdout(), "aegis> ")
-		line, eof, readErr := input.ReadLine(sessionCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
+		var line string
+		var eof bool
+		var readErr error
+		if len(queued) > 0 {
+			line, queued = queued[0], queued[1:]
+			fmt.Fprintln(cmd.OutOrStdout(), "\n[startup queue -> composer]", line)
+		} else {
+			fmt.Fprint(cmd.OutOrStdout(), "\n[composer] > ")
+			line, eof, readErr = input.ReadLine(sessionCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
+		}
 		if readErr != nil {
 			if sessionCtx.Err() != nil {
 				endReason = managerdomain.EndReasonFromContext(sessionCtx)
@@ -233,6 +231,8 @@ func runManager(cmd *cobra.Command, build builder) error {
 			continue
 		}
 		if conversation != nil {
+			fmt.Fprintln(cmd.OutOrStdout(), "[user]", line)
+			fmt.Fprintln(cmd.OutOrStdout(), "[activity] Hermes Agent turn -> authenticated Aegis proxy -> exact Ollama model")
 			message, turnErr := conversation.session.Handle(sessionCtx, line)
 			if turnErr != nil {
 				if sessionCtx.Err() != nil {
@@ -243,7 +243,8 @@ func runManager(cmd *cobra.Command, build builder) error {
 				continue
 			}
 			if message != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), message)
+				fmt.Fprint(cmd.OutOrStdout(), "[assistant / untrusted model] ")
+				streamSafeText(cmd.OutOrStdout(), message)
 			}
 			continue
 		}
@@ -282,7 +283,7 @@ func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Servic
 	case "/quit", "/exit":
 		return true, nil
 	case "/help":
-		commands := "/help /status /audit verify /clear /quit /exit (plain quit and exit also work)"
+		commands := "/help /status /audit verify /clear /complete PREFIX /quit /exit (plain quit and exit also work)"
 		if readiness.authority == "ready" {
 			commands += " /secret list [query] /secret show <record-id>"
 		} else {
@@ -290,13 +291,17 @@ func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Servic
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), commands)
 	case "/status":
-		fmt.Fprintf(cmd.OutOrStdout(), "Principal: authenticated\nCredential authority: %s\nModel: %s\nArtifact: %s\nCertification: %s\nHermes: %s\nInference: %s\nRoute: local-only\nCloud fallback: disabled\nModel switching: disabled\n", readiness.authority, readiness.model, readiness.artifact, readiness.certification, readiness.hermes, readiness.inference)
+		fmt.Fprintf(cmd.OutOrStdout(), "Principal: authenticated\nLogical agent: %s\nTrust stanza/security context: built-in %s\nCharter/policy revision: %s / %s\nCredential authority: %s\nModel: %s\nArtifact: %s\nCertification: %s\nHermes: %s\nInference: %s\nRoute: local-only\nCloud fallback: disabled\nModel switching: disabled\n", managerdomain.LogicalAgentID, managerdomain.SecurityContext, managerdomain.PolicyVersion, managerdomain.PolicyDigest(), readiness.authority, readiness.model, readiness.artifact, readiness.certification, readiness.hermes, readiness.inference)
 	case "/clear":
-		if conversational {
-			fmt.Fprintln(cmd.OutOrStdout(), "A clean Hermes conversation cannot be started in place; exit and start a clean manager session.")
-		} else {
-			fmt.Fprintln(cmd.OutOrStdout(), "No Hermes conversation is active; local terminal display was not retained by Aegis.")
+		if os.Getenv("TERM") != "dumb" {
+			fmt.Fprint(cmd.OutOrStdout(), "\x1b[2J\x1b[H")
 		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Local display cleared. Session authority and Hermes conversation are unchanged.")
+	case "/complete":
+		if len(fields) != 2 {
+			return false, errors.New("usage: /complete PREFIX")
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), commandCompletions(fields[1], readiness.authority == "ready"))
 	case "/audit":
 		if len(fields) != 2 || fields[1] != "verify" {
 			return false, errors.New("usage: /audit verify")
@@ -347,9 +352,40 @@ func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Servic
 		}
 		return false, output(cmd, map[string]any{"records": records, "count": len(records)})
 	default:
+		if strings.HasPrefix(fields[0], "/") {
+			if suggestions := commandCompletions(fields[0], readiness.authority == "ready"); suggestions != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Completions:", suggestions)
+				return false, nil
+			}
+		}
 		return false, errors.New("unrecognized local directive")
 	}
 	return false, nil
+}
+
+func commandCompletions(prefix string, authority bool) string {
+	commands := []string{"/help", "/status", "/audit verify", "/clear", "/complete", "/quit", "/exit"}
+	if authority {
+		commands = append(commands, "/secret list", "/secret show")
+	}
+	var matches []string
+	for _, command := range commands {
+		if strings.HasPrefix(command, prefix) {
+			matches = append(matches, command)
+		}
+	}
+	return strings.Join(matches, "  ")
+}
+
+func streamSafeText(output io.Writer, text string) {
+	const chunkRunes = 96
+	runes := []rune(text)
+	for len(runes) > 0 {
+		n := min(len(runes), chunkRunes)
+		_, _ = fmt.Fprint(output, string(runes[:n]))
+		runes = runes[n:]
+	}
+	_, _ = fmt.Fprintln(output)
 }
 
 type managerReadiness struct {
@@ -444,7 +480,7 @@ func managerStartupReason(err error) string {
 		}
 	}
 	if errors.Is(err, context.Canceled) {
-		return managerdomain.ReasonGatewayProtocol
+		return managerdomain.ReasonStartupCancelled
 	}
 	return managerdomain.ReasonGatewayProtocol
 }

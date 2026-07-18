@@ -1,0 +1,374 @@
+package command
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/initialize"
+	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/onboarding"
+	"github.com/berryhill/aegis/internal/runtime/hermes"
+	"github.com/spf13/cobra"
+)
+
+// inspectOnboarding constructs only read-only discovery dependencies. It must
+// remain usable before the application store can safely be opened.
+func inspectOnboarding(ctx context.Context, configPath string, logger *slog.Logger) onboarding.Snapshot {
+	inspection := config.Inspect(configPath)
+	executable := "hermes"
+	if inspection.State == config.StateValid {
+		executable = inspection.Config.HermesExecutable
+	}
+	return onboarding.NewInspector(hermes.New(executable, logger)).Inspect(ctx, configPath)
+}
+
+// runBootstrap resumes at the first incomplete artifact-derived stage. Its
+// bool result means the operator selected immediate manager launch after a
+// freshly reverified ready state.
+func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
+	input := newTerminalInput(cmd.InOrStdin())
+	fmt.Fprintln(cmd.OutOrStdout(), "AEGIS / bootstrap")
+	fmt.Fprintln(cmd.OutOrStdout(), "Deterministic local setup. The model does not choose or authorize any step.")
+	inspection := config.Inspect(configPath)
+	if inspection.State == config.StateAbsent || inspection.State == config.StatePartial {
+		initialized, err := runFirstInitializationWithInput(cmd, initializer, configPath, statePath, input)
+		if err != nil || !initialized {
+			return false, err
+		}
+	}
+
+	for attempts := 0; attempts < 12; attempts++ {
+		snapshot := inspectOnboarding(cmd.Context(), configPath, logger)
+		renderBootstrapInspection(cmd, snapshot)
+		switch snapshot.State {
+		case onboarding.Ready:
+			renderReadiness(cmd, snapshot)
+			fmt.Fprint(cmd.OutOrStdout(), "Start the Aegis manager TUI now? [1] start  [2] exit (safe default): ")
+			answer, eof, err := readBootstrapLine(cmd, input, 32)
+			if err != nil {
+				return false, err
+			}
+			return !eof && (answer == "1" || answer == "start"), nil
+		case onboarding.RepairRequired:
+			return false, usage(fmt.Errorf("%s: %s; remediation: %s", snapshot.State, snapshot.Reason, snapshot.NextCommand))
+		case onboarding.PrincipalConfigured:
+			continued, err := bootstrapAuthority(cmd, build, input, snapshot)
+			if err != nil || !continued {
+				return false, err
+			}
+		case onboarding.AuthorityConfigured:
+			// Runtime checks are read-only. A missing or unsupported prerequisite
+			// is external and must not be hidden by a weaker fallback.
+			return false, nil
+		case onboarding.RuntimeConfigured:
+			continued, err := bootstrapModel(cmd, build, input, snapshot)
+			if err != nil || !continued {
+				return false, err
+			}
+		case onboarding.ModelPresent:
+			continued, err := bootstrapCertification(cmd, build, input, snapshot)
+			if err != nil || !continued {
+				return false, err
+			}
+		default:
+			return false, usage(fmt.Errorf("bootstrap stopped in unsupported state %s", snapshot.State))
+		}
+	}
+	return false, errors.New("bootstrap did not converge after bounded state transitions")
+}
+
+func renderBootstrapInspection(cmd *cobra.Command, snapshot onboarding.Snapshot) {
+	fmt.Fprintf(cmd.OutOrStdout(), "\nInstallation inspection\n  configuration  %s\n  state          %s\n  derived state  %s\n  reason         %s\n", snapshot.ConfigPath, valueOr(snapshot.StatePath, "not created"), snapshot.State, snapshot.Reason)
+	for _, check := range snapshot.Checks {
+		fmt.Fprintf(cmd.OutOrStdout(), "  [%-15s] %s", check.Status, check.Name)
+		if check.Reason != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), " (%s)", check.Reason)
+		}
+		fmt.Fprintln(cmd.OutOrStdout())
+		if check.Remedy != "" && check.Status != "verified" {
+			fmt.Fprintln(cmd.OutOrStdout(), "    next:", check.Remedy)
+		}
+	}
+}
+
+func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {
+	fmt.Fprintln(cmd.OutOrStdout(), "\nCredential authority custody")
+	fmt.Fprintln(cmd.OutOrStdout(), "  [1] systemd encrypted credential (production; externally delivered KEK)")
+	fmt.Fprintln(cmd.OutOrStdout(), "  [2] host file (development; weaker because the same account/root can read the KEK)")
+	fmt.Fprintln(cmd.OutOrStdout(), "  [3] exit without mutation")
+	fmt.Fprint(cmd.OutOrStdout(), "Select 1-3: ")
+	answer, eof, err := readBootstrapLine(cmd, input, 32)
+	if err != nil || eof || answer == "3" || answer == "exit" {
+		return false, err
+	}
+	custody := ""
+	switch answer {
+	case "1", "systemd":
+		custody = "systemd"
+	case "2", "host-file":
+		custody = "host-file"
+	default:
+		fmt.Fprintln(cmd.OutOrStdout(), "No valid custody choice selected; no mutation performed.")
+		return false, nil
+	}
+	plan, err := onboarding.PreviewAuthority(snapshot.ConfigPath, custody)
+	if err != nil {
+		return false, err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "\nExact authority plan\n  deployment ID  %s\n  database       %s\n  custody        %s\n", plan.DeploymentID, plan.Database, plan.Custody)
+	if plan.KEKFile != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "  KEK file       %s\n", plan.KEKFile)
+	} else {
+		fmt.Fprintf(cmd.OutOrStdout(), "  credential     %s (from CREDENTIALS_DIRECTORY)\n", plan.KEKCredential)
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "  ownership      authenticated OS principal; files 0600; directories 0700")
+	fmt.Fprintln(cmd.OutOrStdout(), "  backup warning never back up a host-file KEK with authority.db")
+	fmt.Fprintln(cmd.OutOrStdout(), "  limitation     local root or a compromised account can defeat this boundary")
+	fmt.Fprintln(cmd.OutOrStdout(), "  config digest  ", plan.OriginalDigest, "->", plan.ResultDigest)
+	fmt.Fprintf(cmd.OutOrStdout(), "Type exactly %q to apply, or anything else to cancel: ", plan.Confirmation)
+	confirmation, eof, err := readBootstrapLine(cmd, input, 512)
+	if err != nil || eof || confirmation != plan.Confirmation {
+		fmt.Fprintln(cmd.OutOrStdout(), "Authority configuration declined; no writes were performed.")
+		return false, err
+	}
+	// Reauthenticate from host-native account APIs immediately before mutation;
+	// this read-only path must not construct stores or create audit artifacts.
+	revalidated := onboarding.NewInspector(nil).Inspect(cmd.Context(), snapshot.ConfigPath)
+	if revalidated.State != onboarding.PrincipalConfigured {
+		return false, fmt.Errorf("principal/configuration changed after preview: state=%s reason=%s", revalidated.State, revalidated.Reason)
+	}
+	if custody == "systemd" {
+		if err = onboarding.ApplyAuthority(plan); err != nil {
+			return false, err
+		}
+		service, subject, auditErr := authenticatedService(cmd, build)
+		if auditErr == nil {
+			auditErr = service.AuditCredentialOperation(cmd.Context(), subject, "credential_authority_initialized", "ok", "systemd_prerequisite_recorded", "")
+		}
+		if auditErr != nil {
+			return false, auditErr
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Systemd prerequisite recorded. Create and deliver encrypted credential %q to the Aegis service, set CREDENTIALS_DIRECTORY, then rerun aegis init. No KEK or database was created.\n", plan.KEKCredential)
+		return false, nil
+	}
+	if err = onboarding.InitializeHostAuthority(cmd.Context(), plan); err != nil {
+		return false, err
+	}
+	if err = onboarding.ApplyAuthority(plan); err != nil {
+		onboarding.CleanupHostAuthority(plan)
+		return false, err
+	}
+	service, subject, auditErr := authenticatedService(cmd, build)
+	if auditErr == nil {
+		auditErr = service.AuditCredentialOperation(cmd.Context(), subject, "credential_authority_initialized", "ok", "host_file_authority_verified", "")
+	}
+	if auditErr != nil {
+		return false, auditErr
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "Host-file authority initialized and verified (explicitly weaker development custody).")
+	return true, nil
+}
+
+func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {
+	service, subject, err := authenticatedService(cmd, build)
+	if err != nil {
+		return false, err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "\nOllama deployment")
+	fmt.Fprintln(cmd.OutOrStdout(), "Aegis will inspect an explicit operator-managed loopback daemon. It will not start, stop, replace, or take ownership of that daemon.")
+	fmt.Fprint(cmd.OutOrStdout(), "Loopback endpoint [http://127.0.0.1:11434]: ")
+	endpoint, eof, err := readBootstrapLine(cmd, input, 512)
+	if err != nil || eof {
+		return false, err
+	}
+	if endpoint == "" {
+		endpoint = "http://127.0.0.1:11434"
+	}
+	report, err := managerdomain.DiscoverInstalledCandidates(cmd.Context(), endpoint, service.Config.Manager.Inference.RequestTimeout)
+	if err != nil {
+		return false, err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Ollama %s at %s\nBoundary: %s\n", report.Version, report.Endpoint, report.Boundary)
+	for index, installed := range report.Installed {
+		fmt.Fprintf(cmd.OutOrStdout(), "  [%d] %s\n      Ollama name: %s\n      publisher/source: %s / %s\n      license/terms: %s / %s\n      digest: %s\n      artifact size: %d bytes\n      quantization: %s\n      context: %d\n      capabilities: %s\n", index+1, installed.Candidate.ID, installed.Candidate.OllamaName, installed.Candidate.Publisher, installed.Candidate.Source, installed.Candidate.License, installed.Candidate.LicenseURL, installed.Digest, installed.Artifact.Size, installed.Artifact.Details.QuantizationLevel, installed.Artifact.Details.ContextLength, strings.Join(installed.Artifact.Capabilities, ", "))
+	}
+	if len(report.Installed) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No approved installed artifact is visible. No candidate is selected by default.")
+		for index, candidate := range managerdomain.Candidates() {
+			fmt.Fprintf(cmd.OutOrStdout(), "  [%d] %s (%s, %s) %s\n", index+1, candidate.ID, candidate.Publisher, candidate.License, candidate.OllamaName)
+		}
+		fmt.Fprint(cmd.OutOrStdout(), "Download one exact registry candidate now? Enter its number, or press Enter to exit: ")
+		choice, ended, readErr := readBootstrapLine(cmd, input, 32)
+		if readErr != nil || ended || choice == "" {
+			return false, readErr
+		}
+		index := parseMenuIndex(choice, len(managerdomain.Candidates()))
+		if index < 0 {
+			return false, usage(errors.New("candidate selection is outside the closed registry"))
+		}
+		candidate := managerdomain.Candidates()[index]
+		confirmation := "download " + candidate.ID + " from " + endpoint
+		fmt.Fprintf(cmd.OutOrStdout(), "Network action: POST %s/api/pull\nExpected artifact: %s\nStore/owner: operator-managed Ollama at %s\nPublisher/source: %s / %s\nLicense/terms: %s / %s\nSize: reported by Ollama during transfer\nDigest policy: rediscover and bind the exact resulting sha256 digest; the mutable name is never identity.\nType exactly %q to authorize: ", endpoint, candidate.OllamaName, endpoint, candidate.Publisher, candidate.Source, candidate.License, candidate.LicenseURL, confirmation)
+		approved, ended, readErr := readBootstrapLine(cmd, input, 512)
+		if readErr != nil || ended || approved != confirmation {
+			fmt.Fprintln(cmd.OutOrStdout(), "Download declined; no network mutation was requested.")
+			return false, readErr
+		}
+		if _, _, err = authenticatedService(cmd, build); err != nil {
+			return false, err
+		}
+		client, clientErr := managerdomain.NewOllamaClient(endpoint, service.Config.Manager.Inference.RequestTimeout)
+		if clientErr != nil {
+			return false, clientErr
+		}
+		last, lastPercent := "", -1
+		started := time.Now()
+		if err = client.Pull(cmd.Context(), candidate.OllamaName, func(progress managerdomain.PullProgress) {
+			if progress.Total > 0 {
+				percent := int(float64(progress.Completed) / float64(progress.Total) * 100)
+				if percent != lastPercent {
+					elapsed := time.Since(started).Seconds()
+					rate, eta := float64(progress.Completed)/max(elapsed, 0.001), "calculating"
+					if rate > 0 {
+						eta = (time.Duration(float64(progress.Total-progress.Completed)/rate) * time.Second).Round(time.Second).String()
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), "  download: %s %d%% (%d/%d bytes, %.0f bytes/s, ETA %s)\n", progress.Status, percent, progress.Completed, progress.Total, rate, eta)
+					lastPercent = percent
+				}
+			} else if progress.Status != "" && progress.Status != last {
+				fmt.Fprintln(cmd.OutOrStdout(), "  download:", progress.Status)
+			}
+			last = progress.Status
+		}); err != nil {
+			auditErr := service.AuditManagerOnboarding(cmd.Context(), subject, "model_pull", "denied", "pull_failed_or_cancelled", map[string]string{"candidate_id": candidate.ID, "endpoint": endpoint})
+			return false, errors.Join(err, auditErr)
+		}
+		if err = service.AuditManagerOnboarding(cmd.Context(), subject, "model_pull", "ok", "pull_completed", map[string]string{"candidate_id": candidate.ID, "endpoint": endpoint}); err != nil {
+			return false, err
+		}
+		for attempt := 0; attempt < 8; attempt++ {
+			report, err = managerdomain.DiscoverInstalledCandidates(cmd.Context(), endpoint, service.Config.Manager.Inference.RequestTimeout)
+			if err == nil && len(report.Installed) > 0 {
+				break
+			}
+			select {
+			case <-cmd.Context().Done():
+				return false, cmd.Context().Err()
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+		if err != nil {
+			return false, err
+		}
+		if len(report.Installed) == 0 {
+			return false, errors.New("download completed but the approved artifact was not visible during bounded rediscovery; rerun aegis init")
+		}
+	}
+	if len(report.Installed) > 1 {
+		fmt.Fprint(cmd.OutOrStdout(), "Select one installed candidate number (no default): ")
+	} else {
+		fmt.Fprint(cmd.OutOrStdout(), "Select candidate [1], or press Enter to exit: ")
+	}
+	choice, eof, err := readBootstrapLine(cmd, input, 32)
+	if err != nil || eof || choice == "" {
+		return false, err
+	}
+	index := parseMenuIndex(choice, len(report.Installed))
+	if index < 0 {
+		return false, usage(errors.New("installed candidate selection is invalid"))
+	}
+	selected := report.Installed[index]
+	preview, err := managerdomain.PreviewExternalModelConfiguration(snapshot.ConfigPath, service.Config.StateDir, "", selected)
+	if err != nil {
+		return false, err
+	}
+	confirmation := "bind " + selected.Candidate.ID + " " + selected.Digest
+	fmt.Fprintf(cmd.OutOrStdout(), "Exact configuration: model=%s digest=%s endpoint=%s certification=%s\nNo cloud fallback. No model switching. No copy.\nType exactly %q to apply: ", preview.Model, preview.Digest, preview.Endpoint, preview.Certification, confirmation)
+	approved, eof, err := readBootstrapLine(cmd, input, 512)
+	if err != nil || eof || approved != confirmation {
+		fmt.Fprintln(cmd.OutOrStdout(), "Model binding declined; no configuration write was performed.")
+		return false, err
+	}
+	if _, _, err = authenticatedService(cmd, build); err != nil {
+		return false, err
+	}
+	if err = managerdomain.ApplyModelConfiguration(preview); err != nil {
+		return false, err
+	}
+	if err = service.AuditManagerOnboarding(cmd.Context(), subject, "model_bound", "ok", "exact_artifact_bound", map[string]string{"candidate_id": selected.Candidate.ID, "model_digest": selected.Digest, "endpoint": endpoint}); err != nil {
+		return false, err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "Exact local artifact configured; certification is still required before readiness.")
+	return true, nil
+}
+
+func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {
+	candidate := "CANDIDATE_ID"
+	for _, item := range managerdomain.Candidates() {
+		if item.OllamaName == snapshot.Model {
+			candidate = item.ID
+		}
+	}
+	confirmation := "certify " + candidate + " " + snapshot.ModelDigest
+	fmt.Fprintln(cmd.OutOrStdout(), "\nCertification runs the complete Hermes Agent -> authenticated Aegis proxy -> Ollama conformance path.")
+	fmt.Fprintln(cmd.OutOrStdout(), "It loads the exact model, may use substantial CPU/GPU/RAM, runs every named corpus case, and unloads all runtime resources afterward.")
+	fmt.Fprintf(cmd.OutOrStdout(), "Type exactly %q to begin, or anything else to exit: ", confirmation)
+	answer, eof, err := readBootstrapLine(cmd, input, 512)
+	if err != nil || eof || answer != confirmation {
+		fmt.Fprintln(cmd.OutOrStdout(), "Certification declined; readiness was not reported.")
+		return false, err
+	}
+	err = runManagerCertification(cmd, build, candidate, func(stage string) {
+		fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
+	})
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func renderReadiness(cmd *cobra.Command, snapshot onboarding.Snapshot) {
+	digest := snapshot.ModelDigest
+	if len(digest) > 19 {
+		digest = digest[:19] + "..."
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "\nREADY / verified from artifacts\n  authenticated principal  %s\n  credential authority     verified\n  Hermes Agent             %s (%s)\n  Ollama route             %s\n  exact model              %s @ %s\n  certification            valid\n  cloud fallback           disabled\n  model switching          disabled\n  isolation limitation     disposable runtime state is not host sandboxing\n  full digest              aegis manager model status\n", snapshot.Principal, snapshot.HermesPath, snapshot.HermesVersion, snapshot.OllamaRoute, snapshot.Model, digest)
+}
+
+func readBootstrapLine(cmd *cobra.Command, input *terminalInput, maximum int) (string, bool, error) {
+	line, eof, err := input.ReadLine(cmd.Context(), maximum)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+			return "", true, nil
+		}
+		return "", false, err
+	}
+	return strings.TrimSpace(line), eof, nil
+}
+
+func parseMenuIndex(value string, maximum int) int {
+	index := 0
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return -1
+		}
+		index = index*10 + int(r-'0')
+	}
+	if index < 1 || index > maximum {
+		return -1
+	}
+	return index - 1
+}
+
+func valueOr(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}

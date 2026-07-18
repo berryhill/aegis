@@ -44,7 +44,24 @@ printf 'not chat' | ./aegis --config .aegis.yaml
 
 Without configuration, the same non-TTY invocation instead emits structured `manager_not_initialized` output naming `aegis init` and exits 2 without prompting.
 
-Run `./aegis --config .aegis.yaml` in a real terminal to inspect the built-in manager shell. It does not download a model. Until an exact local artifact has passed the opt-in conformance suite, ordinary prose reports that no cloud fallback was attempted; `/status`, `/audit verify`, `/help`, `/quit`, and plain `quit`/`exit` remain local. Ctrl-C, SIGTERM, EOF, or session expiry enter the same bounded cleanup path.
+## Reset and replay onboarding
+
+For development/testing, a principal can return a default local installation to first-run state:
+
+```sh
+aegis reset
+# review every delete/preserve path and the irreversible credential/audit warning
+# type exactly: reset aegis
+aegis
+```
+
+Use `aegis --config "$HOME/path/to/aegis.yaml" reset` for a safely scoped custom configuration; reset intentionally rejects repository paths, the home directory itself, filesystem roots, paths outside the authenticated operator home, unsafe parents, symlinks, hard-linked files, unknown state content, and any path/inode change after preview. It never accepts a force flag and non-TTY, EOF, cancellation, or any phrase other than `reset aegis` performs no writes.
+
+The reset scope is the resolved configuration, recognized Aegis state-store objects (charters, plans, approvals, receipts, mandates, sessions, provisioning artifacts, audit/checkpoints), manager certifications and disposable homes, and recognized interrupted initialization/configuration/authority temporaries. A development credential database and host-file KEK are deleted only when configured below the Aegis state root and independently recognizable as Aegis artifacts. External authority/KEK paths and systemd credential custody are reported and preserved. Aegis also preserves its executable and source checkout, Hermes and normal Hermes profiles, Ollama and an operator-managed daemon, external credentials/systems, external Ollama model stores, and downloaded model data. This includes the Aegis managed model store if present.
+
+Reset irreversibly destroys encrypted credentials and audit history in scope without separate backups. It is intended for development/testing unless the operator deliberately accepts that loss. On success it prints `state: uninitialized` and `next_command: aegis`; `config.Inspect` is absent, so the next bare interactive invocation re-enters onboarding. Bare non-TTY invocation instead remains fail-closed with `manager_not_initialized`.
+
+Run `./aegis --config .aegis.yaml` in a real terminal to resume deterministic bootstrap or, once every derived readiness check passes, enter the built-in manager shell. Bootstrap does not download by default: model candidates have no default and `exit` or `use an already-present candidate` performs no network mutation. Choosing `pull` requires a closed-registry candidate, a complete network/disk/route preview, and its displayed exact confirmation phrase; progress remains visible, interruption is resumable, and Aegis rediscovery binds the resulting exact digest before separate certification. Until an exact local artifact has passed the conformance suite, the wizard reports the failed prerequisite and exact next action; no cloud fallback is attempted. In manager mode `/status`, `/audit verify`, `/help`, `/complete`, `/clear`, `/quit`, and plain `quit`/`exit` remain local. Ctrl-C, SIGTERM, EOF, or session expiry enter the same bounded cleanup path.
 
 Do not edit manager model fields merely to suppress that denial. For an already-installed official Ollama candidate, use the deterministic no-download path:
 
@@ -67,4 +84,4 @@ Discovery uses local Ollama metadata only. Configure previews the exact digest-b
 
 Without `credentials.design_provider` and its source credential, this must not be presented as a successful model turn. The command may reach Hermes and report its authentic provider-configuration failure. It uses disposable state and does not modify the normal Hermes profile.
 
-Clean up with `rm -f aegis .aegis.yaml .office-charter.json && rm -rf .aegis`.
+Clean up this repository-local example with `rm -f aegis .aegis.yaml .office-charter.json && rm -rf .aegis`. `aegis reset` deliberately rejects repository paths and is not a replacement for that explicit example cleanup.

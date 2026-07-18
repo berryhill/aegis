@@ -47,7 +47,7 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 			process, master, slave, initial := startManagerPTY(t, binary, configPath)
 			defer master.Close()
 			defer slave.Close()
-			capture := readPTYUntil(t, master, nil, "aegis> ", 5*time.Second)
+			capture := readPTYUntil(t, master, nil, "[composer] > ", 5*time.Second)
 			if test.phrase != "" {
 				_, _ = master.Write([]byte(test.phrase + "\n"))
 				capture = readPTYUntil(t, master, capture, "The local Aegis management model is unavailable (", 3*time.Second)
@@ -111,7 +111,7 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 		process, master, slave, initial := startManagerPTY(t, binary, configPath)
 		defer master.Close()
 		defer slave.Close()
-		capture := readPTYUntil(t, master, nil, "aegis> ", 5*time.Second)
+		capture := readPTYUntil(t, master, nil, "[composer] > ", 5*time.Second)
 		capture = readPTYUntil(t, master, capture, "Shutting down Aegis manager (session_expired).", 3*time.Second)
 		if err := process.Wait(); err != nil {
 			t.Fatalf("expired manager exit=%v output=%q", err, capture)
@@ -211,7 +211,7 @@ func startManagerPTY(t *testing.T, binary, configPath string) (*exec.Cmd, *os.Fi
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(binary, "--config", configPath)
+	command := exec.Command(binary, "--config", configPath, "manager")
 	command.Stdin, command.Stdout, command.Stderr = slave, slave, slave
 	command.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(configPath), "home"), "XDG_CONFIG_HOME="+filepath.Join(filepath.Dir(configPath), "xdg-config"), "XDG_STATE_HOME="+filepath.Join(filepath.Dir(configPath), "xdg-state"))
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}

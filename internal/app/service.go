@@ -135,6 +135,29 @@ func (s *Service) AuditManagerStartup(ctx context.Context, subject core.Subject,
 	return s.audit(ctx, core.AuditEvent{Type: "manager_startup", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: metadata})
 }
 
+// AuditManagerCertification records metadata-only certification attempts. It
+// never accepts prompts, responses, credential material, or model output.
+func (s *Service) AuditManagerCertification(ctx context.Context, subject core.Subject, outcome, reason string, metadata map[string]string) error {
+	if subject.PrincipalID == "" || subject.PrincipalID != s.Config.Principal.ID || (outcome != "ok" && outcome != "denied") || strings.TrimSpace(reason) == "" {
+		return ErrDenied
+	}
+	return s.audit(ctx, core.AuditEvent{Type: "manager_certification", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: metadata})
+}
+
+// AuditManagerOnboarding records metadata-only acquisition and binding events.
+func (s *Service) AuditManagerOnboarding(ctx context.Context, subject core.Subject, action, outcome, reason string, metadata map[string]string) error {
+	allowed := action == "model_pull" || action == "model_bound"
+	if !allowed || subject.PrincipalID == "" || subject.PrincipalID != s.Config.Principal.ID || (outcome != "ok" && outcome != "denied") || strings.TrimSpace(reason) == "" {
+		return ErrDenied
+	}
+	copy := make(map[string]string, len(metadata)+1)
+	for key, value := range metadata {
+		copy[key] = value
+	}
+	copy["action"] = action
+	return s.audit(ctx, core.AuditEvent{Type: "manager_onboarding", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: copy})
+}
+
 // Authenticate uses only the kernel-backed process account mapping. No prompt,
 // display name, requested stanza, or CLI authority flag is accepted as evidence.
 func (s *Service) Authenticate(ctx context.Context) (core.Subject, error) {

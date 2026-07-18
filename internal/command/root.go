@@ -19,6 +19,7 @@ import (
 	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	resetdomain "github.com/berryhill/aegis/internal/reset"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 	selfupdate "github.com/berryhill/aegis/internal/update"
@@ -33,6 +34,7 @@ type Dependencies struct {
 	IsTerminal  func(io.Reader, io.Writer) bool
 	Updater     UpdateService
 	Initializer *initialize.Service
+	Resetter    *resetdomain.Service
 }
 type rootOptions struct{ configFile, stateDir, hermesExecutable, runtime string }
 
@@ -90,6 +92,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	if deps.Initializer == nil {
 		deps.Initializer = initialize.New()
+	}
+	if deps.Resetter == nil {
+		deps.Resetter = resetdomain.New()
 	}
 	o := &rootOptions{}
 	var updateAlias, helpAction, versionAction bool
@@ -153,28 +158,27 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if updateAlias {
 			return runUpdate(cmd, deps.Updater, false)
 		}
-		inspection := config.Inspect(o.configFile)
-		if inspection.State != config.StateValid && inspection.State != config.StateAbsent && inspection.State != config.StatePartial {
-			return usage(inspection.Failure())
-		}
 		if !deps.IsTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
-			if inspection.State == config.StateAbsent || inspection.State == config.StatePartial {
-				if err := output(cmd, map[string]any{"state": inspection.State, "initialized": false, "reason": inspection.ReasonCode, "next_command": "aegis init", "exit_status": 2}); err != nil {
-					return err
-				}
-				return usage(fmt.Errorf("%s: Aegis is uninitialized; run: aegis init", managerdomain.ReasonNotInitialized))
+			snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
+			reason, next := snapshot.Reason, snapshot.NextCommand
+			if snapshot.State == "ready" {
+				reason, next = managerdomain.ReasonRequiresTTY, "aegis"
 			}
-			return usage(fmt.Errorf("%s: interactive manager mode requires stdin and stdout terminals; use deterministic subcommands such as aegis secret, aegis audit, or aegis config", managerdomain.ReasonRequiresTTY))
+			if err := output(cmd, map[string]any{"state": snapshot.State, "initialized": snapshot.State != "uninitialized", "ready": snapshot.State == "ready", "reason": reason, "next_command": next, "exit_status": 2, "checks": snapshot.Checks}); err != nil {
+				return err
+			}
+			return usage(fmt.Errorf("%s: interactive terminal required; no prompts or mutations were performed", reason))
 		}
-		if inspection.State != config.StateValid {
-			initialized, err := runFirstInitialization(cmd, deps.Initializer, o.configFile, o.stateDir)
-			if err != nil || !initialized {
+		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
+		if snapshot.State != "ready" {
+			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
+			if err != nil || !launch {
 				return err
 			}
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o), initCmd(build, deps.IsTerminal, deps.Initializer, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater))
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater))
 	return root
 }
 

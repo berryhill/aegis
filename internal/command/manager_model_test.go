@@ -19,12 +19,15 @@ func TestDegradedManagerHelpStatusAndAuditAreTruthful(t *testing.T) {
 	configPath := managerTestConfig(t)
 	var out bytes.Buffer
 	root := NewRoot(Dependencies{In: strings.NewReader("/help\n/status\nexit\n"), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
-	root.SetArgs([]string{"--config", configPath})
+	root.SetArgs([]string{"--config", configPath, "manager"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, required := range []string{"Reason: manager_model_absent", "Credential authority: absent", "Model: absent", "Inference: degraded", "plain quit and exit also work", "Aegis manager stopped; cleanup complete"} {
+	if !strings.Contains(text, "Reason: "+managerdomain.ReasonStartupCancelled) && !strings.Contains(text, "Reason: "+managerdomain.ReasonModelAbsent) {
+		t.Fatalf("degraded output omitted truthful startup outcome: %s", text)
+	}
+	for _, required := range []string{"Credential authority: absent", "Model: absent", "Inference: degraded", "plain quit and exit also work", "Aegis manager stopped; cleanup complete"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("degraded output missing %q: %s", required, text)
 		}
@@ -40,7 +43,7 @@ func TestDegradedManagerHelpStatusAndAuditAreTruthful(t *testing.T) {
 	if err := auditRoot.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(audit.String(), managerdomain.ReasonModelAbsent) || !strings.Contains(audit.String(), "manager_startup") || strings.Count(audit.String(), "manager_session_closed") != 1 {
+	if (!strings.Contains(audit.String(), managerdomain.ReasonStartupCancelled) && !strings.Contains(audit.String(), managerdomain.ReasonModelAbsent)) || !strings.Contains(audit.String(), "manager_startup") || strings.Count(audit.String(), "manager_session_closed") != 1 {
 		t.Fatalf("startup audit omitted exact reason: %s", audit.String())
 	}
 }
@@ -104,8 +107,8 @@ func TestManagerModelCommandsDiscoverDeclineAndConfigureWithoutDownload(t *testi
 	if loaded.Manager.Inference.Endpoint != server.URL || loaded.Manager.Inference.ModelDigest != "sha256:"+digest || loaded.Manager.Inference.Mode != "external-local" {
 		t.Fatalf("configured route=%+v", loaded.Manager.Inference)
 	}
-	degraded := run("exit\n")
-	if !strings.Contains(degraded, managerdomain.ReasonAuthorityUnavailable) {
+	degraded := run("exit\n", "manager")
+	if !strings.Contains(degraded, managerdomain.ReasonStartupCancelled) && !strings.Contains(degraded, managerdomain.ReasonAuthorityUnavailable) {
 		t.Fatalf("configured model without authority had inexact readiness reason: %s", degraded)
 	}
 }

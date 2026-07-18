@@ -17,6 +17,7 @@ govulncheck
 *.out
 *.prof
 *.coverprofile
+*.worktrees
 coverage.out
 
 # Local runtime state and configuration
