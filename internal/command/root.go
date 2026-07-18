@@ -643,7 +643,7 @@ func serveCmd(build builder) *cobra.Command {
 		if e != nil {
 			return e
 		}
-		defer closeAuthority()
+		defer func() { _ = closeAuthority() }()
 		s.CredentialAuthority = authority
 		destinations := make(map[string]string, len(brokerConfig.Destinations))
 		var repositories []string

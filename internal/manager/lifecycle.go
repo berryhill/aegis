@@ -9,16 +9,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 )
 
 type ManagedOllama struct {
-	command  *exec.Cmd
-	done     chan error
-	endpoint string
-	home     string
-	started  bool
+	command   *exec.Cmd
+	done      chan error
+	endpoint  string
+	home      string
+	closeOnce sync.Once
+	closeErr  error
 }
 
 func StartManagedOllama(ctx context.Context, executable, stateRoot string, timeout time.Duration) (*ManagedOllama, error) {
@@ -57,7 +59,7 @@ func StartManagedOllama(ctx context.Context, executable, stateRoot string, timeo
 		_ = os.RemoveAll(home)
 		return nil, err
 	}
-	managed := &ManagedOllama{command: command, done: make(chan error, 1), endpoint: endpoint, home: home, started: true}
+	managed := &ManagedOllama{command: command, done: make(chan error, 1), endpoint: endpoint, home: home}
 	go func() { managed.done <- command.Wait(); close(managed.done) }()
 	readyCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -71,41 +73,45 @@ func StartManagedOllama(ctx context.Context, executable, stateRoot string, timeo
 			_ = os.RemoveAll(home)
 			return nil, fmt.Errorf("%s: process exited: %w", ReasonOllamaUnavailable, waitErr)
 		case <-readyCtx.Done():
-			_ = managed.Close(context.Background())
+			cleanup, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_ = managed.Close(cleanup)
+			cleanupCancel()
 			return nil, fmt.Errorf("%s: readiness timeout", ReasonOllamaUnavailable)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }
 
-func (m *ManagedOllama) Endpoint() string { return m.endpoint }
+func (m *ManagedOllama) Endpoint() string   { return m.endpoint }
+func (m *ManagedOllama) Done() <-chan error { return m.done }
 func (m *ManagedOllama) Close(ctx context.Context) error {
-	if m == nil || !m.started {
+	if m == nil {
 		return nil
 	}
-	m.started = false
-	if m.command != nil && m.command.Process != nil {
-		_ = syscall.Kill(-m.command.Process.Pid, syscall.SIGTERM)
-	}
-	select {
-	case <-m.done:
-	case <-ctx.Done():
+	m.closeOnce.Do(func() {
 		if m.command != nil && m.command.Process != nil {
-			_ = syscall.Kill(-m.command.Process.Pid, syscall.SIGKILL)
-		}
-		return ctx.Err()
-	case <-time.After(2 * time.Second):
-		if m.command != nil && m.command.Process != nil {
-			_ = syscall.Kill(-m.command.Process.Pid, syscall.SIGKILL)
+			_ = syscall.Kill(-m.command.Process.Pid, syscall.SIGTERM)
 		}
 		select {
 		case <-m.done:
 		case <-ctx.Done():
-			return ctx.Err()
+			if m.command != nil && m.command.Process != nil {
+				_ = syscall.Kill(-m.command.Process.Pid, syscall.SIGKILL)
+			}
+			m.closeErr = ctx.Err()
+		case <-time.After(2 * time.Second):
+			if m.command != nil && m.command.Process != nil {
+				_ = syscall.Kill(-m.command.Process.Pid, syscall.SIGKILL)
+			}
+			select {
+			case <-m.done:
+			case <-ctx.Done():
+				m.closeErr = ctx.Err()
+			}
 		}
-	}
-	if err := os.RemoveAll(m.home); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return nil
+		if err := os.RemoveAll(m.home); err != nil && !errors.Is(err, os.ErrNotExist) {
+			m.closeErr = errors.Join(m.closeErr, err)
+		}
+	})
+	return m.closeErr
 }

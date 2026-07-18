@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -88,27 +91,54 @@ type conversationalRuntime struct {
 	ollama         *managerdomain.OllamaClient
 	managed        *managerdomain.ManagedOllama
 	model          string
-	authorityClose func()
+	authorityClose func() error
 	active         atomic.Bool
+	failures       chan error
+	closeOnce      sync.Once
+	closeErr       error
+	testCleanup    []func(context.Context) error
+	testFinalize   func(context.Context, string, string) error
 }
 
 func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command) (runtime *conversationalRuntime, err error) {
 	cfg := service.Config.Manager
-	if cfg.Inference.Model == "" {
-		return nil, errors.New(managerdomain.ReasonNotCertified)
+	if !protectedIntakeCancellationSafe {
+		return nil, errors.New(managerdomain.ReasonRuntimeUnsupported + ": cancellation-safe protected terminal intake is unavailable on this operating system")
 	}
+	if cfg.Inference.Model == "" {
+		return nil, errors.New(managerdomain.ReasonModelAbsent)
+	}
+	authorityState := inspectManagerReadiness(service).authority
+	if authorityState == "absent" {
+		return nil, errors.New(managerdomain.ReasonAuthorityUnavailable)
+	}
+	if authorityState != "ready" {
+		return nil, errors.New(managerdomain.ReasonAuthorityInvalid)
+	}
+	if cfg.Hermes.ContextLength < 65536 {
+		return nil, errors.New(managerdomain.ReasonContextUnsupported)
+	}
+	endpoint := cfg.Inference.Endpoint
+	runtime = &conversationalRuntime{model: cfg.Inference.Model, failures: make(chan error, 1)}
+	fail := true
+	defer func() {
+		if fail && runtime != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), cfg.CleanupTimeout)
+			defer cancel()
+			if cleanupErr := runtime.Close(cleanup, managerdomain.EndStartupFailed); cleanupErr != nil {
+				err = errors.Join(err, fmt.Errorf("manager cleanup failed: %w", cleanupErr))
+			}
+		}
+	}()
+	authority, closeAuthority, err := openAuthorityForService(ctx, service)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonAuthorityInvalid, err)
+	}
+	runtime.authorityClose = closeAuthority
 	descriptor, err := service.Hermes.Discover(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRuntimeUnsupported, err)
 	}
-	endpoint := cfg.Inference.Endpoint
-	runtime = &conversationalRuntime{model: cfg.Inference.Model}
-	fail := true
-	defer func() {
-		if fail && runtime != nil {
-			_ = runtime.Close(context.Background(), "startup_failed")
-		}
-	}()
 	if cfg.Inference.Mode == "managed" {
 		runtime.managed, err = managerdomain.StartManagedOllama(ctx, cfg.Inference.Executable, service.Config.StateDir, cfg.Inference.StartTimeout)
 		if err != nil {
@@ -124,15 +154,18 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonOllamaUnavailable, err)
 	}
+	if _, err = runtime.ollama.VerifyModel(ctx, cfg.Inference.Model, cfg.Inference.ModelDigest); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (!strings.Contains(err.Error(), managerdomain.ReasonModelAbsent) && !strings.Contains(err.Error(), managerdomain.ReasonDigestMismatch)) {
+			return nil, fmt.Errorf("%s: %w", managerdomain.ReasonOllamaUnavailable, err)
+		}
+		return nil, err
+	}
 	certification, err := managerdomain.LoadCertification(cfg.Inference.Certification, cfg.Inference.Model, cfg.Inference.ModelDigest, descriptor.Version, ollamaVersion, cfg.Hermes.ContextLength)
 	if err != nil {
 		return nil, err
 	}
-	if _, err = runtime.ollama.VerifyModel(ctx, cfg.Inference.Model, cfg.Inference.ModelDigest); err != nil {
-		return nil, err
-	}
 	if err = runtime.ollama.Load(ctx, cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonModelLoadFailed, err)
 	}
 	now := time.Now().UTC()
 	route := managerdomain.RoutePlan{SchemaVersion: "aegis.manager.route.v1", ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, HermesPath: descriptor.Executable, HermesVersion: descriptor.Version, OllamaMode: cfg.Inference.Mode, OllamaEndpoint: endpoint, OllamaVersion: ollamaVersion, Model: certification.Identity(), ProxyIdentity: "ephemeral-session-capability", IssuedAt: now, ExpiresAt: subject.ExpiresAt}
@@ -144,41 +177,60 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	runtime.active.Store(true)
 	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
 	}
 	python := managerPython(descriptor.Installation, descriptor.Executable)
 	if python == "" {
-		return nil, errors.New("Hermes gateway Python executable not found")
+		return nil, errors.New(managerdomain.ReasonRuntimeUnsupported + ": Hermes gateway Python executable not found")
 	}
 	runtime.hermes, err = managerdomain.StartHermesProcess(ctx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), ProxyToken: runtime.proxy.Token(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
 	}
 	armed.client = runtime.hermes.Client()
 	gatewaySession, err := armed.client.CreateSession(ctx, "aegis-manager")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
 	}
-	authority, closeAuthority, err := openAuthorityForService(ctx, service)
-	if err != nil {
-		return nil, err
-	}
-	runtime.authorityClose = closeAuthority
 	sessionID, err := managerdomain.NewSessionID()
 	if err != nil {
 		return nil, err
 	}
-	runtime.session, err = managerdomain.NewSession(ctx, managerdomain.SessionConfig{SessionID: sessionID, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Route: route, Gateway: armed, GatewaySessionID: gatewaySession, Guard: guard, Operations: managerOperations{service: service, subject: subject, authority: authority}, Confirm: func(_ context.Context, preview string) (bool, error) {
+	runtime.session, err = managerdomain.NewSession(ctx, managerdomain.SessionConfig{SessionID: sessionID, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Route: route, Gateway: armed, GatewaySessionID: gatewaySession, Guard: guard, Operations: managerOperations{service: service, subject: subject, authority: authority}, Confirm: func(confirmCtx context.Context, preview string) (bool, error) {
 		fmt.Fprintf(cmd.OutOrStdout(), "Aegis proposal: %s\nType yes to authorize: ", preview)
-		answer, e := readConfirmation(cmd.InOrStdin())
+		input := newTerminalInput(cmd.InOrStdin())
+		answer, eof, e := input.ReadLine(confirmCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
+		if e == nil && eof {
+			e = io.EOF
+		}
 		return answer == "yes", e
-	}, Intake: func(context.Context, string) ([]byte, error) {
-		return readSecret(cmd, false, "Secret value: ", "Confirm secret value: ")
+	}, Intake: func(ctx context.Context, _ string) ([]byte, error) {
+		return readSecretContext(ctx, cmd, false, "Secret value: ", "Confirm secret value: ")
 	}, Receipt: func(ctx context.Context, r managerdomain.SessionReceipt) error {
 		return service.AuditManagerSession(ctx, subject, "ok", r.EndReason, map[string]string{"session_id": r.SessionID, "route_digest": r.RouteDigest, "model_digest": r.Model.Digest, "cleanup": r.Cleanup})
 	}, MaximumResponseBytes: int(cfg.Hermes.MaximumResponseBytes)})
 	if err != nil {
 		return nil, err
+	}
+	go func() {
+		select {
+		case processErr := <-runtime.hermes.Done():
+			if runtime.active.Load() {
+				runtime.failures <- processErr
+			}
+		case <-ctx.Done():
+		}
+	}()
+	if runtime.managed != nil {
+		go func() {
+			select {
+			case processErr := <-runtime.managed.Done():
+				if runtime.active.Load() {
+					runtime.failures <- processErr
+				}
+			case <-ctx.Done():
+			}
+		}()
 	}
 	fail = false
 	return runtime, nil
@@ -188,35 +240,52 @@ func (r *conversationalRuntime) Close(ctx context.Context, reason string) error 
 	if r == nil {
 		return nil
 	}
-	r.active.Store(false)
-	var joined error
-	if r.session != nil {
-		joined = errors.Join(joined, r.session.Close(ctx, reason))
-	}
-	if r.hermes != nil {
-		joined = errors.Join(joined, r.hermes.Close(ctx))
-	}
-	if r.proxy != nil {
-		joined = errors.Join(joined, r.proxy.Close(ctx))
-	}
-	if r.ollama != nil && r.model != "" {
-		joined = errors.Join(joined, r.ollama.Unload(ctx, r.model))
-	}
-	if r.managed != nil {
-		joined = errors.Join(joined, r.managed.Close(ctx))
-	}
-	cleanup := "complete"
-	if joined != nil {
-		cleanup = "incomplete"
-	}
-	if r.session != nil {
-		joined = errors.Join(joined, r.session.Finalize(ctx, reason, cleanup))
-	}
-	if r.authorityClose != nil {
-		r.authorityClose()
-		r.authorityClose = nil
-	}
-	return joined
+	r.closeOnce.Do(func() {
+		r.active.Store(false)
+		var joined error
+		if r.testCleanup != nil {
+			for _, cleanupStep := range r.testCleanup {
+				joined = errors.Join(joined, cleanupStep(ctx))
+			}
+			cleanup := "complete"
+			if joined != nil {
+				cleanup = "incomplete"
+			}
+			if r.testFinalize != nil {
+				joined = errors.Join(joined, r.testFinalize(ctx, reason, cleanup))
+			}
+			r.closeErr = joined
+			return
+		}
+		if r.session != nil {
+			joined = errors.Join(joined, r.session.Close(ctx, reason))
+		}
+		if r.hermes != nil {
+			joined = errors.Join(joined, r.hermes.Close(ctx))
+		}
+		if r.proxy != nil {
+			joined = errors.Join(joined, r.proxy.Close(ctx))
+		}
+		if r.ollama != nil && r.model != "" {
+			joined = errors.Join(joined, r.ollama.Unload(ctx, r.model))
+		}
+		if r.managed != nil {
+			joined = errors.Join(joined, r.managed.Close(ctx))
+		}
+		if r.authorityClose != nil {
+			joined = errors.Join(joined, r.authorityClose())
+			r.authorityClose = nil
+		}
+		cleanup := "complete"
+		if joined != nil {
+			cleanup = "incomplete"
+		}
+		if r.session != nil {
+			joined = errors.Join(joined, r.session.Finalize(ctx, reason, cleanup))
+		}
+		r.closeErr = joined
+	})
+	return r.closeErr
 }
 func managerPython(installation, executable string) string {
 	for _, candidate := range []string{filepath.Join(installation, "venv", "bin", "python"), filepath.Join(installation, ".venv", "bin", "python"), filepath.Join(filepath.Dir(executable), "python"), filepath.Join(filepath.Dir(executable), "python3")} {

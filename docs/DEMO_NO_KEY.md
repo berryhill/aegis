@@ -12,6 +12,6 @@ Without an explicitly configured design provider credential, the final design tu
 
 This demonstration proves control-plane behavior and a real provider boundary; it does not prove host sandboxing, external audit anchoring, or individual-tool runtime attestation.
 
-The bare manager is intentionally not recorded as a successful model conversation: no candidate artifact is downloaded or certified by this no-key workflow. Its non-TTY fail-closed dispatch is covered by repository tests, while the interactive shell reports deterministic alternatives when no model is configured.
+The bare manager is intentionally not recorded as a successful model conversation: no candidate artifact is downloaded or certified by this no-key workflow. Its non-TTY fail-closed dispatch and PTY lifecycle are covered by repository tests. `aegis manager model candidates` and `model route` can describe the no-default, no-download paths without changing state; discovery/configuration are intentionally omitted because they require an operator-owned local Ollama artifact.
 
 A sanitized replayable capture and review instructions are retained in [RECORDING.md](RECORDING.md).

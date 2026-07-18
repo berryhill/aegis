@@ -131,6 +131,23 @@ func TestSessionBlocksSecretBeforeGatewayAndDeclineDenies(t *testing.T) {
 	}
 }
 
+func TestCanceledTurnNeverBecomesScannerFailureOrReachesGateway(t *testing.T) {
+	gateway := &fakeGateway{}
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	session, err := NewSession(context.Background(), SessionConfig{SessionID: "cancel", SubjectID: "u", PrincipalID: "p", Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "g", Guard: guard, Operations: &fakeOperations{}, Confirm: func(context.Context, string) (bool, error) { return false, nil }, Intake: func(context.Context, string) ([]byte, error) { return nil, errors.New("must not run") }, Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err = session.Handle(ctx, "ordinary text"); !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), ReasonScannerFailed) {
+		t.Fatalf("canceled turn error=%v", err)
+	}
+	if len(gateway.inputs) != 0 {
+		t.Fatal("canceled input reached the gateway")
+	}
+}
+
 func TestSessionExpiryAndIdempotentFinalReceipt(t *testing.T) {
 	route := certifiedRoute(t)
 	expiredNow := route.ExpiresAt.Add(time.Second)

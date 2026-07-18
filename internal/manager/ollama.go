@@ -107,25 +107,52 @@ func supportedOllamaVersion(value string) bool {
 }
 
 func (c *OllamaClient) VerifyModel(ctx context.Context, name, digest string) (OllamaModel, error) {
-	var result struct {
-		Models []OllamaModel `json:"models"`
-	}
-	if err := c.request(ctx, http.MethodGet, "/api/tags", nil, &result); err != nil {
+	models, err := c.ListModels(ctx)
+	if err != nil {
 		return OllamaModel{}, err
 	}
-	for _, model := range result.Models {
+	for _, model := range models {
 		if model.Name == name || model.Model == name {
 			resolved := model.Digest
 			if !strings.HasPrefix(resolved, "sha256:") {
 				resolved = "sha256:" + resolved
 			}
 			if resolved != digest {
-				return model, errors.New(ReasonDigestMismatch)
+				return OllamaModel{}, errors.New(ReasonDigestMismatch)
 			}
 			return model, nil
 		}
 	}
 	return OllamaModel{}, errors.New(ReasonModelAbsent)
+}
+
+func (c *OllamaClient) ListModels(ctx context.Context) ([]OllamaModel, error) {
+	var result struct {
+		Models []OllamaModel `json:"models"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/tags", nil, &result); err != nil {
+		return nil, err
+	}
+	if len(result.Models) > 10000 {
+		return nil, errors.New("Ollama model inventory is oversized")
+	}
+	return result.Models, nil
+}
+
+func NormalizeModelDigest(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "sha256:") {
+		value = "sha256:" + value
+	}
+	if len(value) != 71 {
+		return "", errors.New("Ollama artifact digest is not an exact sha256 identity")
+	}
+	for _, character := range value[len("sha256:"):] {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return "", errors.New("Ollama artifact digest is not an exact lowercase sha256 identity")
+		}
+	}
+	return value, nil
 }
 
 func (c *OllamaClient) Load(ctx context.Context, model string, contextLength int, keepAlive time.Duration) error {

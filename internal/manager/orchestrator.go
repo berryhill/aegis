@@ -85,6 +85,11 @@ func NewSession(parent context.Context, config SessionConfig) (*Session, error) 
 }
 
 func (s *Session) Handle(ctx context.Context, text string) (string, error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+	}
 	s.mu.Lock()
 	if s.closing || s.closed {
 		s.mu.Unlock()
@@ -98,7 +103,13 @@ func (s *Session) Handle(ctx context.Context, text string) (string, error) {
 	if ctx == nil {
 		ctx = s.ctx
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	finding := s.config.Guard.Inspect(ctx, ContentEnvelope{Source: SourceUser, SubjectID: s.config.SubjectID, SessionID: s.config.SessionID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(text)})
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if finding.Decision != AllowLocal {
 		return "", errors.New(finding.Reason)
 	}

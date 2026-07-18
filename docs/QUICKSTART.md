@@ -44,9 +44,20 @@ printf 'not chat' | ./aegis --config .aegis.yaml
 
 Without configuration, the same non-TTY invocation instead emits structured `manager_not_initialized` output naming `aegis init` and exits 2 without prompting.
 
-Run `./aegis --config .aegis.yaml` in a real terminal to inspect the built-in manager shell. It does not download a model. Until an exact local artifact has passed the opt-in conformance suite, ordinary prose reports that no cloud fallback was attempted; `/status`, `/audit verify`, `/help`, and `/quit` remain local.
+Run `./aegis --config .aegis.yaml` in a real terminal to inspect the built-in manager shell. It does not download a model. Until an exact local artifact has passed the opt-in conformance suite, ordinary prose reports that no cloud fallback was attempted; `/status`, `/audit verify`, `/help`, `/quit`, and plain `quit`/`exit` remain local. Ctrl-C, SIGTERM, EOF, or session expiry enter the same bounded cleanup path.
 
-Do not fill the manager model fields merely to suppress that denial. For an already-installed official candidate, first record the exact Ollama artifact digest and a mode-`0600` certification destination, then explicitly invoke `./aegis --config .aegis.yaml manager certify CANDIDATE_ID`. This live command loads and tests the artifact through disposable Hermes and the authenticated loopback proxy; it writes no certification unless all security-critical and operational cases pass. Model installation/downloading remains an operator action outside this quickstart.
+Do not edit manager model fields merely to suppress that denial. For an already-installed official Ollama candidate, use the deterministic no-download path:
+
+```sh
+./aegis --config .aegis.yaml manager model candidates
+./aegis --config .aegis.yaml manager model route --mode external-local --endpoint http://127.0.0.1:11434
+./aegis --config .aegis.yaml manager model discover --endpoint http://127.0.0.1:11434
+./aegis --config .aegis.yaml manager model configure CANDIDATE_ID --endpoint http://127.0.0.1:11434
+./aegis --config .aegis.yaml manager certify CANDIDATE_ID
+./aegis --config .aegis.yaml manager model status
+```
+
+Discovery uses local Ollama metadata only. Configure previews the exact digest-bound route and requires literal `yes`; decline and interruption perform no write. Certification loads and tests the artifact through disposable Hermes and the authenticated loopback proxy, and writes nothing unless all security-critical and operational cases pass. Model installation/downloading remains an operator action outside this quickstart.
 
 ## Provider boundary
 

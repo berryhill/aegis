@@ -7,17 +7,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 )
 
 type HermesProcess struct {
-	command *exec.Cmd
-	stdin   io.WriteCloser
-	client  *GatewayClient
-	done    chan error
-	home    string
-	closed  bool
+	command   *exec.Cmd
+	stdin     io.WriteCloser
+	client    *GatewayClient
+	done      chan error
+	home      string
+	closeOnce sync.Once
+	closeErr  error
 }
 
 type HermesProcessConfig struct {
@@ -79,44 +81,56 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 	go func() { process.done <- command.Wait(); close(process.done) }()
 	client, err := NewGatewayClient(stdout, stdin, config.MaximumMessageBytes)
 	if err != nil {
-		_ = process.Close(context.Background())
+		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = process.Close(cleanup)
+		cancel()
 		return nil, err
 	}
 	process.client = client
 	ready, cancel := context.WithTimeout(ctx, config.StartTimeout)
 	defer cancel()
 	if err = client.WaitReady(ready); err != nil {
-		_ = process.Close(context.Background())
+		cleanup, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_ = process.Close(cleanup)
+		cleanupCancel()
 		return nil, err
 	}
 	return process, nil
 }
 
 func (p *HermesProcess) Client() *GatewayClient { return p.client }
+func (p *HermesProcess) Done() <-chan error     { return p.done }
 func (p *HermesProcess) Close(ctx context.Context) error {
-	if p == nil || p.closed {
+	if p == nil {
 		return nil
 	}
-	p.closed = true
-	if p.stdin != nil {
-		_ = p.stdin.Close()
-	}
-	if p.command != nil && p.command.Process != nil {
-		_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGTERM)
-	}
-	select {
-	case <-p.done:
-	case <-time.After(2 * time.Second):
+	p.closeOnce.Do(func() {
+		if p.stdin != nil {
+			_ = p.stdin.Close()
+		}
 		if p.command != nil && p.command.Process != nil {
-			_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGKILL)
+			_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGTERM)
 		}
 		select {
 		case <-p.done:
+		case <-time.After(2 * time.Second):
+			if p.command != nil && p.command.Process != nil {
+				_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGKILL)
+			}
+			select {
+			case <-p.done:
+			case <-ctx.Done():
+				p.closeErr = ctx.Err()
+			}
 		case <-ctx.Done():
-			return ctx.Err()
+			if p.command != nil && p.command.Process != nil {
+				_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGKILL)
+			}
+			p.closeErr = ctx.Err()
 		}
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	return os.RemoveAll(p.home)
+		if err := os.RemoveAll(p.home); err != nil {
+			p.closeErr = errors.Join(p.closeErr, err)
+		}
+	})
+	return p.closeErr
 }

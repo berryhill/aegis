@@ -154,6 +154,7 @@ type Manager struct {
 	Enabled         bool              `mapstructure:"enabled" json:"enabled"`
 	Runtime         string            `mapstructure:"runtime" json:"runtime"`
 	SecurityContext string            `mapstructure:"security_context" json:"security_context"`
+	CleanupTimeout  time.Duration     `mapstructure:"cleanup_timeout" json:"cleanup_timeout"`
 	Hermes          ManagerHermes     `mapstructure:"hermes" json:"hermes"`
 	Inference       ManagerInference  `mapstructure:"inference" json:"inference"`
 	Ingress         ManagerIngress    `mapstructure:"ingress" json:"ingress"`
@@ -278,7 +279,7 @@ func validEnvironmentName(name string) bool {
 
 func Defaults() Config {
 	h, _ := os.UserHomeDir()
-	return Config{StateDir: filepath.Join(h, ".local", "state", "aegis"), RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 5 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: filepath.Join(h, ".local", "state", "aegis-checkpoints")}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 120 * time.Second, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 120 * time.Second, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
+	return Config{StateDir: filepath.Join(h, ".local", "state", "aegis"), RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 5 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: filepath.Join(h, ".local", "state", "aegis-checkpoints")}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 120 * time.Second, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 120 * time.Second, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
 func (c Config) Validate() error {
 	var es []error
@@ -310,7 +311,7 @@ func (c Config) Validate() error {
 		es = append(es, errors.New("audit.checkpoint_dir is required"))
 	}
 	manager := c.Manager
-	if manager.Runtime != "hermes" || manager.SecurityContext != "secrets-manager" || manager.Hermes.ContextLength < 64000 || manager.Hermes.ContextLength > 1<<20 || manager.Hermes.GatewayStartTimeout <= 0 || manager.Hermes.GatewayStartTimeout > time.Minute || manager.Hermes.TurnTimeout <= 0 || manager.Hermes.TurnTimeout > 10*time.Minute || manager.Hermes.MaximumResponseBytes < 1024 || manager.Hermes.MaximumResponseBytes > 16<<20 {
+	if manager.Runtime != "hermes" || manager.SecurityContext != "secrets-manager" || manager.CleanupTimeout <= 0 || manager.CleanupTimeout > time.Minute || manager.Hermes.ContextLength < 64000 || manager.Hermes.ContextLength > 1<<20 || manager.Hermes.GatewayStartTimeout <= 0 || manager.Hermes.GatewayStartTimeout > time.Minute || manager.Hermes.TurnTimeout <= 0 || manager.Hermes.TurnTimeout > 10*time.Minute || manager.Hermes.MaximumResponseBytes < 1024 || manager.Hermes.MaximumResponseBytes > 16<<20 {
 		es = append(es, errors.New("manager Hermes configuration is invalid or outside supported bounds"))
 	}
 	if manager.Inference.Runtime != "ollama" || (manager.Inference.Mode != "managed" && manager.Inference.Mode != "external-local") || manager.Inference.Executable == "" || manager.Inference.KeepAlive <= 0 || manager.Inference.KeepAlive > 30*time.Minute || manager.Inference.StartTimeout <= 0 || manager.Inference.StartTimeout > 2*time.Minute || manager.Inference.RequestTimeout <= 0 || manager.Inference.RequestTimeout > 10*time.Minute || manager.Inference.MaximumRequestBytes < 1024 || manager.Inference.MaximumRequestBytes > 16<<20 || manager.Inference.MaximumResponseBytes < 1024 || manager.Inference.MaximumResponseBytes > 16<<20 {
@@ -424,7 +425,7 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 	v.SetDefault("manager", d.Manager)
 	v.SetEnvPrefix("AEGIS")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
+	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
 		_ = v.BindEnv(k)
 	}
 	if flags != nil {

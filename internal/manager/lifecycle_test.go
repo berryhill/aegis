@@ -2,9 +2,11 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -39,9 +41,7 @@ HTTPServer((host,int(port)),H).serve_forever()'
 	if version, err := client.Version(context.Background()); err != nil || version != "0.32.0" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
-	if err := managed.Close(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	concurrentClose(t, func() error { return managed.Close(context.Background()) })
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Fatalf("managed state retained: %v", err)
 	}
@@ -93,13 +93,65 @@ done
 			t.Fatal(err)
 		}
 	}
-	if err := process.Close(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	concurrentClose(t, func() error { return process.Close(context.Background()) })
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Fatalf("Hermes home retained: %v", err)
 	}
 	if err := process.Close(context.Background()); err != nil {
 		t.Fatal("idempotent close failed", err)
+	}
+}
+
+func concurrentClose(t *testing.T, closeComponent func() error) {
+	t.Helper()
+	start := make(chan struct{})
+	errorsFound := make(chan error, 8)
+	var wait sync.WaitGroup
+	for range 8 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			errorsFound <- closeComponent()
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(errorsFound)
+	for err := range errorsFound {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestHermesCleanupDeadlineForcesProcessGroupAndRemovesHome(t *testing.T) {
+	dir := t.TempDir()
+	executable := filepath.Join(dir, "stubborn-hermes-python")
+	script := `#!/bin/sh
+trap '' TERM
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+while :; do sleep 1; done
+`
+	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", ProxyToken: "fixture-capability", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := process.home
+	cleanup, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err = process.Close(cleanup)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cleanup error=%v", err)
+	}
+	if time.Since(started) > time.Second {
+		t.Fatalf("cleanup exceeded bound: %s", time.Since(started))
+	}
+	if _, err = os.Lstat(home); !os.IsNotExist(err) {
+		t.Fatalf("Hermes home retained after forced cleanup: %v", err)
 	}
 }

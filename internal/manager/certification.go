@@ -154,6 +154,17 @@ func SaveCertification(path string, cert Certification) error {
 }
 
 func LoadCertification(path, model, digest, hermesVersion, ollamaVersion string, contextLength int) (Certification, error) {
+	cert, err := InspectCertification(path, model, digest)
+	if err != nil {
+		return Certification{}, err
+	}
+	if cert.HermesVersion != hermesVersion || cert.OllamaVersion != ollamaVersion || cert.ContextLength != contextLength {
+		return Certification{}, errors.New(ReasonNotCertified)
+	}
+	return cert, nil
+}
+
+func InspectCertification(path, model, digest string) (Certification, error) {
 	var cert Certification
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
@@ -163,7 +174,7 @@ func LoadCertification(path, model, digest, hermesVersion, ollamaVersion string,
 	if err != nil || len(data) > 1<<20 || validateJSONObject(data, 32) != nil || strictDecode(data, &cert) != nil {
 		return Certification{}, errors.New(ReasonNotCertified)
 	}
-	if cert.Validate() != nil || cert.ArtifactName != model || cert.ArtifactDigest != digest || cert.HermesVersion != hermesVersion || cert.OllamaVersion != ollamaVersion || cert.ContextLength != contextLength {
+	if cert.Validate() != nil || cert.ArtifactName != model || cert.ArtifactDigest != digest {
 		return Certification{}, errors.New(ReasonNotCertified)
 	}
 	return cert, nil

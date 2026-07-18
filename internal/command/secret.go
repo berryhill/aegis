@@ -48,6 +48,18 @@ func secretCmd(build builder) *cobra.Command {
 		if authorityConfig.Custody != "host-file" {
 			return usage(errors.New("initialize supports only the explicitly weaker host-file custody fallback; create encrypted systemd credentials with systemd-creds"))
 		}
+		if err = output(cmd, map[string]any{"operation": "initialize_credential_authority", "database": authorityConfig.Database, "deployment_id": authorityConfig.DeploymentID, "custody": authorityConfig.Custody, "kek_file": "[REDACTED]", "required_permissions": "database and KEK 0600; parent directories owned by the principal and not group/other writable", "startup_check": "open database, validate schema and structure, unwrap KEK, verify deployment-bound sentinel", "warning": "host-file KEK custody is weaker than an encrypted systemd service credential; never back up the KEK with authority.db"}); err != nil {
+			return err
+		}
+		fmt.Fprint(cmd.OutOrStdout(), "Type yes to create/open the configured authority: ")
+		input := newTerminalInput(cmd.InOrStdin())
+		answer, eof, readErr := input.ReadLine(cmd.Context(), 16)
+		if readErr != nil {
+			return readErr
+		}
+		if eof || answer != "yes" {
+			return output(cmd, map[string]any{"status": "declined", "written": false})
+		}
 		if _, statErr := os.Lstat(authorityConfig.KEKFile); errors.Is(statErr, os.ErrNotExist) {
 			if err = credentials.CreateHostKey(authorityConfig.KEKFile, "host-kek"); err != nil {
 				return err
@@ -80,7 +92,7 @@ func secretCmd(build builder) *cobra.Command {
 			return err
 		}
 		defer closeAuthority()
-		value, err := readSecret(cmd, options.stdin, "Secret value: ", "Confirm secret value: ")
+		value, err := readSecretContext(cmd.Context(), cmd, options.stdin, "Secret value: ", "Confirm secret value: ")
 		if err != nil {
 			return err
 		}
@@ -141,7 +153,7 @@ func secretCmd(build builder) *cobra.Command {
 			return err
 		}
 		defer closeAuthority()
-		value, err := readSecret(cmd, options.stdin, "New secret value: ", "Confirm new secret value: ")
+		value, err := readSecretContext(cmd.Context(), cmd, options.stdin, "New secret value: ", "Confirm new secret value: ")
 		if err != nil {
 			return err
 		}
@@ -265,23 +277,27 @@ func openCredentialAuthority(cmd *cobra.Command, build builder) (*app.Service, c
 	return service, subject, authority, func() { _ = authority.Close(); custodian.Close() }, nil
 }
 
-func openAuthorityForService(ctx context.Context, service *app.Service) (*credentials.Authority, func(), error) {
+func openAuthorityForService(ctx context.Context, service *app.Service) (*credentials.Authority, func() error, error) {
 	configured := service.Config.Credentials.Authority
 	custodianPath, err := custodyPath(configured)
 	if err != nil {
-		return nil, func() {}, err
+		return nil, func() error { return nil }, err
 	}
 	custodian, err := credentials.LoadFileCustodian(custodianPath)
 	if err != nil {
-		return nil, func() {}, err
+		return nil, func() error { return nil }, err
 	}
 	repository, err := credentialbolt.Open(ctx, configured.Database, configured.DeploymentID, custodian)
 	if err != nil {
 		custodian.Close()
-		return nil, func() {}, err
+		return nil, func() error { return nil }, err
 	}
 	authority := credentials.NewAuthority(repository, custodian)
-	return authority, func() { _ = authority.Close(); custodian.Close() }, nil
+	return authority, func() error {
+		err := authority.Close()
+		custodian.Close()
+		return err
+	}, nil
 }
 
 func custodyPath(configured config.CredentialAuthority) (string, error) {
@@ -304,7 +320,18 @@ func custodyPath(configured config.CredentialAuthority) (string, error) {
 }
 
 func readSecret(cmd *cobra.Command, fromStdin bool, prompt, confirmation string) ([]byte, error) {
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return readSecretContext(ctx, cmd, fromStdin, prompt, confirmation)
+}
+
+func readSecretContext(ctx context.Context, cmd *cobra.Command, fromStdin bool, prompt, confirmation string) ([]byte, error) {
 	if fromStdin {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		value, err := io.ReadAll(io.LimitReader(cmd.InOrStdin(), maximumIntakeBytes+1))
 		if err != nil {
 			return nil, errors.New("read secret from stdin")
@@ -313,24 +340,28 @@ func readSecret(cmd *cobra.Command, fromStdin bool, prompt, confirmation string)
 			wipeSecret(value)
 			return nil, errors.New("secret value must be between 1 byte and 1 MiB")
 		}
+		if err = ctx.Err(); err != nil {
+			wipeSecret(value)
+			return nil, err
+		}
 		return value, nil
 	}
 	file, ok := cmd.InOrStdin().(*os.File)
 	if !ok || !term.IsTerminal(int(file.Fd())) {
 		return nil, errors.New("no terminal is available for no-echo intake; use --stdin with a protected pipe")
 	}
-	first, err := readTerminalSecret(file, cmd.ErrOrStderr(), prompt)
+	first, err := readTerminalSecret(ctx, file, cmd.ErrOrStderr(), prompt)
 	if err != nil {
-		return nil, errors.New("read secret value")
+		return nil, errors.Join(errors.New("read secret value"), err)
 	}
 	if len(first) == 0 || len(first) > maximumIntakeBytes {
 		wipeSecret(first)
 		return nil, errors.New("secret value must be between 1 byte and 1 MiB")
 	}
-	second, err := readTerminalSecret(file, cmd.ErrOrStderr(), confirmation)
+	second, err := readTerminalSecret(ctx, file, cmd.ErrOrStderr(), confirmation)
 	if err != nil {
 		wipeSecret(first)
-		return nil, errors.New("read secret confirmation")
+		return nil, errors.Join(errors.New("read secret confirmation"), err)
 	}
 	defer wipeSecret(second)
 	if !bytes.Equal(first, second) {
@@ -340,7 +371,11 @@ func readSecret(cmd *cobra.Command, fromStdin bool, prompt, confirmation string)
 	return first, nil
 }
 
-func readTerminalSecret(file *os.File, output io.Writer, prompt string) (value []byte, err error) {
+func readTerminalSecret(ctx context.Context, file *os.File, output io.Writer, prompt string) (value []byte, err error) {
+	return readTerminalSecretBounded(ctx, file, output, prompt, maximumIntakeBytes)
+}
+
+func readTerminalSecretBounded(ctx context.Context, file *os.File, output io.Writer, prompt string, maximum int) (value []byte, err error) {
 	restore, err := disableTerminalEcho(int(file.Fd()))
 	if err != nil {
 		return nil, err
@@ -352,7 +387,7 @@ func readTerminalSecret(file *os.File, output io.Writer, prompt string) (value [
 		}
 	}()
 	fmt.Fprint(output, prompt)
-	value, err = term.ReadPassword(int(file.Fd()))
+	value, err = readProtectedTerminalLine(ctx, file, maximum)
 	restoreErr := restore()
 	restored = true
 	fmt.Fprintln(output)

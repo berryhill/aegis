@@ -30,11 +30,13 @@ type ProxyConfig struct {
 }
 
 type Proxy struct {
-	config ProxyConfig
-	token  string
-	server *http.Server
-	listen net.Listener
-	once   sync.Once
+	config   ProxyConfig
+	token    string
+	server   *http.Server
+	listen   net.Listener
+	once     sync.Once
+	mu       sync.RWMutex
+	closeErr error
 }
 
 type openAIChatRequest struct {
@@ -106,18 +108,27 @@ func StartProxy(ctx context.Context, config ProxyConfig) (*Proxy, error) {
 }
 
 func (p *Proxy) Endpoint() string { return "http://" + p.listen.Addr().String() }
-func (p *Proxy) Token() string    { return p.token }
+func (p *Proxy) Token() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.token
+}
 
 func (p *Proxy) Close(ctx context.Context) error {
-	var err error
-	p.once.Do(func() { p.token = ""; err = p.server.Shutdown(ctx); _ = p.listen.Close() })
-	return err
+	p.once.Do(func() {
+		p.mu.Lock()
+		p.token = ""
+		p.mu.Unlock()
+		p.closeErr = p.server.Shutdown(ctx)
+		_ = p.listen.Close()
+	})
+	return p.closeErr
 }
 
 func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	capabilityValid := p.config.CapabilityExpires.IsZero() || time.Now().Before(p.config.CapabilityExpires)
-	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || request.Header.Get("Content-Type") != "application/json" || !p.config.SessionActive() || !capabilityValid || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.token) {
+	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || request.Header.Get("Content-Type") != "application/json" || !p.config.SessionActive() || !capabilityValid || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.Token()) {
 		http.Error(writer, "route denied", http.StatusForbidden)
 		return
 	}
