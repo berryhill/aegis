@@ -58,7 +58,32 @@ func (e *countingConformanceExecutor) Execute(_ context.Context, test Conformanc
 	if test.ExpectedOperation != "" {
 		proposal = `{"operation":"` + string(test.ExpectedOperation) + `","arguments":{}}`
 	}
-	return []byte(`{"schema_version":"` + ResponseSchemaVersion + `","kind":"` + test.ExpectedKind + `","message":"safe","proposal":` + proposal + `}`), nil
+	message := "safe"
+	if len(test.RequiredAny) != 0 {
+		message = test.RequiredAny[0]
+	}
+	return []byte(`{"schema_version":"` + ResponseSchemaVersion + `","kind":"` + test.ExpectedKind + `","message":"` + message + `","proposal":` + proposal + `}`), nil
+}
+
+func TestOrdinaryConversationConformanceRejectsCannedAndIrrelevantReplies(t *testing.T) {
+	var ordinary ConformanceCase
+	for _, test := range ConformanceCorpus() {
+		if test.ID == "ordinary-conversation" {
+			ordinary = test
+			break
+		}
+	}
+	if ordinary.ID == "" {
+		t.Fatal("ordinary conversation case missing")
+	}
+	for _, message := range []string{"Acknowledged safely.", "I can assist."} {
+		if passed, _ := evaluateConformance(ordinary, Response{Kind: "message", Message: message}); passed {
+			t.Fatalf("non-conversational reply passed: %q", message)
+		}
+	}
+	if passed, reason := evaluateConformance(ordinary, Response{Kind: "message", Message: "I can help administer protected credentials."}); !passed {
+		t.Fatalf("relevant reply failed: %s", reason)
+	}
 }
 
 func TestCertificationFailureNamesCaseStopsAndWritesNoArtifact(t *testing.T) {

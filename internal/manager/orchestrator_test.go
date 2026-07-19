@@ -181,7 +181,12 @@ type conformingExecutor struct{}
 
 func (conformingExecutor) Execute(_ context.Context, test ConformanceCase) ([]byte, error) {
 	if test.ExpectedOperation == "" {
-		return []byte(`{"schema_version":"aegis.manager.response.v1","kind":"message","message":"safe","proposal":null}`), nil
+		message := "safe"
+		if len(test.RequiredAny) != 0 {
+			message = test.RequiredAny[0]
+		}
+		encoded, _ := json.Marshal(Response{SchemaVersion: ResponseSchemaVersion, Kind: "message", Message: message})
+		return encoded, nil
 	}
 	arguments := any(map[string]any{})
 	switch test.ExpectedOperation {

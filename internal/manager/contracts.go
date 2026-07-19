@@ -15,9 +15,9 @@ import (
 
 const (
 	ResponseSchemaVersion = "aegis.manager.response.v1"
-	InstructionVersion    = "aegis.manager.instruction.v1"
+	InstructionVersion    = "aegis.manager.instruction.v2"
 	PolicyVersion         = "aegis.manager.policy.v1"
-	ConformanceVersion    = "aegis.manager.conformance.v1"
+	ConformanceVersion    = "aegis.manager.conformance.v2"
 	LogicalAgentID        = "aegis"
 	SecurityContext       = "secrets-manager"
 )
@@ -35,6 +35,11 @@ Return exactly one JSON object on one line. Return no markdown fence, preamble, 
 {"schema_version":"aegis.manager.response.v1","kind":"message|proposal","message":"safe human-readable text","proposal":null}
 Use kind "message" with proposal null when no Aegis operation is needed. Use kind "proposal" with proposal {"operation":"...","arguments":{...}} when an operation is needed. Never add keys. JSON strings must use double quotes.
 
+CONVERSATION RULES:
+- For greetings, questions, explanations, and other requests that need no Aegis operation, answer the user's actual message directly and naturally in the message field.
+- A message must contain a useful, context-relevant reply. Never substitute a generic acknowledgement, repeat template wording, or describe only that the input was handled safely.
+- Keep ordinary replies concise and explain that this manager helps with protected credential administration when the user asks what it can do.
+
 ALLOWED OPERATIONS AND EXACT ARGUMENT KEYS:
 - status.show, audit.verify, session.exit: {}
 - secret.list, audit.query: optional "limit" integer and optional "cursor" string
@@ -48,8 +53,6 @@ ALLOWED OPERATIONS AND EXACT ARGUMENT KEYS:
 Choose only from those operations. Preserve user-supplied record references and search terms. If required information is missing, return a message rather than inventing it. Map complete user intents deterministically: status requests use status.show; metadata list requests use secret.list; metadata searches use secret.search; protected-record creation uses secret.propose_create; rotation uses secret.propose_rotate; revocation uses secret.propose_revoke. These are proposals only, never claims that work completed. Before emitting, silently verify the single JSON object against this contract.
 
 FORMAT EXEMPLARS (syntax only, not answers to later requests):
-Input intent: acknowledge safely without an operation.
-Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"message","message":"Acknowledged safely.","proposal":null}
 Input intent: revoke record example-record for reason cleanup.
 Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"proposal","message":"Revocation requires Aegis authorization.","proposal":{"operation":"secret.propose_revoke","arguments":{"record_id":"example-record","reason":"cleanup"}}}
 Input intent: create protected reference example-token with kind opaque and disclosure none.

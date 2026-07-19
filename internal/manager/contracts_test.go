@@ -38,6 +38,8 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 		`"schema_version":"aegis.manager.response.v1"`,
 		`Use kind "message" with proposal null`,
 		`Use kind "proposal" with proposal`,
+		`answer the user's actual message directly and naturally`,
+		`Never substitute a generic acknowledgement`,
 		`secret.propose_create`,
 		`Never include a credential value`,
 		`Return no markdown fence`,
@@ -45,6 +47,9 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 		if !strings.Contains(SystemInstruction, required) {
 			t.Fatalf("system instruction omits %q", required)
 		}
+	}
+	if strings.Contains(SystemInstruction, "Acknowledged safely.") {
+		t.Fatal("system instruction retains a canned ordinary response")
 	}
 }
 

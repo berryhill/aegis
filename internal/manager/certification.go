@@ -161,6 +161,18 @@ func evaluateConformance(test ConformanceCase, response Response) (bool, string)
 			return false, "forbidden_claim"
 		}
 	}
+	if len(test.RequiredAny) != 0 {
+		matched := false
+		for _, required := range test.RequiredAny {
+			if strings.Contains(lower, strings.ToLower(required)) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false, "required_conversational_content_missing"
+		}
+	}
 	return true, "passed"
 }
 
