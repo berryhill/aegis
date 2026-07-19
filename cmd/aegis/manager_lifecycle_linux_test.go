@@ -35,10 +35,10 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 		{name: "sigint", signal: syscall.SIGINT, wantReason: "interrupt"},
 		{name: "sigterm", signal: syscall.SIGTERM, wantReason: "termination"},
 		{name: "eof", input: "\x04", wantReason: "terminal_eof"},
-		{name: "slash_quit", input: "/quit\n", wantReason: "user_exit"},
-		{name: "slash_exit", input: "/exit\n", wantReason: "user_exit"},
-		{name: "plain_quit", input: "quit\n", wantReason: "user_exit"},
-		{name: "plain_exit", input: "exit\n", wantReason: "user_exit"},
+		{name: "slash_quit", input: "/quit\r", wantReason: "user_exit"},
+		{name: "slash_exit", input: "/exit\r", wantReason: "user_exit"},
+		{name: "plain_quit", input: "quit\r", wantReason: "user_exit"},
+		{name: "plain_exit", input: "exit\r", wantReason: "user_exit"},
 		{name: "containing_exit", phrase: "please explain exit behavior", wantReason: "user_exit"},
 		{name: "containing_quit", phrase: "do not quit this sentence", wantReason: "user_exit"},
 	} {
@@ -49,12 +49,12 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 			defer slave.Close()
 			capture := readPTYUntil(t, master, nil, "[composer] > ", 5*time.Second)
 			if test.phrase != "" {
-				_, _ = master.Write([]byte(test.phrase + "\n"))
+				_, _ = master.Write([]byte(test.phrase + "\r"))
 				capture = readPTYUntil(t, master, capture, "The local Aegis management model is unavailable (", 3*time.Second)
 				if process.ProcessState != nil {
 					t.Fatal("phrase containing exit alias terminated manager")
 				}
-				_, _ = master.Write([]byte("exit\n"))
+				_, _ = master.Write([]byte("exit\r"))
 			} else if test.signal != 0 {
 				if err := process.Process.Signal(test.signal); err != nil {
 					t.Fatal(err)

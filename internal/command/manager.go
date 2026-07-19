@@ -13,8 +13,11 @@ import (
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/slash"
+	"github.com/berryhill/aegis/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -99,37 +102,56 @@ func runManager(cmd *cobra.Command, build builder) error {
 }
 
 func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput) error {
-	fmt.Fprintln(cmd.OutOrStdout(), "AEGIS / manager")
-	fmt.Fprintln(cmd.OutOrStdout(), "[startup] authenticating principal")
+	rawOutput := cmd.OutOrStdout()
+	capabilities := tui.Detect(cmd.InOrStdin(), rawOutput, os.Getenv)
+	terminalOutput := tui.NewSynchronizedWriter(rawOutput)
+	cmd.SetOut(terminalOutput)
+	presentation := tui.NewController(terminalOutput, capabilities, tui.SecurityContext{Principal: "pending", Stanza: managerdomain.SecurityContext, MandateState: "pending", Runtime: "Hermes Agent", RuntimeState: "pending", Route: "local-only", NoFallback: true})
+	_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "principal authentication", Message: "AEGIS / manager — authenticating principal"})
 	lifecycle := managerdomain.NewLifecycle()
 	_ = lifecycle.Advance(managerdomain.LifecyclePreflighting)
 	service, subject, err := authenticatedService(cmd, build)
 	if err != nil {
+		_ = presentation.Emit(tui.Event{Kind: tui.PrincipalDenied, Origin: tui.AegisAuthoritative, Reason: "principal authentication denied"})
 		return err
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "[startup] validating fixed manager authority")
-	fmt.Fprintln(cmd.OutOrStdout(), "[startup] verifying security context")
+	security := tui.SecurityContext{Principal: subject.PrincipalID, Stanza: managerdomain.SecurityContext, MandateID: subject.ID, MandateState: "active", ExpiresAt: subject.ExpiresAt, Runtime: "Hermes Agent", RuntimeState: "preflight", Route: "local-only", PolicyDigest: managerdomain.PolicyDigest(), NoFallback: true}
+	_ = presentation.Emit(tui.Event{Kind: tui.PrincipalAuthenticated, Origin: tui.AegisAuthoritative, Message: "principal authenticated", Security: &security})
+	_ = presentation.Emit(tui.Event{Kind: tui.TrustSelected, Origin: tui.AegisAuthoritative, Message: "exactly one built-in trust stanza selected: " + managerdomain.SecurityContext, Security: &security})
 	guard, err := managerdomain.NewGuard(int(service.Config.Manager.Ingress.MaximumMessageBytes), service.Config.Manager.Ingress.MaximumMessageRunes, service.Config.Manager.Ingress.BoundedDecodeDepth, service.Config.Manager.Ingress.ScanTimeout)
 	if err != nil {
 		return err
 	}
 	readiness := inspectManagerReadiness(service)
+	commandRegistry, err := slash.NewRegistry()
+	if err != nil {
+		return err
+	}
+	commandService := slash.NewService(service, commandRegistry)
+	security.Authority = readiness.authority
 	model := service.Config.Manager.Inference.Model
 	digest := service.Config.Manager.Inference.ModelDigest
 	if model == "" {
 		model, digest = "not configured", "not certified"
 	}
+	security.Model, security.ModelDigest, security.Certification = readiness.model, digest, readiness.certification
+	if service.Config.Manager.Inference.ModelDigest == "" {
+		security.ModelDigest = "absent"
+	}
+	_ = presentation.RenderHeader()
 	fmt.Fprintf(cmd.OutOrStdout(), "Aegis manager\nPrincipal: %s (authenticated)\nLogical agent: %s\nTrust stanza: built-in %s (security context; not a personality)\nSecurity context: %s\nAuthority session: %s (expires %s)\nCharter/policy revision: %s / %s\nCredential authority: %s\nRuntime: Hermes Agent\nInference: Ollama local / %s@%s\nManager route: local-only\nCloud fallback: disabled\nModel switching: disabled\nRuntime-state isolation is not host sandboxing.\nType /help for local commands.\n", subject.PrincipalID, managerdomain.LogicalAgentID, managerdomain.SecurityContext, managerdomain.SecurityContext, subject.ID, subject.ExpiresAt.Format(time.RFC3339), managerdomain.PolicyVersion, managerdomain.PolicyDigest(), readiness.authority, model, digest)
 	_ = lifecycle.Advance(managerdomain.LifecycleStarting)
 	sessionCtx, cancelSession := context.WithCancelCause(cmd.Context())
 	defer cancelSession(nil)
-	conversation, startupErr, queued, cancelStartup := startManagerWithQueue(sessionCtx, service, subject, guard, cmd, input)
+	conversation, startupErr, queued, cancelStartup := startManagerWithQueue(sessionCtx, service, subject, guard, cmd, input, presentation, commandRegistry)
 	defer cancelStartup(nil)
 	startupReason := ""
 	if startupErr != nil {
 		_ = lifecycle.Advance(managerdomain.LifecycleDegraded)
 		startupReason = managerStartupReason(startupErr)
 		readiness.applyStartupReason(startupReason)
+		security.RuntimeState = "degraded"
+		_ = presentation.Emit(tui.Event{Kind: tui.ManagerDegraded, Origin: tui.AegisAuthoritative, Reason: startupReason, Security: &security})
 		auditCtx, auditCancel := context.WithTimeout(context.Background(), service.Config.Manager.CleanupTimeout)
 		defer auditCancel()
 		if auditErr := service.AuditManagerStartup(auditCtx, subject, "degraded", startupReason, map[string]string{"runtime": "hermes", "model": service.Config.Manager.Inference.Model, "mode": service.Config.Manager.Inference.Mode}); auditErr != nil {
@@ -145,6 +167,8 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		readiness.hermes = "supported"
 		readiness.artifact = "installed"
 		readiness.certification = "valid"
+		security.RuntimeState, security.Certification = "active", "valid"
+		_ = presentation.Emit(tui.Event{Kind: tui.ManagerReady, Origin: tui.AegisAuthoritative, Message: "manager ready through authenticated local route", Security: &security})
 		auditCtx, auditCancel := context.WithTimeout(context.Background(), service.Config.Manager.CleanupTimeout)
 		if auditErr := service.AuditManagerStartup(auditCtx, subject, "ok", "manager_ready", map[string]string{"runtime": "hermes", "model": service.Config.Manager.Inference.Model, "mode": service.Config.Manager.Inference.Mode}); auditErr != nil {
 			auditCancel()
@@ -174,7 +198,15 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		}()
 	}
 	endReason := ""
+	composer := tui.NewComposer(cmd.InOrStdin(), cmd.OutOrStdout(), int(service.Config.Manager.Ingress.MaximumMessageBytes))
 	for {
+		refreshed := tui.Detect(cmd.InOrStdin(), rawOutput, os.Getenv)
+		if refreshed.Width != capabilities.Width || refreshed.Height != capabilities.Height {
+			capabilities = refreshed
+			presentation.SetCapabilities(refreshed)
+			_ = presentation.Emit(tui.Event{Kind: tui.TerminalResize, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("terminal resized to %dx%d", refreshed.Width, refreshed.Height)})
+			_ = presentation.RenderHeader()
+		}
 		if sessionCtx.Err() != nil {
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
 			break
@@ -184,10 +216,12 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		var readErr error
 		if len(queued) > 0 {
 			line, queued = queued[0], queued[1:]
-			fmt.Fprintln(cmd.OutOrStdout(), "\n[startup queue -> composer]", line)
-		} else {
+			fmt.Fprintln(cmd.OutOrStdout(), "\n[startup queue -> composer] queued input released to the guard")
+		} else if capabilities.Profile == tui.Machine {
 			fmt.Fprint(cmd.OutOrStdout(), "\n[composer] > ")
 			line, eof, readErr = input.ReadLine(sessionCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
+		} else {
+			line, eof, readErr = composer.Read(sessionCtx, "\n[composer] > ", capabilities)
 		}
 		if readErr != nil {
 			if sessionCtx.Err() != nil {
@@ -202,12 +236,17 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			break
 		}
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "/quit" || trimmed == "/exit" || trimmed == "quit" || trimmed == "exit" {
+		if trimmed == "?" {
+			_, _ = localDirective(sessionCtx, cmd, service, commandRegistry, commandService, subject, "/help", readiness, conversation != nil, presentation)
+			continue
+		}
+		if trimmed == "quit" || trimmed == "exit" {
 			endReason = managerdomain.EndUserExit
 			break
 		}
-		if strings.HasPrefix(line, "/") {
-			exit, err := localDirective(sessionCtx, cmd, service, line, readiness, conversation != nil)
+		detection := slash.Detect(line)
+		if detection == slash.Command {
+			exit, err := localDirective(sessionCtx, cmd, service, commandRegistry, commandService, subject, line, readiness, conversation != nil, presentation)
 			if err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "aegis:", err)
 				continue
@@ -218,35 +257,39 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			}
 			continue
 		}
+		if detection == slash.LiteralSlash {
+			line = slash.UnescapeLiteral(line)
+		}
 		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(line)})
 		if sessionCtx.Err() != nil {
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
 			break
 		}
 		if finding.Decision == managerdomain.BlockSecret {
-			fmt.Fprintln(cmd.OutOrStdout(), "Aegis blocked a possible credential.\nThe message was not sent to Hermes and was not retained in the transcript.\nStart protected intake instead? Use /secret put <reference>.")
+			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "possible credential blocked; message was not sent to Hermes and was not retained; use protected intake"})
 			continue
 		}
 		if finding.Decision != managerdomain.AllowLocal {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Aegis blocked the message:", finding.Reason)
 			continue
 		}
+		composer.Remember(line)
 		if conversation != nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "[user]", line)
-			fmt.Fprintln(cmd.OutOrStdout(), "[activity] Hermes Agent turn -> authenticated Aegis proxy -> exact Ollama model")
-			message, turnErr := conversation.session.Handle(sessionCtx, line)
+			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
+			_ = presentation.Emit(tui.Event{Kind: tui.TurnStarted, Origin: tui.RuntimeHermes, Stage: "Hermes Agent turn", Message: "turn started through authenticated Aegis proxy to exact Ollama model"})
+			message, turnErr := handleManagerTurn(sessionCtx, presentation, conversation.session, line)
 			if turnErr != nil {
 				if sessionCtx.Err() != nil {
 					endReason = managerdomain.EndReasonFromContext(sessionCtx)
 					break
 				}
-				fmt.Fprintln(cmd.ErrOrStderr(), "Aegis denied the manager turn:", turnErr)
+				_ = presentation.Emit(tui.Event{Kind: tui.TurnFailed, Origin: tui.AegisDiagnostic, Reason: turnErr.Error()})
 				continue
 			}
 			if message != "" {
-				fmt.Fprint(cmd.OutOrStdout(), "[assistant / untrusted model] ")
-				streamSafeText(cmd.OutOrStdout(), message)
+				_ = presentation.Emit(tui.Event{Kind: tui.AssistantCompleted, Origin: tui.ModelUntrusted, Message: message})
 			}
+			_ = presentation.Emit(tui.Event{Kind: tui.TurnCompleted, Origin: tui.AegisAuthoritative, Message: "guarded turn complete"})
 			continue
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "The local Aegis management model is unavailable (%s). No cloud fallback was attempted.\nUse /help or /status. Next: %s\n", startupReason, readiness.nextStep(service.Config.StateDir))
@@ -256,131 +299,180 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 	}
 	_ = lifecycle.RequestClose(endReason)
 	cancelSession(endReasonCause(endReason))
+	_ = presentation.Emit(tui.Event{Kind: tui.CleanupRequested, Origin: tui.AegisAuthoritative, Reason: endReason})
 	fmt.Fprintf(cmd.OutOrStdout(), "Shutting down Aegis manager (%s).\n", endReason)
 	_ = lifecycle.Advance(managerdomain.LifecycleCleaning)
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), service.Config.Manager.CleanupTimeout)
 	defer cleanupCancel()
 	var cleanupErr error
 	if conversation != nil {
+		_ = presentation.Emit(tui.Event{Kind: tui.CleanupStage, Origin: tui.AegisAuthoritative, Stage: "bounded runtime teardown", Message: "stopping Hermes, closing proxy, unloading exact model, removing disposable state, finalizing receipt"})
 		cleanupErr = conversation.Close(cleanupCtx, endReason)
 	} else {
 		cleanupErr = service.AuditManagerSession(cleanupCtx, subject, "ok", endReason, map[string]string{"cleanup": "complete", "runtime": "degraded"})
 	}
 	if cleanupErr != nil {
+		_ = presentation.Emit(tui.Event{Kind: tui.CleanupFailed, Origin: tui.AegisAuthoritative, Reason: managerdomain.ReasonCleanupIncomplete})
 		_ = lifecycle.Advance(managerdomain.LifecycleFailed)
 		return fmt.Errorf("%s: bounded manager cleanup incomplete", managerdomain.ReasonCleanupIncomplete)
 	}
 	_ = lifecycle.Advance(managerdomain.LifecycleClosed)
+	_ = presentation.Emit(tui.Event{Kind: tui.CleanupCompleted, Origin: tui.AegisAuthoritative, Message: "bounded cleanup and terminal restoration complete"})
 	fmt.Fprintln(cmd.OutOrStdout(), "Aegis manager stopped; cleanup complete.")
 	return nil
 }
 
-func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Service, line string, readiness managerReadiness, conversational bool) (bool, error) {
-	fields := strings.Fields(line)
-	if len(fields) == 0 {
+func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Service, registry *slash.Registry, commands *slash.Service, subject core.Subject, line string, readiness managerReadiness, conversational bool, presentation *tui.Controller) (bool, error) {
+	request, err := registry.Parse(line)
+	if err != nil {
+		var parseError *slash.ParseError
+		if errors.As(err, &parseError) && len(parseError.Suggestions) != 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "Suggestions (submit explicitly):", strings.Join(parseError.Suggestions, "  "))
+		}
+		return false, err
+	}
+	state := slash.Degraded
+	if conversational {
+		state = slash.Active
+	}
+	managerContext := slash.Context{
+		Subject: subject, StanzaID: managerdomain.SecurityContext, MandateID: subject.ID,
+		MandateIssued: subject.AuthenticatedAt, MandateExpiry: subject.ExpiresAt, MandateState: "active",
+		Lifecycle: state, RuntimeState: readiness.inference, Route: "local-only",
+		PolicyVersion: managerdomain.PolicyVersion, PolicyDigest: managerdomain.PolicyDigest(),
+		Readiness:      map[string]string{"authority": readiness.authority, "model": readiness.model, "artifact": readiness.artifact, "certification": readiness.certification, "hermes": readiness.hermes, "inference": readiness.inference},
+		Conversational: conversational,
+	}
+	if request.Canonical == "complete" {
+		matches := registry.Complete(request.Arguments[0], state, map[string]bool{"credential authority": readiness.authority == "ready", "authenticated manager context": true, "finding store": true, "authoritative audit/event records": true, "audit authority": true})
+		fmt.Fprintln(cmd.OutOrStdout(), strings.Join(matches, "  "))
 		return false, nil
 	}
-	switch fields[0] {
-	case "/quit", "/exit":
-		return true, nil
-	case "/help":
-		commands := "/help /status /audit verify /clear /complete PREFIX /quit /exit (plain quit and exit also work)"
-		if readiness.authority == "ready" {
-			commands += " /secret list [query] /secret show <record-id>"
-		} else {
-			commands += "\nCredential metadata commands unavailable: credential authority prerequisite is " + readiness.authority
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), commands)
-	case "/status":
-		fmt.Fprintf(cmd.OutOrStdout(), "Principal: authenticated\nLogical agent: %s\nTrust stanza/security context: built-in %s\nCharter/policy revision: %s / %s\nCredential authority: %s\nModel: %s\nArtifact: %s\nCertification: %s\nHermes: %s\nInference: %s\nRoute: local-only\nCloud fallback: disabled\nModel switching: disabled\n", managerdomain.LogicalAgentID, managerdomain.SecurityContext, managerdomain.PolicyVersion, managerdomain.PolicyDigest(), readiness.authority, readiness.model, readiness.artifact, readiness.certification, readiness.hermes, readiness.inference)
-	case "/clear":
-		if os.Getenv("TERM") != "dumb" {
-			fmt.Fprint(cmd.OutOrStdout(), "\x1b[2J\x1b[H")
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Local display cleared. Session authority and Hermes conversation are unchanged.")
-	case "/complete":
-		if len(fields) != 2 {
-			return false, errors.New("usage: /complete PREFIX")
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), commandCompletions(fields[1], readiness.authority == "ready"))
-	case "/audit":
-		if len(fields) != 2 || fields[1] != "verify" {
-			return false, errors.New("usage: /audit verify")
-		}
-		if err := service.VerifyAudit(ctx); err != nil {
-			return false, err
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Audit verification: valid")
-	case "/secret":
-		if readiness.authority != "ready" {
-			return false, errors.New("credential authority is not ready; configure credentials.authority and run: aegis secret initialize")
-		}
-		if len(fields) < 2 {
-			return false, errors.New("usage: /secret list [query] or /secret show <record-id>")
-		}
-		if fields[1] != "list" && fields[1] != "show" {
-			return false, errors.New("protected mutations use deterministic aegis secret put|rotate|revoke subcommands in this build")
-		}
-		authority, closeAuthority, err := openAuthorityForService(cmd, service)
-		if err != nil {
-			return false, err
-		}
-		defer func() {
-			if closeErr := closeAuthority(); closeErr != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "%s: credential authority close failed\n", managerdomain.ReasonCleanupIncomplete)
-			}
-		}()
-		if fields[1] == "show" {
-			if len(fields) != 3 {
-				return false, errors.New("usage: /secret show <record-id>")
-			}
-			record, err := authority.Metadata(ctx, fields[2])
-			if err != nil {
-				return false, err
-			}
-			return false, output(cmd, record)
-		}
-		if len(fields) > 3 {
-			return false, errors.New("usage: /secret list [query]")
-		}
-		query := ""
-		if len(fields) == 3 {
-			query = fields[2]
-		}
-		records, err := authority.List(ctx, query, 50)
-		if err != nil {
-			return false, err
-		}
-		return false, output(cmd, map[string]any{"records": records, "count": len(records)})
-	default:
-		if strings.HasPrefix(fields[0], "/") {
-			if suggestions := commandCompletions(fields[0], readiness.authority == "ready"); suggestions != "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "Completions:", suggestions)
-				return false, nil
-			}
-		}
-		return false, errors.New("unrecognized local directive")
+	if request.Canonical == "secret" {
+		return executeSecretMetadata(ctx, cmd, service, request, readiness)
 	}
-	return false, nil
+	if request.Canonical == "status" && presentation != nil {
+		if err := presentation.RenderStatus(); err != nil {
+			return false, err
+		}
+	}
+	if request.Canonical == "help" {
+		fmt.Fprintln(cmd.OutOrStdout(), "plain quit and exit also work")
+	}
+	if presentation != nil {
+		_ = presentation.Emit(tui.Event{Kind: tui.CommandAccepted, Origin: tui.AegisAuthoritative, Stage: request.Definition.Policy, Message: "local command accepted: /" + request.Canonical})
+	}
+	result, err := commands.Execute(ctx, managerContext, request)
+	if err != nil {
+		if presentation != nil {
+			_ = presentation.Emit(tui.Event{Kind: tui.CommandDenied, Origin: tui.AegisAuthoritative, Reason: result.Reason, Fields: slashResultFields(result)})
+		}
+		return false, err
+	}
+	if request.Canonical == "clear" && presentation != nil {
+		_ = presentation.Redraw()
+	}
+	kind := tui.CommandResult
+	if result.State == "unavailable" {
+		kind = tui.CommandUnavailable
+	} else if strings.Contains(result.State, "cancel") {
+		kind = tui.CommandCancelled
+	}
+	if presentation != nil {
+		message := "/" + request.Canonical + " — " + result.Reason
+		if request.Canonical == "status" {
+			message += "\nOrigin: AEGIS / authoritative"
+		}
+		if request.Canonical == "help" && readiness.authority != "ready" {
+			message += "\nCredential metadata commands unavailable: credential authority prerequisite is " + readiness.authority + ". Plain quit and exit also work."
+		}
+		if err = presentation.Emit(tui.Event{Kind: kind, Origin: tui.AegisAuthoritative, Message: message, Fields: slashResultFields(result)}); err != nil {
+			return false, err
+		}
+	}
+	return request.Canonical == "exit", nil
 }
 
-func commandCompletions(prefix string, authority bool) string {
-	commands := []string{"/help", "/status", "/audit verify", "/clear", "/complete", "/quit", "/exit"}
-	if authority {
-		commands = append(commands, "/secret list", "/secret show")
+func executeSecretMetadata(ctx context.Context, cmd *cobra.Command, service *app.Service, request slash.Request, readiness managerReadiness) (bool, error) {
+	if readiness.authority != "ready" {
+		return false, errors.New("credential authority is not ready; configure credentials.authority and run: aegis secret initialize")
 	}
-	var matches []string
-	for _, command := range commands {
-		if strings.HasPrefix(command, prefix) {
-			matches = append(matches, command)
+	authority, closeAuthority, err := openAuthorityForService(cmd, service)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if closeErr := closeAuthority(); closeErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s: credential authority close failed\n", managerdomain.ReasonCleanupIncomplete)
 		}
+	}()
+	if request.Arguments[0] == "show" {
+		record, metadataErr := authority.Metadata(ctx, request.Arguments[1])
+		if metadataErr != nil {
+			return false, metadataErr
+		}
+		return false, output(cmd, record)
 	}
-	return strings.Join(matches, "  ")
+	query := ""
+	if len(request.Arguments) == 2 {
+		query = request.Arguments[1]
+	}
+	records, listErr := authority.List(ctx, query, 50)
+	if listErr != nil {
+		return false, listErr
+	}
+	return false, output(cmd, map[string]any{"records": records, "count": len(records)})
+}
+
+func slashResultFields(result slash.Result) map[string]any {
+	return map[string]any{
+		"schema": result.Schema, "result_schema": result.ResultSchema, "operation": result.Operation, "operation_id": result.OperationID,
+		"state": result.State, "reason": result.Reason, "actor_id": result.ActorID,
+		"context_id": result.ContextID, "stanza_id": result.StanzaID,
+		"requested_scope": result.RequestedScope, "effective_scope": result.EffectiveScope,
+		"started_at": result.StartedAt, "finished_at": result.FinishedAt, "observed_at": result.ObservedAt,
+		"health": result.Health, "coverage": result.Coverage, "warnings": result.Warnings,
+		"related_ids": result.RelatedIDs, "audit_reference": result.AuditReference, "data": result.Data,
+	}
+}
+
+func handleManagerTurn(ctx context.Context, presentation *tui.Controller, session *managerdomain.Session, input string) (string, error) {
+	started := time.Now()
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		timer := time.NewTimer(750 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-stop:
+			return
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+		}
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			_ = presentation.Emit(tui.Event{Kind: tui.TurnProgress, Origin: tui.RuntimeHermes, Message: fmt.Sprintf("Hermes turn active for %s; Ctrl-C interrupts", time.Since(started).Round(time.Second))})
+			select {
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	message, err := session.Handle(ctx, input)
+	close(stop)
+	<-done
+	return message, err
 }
 
 func streamSafeText(output io.Writer, text string) {
 	const chunkRunes = 96
-	runes := []rune(text)
+	runes := []rune(tui.Sanitize(text, tui.DefaultSanitizeOptions(tui.Prose)))
 	for len(runes) > 0 {
 		n := min(len(runes), chunkRunes)
 		_, _ = fmt.Fprint(output, string(runes[:n]))

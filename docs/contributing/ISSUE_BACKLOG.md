@@ -33,3 +33,11 @@ Scope: port the Linux PTY coverage for SIGINT/SIGTERM, second-signal termination
 ## 8. Prove descriptor-anchored layout migration on additional platforms
 
 Scope: implement and race-test equivalents of Linux no-follow descriptor-relative migration/reset cleanup on each supported non-Linux filesystem API. Relevant files: `internal/migration`, `internal/safefs`, `docs/PATH_LAYOUT.md`. Acceptance: exact legacy defaults beneath a writable external parent cannot redirect copy or deletion; unsupported filesystems deny before mutation; same- and cross-filesystem source layouts preserve exact authority/certification bindings. Security: do not replace the current explicit unsupported-platform denial with pathname-only deletion.
+
+## 9. Complete non-Linux rich-terminal PTY campaigns
+
+Scope: port the production manager composer, resize, accessible/plain, approval cancellation, renderer-failure, and raw-mode restoration matrix to macOS and explicitly evaluate Windows console support. Relevant files: `internal/tui`, `internal/command`, `cmd/aegis`. Acceptance: every supported platform either passes real PTY/console subprocess tests or fails rich preflight before Hermes/model activation and retains the plain path; tmux/screen campaigns are included where available. Security: never substitute direct Hermes TTY attachment or an uninterruptible reader.
+
+## 10. Add a production leased Aegis event-source manager
+
+Scope: implement the currently unavailable `/watch` boundary over an existing authoritative Aegis lifecycle/control/audit event stream before considering endpoint adapters. Relevant files: `internal/slash`, `internal/app`, `internal/store`, `internal/command`. Acceptance: owner-bound IDs; exact scope/profile/rule/source-generation equivalence; bounded leases, buffers, retention, and event queries; explicit reconnect/gap/drop semantics; revocation/expiry/session cleanup; race and PTY command-path tests. Security: do not relabel polling, fixtures, or host-blind Aegis events as endpoint threat monitoring, and do not install sensors in tests.

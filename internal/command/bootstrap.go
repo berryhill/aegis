@@ -18,6 +18,7 @@ import (
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/onboarding"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
+	"github.com/berryhill/aegis/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,13 @@ func inspectOnboarding(ctx context.Context, configPath string, logger *slog.Logg
 // bool result means the operator selected immediate manager launch after a
 // freshly reverified ready state.
 func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
+	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
+	terminalOutput := tui.NewSynchronizedWriter(cmd.OutOrStdout())
+	cmd.SetOut(terminalOutput)
+	presentation := tui.NewController(terminalOutput, capabilities, tui.SecurityContext{Principal: "pending", Stanza: managerdomain.SecurityContext, MandateState: "bootstrap", Runtime: "Hermes Agent", RuntimeState: "preflight", Route: "local-only", NoFallback: true})
+	if err := presentation.Emit(tui.Event{Kind: tui.BootstrapInspectionStarted, Origin: tui.AegisAuthoritative, Message: "bootstrap inspection started; deterministic Aegis operations only"}); err != nil {
+		return false, err
+	}
 	input := newTerminalInput(cmd.InOrStdin())
 	var authorityPassphrase []byte
 	defer wipeSecret(authorityPassphrase)
@@ -55,9 +63,13 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 
 	for attempts := 0; attempts < 12; attempts++ {
 		snapshot := inspectOnboarding(cmd.Context(), configPath, logger, authorityPassphrase)
+		if err := presentation.Emit(tui.Event{Kind: tui.BootstrapInspectionComplete, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("artifact-derived bootstrap state: %s (%s)", snapshot.State, snapshot.Reason)}); err != nil {
+			return false, err
+		}
 		renderBootstrapInspection(cmd, snapshot)
 		switch snapshot.State {
 		case onboarding.Ready:
+			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageComplete, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Message: "all manager prerequisites verified"})
 			renderReadiness(cmd, snapshot)
 			fmt.Fprint(cmd.OutOrStdout(), "Start the Aegis manager TUI now? [1] start  [2] exit (safe default): ")
 			answer, eof, err := readBootstrapLine(cmd, input, 32)
@@ -66,8 +78,10 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 			}
 			return !eof && (answer == "1" || answer == "start"), nil
 		case onboarding.RepairRequired:
+			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageFailed, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Reason: snapshot.Reason})
 			return false, usage(fmt.Errorf("%s: %s; remediation: %s", snapshot.State, snapshot.Reason, snapshot.NextCommand))
 		case onboarding.PrincipalConfigured:
+			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "credential authority", Message: "credential authority setup or unlock required"})
 			continued, err := bootstrapAuthority(cmd, build, input, snapshot, &authorityPassphrase)
 			if err != nil || !continued {
 				return false, err
@@ -77,11 +91,13 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 			// is external and must not be hidden by a weaker fallback.
 			return false, nil
 		case onboarding.RuntimeConfigured:
+			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "exact local model", Message: "model route and exact artifact verification required"})
 			continued, err := bootstrapModel(cmd, build, input, snapshot)
 			if err != nil || !continued {
 				return false, err
 			}
 		case onboarding.ModelPresent:
+			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "certification", Message: "exact Hermes to proxy to Ollama certification required"})
 			continued, err := bootstrapCertification(cmd, build, input, snapshot)
 			if err != nil || !continued {
 				return false, err

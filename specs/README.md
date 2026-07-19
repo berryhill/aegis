@@ -13,6 +13,7 @@ This directory contains Aegis's normative, implementation-independent Markdown s
 - [Base manager end-to-end local session](BASE_MANAGER_END_TO_END.md) — focused implementation profile for wiring the manager UI, Hermes gateway, Aegis inference proxy, pinned Ollama route, typed proposals, protected credential operations, and bounded cleanup.
 - [Manager lifecycle and onboarding remediation](MANAGER_LIFECYCLE_AND_ONBOARDING.md) — focused remediation for cancellation-safe terminal input, graceful signal handling, bounded cleanup, protected-intake restoration, truthful degraded mode, and deterministic local-model onboarding.
 - [Terminal experience operational implementation](TERMINAL_EXPERIENCE_OPERATIONAL_IMPLEMENTATION.md) — `/loop`-ready requirements for a real typed Aegis terminal controller, safe rendering, persistent trust context, operational composer and approval flows, lifecycle integration, PTY evidence, and launch completion gates.
+- [Base slash commands](BASE_SLASH_COMMANDS.md) — normative Core 15 command vocabulary, local routing and parser contract, typed registry and results, authority and lifecycle semantics, scan/watch truthfulness, subagent attenuation, and phased operational completion gates.
 - [Audit](AUDIT.md) — authoritative events, integrity, inspection, and deployment boundary.
 - [Control-plane API](CONTROL_PLANE_API.md) — shared CLI/API behavior and transport security.
 - [Deployment projection](DEPLOYMENT_PROJECTION.md) — post-MVP selective deployment and fleet synchronization architecture.

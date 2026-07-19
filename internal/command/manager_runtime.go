@@ -18,6 +18,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/credentials"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -100,9 +101,10 @@ type conversationalRuntime struct {
 	closeErr       error
 	testCleanup    []func(context.Context) error
 	testFinalize   func(context.Context, string, string) error
+	cleanupEvent   func(string, string)
 }
 
-func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command, input *terminalInput, stage func(string)) (runtime *conversationalRuntime, err error) {
+func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command, input *terminalInput, presentation *tui.Controller, stage func(string)) (runtime *conversationalRuntime, err error) {
 	if stage == nil {
 		stage = func(string) {}
 	}
@@ -125,6 +127,11 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	}
 	endpoint := cfg.Inference.Endpoint
 	runtime = &conversationalRuntime{model: cfg.Inference.Model, failures: make(chan error, 1)}
+	if presentation != nil {
+		runtime.cleanupEvent = func(stage, status string) {
+			_ = presentation.Emit(tui.Event{Kind: tui.CleanupStage, Origin: tui.AegisAuthoritative, Stage: stage, Message: stage + ": " + status})
+		}
+	}
 	fail := true
 	defer func() {
 		if fail && runtime != nil {
@@ -212,14 +219,52 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	runtime.session, err = managerdomain.NewSession(ctx, managerdomain.SessionConfig{SessionID: sessionID, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Route: route, Gateway: armed, GatewaySessionID: gatewaySession, Guard: guard, Operations: managerOperations{service: service, subject: subject, authority: authority}, Confirm: func(confirmCtx context.Context, preview string) (bool, error) {
 		sum := sha256.Sum256([]byte(preview))
 		phrase := "approve " + hex.EncodeToString(sum[:8])
-		fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS / authoritative approval]\nOperation and exact target: %s\nAuthenticated actor: %s\nScope: built-in %s session only\nSecurity consequence: an Aegis-controlled mutation may persist in credential authority state\nAuthority expires: %s\nAllowed choices: exact phrase or cancel\nSafe default: cancel\nType exactly %q to authorize: ", preview, subject.PrincipalID, managerdomain.SecurityContext, subject.ExpiresAt.Format(time.RFC3339), phrase)
+		if presentation != nil {
+			if emitErr := presentation.Emit(tui.Event{Kind: tui.ApprovalRequested, Origin: tui.AegisAuthoritative, Message: "deterministic credential-authority mutation approval requested"}); emitErr != nil {
+				return false, emitErr
+			}
+			capability := presentation.State().Capabilities
+			if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), tui.ApprovalCard("credential authority mutation", preview, subject.PrincipalID, managerdomain.SecurityContext, "an Aegis-controlled mutation may persist", phrase, subject.ExpiresAt, capability.Width, !capability.Unicode)); writeErr != nil {
+				return false, writeErr
+			}
+		} else {
+			fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS / authoritative approval]\nOperation and exact target: %s\nAuthenticated actor: %s\nScope: built-in %s session only\nSecurity consequence: an Aegis-controlled mutation may persist in credential authority state\nAuthority expires: %s\nAllowed choices: exact phrase or cancel\nSafe default: cancel\nType exactly %q to authorize: ", preview, subject.PrincipalID, managerdomain.SecurityContext, subject.ExpiresAt.Format(time.RFC3339), phrase)
+		}
 		answer, eof, e := input.ReadLine(confirmCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
 		if e == nil && eof {
 			e = io.EOF
 		}
-		return answer == phrase, e
+		approved := answer == phrase && e == nil
+		if presentation != nil {
+			kind, message := tui.ApprovalCancelled, "approval cancelled; no authorization granted"
+			if approved {
+				kind, message = tui.ApprovalConfirmed, "exact approval confirmed"
+			}
+			if emitErr := presentation.Emit(tui.Event{Kind: kind, Origin: tui.AegisAuthoritative, Message: message}); emitErr != nil {
+				return false, emitErr
+			}
+		}
+		return approved, e
 	}, Intake: func(ctx context.Context, _ string) ([]byte, error) {
-		return readSecretContext(ctx, cmd, false, "Secret value: ", "Confirm secret value: ")
+		if presentation != nil {
+			if emitErr := presentation.Emit(tui.Event{Kind: tui.IntakeStarted, Origin: tui.AegisAuthoritative, Message: "protected no-echo intake started; secret content is excluded from presentation state"}); emitErr != nil {
+				return nil, emitErr
+			}
+		}
+		value, intakeErr := readSecretContext(ctx, cmd, false, "Secret value: ", "Confirm secret value: ")
+		if presentation != nil {
+			kind, message := tui.IntakeCompleted, "protected intake completed; content not retained"
+			if intakeErr != nil {
+				kind, message = tui.IntakeCancelled, "protected intake cancelled; no content retained"
+			}
+			if emitErr := presentation.Emit(tui.Event{Kind: kind, Origin: tui.AegisAuthoritative, Message: message}); emitErr != nil {
+				for index := range value {
+					value[index] = 0
+				}
+				return nil, emitErr
+			}
+		}
+		return value, intakeErr
 	}, Receipt: func(ctx context.Context, r managerdomain.SessionReceipt) error {
 		return service.AuditManagerSession(ctx, subject, "ok", r.EndReason, map[string]string{"session_id": r.SessionID, "route_digest": r.RouteDigest, "model_digest": r.Model.Digest, "cleanup": r.Cleanup})
 	}, MaximumResponseBytes: int(cfg.Hermes.MaximumResponseBytes)})
@@ -272,22 +317,22 @@ func (r *conversationalRuntime) Close(ctx context.Context, reason string) error 
 			return
 		}
 		if r.session != nil {
-			joined = errors.Join(joined, r.session.Close(ctx, reason))
+			joined = errors.Join(joined, r.cleanupStep("closing Aegis session", func() error { return r.session.Close(ctx, reason) }))
 		}
 		if r.hermes != nil {
-			joined = errors.Join(joined, r.hermes.Close(ctx))
+			joined = errors.Join(joined, r.cleanupStep("stopping Hermes and removing disposable state", func() error { return r.hermes.Close(ctx) }))
 		}
 		if r.proxy != nil {
-			joined = errors.Join(joined, r.proxy.Close(ctx))
+			joined = errors.Join(joined, r.cleanupStep("invalidating inference capability and closing proxy", func() error { return r.proxy.Close(ctx) }))
 		}
 		if r.ollama != nil && r.model != "" {
-			joined = errors.Join(joined, r.ollama.Unload(ctx, r.model))
+			joined = errors.Join(joined, r.cleanupStep("unloading exact model", func() error { return r.ollama.Unload(ctx, r.model) }))
 		}
 		if r.managed != nil {
-			joined = errors.Join(joined, r.managed.Close(ctx))
+			joined = errors.Join(joined, r.cleanupStep("stopping Aegis-managed Ollama", func() error { return r.managed.Close(ctx) }))
 		}
 		if r.authorityClose != nil {
-			joined = errors.Join(joined, r.authorityClose())
+			joined = errors.Join(joined, r.cleanupStep("closing credential authority", r.authorityClose))
 			r.authorityClose = nil
 		}
 		cleanup := "complete"
@@ -295,11 +340,25 @@ func (r *conversationalRuntime) Close(ctx context.Context, reason string) error 
 			cleanup = "incomplete"
 		}
 		if r.session != nil {
-			joined = errors.Join(joined, r.session.Finalize(ctx, reason, cleanup))
+			joined = errors.Join(joined, r.cleanupStep("finalizing metadata-only receipt", func() error { return r.session.Finalize(ctx, reason, cleanup) }))
 		}
 		r.closeErr = joined
 	})
 	return r.closeErr
+}
+func (r *conversationalRuntime) cleanupStep(stage string, operation func() error) error {
+	if r.cleanupEvent != nil {
+		r.cleanupEvent(stage, "started")
+	}
+	err := operation()
+	if r.cleanupEvent != nil {
+		status := "completed"
+		if err != nil {
+			status = "failed"
+		}
+		r.cleanupEvent(stage, status)
+	}
+	return err
 }
 func managerPython(installation, executable string) string {
 	for _, candidate := range []string{filepath.Join(installation, "venv", "bin", "python"), filepath.Join(installation, ".venv", "bin", "python"), filepath.Join(filepath.Dir(executable), "python"), filepath.Join(filepath.Dir(executable), "python3")} {

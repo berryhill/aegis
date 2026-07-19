@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added the complete typed Core 15 manager base registry and real authenticated composer path: bounded exact parsing and local unknown/malformed consumption, state-aware help/completion, canonical alias/policy/audit naming, typed result/presentation events, authoritative orientation and audit commands, durable Aegis-native core scans/findings/investigations/local report revisions, authoritative timeline queries, cancellation/presentation/cleanup semantics, and an explicit unavailable watch/endpoint-adapter boundary.
+- Replaced the built-in manager's line-only presentation with an Aegis-owned typed terminal controller: persistent authoritative principal/stanza/mandate/Hermes/route context, rich and accessible/plain profiles, a restorable multiline PTY composer with Ctrl+J newline, history, reverse search, bracketed paste and local help, bounded typed timeline state, focused exact approval and metadata-only protected-intake states, and real lifecycle/cleanup events wired to the production manager path.
+- Added a centralized contextual terminal sanitizer for model/runtime text, external status, and security fields. It strips CSI/OSC/DCS/APC/PM/SOS and unsafe C0/C1 controls, neutralizes carriage-return and bidi/invisible rewriting, repairs malformed UTF-8, and applies bounded bytes/runes/lines/width before layout.
+
 ## [0.1.18] - 2026-07-19
 
 ### Fixed

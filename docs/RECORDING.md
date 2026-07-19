@@ -22,3 +22,5 @@ asciinema rec --idle-time-limit 2 --command './scripts/demo-no-key.sh' aegis-no-
 ```
 
 Before publishing any recording, replay it, inspect it for usernames, hostnames, paths, tokens, API keys, and provider output, and regenerate it whenever CLI output or commands change. Do not edit a recording to imply a successful provider-backed turn.
+
+The retained no-key recording does not enter the interactive manager and therefore does not demonstrate the Core 15 slash surface; it was reviewed as unaffected because the recording source and no-key CLI output did not change. Any future manager recording must capture both rich and `AEGIS_ACCESSIBLE=1` paths, show the permanent untrusted-model origin label and trust surface, and use only fake local runtime fixtures unless an already-installed live artifact is separately authorized.

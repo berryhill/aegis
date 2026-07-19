@@ -158,6 +158,26 @@ func (s *Service) AuditManagerOnboarding(ctx context.Context, subject core.Subje
 	return s.audit(ctx, core.AuditEvent{Type: "manager_onboarding", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason, Metadata: copy})
 }
 
+// AuditManagerCommand records only canonical registry metadata. Command text,
+// arguments, protected values, evidence, and rendered output are excluded.
+func (s *Service) AuditManagerCommand(ctx context.Context, subject core.Subject, operation, outcome, reason, operationID, scopeDigest string) error {
+	if subject.PrincipalID == "" || subject.PrincipalID != s.Config.Principal.ID || !strings.HasPrefix(operation, "manager.") || strings.ContainsAny(operation, " 	\r\n") || strings.TrimSpace(reason) == "" {
+		return ErrDenied
+	}
+	allowedOutcome := outcome == "completed" || outcome == "unavailable" || outcome == "denied" || outcome == "failed" || outcome == "accepted" || outcome == "cancel_requested" || outcome == "degraded" || outcome == "partial" || outcome == "completed_no_findings" || outcome == "completed_with_findings" || outcome == "cancelled"
+	if !allowedOutcome {
+		return ErrDenied
+	}
+	metadata := map[string]string{"operation": operation}
+	if operationID != "" {
+		metadata["operation_id"] = operationID
+	}
+	if scopeDigest != "" {
+		metadata["scope_digest"] = scopeDigest
+	}
+	return s.audit(ctx, core.AuditEvent{Type: "manager_command", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, AgentID: "aegis", StanzaID: "secrets-manager", MandateID: subject.ID, Runtime: "hermes-agent", Outcome: outcome, Reason: reason, Metadata: metadata})
+}
+
 // Authenticate uses only the kernel-backed process account mapping. No prompt,
 // display name, requested stanza, or CLI authority flag is accepted as evidence.
 func (s *Service) Authenticate(ctx context.Context) (core.Subject, error) {
