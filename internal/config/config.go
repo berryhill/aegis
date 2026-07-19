@@ -387,8 +387,12 @@ func (c Config) Validate() error {
 			if authority.KEKFile == "" || authority.KEKCredential != "" {
 				es = append(es, errors.New("host-file credential custody requires kek_file and no kek_credential"))
 			}
+		case "passphrase-file":
+			if authority.KEKFile == "" || authority.KEKCredential != "" {
+				es = append(es, errors.New("passphrase-file credential custody requires one encrypted kek_file and no kek_credential"))
+			}
 		default:
-			es = append(es, errors.New("credentials.authority.custody must be systemd or host-file"))
+			es = append(es, errors.New("credentials.authority.custody must be systemd, passphrase-file, or host-file"))
 		}
 		broker := authority.Broker
 		if broker.Socket != "" {

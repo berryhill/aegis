@@ -66,13 +66,19 @@ type RuntimeDiscovery interface {
 }
 
 type Inspector struct {
-	Runtime  RuntimeDiscovery
-	Current  func() (*user.User, error)
-	LookupID func(string) (*user.User, error)
+	Runtime             RuntimeDiscovery
+	Current             func() (*user.User, error)
+	LookupID            func(string) (*user.User, error)
+	AuthorityPassphrase []byte
 }
 
 func NewInspector(runtime RuntimeDiscovery) *Inspector {
 	return &Inspector{Runtime: runtime, Current: user.Current, LookupID: user.LookupId}
+}
+
+func (i *Inspector) WithAuthorityPassphrase(passphrase []byte) *Inspector {
+	i.AuthorityPassphrase = append([]byte(nil), passphrase...)
+	return i
 }
 
 // Inspect is read-only. It does not open the normal Aegis store, start Ollama,
@@ -110,11 +116,14 @@ func (i *Inspector) Inspect(ctx context.Context, configuredPath string) Snapshot
 	}
 	s.State, s.Reason, s.NextCommand = PrincipalConfigured, "credential_authority_incomplete", "aegis init"
 	s.Checks = append(s.Checks, Check{Name: "principal", Status: "verified"})
-	if err = inspectAuthority(ctx, cfg.Credentials.Authority); err != nil {
+	if err = inspectAuthority(ctx, cfg.Credentials.Authority, i.AuthorityPassphrase); err != nil {
 		status := "incomplete"
 		if systemdAuthorityPrerequisiteIncomplete(cfg.Credentials.Authority) {
 			s.Reason = "systemd_authority_prerequisite_incomplete"
 			s.NextCommand = "deliver the configured systemd credential and run aegis init"
+		} else if cfg.Credentials.Authority.Custody == "passphrase-file" && len(i.AuthorityPassphrase) == 0 {
+			s.Reason = "credential_authority_locked"
+			s.NextCommand = "unlock the credential authority in a real terminal"
 		} else if authoritySpecified(cfg.Credentials.Authority) {
 			status = "repair-required"
 			s.State, s.Reason = RepairRequired, "credential_authority_invalid"
@@ -215,7 +224,7 @@ func systemdAuthorityPrerequisiteIncomplete(a config.CredentialAuthority) bool {
 	return false
 }
 
-func inspectAuthority(ctx context.Context, a config.CredentialAuthority) error {
+func inspectAuthority(ctx context.Context, a config.CredentialAuthority, passphrase []byte) error {
 	if !authoritySpecified(a) {
 		return errors.New("authority is absent")
 	}
@@ -223,6 +232,16 @@ func inspectAuthority(ctx context.Context, a config.CredentialAuthority) error {
 	switch a.Custody {
 	case "host-file":
 		path = a.KEKFile
+	case "passphrase-file":
+		if len(passphrase) == 0 {
+			return errors.New("passphrase-encrypted custody is locked")
+		}
+		custodian, err := credentials.LoadPassphraseCustodian(a.KEKFile, passphrase)
+		if err != nil {
+			return err
+		}
+		defer custodian.Close()
+		return credentialbolt.Inspect(ctx, a.Database, a.DeploymentID, custodian)
 	case "systemd":
 		dir := os.Getenv("CREDENTIALS_DIRECTORY")
 		if dir == "" {
@@ -328,11 +347,13 @@ func PreviewAuthority(configPath, custody string) (AuthorityPlan, error) {
 	if ci.State != config.StateValid || !ci.FilePresent {
 		return AuthorityPlan{}, errors.New("authority configuration requires one secure file-backed valid configuration")
 	}
-	if authoritySpecified(ci.Config.Credentials.Authority) {
+	existing := ci.Config.Credentials.Authority
+	recoveringSystemd := existing.Custody == "systemd" && existing.Database != "" && existing.DeploymentID != "" && !pathExists(existing.Database) && strings.TrimSpace(os.Getenv("CREDENTIALS_DIRECTORY")) == ""
+	if authoritySpecified(existing) && !recoveringSystemd {
 		return AuthorityPlan{}, errors.New("credential authority is already configured; inspect or repair it rather than rotating it during onboarding")
 	}
-	if custody != "host-file" && custody != "systemd" {
-		return AuthorityPlan{}, errors.New("custody must be host-file or systemd")
+	if custody != "passphrase-file" && custody != "host-file" && custody != "systemd" {
+		return AuthorityPlan{}, errors.New("custody must be passphrase-file, host-file, or systemd")
 	}
 	random := make([]byte, 12)
 	if _, err := rand.Read(random); err != nil {
@@ -341,8 +362,12 @@ func PreviewAuthority(configPath, custody string) (AuthorityPlan, error) {
 	deployment := "deployment-" + hex.EncodeToString(random)
 	database := filepath.Join(ci.Config.StateDir, "credentials", "authority.db")
 	plan := AuthorityPlan{ConfigPath: ci.Path, StatePath: ci.Config.StateDir, Custody: custody, Database: database, DeploymentID: deployment}
-	if custody == "host-file" {
-		plan.KEKFile = filepath.Join(ci.Config.StateDir, "credentials", "authority.kek")
+	if custody == "host-file" || custody == "passphrase-file" {
+		name := "authority.kek"
+		if custody == "passphrase-file" {
+			name = "authority.kek.enc"
+		}
+		plan.KEKFile = filepath.Join(ci.Config.StateDir, "credentials", name)
 	} else {
 		plan.KEKCredential = "aegis-authority-kek"
 	}
@@ -359,7 +384,9 @@ func PreviewAuthority(configPath, custody string) (AuthorityPlan, error) {
 	setScalar(authority, "database", database)
 	setScalar(authority, "deployment_id", deployment)
 	setScalar(authority, "custody", custody)
-	if custody == "host-file" {
+	removeScalar(authority, "kek_file")
+	removeScalar(authority, "kek_credential")
+	if custody == "host-file" || custody == "passphrase-file" {
 		setScalar(authority, "kek_file", plan.KEKFile)
 	} else {
 		setScalar(authority, "kek_credential", plan.KEKCredential)
@@ -441,6 +468,41 @@ func InitializeHostAuthority(ctx context.Context, plan AuthorityPlan) error {
 	return nil
 }
 
+func InitializePassphraseAuthority(ctx context.Context, plan AuthorityPlan, passphrase []byte) error {
+	if plan.Custody != "passphrase-file" || plan.KEKFile == "" {
+		return errors.New("passphrase-file authority plan required")
+	}
+	if pathExists(plan.KEKFile) || pathExists(plan.Database) {
+		return errors.New("authority artifact appeared after preview; refusing to overwrite it")
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			CleanupAuthority(plan)
+		}
+	}()
+	if err := credentials.CreatePassphraseKey(plan.KEKFile, "authority-kek", passphrase); err != nil {
+		return err
+	}
+	custodian, err := credentials.LoadPassphraseCustodian(plan.KEKFile, passphrase)
+	if err != nil {
+		return err
+	}
+	defer custodian.Close()
+	repository, err := credentialbolt.Open(ctx, plan.Database, plan.DeploymentID, custodian)
+	if err != nil {
+		return err
+	}
+	if err = repository.Close(); err != nil {
+		return err
+	}
+	if err = credentialbolt.Inspect(ctx, plan.Database, plan.DeploymentID, custodian); err != nil {
+		return err
+	}
+	succeeded = true
+	return nil
+}
+
 // InitializeConfiguredSystemdAuthority creates and verifies only the database
 // for a previously confirmed systemd-custody configuration. The KEK remains an
 // externally delivered systemd credential and is never copied by Aegis.
@@ -495,6 +557,10 @@ func CleanupHostAuthority(plan AuthorityPlan) {
 	if plan.Custody != "host-file" {
 		return
 	}
+	CleanupAuthority(plan)
+}
+
+func CleanupAuthority(plan AuthorityPlan) {
 	_ = os.Remove(plan.Database)
 	_ = os.Remove(plan.KEKFile)
 	_ = os.Remove(filepath.Dir(plan.Database))
@@ -580,6 +646,20 @@ func setScalar(parent *yaml.Node, key, value string) {
 	parent.Content = append(parent.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value})
+}
+
+func removeScalar(parent *yaml.Node, key string) {
+	for n := 0; n+1 < len(parent.Content); n += 2 {
+		if parent.Content[n].Value == key {
+			parent.Content = append(parent.Content[:n], parent.Content[n+2:]...)
+			return
+		}
+	}
+}
+
+func pathExists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }
 
 // StatOwned0600 is exposed for truthful previews without leaking platform

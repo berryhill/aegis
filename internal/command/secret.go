@@ -260,11 +260,7 @@ func openCredentialAuthority(cmd *cobra.Command, build builder) (*app.Service, c
 		return nil, core.Subject{}, nil, func() {}, err
 	}
 	configured := service.Config.Credentials.Authority
-	custodianPath, err := custodyPath(configured)
-	if err != nil {
-		return nil, core.Subject{}, nil, func() {}, err
-	}
-	custodian, err := credentials.LoadFileCustodian(custodianPath)
+	custodian, err := loadConfiguredCustodian(cmd, configured)
 	if err != nil {
 		return nil, core.Subject{}, nil, func() {}, err
 	}
@@ -277,13 +273,10 @@ func openCredentialAuthority(cmd *cobra.Command, build builder) (*app.Service, c
 	return service, subject, authority, func() { _ = authority.Close(); custodian.Close() }, nil
 }
 
-func openAuthorityForService(ctx context.Context, service *app.Service) (*credentials.Authority, func() error, error) {
+func openAuthorityForService(cmd *cobra.Command, service *app.Service) (*credentials.Authority, func() error, error) {
+	ctx := cmd.Context()
 	configured := service.Config.Credentials.Authority
-	custodianPath, err := custodyPath(configured)
-	if err != nil {
-		return nil, func() error { return nil }, err
-	}
-	custodian, err := credentials.LoadFileCustodian(custodianPath)
+	custodian, err := loadConfiguredCustodian(cmd, configured)
 	if err != nil {
 		return nil, func() error { return nil }, err
 	}
@@ -300,10 +293,28 @@ func openAuthorityForService(ctx context.Context, service *app.Service) (*creden
 	}, nil
 }
 
+func loadConfiguredCustodian(cmd *cobra.Command, configured config.CredentialAuthority) (*credentials.FileCustodian, error) {
+	if configured.Custody == "passphrase-file" {
+		passphrase, err := readAuthorityPassphrase(cmd, false)
+		if err != nil {
+			return nil, err
+		}
+		defer wipeSecret(passphrase)
+		return credentials.LoadPassphraseCustodian(configured.KEKFile, passphrase)
+	}
+	custodianPath, err := custodyPath(configured)
+	if err != nil {
+		return nil, err
+	}
+	return credentials.LoadFileCustodian(custodianPath)
+}
+
 func custodyPath(configured config.CredentialAuthority) (string, error) {
 	switch configured.Custody {
 	case "host-file":
 		return configured.KEKFile, nil
+	case "passphrase-file":
+		return "", errors.New("passphrase-encrypted custody requires protected terminal unlock")
 	case "systemd":
 		directory := os.Getenv("CREDENTIALS_DIRECTORY")
 		if directory == "" {

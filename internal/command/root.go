@@ -648,7 +648,7 @@ func serveCmd(build builder) *cobra.Command {
 		if brokerConfig.Socket == "" {
 			return api.Serve(cmd.Context(), s)
 		}
-		authority, closeAuthority, e := openAuthorityForService(cmd.Context(), s)
+		authority, closeAuthority, e := openAuthorityForService(cmd, s)
 		if e != nil {
 			return e
 		}

@@ -481,6 +481,45 @@ func TestOwnedDevelopmentAuthorityAndKEKAreDestroyed(t *testing.T) {
 	}
 }
 
+func TestOwnedPassphraseEncryptedAuthorityIsRecognizedAndDestroyed(t *testing.T) {
+	f := newFixture(t)
+	database := filepath.Join(f.state, "credentials", "authority.db")
+	kek := filepath.Join(f.state, "credentials", "authority.kek.enc")
+	f.writeConfig(t, fmt.Sprintf("credentials:\n  authority:\n    database: %q\n    deployment_id: deployment-one\n    custody: passphrase-file\n    kek_file: %q\n", database, kek))
+	passphrase := []byte("correct horse battery staple")
+	if err := credentials.CreatePassphraseKey(kek, "authority-kek", passphrase); err != nil {
+		t.Fatal(err)
+	}
+	custodian, err := credentials.LoadPassphraseCustodian(kek, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := credentialbolt.Open(context.Background(), database, "deployment-one", custodian)
+	if err != nil {
+		custodian.Close()
+		t.Fatal(err)
+	}
+	if err = authority.Close(); err != nil {
+		t.Fatal(err)
+	}
+	custodian.Close()
+	plan, err := f.service.Plan(context.Background(), f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.CredentialRecords || !plan.LocalKEK {
+		t.Fatalf("encrypted authority destruction not disclosed: %+v", plan)
+	}
+	if err = f.service.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{database, kek} {
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("encrypted authority artifact retained %s: %v", path, statErr)
+		}
+	}
+}
+
 func TestSymlinkedAuthorityAndKEKFailClosed(t *testing.T) {
 	for _, target := range []string{"database", "kek"} {
 		t.Run(target, func(t *testing.T) {

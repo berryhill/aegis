@@ -136,7 +136,7 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		}
 	}()
 	stage("validating credential authority")
-	authority, closeAuthority, err := openAuthorityForService(ctx, service)
+	authority, closeAuthority, err := openAuthorityForService(cmd, service)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonAuthorityInvalid, err)
 	}

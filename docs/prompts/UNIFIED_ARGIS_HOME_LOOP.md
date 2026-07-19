@@ -99,6 +99,7 @@ Introduce one focused package or cohesive API that returns a typed layout, inclu
 - state root;
 - audit checkpoint root;
 - credential-authority database;
+- passphrase-encrypted local KEK;
 - host-file KEK;
 - manager certification root;
 - managed model store;
@@ -198,7 +199,10 @@ Migration must:
 - show which credentials, audit records, certifications, and state artifacts move;
 - show external assets that remain untouched;
 - compute a canonical digest over the exact plan;
-- require the exact phrase `migrate aegis to ~/.argis`;
+- render `Apply this digest-bound migration plan? [Y/n]` with apply as the clearly displayed default;
+- accept Enter alone as confirmation of the displayed default, and also accept an explicit `y` or `yes` without requiring the operator to retype paths or ceremonial phrases;
+- treat `n`, `no`, EOF, Ctrl+C, non-TTY input, and every unrecognized answer as cancellation with no mutation;
+- bind the Enter/default confirmation to the exact displayed plan digest and reject any plan, path, identity, or artifact change before application;
 - reauthenticate and revalidate source/destination identities before application;
 - create the canonical root securely;
 - support cross-filesystem migration using verified copy, fsync, publication, and source cleanup rather than assuming rename works;
@@ -328,7 +332,9 @@ Add tests for at least:
 - same-filesystem migration;
 - simulated cross-filesystem migration;
 - decline, EOF, non-TTY, cancellation, and identity drift perform no destructive source mutation;
-- exact confirmation and plan digest binding;
+- Enter accepts the clearly displayed default migration action;
+- explicit `y` and `yes` accept, while `n`, `no`, EOF, Ctrl+C, non-TTY input, and unrecognized input cancel without mutation;
+- confirmation remains bound to the exact displayed plan digest, and drift is rejected;
 - destination collision;
 - interrupted migration recovery;
 - migrated authority DB and KEK verify without exposing values;

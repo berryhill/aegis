@@ -69,7 +69,7 @@ func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize
 		fmt.Fprintf(cmd.OutOrStdout(), "Recovery: remove %d recognized secure interrupted initialization artifact(s) before the atomic write.\n", len(plan.Partials))
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "No Hermes profile, model, credential, agent, Ollama service, or external system will be created or modified.")
-	fmt.Fprint(cmd.OutOrStdout(), "Type yes to create this configuration, or anything else to decline: ")
+	fmt.Fprint(cmd.OutOrStdout(), "Create this configuration? [Y/n]: ")
 	confirmation, eof, err := input.ReadLine(cmd.Context(), 16)
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -82,7 +82,8 @@ func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize
 		fmt.Fprintln(cmd.OutOrStdout(), "\nInitialization declined; no writes were performed.")
 		return false, nil
 	}
-	if confirmation != "yes" {
+	confirmation = strings.ToLower(strings.TrimSpace(confirmation))
+	if confirmation != "" && confirmation != "y" && confirmation != "yes" {
 		fmt.Fprintln(cmd.OutOrStdout(), "Initialization declined; no writes were performed.")
 		return false, nil
 	}
@@ -320,7 +321,7 @@ func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Servic
 		if fields[1] != "list" && fields[1] != "show" {
 			return false, errors.New("protected mutations use deterministic aegis secret put|rotate|revoke subcommands in this build")
 		}
-		authority, closeAuthority, err := openAuthorityForService(ctx, service)
+		authority, closeAuthority, err := openAuthorityForService(cmd, service)
 		if err != nil {
 			return false, err
 		}
@@ -405,6 +406,10 @@ func inspectManagerReadiness(service *app.Service) managerReadiness {
 				custodyReady = directory != "" && credentialErr == nil && credential.Mode().IsRegular()
 			}
 			if authority.Custody == "host-file" {
+				key, keyErr := os.Lstat(authority.KEKFile)
+				custodyReady = keyErr == nil && key.Mode().IsRegular() && key.Mode().Perm()&0077 == 0
+			}
+			if authority.Custody == "passphrase-file" {
 				key, keyErr := os.Lstat(authority.KEKFile)
 				custodyReady = keyErr == nil && key.Mode().IsRegular() && key.Mode().Perm()&0077 == 0
 			}

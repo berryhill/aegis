@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/berryhill/aegis/internal/migration"
 	"github.com/spf13/cobra"
@@ -28,12 +29,13 @@ func migrateLayoutCmd(service *migration.Service, isTerminal func(io.Reader, io.
 			if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 				return usage(errors.New("migration_requires_tty: migration requires real terminal input and output; no writes were performed"))
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Type exactly %q to apply this digest-bound migration plan: ", migration.Confirmation)
+			fmt.Fprint(cmd.OutOrStdout(), "Apply this digest-bound migration plan? [Y/n]: ")
 			answer, eof, err := newTerminalInput(cmd.InOrStdin()).ReadLine(cmd.Context(), 128)
 			if err != nil {
 				return err
 			}
-			if eof || answer != migration.Confirmation {
+			answer = strings.ToLower(strings.TrimSpace(answer))
+			if eof || (answer != "" && answer != "y" && answer != "yes") {
 				return output(cmd, map[string]any{"state": "legacy-layout-detected", "reason": "migration_declined", "written": false})
 			}
 			if err = service.Apply(cmd.Context(), plan); err != nil {

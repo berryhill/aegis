@@ -134,7 +134,7 @@ func TestExplicitInitDeclineWritesNothing(t *testing.T) {
 
 func TestExplicitInitCreatesRestrictiveValidConfiguration(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
-	root := NewRoot(Dependencies{In: strings.NewReader("yes\n"), Out: io.Discard, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	root := NewRoot(Dependencies{In: strings.NewReader("\n"), Out: io.Discard, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--state-dir", statePath, "init"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)

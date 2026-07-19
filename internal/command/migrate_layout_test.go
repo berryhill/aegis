@@ -74,8 +74,10 @@ func TestMigrateLayoutCommandPTYConfirmationAndDecline(t *testing.T) {
 		name, input       string
 		terminal, success bool
 	}{
-		{name: "exact", input: migration.Confirmation + "\n", terminal: true, success: true},
-		{name: "decline", input: "yes\n", terminal: true},
+		{name: "enter-default", input: "\n", terminal: true, success: true},
+		{name: "yes", input: "yes\n", terminal: true, success: true},
+		{name: "decline", input: "no\n", terminal: true},
+		{name: "unrecognized", input: migration.Confirmation + "\n", terminal: true},
 		{name: "eof", input: "", terminal: true},
 		{name: "non-tty", input: migration.Confirmation + "\n"},
 	} {
@@ -109,7 +111,7 @@ func TestMigrateLayoutCommandPTYConfirmationAndDecline(t *testing.T) {
 
 func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
 	fixture := newMigrateCommandFixture(t)
-	if _, err := executeMigrate(t, fixture, migration.Confirmation+"\n", true); err != nil {
+	if _, err := executeMigrate(t, fixture, "\n", true); err != nil {
 		t.Fatal(err)
 	}
 

@@ -131,6 +131,56 @@ func TestHostAuthorityInitializesBeforePublicationAndRollbackIsScoped(t *testing
 	}
 }
 
+func TestPassphraseEncryptedAuthorityInitializesAndRequiresUnlock(t *testing.T) {
+	path := validPrincipalConfig(t)
+	plan, err := PreviewAuthority(path, "passphrase-file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	passphrase := []byte("correct horse battery staple")
+	if err = InitializePassphraseAuthority(context.Background(), plan, passphrase); err != nil {
+		t.Fatal(err)
+	}
+	if err = ApplyAuthority(plan); err != nil {
+		CleanupAuthority(plan)
+		t.Fatal(err)
+	}
+	stored, err := os.ReadFile(plan.KEKFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stored), string(passphrase)) || strings.Contains(string(stored), `"key"`) {
+		t.Fatal("passphrase-encrypted authority persisted plaintext credential material")
+	}
+	locked := NewInspector(nil).Inspect(context.Background(), path)
+	if locked.State != PrincipalConfigured || locked.Reason != "credential_authority_locked" {
+		t.Fatalf("locked snapshot=%+v", locked)
+	}
+	unlocked := NewInspector(nil).WithAuthorityPassphrase(passphrase).Inspect(context.Background(), path)
+	if len(unlocked.Checks) < 2 || unlocked.Checks[1].Name != "credential-authority" || unlocked.Checks[1].Status != "verified" || unlocked.Reason != "hermes_inspector_unavailable" {
+		t.Fatalf("unlocked snapshot=%+v", unlocked)
+	}
+}
+
+func TestIncompleteSystemdPlanCanSwitchToEncryptedLocalCustody(t *testing.T) {
+	path := validPrincipalConfig(t)
+	systemdPlan, err := PreviewAuthority(path, "systemd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ApplyAuthority(systemdPlan); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", "")
+	encryptedPlan, err := PreviewAuthority(path, "passphrase-file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encryptedPlan.document), "custody: passphrase-file") || strings.Contains(string(encryptedPlan.document), "kek_credential:") {
+		t.Fatalf("recovery plan retained systemd custody: %s", encryptedPlan.document)
+	}
+}
+
 func TestSystemdAuthorityPrerequisiteResumesAfterExternalCredentialDelivery(t *testing.T) {
 	path := validPrincipalConfig(t)
 	plan, err := PreviewAuthority(path, "systemd")
@@ -169,7 +219,7 @@ func TestSystemdAuthorityPrerequisiteResumesAfterExternalCredentialDelivery(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = inspectAuthority(context.Background(), loaded.Credentials.Authority); err != nil {
+	if err = inspectAuthority(context.Background(), loaded.Credentials.Authority, nil); err != nil {
 		t.Fatalf("initialized systemd authority did not verify: %v", err)
 	}
 	after, err := os.ReadFile(credential)

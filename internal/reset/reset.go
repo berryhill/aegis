@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/layout"
 	"github.com/berryhill/aegis/internal/safefs"
 	bolt "go.etcd.io/bbolt"
@@ -282,7 +283,13 @@ func (s *Service) addLegacyScope(ctx context.Context, plan *Plan, cfg config.Con
 		plan.CredentialRecords = true
 	}
 	if authority.KEKFile != "" && within(cfg.StateDir, authority.KEKFile) && existsNoFollow(authority.KEKFile) {
-		if err := validateHostKEK(authority.KEKFile); err != nil {
+		var err error
+		if authority.Custody == "passphrase-file" {
+			err = credentials.InspectPassphraseCredential(authority.KEKFile)
+		} else {
+			err = validateHostKEK(authority.KEKFile)
+		}
+		if err != nil {
 			return deny(err)
 		}
 		plan.LocalKEK = true
@@ -429,11 +436,17 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 	} else if authority.KEKFile != "" {
 		kek, approved := approvedAuthority(authority.KEKFile)
 		if !approved {
-			plan.Preserved = append(plan.Preserved, "external host-file KEK: "+kek)
+			plan.Preserved = append(plan.Preserved, "external KEK credential: "+kek)
 			protected[kek] = true
 		} else {
 			if existsNoFollow(kek) {
-				if validationErr := validateHostKEK(kek); validationErr != nil {
+				var validationErr error
+				if authority.Custody == "passphrase-file" {
+					validationErr = credentials.InspectPassphraseCredential(kek)
+				} else {
+					validationErr = validateHostKEK(kek)
+				}
+				if validationErr != nil {
 					return deny(validationErr)
 				}
 			}

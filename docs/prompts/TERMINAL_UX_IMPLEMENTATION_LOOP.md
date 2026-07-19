@@ -144,6 +144,7 @@ Do not persist one optimistic `onboarding_complete` boolean. Derive state from v
 3. Credential authority
    - Do not require manual YAML editing.
    - Offer supported custody choices with truthful security descriptions:
+     - passphrase-encrypted local KEK custody as the working bare-terminal default;
      - production systemd encrypted credential custody;
      - explicitly weaker development host-file custody.
    - Do not imply the two choices provide equivalent protection.
@@ -328,7 +329,7 @@ Each approval must show:
 - allowed choices;
 - safe default.
 
-Dangerous or foundational actions must default to deny or cancel and preserve any required exact confirmation phrase. Do not replace digest-bound approvals with generic yes/no prompts.
+Use conventional `[Y/n]` and `[y/N]` prompts for bootstrap choices; Enter accepts the clearly displayed default. Digest-bound integrity comes from displaying, binding, and revalidating the exact plan, not from making the operator copy generated prose. Keep an exact phrase only for genuinely destructive reset unless the product policy explicitly changes it.
 
 ### Protected credential intake
 

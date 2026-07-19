@@ -786,7 +786,9 @@ Initialization effects MUST be deterministic Aegis code, not model-generated com
 
 ### 12.3 Key custody
 
-The wizard MUST prefer the stronger supported production custody mode where deployable and clearly identify host-file custody as weaker. It MUST not silently create a host-file KEK without displaying paths, backup separation requirements, and the local-root limitation.
+The wizard MUST prefer the strongest custody mode that is actually deployable in the current execution context. Bare foreground onboarding MUST offer a working passphrase-encrypted random KEK default, collect and confirm the passphrase with terminal echo disabled, persist only an authenticated encrypted envelope, and verify the authority before continuing. Systemd custody MUST be offered as advanced service custody only when its external delivery prerequisite is explicit; an ordinary shell MUST NOT be told that it can emulate `CREDENTIALS_DIRECTORY`. Plaintext host-file custody MUST remain clearly weaker and MUST NOT be created without displaying paths, backup separation requirements, and the local-root limitation.
+
+Bootstrap confirmations MUST use conventional `[Y/n]` or `[y/N]` choices with Enter accepting the displayed default. Plan integrity MUST come from exact digest binding, artifact identity, and immediate pre-apply revalidation rather than requiring the operator to copy generated prose.
 
 ### 12.4 Idempotency and repair
 

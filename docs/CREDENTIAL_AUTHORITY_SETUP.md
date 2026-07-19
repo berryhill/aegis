@@ -2,7 +2,13 @@
 
 Credential-authority setup is a principal operation separate from manager-model onboarding and certification. Aegis does not ask a model to configure or initialize it.
 
-For a bare local installation, onboarding derives the database and host-file KEK from the unified layout as `~/.argis/state/credentials/authority.db` and `~/.argis/state/credentials/authority.kek`. The absolute placeholders below describe explicit deployments; Aegis resolves the local home before filesystem use and never stores a tilde path.
+For a bare local installation, onboarding defaults to a passphrase-encrypted KEK at `~/.argis/state/credentials/authority.kek.enc` and a database at `~/.argis/state/credentials/authority.db`. It asks for and confirms the authority passphrase with terminal echo disabled, generates the KEK, stores only an Argon2id plus XChaCha20-Poly1305 envelope, initializes the database, verifies the deployment-bound sentinel, and continues onboarding in the same process. Enter accepts the displayed `[Y/n]` defaults. The passphrase is never persisted and must unlock the authority again in a later process.
+
+This local encrypted mode protects a copied credential file against offline disclosure without its passphrase. A compromised logged-in account, root, kernel, terminal, or active Aegis process can still capture the passphrase or plaintext KEK. It is not equivalent to externally delivered systemd service custody, and losing the passphrase makes the authority unavailable without a separately designed recovery mechanism.
+
+Systemd custody remains available only for an actual service deployment that already supplies `CREDENTIALS_DIRECTORY`. Bare onboarding does not pretend that an ordinary shell can deliver a systemd credential. If an earlier incomplete systemd selection has no database and no delivered credential, the wizard offers a digest-bound switch to passphrase-encrypted local custody and removes the obsolete `kek_credential` setting.
+
+The explicitly weaker plaintext host-file mode remains available for development. Aegis resolves the local home before filesystem use and never stores a tilde path.
 
 ## Development host-file path
 

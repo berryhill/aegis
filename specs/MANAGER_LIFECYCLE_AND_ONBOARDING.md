@@ -546,7 +546,7 @@ Managed mode MUST NOT silently point at arbitrary ambient model state merely to 
 
 ## 14. Credential-authority readiness
 
-First run MAY continue to avoid creating credential authority automatically.
+First run MUST offer a working passphrase-encrypted local authority path in a real terminal. It MAY also defer authority creation when the operator declines or deliberately selects externally delivered service custody.
 
 Aegis MUST nevertheless provide deterministic readiness and setup guidance covering:
 
@@ -556,7 +556,9 @@ Aegis MUST nevertheless provide deterministic readiness and setup guidance cover
 - KEK source;
 - ownership and permissions;
 - startup check;
-- exact confirmation before creation.
+- explicit `[Y/n]` confirmation before creation, with plan digest and artifact identity revalidated before mutation;
+- no-echo passphrase creation/unlock when passphrase-encrypted local custody is selected;
+- deterministic recovery from an incomplete undelivered systemd selection without silently downgrading.
 
 The manager MUST not claim credential administration is ready until these checks pass.
 
