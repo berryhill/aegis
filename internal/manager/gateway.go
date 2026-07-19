@@ -152,6 +152,10 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 			if !started {
 				return nil, errors.New("Hermes gateway completion before message start")
 			}
+			status, _ := message.Params.Payload["status"].(string)
+			if status != "complete" {
+				return nil, errors.New("Hermes gateway turn did not complete successfully")
+			}
 			if len(response) == 0 {
 				response = append(response, payloadTextValue(message.Params.Payload)...)
 			}

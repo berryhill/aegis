@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -128,7 +129,7 @@ func (p *Proxy) Close(ctx context.Context) error {
 func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	capabilityValid := p.config.CapabilityExpires.IsZero() || time.Now().Before(p.config.CapabilityExpires)
-	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || request.Header.Get("Content-Type") != "application/json" || !p.config.SessionActive() || !capabilityValid || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.Token()) {
+	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || !jsonContentType(request.Header.Get("Content-Type")) || !p.config.SessionActive() || !capabilityValid || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.Token()) {
 		http.Error(writer, "route denied", http.StatusForbidden)
 		return
 	}
@@ -194,6 +195,11 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 
 func constantToken(got, expected string) bool {
 	return got != "" && expected != "" && len(got) == len(expected) && subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
+}
+
+func jsonContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	return err == nil && strings.EqualFold(mediaType, "application/json")
 }
 
 func loopbackHost(host string) bool {

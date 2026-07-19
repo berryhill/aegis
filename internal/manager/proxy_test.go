@@ -153,3 +153,28 @@ func TestOllamaFixtureDigestAndLocality(t *testing.T) {
 		t.Fatal("public endpoint accepted")
 	}
 }
+
+func TestProxyAcceptsOpenAIJSONContentTypeParameters(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write([]byte(`{"id":"x","model":"exact:1","choices":[{"index":0,"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer upstream.Close()
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close(context.Background())
+	req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("Authorization", "Bearer "+proxy.Token())
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("parameterized JSON content type status=%d", response.StatusCode)
+	}
+}

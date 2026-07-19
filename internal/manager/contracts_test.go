@@ -32,6 +32,22 @@ func TestDecodeResponseStrict(t *testing.T) {
 	}
 }
 
+func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
+	for _, required := range []string{
+		`exactly these four keys`,
+		`"schema_version":"aegis.manager.response.v1"`,
+		`Use kind "message" with proposal null`,
+		`Use kind "proposal" with proposal`,
+		`secret.propose_create`,
+		`Never include a credential value`,
+		`Return no markdown fence`,
+	} {
+		if !strings.Contains(SystemInstruction, required) {
+			t.Fatalf("system instruction omits %q", required)
+		}
+	}
+}
+
 func TestRouteDigestDeterministicAndFailClosed(t *testing.T) {
 	plan := RoutePlan{SchemaVersion: "aegis.manager.route.v1", ManagerID: LogicalAgentID, SecurityContext: SecurityContext, HermesPath: "/opt/hermes", HermesVersion: "0.18.2", OllamaMode: "managed", OllamaEndpoint: "http://127.0.0.1:1234", OllamaVersion: "0.32.0", Model: validModel(), ProxyIdentity: "proxy-1", IssuedAt: time.Unix(10, 0).UTC(), ExpiresAt: time.Unix(20, 0).UTC()}
 	one, err := plan.Digest()
