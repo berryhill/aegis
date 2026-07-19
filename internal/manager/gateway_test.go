@@ -33,9 +33,11 @@ func TestGatewayFixtureMultiTurn(t *testing.T) {
 			case "session.create":
 				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"session_id": "session-1"}})
 			case "prompt.submit":
-				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.start", "payload": map[string]any{}}})
-				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.delta", "payload": map[string]any{"delta": `{"schema_version":"aegis.manager.response.v1","kind":"message","message":"ok","proposal":null}`}}})
-				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "payload": map[string]any{}}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.start", "session_id": "another-session"}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "another-session", "payload": map[string]any{"text": "wrong session"}}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.start", "session_id": "session-1"}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.delta", "session_id": "session-1", "payload": map[string]any{"text": `{"schema_version":"aegis.manager.response.v1","kind":"message","message":"ok","proposal":null}`}}})
+				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "session-1", "payload": map[string]any{"status": "complete"}}})
 			}
 		}
 	}()

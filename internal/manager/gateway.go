@@ -17,8 +17,9 @@ type GatewayMessage struct {
 	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  struct {
-		Type    string         `json:"type"`
-		Payload map[string]any `json:"payload"`
+		Type      string         `json:"type"`
+		SessionID string         `json:"session_id,omitempty"`
+		Payload   map[string]any `json:"payload"`
 	} `json:"params,omitempty"`
 	Result map[string]any `json:"result,omitempty"`
 	Error  *struct {
@@ -125,7 +126,7 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 	started := false
 	for {
 		message, err := c.wait(ctx, func(message GatewayMessage) bool {
-			return messageID(message) == id || (message.Method == "event" && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error"))
+			return messageID(message) == id || (message.Method == "event" && message.Params.SessionID == sessionID && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error"))
 		})
 		if err != nil {
 			// Turn events carry no prompt ID. After interruption, late events cannot

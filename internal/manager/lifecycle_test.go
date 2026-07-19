@@ -60,9 +60,9 @@ while IFS= read -r line; do
  case "$line" in
   *session.create*) printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-1","result":{"session_id":"fake-session"}}' ;;
   *prompt.submit*)
-   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","payload":{}}}'
-   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","payload":{"delta":"` + strings.ReplaceAll(response, `"`, `\"`) + `"}}}'
-   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","payload":{}}}' ;;
+   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"fake-session"}}'
+   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"fake-session","payload":{"text":"` + strings.ReplaceAll(response, `"`, `\"`) + `"}}}'
+   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fake-session","payload":{"status":"complete"}}}' ;;
  esac
 done
 `
@@ -74,7 +74,7 @@ done
 		t.Fatal(err)
 	}
 	environment := strings.Join(process.command.Env, "\n")
-	for _, required := range []string{"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_HOME="} {
+	for _, required := range []string{"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_HOME=", "HERMES_TUI_PROVIDER=custom", "OPENAI_BASE_URL=http://127.0.0.1:1/v1", "OPENAI_API_KEY=capability"} {
 		if !strings.Contains(environment, required) {
 			t.Fatalf("missing Hermes isolation environment %q", required)
 		}

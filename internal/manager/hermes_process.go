@@ -54,8 +54,8 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 		"HERMES_PYTHON_SRC_ROOT=" + config.Installation, "HERMES_ENABLE_PROJECT_PLUGINS=false",
 		"HERMES_DISABLE_AUTO_SKILLS=1", "HERMES_TUI_TOOLSETS=no_mcp", "HERMES_TUI_SKILLS=",
 		"HERMES_SKIP_VERSION_CHECK=1", "HERMES_YOLO_MODE=0", "PYTHONDONTWRITEBYTECODE=1",
-		"HERMES_MODEL=" + config.Model, "HERMES_TUI_PROVIDER=openai", "HERMES_BASE_URL=" + config.ProxyEndpoint + "/v1",
-		"HERMES_API_KEY=" + config.ProxyToken, "HERMES_EPHEMERAL_SYSTEM_PROMPT=" + SystemInstruction,
+		"HERMES_MODEL=" + config.Model, "HERMES_TUI_PROVIDER=custom", "OPENAI_BASE_URL=" + config.ProxyEndpoint + "/v1",
+		"OPENAI_API_KEY=" + config.ProxyToken, "HERMES_EPHEMERAL_SYSTEM_PROMPT=" + SystemInstruction,
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
