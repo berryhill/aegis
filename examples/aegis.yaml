@@ -30,6 +30,7 @@ manager:
   enabled: true
   runtime: hermes
   security_context: secrets-manager
+  cleanup_timeout: 10s
   hermes:
     context_length: 65536
     gateway_start_timeout: 20s

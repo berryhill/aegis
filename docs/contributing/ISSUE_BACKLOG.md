@@ -33,3 +33,7 @@ Scope: against an already-installed official candidate and with explicit operato
 ## 8. Complete cross-platform terminal interruption campaigns
 
 Scope: port the Linux PTY coverage for SIGINT/SIGTERM, second-signal termination, EOF, ordinary/protected intake cancellation, and exact exit aliases to each supported non-Linux OS, including resize and forced child failure. Acceptance: cancellation-safe protected intake is either implemented and preflighted or fails closed before model activation; terminal echo is restored, capabilities are invalidated, children are gone, disposable state is removed, and one metadata-only receipt remains. Security: generated canaries must remain absent from captures, errors, audit, database metadata, and temporary files.
+
+## 9. Prove descriptor-anchored layout migration on additional platforms
+
+Scope: implement and race-test equivalents of Linux no-follow descriptor-relative migration/reset cleanup on each supported non-Linux filesystem API. Relevant files: `internal/migration`, `internal/safefs`, `docs/PATH_LAYOUT.md`. Acceptance: exact legacy defaults beneath a writable external parent cannot redirect copy or deletion; unsupported filesystems deny before mutation; same- and cross-filesystem source layouts preserve exact authority/certification bindings. Security: do not replace the current explicit unsupported-platform denial with pathname-only deletion.

@@ -33,7 +33,7 @@ The copied files are local working files and should not be committed.
 
 Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the API token is shown as `[REDACTED]`.
 
-Alternatively, a genuinely new installation can run `./aegis init` in a terminal. Review the displayed configuration/state paths and exact configuration, then type `yes`; this does not start Hermes/Ollama, download a model, create credentials, modify profiles, or provision an agent.
+Alternatively, a genuinely new installation can run `./aegis init` in a terminal. The literal local defaults are `~/.argis/aegis.yaml` and `~/.argis/state`; XDG variables do not change them. Review the displayed resolved paths and exact configuration, then type `yes`; this does not start Hermes/Ollama, download a model, create credentials, modify profiles, or provision an agent.
 
 Verify the initialized non-interactive manager boundary without starting Hermes or Ollama:
 
@@ -54,6 +54,8 @@ aegis reset
 # type exactly: reset aegis
 aegis
 ```
+
+If exact legacy defaults are detected, bare startup reports `legacy-layout-detected` rather than creating `~/.argis`. In a real terminal, run `aegis migrate-layout`, review its digest-bound copy/preservation plan, and type exactly `migrate aegis to ~/.argis`; or run `aegis reset` to remove only the recognized legacy installation. Canonical plus legacy artifacts are ambiguous and are never merged or selected automatically. Linux migration copies, fsyncs, verifies, publishes, then cleans the source; reset can retain an empty legacy child beneath an unsafe external XDG parent without chmodding that parent. See [PATH_LAYOUT.md](PATH_LAYOUT.md).
 
 Use `aegis --config "$HOME/path/to/aegis.yaml" reset` for a safely scoped custom configuration; reset intentionally rejects repository paths, the home directory itself, filesystem roots, paths outside the authenticated operator home, unsafe parents, symlinks, hard-linked files, unknown state content, and any path/inode change after preview. It never accepts a force flag and non-TTY, EOF, cancellation, or any phrase other than `reset aegis` performs no writes.
 

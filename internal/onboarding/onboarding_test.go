@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/credentials"
 )
 
 func TestInspectAbsentAndMalformedAreReadOnlyAndDeterministic(t *testing.T) {
@@ -29,6 +32,13 @@ func TestInspectAbsentAndMalformedAreReadOnlyAndDeterministic(t *testing.T) {
 	after, _ := os.ReadFile(path)
 	if snapshot.State != RepairRequired || snapshot.NextCommand == "" || string(before) != string(after) {
 		t.Fatalf("malformed inspection was not fail-closed/read-only: %+v", snapshot)
+	}
+}
+
+func TestLegacyRemediationNamesMigrationAndReset(t *testing.T) {
+	remedy := remediation(config.Inspection{State: config.StateLegacy})
+	if !strings.Contains(remedy, "aegis migrate-layout") || !strings.Contains(remedy, "aegis reset") {
+		t.Fatalf("legacy remedy=%q", remedy)
 	}
 }
 
@@ -118,6 +128,56 @@ func TestHostAuthorityInitializesBeforePublicationAndRollbackIsScoped(t *testing
 	got, readErr := os.ReadFile(conflict.KEKFile)
 	if readErr != nil || string(got) != string(marker) {
 		t.Fatalf("failed initialization removed or changed preexisting file: %q err=%v", got, readErr)
+	}
+}
+
+func TestSystemdAuthorityPrerequisiteResumesAfterExternalCredentialDelivery(t *testing.T) {
+	path := validPrincipalConfig(t)
+	plan, err := PreviewAuthority(path, "systemd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ApplyAuthority(plan); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", "")
+	snapshot := NewInspector(nil).Inspect(context.Background(), path)
+	if snapshot.State != PrincipalConfigured || snapshot.Reason != "systemd_authority_prerequisite_incomplete" {
+		t.Fatalf("external prerequisite was not resumable: %+v", snapshot)
+	}
+	if _, err = os.Stat(plan.Database); !os.IsNotExist(err) {
+		t.Fatalf("prerequisite inspection created database: %v", err)
+	}
+
+	credentialDirectory := t.TempDir()
+	if err = os.Chmod(credentialDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	credential := filepath.Join(credentialDirectory, plan.KEKCredential)
+	if err = credentials.CreateHostKey(credential, "systemd-credential-kek"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", credentialDirectory)
+	before, err := os.ReadFile(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = InitializeConfiguredSystemdAuthority(context.Background(), path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = inspectAuthority(context.Background(), loaded.Credentials.Authority); err != nil {
+		t.Fatalf("initialized systemd authority did not verify: %v", err)
+	}
+	after, err := os.ReadFile(credential)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("Aegis modified externally delivered credential: err=%v", err)
+	}
+	if err = InitializeConfiguredSystemdAuthority(context.Background(), path); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("systemd authority was recreated: %v", err)
 	}
 }
 

@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/layout"
+	"github.com/berryhill/aegis/internal/safefs"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -70,7 +72,10 @@ type Plan struct {
 	LocalKEK          bool         `json:"local_kek_destroyed"`
 	Postcondition     string       `json:"postcondition"`
 	Warning           string       `json:"warning"`
+	LegacyRetained    []string     `json:"retained_empty_legacy_directories,omitempty"`
+	Legacy            bool         `json:"legacy_layout"`
 	configIdentity    *Identity
+	legacyRoots       map[string]Identity
 }
 
 type Service struct {
@@ -92,15 +97,16 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 	if err != nil {
 		return Plan{}, deny(err)
 	}
-	home, err := s.HomeDir()
+	resolvedLayout, err := (layout.Resolver{Home: s.HomeDir, EUID: os.Geteuid}).Resolve()
 	if err != nil {
-		return Plan{}, deny(fmt.Errorf("resolve operator home: %w", err))
+		return Plan{}, deny(fmt.Errorf("resolve operator layout: %w", err))
 	}
-	home, err = filepath.Abs(home)
-	if err != nil {
-		return Plan{}, deny(fmt.Errorf("resolve operator home: %w", err))
-	}
+	home := resolvedLayout.Home
 	inspection := config.Inspect(configuredPath)
+	legacy := configuredPath == "" && inspection.State == config.StateLegacy
+	if legacy {
+		inspection = config.Inspect(resolvedLayout.LegacyConfig)
+	}
 	plan := Plan{
 		Principal:     Principal{UID: principal.Uid, User: principal.Username},
 		ConfigPath:    inspection.Path,
@@ -113,6 +119,10 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 			"Ollama installation, operator-managed daemon, and downloaded model stores",
 			"external credentials, systemd credentials, and every external system",
 		},
+	}
+	if legacy {
+		plan.legacyRoots = map[string]Identity{}
+		plan.Legacy = true
 	}
 	if inspection.Path == "" {
 		return Plan{}, deny(errors.New("configuration path is unresolved"))
@@ -182,9 +192,41 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 	}
 
 	if cfg != nil {
-		if err = s.addConfiguredScope(ctx, &plan, *cfg, home); err != nil {
+		if legacy {
+			if cfg.StateDir != resolvedLayout.LegacyState || (cfg.Audit.CheckpointDir != resolvedLayout.LegacyCheckpoints && cfg.Audit.CheckpointDir != filepath.Join(resolvedLayout.LegacyState, "audit-checkpoints")) {
+				return Plan{}, deny(errors.New("legacy reset accepts only exact recognized legacy state and checkpoint defaults"))
+			}
+			if err = s.addLegacyScope(ctx, &plan, *cfg, resolvedLayout); err != nil {
+				return Plan{}, err
+			}
+		} else if err = s.addConfiguredScope(ctx, &plan, *cfg, home); err != nil {
 			return Plan{}, err
 		}
+	}
+	if !legacy && inspection.Path == resolvedLayout.Config && existsNoFollow(resolvedLayout.Root) && !existsNoFollow(resolvedLayout.ManagedModels) {
+		rootEntries, rootErr := os.ReadDir(resolvedLayout.Root)
+		if rootErr != nil {
+			return Plan{}, deny(rootErr)
+		}
+		for _, entry := range rootEntries {
+			name := entry.Name()
+			recognized := name == "aegis.yaml" || name == "state"
+			for _, artifact := range plan.Artifacts {
+				recognized = recognized || artifact.Path == filepath.Join(resolvedLayout.Root, name)
+			}
+			if !recognized {
+				return Plan{}, deny(fmt.Errorf("unknown canonical-root artifact: %s", filepath.Join(resolvedLayout.Root, name)))
+			}
+		}
+		rootInfo, rootErr := os.Lstat(resolvedLayout.Root)
+		if rootErr != nil {
+			return Plan{}, deny(rootErr)
+		}
+		rootIdentity, identityErr := identity(rootInfo, true)
+		if identityErr != nil {
+			return Plan{}, deny(identityErr)
+		}
+		plan.Artifacts = append(plan.Artifacts, Artifact{Path: resolvedLayout.Root, Kind: "directory", Status: "delete-if-empty", identity: rootIdentity})
 	}
 
 	plan.Artifacts = uniqueArtifacts(plan.Artifacts)
@@ -199,6 +241,111 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 	})
 	sort.Strings(plan.Preserved)
 	return plan, nil
+}
+
+func (s *Service) addLegacyScope(ctx context.Context, plan *Plan, cfg config.Config, resolved layout.Layout) error {
+	protected := map[string]bool{}
+	configuredFiles := map[string]bool{}
+	modelStore := filepath.Join(cfg.StateDir, "manager", "ollama-models")
+	if existsNoFollow(modelStore) {
+		if err := validateLegacyTraversal(modelStore, resolved.Home); err != nil {
+			return deny(fmt.Errorf("unsafe legacy managed model store: %w", err))
+		}
+		protected[modelStore] = true
+		plan.Preserved = append(plan.Preserved, "Aegis managed Ollama model store: "+modelStore)
+	}
+	if certification := cfg.Manager.Inference.Certification; certification != "" {
+		if !within(cfg.StateDir, certification) {
+			return deny(errors.New("legacy manager certification is outside the recognized legacy state root"))
+		}
+		configuredFiles[certification], configuredFiles[certification+".new"] = true, true
+	}
+	authority := cfg.Credentials.Authority
+	for _, authorityPath := range []string{authority.Database, authority.KEKFile} {
+		if authorityPath == "" {
+			continue
+		}
+		if !within(cfg.StateDir, authorityPath) {
+			protected[authorityPath] = true
+			plan.Preserved = append(plan.Preserved, "external credential-authority artifact: "+authorityPath)
+			continue
+		}
+		configuredFiles[authorityPath], configuredFiles[authorityPath+".initialize"] = true, true
+	}
+	if authority.Custody == "systemd" {
+		plan.Preserved = append(plan.Preserved, "systemd KEK credential: "+authority.KEKCredential)
+	}
+	if authority.Database != "" && within(cfg.StateDir, authority.Database) && existsNoFollow(authority.Database) {
+		if err := validateAuthorityDatabase(authority.Database, authority.DeploymentID); err != nil {
+			return deny(err)
+		}
+		plan.CredentialRecords = true
+	}
+	if authority.KEKFile != "" && within(cfg.StateDir, authority.KEKFile) && existsNoFollow(authority.KEKFile) {
+		if err := validateHostKEK(authority.KEKFile); err != nil {
+			return deny(err)
+		}
+		plan.LocalKEK = true
+	}
+	seen := map[string]bool{}
+	for _, rootPath := range []string{cfg.StateDir, cfg.Audit.CheckpointDir} {
+		if seen[rootPath] {
+			continue
+		}
+		seen[rootPath] = true
+		if !existsNoFollow(rootPath) {
+			continue
+		}
+		if err := validateLegacyTraversal(rootPath, resolved.Home); err != nil {
+			return deny(err)
+		}
+		kind := "state"
+		rootProtected := protected
+		if rootPath != cfg.StateDir {
+			kind, rootProtected = "checkpoint", map[string]bool{}
+		}
+		artifacts, err := inventory(ctx, inventoryRoot{path: rootPath, kind: kind, state: cfg.StateDir, protected: rootProtected, configuredFiles: configuredFiles})
+		if err != nil {
+			return deny(err)
+		}
+		info, err := os.Lstat(rootPath)
+		if err != nil {
+			return deny(err)
+		}
+		id, err := identity(info, true)
+		if err != nil {
+			return deny(err)
+		}
+		plan.legacyRoots[rootPath] = id
+		plan.LegacyRetained = append(plan.LegacyRetained, rootPath)
+		for index := range artifacts {
+			if artifacts[index].Path == rootPath {
+				artifacts[index].Status = "retain-empty"
+			}
+		}
+		plan.Artifacts = append(plan.Artifacts, artifacts...)
+	}
+	sort.Strings(plan.LegacyRetained)
+	return nil
+}
+
+func validateLegacyTraversal(path, home string) error {
+	if !within(home, path) || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return errors.New("legacy path is not cleanly below authenticated home")
+	}
+	relative, _ := filepath.Rel(home, path)
+	current := home
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("legacy traversal contains symlink component %s", current)
+		}
+	}
+	return nil
 }
 
 func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config.Config, home string) error {
@@ -244,6 +391,9 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 	}
 	modelStore := filepath.Join(state, "manager", "ollama-models")
 	if existsNoFollow(modelStore) {
+		if validationErr := validateScopedPath(modelStore, home); validationErr != nil {
+			return deny(fmt.Errorf("unsafe managed model store: %w", validationErr))
+		}
 		protected[modelStore] = true
 		plan.Preserved = append(plan.Preserved, "Aegis managed Ollama model store: "+modelStore)
 	}
@@ -292,11 +442,8 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 		}
 	}
 
-	if within(state, checkpoint) {
-		protected[checkpoint] = true // inventoried independently, never trusted as generic state content
-	}
 	roots := []inventoryRoot{{path: state, kind: "state", state: state, protected: protected, configuredFiles: configuredFiles}}
-	if checkpoint != state {
+	if checkpoint != state && !within(state, checkpoint) {
 		roots = append(roots, inventoryRoot{path: checkpoint, kind: "checkpoint", state: state, protected: map[string]bool{}, configuredFiles: configuredFiles})
 	}
 	for _, root := range roots {
@@ -564,7 +711,11 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	if s.BeforeApply != nil {
 		s.BeforeApply(plan)
 	}
-	revalidated, err := s.Plan(ctx, plan.ConfigPath)
+	revalidatePath := plan.ConfigPath
+	if plan.Legacy {
+		revalidatePath = ""
+	}
+	revalidated, err := s.Plan(ctx, revalidatePath)
 	if err != nil {
 		return changed(fmt.Errorf("revalidate reset plan immediately before mutation: %w", err))
 	}
@@ -587,6 +738,36 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 			return changed(fmt.Errorf("artifact identity changed: %s", artifact.Path))
 		}
 	}
+	if plan.Legacy {
+		for _, artifact := range plan.Artifacts {
+			if artifact.Path == plan.ConfigPath || artifact.Status == "retain-empty" {
+				continue
+			}
+			for root := range plan.legacyRoots {
+				if !within(root, artifact.Path) {
+					continue
+				}
+				relative, relErr := filepath.Rel(root, artifact.Path)
+				if relErr != nil {
+					return incomplete(relErr)
+				}
+				rootIdentity := plan.legacyRoots[root]
+				if err = safefs.RemoveRelativeIdentity(root, relative, artifact.Kind == "directory", rootIdentity.Device, rootIdentity.Inode); err != nil {
+					return incomplete(err)
+				}
+				break
+			}
+		}
+		if plan.configIdentity != nil {
+			if err = safefs.RemoveFile(filepath.Dir(plan.ConfigPath), filepath.Base(plan.ConfigPath)); err != nil {
+				return incomplete(err)
+			}
+		}
+		if inspection := config.Inspect(""); inspection.State != config.StateAbsent {
+			return incomplete(fmt.Errorf("post-reset default configuration state is %s", inspection.State))
+		}
+		return nil
+	}
 	// Revalidate the complete immutable plan before the first deletion. Files are
 	// removed before directories; os.Remove never follows links or removes a
 	// non-empty directory. The configuration is removed last so failed state
@@ -603,12 +784,22 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 		if artifact.Kind != "directory" {
 			continue
 		}
+		if artifact.Path == filepath.Dir(plan.ConfigPath) {
+			continue
+		}
 		if err = removeExact(ctx, artifact); err != nil {
 			return incomplete(err)
 		}
 	}
 	for _, artifact := range plan.Artifacts {
 		if artifact.Kind == "file" && artifact.Path == plan.ConfigPath {
+			if err = removeExact(ctx, artifact); err != nil {
+				return incomplete(err)
+			}
+		}
+	}
+	for _, artifact := range plan.Artifacts {
+		if artifact.Kind == "directory" && artifact.Path == filepath.Dir(plan.ConfigPath) {
 			if err = removeExact(ctx, artifact); err != nil {
 				return incomplete(err)
 			}
@@ -780,7 +971,7 @@ func uniqueArtifacts(in []Artifact) []Artifact {
 }
 
 func validateCurrentPlan(original, current Plan) error {
-	if original.Principal != current.Principal || original.ConfigPath != current.ConfigPath || original.ConfigState != current.ConfigState || original.CredentialRecords != current.CredentialRecords || original.LocalKEK != current.LocalKEK || strings.Join(original.Preserved, "\x00") != strings.Join(current.Preserved, "\x00") {
+	if original.Principal != current.Principal || original.ConfigPath != current.ConfigPath || original.ConfigState != current.ConfigState || original.CredentialRecords != current.CredentialRecords || original.LocalKEK != current.LocalKEK || original.Legacy != current.Legacy || strings.Join(original.LegacyRetained, "\x00") != strings.Join(current.LegacyRetained, "\x00") || strings.Join(original.Preserved, "\x00") != strings.Join(current.Preserved, "\x00") {
 		return errors.New("reset scope changed after preview")
 	}
 	expected := make(map[string]Artifact, len(original.Artifacts))
@@ -819,12 +1010,15 @@ func incomplete(err error) error { return fmt.Errorf("%s: %w", ReasonIncomplete,
 
 func PlanDigest(plan Plan) string {
 	hash := sha256.New()
-	_, _ = fmt.Fprintf(hash, "%s\x00%s\x00%s\x00%s\x00%t\x00%t", plan.Principal.UID, plan.Principal.User, plan.ConfigPath, plan.ConfigState, plan.CredentialRecords, plan.LocalKEK)
+	_, _ = fmt.Fprintf(hash, "%s\x00%s\x00%s\x00%s\x00%t\x00%t\x00%t", plan.Principal.UID, plan.Principal.User, plan.ConfigPath, plan.ConfigState, plan.CredentialRecords, plan.LocalKEK, plan.Legacy)
 	for _, artifact := range plan.Artifacts {
 		_, _ = fmt.Fprintf(hash, "\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d", artifact.Path, artifact.Kind, artifact.Status, artifact.identity.Device, artifact.identity.Inode, artifact.identity.Mode, artifact.identity.UID, artifact.identity.GID, artifact.identity.Links, artifact.identity.Size, artifact.identity.ModTime)
 	}
 	for _, preserved := range plan.Preserved {
 		_, _ = fmt.Fprintf(hash, "\x00preserve\x00%s", preserved)
+	}
+	for _, retained := range plan.LegacyRetained {
+		_, _ = fmt.Fprintf(hash, "\x00retain-empty\x00%s", retained)
 	}
 	_, _ = fmt.Fprintf(hash, "\x00%s\x00%s", plan.Postcondition, plan.Warning)
 	return "sha256:" + hex.EncodeToString(hash.Sum(nil))

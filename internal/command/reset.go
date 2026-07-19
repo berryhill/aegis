@@ -31,8 +31,9 @@ func resetCmd(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer
 				LocalKEK             bool                   `json:"local_kek_destroyed"`
 				Postcondition        string                 `json:"postcondition"`
 				Warning              string                 `json:"warning"`
+				RetainedLegacy       []string               `json:"retained_empty_legacy_directories,omitempty"`
 				ConfirmationRequired string                 `json:"confirmation_required"`
-			}{"reset", resetdomain.PlanDigest(plan), plan.Principal, plan.ConfigPath, string(plan.ConfigState), plan.Artifacts, plan.Preserved, plan.CredentialRecords, plan.LocalKEK, plan.Postcondition, plan.Warning, resetdomain.Confirmation}
+			}{"reset", resetdomain.PlanDigest(plan), plan.Principal, plan.ConfigPath, string(plan.ConfigState), plan.Artifacts, plan.Preserved, plan.CredentialRecords, plan.LocalKEK, plan.Postcondition, plan.Warning, plan.LegacyRetained, resetdomain.Confirmation}
 			if err = output(cmd, preview); err != nil {
 				return err
 			}
@@ -50,7 +51,7 @@ func resetCmd(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer
 			if err = service.Apply(cmd.Context(), plan); err != nil {
 				return err
 			}
-			return output(cmd, map[string]any{"state": "uninitialized", "reason": "reset_complete", "next_command": "aegis"})
+			return output(cmd, map[string]any{"state": "uninitialized", "reason": "reset_complete", "next_command": "aegis", "retained_empty_legacy_directories": plan.LegacyRetained})
 		},
 	}
 }

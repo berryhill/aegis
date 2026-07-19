@@ -33,10 +33,14 @@ func managerTestConfig(t *testing.T) string {
 func isolatedPaths(t *testing.T) (string, string) {
 	t.Helper()
 	root := t.TempDir()
-	t.Setenv("HOME", filepath.Join(root, "home"))
+	home := filepath.Join(root, "home")
+	if err := os.Mkdir(home, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state-home"))
-	return filepath.Join(root, "config", "aegis", "aegis.yaml"), filepath.Join(root, "state")
+	return filepath.Join(home, ".argis", "aegis.yaml"), filepath.Join(root, "state")
 }
 
 func TestBareRootNonTTYUninitializedReturnsStructuredAction(t *testing.T) {
@@ -286,6 +290,13 @@ func assertSecureConfig(t *testing.T, path string) {
 	}
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("config mode=%04o", info.Mode().Perm())
+	}
+	rootInfo, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rootInfo.Mode().Perm() != 0700 {
+		t.Fatalf("canonical root mode=%04o", rootInfo.Mode().Perm())
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {

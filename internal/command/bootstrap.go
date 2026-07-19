@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -98,6 +100,46 @@ func renderBootstrapInspection(cmd *cobra.Command, snapshot onboarding.Snapshot)
 }
 
 func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {
+	inspection := config.Inspect(snapshot.ConfigPath)
+	if inspection.State == config.StateValid && inspection.Config.Credentials.Authority.Custody == "systemd" {
+		authority := inspection.Config.Credentials.Authority
+		fmt.Fprintln(cmd.OutOrStdout(), "\nCredential authority / systemd prerequisite")
+		fmt.Fprintf(cmd.OutOrStdout(), "  deployment ID  %s\n  database       %s\n  credential     %s (from CREDENTIALS_DIRECTORY)\n", authority.DeploymentID, authority.Database, authority.KEKCredential)
+		directory := strings.TrimSpace(os.Getenv("CREDENTIALS_DIRECTORY"))
+		if directory == "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Deliver encrypted credential %q to the Aegis service and set CREDENTIALS_DIRECTORY, then rerun aegis init. No database or KEK was created.\n", authority.KEKCredential)
+			return false, nil
+		}
+		credential := filepath.Join(directory, authority.KEKCredential)
+		if _, statErr := os.Lstat(credential); statErr != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "The delivered credential is not available at %s. Correct systemd credential delivery, then rerun aegis init. No database was created.\n", credential)
+			return false, nil
+		}
+		confirmation := "initialize systemd authority " + authority.DeploymentID
+		fmt.Fprintln(cmd.OutOrStdout(), "The externally delivered KEK is available. Aegis will create the deployment-bound mode-0600 authority database; it will not copy or modify the credential.")
+		fmt.Fprintf(cmd.OutOrStdout(), "Type exactly %q to initialize, or anything else to exit: ", confirmation)
+		answer, eof, err := readBootstrapLine(cmd, input, 512)
+		if err != nil || eof || answer != confirmation {
+			fmt.Fprintln(cmd.OutOrStdout(), "Systemd authority initialization declined; no database was created.")
+			return false, err
+		}
+		revalidated := onboarding.NewInspector(nil).Inspect(cmd.Context(), snapshot.ConfigPath)
+		if revalidated.State != onboarding.PrincipalConfigured || revalidated.Reason != "systemd_authority_prerequisite_incomplete" {
+			return false, fmt.Errorf("principal/configuration changed after systemd authority preview: state=%s reason=%s", revalidated.State, revalidated.Reason)
+		}
+		if err = onboarding.InitializeConfiguredSystemdAuthority(cmd.Context(), snapshot.ConfigPath); err != nil {
+			return false, err
+		}
+		service, subject, err := authenticatedService(cmd, build)
+		if err != nil {
+			return false, err
+		}
+		if err = service.AuditCredentialOperation(cmd.Context(), subject, "credential_authority_initialized", "ok", "systemd_authority_verified", ""); err != nil {
+			return false, err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Systemd-custody authority initialized and verified.")
+		return true, nil
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "\nCredential authority custody")
 	fmt.Fprintln(cmd.OutOrStdout(), "  [1] systemd encrypted credential (production; externally delivered KEK)")
 	fmt.Fprintln(cmd.OutOrStdout(), "  [2] host file (development; weaker because the same account/root can read the KEK)")
@@ -146,13 +188,6 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 	if custody == "systemd" {
 		if err = onboarding.ApplyAuthority(plan); err != nil {
 			return false, err
-		}
-		service, subject, auditErr := authenticatedService(cmd, build)
-		if auditErr == nil {
-			auditErr = service.AuditCredentialOperation(cmd.Context(), subject, "credential_authority_initialized", "ok", "systemd_prerequisite_recorded", "")
-		}
-		if auditErr != nil {
-			return false, auditErr
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Systemd prerequisite recorded. Create and deliver encrypted credential %q to the Aegis service, set CREDENTIALS_DIRECTORY, then rerun aegis init. No KEK or database was created.\n", plan.KEKCredential)
 		return false, nil

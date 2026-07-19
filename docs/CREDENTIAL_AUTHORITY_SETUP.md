@@ -2,16 +2,18 @@
 
 Credential-authority setup is a principal operation separate from manager-model onboarding and certification. Aegis does not ask a model to configure or initialize it.
 
+For a bare local installation, onboarding derives the database and host-file KEK from the unified layout as `~/.argis/state/credentials/authority.db` and `~/.argis/state/credentials/authority.kek`. The absolute placeholders below describe explicit deployments; Aegis resolves the local home before filesystem use and never stores a tilde path.
+
 ## Development host-file path
 
 Choose deployment-specific absolute paths below the configured Aegis state directory. Add this block under `credentials` in the existing mode-`0600` Aegis configuration:
 
 ```yaml
 authority:
-  database: /ABSOLUTE/AEGIS/STATE/authority.db
+  database: /ABSOLUTE/AEGIS/STATE/credentials/authority.db
   deployment_id: REPLACE_WITH_STABLE_DEPLOYMENT_ID
   custody: host-file
-  kek_file: /ABSOLUTE/AEGIS/STATE/custody/authority-kek.json
+  kek_file: /ABSOLUTE/AEGIS/STATE/credentials/authority.kek
 ```
 
 The configuration must remain owned by the configured principal with mode `0600`. Parent directories must be owned by that principal and must not be writable by group or others. The database and KEK paths must not be symlinks. The host-file KEK is a weaker development fallback: never store or back it up with `authority.db`.
@@ -38,6 +40,6 @@ aegis --config /ABSOLUTE/PATH/aegis.yaml secret list
 
 ## Production systemd custody
 
-Production should use `custody: systemd`, a basename-only `kek_credential`, and an encrypted systemd service credential delivered through `CREDENTIALS_DIRECTORY`. The interactive `secret initialize` command deliberately does not create systemd credentials. The deployment administrator must create and provision that encrypted credential and service unit outside Aegis, then start Aegis with the configured credential available. Aegis does not report manager credential administration as ready unless the configured database and delivered credential are both present and pass authority startup validation.
+Production should use `custody: systemd`, a basename-only `kek_credential`, and an encrypted systemd service credential delivered through `CREDENTIALS_DIRECTORY`. The bootstrap records the exact deployment/database/credential names only after its digest-bound confirmation, then remains at a resumable incomplete prerequisite; absence of externally delivered material is not corruption and is not reported as a systemd authority selection when custody is empty. The interactive `secret initialize` command deliberately does not create systemd credentials. The deployment administrator must create and provision that encrypted credential and service unit outside Aegis, then rerun `aegis init` with the configured credential available. Aegis displays the exact database effect and requires `initialize systemd authority DEPLOYMENT_ID` before creating and validating the deployment-bound database. It never copies or modifies the delivered KEK and does not report manager credential administration as ready unless the database and credential both pass authority startup validation.
 
 Keep KEK/recovery material separate from database backups. Disable core dumps and use distinct production service/runtime identities where required by the threat model. See `research/2026-07-17-embedded-bbolt-credential-authority.md` for the normative production custody and recovery design.

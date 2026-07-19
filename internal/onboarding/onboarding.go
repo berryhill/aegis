@@ -112,11 +112,14 @@ func (i *Inspector) Inspect(ctx context.Context, configuredPath string) Snapshot
 	s.Checks = append(s.Checks, Check{Name: "principal", Status: "verified"})
 	if err = inspectAuthority(ctx, cfg.Credentials.Authority); err != nil {
 		status := "incomplete"
-		if authoritySpecified(cfg.Credentials.Authority) {
+		if systemdAuthorityPrerequisiteIncomplete(cfg.Credentials.Authority) {
+			s.Reason = "systemd_authority_prerequisite_incomplete"
+			s.NextCommand = "deliver the configured systemd credential and run aegis init"
+		} else if authoritySpecified(cfg.Credentials.Authority) {
 			status = "repair-required"
 			s.State, s.Reason = RepairRequired, "credential_authority_invalid"
 		}
-		s.Checks = append(s.Checks, Check{Name: "credential-authority", Status: status, Reason: safeReason(err), Remedy: "aegis init"})
+		s.Checks = append(s.Checks, Check{Name: "credential-authority", Status: status, Reason: safeReason(err), Remedy: s.NextCommand})
 		return s
 	}
 	s.State, s.Reason = AuthorityConfigured, "runtime_incomplete"
@@ -185,6 +188,33 @@ func authoritySpecified(a config.CredentialAuthority) bool {
 	return a.Database != "" || a.DeploymentID != "" || a.Custody != "" || a.KEKFile != "" || a.KEKCredential != ""
 }
 
+// systemdAuthorityPrerequisiteIncomplete distinguishes an intentionally
+// recorded external-custody prerequisite from malformed or drifted authority
+// state. Missing delivery, or a database not yet initialized after delivery,
+// is resumable onboarding rather than repair-required state.
+func systemdAuthorityPrerequisiteIncomplete(a config.CredentialAuthority) bool {
+	if a.Custody != "systemd" || a.Database == "" || a.DeploymentID == "" || a.KEKCredential == "" {
+		return false
+	}
+	directory := os.Getenv("CREDENTIALS_DIRECTORY")
+	if directory == "" {
+		return true
+	}
+	credential := filepath.Join(directory, a.KEKCredential)
+	if _, err := os.Lstat(credential); errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	custodian, err := credentials.LoadFileCustodian(credential)
+	if err != nil {
+		return false
+	}
+	custodian.Close()
+	if _, err = os.Lstat(a.Database); errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	return false
+}
+
 func inspectAuthority(ctx context.Context, a config.CredentialAuthority) error {
 	if !authoritySpecified(a) {
 		return errors.New("authority is absent")
@@ -238,6 +268,10 @@ func inspectOllama(ctx context.Context, cfg config.Config) error {
 
 func remediation(ci config.Inspection) string {
 	switch ci.State {
+	case config.StateLegacy:
+		return "run aegis migrate-layout in a real terminal, or run aegis reset to remove the exact legacy installation"
+	case config.StateAmbiguous:
+		return "inspect canonical and legacy artifacts; preserve one installation explicitly before rerunning aegis"
 	case config.StateInsecure:
 		return "chmod 600 " + ci.Path + " and verify ownership, then run aegis init"
 	case config.StateMalformed:
@@ -401,6 +435,53 @@ func InitializeHostAuthority(ctx context.Context, plan AuthorityPlan) error {
 		return err
 	}
 	if err = credentialbolt.Inspect(ctx, plan.Database, plan.DeploymentID, custodian); err != nil {
+		return err
+	}
+	succeeded = true
+	return nil
+}
+
+// InitializeConfiguredSystemdAuthority creates and verifies only the database
+// for a previously confirmed systemd-custody configuration. The KEK remains an
+// externally delivered systemd credential and is never copied by Aegis.
+func InitializeConfiguredSystemdAuthority(ctx context.Context, configPath string) error {
+	ci := config.Inspect(configPath)
+	if ci.State != config.StateValid || !ci.FilePresent {
+		return errors.New("systemd authority initialization requires one secure file-backed valid configuration")
+	}
+	a := ci.Config.Credentials.Authority
+	if a.Custody != "systemd" || a.Database == "" || a.DeploymentID == "" || a.KEKCredential == "" {
+		return errors.New("complete systemd authority configuration is required")
+	}
+	directory := os.Getenv("CREDENTIALS_DIRECTORY")
+	if directory == "" {
+		return errors.New("systemd credential directory is unavailable")
+	}
+	custodian, err := credentials.LoadFileCustodian(filepath.Join(directory, a.KEKCredential))
+	if err != nil {
+		return err
+	}
+	defer custodian.Close()
+	if _, err = os.Lstat(a.Database); !errors.Is(err, os.ErrNotExist) {
+		if err != nil {
+			return err
+		}
+		return errors.New("authority database already exists; inspect it rather than recreating it")
+	}
+	succeeded := false
+	defer func() {
+		if !succeeded {
+			_ = os.Remove(a.Database)
+		}
+	}()
+	repository, err := credentialbolt.Open(ctx, a.Database, a.DeploymentID, custodian)
+	if err != nil {
+		return err
+	}
+	if err = repository.Close(); err != nil {
+		return err
+	}
+	if err = credentialbolt.Inspect(ctx, a.Database, a.DeploymentID, custodian); err != nil {
 		return err
 	}
 	succeeded = true

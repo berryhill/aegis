@@ -14,6 +14,7 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/initialize"
+	"github.com/berryhill/aegis/internal/layout"
 )
 
 type fixture struct {
@@ -45,6 +46,72 @@ func newFixture(t *testing.T) fixture {
 		HomeDir: func() (string, error) { return home, nil },
 	}
 	return fixture{home: home, config: filepath.Join(home, ".config", "aegis", "aegis.yaml"), state: filepath.Join(home, "custom-state"), checkpoints: filepath.Join(home, "custom-checkpoints"), service: service, current: current}
+}
+
+func TestCanonicalResetRemovesUnifiedRootAndReturnsUninitialized(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("HOME", f.home)
+	resolved, err := (layout.Resolver{Home: func() (string, error) { return f.home, nil }, EUID: os.Geteuid}).Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.config, f.state, f.checkpoints = resolved.Config, resolved.State, resolved.AuditCheckpoints
+	f.writeConfig(t, "")
+	if err = os.MkdirAll(filepath.Join(f.state, "plans"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(f.state, "plans", "one.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := f.service.Plan(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.service.Apply(context.Background(), plan); err != nil {
+		entries, _ := os.ReadDir(resolved.Root)
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+			children, _ := os.ReadDir(filepath.Join(resolved.Root, entry.Name()))
+			for _, child := range children {
+				names = append(names, entry.Name()+"/"+child.Name())
+			}
+		}
+		t.Fatalf("%v; root entries=%v; plan=%+v preserved=%v", err, names, plan.Artifacts, plan.Preserved)
+	}
+	if _, err = os.Lstat(resolved.Root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("canonical root remains: %v", err)
+	}
+	discovery, err := resolved.Discover()
+	if err != nil || discovery.Presence != layout.None {
+		t.Fatalf("discovery=%+v err=%v", discovery, err)
+	}
+}
+
+func TestCanonicalResetPreservesManagedModelsButReturnsUninitialized(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("HOME", f.home)
+	resolved, err := (layout.Resolver{Home: func() (string, error) { return f.home, nil }, EUID: os.Geteuid}).Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.config, f.state, f.checkpoints = resolved.Config, resolved.State, resolved.AuditCheckpoints
+	f.writeConfig(t, "")
+	model := filepath.Join(resolved.ManagedModels, "blobs", "model")
+	writeOwned(t, model, "preserved")
+	plan, err := f.service.Plan(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.service.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	if content, readErr := os.ReadFile(model); readErr != nil || string(content) != "preserved" {
+		t.Fatalf("model changed: %q %v", content, readErr)
+	}
+	if inspection := config.Inspect(""); inspection.State != config.StateAbsent {
+		t.Fatalf("post-reset inspection=%+v", inspection)
+	}
 }
 
 func (f fixture) writeConfig(t *testing.T, extra string) {
@@ -474,6 +541,49 @@ func TestEnvironmentPathOverrideIsNotDeletionAuthority(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(external, "plans", "one.json")); err != nil {
 		t.Fatalf("environment-selected state changed: %v", err)
+	}
+}
+
+func TestLegacyResetUnderGroupWritableXDGParentIsDescriptorAnchored(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("HOME", f.home)
+	f.config = filepath.Join(f.home, ".config", "aegis", "aegis.yaml")
+	f.state = filepath.Join(f.home, ".local", "state", "aegis")
+	f.checkpoints = filepath.Join(f.state, "audit-checkpoints")
+	if err := os.MkdirAll(filepath.Dir(f.state), 0775); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Dir(f.state), 0775); err != nil {
+		t.Fatal(err)
+	}
+	f.writeConfig(t, "")
+	writeOwned(t, filepath.Join(f.state, "plans", "legacy.json"), "{}")
+	external := filepath.Join(f.home, ".hermes", "profiles", "normal", "config.yaml")
+	writeOwned(t, external, "preserve")
+
+	plan, err := f.service.Plan(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !plan.Legacy || len(plan.LegacyRetained) == 0 {
+		t.Fatalf("legacy retained-root behavior not disclosed: %+v", plan)
+	}
+	if err = f.service.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	parentInfo, err := os.Stat(filepath.Dir(f.state))
+	if err != nil || parentInfo.Mode().Perm() != 0775 {
+		t.Fatalf("external XDG parent was changed: mode=%v err=%v", parentInfo.Mode().Perm(), err)
+	}
+	entries, err := os.ReadDir(f.state)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("retained legacy child was not empty: entries=%v err=%v", entries, err)
+	}
+	if inspection := config.Inspect(""); inspection.State != config.StateAbsent {
+		t.Fatalf("default discovery after legacy reset=%+v", inspection)
+	}
+	if data, err := os.ReadFile(external); err != nil || string(data) != "preserve" {
+		t.Fatalf("external Hermes profile changed: %q %v", data, err)
 	}
 }
 

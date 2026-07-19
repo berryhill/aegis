@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/berryhill/aegis/internal/layout"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
@@ -25,6 +26,7 @@ const (
 	StateInsecure  State = "insecure_permissions"
 	StatePartial   State = "partially_initialized"
 	StateAmbiguous State = "ambiguous"
+	StateLegacy    State = "legacy-layout-detected"
 )
 
 type Inspection struct {
@@ -45,11 +47,11 @@ func (inspection Inspection) Failure() error {
 }
 
 func DefaultPath() (string, error) {
-	directory, err := os.UserConfigDir()
+	resolved, err := layout.New().Resolve()
 	if err != nil {
-		return "", fmt.Errorf("resolve user configuration directory: %w", err)
+		return "", err
 	}
-	return filepath.Join(directory, "aegis", "aegis.yaml"), nil
+	return resolved.Config, nil
 }
 
 func ResolvePath(path string) (string, error) {
@@ -65,6 +67,22 @@ func ResolvePath(path string) (string, error) {
 
 // Inspect distinguishes absence from every unsafe existing-artifact state.
 func Inspect(path string) Inspection {
+	if path == "" {
+		resolvedLayout, layoutErr := layout.New().Resolve()
+		if layoutErr != nil {
+			return Inspection{State: StateAmbiguous, ReasonCode: "layout_unsafe", Err: layoutErr}
+		}
+		discovery, discoveryErr := resolvedLayout.Discover()
+		if discoveryErr != nil {
+			return Inspection{Path: resolvedLayout.Config, State: StateAmbiguous, ReasonCode: "layout_ambiguous", Err: discoveryErr}
+		}
+		switch discovery.Presence {
+		case layout.Ambiguous:
+			return Inspection{Path: resolvedLayout.Config, State: StateAmbiguous, ReasonCode: "canonical_and_legacy_layout_ambiguous", Err: fmt.Errorf("canonical and legacy Aegis layouts both exist; inspect %s and %s, then run either 'aegis migrate-layout' after removing the empty canonical layout or 'aegis reset' for the intended installation", resolvedLayout.Root, resolvedLayout.LegacyConfig)}
+		case layout.Legacy:
+			return Inspection{Path: resolvedLayout.LegacyConfig, State: StateLegacy, ReasonCode: "legacy-layout-detected", Err: fmt.Errorf("recognized legacy Aegis layout exists; run 'aegis migrate-layout' in a terminal or 'aegis reset'")}
+		}
+	}
 	resolved, err := ResolvePath(path)
 	if err != nil {
 		return Inspection{Path: path, State: StateAmbiguous, ReasonCode: "configuration_path_ambiguous", Err: err}
@@ -278,8 +296,12 @@ func validEnvironmentName(name string) bool {
 }
 
 func Defaults() Config {
-	h, _ := os.UserHomeDir()
-	return Config{StateDir: filepath.Join(h, ".local", "state", "aegis"), RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 5 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: filepath.Join(h, ".local", "state", "aegis-checkpoints")}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 120 * time.Second, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 120 * time.Second, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
+	resolved, _ := layout.New().Resolve()
+	return DefaultsFor(resolved)
+}
+
+func DefaultsFor(resolved layout.Layout) Config {
+	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 5 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 120 * time.Second, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 120 * time.Second, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
 func (c Config) Validate() error {
 	var es []error

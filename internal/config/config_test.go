@@ -24,6 +24,22 @@ func TestLoadStrictAndEnvironmentPrecedence(t *testing.T) {
 		t.Fatalf("state_dir=%q", c.StateDir)
 	}
 }
+func TestExampleConfigurationRemainsLoadable(t *testing.T) {
+	example, err := os.ReadFile(filepath.Join("..", "..", "examples", "aegis.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := strings.ReplaceAll(string(example), "REPLACE_WITH_LOCAL_UID", "4242")
+	document = strings.ReplaceAll(document, "REPLACE_WITH_LOCAL_USERNAME", "operator")
+	path := filepath.Join(t.TempDir(), "aegis.yaml")
+	if err = os.WriteFile(path, []byte(document), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Load(path, nil); err != nil {
+		t.Fatalf("examples/aegis.yaml is not a valid launch asset: %v", err)
+	}
+}
+
 func TestLoadRejectsUnknownField(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.yaml")
 	data := []byte("unknown_security_switch: true\n")
@@ -46,6 +62,45 @@ func TestLoadPreservesValidEnvironmentOnlyConfiguration(t *testing.T) {
 	}
 	if configuration.Principal.UID != "4242" || configuration.Principal.User != "operator" {
 		t.Fatalf("environment principal not preserved: %#v", configuration.Principal)
+	}
+}
+
+func TestLiteralArgisDefaultsIgnoreXDGScattering(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "elsewhere-config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, "elsewhere-state"))
+	path, err := DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaults := Defaults()
+	if path != filepath.Join(home, ".argis", "aegis.yaml") || defaults.StateDir != filepath.Join(home, ".argis", "state") || defaults.Audit.CheckpointDir != filepath.Join(home, ".argis", "state", "audit-checkpoints") {
+		t.Fatalf("scattered defaults: path=%q state=%q checkpoints=%q", path, defaults.StateDir, defaults.Audit.CheckpointDir)
+	}
+}
+
+func TestDefaultInspectionDetectsLegacyAndCanonicalAmbiguity(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	legacy := filepath.Join(home, ".config", "aegis", "aegis.yaml")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("malformed: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := Inspect(""); got.State != StateLegacy || got.ReasonCode != "legacy-layout-detected" {
+		t.Fatalf("legacy=%+v", got)
+	}
+	if err := os.Mkdir(filepath.Join(home, ".argis"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".argis", "unknown"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := Inspect(""); got.State != StateAmbiguous || got.ReasonCode != "canonical_and_legacy_layout_ambiguous" {
+		t.Fatalf("ambiguity=%+v", got)
 	}
 }
 
