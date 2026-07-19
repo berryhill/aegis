@@ -75,9 +75,9 @@ func executeReset(t *testing.T, fixture resetCommandFixture, input string, termi
 	return out.String(), err
 }
 
-func TestResetCommandPreviewAndExactConfirmation(t *testing.T) {
+func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
-	output, err := executeReset(t, fixture, resetdomain.Confirmation+"\n", true, nil)
+	output, err := executeReset(t, fixture, "y\n", true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,8 @@ func TestResetCommandPreviewAndExactConfirmation(t *testing.T) {
 		`"operation": "reset"`,
 		`"resolved_config_path": "` + fixture.config + `"`,
 		`"path": "` + filepath.Join(fixture.state, "plans", "one.json") + `"`,
-		`"confirmation_required": "reset aegis"`,
+		`"confirmation_required": "y/yes"`,
+		"Apply this exact reset plan? [y/N]",
 		`"credential_records_destroyed": false`,
 		`"local_kek_destroyed": false`,
 		"encrypted credentials and audit history",
@@ -111,8 +112,9 @@ func TestResetCommandDeclineEOFNonTTYAndCancellationWriteNothing(t *testing.T) {
 		wantError   bool
 		wantReason  string
 	}{
-		{name: "generic yes", input: "yes\n", terminal: true},
-		{name: "wrong case", input: "Reset Aegis\n", terminal: true},
+		{name: "default no", input: "\n", terminal: true},
+		{name: "explicit no", input: "no\n", terminal: true},
+		{name: "old phrase", input: "reset aegis\n", terminal: true},
 		{name: "eof", input: "", terminal: true},
 		{name: "non tty", input: resetdomain.Confirmation + "\n", terminal: false, wantError: true, wantReason: resetdomain.ReasonRequiresTTY},
 		{name: "cancellation", input: resetdomain.Confirmation + "\n", terminal: true, cancel: true, wantError: true},

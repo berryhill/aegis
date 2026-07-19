@@ -34,7 +34,7 @@ const (
 	ReasonIncomplete  = "reset_incomplete"
 	ReasonDeclined    = "reset_declined"
 	ReasonRequiresTTY = "reset_requires_tty"
-	Confirmation      = "reset aegis"
+	Confirmation      = "yes"
 	maximumArtifacts  = 10000
 	maximumPathBytes  = 4096
 	maximumPathDepth  = 64

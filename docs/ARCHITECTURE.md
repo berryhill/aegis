@@ -35,7 +35,7 @@ flowchart TB
   Proxy --> Ollama[Exact loopback Ollama model]
   Onboarding[Authenticated installed-only onboarding] -->|preview + yes; atomic config| Config
   Onboarding -->|version/tags only; no pull| Ollama
-  Reset[Authenticated deterministic reset] -->|inventory + exact phrase; config last| Config
+  Reset[Authenticated deterministic reset] -->|inventory + default-deny confirmation; config last| Config
   Reset -->|recognized owned local artifacts only| State
   Reset -. preserve .-> Hermes
   Reset -. preserve daemon and models .-> Ollama

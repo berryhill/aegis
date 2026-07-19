@@ -174,7 +174,7 @@ Do not persist one optimistic `onboarding_complete` boolean. Derive state from v
 6. Exact model artifact
    - Discover approved installed candidate artifacts using the existing closed registry.
    - Show candidate ID, exact Ollama name, publisher/source, license, terms URL, digest, artifact size, quantization, context, and required capabilities.
-   - Do not silently choose a candidate.
+   - If exactly one approved installed candidate is discovered, select it visibly without rendering a one-item selection prompt; require explicit selection with no default when multiple candidates are installed.
    - Reject unsupported, modified, abliterated, mutable, ambiguous, or drifted artifacts.
    - If no approved candidate is installed, offer an exact download only during explicit onboarding and only after a separately authenticated, exact-plan-bound confirmation.
    - Show the network action, expected artifact, endpoint/store, approximate size, licensing information, and digest-pinning behavior before download.
@@ -329,7 +329,7 @@ Each approval must show:
 - allowed choices;
 - safe default.
 
-Use conventional `[Y/n]` and `[y/N]` prompts for bootstrap choices; Enter accepts the clearly displayed default. Digest-bound integrity comes from displaying, binding, and revalidating the exact plan, not from making the operator copy generated prose. Keep an exact phrase only for genuinely destructive reset unless the product policy explicitly changes it.
+Use conventional `[Y/n]` and `[y/N]` prompts for choices. Enter accepts the clearly displayed default. Destructive reset uses `[y/N]`, so Enter cancels. Digest-bound integrity comes from displaying, binding, and revalidating the exact plan, not from making the operator copy generated prose.
 
 ### Protected credential intake
 

@@ -346,9 +346,7 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 		return false, err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Ollama %s at %s\nBoundary: %s\n", report.Version, report.Endpoint, report.Boundary)
-	for index, installed := range report.Installed {
-		fmt.Fprintf(cmd.OutOrStdout(), "  [%d] %s\n      Ollama name: %s\n      publisher/source: %s / %s\n      license/terms: %s / %s\n      digest: %s\n      artifact size: %d bytes\n      quantization: %s\n      context: %d\n      capabilities: %s\n", index+1, installed.Candidate.ID, installed.Candidate.OllamaName, installed.Candidate.Publisher, installed.Candidate.Source, installed.Candidate.License, installed.Candidate.LicenseURL, installed.Digest, installed.Artifact.Size, installed.Artifact.Details.QuantizationLevel, installed.Artifact.Details.ContextLength, strings.Join(installed.Artifact.Capabilities, ", "))
-	}
+	renderInstalledCandidates(cmd, report.Installed)
 	if len(report.Installed) == 0 {
 		fmt.Fprintln(cmd.OutOrStdout(), "No approved installed artifact is visible. No candidate is selected by default.")
 		for index, candidate := range managerdomain.Candidates() {
@@ -420,20 +418,10 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 			return false, errors.New("download completed but the approved artifact was not visible during bounded rediscovery; rerun aegis init")
 		}
 	}
-	if len(report.Installed) > 1 {
-		fmt.Fprint(cmd.OutOrStdout(), "Select one installed candidate number (no default): ")
-	} else {
-		fmt.Fprint(cmd.OutOrStdout(), "Select candidate [1], or press Enter to exit: ")
-	}
-	choice, eof, err := readBootstrapLine(cmd, input, 32)
-	if err != nil || eof || choice == "" {
+	selected, selectedOK, err := selectInstalledCandidate(cmd, input, report.Installed)
+	if err != nil || !selectedOK {
 		return false, err
 	}
-	index := parseMenuIndex(choice, len(report.Installed))
-	if index < 0 {
-		return false, usage(errors.New("installed candidate selection is invalid"))
-	}
-	selected := report.Installed[index]
 	preview, err := managerdomain.PreviewExternalModelConfiguration(snapshot.ConfigPath, service.Config.StateDir, "", selected)
 	if err != nil {
 		return false, err
@@ -455,6 +443,36 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Exact local artifact configured; certification is still required before readiness.")
 	return true, nil
+}
+
+func selectInstalledCandidate(cmd *cobra.Command, input *terminalInput, installed []managerdomain.InstalledCandidate) (managerdomain.InstalledCandidate, bool, error) {
+	if len(installed) == 0 {
+		return managerdomain.InstalledCandidate{}, false, errors.New("no installed candidate is available for selection")
+	}
+	if len(installed) == 1 {
+		fmt.Fprintf(cmd.OutOrStdout(), "Only one approved installed candidate found; selected automatically: %s\n", installed[0].Candidate.ID)
+		return installed[0], true, nil
+	}
+	fmt.Fprint(cmd.OutOrStdout(), "Select one installed candidate number (no default): ")
+	choice, eof, err := readBootstrapLine(cmd, input, 32)
+	if err != nil || eof || choice == "" {
+		return managerdomain.InstalledCandidate{}, false, err
+	}
+	index := parseMenuIndex(choice, len(installed))
+	if index < 0 {
+		return managerdomain.InstalledCandidate{}, false, usage(errors.New("installed candidate selection is invalid"))
+	}
+	return installed[index], true, nil
+}
+
+func renderInstalledCandidates(cmd *cobra.Command, installed []managerdomain.InstalledCandidate) {
+	for index, candidate := range installed {
+		label := ""
+		if len(installed) > 1 {
+			label = fmt.Sprintf("[%d] ", index+1)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "  %s%s\n      Ollama name: %s\n      publisher/source: %s / %s\n      license/terms: %s / %s\n      digest: %s\n      artifact size: %d bytes\n      quantization: %s\n      context: %d\n      capabilities: %s\n", label, candidate.Candidate.ID, candidate.Candidate.OllamaName, candidate.Candidate.Publisher, candidate.Candidate.Source, candidate.Candidate.License, candidate.Candidate.LicenseURL, candidate.Digest, candidate.Artifact.Size, candidate.Artifact.Details.QuantizationLevel, candidate.Artifact.Details.ContextLength, strings.Join(candidate.Artifact.Capabilities, ", "))
+	}
 }
 
 func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {

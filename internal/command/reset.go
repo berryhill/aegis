@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	resetdomain "github.com/berryhill/aegis/internal/reset"
 	"github.com/spf13/cobra"
@@ -33,19 +34,20 @@ func resetCmd(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer
 				Warning              string                 `json:"warning"`
 				RetainedLegacy       []string               `json:"retained_empty_legacy_directories,omitempty"`
 				ConfirmationRequired string                 `json:"confirmation_required"`
-			}{"reset", resetdomain.PlanDigest(plan), plan.Principal, plan.ConfigPath, string(plan.ConfigState), plan.Artifacts, plan.Preserved, plan.CredentialRecords, plan.LocalKEK, plan.Postcondition, plan.Warning, plan.LegacyRetained, resetdomain.Confirmation}
+			}{"reset", resetdomain.PlanDigest(plan), plan.Principal, plan.ConfigPath, string(plan.ConfigState), plan.Artifacts, plan.Preserved, plan.CredentialRecords, plan.LocalKEK, plan.Postcondition, plan.Warning, plan.LegacyRetained, "y/yes"}
 			if err = output(cmd, preview); err != nil {
 				return err
 			}
 			if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 				return usage(errors.New(resetdomain.ReasonRequiresTTY + ": reset requires real terminal input and output; no writes were performed"))
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Type %s to apply this exact reset plan: ", resetdomain.Confirmation)
+			fmt.Fprint(cmd.OutOrStdout(), "Apply this exact reset plan? [y/N]: ")
 			answer, eof, readErr := newTerminalInput(cmd.InOrStdin()).ReadLine(cmd.Context(), 64)
 			if readErr != nil {
 				return fmt.Errorf("%s: confirmation input failed; no writes were performed: %w", resetdomain.ReasonDeclined, readErr)
 			}
-			if eof || answer != resetdomain.Confirmation {
+			answer = strings.ToLower(strings.TrimSpace(answer))
+			if eof || answer != "y" && answer != resetdomain.Confirmation {
 				return output(cmd, map[string]any{"state": "unchanged", "reason": resetdomain.ReasonDeclined, "written": false})
 			}
 			if err = service.Apply(cmd.Context(), plan); err != nil {

@@ -228,7 +228,7 @@ Canonical reset:
 - authorize only validated Aegis-owned artifacts below `~/.argis`;
 - preserve managed Ollama model artifacts if that is the retained product contract, or explicitly change and document the contract after reviewing existing requirements;
 - preserve all external assets;
-- require the existing exact terminal confirmation `reset aegis`;
+- require explicit `yes` at a default-deny `[y/N]` terminal confirmation;
 - retain plan digest, identity revalidation, no-follow behavior, bounded inventory, unknown-artifact denial, and postcondition verification;
 - return the local installation to artifact-derived `uninitialized` state.
 
@@ -349,7 +349,7 @@ Add tests for at least:
 - unsafe external-parent race attempts cannot redirect deletion;
 - retained empty legacy child behavior, if used, is verified and reported;
 - unknown files, symlinks, hard links, malformed paths, repositories, roots, home itself, and arbitrary explicit external paths fail closed;
-- exact `reset aegis` confirmation remains mandatory;
+- default-deny `[y/N]` confirmation remains mandatory;
 - plan and apply identity drift is detected;
 - non-TTY, decline, EOF, and cancellation make no changes;
 - post-reset default inspection reports `uninitialized` and next bare interactive invocation enters canonical `~/.argis` onboarding;
