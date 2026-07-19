@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Repaired live Hermes 0.18.2 manager certification end to end: the disposable gateway now receives the Aegis contract through supported `session.create` seed history, resolves the authenticated local route through Hermes's OpenRouter-compatible custom-base environment, uses a real empty toolset, accepts and strips Hermes's `session_id` request extension, validates buffered streaming responses, and constrains local generation to the closed response schema. Certification isolates ordinary cases, executes a genuine repeated-turn case, and publishes only after every real Hermes → authenticated proxy → exact Ollama case passes.
+
 ## [0.1.17] - 2026-07-18
 
 ### Fixed

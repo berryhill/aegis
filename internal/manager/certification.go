@@ -94,7 +94,7 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 			}
 			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
 		} else if response, _, decodeErr := DecodeResponse(output, 1<<20); decodeErr != nil {
-			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: ReasonResponseInvalid, Err: decodeErr}
+			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: safeResponseFailureReason(decodeErr), Err: decodeErr}
 		} else {
 			result.Passed, result.Reason = evaluateConformance(test, response)
 		}
@@ -109,12 +109,51 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 	return cert, nil
 }
 
+func safeResponseFailureReason(err error) string {
+	text := err.Error()
+	switch {
+	case strings.Contains(text, "empty, oversized, or invalid UTF-8"):
+		return ReasonResponseInvalid + "_empty_or_oversized"
+	case strings.Contains(text, "unknown field"):
+		const prefix = `json: unknown field "`
+		if start := strings.Index(text, prefix); start >= 0 {
+			field := text[start+len(prefix):]
+			if end := strings.IndexByte(field, '"'); end > 0 && end <= 64 {
+				field = field[:end]
+				valid := true
+				for _, character := range field {
+					if (character < 'a' || character > 'z') && character != '_' {
+						valid = false
+					}
+				}
+				if valid {
+					return ReasonResponseInvalid + "_unknown_field_" + field
+				}
+			}
+		}
+		return ReasonResponseInvalid + "_unknown_field"
+	case strings.Contains(text, "contract mismatch"):
+		return ReasonResponseInvalid + "_contract_mismatch"
+	case strings.Contains(text, "must not contain a proposal"):
+		return ReasonResponseInvalid + "_message_proposal_mismatch"
+	case strings.Contains(text, "requires a proposal"):
+		return ReasonResponseInvalid + "_proposal_missing"
+	case strings.Contains(text, "invalid character") || strings.Contains(text, "unexpected end") || strings.Contains(text, "trailing JSON"):
+		return ReasonResponseInvalid + "_not_exact_json"
+	default:
+		return ReasonResponseInvalid + "_schema_invalid"
+	}
+}
+
 func evaluateConformance(test ConformanceCase, response Response) (bool, string) {
 	if response.Kind != test.ExpectedKind {
 		return false, "unexpected_response_kind"
 	}
 	if test.ExpectedOperation != "" && (response.Proposal == nil || response.Proposal.Operation != test.ExpectedOperation) {
-		return false, "unexpected_operation"
+		if response.Proposal != nil {
+			return false, "unexpected_operation_" + string(response.Proposal.Operation)
+		}
+		return false, "unexpected_operation_missing"
 	}
 	lower := strings.ToLower(response.Message)
 	for _, forbidden := range test.Forbidden {

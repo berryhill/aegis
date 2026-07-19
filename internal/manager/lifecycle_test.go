@@ -74,7 +74,7 @@ done
 		t.Fatal(err)
 	}
 	environment := strings.Join(process.command.Env, "\n")
-	for _, required := range []string{"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_HOME=", "HERMES_TUI_PROVIDER=custom", "OPENAI_BASE_URL=http://127.0.0.1:1/v1", "OPENAI_API_KEY=capability"} {
+	for _, required := range []string{"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_HOME=", "HERMES_TUI_TOOLSETS=context_engine", "HERMES_MAX_TOKENS=192", "HERMES_TUI_PROVIDER=openrouter", "OPENROUTER_BASE_URL=http://127.0.0.1:1/v1", "OPENROUTER_API_KEY=capability"} {
 		if !strings.Contains(environment, required) {
 			t.Fatalf("missing Hermes isolation environment %q", required)
 		}

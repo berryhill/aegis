@@ -52,10 +52,10 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 		"PATH=" + os.Getenv("PATH"), "HOME=" + home, "HERMES_HOME=" + home,
 		"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1",
 		"HERMES_PYTHON_SRC_ROOT=" + config.Installation, "HERMES_ENABLE_PROJECT_PLUGINS=false",
-		"HERMES_DISABLE_AUTO_SKILLS=1", "HERMES_TUI_TOOLSETS=no_mcp", "HERMES_TUI_SKILLS=",
-		"HERMES_SKIP_VERSION_CHECK=1", "HERMES_YOLO_MODE=0", "PYTHONDONTWRITEBYTECODE=1",
-		"HERMES_MODEL=" + config.Model, "HERMES_TUI_PROVIDER=custom", "OPENAI_BASE_URL=" + config.ProxyEndpoint + "/v1",
-		"OPENAI_API_KEY=" + config.ProxyToken, "HERMES_EPHEMERAL_SYSTEM_PROMPT=" + SystemInstruction,
+		"HERMES_DISABLE_AUTO_SKILLS=1", "HERMES_TUI_TOOLSETS=context_engine", "HERMES_TUI_SKILLS=",
+		"HERMES_SKIP_VERSION_CHECK=1", "HERMES_YOLO_MODE=0", "HERMES_MAX_TOKENS=192", "PYTHONDONTWRITEBYTECODE=1",
+		"HERMES_MODEL=" + config.Model, "HERMES_TUI_PROVIDER=openrouter", "OPENROUTER_BASE_URL=" + config.ProxyEndpoint + "/v1",
+		"OPENROUTER_API_KEY=" + config.ProxyToken, "HERMES_EPHEMERAL_SYSTEM_PROMPT=" + SystemInstruction,
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {

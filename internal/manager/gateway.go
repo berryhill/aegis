@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -93,7 +94,15 @@ func (c *GatewayClient) CreateSession(ctx context.Context, source string) (strin
 		return "", errors.New("Hermes gateway source is invalid")
 	}
 	id := c.id()
-	if err := c.write(id, "session.create", map[string]any{"cols": 100, "source": source}); err != nil {
+	if err := c.write(id, "session.create", map[string]any{
+		"cols":             100,
+		"source":           source,
+		"reasoning_effort": "none",
+		// Hermes 0.18.2 does not pass HERMES_EPHEMERAL_SYSTEM_PROMPT into the
+		// TUI gateway's direct AIAgent constructor. session.create seed messages
+		// are its supported per-session protocol boundary for this contract.
+		"messages": []map[string]string{{"role": "system", "content": SystemInstruction}},
+	}); err != nil {
 		return "", err
 	}
 	message, err := c.wait(ctx, func(message GatewayMessage) bool { return messageID(message) == id })
@@ -135,7 +144,10 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 			return nil, err
 		}
 		if message.Error != nil || message.Params.Type == "error" {
-			return nil, errors.New("Hermes manager turn failed")
+			if message.Error != nil {
+				return nil, errors.New("Hermes prompt-submit RPC failed")
+			}
+			return nil, errors.New(safeHermesErrorEvent(message.Params.Payload))
 		}
 		switch message.Params.Type {
 		case "message.start":
@@ -154,7 +166,14 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 			}
 			status, _ := message.Params.Payload["status"].(string)
 			if status != "complete" {
-				return nil, errors.New("Hermes gateway turn did not complete successfully")
+				switch status {
+				case "error":
+					return nil, errors.New("Hermes gateway completion status was error")
+				case "interrupted":
+					return nil, errors.New("Hermes gateway completion status was interrupted")
+				default:
+					return nil, errors.New("Hermes gateway completion status was missing or unknown")
+				}
 			}
 			if len(response) == 0 {
 				response = append(response, payloadTextValue(message.Params.Payload)...)
@@ -202,6 +221,23 @@ func messageID(message GatewayMessage) string {
 	_ = json.Unmarshal(message.ID, &value)
 	return value
 }
+func safeHermesErrorEvent(payload map[string]any) string {
+	text, _ := payload["message"].(string)
+	lower := strings.ToLower(text)
+	switch {
+	case strings.Contains(lower, "no llm provider configured"):
+		return "Hermes gateway emitted a provider-unresolved error event"
+	case strings.Contains(lower, "auth") || strings.Contains(lower, "api key"):
+		return "Hermes gateway emitted an authentication error event"
+	case strings.Contains(lower, "custom") || strings.Contains(lower, "provider"):
+		return "Hermes gateway emitted a provider-configuration error event"
+	case strings.Contains(lower, "model"):
+		return "Hermes gateway emitted a model-configuration error event"
+	default:
+		return "Hermes gateway emitted an unclassified error event"
+	}
+}
+
 func payloadTextValue(payload map[string]any) string {
 	for _, key := range []string{"delta", "text", "content", "message"} {
 		if value, ok := payload[key].(string); ok {

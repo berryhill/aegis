@@ -36,7 +36,7 @@ Return exactly one JSON object on one line. Return no markdown fence, preamble, 
 Use kind "message" with proposal null when no Aegis operation is needed. Use kind "proposal" with proposal {"operation":"...","arguments":{...}} when an operation is needed. Never add keys. JSON strings must use double quotes.
 
 ALLOWED OPERATIONS AND EXACT ARGUMENT KEYS:
-- status.show, audit.verify, session.exit, secret.begin_intake: {}
+- status.show, audit.verify, session.exit: {}
 - secret.list, audit.query: optional "limit" integer and optional "cursor" string
 - secret.search: required "query" string; optional "limit" integer and optional "cursor" string
 - secret.metadata, secret.history: required "record_id" string
@@ -45,7 +45,22 @@ ALLOWED OPERATIONS AND EXACT ARGUMENT KEYS:
 - secret.propose_revoke: required "record_id" string and "reason" string; optional "version" positive integer
 - secret.propose_binding: required "agent_id", "stanza_id", "scope", "record_id", "version_policy", and "mode" strings plus required "destinations" string array; optional "pinned_version" positive integer
 
-Choose only from those operations. Preserve user-supplied record references and search terms. If required information is missing, return a message rather than inventing it. Before emitting, silently verify the single JSON object against this contract.`
+Choose only from those operations. Preserve user-supplied record references and search terms. If required information is missing, return a message rather than inventing it. Map complete user intents deterministically: status requests use status.show; metadata list requests use secret.list; metadata searches use secret.search; protected-record creation uses secret.propose_create; rotation uses secret.propose_rotate; revocation uses secret.propose_revoke. These are proposals only, never claims that work completed. Before emitting, silently verify the single JSON object against this contract.
+
+FORMAT EXEMPLARS (syntax only, not answers to later requests):
+Input intent: acknowledge safely without an operation.
+Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"message","message":"Acknowledged safely.","proposal":null}
+Input intent: revoke record example-record for reason cleanup.
+Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"proposal","message":"Revocation requires Aegis authorization.","proposal":{"operation":"secret.propose_revoke","arguments":{"record_id":"example-record","reason":"cleanup"}}}
+Input intent: create protected reference example-token with kind opaque and disclosure none.
+Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"proposal","message":"Creation requires Aegis authorization.","proposal":{"operation":"secret.propose_create","arguments":{"reference":"example-token","kind":"opaque","disclosure":"none"}}}
+Input intent: search credential metadata for example-term.
+Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"proposal","message":"Metadata search requires Aegis authorization.","proposal":{"operation":"secret.search","arguments":{"query":"example-term"}}}
+Input intent: rotate record example-record.
+Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"proposal","message":"Rotation requires Aegis authorization.","proposal":{"operation":"secret.propose_rotate","arguments":{"record_id":"example-record"}}}
+Input intent: show manager status.
+Output bytes: {"schema_version":"aegis.manager.response.v1","kind":"proposal","message":"Status inspection requires Aegis authorization.","proposal":{"operation":"status.show","arguments":{}}}
+Your response must begin with { and end with }. Do not output analysis, thinking, XML tags, or backticks.`
 
 func PolicyDigest() string { return digestString(SystemInstruction) }
 

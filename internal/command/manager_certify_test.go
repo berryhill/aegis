@@ -18,8 +18,11 @@ func blockedCertificationExecutor(t *testing.T, timeout time.Duration, progress 
 	if err != nil {
 		t.Fatal(err)
 	}
+	go func() {
+		_, _ = io.WriteString(writer, "{\"jsonrpc\":\"2.0\",\"id\":\"aegis-1\",\"result\":{\"session_id\":\"fixture-session\"}}\n")
+	}()
 	var budget atomic.Int32
-	return liveConformanceExecutor{gateway: client, session: "fixture-session", budget: &budget, maximum: 4096, timeout: timeout, progress: progress}, writer
+	return liveConformanceExecutor{gateway: client, budget: &budget, maximum: 4096, timeout: timeout, progress: progress}, writer
 }
 
 func TestLiveConformanceTurnTimeoutIsBoundedAndAbortsCorpus(t *testing.T) {

@@ -26,14 +26,10 @@ Scope: run `docs/RECORDING.md`, sanitize, replay, and verify against current CLI
 
 Scope: prove that pinned Hermes can register exactly one Aegis-owned `github.get_repository.v1` bridge from a disposable home without enabling inherited MCP, plugins, tokens, skills, or profiles. Relevant files: `internal/runtime/hermes`, `internal/credentials/broker`, `docs/CREDENTIAL_BROKER.md`. Acceptance: effective tool registration is verified before prompts; capability arrives through an inherited channel where supported; a stanza without the exact operation cannot call it; safe-mode invariants remain tested; no terminal/curl fallback. Dependency: a supported Hermes bridge-injection contract or an upstream change.
 
-## 7. Run and review an exact real manager-model certification
-
-Scope: against an already-installed official candidate and with explicit operator authorization, run the live 64K-context corpus through the complete Hermes/proxy/Ollama path and review every result. Acceptance: persist the exact artifact/Hermes/Ollama/instruction/schema/corpus identity only when every critical case genuinely passes; document measured hardware and latency. Security: do not download or select an artifact implicitly, fabricate results, use mutable identity, enable cloud fallback, or alter the normal model store during default verification.
-
-## 8. Complete cross-platform terminal interruption campaigns
+## 7. Complete cross-platform terminal interruption campaigns
 
 Scope: port the Linux PTY coverage for SIGINT/SIGTERM, second-signal termination, EOF, ordinary/protected intake cancellation, and exact exit aliases to each supported non-Linux OS, including resize and forced child failure. Acceptance: cancellation-safe protected intake is either implemented and preflighted or fails closed before model activation; terminal echo is restored, capabilities are invalidated, children are gone, disposable state is removed, and one metadata-only receipt remains. Security: generated canaries must remain absent from captures, errors, audit, database metadata, and temporary files.
 
-## 9. Prove descriptor-anchored layout migration on additional platforms
+## 8. Prove descriptor-anchored layout migration on additional platforms
 
 Scope: implement and race-test equivalents of Linux no-follow descriptor-relative migration/reset cleanup on each supported non-Linux filesystem API. Relevant files: `internal/migration`, `internal/safefs`, `docs/PATH_LAYOUT.md`. Acceptance: exact legacy defaults beneath a writable external parent cannot redirect copy or deletion; unsupported filesystems deny before mutation; same- and cross-filesystem source layouts preserve exact authority/certification bindings. Security: do not replace the current explicit unsupported-platform denial with pathname-only deletion.

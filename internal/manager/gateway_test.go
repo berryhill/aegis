@@ -150,7 +150,7 @@ func TestGatewayRejectsNonSuccessfulHermesCompletionStatus(t *testing.T) {
 				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.start", "session_id": "session-1", "payload": map[string]any{}}})
 				_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "session-1", "payload": map[string]any{"text": "not a successful response", "status": status}}})
 			}()
-			if _, err = client.Turn(context.Background(), "session-1", "hello", 4096); err == nil || !strings.Contains(err.Error(), "did not complete successfully") {
+			if _, err = client.Turn(context.Background(), "session-1", "hello", 4096); err == nil || !strings.Contains(err.Error(), "completion status was") {
 				t.Fatalf("status %q accepted: %v", status, err)
 			}
 		})
