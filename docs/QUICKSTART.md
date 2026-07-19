@@ -76,7 +76,7 @@ Do not edit manager model fields merely to suppress that denial. For an already-
 ./aegis --config .aegis.yaml manager model status
 ```
 
-Discovery uses local Ollama metadata only. Configure previews the exact digest-bound route and requires literal `yes`; decline and interruption perform no write. Certification loads and tests the artifact through disposable Hermes and the authenticated loopback proxy, and writes nothing unless all security-critical and operational cases pass. Model installation/downloading remains an operator action outside this quickstart.
+Discovery uses local Ollama metadata only. Configure previews the exact digest-bound route and requires literal `yes`; decline and interruption perform no write. Certification loads and tests the artifact through disposable Hermes and the authenticated loopback proxy. Every case is bounded by `manager.hermes.turn_timeout`, while principal authority expiry bounds the complete run. A timeout, cancellation, expiry, protocol/transport failure, invalid envelope, or failed case aborts immediately, reports the exact case and stable metadata-safe reason, performs cleanup, and writes no certification; retry the printed `aegis manager certify CANDIDATE_ID` command after correcting the reason. Model installation/downloading remains an operator action outside this quickstart.
 
 ## Provider boundary
 

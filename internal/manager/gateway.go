@@ -34,6 +34,7 @@ type GatewayClient struct {
 	maximum  int
 	writeMu  sync.Mutex
 	nextID   atomic.Uint64
+	poisoned atomic.Bool
 }
 
 func NewGatewayClient(reader io.Reader, writer io.Writer, maximumMessageBytes int) (*GatewayClient, error) {
@@ -112,8 +113,12 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 	if sessionID == "" || len(sessionID) > 256 || text == "" || len(text) > c.maximum || maximumResponseBytes < 1 || maximumResponseBytes > c.maximum {
 		return nil, errors.New("Hermes turn bounds are invalid")
 	}
+	if c.poisoned.Load() {
+		return nil, errors.New("Hermes gateway session is unusable after an interrupted turn")
+	}
 	id := c.id()
-	if err := c.write(id, "prompt.submit", map[string]any{"session_id": sessionID, "text": text}); err != nil {
+	if err := c.writeContext(ctx, id, "prompt.submit", map[string]any{"session_id": sessionID, "text": text}); err != nil {
+		c.poisoned.Store(true)
 		return nil, err
 	}
 	response := make([]byte, 0, 4096)
@@ -123,6 +128,9 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 			return messageID(message) == id || (message.Method == "event" && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error"))
 		})
 		if err != nil {
+			// Turn events carry no prompt ID. After interruption, late events cannot
+			// safely be distinguished from the events of a later turn.
+			c.poisoned.Store(true)
 			return nil, err
 		}
 		if message.Error != nil || message.Params.Type == "error" {
@@ -159,6 +167,16 @@ func (c *GatewayClient) write(id, method string, params map[string]any) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return json.NewEncoder(c.writer).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+}
+func (c *GatewayClient) writeContext(ctx context.Context, id, method string, params map[string]any) error {
+	done := make(chan error, 1)
+	go func() { done <- c.write(id, method, params) }()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
 }
 func (c *GatewayClient) wait(ctx context.Context, match func(GatewayMessage) bool) (GatewayMessage, error) {
 	for {

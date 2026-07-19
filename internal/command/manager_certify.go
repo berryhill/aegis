@@ -18,7 +18,17 @@ type liveConformanceExecutor struct {
 	session  string
 	budget   *atomic.Int32
 	maximum  int
+	timeout  time.Duration
 	progress func(string)
+}
+
+type certificationCleanup struct{ steps []func() }
+
+func (c *certificationCleanup) add(step func()) { c.steps = append(c.steps, step) }
+func (c *certificationCleanup) close() {
+	for index := len(c.steps) - 1; index >= 0; index-- {
+		c.steps[index]()
+	}
 }
 
 func (e liveConformanceExecutor) Execute(ctx context.Context, test managerdomain.ConformanceCase) ([]byte, error) {
@@ -28,7 +38,22 @@ func (e liveConformanceExecutor) Execute(ctx context.Context, test managerdomain
 	e.budget.Store(1)
 	defer e.budget.Store(0)
 	prompt := fmt.Sprintf("Conformance case %s. Requirement: %s\nInput: %s", test.ID, test.Requirement, test.Input)
-	return e.gateway.Turn(ctx, e.session, prompt, e.maximum)
+	turnCtx, cancel := context.WithTimeout(ctx, e.timeout)
+	defer cancel()
+	output, err := e.gateway.Turn(turnCtx, e.session, prompt, e.maximum)
+	if err == nil {
+		return output, nil
+	}
+	reason := managerdomain.ReasonGatewayProtocol
+	deadline, hasDeadline := ctx.Deadline()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || (hasDeadline && !time.Now().Before(deadline)) {
+		reason = managerdomain.ReasonSessionExpired
+	} else if errors.Is(ctx.Err(), context.Canceled) {
+		reason = managerdomain.ReasonStartupCancelled
+	} else if errors.Is(turnCtx.Err(), context.DeadlineExceeded) {
+		reason = managerdomain.ReasonTurnTimeout
+	}
+	return nil, &managerdomain.ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
 }
 
 func managerCertifyCmd(build builder) *cobra.Command {
@@ -44,17 +69,26 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	}
 	defer func() {
 		outcome, reason := "denied", "certification_failed"
+		details := map[string]string{"candidate_id": candidateID, "model": service.Config.Manager.Inference.Model, "model_digest": service.Config.Manager.Inference.ModelDigest}
 		if resultErr == nil {
 			outcome, reason = "ok", "certification_passed"
+		} else {
+			var failure *managerdomain.ConformanceFailure
+			if errors.As(resultErr, &failure) {
+				reason = failure.Reason
+				details["conformance_case"] = failure.CaseID
+			}
 		}
 		auditCtx, cancel := context.WithTimeout(context.Background(), service.Config.Manager.CleanupTimeout)
 		defer cancel()
-		auditErr := service.AuditManagerCertification(auditCtx, subject, outcome, reason, map[string]string{"candidate_id": candidateID, "model": service.Config.Manager.Inference.Model, "model_digest": service.Config.Manager.Inference.ModelDigest})
+		auditErr := service.AuditManagerCertification(auditCtx, subject, outcome, reason, details)
 		if auditErr != nil {
 			resultErr = errors.Join(resultErr, auditErr)
 		}
 	}()
 	cfg := service.Config.Manager
+	cleanup := &certificationCleanup{}
+	defer cleanup.close()
 	if cfg.Inference.Model == "" || cfg.Inference.ModelDigest == "" || cfg.Inference.Certification == "" {
 		return usage(errors.New("configure exact manager model, digest, and certification path before live certification"))
 	}
@@ -84,7 +118,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 			return err
 		}
 		endpoint = managed.Endpoint()
-		defer closeManagedBounded(managed, cfg.CleanupTimeout)
+		cleanup.add(func() { closeManagedBounded(managed, cfg.CleanupTimeout) })
 	}
 	ollama, err := managerdomain.NewOllamaClient(endpoint, cfg.Inference.RequestTimeout)
 	if err != nil {
@@ -101,7 +135,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err = ollama.Load(cmd.Context(), cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive); err != nil {
 		return err
 	}
-	defer unloadBounded(ollama, cfg.Inference.Model, cfg.CleanupTimeout)
+	cleanup.add(func() { unloadBounded(ollama, cfg.Inference.Model, cfg.CleanupTimeout) })
 	var active atomic.Bool
 	active.Store(true)
 	defer active.Store(false)
@@ -112,7 +146,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err != nil {
 		return err
 	}
-	defer closeProxyBounded(proxy, cfg.CleanupTimeout)
+	cleanup.add(func() { closeProxyBounded(proxy, cfg.CleanupTimeout) })
 	python := managerPython(descriptor.Installation, descriptor.Executable)
 	if python == "" {
 		return errors.New("Hermes gateway Python executable not found")
@@ -121,12 +155,17 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err != nil {
 		return err
 	}
-	defer closeHermesBounded(hermes, cfg.CleanupTimeout)
+	cleanup.add(func() { closeHermesBounded(hermes, cfg.CleanupTimeout) })
 	session, err := hermes.Client().CreateSession(cmd.Context(), "aegis-manager-certification")
 	if err != nil {
 		return err
 	}
-	certification, err := managerdomain.RunCertification(cmd.Context(), liveConformanceExecutor{gateway: hermes.Client(), session: session, budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), progress: progress}, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC())
+	certificationCtx, cancelCertification := context.WithDeadline(cmd.Context(), subject.ExpiresAt)
+	defer cancelCertification()
+	if err = certificationCtx.Err(); err != nil {
+		return fmt.Errorf("certification authority expired before conformance began: %s", managerdomain.ReasonSessionExpired)
+	}
+	certification, err := managerdomain.RunCertification(certificationCtx, liveConformanceExecutor{gateway: hermes.Client(), session: session, budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), timeout: cfg.Hermes.TurnTimeout, progress: progress}, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC())
 	if err != nil {
 		return err
 	}

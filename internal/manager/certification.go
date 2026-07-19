@@ -56,6 +56,19 @@ type ConformanceExecutor interface {
 	Execute(context.Context, ConformanceCase) ([]byte, error)
 }
 
+// ConformanceFailure identifies a failed case without retaining model output.
+type ConformanceFailure struct {
+	CaseID string
+	Reason string
+	Err    error
+}
+
+func (e *ConformanceFailure) Error() string {
+	return fmt.Sprintf("certification case %s failed: %s", e.CaseID, e.Reason)
+}
+
+func (e *ConformanceFailure) Unwrap() error { return e.Err }
+
 func RunCertification(ctx context.Context, executor ConformanceExecutor, candidate Candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion string, contextLength int, now time.Time) (Certification, error) {
 	if executor == nil {
 		return Certification{}, errors.New("conformance executor is required")
@@ -74,13 +87,21 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 		output, err := executor.Execute(ctx, test)
 		result := ConformanceResult{CaseID: test.ID}
 		if err != nil {
-			result.Reason = "execution_failed"
+			reason := ReasonGatewayProtocol
+			var failure *ConformanceFailure
+			if errors.As(err, &failure) && failure.Reason != "" {
+				reason = failure.Reason
+			}
+			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
 		} else if response, _, decodeErr := DecodeResponse(output, 1<<20); decodeErr != nil {
-			result.Reason = "response_invalid"
+			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: ReasonResponseInvalid, Err: decodeErr}
 		} else {
 			result.Passed, result.Reason = evaluateConformance(test, response)
 		}
 		cert.Results = append(cert.Results, result)
+		if !result.Passed {
+			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: result.Reason}
+		}
 	}
 	if err := cert.Validate(); err != nil {
 		return Certification{}, fmt.Errorf("certification failed: %w", err)

@@ -1,6 +1,14 @@
 package manager
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
 
 func TestCandidatesAreTraceableAndNoUncertifiedDefault(t *testing.T) {
 	candidates := Candidates()
@@ -33,6 +41,68 @@ func TestCertificationRequiresEveryExactCase(t *testing.T) {
 	results[0].Passed = false
 	if err := ValidateCertification(results); err == nil {
 		t.Fatal("critical failure certified")
+	}
+}
+
+type countingConformanceExecutor struct {
+	calls  []string
+	failAt int
+}
+
+func (e *countingConformanceExecutor) Execute(_ context.Context, test ConformanceCase) ([]byte, error) {
+	e.calls = append(e.calls, test.ID)
+	if len(e.calls) == e.failAt {
+		return nil, errors.New("fixture transport failure")
+	}
+	proposal := "null"
+	if test.ExpectedOperation != "" {
+		proposal = `{"operation":"` + string(test.ExpectedOperation) + `","arguments":{}}`
+	}
+	return []byte(`{"schema_version":"` + ResponseSchemaVersion + `","kind":"` + test.ExpectedKind + `","message":"safe","proposal":` + proposal + `}`), nil
+}
+
+func TestCertificationFailureNamesCaseStopsAndWritesNoArtifact(t *testing.T) {
+	executor := &countingConformanceExecutor{failAt: 2}
+	candidate := Candidates()[0]
+	cert, err := RunCertification(context.Background(), executor, candidate, candidate.OllamaName, "sha256:"+strings.Repeat("b", 64), "Q4", "0.18.2", "0.32.0", 65536, time.Now())
+	var failure *ConformanceFailure
+	if !errors.As(err, &failure) || failure.CaseID != ConformanceCorpus()[1].ID || failure.Reason != ReasonGatewayProtocol {
+		t.Fatalf("failure=%v", err)
+	}
+	if len(executor.calls) != 2 {
+		t.Fatalf("corpus continued: %v", executor.calls)
+	}
+	path := filepath.Join(t.TempDir(), "certification.json")
+	if err := SaveCertification(path, cert); err == nil {
+		t.Fatal("failed certification was saveable")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed certification artifact exists: %v", err)
+	}
+}
+
+func TestSuccessfulCertificationRunsExactCorpusAndSavesAtomically(t *testing.T) {
+	executor := &countingConformanceExecutor{}
+	candidate := Candidates()[0]
+	cert, err := RunCertification(context.Background(), executor, candidate, candidate.OllamaName, "sha256:"+strings.Repeat("b", 64), "Q4", "0.18.2", "0.32.0", 65536, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := ConformanceCorpus()
+	if len(executor.calls) != len(cases) {
+		t.Fatalf("calls=%v", executor.calls)
+	}
+	for index := range cases {
+		if executor.calls[index] != cases[index].ID {
+			t.Fatalf("case %d=%s want %s", index, executor.calls[index], cases[index].ID)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "certification.json")
+	if err := SaveCertification(path, cert); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".new"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("atomic temporary remains: %v", err)
 	}
 }
 

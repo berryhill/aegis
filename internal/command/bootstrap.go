@@ -494,7 +494,7 @@ func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalIn
 		fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
 	})
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("%w; certification was not saved; retry with: aegis manager certify %s", err, candidate)
 	}
 	return true, nil
 }

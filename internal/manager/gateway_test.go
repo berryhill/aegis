@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -80,5 +81,49 @@ func TestGatewayMalformedOversizedAndTimeoutFailClosed(t *testing.T) {
 	defer cancel()
 	if err := client.WaitReady(ctx); err == nil {
 		t.Fatal("closed gateway accepted")
+	}
+}
+
+func TestGatewayInterruptedTurnPoisonsSessionAgainstStaleEvents(t *testing.T) {
+	outputReader, outputWriter := io.Pipe()
+	client, err := NewGatewayClient(outputReader, io.Discard, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer outputWriter.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if _, err = client.Turn(ctx, "session-1", "first", 4096); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first turn error=%v", err)
+	}
+	go func() {
+		encoder := json.NewEncoder(outputWriter)
+		_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.start", "payload": map[string]any{}}})
+		_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "payload": map[string]any{"text": "stale"}}})
+	}()
+	if _, err = client.Turn(context.Background(), "session-1", "second", 4096); err == nil || !strings.Contains(err.Error(), "unusable after an interrupted turn") {
+		t.Fatalf("later turn accepted stale session: %v", err)
+	}
+}
+
+func TestGatewayTurnBoundsBlockedTransportWrite(t *testing.T) {
+	outputReader, outputWriter := io.Pipe()
+	inputReader, inputWriter := io.Pipe()
+	client, err := NewGatewayClient(outputReader, inputWriter, 4096)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer outputWriter.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err = client.Turn(ctx, "session-1", "blocked-write", 4096)
+	_ = inputReader.Close()
+	_ = inputWriter.Close()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("blocked transport error=%v", err)
+	}
+	if time.Since(started) > 500*time.Millisecond {
+		t.Fatal("blocked transport exceeded context deadline")
 	}
 }
