@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.17] - 2026-07-18
+
 ### Fixed
 
 - Made live manager certification deterministic for small local models by fully specifying the strict response envelope and typed operation argument schemas without weakening authorization or secret-handling rules. The Hermes gateway now rejects `error` and `interrupted` completion statuses, and the authenticated OpenAI-compatible proxy accepts standards-compliant JSON media-type parameters while retaining strict body validation.
