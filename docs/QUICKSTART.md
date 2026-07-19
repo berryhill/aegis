@@ -5,6 +5,7 @@
 - Linux
 - Go 1.26.5+
 - Hermes Agent `>=0.18.0,<0.19.0` on `PATH`
+- A compatible `pinentry` in the operator's desktop session for protected authority prompts, or a real terminal for the no-echo fallback
 
 Install the latest tagged Aegis source with `go install github.com/berryhill/aegis/cmd/aegis@latest`, or continue below to build a checkout. Self-update requires a published, non-draft stable GitHub release with assets, not merely a local or remote Git tag; until publication completes it correctly reports the previous published stable version. `aegis --update` is the strict root-only alias for `aegis update`; both use the same checksum-verifying service.
 
@@ -33,7 +34,7 @@ The copied files are local working files and should not be committed.
 
 Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the API token is shown as `[REDACTED]`.
 
-Alternatively, a genuinely new installation can run bare `./aegis` in a terminal. The literal local defaults are `~/.argis/aegis.yaml` and `~/.argis/state`; XDG variables do not change them. Review each displayed plan and press Enter to accept its `[Y/n]` default. Bare onboarding asks for and confirms an authority passphrase with echo disabled, generates a random KEK, persists only its Argon2id plus XChaCha20-Poly1305 encrypted envelope, creates and verifies the authority database, and continues to runtime/model/certification checks. It never sends the passphrase or KEK to Hermes, Ollama, or a model.
+Alternatively, a genuinely new installation can run bare `./aegis` in a terminal. The literal local defaults are `~/.argis/aegis.yaml` and `~/.argis/state`; XDG variables do not change them. Review each displayed plan and press Enter to accept its `[Y/n]` default. After plan authorization, bare onboarding asks for and confirms an authority passphrase in two fresh pinentry windows. It prefers an explicit absolute `--pinentry-executable`, otherwise conventional `pinentry`, and uses terminal-backed no-echo input only if pinentry is unavailable before interaction. It generates a random KEK, persists only its Argon2id plus XChaCha20-Poly1305 encrypted envelope, creates and verifies the authority database, and continues to runtime/model/certification checks. It never sends the passphrase or KEK to Hermes, Ollama, or a model. Pinentry cancellation does not fall back; headless services should use systemd credential custody.
 
 Verify the initialized non-interactive manager boundary without starting Hermes or Ollama:
 

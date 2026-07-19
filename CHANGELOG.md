@@ -4,6 +4,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added one injected pinentry-first authority-passphrase service for create/confirmation and unlock/verification, with bounded Assuan protocol parsing, direct process execution, allowlisted desktop/session environment, typed cancellation/policy/protocol failures, bounded retries, process-tree cleanup, and hermetic fake-helper coverage.
+
+### Fixed
+
+- Corrected authority intake behind synchronized bootstrap output: genuinely unavailable pre-interaction pinentry now falls back to terminal-backed no-echo stdin plus diagnostic output without requiring the presentation writer itself to be an `*os.File`; cancellation and post-interaction failures remain fail-closed.
+
 ## [0.1.19] - 2026-07-19
 
 ### Added

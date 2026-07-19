@@ -295,12 +295,22 @@ func openAuthorityForService(cmd *cobra.Command, service *app.Service) (*credent
 
 func loadConfiguredCustodian(cmd *cobra.Command, configured config.CredentialAuthority) (*credentials.FileCustodian, error) {
 	if configured.Custody == "passphrase-file" {
-		passphrase, err := readAuthorityPassphrase(cmd, false)
-		if err != nil {
-			return nil, err
+		for attempt := 0; attempt < passphraseRetryLimit; attempt++ {
+			passphrase, err := readAuthorityPassphrase(cmd, false)
+			if err != nil {
+				return nil, err
+			}
+			custodian, loadErr := credentials.LoadPassphraseCustodian(configured.KEKFile, passphrase)
+			wipeSecret(passphrase)
+			if loadErr == nil {
+				return custodian, nil
+			}
+			if !credentials.IsPassphraseAuthentication(loadErr) || attempt+1 == passphraseRetryLimit {
+				return nil, loadErr
+			}
+			fmt.Fprintln(cmd.ErrOrStderr(), "Aegis: authority passphrase was not accepted; retrying protected input")
 		}
-		defer wipeSecret(passphrase)
-		return credentials.LoadPassphraseCustodian(configured.KEKFile, passphrase)
+		return nil, credentials.ErrPassphraseAuthentication
 	}
 	custodianPath, err := custodyPath(configured)
 	if err != nil {
@@ -314,7 +324,7 @@ func custodyPath(configured config.CredentialAuthority) (string, error) {
 	case "host-file":
 		return configured.KEKFile, nil
 	case "passphrase-file":
-		return "", errors.New("passphrase-encrypted custody requires protected terminal unlock")
+		return "", errors.New("passphrase-encrypted custody requires protected pinentry or no-echo terminal unlock")
 	case "systemd":
 		directory := os.Getenv("CREDENTIALS_DIRECTORY")
 		if directory == "" {

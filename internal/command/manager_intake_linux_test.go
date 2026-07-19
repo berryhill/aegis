@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/berryhill/aegis/internal/tui"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/unix"
 )
@@ -297,4 +298,50 @@ func TestProtectedManagerIntakeOversizeAndEOFAreBounded(t *testing.T) {
 			t.Fatalf("terminal state changed after EOF: before=%#x after=%#x", initial.Lflag, final.Lflag)
 		}
 	})
+}
+
+func TestAuthorityFallbackAcceptsSynchronizedPresentationOutput(t *testing.T) {
+	master, slave := openCommandPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	initial, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := newAuthorityPassphraseService(func() string { return "" })
+	service.lookPath = func(string) (string, error) { return "", os.ErrNotExist }
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.WithValue(context.Background(), authorityPassphraseContextKey{}, AuthorityPassphraseProvider(service)))
+	cmd.SetIn(slave)
+	cmd.SetOut(tui.NewSynchronizedWriter(slave))
+	cmd.SetErr(slave)
+	result := make(chan []byte, 1)
+	failures := make(chan error, 1)
+	go func() {
+		value, readErr := readAuthorityPassphrase(cmd, false)
+		if readErr != nil {
+			failures <- readErr
+			return
+		}
+		result <- value
+	}()
+	var capture bytes.Buffer
+	readCommandPTYUntil(t, master, &capture, "Authority passphrase", 2*time.Second)
+	canary := "synchronized-fallback-canary"
+	_, _ = master.Write([]byte(canary + "\n"))
+	select {
+	case readErr := <-failures:
+		t.Fatal(readErr)
+	case value := <-result:
+		if string(value) != canary {
+			t.Fatal("fallback value mismatch")
+		}
+		wipeSecret(value)
+	case <-time.After(2 * time.Second):
+		t.Fatal("fallback remained blocked")
+	}
+	if strings.Contains(capture.String(), canary) {
+		t.Fatal("fallback passphrase was echoed")
+	}
+	assertCommandPTYRestored(t, slave, initial)
 }

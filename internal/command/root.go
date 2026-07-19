@@ -37,8 +37,9 @@ type Dependencies struct {
 	Initializer *initialize.Service
 	Resetter    *resetdomain.Service
 	Migrator    *migration.Service
+	Passphrases AuthorityPassphraseProvider
 }
-type rootOptions struct{ configFile, stateDir, hermesExecutable, runtime string }
+type rootOptions struct{ configFile, stateDir, hermesExecutable, pinentryExecutable, runtime string }
 
 type UpdateService interface {
 	Run(context.Context, bool) (selfupdate.Result, error)
@@ -102,6 +103,10 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		deps.Migrator = migration.New()
 	}
 	o := &rootOptions{}
+	passphrases := deps.Passphrases
+	if passphrases == nil {
+		passphrases = newAuthorityPassphraseService(func() string { return o.pinentryExecutable })
+	}
 	var updateAlias, helpAction, versionAction bool
 	var selectedAction string
 	root := &cobra.Command{Use: "aegis", Short: "Authenticated trust-stanza sessions over explicit Hermes Agent runtimes", Version: deps.Version, Args: cobra.NoArgs, SilenceErrors: true, SilenceUsage: true}
@@ -112,6 +117,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	f.StringVar(&o.configFile, "config", "", "configuration file")
 	f.StringVar(&o.stateDir, "state-dir", "", "Aegis state directory")
 	f.StringVar(&o.hermesExecutable, "hermes-executable", "", "Hermes executable")
+	f.StringVar(&o.pinentryExecutable, "pinentry-executable", "", "absolute path to a protected pinentry executable")
 	f.StringVar(&o.runtime, "runtime", "", "explicit runtime (hermes)")
 	f.Var(&rootActionValue{name: "update", value: &updateAlias, selected: &selectedAction}, "update", "update Aegis from the latest verified GitHub release")
 	f.VarP(&rootActionValue{name: "help", value: &helpAction, selected: &selectedAction}, "help", "h", "help for aegis")
@@ -154,6 +160,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		return service, nil
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
 		if updateAlias && cmd != root {
 			return usage(errors.New("--update is valid only as a root action without a positional command"))
 		}

@@ -17,12 +17,12 @@ import (
 )
 
 const (
-	encryptedKeyFormatVersion = 1
-	passphraseMinimumBytes    = 12
-	passphraseMaximumBytes    = 1024
-	argonTime                 = 3
-	argonMemory               = 64 * 1024
-	argonThreads              = 4
+	encryptedKeyFormatVersion       = 1
+	AuthorityPassphraseMinimumBytes = 12
+	AuthorityPassphraseMaximumBytes = 1024
+	argonTime                       = 3
+	argonMemory                     = 64 * 1024
+	argonThreads                    = 4
 )
 
 type encryptedKeyFile struct {
@@ -38,6 +38,10 @@ type encryptedKeyFile struct {
 
 var encryptedKeyAAD = []byte("aegis/passphrase-encrypted-kek/v1")
 
+var ErrPassphraseAuthentication = errors.New("encrypted key-encryption key credential could not be unlocked")
+
+func IsPassphraseAuthentication(err error) bool { return errors.Is(err, ErrPassphraseAuthentication) }
+
 // CreatePassphraseKey creates a random KEK and persists only an
 // Argon2id-derived-key encrypted envelope. The passphrase and plaintext KEK are
 // never written to disk.
@@ -45,8 +49,8 @@ func CreatePassphraseKey(path, id string, passphrase []byte) error {
 	if !ValidateIdentifier(id) {
 		return errors.New("invalid key-encryption key identifier")
 	}
-	if len(passphrase) < passphraseMinimumBytes || len(passphrase) > passphraseMaximumBytes {
-		return fmt.Errorf("authority passphrase must be between %d and %d bytes", passphraseMinimumBytes, passphraseMaximumBytes)
+	if len(passphrase) < AuthorityPassphraseMinimumBytes || len(passphrase) > AuthorityPassphraseMaximumBytes {
+		return fmt.Errorf("authority passphrase must be between %d and %d bytes", AuthorityPassphraseMinimumBytes, AuthorityPassphraseMaximumBytes)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
@@ -99,8 +103,8 @@ func CreatePassphraseKey(path, id string, passphrase []byte) error {
 // the passphrase. Authentication failures deliberately return one generic
 // error that reveals no plaintext or envelope details.
 func LoadPassphraseCustodian(path string, passphrase []byte) (*FileCustodian, error) {
-	if len(passphrase) < passphraseMinimumBytes || len(passphrase) > passphraseMaximumBytes {
-		return nil, errors.New("encrypted key-encryption key credential could not be unlocked")
+	if len(passphrase) < AuthorityPassphraseMinimumBytes || len(passphrase) > AuthorityPassphraseMaximumBytes {
+		return nil, ErrPassphraseAuthentication
 	}
 	if err := validateEncryptedCredentialFile(path); err != nil {
 		return nil, err
@@ -132,11 +136,11 @@ func LoadPassphraseCustodian(path string, passphrase []byte) (*FileCustodian, er
 	defer wipe(wrappingKey)
 	aead, err := chacha20poly1305.NewX(wrappingKey)
 	if err != nil {
-		return nil, errors.New("encrypted key-encryption key credential could not be unlocked")
+		return nil, ErrPassphraseAuthentication
 	}
 	plaintext, err := aead.Open(nil, nonce, ciphertext, encryptedKeyAAD)
 	if err != nil {
-		return nil, errors.New("encrypted key-encryption key credential could not be unlocked")
+		return nil, ErrPassphraseAuthentication
 	}
 	defer wipe(plaintext)
 	var key keyFile

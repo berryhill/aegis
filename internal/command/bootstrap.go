@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/credentials"
+	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/onboarding"
@@ -126,20 +126,33 @@ func renderBootstrapInspection(cmd *cobra.Command, snapshot onboarding.Snapshot)
 func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot, unlocked *[]byte) (bool, error) {
 	inspection := config.Inspect(snapshot.ConfigPath)
 	if inspection.State == config.StateValid && inspection.Config.Credentials.Authority.Custody == "passphrase-file" {
-		passphrase, err := readAuthorityPassphrase(cmd, false)
-		if err != nil {
-			return false, err
+		configured := inspection.Config.Credentials.Authority
+		for attempt := 0; attempt < passphraseRetryLimit; attempt++ {
+			passphrase, err := readAuthorityPassphrase(cmd, false)
+			if err != nil {
+				return false, err
+			}
+			custodian, loadErr := credentials.LoadPassphraseCustodian(configured.KEKFile, passphrase)
+			if loadErr != nil {
+				wipeSecret(passphrase)
+				if !credentials.IsPassphraseAuthentication(loadErr) || attempt+1 == passphraseRetryLimit {
+					return false, loadErr
+				}
+				fmt.Fprintln(cmd.ErrOrStderr(), "Aegis: authority passphrase was not accepted; retrying protected input")
+				continue
+			}
+			inspectErr := credentialbolt.Inspect(cmd.Context(), configured.Database, configured.DeploymentID, custodian)
+			custodian.Close()
+			if inspectErr != nil {
+				wipeSecret(passphrase)
+				return false, inspectErr
+			}
+			wipeSecret(*unlocked)
+			*unlocked = passphrase
+			fmt.Fprintln(cmd.OutOrStdout(), "Encrypted credential authority unlocked and verified for this process.")
+			return true, nil
 		}
-		custodian, err := credentials.LoadPassphraseCustodian(inspection.Config.Credentials.Authority.KEKFile, passphrase)
-		if err != nil {
-			wipeSecret(passphrase)
-			return false, err
-		}
-		custodian.Close()
-		wipeSecret(*unlocked)
-		*unlocked = passphrase
-		fmt.Fprintln(cmd.OutOrStdout(), "Encrypted credential authority unlocked and verified for this process.")
-		return true, nil
+		return false, credentials.ErrPassphraseAuthentication
 	}
 	if inspection.State == config.StateValid && inspection.Config.Credentials.Authority.Custody == "systemd" {
 		authority := inspection.Config.Credentials.Authority
@@ -298,32 +311,15 @@ func bootstrapPassphraseAuthority(cmd *cobra.Command, build builder, snapshot on
 }
 
 func readAuthorityPassphrase(cmd *cobra.Command, confirm bool) ([]byte, error) {
-	file, ok := cmd.InOrStdin().(*os.File)
-	if !ok || !terminalPair(file, cmd.OutOrStdout()) {
-		return nil, errors.New("a real terminal is required for no-echo authority passphrase intake")
-	}
-	first, err := readTerminalSecretBounded(cmd.Context(), file, cmd.ErrOrStderr(), "Authority passphrase (minimum 12 bytes): ", 1024)
+	provider, err := passphraseProvider(cmd)
 	if err != nil {
 		return nil, err
 	}
-	if len(first) < 12 {
-		wipeSecret(first)
-		return nil, errors.New("authority passphrase must contain at least 12 bytes")
+	intent := AuthorityPassphraseUnlock
+	if confirm {
+		intent = AuthorityPassphraseCreate
 	}
-	if !confirm {
-		return first, nil
-	}
-	second, err := readTerminalSecretBounded(cmd.Context(), file, cmd.ErrOrStderr(), "Confirm authority passphrase: ", 1024)
-	if err != nil {
-		wipeSecret(first)
-		return nil, err
-	}
-	defer wipeSecret(second)
-	if !bytes.Equal(first, second) {
-		wipeSecret(first)
-		return nil, errors.New("authority passphrase confirmation does not match")
-	}
-	return first, nil
+	return provider.Acquire(cmd.Context(), AuthorityPassphraseRequest{Intent: intent, Input: cmd.InOrStdin(), Diagnostic: cmd.ErrOrStderr()})
 }
 
 func readDefaultYes(cmd *cobra.Command, input *terminalInput) (bool, error) {

@@ -548,7 +548,7 @@ Managed mode MUST NOT silently point at arbitrary ambient model state merely to 
 
 ## 14. Credential-authority readiness
 
-First run MUST offer a working passphrase-encrypted local authority path in a real terminal. It MAY also defer authority creation when the operator declines or deliberately selects externally delivered service custody.
+First run MUST offer a working passphrase-encrypted local authority path in a real terminal. Authority passphrase intake MUST prefer a bounded directly executed pinentry helper and MAY fall back before interaction to terminal-backed no-echo input; pinentry does not remove the real-terminal requirement for the wizard's ordinary menus and confirmations. It MAY also defer authority creation when the operator declines or deliberately selects externally delivered service custody.
 
 Aegis MUST nevertheless provide deterministic readiness and setup guidance covering:
 
