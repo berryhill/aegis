@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.22] - 2026-07-19
+
 ### Fixed
 
 - Allowed fresh release preparation to consume existing unstaged changelog entries while preserving and restoring the original changelog exactly on dry-run or pre-commit failure.
