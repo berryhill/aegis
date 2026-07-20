@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.21] - 2026-07-19
+
 ### Fixed
 
 - Removed the manager instruction's canned `Acknowledged safely.` exemplar, required relevant replies for ordinary conversation, and added manager-specific conversational conformance so certified small local models cannot pass by copying a generic acknowledgement. The instruction and corpus identity change invalidates prior certifications and requires explicit recertification.
