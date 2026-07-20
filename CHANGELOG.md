@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.23] - 2026-07-20
+
 ### Fixed
 
 - Retried schema-valid certification replies that omit required conversational content with up to three fresh executions, while preserving immediate fail-closed behavior for invalid envelopes, forbidden claims, operational failures, cancellation, and authority expiry.
