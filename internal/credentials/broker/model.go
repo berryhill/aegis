@@ -12,6 +12,7 @@ const (
 	ActionGitHubGetRepository = "github.get_repository.v1"
 	GitHubScope               = "github/read"
 	GitHubDestination         = "github-api"
+	CapabilityFileName        = "aegis-broker-capability.json"
 )
 
 type Peer struct {

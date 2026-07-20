@@ -40,8 +40,11 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 		`Use kind "proposal" with proposal`,
 		`answer the user's actual message directly and naturally`,
 		`Never substitute a generic acknowledgement`,
+		`Aegis does store actual reusable credential values`,
+		`protected no-echo intake`,
 		`secret.propose_create`,
 		`Never include a credential value`,
+		`disclosure "protected"`,
 		`Return no markdown fence`,
 	} {
 		if !strings.Contains(SystemInstruction, required) {
@@ -50,6 +53,9 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 	}
 	if strings.Contains(SystemInstruction, "Acknowledged safely.") {
 		t.Fatal("system instruction retains a canned ordinary response")
+	}
+	if strings.Contains(SystemInstruction, `disclosure "none"`) {
+		t.Fatal("system instruction conflicts with create validation disclosure")
 	}
 }
 

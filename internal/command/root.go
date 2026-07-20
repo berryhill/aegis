@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	credentialbridge "github.com/berryhill/aegis/internal/credentials/bridge"
 	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
@@ -190,8 +191,29 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater))
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
 	return root
+}
+
+func credentialBridgeCmd() *cobra.Command {
+	var materialPath string
+	var timeout time.Duration
+	command := &cobra.Command{
+		Use:    "credential-bridge",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			server, err := credentialbridge.New(materialPath, timeout)
+			if err != nil {
+				return err
+			}
+			return server.Serve(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout())
+		},
+	}
+	command.Flags().StringVar(&materialPath, "material", "", "ephemeral Aegis broker capability material")
+	command.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "bounded broker operation timeout")
+	_ = command.MarkFlagRequired("material")
+	return command
 }
 
 func versionCmd(version string) *cobra.Command {

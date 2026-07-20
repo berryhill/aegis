@@ -14,9 +14,11 @@ A short-lived mandate binds one authenticated subject, agent, stanza, charter re
 
 ## Operational launch
 
-Each session starts a new Hermes process and disposable home with a minimal environment. Safe mode disables inherited project rules, user memories, plugins, and MCP. Aegis passes exactly the approved stanza toolset arguments and selected provider binding, verifies the resolved launch arguments, and records `toolset_verification: launch_arguments`.
+Each session starts a new Hermes process and disposable home with a minimal environment. Ordinary toolsets use safe mode, which disables inherited project rules, user memories, plugins, and MCP. Aegis passes exactly the approved stanza toolset arguments and selected provider binding, verifies the resolved launch arguments, and records `toolset_verification: launch_arguments`.
 
-This is process and Hermes-state isolation, not host filesystem, network, container, VM, or individual-tool runtime attestation.
+The reserved `aegis` toolset is permitted only with the exact implemented broker action and scope. Because Hermes safe mode disables MCP, Aegis instead generates one disposable MCP mapping, disables inherited configuration, project plugins/rules, auto-skills, and all other toolsets, launches the direct Hermes gateway, and fails closed unless the live gateway reports exactly `mcp__aegis__github_get_repository`. Successful sessions record `toolset_verification: exact_registered_aegis_bridge_tool`.
+
+This is process and Hermes-state isolation, not host filesystem, network, container, or VM confinement. Only the reserved Aegis bridge receives individual-tool runtime registration verification; ordinary toolsets retain launch-argument verification.
 
 ## Lifecycle
 

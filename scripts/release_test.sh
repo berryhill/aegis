@@ -149,6 +149,31 @@ setup_repo fresh
     grep -q 'would create one release commit' "$root/fresh-output" || fail_test 'fresh dry-run omitted exact action'
 )
 
+# An unstaged changelog participates in preparation and survives a dry run exactly.
+setup_repo dirty-changelog
+(
+    cd "$repo"
+    printf '%s\n' '- Additional unstaged release change.' >>CHANGELOG.md
+    cp CHANGELOG.md "$root/dirty-changelog-before"
+    run_dry_release >"$root/dirty-changelog-output"
+    cmp "$root/dirty-changelog-before" CHANGELOG.md || fail_test 'dirty changelog was not restored after dry run'
+    grep -q 'fresh release preparation' "$root/dirty-changelog-output" || fail_test 'dirty changelog blocked fresh release'
+    if "$real_git" diff --quiet -- CHANGELOG.md; then
+        fail_test 'dirty changelog was unexpectedly discarded'
+    fi
+)
+
+setup_repo dirty-changelog-publish
+(
+    cd "$repo"
+    printf '%s\n' '- Additional unstaged release change.' >>CHANGELOG.md
+    run_release >"$root/dirty-changelog-publish-output"
+    "$real_git" show HEAD:CHANGELOG.md | grep -q 'Additional unstaged release change' || fail_test 'release commit omitted dirty changelog entry'
+    [ "$("$real_git" ls-remote --heads origin main | cut -f1)" = "$("$real_git" rev-parse HEAD)" ] || fail_test 'dirty changelog release did not publish main'
+    run_dry_release >"$root/dirty-changelog-recovery-output"
+    grep -q 'remote tag already exists and matches exactly' "$root/dirty-changelog-recovery-output" || fail_test 'dirty changelog release was not recoverable'
+)
+
 # A valid existing signed tag is recoverable with origin/main at either allowed commit.
 setup_repo recovery-parent
 (
@@ -288,7 +313,7 @@ setup_repo bad-changelog
     "$real_git" add CHANGELOG.md
     "$real_git" commit -q -m 'Prepare v9.8.7 release'
     create_signed_tag
-    expect_failure 'has an incorrect changelog' run_dry_release
+    expect_failure 'does not preserve its parent changelog' run_dry_release
 )
 
 setup_repo unexpected-file

@@ -52,8 +52,21 @@ func testService(t *testing.T) *Service {
 	t.Helper()
 	root := t.TempDir()
 	exe := filepath.Join(root, "hermes-test")
-	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: /isolated/test'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$HERMES_HOME/launch-args\"\nprintf '%s' \"${TEST_PROVIDER_KEY:-}\" > \"$HERMES_HOME/provider-present\"\nsleep 30 &\necho $! > \"$HERMES_HOME/child.pid\"\nwait\n"
+	installation := filepath.Join(root, "hermes-install")
+	if err := os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: " + installation + "'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$HERMES_HOME/launch-args\"\nprintf '%s' \"${TEST_PROVIDER_KEY:-}\" > \"$HERMES_HOME/provider-present\"\nsleep 30 &\necho $! > \"$HERMES_HOME/child.pid\"\nwait\n"
 	if err := os.WriteFile(exe, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gateway := `#!/bin/sh
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"bridge-tools-0","result":{"total":1,"sections":[{"name":"mcp-aegis","tools":[{"name":"mcp__aegis__github_get_repository"}]}]}}'
+while read rest; do :; done
+`
+	if err := os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(gateway), 0700); err != nil {
 		t.Fatal(err)
 	}
 	st, err := store.Open(filepath.Join(root, "state"))

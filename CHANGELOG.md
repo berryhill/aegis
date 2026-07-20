@@ -6,7 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Allowed fresh release preparation to consume existing unstaged changelog entries while preserving and restoring the original changelog exactly on dry-run or pre-commit failure.
 - Streamed canonical message-only Hermes responses through bounded monotonic sanitized snapshots while retaining complete final-envelope validation; proposal and non-canonical output remains buffered, invalid completed streams are visibly rejected, rich turn progress updates in place, and plain terminals no longer print repeated elapsed-time lines.
+- Corrected the manager's contradictory credential-storage guidance: it now states that Aegis stores actual credential values encrypted after protected no-echo intake while the conversational model receives metadata only. The create-operation exemplar and conformance corpus now use the implementation's required `protected` disclosure value, and a new security-critical certification case rejects false metadata-only custody claims. The instruction and corpus identity change invalidates prior certifications and requires explicit recertification.
+- Added the Aegis-owned model-visible credential bridge for the sole typed `github.get_repository.v1` broker action. Exact `aegis` stanzas now launch a hidden stdio MCP server from a disposable Hermes home, keep the session capability out of argv/environment/model context, disable ambient rules/plugins/skills/toolsets, and fail closed unless the live Hermes gateway reports exactly `mcp__aegis__github_get_repository`. Unknown MCP methods/tools/arguments and mismatched broker grants deny.
 
 ## [0.1.21] - 2026-07-19
 

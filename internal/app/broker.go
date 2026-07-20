@@ -19,8 +19,6 @@ import (
 	"github.com/berryhill/aegis/internal/credentials/broker"
 )
 
-const brokerCapabilityFile = "aegis-broker-capability.json"
-
 const maxBrokerRequestsPerCapability = 4096
 
 func (s *Service) issueBrokerCapability(session *core.Session) error {
@@ -57,7 +55,7 @@ func (s *Service) issueBrokerCapability(session *core.Session) error {
 		s.revokeBrokerCapabilities(session.ID)
 		return errors.New("encode broker session material")
 	}
-	path := filepath.Join(session.RuntimeHome, brokerCapabilityFile)
+	path := filepath.Join(session.RuntimeHome, broker.CapabilityFileName)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err == nil {
 		err = file.Chown(int(cfg.AllowedUID), int(cfg.AllowedGID))
@@ -94,7 +92,7 @@ func (s *Service) revokeBrokerCapabilities(sessionID string) {
 	}
 	s.capMu.Unlock()
 	if session, err := s.GetSession(sessionID); err == nil && session.RuntimeHome != "" {
-		_ = os.Remove(filepath.Join(session.RuntimeHome, brokerCapabilityFile))
+		_ = os.Remove(filepath.Join(session.RuntimeHome, broker.CapabilityFileName))
 	}
 }
 

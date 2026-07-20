@@ -82,6 +82,8 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 	charter := testCharter(now)
 	charter.Stanzas[0].Scopes.Credentials = []string{"provider:test", broker.GitHubScope}
 	charter.Stanzas[0].Grant.Capabilities = append(charter.Stanzas[0].Grant.Capabilities, broker.ActionGitHubGetRepository)
+	charter.Stanzas[0].Grant.Tools = []string{"aegis"}
+	charter.Stanzas[0].Hermes.Toolsets = []string{"aegis"}
 	canonical, _ := core.Canonicalize(charter)
 	if err = s.Store.SaveCharter(canonical); err != nil {
 		t.Fatal(err)
@@ -180,7 +182,7 @@ func TestBrokerCapabilityMaterialIsEphemeralAndNotPersisted(t *testing.T) {
 	if err = s.issueBrokerCapability(&session); err != nil {
 		t.Fatal(err)
 	}
-	materialPath := filepath.Join(session.RuntimeHome, brokerCapabilityFile)
+	materialPath := filepath.Join(session.RuntimeHome, broker.CapabilityFileName)
 	material, err := os.ReadFile(materialPath)
 	if err != nil {
 		t.Fatal(err)
@@ -220,7 +222,7 @@ func TestOperationalSessionBrokerLifecycleEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	material, err := os.ReadFile(filepath.Join(session.RuntimeHome, brokerCapabilityFile))
+	material, err := os.ReadFile(filepath.Join(session.RuntimeHome, broker.CapabilityFileName))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +252,7 @@ func TestOperationalSessionBrokerLifecycleEndToEnd(t *testing.T) {
 		}
 	}
 	if walkErr := filepath.Walk(session.RuntimeHome, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil || info.IsDir() || filepath.Base(path) == brokerCapabilityFile {
+		if walkErr != nil || info.IsDir() || filepath.Base(path) == broker.CapabilityFileName {
 			return walkErr
 		}
 		data, readErr := os.ReadFile(path)
@@ -281,7 +283,7 @@ func TestOperationalSessionBrokerLifecycleEndToEnd(t *testing.T) {
 	}); !errors.Is(err, ErrDenied) {
 		t.Fatalf("terminated session capability replay=%v", err)
 	}
-	if _, err = os.Stat(filepath.Join(session.RuntimeHome, brokerCapabilityFile)); !errors.Is(err, os.ErrNotExist) {
+	if _, err = os.Stat(filepath.Join(session.RuntimeHome, broker.CapabilityFileName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("session cleanup retained capability material: %v", err)
 	}
 }

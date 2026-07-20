@@ -4,9 +4,9 @@
 
 The first Aegis release should prove one coherent vertical slice:
 
-> A configured principal can design one logical agent for an explicit Hermes runtime, define one or more authenticated trust stanzas, approve an exact charter, and start a clean Hermes session bound to exactly one authorized stanza without creating a persistent Hermes profile during design.
+> A configured principal can place one personal credential under encrypted Aegis custody, approve one exact grant, and start a clean Hermes session bound to exactly one authenticated stanza in which the model can perform one typed useful operation without receiving reusable credential plaintext.
 
-The MVP should not claim to solve all agent security. It should establish a trustworthy session boundary and a deterministic design-to-launch workflow.
+The design-to-launch workflow, charters, trust stanzas, mandates, and clean runtime boundary remain required enabling controls. The release-defining use edge is the typed `github.get_repository.v1` operation through an Aegis-owned bridge and broker. The MVP should not claim to solve all agent security, generic credential use, or host/network confinement.
 
 ## 1. Principal authentication
 
@@ -182,6 +182,18 @@ The MVP should not claim to solve all agent security. It should establish a trus
 - Centralize error rendering and exit codes.
 - Make the optional Echo API call the same application services as the CLI.
 
+## 15a. Personal credential custody and typed use
+
+- Store reusable values only through protected intake outside model context and persist only encrypted credential versions.
+- Expose credential metadata, bindings, rotation, revocation, backup, and recovery status without returning plaintext.
+- Require an exact active binding for agent, stanza, deployment, scope, destination, record, and rotation policy before use.
+- Support only `github.get_repository.v1` with `github/read` and exact allowlisted `github-api` repositories in this release.
+- Give Hermes only the typed owner/repository operation. Do not expose GetSecret, arbitrary URLs, headers, methods, record IDs, versions, destinations, or generic proxying.
+- Keep the session capability outside model context, environment, charter, mandate, session JSON, logs, and audit.
+- Verify the live Hermes gateway registers exactly the approved Aegis-owned bridge tool and fail closed on missing or additional tools.
+- Apply the credential inside Aegis and return only bounded sanitized repository metadata.
+- Reauthorize current session, mandate, charter, process identity, binding, version, deadline, request ID, and revocation state on every use.
+
 ## 16. MVP security invariants
 
 The release is not complete unless tests demonstrate:
@@ -197,6 +209,9 @@ The release is not complete unless tests demonstrate:
 - The design session cannot provision or modify Hermes artifacts.
 - Provisioning rejects an unapproved or changed charter.
 - The actual launched runtime and effective tool list match the approved charter.
+- The model-visible broker surface contains exactly the approved typed operation and no secret-reading or generic network operation.
+- Replays, stale deadlines, wrong repositories, wrong stanzas, ambiguous bindings, rotation drift, expired sessions, and revoked records/sessions deny.
+- Random credential canaries do not appear in model-visible tool definitions/results, configuration, argv, environment, logs, audit, errors, or retained terminal state.
 - Revocation prevents a revoked session from continuing through Aegis.
 - Audit events identify the authenticated subject, stanza, runtime, and charter revision.
 
@@ -221,6 +236,9 @@ The following are not required for the first release:
 - Multi-tenant SaaS operation
 - Hardware-backed runtime attestation
 - Public transparency logs
+- Generic credential retrieval or arbitrary authenticated HTTP proxying
+- Additional downstream providers beyond the one typed GitHub metadata action
+- Automated Google, email, Drive, banking, or cloud-administration credential use
 
 ## MVP success demonstration
 
@@ -238,5 +256,8 @@ A successful MVP demonstration should show:
 10. An attempted stanza escalation is denied and recorded.
 11. The principal revokes a session and Aegis terminates its authority.
 12. The audit trail reconstructs the full identity-to-runtime-to-stanza chain.
+13. The principal enters one generated credential canary through protected intake, reviews an exact GitHub binding, and starts a clean stanza whose live Hermes registry contains only the Aegis GitHub metadata tool.
+14. One allowlisted repository request returns real or deterministic-fixture sanitized metadata while the reusable credential remains absent from model-visible and retained surfaces.
+15. Wrong repository, replay, expiry, rotation drift, record revocation, and session revocation each fail closed and are reconstructable from metadata-only audit events.
 
 That vertical slice proves the defining Aegis concept without pretending the first release is a complete agent-security platform.

@@ -55,9 +55,30 @@ credentials:
 
 `github-api` is the only accepted destination identifier, and at least one exact `owner/repository` entry is required. Redirects and proxy-environment use are disabled. The broker always constructs `GET /repos/{owner}/{repository}` for an exact configured repository, applies the `Authorization` header internally, bounds the response to 64 KiB, requires a successful JSON response, and returns only owner, name, private, default branch, archived, visibility, and update time. Downstream headers, error bodies, URLs, permissions, and credential material are never returned.
 
-## Current integration boundary
+## Hermes bridge
 
-Aegis materializes session authentication for a future Aegis-owned bridge, but Hermes 0.18.x safe mode does not currently provide a verified way to register exactly that bridge while keeping ambient MCP/plugins disabled. The broker is therefore not advertised as a model-visible Hermes tool. Do not expose it through terminal/curl or inherited MCP configuration. A separately pinned bridge and exact Hermes tool-registration verification remain a deployment blocker.
+A stanza may select the exact `aegis` toolset only when it also grants `github.get_repository.v1` and `github/read` and the broker is configured. Aegis then writes a mode-0600 configuration into the fresh disposable Hermes home. That configuration launches the current Aegis executable's hidden `credential-bridge` command as one stdio MCP server and passes only the pathname of the session capability file; the raw capability is never placed in configuration, argv, environment, logs, audit, or model context. The bridge reads the capability file only when handling a typed call and sends the fixed broker request over the configured Unix socket.
+
+The selected stanza must contain the matching authority tuple:
+
+```yaml
+grant:
+  capabilities:
+    - github.get_repository.v1
+  tools:
+    - aegis
+scopes:
+  credentials:
+    - provider:<configured-model-provider>
+    - github/read
+hermes:
+  toolsets:
+    - aegis
+```
+
+Hermes safe mode disables all MCP, so this path uses a direct Hermes gateway with an isolated `HOME`/`HERMES_HOME`, no inherited user configuration, project plugins, project rules, auto-skills, or additional toolsets. Before session launch succeeds, Aegis queries that live gateway and requires exactly one registered tool named `mcp__aegis__github_get_repository`; missing, renamed, or additional tools fail closed and terminate the process. The model receives only `owner` and `repository` arguments and the broker's bounded sanitized result. Unknown MCP methods, tool names, and arguments are rejected.
+
+Start sessions through the long-lived `aegis serve` process that owns the authority, broker listener, live-session state, and process-local capabilities. A one-shot `aegis session start` process cannot keep that broker authority alive after the CLI exits.
 
 Environment-backed provider authentication remains unchanged. This GitHub operation does not replace model-provider credentials and Aegis does not claim that all runtime credentials are brokered.
 

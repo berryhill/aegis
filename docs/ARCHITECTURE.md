@@ -11,7 +11,7 @@ flowchart TB
   Service --> Provisioner[Typed deterministic provisioner]
   Service --> Mandate[Short-lived mandate issuer]
   Mandate --> Adapter[Hermes 0.18.x adapter]
-  Adapter -->|safe mode, explicit toolsets and credentials| Hermes[Fresh Hermes process + disposable home]
+  Adapter -->|safe mode, or isolated exact Aegis bridge| Hermes[Fresh Hermes process + disposable home]
   Service --> State[(Charters, plans, approvals, receipts, sessions)]
   Service --> Audit[(Hash-linked audit)]
   Audit --> Checkpoint[(Ed25519 checkpoints)]
@@ -23,8 +23,8 @@ flowchart TB
   Pinentry --> Authority[(Encrypted bbolt authority)]
   Custody[systemd credential, encrypted passphrase envelope, or weaker host KEK file] -->|wraps per-record DEKs| Authority
   Authority --> Broker[Session-bound GitHub repository broker]
-  Broker -->|SO_PEERCRED + capability; sanitized result| Bridge[Future verified Hermes bridge]
-  Bridge -. Hermes 0.18 safe-mode gate .-> Adapter
+  Broker -->|SO_PEERCRED + capability; sanitized result| Bridge[Aegis-owned MCP bridge]
+  Bridge -->|exact live one-tool registration| Adapter
   Updater[CLI self-updater] -->|GitHub release + SHA256SUMS| Binary[Aegis executable]
   Init[Deterministic first-run initializer] -->|host UID/user + confirmation; atomic 0600| Config[(Aegis configuration)]
   Layout[Typed literal ~/.argis resolver] --> Config
@@ -61,7 +61,7 @@ Operational launch resolves one stanza into one mandate, one credential binding,
 
 The optional credential authority is a separate administrative data path. It stores independently encrypted immutable versions, exact agent/stanza/deployment/scope bindings, revocations, and metadata in one deployment-bound bbolt file. It validates schema, structural integrity, filesystem ownership/mode, and a KEK-authenticated sentinel before serving administration. The injected passphrase service is the single authority-passphrase edge for onboarding, secret administration, manager startup, and service opening. It selects an explicit validated absolute helper or conventional `pinentry`, executes it directly with an allowlisted desktop/session environment, bounds and validates the Assuan exchange, and returns process-local bytes only. Create uses two fresh interactions; unlock retries only envelope-authentication failure. Pre-`GETPIN` unavailability may use a real-terminal no-echo fallback, while cancellation and post-interaction failures fail closed. Systemd custody is a two-boundary resumable transaction: Aegis first records the exact external prerequisite, then—only after systemd delivers the KEK and the principal separately confirms—creates the database without copying or modifying the credential. Secret intake is outside the model and avoids argv; inspection returns metadata only. Consistent backups use bbolt read transactions and do not include the KEK.
 
-The optional Linux broker is an active authority-to-downstream edge, but not yet a model-visible Hermes edge. It exposes only `github.get_repository.v1`, derives the exact binding and `github-api` destination from current Aegis state, applies the credential internally, and returns a bounded field allowlist. Its pathname socket authenticates a distinct runtime identity with `SO_PEERCRED`; a 256-bit capability is bound to the exact live session, mandate, charter, deployment, stanza, PID/start token, and expiry. Fresh 128-bit request IDs and bounded deadlines are deduplicated in a finite per-capability replay cache. Session cleanup revokes the capability and removes its file. Hermes 0.18.x safe mode has not yet demonstrated exact Aegis bridge registration without ambient MCP, so the dotted bridge-to-adapter edge remains gated. Operational provider authentication continues through the configured environment-binding path. See `CREDENTIAL_BROKER.md`.
+The optional Linux broker is an active model-visible authority-to-downstream edge for only `github.get_repository.v1`. It derives the exact binding and `github-api` destination from current Aegis state, applies the credential internally, and returns a bounded field allowlist. Its pathname socket authenticates a distinct runtime identity with `SO_PEERCRED`; a 256-bit capability is bound to the exact live session, mandate, charter, deployment, stanza, PID/start token, and expiry. Fresh 128-bit request IDs and bounded deadlines are deduplicated in a finite per-capability replay cache. Session cleanup revokes the capability and removes its file. For the exact `aegis` toolset, the adapter generates one disposable MCP server mapping and queries the live gateway, denying launch unless only `mcp__aegis__github_get_repository` is registered. Operational provider authentication continues through the configured environment-binding path. This remains application-level mediation, not host or network confinement. See `CREDENTIAL_BROKER.md`.
 
 The API uses the same services as Cobra. Bearer authentication is transport-only; Linux Unix peer credentials create the Aegis subject. TCP TLS is optional transport encryption and does not map a principal identity.
 

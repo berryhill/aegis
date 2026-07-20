@@ -6,6 +6,7 @@ tag=v$version
 dry_run=${RELEASE_DRY_RUN:-0}
 verify_root=
 changelog_temp=
+changelog_original=
 prepared=false
 committed=false
 
@@ -18,11 +19,14 @@ cleanup() {
     if [ -n "$verify_root" ]; then
         rm -rf "$verify_root"
     fi
+    if [ "$prepared" = true ] && [ "$committed" = false ]; then
+        cp "$changelog_original" CHANGELOG.md
+    fi
     if [ -n "$changelog_temp" ]; then
         rm -f "$changelog_temp"
     fi
-    if [ "$prepared" = true ] && [ "$committed" = false ]; then
-        git restore -- CHANGELOG.md
+    if [ -n "$changelog_original" ]; then
+        rm -f "$changelog_original"
     fi
 }
 trap cleanup EXIT HUP INT TERM
@@ -44,10 +48,6 @@ fi
 if ! git diff --cached --quiet; then
     fail 'release refuses pre-staged changes; unstage them and retry'
 fi
-if ! git diff --quiet -- CHANGELOG.md; then
-    fail 'release refuses a pre-existing CHANGELOG.md edit; preserve and resolve it before retrying'
-fi
-
 head=$(git rev-parse HEAD)
 remote_main=$(git ls-remote --heads origin refs/heads/main | cut -f1)
 [ -n "$remote_main" ] || fail 'origin/main is missing or unreadable; release state is ambiguous'
@@ -140,10 +140,41 @@ verify_release_commit() {
     release_date=$(git show -s --format=%cs "$release_commit")
     expected_changelog="$verify_root/expected-CHANGELOG.md"
     git show "$release_parent:CHANGELOG.md" >"$verify_root/parent-CHANGELOG.md"
-    if ! prepare_changelog "$verify_root/parent-CHANGELOG.md" "$expected_changelog" "$release_date"; then
-        fail "existing release commit for $tag cannot be reproduced from its parent changelog; it was not changed"
-    fi
     git show "$release_commit:CHANGELOG.md" >"$verify_root/tagged-CHANGELOG.md"
+    VERSION=$version RELEASE_DATE=$release_date PARENT_FILE="$verify_root/parent-CHANGELOG.md" TAGGED_FILE="$verify_root/tagged-CHANGELOG.md" SOURCE_FILE="$verify_root/source-CHANGELOG.md" python3 -c '
+import os
+from pathlib import Path
+
+parent = Path(os.environ["PARENT_FILE"]).read_text()
+tagged = Path(os.environ["TAGGED_FILE"]).read_text()
+version = os.environ["VERSION"]
+release_date = os.environ["RELEASE_DATE"]
+heading = f"## [{version}] - {release_date}"
+needle = "\n\n" + heading
+if tagged.count(needle) != 1:
+    raise SystemExit("release heading is not unique")
+source = tagged.replace(needle, "", 1)
+
+def sections(text):
+    marker = "## Unreleased"
+    before, after = text.split(marker, 1)
+    boundary = after.find("\n## ")
+    if boundary < 0:
+        return before, after, ""
+    return before, after[:boundary], after[boundary:]
+
+parent_before, parent_pending, parent_tail = sections(parent)
+source_before, source_pending, source_tail = sections(source)
+if parent_before != source_before or parent_tail != source_tail:
+    raise SystemExit("changes outside Unreleased")
+remaining = iter(source_pending.splitlines())
+if not all(any(candidate == line for candidate in remaining) for line in parent_pending.splitlines()):
+    raise SystemExit("parent Unreleased entries were changed or removed")
+Path(os.environ["SOURCE_FILE"]).write_text(source)
+' || fail "existing release commit for $tag does not preserve its parent changelog outside additive Unreleased entries; it was not changed"
+    if ! prepare_changelog "$verify_root/source-CHANGELOG.md" "$expected_changelog" "$release_date"; then
+        fail "existing release commit for $tag cannot reproduce its changelog preparation; it was not changed"
+    fi
     cmp -s "$expected_changelog" "$verify_root/tagged-CHANGELOG.md" ||
         fail "existing release commit for $tag has an incorrect changelog; it was not changed"
     heading_count=$(git show "$release_commit:CHANGELOG.md" | grep -Ec "^## \[$version\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" || true)
@@ -234,6 +265,10 @@ if [ "$local_tag" = false ]; then
     [ -z "$existing_commit" ] || fail "a release commit for $tag already exists without the local tag; inspect $existing_commit and recover manually"
     printf 'fresh release preparation for %s found.\n' "$tag"
     release_date=$(date +%F)
+    # Preserve an existing unstaged changelog and restore it exactly on any
+    # pre-commit failure or dry run.
+    changelog_original=$(mktemp "${TMPDIR:-/tmp}/aegis-changelog-original-XXXXXXXX")
+    cp CHANGELOG.md "$changelog_original"
     # Write through a temporary file so failed validation cannot truncate CHANGELOG.md.
     changelog_temp=$(mktemp "${TMPDIR:-/tmp}/aegis-changelog-XXXXXXXX")
     if ! prepare_changelog CHANGELOG.md "$changelog_temp" "$release_date"; then

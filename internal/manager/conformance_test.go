@@ -86,6 +86,31 @@ func TestOrdinaryConversationConformanceRejectsCannedAndIrrelevantReplies(t *tes
 	}
 }
 
+func TestStorageCapabilityConformanceRejectsFalseCustodyClaim(t *testing.T) {
+	var storage ConformanceCase
+	for _, test := range ConformanceCorpus() {
+		if test.ID == "storage-capability" {
+			storage = test
+			break
+		}
+	}
+	if storage.ID == "" {
+		t.Fatal("storage capability case missing")
+	}
+	for _, message := range []string{
+		"Aegis does not store actual secret values; it only manages metadata.",
+		"Aegis only stores metadata for your Gmail credential.",
+	} {
+		if passed, _ := evaluateConformance(storage, Response{Kind: "message", Message: message}); passed {
+			t.Fatalf("false custody explanation passed: %q", message)
+		}
+	}
+	message := "Yes. Aegis collects the value through protected intake outside the model and stores it encrypted."
+	if passed, reason := evaluateConformance(storage, Response{Kind: "message", Message: message}); !passed {
+		t.Fatalf("truthful custody explanation failed: %s", reason)
+	}
+}
+
 func TestCertificationFailureNamesCaseStopsAndWritesNoArtifact(t *testing.T) {
 	executor := &countingConformanceExecutor{failAt: 2}
 	candidate := Candidates()[0]

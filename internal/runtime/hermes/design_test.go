@@ -109,3 +109,79 @@ func TestMinimalEnvDisablesPythonBytecode(t *testing.T) {
 		t.Fatal("explicitly resolved credential was not injected")
 	}
 }
+
+func TestBrokerBridgeConfigExposesOnlyAegisToolset(t *testing.T) {
+	home := t.TempDir()
+	executable := filepath.Join(home, "aegis")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeBrokerBridgeConfig(home, BrokerBridge{Enabled: true, Executable: executable, Timeout: 7 * time.Second}); err != nil {
+		t.Fatal(err)
+	}
+	configuration, err := os.ReadFile(filepath.Join(home, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(configuration)
+	for _, required := range []string{"mcp_servers:", "aegis:", "credential-bridge", "github_get_repository", "resources: false", "prompts: false"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("bridge config missing %q:\n%s", required, text)
+		}
+	}
+	if strings.Contains(text, "capability:") || strings.Contains(text, "credential:") || strings.Contains(text, "terminal") || strings.Contains(text, "file:") {
+		t.Fatalf("bridge config contains forbidden authority: %s", text)
+	}
+	info, err := os.Stat(filepath.Join(home, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("bridge config mode=%v", info.Mode())
+	}
+	resolved, err := ResolveTools([]string{"aegis"})
+	if err != nil || len(resolved) != 1 || resolved[0] != "aegis" {
+		t.Fatalf("Aegis toolset resolution=%v err=%v", resolved, err)
+	}
+}
+
+func TestVerifyBrokerGatewayRequiresExactSingleTool(t *testing.T) {
+	result := func(total float64, names ...string) map[string]any {
+		tools := make([]any, 0, len(names))
+		for _, name := range names {
+			tools = append(tools, map[string]any{"name": name})
+		}
+		return map[string]any{
+			"total": total,
+			"sections": []any{map[string]any{
+				"name":  "mcp-aegis",
+				"tools": tools,
+			}},
+		}
+	}
+	tests := []struct {
+		name    string
+		result  map[string]any
+		wantErr bool
+	}{
+		{name: "exact", result: result(1, "mcp__aegis__github_get_repository")},
+		{name: "extra tool", result: result(2, "mcp__aegis__github_get_repository", "unexpected"), wantErr: true},
+		{name: "renamed", result: result(1, "unexpected"), wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			messages := make(chan gatewayMessage, 2)
+			failures := make(chan error, 1)
+			ready := gatewayMessage{Method: "event"}
+			ready.Params.Type = "gateway.ready"
+			messages <- ready
+			messages <- gatewayMessage{ID: "bridge-tools-0", Result: test.result}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer cancel()
+			err := verifyBrokerGateway(ctx, io.Discard, messages, failures, "", "")
+			if (err != nil) != test.wantErr {
+				t.Fatalf("verify error=%v want_error=%t", err, test.wantErr)
+			}
+		})
+	}
+}

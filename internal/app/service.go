@@ -1096,7 +1096,21 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err != nil {
 		return core.Session{}, err
 	}
-	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, credentials)
+	wantsBrokerTool := contains(m.Hermes.Toolsets, "aegis")
+	hasBrokerAuthority := contains(m.Capabilities, broker.ActionGitHubGetRepository) && contains(m.Scopes.Credentials, broker.GitHubScope)
+	brokerAvailable := s.CredentialAuthority != nil && s.Config.Credentials.Authority.Broker.Socket != ""
+	if wantsBrokerTool != hasBrokerAuthority || wantsBrokerTool != brokerAvailable {
+		return core.Session{}, fmt.Errorf("%w: Aegis broker tool, capability, credential scope, and configured authority must match exactly", ErrDenied)
+	}
+	bridge := hermes.BrokerBridge{}
+	if wantsBrokerTool {
+		executable, executableErr := os.Executable()
+		if executableErr != nil {
+			return core.Session{}, errors.New("resolve Aegis credential bridge executable")
+		}
+		bridge = hermes.BrokerBridge{Enabled: true, Executable: executable, Timeout: s.Config.Credentials.Authority.Broker.Timeout}
+	}
+	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, credentials, bridge)
 	if err != nil {
 		return core.Session{}, err
 	}
@@ -1109,7 +1123,11 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		_ = s.Hermes.Terminate(stop, id, true)
 		return core.Session{}, errors.New("launched Hermes toolset arguments do not match the approved mandate")
 	}
-	sess := core.Session{ID: store.ID("session"), Mandate: m, RuntimeSessionID: id, RuntimePID: pid, ProcessStart: processStartToken(pid), RuntimeHome: home, VerifiedToolsets: launchedToolsets, ToolsetVerification: "launch_arguments", Status: "running", StartedAt: s.Now()}
+	verification := "launch_arguments"
+	if bridge.Enabled {
+		verification = "exact_registered_aegis_bridge_tool"
+	}
+	sess := core.Session{ID: store.ID("session"), Mandate: m, RuntimeSessionID: id, RuntimePID: pid, ProcessStart: processStartToken(pid), RuntimeHome: home, VerifiedToolsets: launchedToolsets, ToolsetVerification: verification, Status: "running", StartedAt: s.Now()}
 	if sess.ProcessStart == "" {
 		stop, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

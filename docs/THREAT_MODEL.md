@@ -25,7 +25,8 @@ flowchart LR
   Principal -. terminal-backed no-echo fallback before interaction .-> Authority
   KEK[External KEK custody] --> Authority
   Authority --> Broker[Typed GitHub repository broker]
-  Broker -. verified bridge not implemented .-> Hermes
+  Broker -->|session capability; one sanitized typed action| Bridge[Aegis-owned MCP bridge]
+  Bridge -->|exact live one-tool registration| Hermes
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
   Hermes -. untrusted output .-> Aegis
@@ -65,7 +66,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Authority passphrase is exposed through terminal/model/logs or a malicious helper response | Static Aegis-owned pinentry chrome, direct executable selection, bounded Assuan pipes, percent decoding, minimal environment, metadata-safe errors, no secret argv/config/audit/TUI state, fresh create/confirm requests, and no-echo terminal fallback only before interaction | A compromised account, desktop session, selected pinentry executable, root/kernel, or process-memory reader can capture bytes; pinentry provides no hardware custody, sandbox, keyring, cache, or recovery |
 | Ciphertext/version/context is swapped | Canonical AAD binds store, record, version, kind, KEK, algorithm, format, and purpose; startup key check | No TPM monotonic anti-rollback protection; whole-host backup rollback needs external detection |
 | Wrong stanza or destination resolves a secret | Broker requires exact peer + session capability + active session/mandate + charter + agent + stanza + local deployment + `github/read` scope + `github-api` destination + active binding/version on every use | No host/network confinement; a compromised authorized runtime may misuse its permitted read action |
-| Prompt turns the broker into secret retrieval or SSRF | One strict `github.get_repository.v1` schema; caller cannot select URL, header, scope, record, version, deployment, stanza, or destination; redirects/proxy environment disabled; sanitized response allowlist | Configured downstream and DNS remain operator/network trust; Hermes bridge registration is not implemented |
+| Prompt turns the broker into secret retrieval or SSRF | One strict `github.get_repository.v1` schema; caller cannot select URL, header, scope, record, version, deployment, stanza, or destination; redirects/proxy environment disabled; sanitized response allowlist; generated MCP bridge accepts only owner/repository and launch verifies its sole registered tool | Configured downstream and DNS remain operator/network trust; direct runtime network paths are not confined |
 | Capability or request is replayed by another local process | 256-bit short-lived capability digest plus exact SO_PEERCRED UID/GID and runtime PID/start-token ancestry; fresh bounded request IDs/deadlines reject duplicate or stale actions; termination/failure/expiry removes capability material | Same-host root/kernel can inspect process memory/files; production needs distinct service/runtime identities |
 | Secret leaks through administration | Authority passphrases use pinentry-first intake with no cross-surface downgrade after interaction; generic values use no-echo or explicit protected stdin; no argv value, metadata-only output/audit, bounded buffers and best-effort overwrite | Go/runtime/OS may retain memory copies; protected-pipe hygiene is operator responsibility |
 | Credential is pasted into manager chat | Aegis owns terminal input; bounded deterministic scanning blocks before gateway/proxy and records no content; intentional create/rotate values use confirmed no-echo intake outside the model path | False negatives and Go/runtime memory copies remain possible |
@@ -81,7 +82,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 
 ## Non-goals
 
-The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a model-visible verified Hermes broker bridge, a fleet projection system, or protection from a fully compromised kernel/operator account. The implemented broker supports only typed GitHub repository metadata.
+The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a generic credential bridge, a fleet projection system, or protection from a fully compromised kernel/operator account. The model-visible broker bridge supports only typed GitHub repository metadata.
 
 ## Deployment requirements
 
