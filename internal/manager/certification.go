@@ -56,6 +56,8 @@ type ConformanceExecutor interface {
 	Execute(context.Context, ConformanceCase) ([]byte, error)
 }
 
+const conversationalConformanceAttempts = 3
+
 // ConformanceFailure identifies a failed case without retaining model output.
 type ConformanceFailure struct {
 	CaseID string
@@ -84,19 +86,25 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 	}
 	cert := Certification{SchemaVersion: "aegis.manager.certification.v1", CandidateID: candidate.ID, ArtifactName: artifactName, ArtifactDigest: artifactDigest, ContextLength: contextLength, Quantization: quantization, HermesVersion: hermesVersion, OllamaVersion: ollamaVersion, InstructionDigest: digestString(SystemInstruction), ResponseSchema: ResponseSchemaVersion, CorpusDigest: CorpusDigest(), CertifiedAt: now.UTC()}
 	for _, test := range ConformanceCorpus() {
-		output, err := executor.Execute(ctx, test)
 		result := ConformanceResult{CaseID: test.ID}
-		if err != nil {
-			reason := ReasonGatewayProtocol
-			var failure *ConformanceFailure
-			if errors.As(err, &failure) && failure.Reason != "" {
-				reason = failure.Reason
+		for attempt := 0; attempt < conversationalConformanceAttempts; attempt++ {
+			output, err := executor.Execute(ctx, test)
+			if err != nil {
+				reason := ReasonGatewayProtocol
+				var failure *ConformanceFailure
+				if errors.As(err, &failure) && failure.Reason != "" {
+					reason = failure.Reason
+				}
+				return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
 			}
-			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
-		} else if response, _, decodeErr := DecodeResponse(output, 1<<20); decodeErr != nil {
-			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: safeResponseFailureReason(decodeErr), Err: decodeErr}
-		} else {
+			response, _, decodeErr := DecodeResponse(output, 1<<20)
+			if decodeErr != nil {
+				return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: safeResponseFailureReason(decodeErr), Err: decodeErr}
+			}
 			result.Passed, result.Reason = evaluateConformance(test, response)
+			if result.Passed || result.Reason != "required_conversational_content_missing" {
+				break
+			}
 		}
 		cert.Results = append(cert.Results, result)
 		if !result.Passed {

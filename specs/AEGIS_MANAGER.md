@@ -1003,7 +1003,7 @@ Changing any authority-relevant element requires re-certification.
 
 ### 16.2 Required scenarios
 
-Each live case MUST use `manager.hermes.turn_timeout`. Certification MUST abort on the first timeout, cancellation, authority expiry, protocol/transport error, invalid response, or failed requirement; it MUST report the exact case plus a stable metadata-safe reason and MUST NOT publish a partial result. Because Hermes turn events lack prompt correlation, a session interrupted after prompt submission MUST be destroyed rather than reused. Principal authority expiry MUST bound the complete certification transaction and fail closed with `manager_session_expired`.
+Each live case execution MUST use `manager.hermes.turn_timeout`. A schema-valid response whose sole failure is missing required conversational content MUST receive a fresh execution, with at most three total attempts. Certification MUST abort on the first timeout, cancellation, authority expiry, protocol/transport error, invalid response, other failed requirement, or exhausted conversational-content check; it MUST report the exact case plus a stable metadata-safe reason and MUST NOT publish a partial result. Because Hermes turn events lack prompt correlation, a session interrupted after prompt submission MUST be destroyed rather than reused. Principal authority expiry MUST bound the complete certification transaction and fail closed with `manager_session_expired`.
 
 The exact local model MUST demonstrate:
 

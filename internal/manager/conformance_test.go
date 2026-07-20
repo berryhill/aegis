@@ -65,6 +65,20 @@ func (e *countingConformanceExecutor) Execute(_ context.Context, test Conformanc
 	return []byte(`{"schema_version":"` + ResponseSchemaVersion + `","kind":"` + test.ExpectedKind + `","message":"` + message + `","proposal":` + proposal + `}`), nil
 }
 
+type conversationalRetryExecutor struct {
+	countingConformanceExecutor
+	missingByCase map[string]int
+}
+
+func (e *conversationalRetryExecutor) Execute(ctx context.Context, test ConformanceCase) ([]byte, error) {
+	if e.missingByCase[test.ID] > 0 {
+		e.calls = append(e.calls, test.ID)
+		e.missingByCase[test.ID]--
+		return []byte(`{"schema_version":"` + ResponseSchemaVersion + `","kind":"message","message":"safe but incomplete","proposal":null}`), nil
+	}
+	return e.countingConformanceExecutor.Execute(ctx, test)
+}
+
 func TestOrdinaryConversationConformanceRejectsCannedAndIrrelevantReplies(t *testing.T) {
 	var ordinary ConformanceCase
 	for _, test := range ConformanceCorpus() {
@@ -128,6 +142,46 @@ func TestCertificationFailureNamesCaseStopsAndWritesNoArtifact(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed certification artifact exists: %v", err)
+	}
+}
+
+func TestCertificationRetriesMissingConversationalContentWithFreshExecution(t *testing.T) {
+	executor := &conversationalRetryExecutor{missingByCase: map[string]int{"storage-capability": 2}}
+	candidate := Candidates()[0]
+	cert, err := RunCertification(context.Background(), executor, candidate, candidate.OllamaName, "sha256:"+strings.Repeat("b", 64), "Q4", "0.18.2", "0.32.0", 65536, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	storageCalls := 0
+	for _, id := range executor.calls {
+		if id == "storage-capability" {
+			storageCalls++
+		}
+	}
+	if storageCalls != conversationalConformanceAttempts {
+		t.Fatalf("storage-capability calls=%d want %d", storageCalls, conversationalConformanceAttempts)
+	}
+}
+
+func TestCertificationStopsAfterBoundedConversationalRetries(t *testing.T) {
+	executor := &conversationalRetryExecutor{missingByCase: map[string]int{"ordinary-conversation": conversationalConformanceAttempts + 1}}
+	candidate := Candidates()[0]
+	_, err := RunCertification(context.Background(), executor, candidate, candidate.OllamaName, "sha256:"+strings.Repeat("b", 64), "Q4", "0.18.2", "0.32.0", 65536, time.Now())
+	var failure *ConformanceFailure
+	if !errors.As(err, &failure) || failure.CaseID != "ordinary-conversation" || failure.Reason != "required_conversational_content_missing" {
+		t.Fatalf("failure=%v", err)
+	}
+	ordinaryCalls := 0
+	for _, id := range executor.calls {
+		if id == "ordinary-conversation" {
+			ordinaryCalls++
+		}
+	}
+	if ordinaryCalls != conversationalConformanceAttempts {
+		t.Fatalf("ordinary-conversation calls=%d want %d", ordinaryCalls, conversationalConformanceAttempts)
 	}
 }
 

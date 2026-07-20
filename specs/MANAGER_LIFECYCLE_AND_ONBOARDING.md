@@ -481,7 +481,7 @@ Aegis MUST provide deterministic commands to:
 12. inspect certification status and drift;
 13. display the exact next step for every state.
 
-Live certification MUST place the configured `manager.hermes.turn_timeout` around every gateway turn and principal authority expiry around the complete run. The first timeout, cancellation, expiry, protocol/transport error, invalid response, or failed case MUST abort the corpus and cleanup the disposable Hermes/proxy/model resources. Since late Hermes events are not prompt-correlated, an interrupted session MUST NOT be reused. Failure output MUST include the exact case and a stable metadata-safe reason, MUST provide the exact retry command, and MUST NOT publish a partial certification.
+Live certification MUST place the configured `manager.hermes.turn_timeout` around every gateway turn and principal authority expiry around the complete run. A schema-valid response whose sole failure is missing required conversational content MUST be retried in a fresh execution, with at most three total attempts. The first timeout, cancellation, expiry, protocol/transport error, invalid response, other semantic failure, or exhausted conversational-content check MUST abort the corpus and cleanup the disposable Hermes/proxy/model resources. Since late Hermes events are not prompt-correlated, an interrupted session MUST NOT be reused. Failure output MUST include the exact case and a stable metadata-safe reason, MUST provide the exact retry command, and MUST NOT publish a partial certification.
 
 Command names SHOULD fit the existing constructor-built Cobra hierarchy. Business logic MUST live in shared services rather than command handlers.
 
