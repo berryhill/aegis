@@ -54,6 +54,10 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 				if process.ProcessState != nil {
 					t.Fatal("phrase containing exit alias terminated manager")
 				}
+				// The response marker precedes the next Composer.Read call. Wait until
+				// that call has entered raw mode before sending carriage return;
+				// canonical input would translate it to the multiline Ctrl+J byte.
+				capture = readPTYUntilCount(t, master, capture, "Enter submit; Ctrl+J newline", 2, 3*time.Second)
 				_, _ = master.Write([]byte("exit\r"))
 			} else if test.signal != 0 {
 				if err := process.Process.Signal(test.signal); err != nil {
