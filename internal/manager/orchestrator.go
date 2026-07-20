@@ -19,6 +19,10 @@ type Gateway interface {
 	Turn(context.Context, string, string, int) ([]byte, error)
 }
 
+type streamingGateway interface {
+	TurnStream(context.Context, string, string, int, func([]byte) error) ([]byte, error)
+}
+
 // Operations is the shared authoritative manager service. Implementations own
 // authentication, authorization, persistence, encryption, and audit.
 type Operations interface {
@@ -85,46 +89,69 @@ func NewSession(parent context.Context, config SessionConfig) (*Session, error) 
 }
 
 func (s *Session) Handle(ctx context.Context, text string) (string, error) {
+	message, _, err := s.HandleStream(ctx, text, nil)
+	return message, err
+}
+
+// HandleStream releases only the message field of a canonical message-only
+// envelope. Proposal envelopes and non-canonical responses remain completely
+// buffered. The returned bool reports whether any assistant text was released.
+func (s *Session) HandleStream(ctx context.Context, text string, emit func(string) error) (string, bool, error) {
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
 	s.mu.Lock()
 	if s.closing || s.closed {
 		s.mu.Unlock()
-		return "", errors.New("manager session is closing")
+		return "", false, errors.New("manager session is closing")
 	}
 	s.mu.Unlock()
 	if !s.config.Now().Before(s.config.Route.ExpiresAt) {
 		_ = s.Close(context.Background(), ReasonSessionExpired)
-		return "", errors.New(ReasonSessionExpired)
+		return "", false, errors.New(ReasonSessionExpired)
 	}
 	if ctx == nil {
 		ctx = s.ctx
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	finding := s.config.Guard.Inspect(ctx, ContentEnvelope{Source: SourceUser, SubjectID: s.config.SubjectID, SessionID: s.config.SessionID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(text)})
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if finding.Decision != AllowLocal {
-		return "", errors.New(finding.Reason)
+		return "", false, errors.New(finding.Reason)
 	}
-	responseBytes, err := s.config.Gateway.Turn(ctx, s.config.GatewaySessionID, text, s.config.MaximumResponseBytes)
+	preview := newMessagePreview(s.config.MaximumResponseBytes)
+	var responseBytes []byte
+	var err error
+	if gateway, ok := s.config.Gateway.(streamingGateway); ok && emit != nil {
+		responseBytes, err = gateway.TurnStream(ctx, s.config.GatewaySessionID, text, s.config.MaximumResponseBytes, func(chunk []byte) error {
+			return preview.Feed(chunk, emit)
+		})
+	} else {
+		responseBytes, err = s.config.Gateway.Turn(ctx, s.config.GatewaySessionID, text, s.config.MaximumResponseBytes)
+	}
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", ReasonGatewayProtocol, err)
+		return "", preview.Released(), fmt.Errorf("%s: %w", ReasonGatewayProtocol, err)
 	}
 	response, arguments, err := DecodeResponse(responseBytes, s.config.MaximumResponseBytes)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", ReasonResponseInvalid, err)
+		return "", preview.Released(), fmt.Errorf("%s: %w", ReasonResponseInvalid, err)
 	}
 	if response.Kind == "message" {
-		return response.Message, nil
+		if emit != nil {
+			if err := preview.Complete(response.Message, emit); err != nil {
+				return "", preview.Released(), fmt.Errorf("%s: %w", ReasonResponseInvalid, err)
+			}
+		}
+		return response.Message, preview.Released(), nil
 	}
-	return s.execute(ctx, *response.Proposal, arguments, response.Message)
+	message, err := s.execute(ctx, *response.Proposal, arguments, response.Message)
+	return message, false, err
 }
 
 func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any, message string) (string, error) {

@@ -94,6 +94,67 @@ func TestRendererFailureIsReturned(t *testing.T) {
 	}
 }
 
+func TestAssistantSnapshotsRenderIncrementallyAndProgressDoesNotSpam(t *testing.T) {
+	var output bytes.Buffer
+	controller := NewController(&output, Capabilities{Profile: PlainInteractive, Term: "dumb"}, SecurityContext{})
+	for _, elapsed := range []string{"1s", "3s", "5s"} {
+		if err := controller.Emit(Event{Kind: TurnProgress, Origin: RuntimeHermes, Message: "Hermes turn active for " + elapsed}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Count(output.String(), "Hermes turn active") != 1 {
+		t.Fatalf("progress output=%q", output.String())
+	}
+	progress := 0
+	for _, component := range controller.State().Components {
+		if component.Kind == TurnProgress {
+			progress++
+		}
+	}
+	if progress != 1 {
+		t.Fatalf("retained progress components=%d", progress)
+	}
+	if err := controller.Emit(Event{Kind: AssistantDelta, Origin: ModelUntrusted, Message: "Hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Emit(Event{Kind: AssistantDelta, Origin: ModelUntrusted, Message: "Hello world"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Emit(Event{Kind: AssistantCompleted, Origin: ModelUntrusted, Message: "Hello world"}); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	if strings.Count(text, "Hello world") != 1 || strings.Count(text, "Hermes model / untrusted") != 1 {
+		t.Fatalf("stream output=%q", text)
+	}
+	state := controller.State()
+	deltas := 0
+	for _, component := range state.Components {
+		if component.Kind == AssistantDelta {
+			deltas++
+		}
+	}
+	if deltas != 1 {
+		t.Fatalf("retained delta components=%d", deltas)
+	}
+}
+
+func TestAssistantSnapshotsSanitizeControlSequenceAcrossUpdates(t *testing.T) {
+	var output bytes.Buffer
+	controller := NewController(&output, Capabilities{Profile: PlainInteractive, Term: "dumb"}, SecurityContext{})
+	for _, snapshot := range []string{"safe\x1b", "safe\x1b[31mred"} {
+		if err := controller.Emit(Event{Kind: AssistantDelta, Origin: ModelUntrusted, Message: snapshot}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := controller.Emit(Event{Kind: AssistantCompleted, Origin: ModelUntrusted, Message: "safe\x1b[31mred"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.ContainsRune(output.String(), '\x1b') || !strings.Contains(output.String(), "safered") {
+		t.Fatalf("unsafe fragmented stream output=%q", output.String())
+	}
+}
+
 func TestBoundedStateQueueAndCriticalDelivery(t *testing.T) {
 	state := NewState(Capabilities{}, SecurityContext{})
 	state.MaxComponents, state.MaxComponentBytes = 3, 30

@@ -97,8 +97,15 @@ func Update(state State, event Event) State {
 		}
 		text = Sanitize(text, DefaultSanitizeOptions(context))
 		component := Component{Kind: event.Kind, Origin: event.Origin, At: event.At, Text: text, Bytes: len(text)}
-		state.Components = append(state.Components, component)
-		state.ComponentBytes += component.Bytes
+		coalesced := event.Kind == AssistantDelta || event.Kind == TurnProgress
+		if coalesced && len(state.Components) > 0 && state.Components[len(state.Components)-1].Kind == event.Kind {
+			state.ComponentBytes -= state.Components[len(state.Components)-1].Bytes
+			state.Components[len(state.Components)-1] = component
+			state.ComponentBytes += component.Bytes
+		} else {
+			state.Components = append(state.Components, component)
+			state.ComponentBytes += component.Bytes
+		}
 	}
 	for len(state.Components) > state.MaxComponents || state.ComponentBytes > state.MaxComponentBytes {
 		state.ComponentBytes -= state.Components[0].Bytes

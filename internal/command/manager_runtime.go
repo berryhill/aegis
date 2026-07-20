@@ -85,6 +85,11 @@ func (g *armedGateway) Turn(ctx context.Context, session, text string, maximum i
 	defer g.budget.Store(0)
 	return g.client.Turn(ctx, session, text, maximum)
 }
+func (g *armedGateway) TurnStream(ctx context.Context, session, text string, maximum int, delta func([]byte) error) ([]byte, error) {
+	g.budget.Store(1)
+	defer g.budget.Store(0)
+	return g.client.TurnStream(ctx, session, text, maximum, delta)
+}
 func (g *armedGateway) consume() bool { return g.budget.CompareAndSwap(1, 0) }
 
 type conversationalRuntime struct {

@@ -120,6 +120,13 @@ func (c *GatewayClient) CreateSession(ctx context.Context, source string) (strin
 }
 
 func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximumResponseBytes int) ([]byte, error) {
+	return c.TurnStream(ctx, sessionID, text, maximumResponseBytes, nil)
+}
+
+// TurnStream reports each bounded Hermes response delta after it has passed the
+// gateway protocol checks. The callback is presentation-only; callers must
+// still validate the complete response before treating it as control data.
+func (c *GatewayClient) TurnStream(ctx context.Context, sessionID, text string, maximumResponseBytes int, delta func([]byte) error) ([]byte, error) {
 	if sessionID == "" || len(sessionID) > 256 || text == "" || len(text) > c.maximum || maximumResponseBytes < 1 || maximumResponseBytes > c.maximum {
 		return nil, errors.New("Hermes turn bounds are invalid")
 	}
@@ -156,9 +163,16 @@ func (c *GatewayClient) Turn(ctx context.Context, sessionID, text string, maximu
 			if !started {
 				return nil, errors.New("Hermes gateway delta before message start")
 			}
-			response = append(response, payloadTextValue(message.Params.Payload)...)
+			chunk := []byte(payloadTextValue(message.Params.Payload))
+			response = append(response, chunk...)
 			if len(response) > maximumResponseBytes {
 				return nil, errors.New("Hermes gateway response exceeds limit")
+			}
+			if delta != nil && len(chunk) != 0 {
+				if err := delta(chunk); err != nil {
+					c.poisoned.Store(true)
+					return nil, err
+				}
 			}
 		case "message.complete":
 			if !started {

@@ -277,8 +277,11 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		if conversation != nil {
 			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
 			_ = presentation.Emit(tui.Event{Kind: tui.TurnStarted, Origin: tui.RuntimeHermes, Stage: "Hermes Agent turn", Message: "turn started through authenticated Aegis proxy to exact Ollama model"})
-			message, turnErr := handleManagerTurn(sessionCtx, presentation, conversation.session, line)
+			message, streamed, turnErr := handleManagerTurn(sessionCtx, presentation, conversation.session, line)
 			if turnErr != nil {
+				if streamed {
+					_ = presentation.Emit(tui.Event{Kind: tui.AssistantRejected, Origin: tui.ModelUntrusted, Reason: "stream rejected because the completed manager response was invalid"})
+				}
 				if sessionCtx.Err() != nil {
 					endReason = managerdomain.EndReasonFromContext(sessionCtx)
 					break
@@ -436,7 +439,7 @@ func slashResultFields(result slash.Result) map[string]any {
 	}
 }
 
-func handleManagerTurn(ctx context.Context, presentation *tui.Controller, session *managerdomain.Session, input string) (string, error) {
+func handleManagerTurn(ctx context.Context, presentation *tui.Controller, session *managerdomain.Session, input string) (string, bool, error) {
 	started := time.Now()
 	stop := make(chan struct{})
 	done := make(chan struct{})
@@ -464,10 +467,12 @@ func handleManagerTurn(ctx context.Context, presentation *tui.Controller, sessio
 			}
 		}
 	}()
-	message, err := session.Handle(ctx, input)
+	message, streamed, err := session.HandleStream(ctx, input, func(snapshot string) error {
+		return presentation.Emit(tui.Event{Kind: tui.AssistantDelta, Origin: tui.ModelUntrusted, Message: snapshot})
+	})
 	close(stop)
 	<-done
-	return message, err
+	return message, streamed, err
 }
 
 func streamSafeText(output io.Writer, text string) {

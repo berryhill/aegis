@@ -11,11 +11,15 @@ import (
 )
 
 type Controller struct {
-	mu    sync.Mutex
-	out   io.Writer
-	state State
-	now   func() time.Time
-	queue *Queue
+	mu                sync.Mutex
+	out               io.Writer
+	state             State
+	now               func() time.Time
+	queue             *Queue
+	assistantRendered string
+	assistantActive   bool
+	progressActive    bool
+	plainProgress     bool
 }
 
 func NewController(output io.Writer, capabilities Capabilities, security SecurityContext) *Controller {
@@ -137,6 +141,66 @@ func (controller *Controller) renderEvent(event Event) error {
 		label = "[origin: " + label + "]"
 	} else {
 		label = "[" + label + "]"
+	}
+	if event.Kind == TurnProgress {
+		if controller.assistantActive {
+			return nil
+		}
+		if controller.state.Capabilities.Profile == RichInteractive && controller.state.Capabilities.Term != "dumb" {
+			controller.progressActive = true
+			_, err := fmt.Fprintf(controller.out, "\r\x1b[2K%s %s", label, message)
+			return err
+		}
+		if controller.plainProgress {
+			return nil
+		}
+		controller.plainProgress = true
+	}
+	if event.Kind == AssistantDelta {
+		if controller.progressActive {
+			if _, err := io.WriteString(controller.out, "\r\x1b[2K"); err != nil {
+				return err
+			}
+			controller.progressActive = false
+		}
+		if !controller.assistantActive {
+			if _, err := fmt.Fprint(controller.out, label, " "); err != nil {
+				return err
+			}
+			controller.assistantActive = true
+			controller.assistantRendered = ""
+		}
+		if !strings.HasPrefix(message, controller.assistantRendered) {
+			return nil
+		}
+		delta := strings.TrimPrefix(message, controller.assistantRendered)
+		controller.assistantRendered = message
+		_, err := io.WriteString(controller.out, delta)
+		return err
+	}
+	if event.Kind == AssistantCompleted && controller.assistantActive {
+		controller.assistantActive = false
+		controller.assistantRendered = ""
+		controller.plainProgress = false
+		_, err := io.WriteString(controller.out, "\n")
+		return err
+	}
+	if event.Kind == AssistantRejected && controller.assistantActive {
+		controller.assistantActive = false
+		controller.assistantRendered = ""
+		controller.plainProgress = false
+		if _, err := io.WriteString(controller.out, "\n"); err != nil {
+			return err
+		}
+	}
+	if controller.progressActive && event.Kind != TurnProgress {
+		if _, err := io.WriteString(controller.out, "\r\x1b[2K"); err != nil {
+			return err
+		}
+		controller.progressActive = false
+	}
+	if event.Kind == TurnCompleted || event.Kind == TurnFailed || event.Kind == TurnInterrupted {
+		controller.plainProgress = false
 	}
 	if len(event.Fields) != 0 {
 		encoded, err := json.MarshalIndent(event.Fields, "", "  ")

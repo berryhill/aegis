@@ -51,7 +51,20 @@ func TestGatewayFixtureMultiTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	for index := 0; index < 2; index++ {
-		response, err := client.Turn(ctx, session, "hello", 4096)
+		var response []byte
+		var err error
+		if index == 0 {
+			response, err = client.Turn(ctx, session, "hello", 4096)
+		} else {
+			var streamed []byte
+			response, err = client.TurnStream(ctx, session, "hello", 4096, func(delta []byte) error {
+				streamed = append(streamed, delta...)
+				return nil
+			})
+			if !bytes.Equal(streamed, response) {
+				t.Fatalf("streamed=%s response=%s", streamed, response)
+			}
+		}
 		if err != nil {
 			t.Fatal(err)
 		}

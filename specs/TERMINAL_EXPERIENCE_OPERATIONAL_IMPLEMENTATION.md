@@ -474,6 +474,8 @@ Assistant text MUST:
 
 Where the security protocol requires buffering the complete response, the UI MAY show activity but MUST NOT leak unvalidated partial assistant content.
 
+The manager's message-only response path MAY incrementally release the `message` JSON string only after a bounded parser has matched the exact canonical schema/version, `kind:"message"`, and message-field prefix. It MUST retain a tail sufficient to avoid splitting JSON escapes, UTF-8, or surrogate pairs; sanitize each complete accumulated snapshot; require monotonic rendered snapshots; and validate the complete response normally before accepting the turn. Proposal and non-canonical envelopes MUST remain fully buffered. A streamed message whose completed envelope fails validation MUST be visibly rejected and MUST never produce an authoritative event or operation.
+
 ### 12.3 Bounded retention
 
 In-memory presentation state MUST be bounded by component count and byte size. Pruning a visual component MUST also remove side indexes, pending-stream references, and retained untrusted payloads. Authoritative audit remains separate and metadata-only.
