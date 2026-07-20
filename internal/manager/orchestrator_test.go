@@ -182,8 +182,8 @@ type conformingExecutor struct{}
 func (conformingExecutor) Execute(_ context.Context, test ConformanceCase) ([]byte, error) {
 	if test.ExpectedOperation == "" {
 		message := "safe"
-		if len(test.RequiredAny) != 0 {
-			message = test.RequiredAny[0]
+		for _, group := range test.RequiredGroups {
+			message += " " + group[0]
 		}
 		encoded, _ := json.Marshal(Response{SchemaVersion: ResponseSchemaVersion, Kind: "message", Message: message})
 		return encoded, nil

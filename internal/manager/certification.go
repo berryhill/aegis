@@ -56,7 +56,13 @@ type ConformanceExecutor interface {
 	Execute(context.Context, ConformanceCase) ([]byte, error)
 }
 
-const conversationalConformanceAttempts = 3
+const conversationalConformanceAttempts = 10
+
+// CertificationOptions controls diagnostic execution without weakening the
+// requirement that every corpus case pass before a certification is returned.
+type CertificationOptions struct {
+	ContinueOnError bool
+}
 
 // ConformanceFailure identifies a failed case without retaining model output.
 type ConformanceFailure struct {
@@ -72,6 +78,10 @@ func (e *ConformanceFailure) Error() string {
 func (e *ConformanceFailure) Unwrap() error { return e.Err }
 
 func RunCertification(ctx context.Context, executor ConformanceExecutor, candidate Candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion string, contextLength int, now time.Time) (Certification, error) {
+	return RunCertificationWithOptions(ctx, executor, candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion, contextLength, now, CertificationOptions{})
+}
+
+func RunCertificationWithOptions(ctx context.Context, executor ConformanceExecutor, candidate Candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion string, contextLength int, now time.Time, options CertificationOptions) (Certification, error) {
 	if executor == nil {
 		return Certification{}, errors.New("conformance executor is required")
 	}
@@ -85,8 +95,10 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 		return Certification{}, errors.New("candidate is not in the traceable registry")
 	}
 	cert := Certification{SchemaVersion: "aegis.manager.certification.v1", CandidateID: candidate.ID, ArtifactName: artifactName, ArtifactDigest: artifactDigest, ContextLength: contextLength, Quantization: quantization, HermesVersion: hermesVersion, OllamaVersion: ollamaVersion, InstructionDigest: digestString(SystemInstruction), ResponseSchema: ResponseSchemaVersion, CorpusDigest: CorpusDigest(), CertifiedAt: now.UTC()}
+	var failures []error
 	for _, test := range ConformanceCorpus() {
 		result := ConformanceResult{CaseID: test.ID}
+		var caseFailure error
 		for attempt := 0; attempt < conversationalConformanceAttempts; attempt++ {
 			output, err := executor.Execute(ctx, test)
 			if err != nil {
@@ -95,11 +107,16 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 				if errors.As(err, &failure) && failure.Reason != "" {
 					reason = failure.Reason
 				}
-				return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
+				caseFailure = &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: err}
+				result.Reason = reason
+				break
 			}
 			response, _, decodeErr := DecodeResponse(output, 1<<20)
 			if decodeErr != nil {
-				return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: safeResponseFailureReason(decodeErr), Err: decodeErr}
+				reason := safeResponseFailureReason(decodeErr)
+				caseFailure = &ConformanceFailure{CaseID: test.ID, Reason: reason, Err: decodeErr}
+				result.Reason = reason
+				break
 			}
 			result.Passed, result.Reason = evaluateConformance(test, response)
 			if result.Passed || result.Reason != "required_conversational_content_missing" {
@@ -107,9 +124,19 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 			}
 		}
 		cert.Results = append(cert.Results, result)
-		if !result.Passed {
-			return Certification{}, &ConformanceFailure{CaseID: test.ID, Reason: result.Reason}
+		if result.Passed {
+			continue
 		}
+		if caseFailure == nil {
+			caseFailure = &ConformanceFailure{CaseID: test.ID, Reason: result.Reason}
+		}
+		failures = append(failures, caseFailure)
+		if !options.ContinueOnError || ctx.Err() != nil {
+			return Certification{}, caseFailure
+		}
+	}
+	if len(failures) != 0 {
+		return Certification{}, errors.Join(failures...)
 	}
 	if err := cert.Validate(); err != nil {
 		return Certification{}, fmt.Errorf("certification failed: %w", err)
@@ -169,9 +196,9 @@ func evaluateConformance(test ConformanceCase, response Response) (bool, string)
 			return false, "forbidden_claim"
 		}
 	}
-	if len(test.RequiredAny) != 0 {
+	for _, group := range test.RequiredGroups {
 		matched := false
-		for _, required := range test.RequiredAny {
+		for _, required := range group {
 			if strings.Contains(lower, strings.ToLower(required)) {
 				matched = true
 				break

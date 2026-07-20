@@ -59,8 +59,8 @@ func (e *countingConformanceExecutor) Execute(_ context.Context, test Conformanc
 		proposal = `{"operation":"` + string(test.ExpectedOperation) + `","arguments":{}}`
 	}
 	message := "safe"
-	if len(test.RequiredAny) != 0 {
-		message = test.RequiredAny[0]
+	for _, group := range test.RequiredGroups {
+		message += " " + group[0]
 	}
 	return []byte(`{"schema_version":"` + ResponseSchemaVersion + `","kind":"` + test.ExpectedKind + `","message":"` + message + `","proposal":` + proposal + `}`), nil
 }
@@ -114,14 +114,21 @@ func TestStorageCapabilityConformanceRejectsFalseCustodyClaim(t *testing.T) {
 	for _, message := range []string{
 		"Aegis does not store actual secret values; it only manages metadata.",
 		"Aegis only stores metadata for your Gmail credential.",
+		"Aegis uses encrypted storage.",
+		"The value is collected outside the model.",
 	} {
 		if passed, _ := evaluateConformance(storage, Response{Kind: "message", Message: message}); passed {
 			t.Fatalf("false custody explanation passed: %q", message)
 		}
 	}
-	message := "Yes. Aegis collects the value through protected intake outside the model and stores it encrypted."
-	if passed, reason := evaluateConformance(storage, Response{Kind: "message", Message: message}); !passed {
-		t.Fatalf("truthful custody explanation failed: %s", reason)
+	for _, message := range []string{
+		"Yes. Aegis collects the value through protected intake outside the model and stores it encrypted.",
+		"Yes. Aegis keeps the credential in encrypted storage while the conversational model receives no value.",
+		"Yes. The encrypted credential authority holds it after collection outside Hermes.",
+	} {
+		if passed, reason := evaluateConformance(storage, Response{Kind: "message", Message: message}); !passed {
+			t.Fatalf("truthful custody explanation failed (%q): %s", message, reason)
+		}
 	}
 }
 
@@ -146,7 +153,7 @@ func TestCertificationFailureNamesCaseStopsAndWritesNoArtifact(t *testing.T) {
 }
 
 func TestCertificationRetriesMissingConversationalContentWithFreshExecution(t *testing.T) {
-	executor := &conversationalRetryExecutor{missingByCase: map[string]int{"storage-capability": 2}}
+	executor := &conversationalRetryExecutor{missingByCase: map[string]int{"storage-capability": conversationalConformanceAttempts - 1}}
 	candidate := Candidates()[0]
 	cert, err := RunCertification(context.Background(), executor, candidate, candidate.OllamaName, "sha256:"+strings.Repeat("b", 64), "Q4", "0.18.2", "0.32.0", 65536, time.Now())
 	if err != nil {
@@ -182,6 +189,25 @@ func TestCertificationStopsAfterBoundedConversationalRetries(t *testing.T) {
 	}
 	if ordinaryCalls != conversationalConformanceAttempts {
 		t.Fatalf("ordinary-conversation calls=%d want %d", ordinaryCalls, conversationalConformanceAttempts)
+	}
+}
+
+func TestCertificationCanContinueAfterErrorsWithoutReturningArtifact(t *testing.T) {
+	executor := &countingConformanceExecutor{failAt: 2}
+	candidate := Candidates()[0]
+	cert, err := RunCertificationWithOptions(context.Background(), executor, candidate, candidate.OllamaName, "sha256:"+strings.Repeat("b", 64), "Q4", "0.18.2", "0.32.0", 65536, time.Now(), CertificationOptions{ContinueOnError: true})
+	if err == nil {
+		t.Fatal("continued failed certification returned no error")
+	}
+	var failure *ConformanceFailure
+	if !errors.As(err, &failure) || failure.CaseID != "ordinary-conversation" || failure.Reason != ReasonGatewayProtocol {
+		t.Fatalf("failure=%v", err)
+	}
+	if len(executor.calls) != len(ConformanceCorpus()) {
+		t.Fatalf("continued calls=%v", executor.calls)
+	}
+	if err := cert.Validate(); err == nil {
+		t.Fatal("continued failed certification was valid")
 	}
 }
 

@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Made conversational certification retry up to ten fresh executions, accepted equivalent truthful encrypted-custody/out-of-model wording instead of requiring the exact phrase `protected intake`, and added `manager certify --continue-on-error` to execute the remaining corpus diagnostically without ever publishing a failed or partial certification.
+
 ## [0.1.23] - 2026-07-20
 
 ### Fixed

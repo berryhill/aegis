@@ -504,9 +504,9 @@ func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalIn
 	}
 	err = runManagerCertification(cmd, build, candidate, func(stage string) {
 		fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
-	})
+	}, false)
 	if err != nil {
-		return false, fmt.Errorf("%w; certification was not saved; retry with: aegis manager certify %s", err, candidate)
+		return false, fmt.Errorf("%w; certification was not saved; retry all cases with: aegis manager certify %s --continue-on-error", err, candidate)
 	}
 	return true, nil
 }

@@ -11,6 +11,13 @@ import (
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 )
 
+func TestManagerCertifyExposesContinueOnErrorOption(t *testing.T) {
+	flag := managerCertifyCmd(nil).Flags().Lookup("continue-on-error")
+	if flag == nil || flag.DefValue != "false" {
+		t.Fatalf("continue-on-error flag=%v", flag)
+	}
+}
+
 func blockedCertificationExecutor(t *testing.T, timeout time.Duration, progress func(string)) (liveConformanceExecutor, *io.PipeWriter) {
 	t.Helper()
 	reader, writer := io.Pipe()

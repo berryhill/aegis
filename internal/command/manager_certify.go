@@ -127,12 +127,15 @@ func consumeCertificationBudget(budget *atomic.Int32) bool {
 }
 
 func managerCertifyCmd(build builder) *cobra.Command {
-	return &cobra.Command{Use: "certify CANDIDATE_ID", Short: "Explicitly run live conformance for one already-installed exact local artifact", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		return runManagerCertification(cmd, build, args[0], nil)
+	var continueOnError bool
+	command := &cobra.Command{Use: "certify CANDIDATE_ID", Short: "Explicitly run live conformance for one already-installed exact local artifact", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return runManagerCertification(cmd, build, args[0], nil, continueOnError)
 	}}
+	command.Flags().BoolVar(&continueOnError, "continue-on-error", false, "run the remaining corpus cases after a failure; certification still requires every case to pass")
+	return command
 }
 
-func runManagerCertification(cmd *cobra.Command, build builder, candidateID string, progress func(string)) (resultErr error) {
+func runManagerCertification(cmd *cobra.Command, build builder, candidateID string, progress func(string), continueOnError bool) (resultErr error) {
 	service, subject, err := authenticatedService(cmd, build)
 	if err != nil {
 		return err
@@ -231,7 +234,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err = certificationCtx.Err(); err != nil {
 		return fmt.Errorf("certification authority expired before conformance began: %s", managerdomain.ReasonSessionExpired)
 	}
-	certification, err := managerdomain.RunCertification(certificationCtx, liveConformanceExecutor{gateway: hermes.Client(), budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), timeout: cfg.Hermes.TurnTimeout, progress: progress, proxy: proxy}, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC())
+	certification, err := managerdomain.RunCertificationWithOptions(certificationCtx, liveConformanceExecutor{gateway: hermes.Client(), budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), timeout: cfg.Hermes.TurnTimeout, progress: progress, proxy: proxy}, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC(), managerdomain.CertificationOptions{ContinueOnError: continueOnError})
 	if err != nil {
 		return err
 	}
