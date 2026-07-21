@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,15 @@ import (
 type fakeGateway struct {
 	outputs [][]byte
 	inputs  []string
+}
+
+type sensitiveFakeGateway struct {
+	fakeGateway
+	registered [][]byte
+}
+
+func (f *sensitiveFakeGateway) RegisterSensitive(value []byte) {
+	f.registered = append(f.registered, append([]byte(nil), value...))
 }
 
 func (f *fakeGateway) Turn(_ context.Context, _, text string, _ int) ([]byte, error) {
@@ -33,6 +43,7 @@ type fakeOperations struct {
 	records                   []credentials.SecretRecord
 	created, rotated, revoked int
 	valueHash                 string
+	readValue                 []byte
 }
 
 func (f *fakeOperations) Status(context.Context) (map[string]any, error) {
@@ -40,6 +51,25 @@ func (f *fakeOperations) Status(context.Context) (map[string]any, error) {
 }
 func (f *fakeOperations) List(context.Context, string, int) ([]credentials.SecretRecord, error) {
 	return f.records, nil
+}
+func (f *fakeOperations) Counts(context.Context) (credentials.SecretCounts, error) {
+	counts := credentials.SecretCounts{Total: len(f.records)}
+	for _, record := range f.records {
+		if record.Status == credentials.StatusRevoked {
+			counts.Revoked++
+		} else {
+			counts.Active++
+		}
+	}
+	return counts, nil
+}
+func (f *fakeOperations) ReadValue(_ context.Context, reference string, consume func(credentials.SecretRecord, []byte) error) error {
+	for _, record := range f.records {
+		if record.Reference == reference {
+			return consume(record, f.readValue)
+		}
+	}
+	return credentials.ErrNotFound
 }
 func (f *fakeOperations) Metadata(_ context.Context, id string) (credentials.SecretRecord, error) {
 	for _, r := range f.records {
@@ -79,6 +109,11 @@ func certifiedRoute(t *testing.T) RoutePlan {
 func envelope(op Operation, args any) []byte {
 	raw, _ := json.Marshal(args)
 	out, _ := json.Marshal(Response{SchemaVersion: ResponseSchemaVersion, Kind: "proposal", Message: "proposal", Proposal: &Proposal{Operation: op, Arguments: raw}})
+	return out
+}
+
+func messageEnvelope(message string) []byte {
+	out, _ := json.Marshal(Response{SchemaVersion: ResponseSchemaVersion, Kind: "message", Message: message})
 	return out
 }
 
@@ -137,10 +172,109 @@ func TestSessionHandlesAegisParsedCreateWithoutGateway(t *testing.T) {
 	if ops.created != 1 || len(gateway.inputs) != 0 || !strings.Contains(message, "secret-created") {
 		t.Fatalf("created=%d gateway_inputs=%v message=%q", ops.created, gateway.inputs, message)
 	}
-	for _, expected := range []string{"create protected credential", "reference: google-drive-person-example-com", "kind: api-key", "protected no-echo", "never Hermes/model chat"} {
+	for _, expected := range []string{"create protected credential", "reference: google-drive-person-example-com", "kind: api-key", "protected no-echo", "plaintext session state is purged on close"} {
 		if !strings.Contains(confirmation, expected) {
 			t.Fatalf("confirmation %q missing %q", confirmation, expected)
 		}
+	}
+}
+
+func TestSessionTrustedLocalCreateBypassesModelAndStoresOriginalValue(t *testing.T) {
+	canaryBytes := make([]byte, 24)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	canary := "session-only-credential-" + hex.EncodeToString(canaryBytes)
+	gateway := &sensitiveFakeGateway{fakeGateway: fakeGateway{outputs: [][]byte{messageEnvelope("conversation intact")}}}
+	ops := &fakeOperations{}
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	confirmationCalls := 0
+	session, err := NewSession(context.Background(), SessionConfig{
+		SessionID: "session-trusted-create", SubjectID: "local-uid:1", PrincipalID: "principal",
+		Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-trusted-create", Guard: guard, Operations: ops,
+		Confirm: func(context.Context, string) (bool, error) {
+			confirmationCalls++
+			return false, errors.New("inline imperative must not prompt")
+		},
+		Intake:  func(context.Context, string) ([]byte, error) { return nil, errors.New("separate intake must not run") },
+		Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := `I want to store a test secret.. key: "test" secret: "` + canary + `"`
+	intent, ok := ParseCreateIntent(text)
+	if !ok {
+		t.Fatal("paired key/secret create intent was not recognized")
+	}
+	defer intent.Wipe()
+	message, err := session.HandleCreateIntentWithValue(context.Background(), text, intent.Arguments, intent.Value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantHash := sha256.Sum256([]byte(canary))
+	if ops.created != 1 || confirmationCalls != 0 || ops.valueHash != hex.EncodeToString(wantHash[:]) || len(gateway.inputs) != 0 || len(gateway.registered) != 0 || !strings.Contains(message, "secret-created") {
+		t.Fatalf("trusted create failed: created=%d confirmations=%d hash=%s inputs=%q registered=%q message=%q", ops.created, confirmationCalls, ops.valueHash, gateway.inputs, gateway.registered, message)
+	}
+	reply, err := session.Handle(context.Background(), "ok awesome")
+	if err != nil || reply != "conversation intact" || len(gateway.inputs) != 1 || gateway.inputs[0] != "ok awesome" {
+		t.Fatalf("direct create contaminated following conversation: reply=%q err=%v inputs=%q", reply, err, gateway.inputs)
+	}
+}
+
+func TestSessionTrustedLocalCreateCannotBeVetoedOrRedirectedByModel(t *testing.T) {
+	for _, outputs := range [][][]byte{
+		{envelope(SecretProposeCreate, CreateArguments{Reference: "other", Kind: "opaque", Disclosure: "protected"})},
+		{messageEnvelope("I need more details and confirmation")},
+		nil,
+	} {
+		gateway := &sensitiveFakeGateway{fakeGateway: fakeGateway{outputs: outputs}}
+		ops := &fakeOperations{}
+		guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+		session, err := NewSession(context.Background(), SessionConfig{SessionID: "session-principal-command", SubjectID: "local-uid:1", PrincipalID: "principal", Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-principal-command", Guard: guard, Operations: ops, Confirm: func(context.Context, string) (bool, error) { return false, errors.New("must not run") }, Intake: func(context.Context, string) ([]byte, error) { return nil, errors.New("must not run") }, Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+		message, err := session.HandleCreateIntentWithValue(context.Background(), "store a cred named test with a value of canary", CreateArguments{Reference: "test", Kind: "opaque", Disclosure: "protected"}, []byte("canary"))
+		if err != nil || ops.created != 1 || len(gateway.inputs) != 0 || !strings.Contains(message, "secret-created") {
+			t.Fatalf("model vetoed or redirected principal operation: outputs=%q err=%v created=%d message=%q", outputs, err, ops.created, message)
+		}
+	}
+}
+
+func TestSessionCredentialCountExecutesWithoutModelOrConfirmation(t *testing.T) {
+	gateway := &fakeGateway{}
+	ops := &fakeOperations{records: []credentials.SecretRecord{
+		{Status: credentials.StatusActive},
+		{Status: credentials.StatusActive},
+		{Status: credentials.StatusRevoked},
+	}}
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	session, err := NewSession(context.Background(), SessionConfig{SessionID: "session-count", SubjectID: "local-uid:1", PrincipalID: "principal", Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-count", Guard: guard, Operations: ops, Confirm: func(context.Context, string) (bool, error) { return false, errors.New("count must not prompt") }, Intake: func(context.Context, string) ([]byte, error) { return nil, errors.New("count must not intake") }, Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := session.HandleCredentialCount(context.Background())
+	if err != nil || len(gateway.inputs) != 0 || !strings.Contains(message, `"total":3`) || !strings.Contains(message, `"active":2`) || !strings.Contains(message, `"revoked":1`) {
+		t.Fatalf("count was not immediate and authoritative: message=%q err=%v gateway_inputs=%q", message, err, gateway.inputs)
+	}
+}
+
+func TestSessionCredentialValueReadExecutesWithoutModelOrConfirmation(t *testing.T) {
+	canaryBytes := make([]byte, 24)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	gateway := &fakeGateway{}
+	ops := &fakeOperations{records: []credentials.SecretRecord{{ID: "secret-read", Reference: "test", Status: credentials.StatusActive}}, readValue: canaryBytes}
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	session, err := NewSession(context.Background(), SessionConfig{SessionID: "session-read", SubjectID: "local-uid:1", PrincipalID: "principal", Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-read", Guard: guard, Operations: ops, Confirm: func(context.Context, string) (bool, error) { return false, errors.New("value read must not prompt") }, Intake: func(context.Context, string) ([]byte, error) { return nil, errors.New("value read must not intake") }, Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := session.HandleCredentialValueRead(context.Background(), "test")
+	if err != nil || len(gateway.inputs) != 0 || !strings.Contains(message, strconv.Quote(string(canaryBytes))) {
+		t.Fatalf("value read was not immediate and authoritative: message=%q err=%v gateway_inputs=%q", message, err, gateway.inputs)
 	}
 }
 

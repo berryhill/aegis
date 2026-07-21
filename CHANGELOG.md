@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+
+- Made explicit authenticated credential count/list/create/value-read requests execute directly against typed authority operations without model negotiation or confirmation. Exact-reference retrieval checks active/revoked state, emits metadata-only audit, and renders terminal-escaped plaintext only in session-scoped presentation state. Complete inline creates no longer enter or poison the Hermes conversation. Fixed `credential names "…"` parsing so it no longer silently falls back to `new-credential`. The unambiguous imperative itself authorizes that exact parsed inline create, so model requests for more fields or confirmation—and model-selected target changes—cannot veto or redirect it. Paired shorthand such as `key: "record-name" secret: "credential-value"` deterministically treats the key field as the record reference and the secret field as the session value, preventing sensitive-tracker/reference inversion; the common `stay` typo is accepted only on that narrow paired-field create path. Successful internal startup checks are quiet by default, leaving one concise authenticated/ready transition. Cleanup now terminates dedicated managed Ollama directly, reserves unload polling for external-local mode, and reports stable failed teardown stage names instead of a generic incomplete-cleanup message. Added tracked-value response non-echo, session content/history clearing, updated conformance requirements, and canary-backed guard/proxy/session tests. This invalidates prior manager certifications and requires explicit recertification. Terminal scrollback and host/root/forensic capture remain outside the purge guarantee.
+
 ## [0.1.25] - 2026-07-21
 
 ### Fixed

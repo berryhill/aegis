@@ -119,15 +119,14 @@ The implementation is incomplete if any invariant below is violated.
 - A model statement that an operation succeeded MUST have no authority.
 - Every mutation MUST pass deterministic Aegis authorization and operator confirmation.
 
-### 4.2 Secret non-disclosure
+### 4.2 Trusted-local plaintext and durable non-disclosure
 
-- Protected-intake values MUST NOT enter Hermes input.
-- Protected-intake values MUST NOT enter Ollama requests.
-- Protected-intake values MUST NOT enter model context or history.
-- Secret values MUST NOT appear in stdout, stderr, logs, audit, receipts, errors, argv, environment variables, or plaintext temporary files.
+- The authenticated built-in manager MAY admit a user-supplied credential value to only the exact certified local model on the immutable authenticated loopback route.
+- Protected-intake values, authority passphrases, KEKs, provider credentials, and values from other sessions MUST NOT enter Hermes input, Ollama requests, or model context/history.
+- Credential values MUST NOT appear in model output, Aegis-rendered retained transcript state, logs, audit, receipts, errors, argv, environment variables, or plaintext temporary files. Operator terminal scrollback is explicitly outside the purge guarantee.
 - Credential metadata returned to the model MUST be allowlisted and prompt-injection-safe.
-- Ordinary messages containing high-confidence credential formats MUST be blocked and discarded before Hermes receives them.
-- The exact serialized inference request MUST receive a second guard before forwarding to Ollama.
+- Ordinary credential-bearing messages MUST be blocked unless the current trusted-local session policy authorizes them; clear inline creates are authorized only for that session.
+- The exact serialized inference request MUST receive a second, session-aware guard before forwarding to Ollama.
 - Complete model responses MUST be guarded before release or reuse.
 - Scanner, parser, proxy, or policy failure MUST deny rather than allow.
 
@@ -149,7 +148,7 @@ The implementation is incomplete if any invariant below is violated.
 - Session capabilities MUST be ephemeral and unguessable.
 - Every proxy request MUST be bound to an active, unexpired session and immutable route.
 - Cleanup MUST be bounded and idempotent.
-- Session exit MUST terminate Hermes, close the proxy, unload the exact model, remove disposable state, and invalidate the session capability.
+- Session exit MUST terminate Hermes, close the proxy, unload and verify removal of the exact model, remove disposable state, clear retained composer/presentation state, and invalidate the session capability before a complete receipt is finalized.
 - Partial startup failure MUST roll back all resources already created.
 
 ## 5. Entry behavior and prerequisites
@@ -478,12 +477,22 @@ Interactive manager operations and explicit secret subcommands MUST call shared 
 
 ### 12.2 Create
 
-The flow MUST be:
+For an inline trusted-local value, the flow MUST be:
+
+1. Aegis recognizes clear create intent and captures the original value as session-scoped sensitive state;
+2. the unambiguous imperative acts as the authenticated principal's authorization for that exact parsed create;
+3. Aegis bypasses Hermes/model negotiation for the complete typed request;
+4. Aegis stores the original bytes through the encrypted authority;
+5. Aegis returns metadata only.
+
+Authenticated credential count, metadata-list, and exact-reference value questions are direct authority reads. They MUST NOT be routed through the model or request redundant confirmation. Count uses an exact repository count rather than a bounded-list approximation. Value retrieval MUST fail closed for missing/revoked references, audit metadata only, terminal-escape rendered plaintext, and purge retained presentation state at session close; terminal scrollback remains out of scope.
+
+If no inline value is supplied, the alternative flow MUST be:
 
 1. model proposes non-secret metadata;
 2. Aegis validates the proposal;
 3. Aegis renders a deterministic preview;
-4. the principal confirms;
+4. the principal confirms outside the model;
 5. Aegis enters no-echo input;
 6. the principal enters and confirms the value;
 7. Aegis stores it through the encrypted authority;
@@ -518,11 +527,11 @@ For each natural-language turn, Aegis MUST perform this exact logical sequence:
 1. reject if the session is inactive, expired, or cleaning up;
 2. read bounded terminal input;
 3. consume local deterministic slash commands before Hermes;
-4. apply the ingress guard;
+4. apply the ingress guard and authorize credential plaintext only for the active trusted-local exact route;
 5. submit the accepted turn through Hermes gateway;
 6. authenticate and inspect the serialized proxy request;
 7. call the exact local model;
-8. inspect the complete model response;
+8. inspect the complete model response, including exact tracked-value non-echo;
 9. assemble the complete gateway response;
 10. strictly decode one manager envelope;
 11. render bounded non-authoritative message text;

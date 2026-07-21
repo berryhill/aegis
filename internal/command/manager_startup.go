@@ -58,19 +58,16 @@ func startManagerWithQueue(ctx context.Context, service *app.Service, subject co
 			lines <- managerStartupLine{line: line, eof: eof, err: err}
 		}(readCtx)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "[startup composer] Type a message to queue, or /help for currently available typed local commands.")
-	fmt.Fprint(cmd.OutOrStdout(), "[startup composer] > ")
+	fmt.Fprintln(cmd.OutOrStdout(), "[AEGIS] Starting authenticated exact-local session. You can type now; submissions queue until ready.")
+	fmt.Fprint(cmd.OutOrStdout(), "> ")
 	if interactiveInput {
 		startRead()
 	}
 	for {
 		select {
-		case stage := <-stages:
-			if presentation != nil {
-				_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: stage, Message: stage})
-			} else {
-				fmt.Fprintln(cmd.OutOrStdout(), "\n[startup]", stage)
-			}
+		case <-stages:
+			// Successful implementation-level checks stay quiet. Failures retain
+			// their typed startup reason, and /status exposes readiness details.
 		case completed := <-result:
 			cancelRead()
 			if interactiveInput {
@@ -126,7 +123,7 @@ func startManagerWithQueue(ctx context.Context, service *app.Service, subject co
 				queued = appendStartupLine(cmd, queued, &queuedBytes, read.line, maximum)
 			}
 			readCtx, cancelRead = context.WithCancel(startupCtx)
-			fmt.Fprint(cmd.OutOrStdout(), "[startup composer] > ")
+			fmt.Fprint(cmd.OutOrStdout(), "> ")
 			startRead()
 		case <-ctx.Done():
 			cancelRead()
@@ -144,7 +141,7 @@ func appendStartupLine(cmd *cobra.Command, queued []string, queuedBytes *int, li
 	}
 	queued = append(queued, line)
 	*queuedBytes += len(line)
-	fmt.Fprintf(cmd.OutOrStdout(), "[startup queue] queued locally as message %d; not sent\n", len(queued))
+	fmt.Fprintf(cmd.OutOrStdout(), "[startup] input %d accepted; it will run automatically when ready\n", len(queued))
 	return queued
 }
 

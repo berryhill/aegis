@@ -2,6 +2,8 @@ package manager
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +59,55 @@ func TestProxyAuthenticationModelAndCanaryBoundary(t *testing.T) {
 	}
 	if status := request(proxy.Token(), "exact:1", ""); status != http.StatusOK {
 		t.Fatalf("valid status %d", status)
+	}
+}
+
+func TestTrustedLocalProxyAllowsPlaintextRequestRejectsEchoAndWipesTracker(t *testing.T) {
+	canaryBytes := make([]byte, 24)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	canary := "password=trusted<" + hex.EncodeToString(canaryBytes) + ">"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		content := "safe proposal"
+		if strings.Contains(string(body), "echo-it") {
+			content = canary
+		}
+		_, _ = w.Write([]byte(`{"id":"x","model":"exact:1","choices":[{"index":0,"message":{"role":"assistant","content":"` + content + `"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer upstream.Close()
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	tracker := &SensitiveTracker{}
+	tracker.Add([]byte(canary))
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, AllowPlaintextRequests: true, Sensitive: tracker})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(content string) int {
+		body := `{"model":"exact:1","messages":[{"role":"user","content":"` + content + `"}]}`
+		req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+proxy.Token())
+		response, requestErr := http.DefaultClient.Do(req)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		defer response.Body.Close()
+		return response.StatusCode
+	}
+	if status := call(canary); status != http.StatusOK {
+		t.Fatalf("trusted plaintext request status=%d", status)
+	}
+	if status := call("echo-it"); status != http.StatusBadGateway {
+		t.Fatalf("sensitive echo status=%d", status)
+	}
+	if err = proxy.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if tracker.Contains([]byte(canary)) {
+		t.Fatal("sensitive tracker retained value after proxy close")
 	}
 }
 
@@ -125,6 +176,8 @@ func TestOllamaFixtureDigestAndLocality(t *testing.T) {
 		case "/api/generate":
 			generateCalls++
 			_, _ = w.Write([]byte(`{"model":"exact:1","done":true}`))
+		case "/api/ps":
+			_, _ = w.Write([]byte(`{"models":[]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -146,11 +199,35 @@ func TestOllamaFixtureDigestAndLocality(t *testing.T) {
 	if err := client.Load(context.Background(), "exact:1", 65536, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.Unload(context.Background(), "exact:1"); err != nil || generateCalls != 2 {
+	if err := client.UnloadAndVerify(context.Background(), "exact:1"); err != nil || generateCalls != 2 {
 		t.Fatalf("unload err=%v calls=%d", err, generateCalls)
 	}
 	if _, err := NewOllamaClient("http://example.com:11434", time.Second); err == nil {
 		t.Fatal("public endpoint accepted")
+	}
+}
+
+func TestOllamaUnloadVerificationFailsWhileModelRemainsLoaded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/generate":
+			_, _ = w.Write([]byte(`{"done":true}`))
+		case "/api/ps":
+			_, _ = w.Write([]byte(`{"models":[{"name":"exact:1","model":"exact:1"}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client, err := NewOllamaClient(server.URL, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
+	defer cancel()
+	if err = client.UnloadAndVerify(ctx, "exact:1"); err == nil {
+		t.Fatal("loaded model incorrectly passed unload verification")
 	}
 }
 

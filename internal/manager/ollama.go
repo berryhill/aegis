@@ -242,6 +242,46 @@ func (c *OllamaClient) Unload(ctx context.Context, model string) error {
 	return c.request(ctx, http.MethodPost, "/api/generate", body, nil)
 }
 
+func (c *OllamaClient) RunningModels(ctx context.Context) ([]OllamaModel, error) {
+	var result struct {
+		Models []OllamaModel `json:"models"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/ps", nil, &result); err != nil {
+		return nil, err
+	}
+	return result.Models, nil
+}
+
+// UnloadAndVerify does not claim memory zeroization. It verifies the strongest
+// state Ollama exposes: the exact model no longer appears in the running-model
+// inventory. Dedicated managed mode additionally terminates the daemon.
+func (c *OllamaClient) UnloadAndVerify(ctx context.Context, model string) error {
+	if err := c.Unload(ctx, model); err != nil {
+		return err
+	}
+	for {
+		models, err := c.RunningModels(ctx)
+		if err != nil {
+			return err
+		}
+		loaded := false
+		for _, item := range models {
+			if item.Name == model || item.Model == model {
+				loaded = true
+				break
+			}
+		}
+		if !loaded {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
 func parseVersion(value string) ([3]int, error) {
 	var result [3]int
 	parts := strings.Split(strings.TrimPrefix(value, "v"), ".")

@@ -34,6 +34,17 @@ func (m managerOperations) Status(context.Context) (map[string]any, error) {
 func (m managerOperations) List(ctx context.Context, q string, n int) ([]credentials.SecretRecord, error) {
 	return m.authority.List(ctx, q, n)
 }
+func (m managerOperations) Counts(ctx context.Context) (credentials.SecretCounts, error) {
+	return m.authority.Counts(ctx)
+}
+func (m managerOperations) ReadValue(ctx context.Context, reference string, consume func(credentials.SecretRecord, []byte) error) error {
+	return m.authority.ReadValue(ctx, reference, func(record credentials.SecretRecord, value []byte) error {
+		if err := m.service.AuditCredentialOperation(ctx, m.subject, "credential_value_read", "ok", "authenticated_manager_read_value", record.ID); err != nil {
+			return err
+		}
+		return consume(record, value)
+	})
+}
 func (m managerOperations) Metadata(ctx context.Context, id string) (credentials.SecretRecord, error) {
 	return m.authority.Metadata(ctx, id)
 }
@@ -76,8 +87,9 @@ func (m managerOperations) Bind(ctx context.Context, a managerdomain.BindingArgu
 func (m managerOperations) VerifyAudit(ctx context.Context) error { return m.service.VerifyAudit(ctx) }
 
 type armedGateway struct {
-	client *managerdomain.GatewayClient
-	budget atomic.Int32
+	client    *managerdomain.GatewayClient
+	budget    atomic.Int32
+	sensitive *managerdomain.SensitiveTracker
 }
 
 func (g *armedGateway) Turn(ctx context.Context, session, text string, maximum int) ([]byte, error) {
@@ -90,7 +102,8 @@ func (g *armedGateway) TurnStream(ctx context.Context, session, text string, max
 	defer g.budget.Store(0)
 	return g.client.TurnStream(ctx, session, text, maximum, delta)
 }
-func (g *armedGateway) consume() bool { return g.budget.CompareAndSwap(1, 0) }
+func (g *armedGateway) consume() bool                  { return g.budget.CompareAndSwap(1, 0) }
+func (g *armedGateway) RegisterSensitive(value []byte) { g.sensitive.Add(value) }
 
 type conversationalRuntime struct {
 	session        *managerdomain.Session
@@ -107,6 +120,7 @@ type conversationalRuntime struct {
 	testCleanup    []func(context.Context) error
 	testFinalize   func(context.Context, string, string) error
 	cleanupEvent   func(string, string)
+	cleanupFailed  []string
 }
 
 func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command, input *terminalInput, presentation *tui.Controller, stage func(string)) (runtime *conversationalRuntime, err error) {
@@ -196,10 +210,11 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	if err != nil {
 		return nil, err
 	}
-	armed := &armedGateway{}
+	sensitive := &managerdomain.SensitiveTracker{}
+	armed := &armedGateway{sensitive: sensitive}
 	runtime.active.Store(true)
 	stage("opening authenticated inference route")
-	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume, RequireSystemInstruction: true})
+	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume, RequireSystemInstruction: true, AllowPlaintextRequests: true, Sensitive: sensitive})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
 	}
@@ -330,8 +345,8 @@ func (r *conversationalRuntime) Close(ctx context.Context, reason string) error 
 		if r.proxy != nil {
 			joined = errors.Join(joined, r.cleanupStep("invalidating inference capability and closing proxy", func() error { return r.proxy.Close(ctx) }))
 		}
-		if r.ollama != nil && r.model != "" {
-			joined = errors.Join(joined, r.cleanupStep("unloading exact model", func() error { return r.ollama.Unload(ctx, r.model) }))
+		if r.managed == nil && r.ollama != nil && r.model != "" {
+			joined = errors.Join(joined, r.cleanupStep("unloading and verifying exact model removal", func() error { return r.ollama.UnloadAndVerify(ctx, r.model) }))
 		}
 		if r.managed != nil {
 			joined = errors.Join(joined, r.cleanupStep("stopping Aegis-managed Ollama", func() error { return r.managed.Close(ctx) }))
@@ -356,6 +371,9 @@ func (r *conversationalRuntime) cleanupStep(stage string, operation func() error
 		r.cleanupEvent(stage, "started")
 	}
 	err := operation()
+	if err != nil {
+		r.cleanupFailed = append(r.cleanupFailed, stage)
+	}
 	if r.cleanupEvent != nil {
 		status := "completed"
 		if err != nil {
@@ -364,6 +382,13 @@ func (r *conversationalRuntime) cleanupStep(stage string, operation func() error
 		r.cleanupEvent(stage, status)
 	}
 	return err
+}
+
+func (r *conversationalRuntime) cleanupFailures() []string {
+	if r == nil {
+		return nil
+	}
+	return append([]string(nil), r.cleanupFailed...)
 }
 func managerPython(installation, executable string) string {
 	for _, candidate := range []string{filepath.Join(installation, "venv", "bin", "python"), filepath.Join(installation, ".venv", "bin", "python"), filepath.Join(filepath.Dir(executable), "python"), filepath.Join(filepath.Dir(executable), "python3")} {

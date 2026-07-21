@@ -215,7 +215,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	var budget atomic.Int32
 	attemptSum := sha256.Sum256([]byte(cfg.Inference.Model + "\x00" + cfg.Inference.ModelDigest + "\x00" + descriptor.Version + "\x00" + version + "\x00" + managerdomain.CorpusDigest()))
 	attemptDigest := "sha256:" + hex.EncodeToString(attemptSum[:])
-	proxy, err := managerdomain.StartProxy(cmd.Context(), managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: attemptDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: func() bool { return consumeCertificationBudget(&budget) }, RequireSystemInstruction: true})
+	proxy, err := managerdomain.StartProxy(cmd.Context(), managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: attemptDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: func() bool { return consumeCertificationBudget(&budget) }, RequireSystemInstruction: true, AllowPlaintextRequests: true})
 	if err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func closeManagedBounded(value *managerdomain.ManagedOllama, timeout time.Durati
 func unloadBounded(value *managerdomain.OllamaClient, model string, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	_ = value.Unload(ctx, model)
+	_ = value.UnloadAndVerify(ctx, model)
 }
 func closeProxyBounded(value *managerdomain.Proxy, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

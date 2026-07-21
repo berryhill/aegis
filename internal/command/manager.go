@@ -139,7 +139,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		security.ModelDigest = "absent"
 	}
 	_ = presentation.RenderHeader()
-	fmt.Fprintf(cmd.OutOrStdout(), "Aegis manager\nPrincipal: %s (authenticated)\nLogical agent: %s\nTrust stanza: built-in %s (security context; not a personality)\nSecurity context: %s\nAuthority session: %s (expires %s)\nCharter/policy revision: %s / %s\nCredential authority: %s\nRuntime: Hermes Agent\nInference: Ollama local / %s@%s\nManager route: local-only\nCloud fallback: disabled\nModel switching: disabled\nRuntime-state isolation is not host sandboxing.\nType /help for local commands.\n", subject.PrincipalID, managerdomain.LogicalAgentID, managerdomain.SecurityContext, managerdomain.SecurityContext, subject.ID, subject.ExpiresAt.Format(time.RFC3339), managerdomain.PolicyVersion, managerdomain.PolicyDigest(), readiness.authority, model, digest)
+	fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS] Authenticated as %s. Preparing exact-local manager; /status shows security details.\n", subject.PrincipalID)
 	_ = lifecycle.Advance(managerdomain.LifecycleStarting)
 	sessionCtx, cancelSession := context.WithCancelCause(cmd.Context())
 	defer cancelSession(nil)
@@ -168,7 +168,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		readiness.artifact = "installed"
 		readiness.certification = "valid"
 		security.RuntimeState, security.Certification = "active", "valid"
-		_ = presentation.Emit(tui.Event{Kind: tui.ManagerReady, Origin: tui.AegisAuthoritative, Message: "manager ready through authenticated local route", Security: &security})
+		_ = presentation.Emit(tui.Event{Kind: tui.ManagerReady, Origin: tui.AegisAuthoritative, Message: "ready — authenticated exact-local session; explicit inline credential commands execute directly; terminal scrollback remains outside Aegis cleanup", Security: &security})
 		auditCtx, auditCancel := context.WithTimeout(context.Background(), service.Config.Manager.CleanupTimeout)
 		if auditErr := service.AuditManagerStartup(auditCtx, subject, "ok", "manager_ready", map[string]string{"runtime": "hermes", "model": service.Config.Manager.Inference.Model, "mode": service.Config.Manager.Inference.Mode}); auditErr != nil {
 			auditCancel()
@@ -178,8 +178,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			return errors.Join(auditErr, cleanupErr)
 		}
 		auditCancel()
-		fmt.Fprintln(cmd.OutOrStdout(), "Conversational session: active; route: authenticated loopback proxy to exact certified model")
-		fmt.Fprintln(cmd.OutOrStdout(), "[startup] ready")
+
 	}
 	go func() {
 		select {
@@ -216,7 +215,6 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		var readErr error
 		if len(queued) > 0 {
 			line, queued = queued[0], queued[1:]
-			fmt.Fprintln(cmd.OutOrStdout(), "\n[startup queue -> composer] queued input released to the guard")
 		} else if capabilities.Profile == tui.Machine {
 			fmt.Fprint(cmd.OutOrStdout(), "\n[composer] > ")
 			line, eof, readErr = input.ReadLine(sessionCtx, int(service.Config.Manager.Ingress.MaximumMessageBytes))
@@ -261,32 +259,69 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			line = slash.UnescapeLiteral(line)
 		}
 		createIntent, createRequested := managerdomain.ParseCreateIntent(line)
+		valueReference, valueReadRequested := managerdomain.ParseCredentialValueReadIntent(line)
+		readIntent := managerdomain.ParseAuthorityReadIntent(line)
 		guardedLine := line
 		if createRequested {
 			guardedLine = createIntent.SafeInput
 		}
-		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(guardedLine)})
+		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(guardedLine), PlaintextAuthorized: conversation != nil})
 		if sessionCtx.Err() != nil {
+			createIntent.Wipe()
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
 			break
 		}
 		if finding.Decision == managerdomain.BlockSecret {
+			createIntent.Wipe()
 			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "possible credential blocked; message was not sent to Hermes and was not retained; use protected intake"})
 			continue
 		}
 		if finding.Decision != managerdomain.AllowLocal {
+			createIntent.Wipe()
 			fmt.Fprintln(cmd.ErrOrStderr(), "Aegis blocked the message:", finding.Reason)
 			continue
 		}
-		if createRequested && conversation != nil {
-			if createIntent.ValueRemoved {
-				_ = presentation.Emit(tui.Event{Kind: tui.InputDiscarded, Origin: tui.AegisAuthoritative, Reason: "Aegis blocked a possible credential. The message was not sent to Hermes and was not retained. Review the metadata proposal, then enter the value again only through protected no-echo intake."})
-			} else {
-				composer.Remember(createIntent.SafeInput)
-				_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: createIntent.SafeInput})
+		if !createRequested && valueReadRequested && conversation != nil {
+			composer.Remember(line)
+			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
+			message, operationErr := conversation.session.HandleCredentialValueRead(sessionCtx, valueReference)
+			if operationErr != nil {
+				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
+				continue
 			}
+			_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
+			continue
+		}
+		if !createRequested && readIntent != managerdomain.AuthorityReadUnknown && conversation != nil {
+			composer.Remember(line)
+			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
+			var message string
+			var operationErr error
+			switch readIntent {
+			case managerdomain.AuthorityReadCount:
+				message, operationErr = conversation.session.HandleCredentialCount(sessionCtx)
+			case managerdomain.AuthorityReadList:
+				message, operationErr = conversation.session.HandleCredentialList(sessionCtx)
+			}
+			if operationErr != nil {
+				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
+				continue
+			}
+			_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
+			continue
+		}
+		if createRequested && conversation != nil {
+			composer.Remember(createIntent.SafeInput)
+			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: createIntent.SafeInput})
 			_ = presentation.Emit(tui.Event{Kind: tui.ProposalValidated, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("natural create request mapped locally: reference=%s kind=%s disclosure=protected", createIntent.Arguments.Reference, createIntent.Arguments.Kind)})
-			message, createErr := conversation.session.HandleCreateIntent(sessionCtx, createIntent.Arguments)
+			var message string
+			var createErr error
+			if createIntent.ValueRemoved {
+				message, createErr = conversation.session.HandleCreateIntentWithValue(sessionCtx, line, createIntent.Arguments, createIntent.Value)
+			} else {
+				message, createErr = conversation.session.HandleCreateIntent(sessionCtx, createIntent.Arguments)
+			}
+			createIntent.Wipe()
 			if createErr != nil {
 				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: createErr.Error()})
 				continue
@@ -294,9 +329,22 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
 			continue
 		}
-		composer.Remember(line)
+		if createRequested && createIntent.ValueRemoved {
+			createIntent.Wipe()
+			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "credential-bearing input requires the active authenticated exact-local-model session; input was not retained"})
+			continue
+		}
+		if finding.DetectorID != "" {
+			composer.Remember("[credential-bearing trusted-local turn purged on close]")
+		} else {
+			composer.Remember(line)
+		}
 		if conversation != nil {
-			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
+			presentedLine := line
+			if finding.DetectorID != "" {
+				presentedLine = "[credential-bearing trusted-local turn; plaintext sent only to exact local model]"
+			}
+			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: presentedLine})
 			_ = presentation.Emit(tui.Event{Kind: tui.TurnStarted, Origin: tui.RuntimeHermes, Stage: "Hermes Agent turn", Message: "turn started through authenticated Aegis proxy to exact Ollama model"})
 			message, streamed, turnErr := handleManagerTurn(sessionCtx, presentation, conversation.session, line)
 			if turnErr != nil {
@@ -335,10 +383,16 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 	} else {
 		cleanupErr = service.AuditManagerSession(cleanupCtx, subject, "ok", endReason, map[string]string{"cleanup": "complete", "runtime": "degraded"})
 	}
+	composer.Clear()
+	presentation.PurgeSessionContent()
 	if cleanupErr != nil {
 		_ = presentation.Emit(tui.Event{Kind: tui.CleanupFailed, Origin: tui.AegisAuthoritative, Reason: managerdomain.ReasonCleanupIncomplete})
 		_ = lifecycle.Advance(managerdomain.LifecycleFailed)
-		return fmt.Errorf("%s: bounded manager cleanup incomplete", managerdomain.ReasonCleanupIncomplete)
+		failed := "unknown teardown stage"
+		if conversation != nil && len(conversation.cleanupFailures()) > 0 {
+			failed = strings.Join(conversation.cleanupFailures(), ", ")
+		}
+		return fmt.Errorf("%s: failed teardown stage(s): %s", managerdomain.ReasonCleanupIncomplete, failed)
 	}
 	_ = lifecycle.Advance(managerdomain.LifecycleClosed)
 	_ = presentation.Emit(tui.Event{Kind: tui.CleanupCompleted, Origin: tui.AegisAuthoritative, Message: "bounded cleanup and terminal restoration complete"})

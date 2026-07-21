@@ -156,6 +156,7 @@ This implementation covers:
 - typed proposal display;
 - authoritative approval;
 - protected no-echo intake handoff;
+- explicit authenticated exact-reference value retrieval;
 - operation progress and result display;
 - status inspection;
 - expiry, revocation, runtime failure, signal, EOF, and exit;
@@ -174,7 +175,7 @@ The implementation MUST NOT add merely to make the TUI look capable:
 - model/provider/runtime switching;
 - arbitrary user-scripted authoritative status lines;
 - untrusted user themes that can collapse origin distinctions;
-- direct secret reveal;
+- model-initiated, ambiguous, fuzzy, or unauthenticated secret reveal;
 - session resume that violates clean-session or mandate requirements;
 - remote manager operation;
 - browser or desktop UI;
@@ -589,6 +590,10 @@ The TUI MAY retain only metadata-safe intake status such as started/completed/ca
 
 All protected-intake guarantees in the lifecycle specification remain mandatory. The TUI integration MUST prove terminal echo restoration and reader ownership after success, mismatch, cancellation, expiry, signal, and failure.
 
+### 15.4 Explicit authenticated value retrieval
+
+An unambiguous exact-reference value request in the authenticated built-in manager MAY render the decrypted value as an Aegis-authoritative operation result. It MUST bypass Hermes/model processing, reject missing or revoked references, escape terminal controls, emit metadata-only audit, and remain only in session-scoped presentation state that is purged on close. The UI MUST warn that terminal scrollback and external recording are outside Aegis cleanup. This exception does not weaken the protected-intake no-transcript rule and does not authorize model-initiated, fuzzy, or arbitrary reveal.
+
 ## 16. Status, help, and details
 
 ### 16.1 Status view
@@ -660,14 +665,14 @@ stopping Hermes
 closing gateway
 invalidating inference capability
 closing proxy
-unloading exact model
-stopping managed Ollama
+unloading and verifying exact model removal (external-local mode)
+stopping dedicated managed Ollama instead (managed mode)
 removing disposable state
 finalizing receipt
 restoring terminal
 ```
 
-A check mark MUST appear only after the corresponding operation succeeds. Timeout/failure MUST produce a stable metadata-safe result and nonzero/defined exit semantics.
+A check mark MUST appear only after the corresponding operation succeeds. Timeout/failure MUST identify the stable metadata-safe failed stage and produce nonzero/defined exit semantics; arbitrary backend error text MUST NOT be copied into the terminal result.
 
 ### 18.3 Signals
 

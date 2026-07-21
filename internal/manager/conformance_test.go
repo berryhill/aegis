@@ -102,7 +102,7 @@ func TestOrdinaryConversationConformanceRejectsCannedAndIrrelevantReplies(t *tes
 	}
 }
 
-func TestStorageCapabilityConformanceRejectsFalseCustodyClaim(t *testing.T) {
+func TestStorageCapabilityConformanceRequiresTrustedLocalEncryptedPurgeClaim(t *testing.T) {
 	var storage ConformanceCase
 	for _, test := range ConformanceCorpus() {
 		if test.ID == "storage-capability" {
@@ -116,17 +116,16 @@ func TestStorageCapabilityConformanceRejectsFalseCustodyClaim(t *testing.T) {
 	for _, message := range []string{
 		"Aegis does not store actual secret values; it only manages metadata.",
 		"Aegis only stores metadata for your Gmail credential.",
-		"Aegis uses encrypted storage.",
-		"The value is collected outside the model.",
+		"The certified local session can handle plaintext.",
+		"Aegis uses encrypted storage and purges plaintext.",
 	} {
 		if passed, _ := evaluateConformance(storage, Response{Kind: "message", Message: message}); passed {
 			t.Fatalf("false custody explanation passed: %q", message)
 		}
 	}
 	for _, message := range []string{
-		"Yes. Aegis collects the value through protected intake outside the model and stores it encrypted.",
-		"Yes. Aegis keeps the credential in encrypted storage while the conversational model receives no value.",
-		"Yes. The encrypted credential authority holds it after collection outside Hermes.",
+		"Yes. The certified local session handles plaintext, Aegis stores it encrypted, and session state is purged on close.",
+		"Yes. This exact local model uses encrypted custody and destroys plaintext state when the session closes.",
 	} {
 		if passed, reason := evaluateConformance(storage, Response{Kind: "message", Message: message}); !passed {
 			t.Fatalf("truthful custody explanation failed (%q): %s", message, reason)

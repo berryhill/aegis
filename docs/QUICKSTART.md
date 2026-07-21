@@ -81,7 +81,11 @@ Discovery uses local Ollama metadata only. The generated configuration uses a 15
 
 In the rich manager composer, terminal bracketed paste keeps multiline clipboard text in one guarded submission. Press Enter once after the paste summary; Aegis scans the complete normalized multiline input before sending any allowed text to Hermes.
 
-To create a credential, use ordinary language such as `save my Google Drive key for person@example.com`. Aegis derives a protected metadata proposal locally, shows the exact reference and kind for approval, and then opens protected no-echo intake. If a quoted value was included in the sentence, Aegis discards the message and requires the value again at that protected prompt; it never silently stores chat input.
+To create a credential, use ordinary language such as `store a cred named demo with a value of synthetic-example-1234`, or paired shorthand such as `key: "demo" secret: "synthetic-example-1234"`. That low-ambiguity imperative authorizes the exact parsed create. Aegis executes it directly through the encrypted authority without another confirmation dialogue or model round trip, so it cannot poison or be vetoed by the Hermes conversation. On close, Aegis invalidates the route, removes Hermes state, verifies unload for external Ollama or terminates the dedicated managed daemon, clears retained presentation/history, and reports the stable failed teardown stage rather than claiming completion if cleanup fails. If the request omits a value, protected no-echo intake remains available.
+
+Authenticated read-only questions execute immediately without model negotiation. `how many secrets do we have?` returns exact total, active, and record-level revoked counts from the authority; `list my credentials` returns metadata only. Neither request asks for confirmation or reaches the model.
+
+An explicit request such as `what is the value for credential: "demo"` decrypts and renders that exact reference directly in the authenticated terminal session without reaching the model. The value is terminal-escaped, audit remains metadata-only, retained TUI state is purged on close, and terminal scrollback is outside Aegis cleanup. Missing, ambiguous, or revoked references fail closed.
 
 ## Provider boundary
 

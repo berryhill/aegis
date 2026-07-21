@@ -124,7 +124,8 @@ The initial manager MAY perform only these classes of operation:
 - initialize the configured encrypted credential authority;
 - list and search credential metadata;
 - inspect one credential record and immutable version metadata;
-- propose credential creation and enter protected intake;
+- conversationally supply a new credential value to the exact trusted-local model and propose encrypted storage;
+- propose credential creation and enter protected intake when no value was supplied conversationally;
 - propose metadata changes supported by the authority;
 - propose rotation and enter protected intake;
 - propose revocation of a version or record;
@@ -143,7 +144,7 @@ The manager model MUST NOT receive:
 - provisioning authority;
 - an audit append credential;
 - a generic `GetSecret` operation;
-- credential plaintext reveal;
+- retrieval or reveal of existing credential plaintext without a separately specified capability (not implemented in v1);
 - authority to approve its own proposals;
 - authority to change the route, model, security context, or session lifetime.
 
@@ -175,6 +176,12 @@ manager proposal
   <-> deterministic validation and confirmation
   <-> shared Aegis application service
   <-> metadata-only result
+
+trusted-local create turn
+  <-> authenticated exact-model proxy
+  <-> session-scoped plaintext model context
+  <-> matching metadata-only proposal
+  <-> principal confirmation and encrypted authority write
 ```
 
 ### 5.2 Aegis MUST own terminal input
@@ -356,29 +363,22 @@ block_oversize
 
 A scanner error MUST NOT become allow. For the built-in manager all allowed model requests are local; there is no cloud routing decision.
 
-### 7.4 Accidental credential paste
+### 7.4 Trusted-local plaintext admission
 
-For a high-confidence finding, Aegis MUST:
+The built-in manager is an explicitly authenticated trusted-local plaintext session. For a clear create request containing an inline value, Aegis MUST:
 
-1. prevent the message from reaching Hermes or Ollama;
-2. avoid adding it to transcript, history, audit, logs, errors, or model context;
-3. retain only typed finding metadata needed for a safe user response;
-4. discard and best-effort wipe the captured buffer;
-5. offer protected intake;
-6. require the user to enter the value again through protected intake;
-7. never silently store the accidentally pasted bytes.
+1. require active principal authentication, active mandate, and the built-in secrets-manager stanza;
+2. deterministically derive bounded create metadata and hold the original value only as session-scoped sensitive state;
+3. treat the unambiguous authenticated principal imperative as authorization for that exact parsed inline create;
+4. bypass Hermes/model negotiation for the already-complete typed operation;
+5. store the original bytes through the encrypted credential authority without a redundant confirmation dialogue;
+6. retain only encrypted authority state and metadata-only audit/receipt state after closure.
 
-A clear create request MAY be reduced by deterministic Aegis application code to a metadata-only create proposal using documented safe defaults (`opaque` unless key/token context selects `api-key`, and always `protected`). This parsing MUST NOT authorize the operation, retain an inline value, send the request to Hermes, or bypass the exact metadata confirmation and fresh protected intake. Questions and explanatory discussion MUST NOT become mutation proposals.
+The model response MUST NOT authorize the operation. Authorization comes from the authenticated principal's unambiguous imperative and is limited to the exact deterministic target/value parsed from that turn.
 
-Required user-facing shape:
+Low-ambiguity authenticated read intents such as credential count, metadata list, and exact-reference value retrieval MUST execute directly through Aegis authority operations without a model round trip or confirmation. Count MUST be exact rather than inferred from a bounded list and MUST distinguish total, active, and record-level revoked records. Count/list output and all audit MUST remain metadata-only. Value retrieval MUST require an explicit exact reference, reject missing or revoked records, terminal-escape rendered plaintext, and retain it only in session-scoped presentation state. Terminal scrollback remains outside cleanup. Questions and explanatory discussion MUST NOT become mutation proposals. If no inline value is supplied, the existing confirmed protected no-echo intake path applies. Authority passphrases, KEKs, provider credentials, and values from other sessions remain unauthorized for model admission.
 
-```text
-Aegis blocked a possible credential.
-The message was not sent to Hermes and was not retained in the transcript.
-Start protected intake instead? [Y/n]
-```
-
-The response MUST NOT quote, prefix, suffix, hash unsafely, or partially reveal the candidate.
+The UI MUST visibly state that terminal scrollback is outside Aegis's purge guarantee. Direct typed create/value-read operations MUST bypass the model. Model output MUST still be denied if it contains any tracked session value.
 
 ### 7.5 Exact serialized-request guard
 
@@ -390,7 +390,8 @@ If Hermes's documented gateway prevents Aegis from observing the exact provider 
 - authenticate/bind requests to the active manager session;
 - impose request/body/time bounds;
 - inspect the exact request body;
-- reject secret/policy findings;
+- reject policy findings and any secret not admitted by the current trusted-local session policy;
+- permit credential-bearing user/history messages only while the exact session, model, route, and capability remain active;
 - forward only to the pinned loopback Ollama target;
 - reject alternate hosts, redirects, model names, and endpoints;
 - scan bounded responses before returning them;
@@ -442,7 +443,7 @@ conversation
 
 The implementation MUST reuse the existing credential authority and the current bounded no-echo/exact-stdin intake guarantees through shared application services. It MUST NOT invoke the `aegis secret` CLI as a subprocess.
 
-The value MUST NOT enter:
+Values collected through this protected-intake alternative MUST NOT enter:
 
 - argv;
 - ordinary environment variables;
@@ -466,7 +467,7 @@ Before value collection, Aegis MUST display the complete non-secret target:
 - version policy where relevant;
 - whether a binding is included;
 - disclosure mode, initially `brokered` or `stored-only`;
-- statement that the value is not sent to Hermes/model.
+- statement that no-echo-intake and complete inline-create values are not sent to Hermes/model.
 
 The model cannot supply the confirmation. The authenticated principal must confirm through the Aegis UI.
 

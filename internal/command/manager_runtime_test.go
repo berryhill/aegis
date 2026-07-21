@@ -100,3 +100,17 @@ func TestConversationCleanupHonorsDeadlineAndContinues(t *testing.T) {
 		t.Fatalf("bounded cleanup elapsed=%s following=%d", time.Since(started), following.Load())
 	}
 }
+
+func TestCleanupFailuresExposeOnlyStableStageNames(t *testing.T) {
+	runtime := &conversationalRuntime{}
+	err := runtime.cleanupStep("unloading and verifying exact model removal", func() error {
+		return errors.New("untrusted backend detail")
+	})
+	if err == nil {
+		t.Fatal("cleanup failure was lost")
+	}
+	failures := runtime.cleanupFailures()
+	if len(failures) != 1 || failures[0] != "unloading and verifying exact model removal" {
+		t.Fatalf("cleanup failures=%q", failures)
+	}
+}

@@ -40,6 +40,10 @@ type ContentEnvelope struct {
 	ProvenanceID    string
 	RouteClass      string
 	Content         []byte
+	// PlaintextAuthorized is set only by the authenticated trusted-local
+	// manager path. It permits credential material to remain in that exact
+	// session while preserving every structural, size, timeout, and route check.
+	PlaintextAuthorized bool
 }
 
 type Finding struct {
@@ -115,6 +119,10 @@ func (g *Guard) Inspect(ctx context.Context, envelope ContentEnvelope) (finding 
 			return
 		}
 		if result.found {
+			if envelope.PlaintextAuthorized && (envelope.Source == SourceUser || envelope.Source == SourceOperation) {
+				finding.Decision, finding.DetectorID, finding.Reason = AllowLocal, result.detector, "authorized_trusted_local_plaintext"
+				return
+			}
 			finding.Decision, finding.DetectorID, finding.Reason = BlockSecret, result.detector, ReasonIngressSecret
 			return
 		}

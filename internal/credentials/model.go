@@ -87,13 +87,21 @@ type SecretVersionMetadata struct {
 	CiphertextHash string    `json:"ciphertext_hash"`
 }
 
+type SecretCounts struct {
+	Total   int `json:"total"`
+	Active  int `json:"active"`
+	Revoked int `json:"revoked"`
+}
+
 type Repository interface {
 	StoreID() string
 	DeploymentID() string
 	Create(context.Context, SecretRecord, EncryptedSecretVersion) error
 	AddVersion(context.Context, EncryptedSecretVersion) error
 	Metadata(context.Context, string) (SecretRecord, error)
+	CurrentByReference(context.Context, string) (SecretRecord, EncryptedSecretVersion, error)
 	List(context.Context, string, int) ([]SecretRecord, error)
+	Counts(context.Context) (SecretCounts, error)
 	Version(context.Context, string, uint64) (EncryptedSecretVersion, error)
 	History(context.Context, string, int) ([]SecretVersionMetadata, error)
 	Bind(context.Context, CredentialBinding) error

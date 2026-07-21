@@ -40,8 +40,9 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 		`Use kind "proposal" with proposal`,
 		`answer the user's actual message directly and naturally`,
 		`Never substitute a generic acknowledgement`,
-		`Aegis does store actual reusable credential values`,
-		`protected no-echo intake`,
+		`trusted plaintext conversational component`,
+		`Accept credential values supplied by the authenticated principal`,
+		`purged with the disposable runtime`,
 		`secret.propose_create`,
 		`Never include a credential value`,
 		`disclosure "protected"`,
@@ -94,6 +95,11 @@ func TestGuardBlocksSecretsAndFailures(t *testing.T) {
 		if finding := guard.Inspect(context.Background(), envelope); finding.Decision != BlockSecret {
 			t.Fatalf("secret allowed %q: %#v", input, finding)
 		}
+		envelope.PlaintextAuthorized = true
+		if finding := guard.Inspect(context.Background(), envelope); finding.Decision != AllowLocal {
+			t.Fatalf("trusted-local plaintext blocked %q: %#v", input, finding)
+		}
+		envelope.PlaintextAuthorized = false
 	}
 	envelope.Content = []byte(strings.Repeat("x", 5000))
 	if guard.Inspect(context.Background(), envelope).Decision != BlockOversize {

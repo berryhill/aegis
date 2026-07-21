@@ -233,6 +233,15 @@ func (composer *Composer) Remember(value string) {
 	defer composer.mu.Unlock()
 	composer.remember(value)
 }
+func (composer *Composer) Clear() {
+	composer.mu.Lock()
+	defer composer.mu.Unlock()
+	for index := range composer.history {
+		composer.history[index] = ""
+	}
+	composer.history = nil
+	composer.historyBytes = 0
+}
 func (composer *Composer) remember(value string) {
 	if value == "" {
 		return

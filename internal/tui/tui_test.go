@@ -155,6 +155,27 @@ func TestAssistantSnapshotsSanitizeControlSequenceAcrossUpdates(t *testing.T) {
 	}
 }
 
+func TestPurgeSessionContentAndComposerHistory(t *testing.T) {
+	var output bytes.Buffer
+	controller := NewController(&output, Capabilities{Profile: PlainInteractive, Term: "dumb"}, SecurityContext{})
+	canaryBytes := make([]byte, 24)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	canary := hex.EncodeToString(canaryBytes)
+	if err := controller.Emit(Event{Kind: OperationCompleted, Origin: AegisAuthoritative, Message: "Aegis authoritative credential value (test): " + canary}); err != nil {
+		t.Fatal(err)
+	}
+	composer := NewComposer(strings.NewReader(""), io.Discard, 1024)
+	composer.Remember("what is the value for credential: test")
+	controller.PurgeSessionContent()
+	composer.Clear()
+	state := controller.State()
+	if len(state.Components) != 0 || state.ComponentBytes != 0 || len(composer.history) != 0 || composer.historyBytes != 0 || controller.assistantRendered != "" {
+		t.Fatalf("session content retained: state=%+v history=%q rendered=%q", state, composer.history, controller.assistantRendered)
+	}
+}
+
 func TestBoundedStateQueueAndCriticalDelivery(t *testing.T) {
 	state := NewState(Capabilities{}, SecurityContext{})
 	state.MaxComponents, state.MaxComponentBytes = 3, 30

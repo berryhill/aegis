@@ -40,6 +40,20 @@ func (controller *Controller) SetCapabilities(capabilities Capabilities) {
 	controller.state.Capabilities = capabilities
 }
 
+// PurgeSessionContent removes application-retained transcript/presentation
+// copies. It cannot erase terminal-emulator scrollback already rendered.
+func (controller *Controller) PurgeSessionContent() {
+	controller.mu.Lock()
+	defer controller.mu.Unlock()
+	for index := range controller.state.Components {
+		controller.state.Components[index] = Component{}
+	}
+	controller.state.Components = nil
+	controller.state.ComponentBytes = 0
+	controller.assistantRendered = ""
+	controller.assistantActive = false
+}
+
 func (controller *Controller) Emit(event Event) error {
 	controller.mu.Lock()
 	defer controller.mu.Unlock()

@@ -128,7 +128,7 @@ func (p *HermesProcess) Close(ctx context.Context) error {
 			}
 			p.closeErr = ctx.Err()
 		}
-		if err := os.RemoveAll(p.home); err != nil {
+		if err := removeAllAndVerify(p.home); err != nil {
 			p.closeErr = errors.Join(p.closeErr, err)
 		}
 	})

@@ -109,9 +109,24 @@ func (m *ManagedOllama) Close(ctx context.Context) error {
 				m.closeErr = ctx.Err()
 			}
 		}
-		if err := os.RemoveAll(m.home); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := removeAllAndVerify(m.home); err != nil {
 			m.closeErr = errors.Join(m.closeErr, err)
 		}
 	})
 	return m.closeErr
+}
+
+func removeAllAndVerify(path string) error {
+	if path == "" {
+		return errors.New("disposable runtime state path is empty")
+	}
+	if err := os.RemoveAll(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return errors.New("disposable runtime state still exists after removal")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }

@@ -63,11 +63,31 @@ func (a *Authority) Metadata(ctx context.Context, recordID string) (SecretRecord
 	return a.repository.Metadata(ctx, recordID)
 }
 
+func (a *Authority) ReadValue(ctx context.Context, reference string, fn func(SecretRecord, []byte) error) error {
+	if !ValidateIdentifier(reference) || fn == nil {
+		return errors.New("credential value read requires an exact reference and consumer")
+	}
+	record, version, err := a.repository.CurrentByReference(ctx, reference)
+	if err != nil {
+		return err
+	}
+	if record.Status != StatusActive {
+		return ErrRevoked
+	}
+	return Decrypt(ctx, a.custodian, a.repository.StoreID(), record.Kind, version, func(plaintext []byte) error {
+		return fn(record, plaintext)
+	})
+}
+
 func (a *Authority) List(ctx context.Context, query string, limit int) ([]SecretRecord, error) {
 	if limit < 1 || limit > 100 || len(query) > 255 {
 		return nil, errors.New("credential list query or limit is invalid")
 	}
 	return a.repository.List(ctx, query, limit)
+}
+
+func (a *Authority) Counts(ctx context.Context) (SecretCounts, error) {
+	return a.repository.Counts(ctx)
 }
 
 func (a *Authority) History(ctx context.Context, recordID string, limit int) ([]SecretVersionMetadata, error) {

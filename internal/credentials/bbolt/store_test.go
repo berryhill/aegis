@@ -1,6 +1,7 @@
 package bbolt
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -59,6 +60,9 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	if counts, countErr := authority.Counts(ctx); countErr != nil || counts != (credentials.SecretCounts{Total: 1, Active: 1}) {
+		t.Fatalf("active credential counts=%+v err=%v", counts, countErr)
+	}
 	records, err := authority.List(ctx, "provider", 10)
 	if err != nil || len(records) != 1 || records[0].ID != record.ID {
 		t.Fatalf("metadata list/search mismatch: %#v %v", records, err)
@@ -99,8 +103,17 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	if err = authority.Revoke(ctx, record.ID, 2, "key-compromise"); err != nil {
 		t.Fatal(err)
 	}
+	if counts, countErr := authority.Counts(ctx); countErr != nil || counts != (credentials.SecretCounts{Total: 1, Active: 1}) {
+		t.Fatalf("version revocation changed record counts=%+v err=%v", counts, countErr)
+	}
 	if err = authority.Use(ctx, binding.Key, "api.example.test", func([]byte) error { return nil }); !errors.Is(err, credentials.ErrRevoked) {
 		t.Fatalf("revoked current version error = %v", err)
+	}
+	if err = authority.Revoke(ctx, record.ID, 0, "record-retired"); err != nil {
+		t.Fatal(err)
+	}
+	if counts, countErr := authority.Counts(ctx); countErr != nil || counts != (credentials.SecretCounts{Total: 1, Revoked: 1}) {
+		t.Fatalf("record revocation counts=%+v err=%v", counts, countErr)
 	}
 
 	if err = store.db.Sync(); err != nil {
@@ -112,6 +125,35 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	}
 	if containsBytes(database, firstSecret) || containsBytes(database, secondSecret) {
 		t.Fatal("authority database contains plaintext secret")
+	}
+}
+
+func TestAuthorityReadValueUsesExactReferenceAndHonorsRevocation(t *testing.T) {
+	_, authority, _, _ := openAuthority(t)
+	ctx := context.Background()
+	canary := make([]byte, 32)
+	if _, err := rand.Read(canary); err != nil {
+		t.Fatal(err)
+	}
+	record, err := authority.Create(ctx, "read-value-canary", "opaque", "principal-1", canary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var received []byte
+	if err = authority.ReadValue(ctx, "read-value-canary", func(_ credentials.SecretRecord, value []byte) error {
+		received = append(received, value...)
+		return nil
+	}); err != nil || !bytes.Equal(received, canary) {
+		t.Fatalf("exact-reference value read failed: err=%v", err)
+	}
+	if err = authority.ReadValue(ctx, "read-value", func(credentials.SecretRecord, []byte) error { return nil }); !errors.Is(err, credentials.ErrNotFound) {
+		t.Fatalf("fuzzy reference unexpectedly resolved: %v", err)
+	}
+	if err = authority.Revoke(ctx, record.ID, 0, "operator-request"); err != nil {
+		t.Fatal(err)
+	}
+	if err = authority.ReadValue(ctx, "read-value-canary", func(credentials.SecretRecord, []byte) error { return nil }); !errors.Is(err, credentials.ErrRevoked) {
+		t.Fatalf("revoked value read error=%v", err)
 	}
 }
 

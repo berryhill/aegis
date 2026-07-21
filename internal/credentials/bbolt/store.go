@@ -387,6 +387,39 @@ func (s *Store) Metadata(ctx context.Context, recordID string) (credentials.Secr
 	return record, err
 }
 
+func (s *Store) CurrentByReference(ctx context.Context, reference string) (credentials.SecretRecord, credentials.EncryptedSecretVersion, error) {
+	var record credentials.SecretRecord
+	var version credentials.EncryptedSecretVersion
+	if err := ctx.Err(); err != nil {
+		return record, version, err
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		records := tx.Bucket(recordBucket)
+		recordID := records.Get(referenceKey(reference))
+		if recordID == nil {
+			return credentials.ErrNotFound
+		}
+		if err := decode(records.Get(recordID), &record); err != nil {
+			return credentials.ErrNotFound
+		}
+		if err := credentials.ValidateRecord(record); err != nil {
+			return err
+		}
+		if record.Status != credentials.StatusActive || tx.Bucket(revocationBucket).Get(versionKey(record.ID, 0)) != nil || tx.Bucket(revocationBucket).Get(versionKey(record.ID, record.CurrentVersion)) != nil {
+			return credentials.ErrRevoked
+		}
+		value := tx.Bucket(versionBucket).Get(versionKey(record.ID, record.CurrentVersion))
+		if value == nil {
+			return credentials.ErrNotFound
+		}
+		if err := decode(value, &version); err != nil {
+			return err
+		}
+		return credentials.ValidateEncryptedVersion(version)
+	})
+	return record, version, err
+}
+
 func (s *Store) List(ctx context.Context, query string, limit int) ([]credentials.SecretRecord, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -416,6 +449,40 @@ func (s *Store) List(ctx context.Context, query string, limit int) ([]credential
 		return nil
 	})
 	return result, err
+}
+
+func (s *Store) Counts(ctx context.Context) (credentials.SecretCounts, error) {
+	var counts credentials.SecretCounts
+	if err := ctx.Err(); err != nil {
+		return counts, err
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		cursor := tx.Bucket(recordBucket).Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if bytes.HasPrefix(key, []byte("ref\x00")) {
+				continue
+			}
+			var record credentials.SecretRecord
+			if err := decode(value, &record); err != nil {
+				return err
+			}
+			if err := credentials.ValidateRecord(record); err != nil {
+				return err
+			}
+			counts.Total++
+			switch record.Status {
+			case credentials.StatusActive:
+				counts.Active++
+			case credentials.StatusRevoked:
+				counts.Revoked++
+			}
+		}
+		return nil
+	})
+	return counts, err
 }
 
 func (s *Store) Version(ctx context.Context, recordID string, version uint64) (credentials.EncryptedSecretVersion, error) {

@@ -31,6 +31,53 @@ type ProxyConfig struct {
 	CapabilityExpires        time.Time
 	ConsumeCapability        func() bool
 	RequireSystemInstruction bool
+	AllowPlaintextRequests   bool
+	Sensitive                *SensitiveTracker
+}
+
+// SensitiveTracker retains only session-lifetime copies needed to prevent the
+// model from unnecessarily echoing credential values. Close wipes all tracked
+// byte slices; process teardown remains the primary plaintext disposal boundary.
+type SensitiveTracker struct {
+	mu     sync.RWMutex
+	values [][]byte
+}
+
+func (s *SensitiveTracker) Add(value []byte) {
+	if s == nil || len(value) == 0 {
+		return
+	}
+	s.mu.Lock()
+	s.values = append(s.values, append([]byte(nil), value...))
+	s.mu.Unlock()
+}
+
+func (s *SensitiveTracker) Contains(content []byte) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, value := range s.values {
+		if len(value) != 0 && bytes.Contains(content, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SensitiveTracker) Clear() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	for _, value := range s.values {
+		for index := range value {
+			value[index] = 0
+		}
+	}
+	s.values = nil
+	s.mu.Unlock()
 }
 
 type Proxy struct {
@@ -172,6 +219,7 @@ func (p *Proxy) Close(ctx context.Context) error {
 		p.mu.Unlock()
 		p.closeErr = p.server.Shutdown(ctx)
 		_ = p.listen.Close()
+		p.config.Sensitive.Clear()
 	})
 	return p.closeErr
 }
@@ -234,7 +282,7 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	guardContent := untrustedMessageContent(envelope.Messages)
-	finding := p.config.Guard.Inspect(request.Context(), ContentEnvelope{Source: SourceOperation, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "message-content", RouteClass: "local", Content: guardContent})
+	finding := p.config.Guard.Inspect(request.Context(), ContentEnvelope{Source: SourceOperation, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "message-content", RouteClass: "local", Content: guardContent, PlaintextAuthorized: p.config.AllowPlaintextRequests})
 	if finding.Decision != AllowLocal {
 		p.lastSafe.Store("request_guard_rejected")
 		http.Error(writer, "request denied", http.StatusForbidden)
@@ -293,9 +341,16 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 		modelOutput, valid = validChatStreamResponse(responseBody, p.config.Model)
 		validResponse = validResponse && strings.HasPrefix(strings.ToLower(contentType), "text/event-stream") && valid
 	} else {
-		validResponse = validResponse && strings.HasPrefix(strings.ToLower(contentType), "application/json") && validChatResponse(responseBody, p.config.Model)
+		var valid bool
+		modelOutput, valid = validChatResponse(responseBody, p.config.Model)
+		validResponse = validResponse && strings.HasPrefix(strings.ToLower(contentType), "application/json") && valid
 	}
 	if !validResponse {
+		http.Error(writer, "local inference response denied", http.StatusBadGateway)
+		return
+	}
+	if p.config.Sensitive.Contains(modelOutput) {
+		p.lastSafe.Store("response_sensitive_echo_rejected")
 		http.Error(writer, "local inference response denied", http.StatusBadGateway)
 		return
 	}
@@ -459,17 +514,21 @@ func managerProposalSchema(operation Operation, properties map[string]any, requi
 	}
 }
 
-func validChatResponse(body []byte, model string) bool {
+func validChatResponse(body []byte, model string) ([]byte, bool) {
 	if validateJSONObject(body, 16) != nil {
-		return false
+		return nil, false
 	}
 	var response openAIChatResponse
 	if strictDecode(body, &response) != nil || response.Model != model || len(response.Choices) != 1 {
-		return false
+		return nil, false
 	}
 	message := response.Choices[0].Message
 	content, ok := message.Content.(string)
-	return ok && content != "" && message.Role == "assistant" && message.Name == "" && message.ToolCallID == "" && len(message.ToolCalls) == 0
+	valid := ok && content != "" && message.Role == "assistant" && message.Name == "" && message.ToolCallID == "" && len(message.ToolCalls) == 0
+	if !valid {
+		return nil, false
+	}
+	return []byte(content), true
 }
 
 func validChatStreamResponse(body []byte, model string) ([]byte, bool) {

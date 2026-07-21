@@ -207,9 +207,14 @@ func TestBareInteractiveManagerWithValidConfigOwnsInputAndExits(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, expected := range []string{"Aegis manager", "Runtime: Hermes Agent", "Inference: Ollama local", "Security context: secrets-manager", "Cloud fallback: disabled", "route: local-only"} {
+	for _, expected := range []string{"[AEGIS] Authenticated as principal", "Runtime: Hermes Agent", "Trust stanza / security context: secrets-manager", "No cloud fallback: enabled", "Route: local-only"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("output missing %q: %s", expected, text)
+		}
+	}
+	for _, internalStage := range []string{"validating credential authority", "discovering Hermes Agent", "verifying local Ollama route", "verifying exact model artifact", "validating certification", "opening authenticated inference route", "starting disposable Hermes runtime"} {
+		if strings.Contains(text, internalStage) {
+			t.Fatalf("successful internal stage leaked into default UX: %q", internalStage)
 		}
 	}
 }

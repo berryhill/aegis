@@ -106,6 +106,7 @@ func (s *Service) AuditCredentialOperation(ctx context.Context, subject core.Sub
 		"credential_rotated":               true,
 		"credential_revoked":               true,
 		"credential_bound":                 true,
+		"credential_value_read":            true,
 		"credential_backup_created":        true,
 	}
 	if !allowed[eventType] || (outcome != "ok" && outcome != "denied") || strings.TrimSpace(reason) == "" {

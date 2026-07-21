@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -28,6 +29,8 @@ type streamingGateway interface {
 type Operations interface {
 	Status(context.Context) (map[string]any, error)
 	List(context.Context, string, int) ([]credentials.SecretRecord, error)
+	Counts(context.Context) (credentials.SecretCounts, error)
+	ReadValue(context.Context, string, func(credentials.SecretRecord, []byte) error) error
 	Metadata(context.Context, string) (credentials.SecretRecord, error)
 	History(context.Context, string, int) ([]credentials.SecretVersionMetadata, error)
 	Create(context.Context, CreateArguments, []byte) (credentials.SecretRecord, error)
@@ -84,7 +87,7 @@ func NewSession(parent context.Context, config SessionConfig) (*Session, error) 
 	}
 	ctx, cancel := context.WithCancel(parent)
 	s := &Session{config: config, ctx: ctx, cancel: cancel}
-	s.receipt = SessionReceipt{SchemaVersion: "aegis.manager.receipt.v1", SessionID: config.SessionID, SubjectID: config.SubjectID, PrincipalID: config.PrincipalID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, PolicyVersion: PolicyVersion, PolicyDigest: digestString(SystemInstruction), RouteDigest: routeDigest, Model: config.Route.Model, StartedAt: config.Now()}
+	s.receipt = SessionReceipt{SchemaVersion: "aegis.manager.receipt.v1", SessionID: config.SessionID, SubjectID: config.SubjectID, PrincipalID: config.PrincipalID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, PolicyVersion: PolicyVersion, PolicyDigest: PolicyDigest(), RouteDigest: routeDigest, Model: config.Route.Model, StartedAt: config.Now()}
 	return s, nil
 }
 
@@ -104,6 +107,55 @@ func (s *Session) HandleCreateIntent(ctx context.Context, arguments CreateArgume
 		return "", err
 	}
 	return s.execute(activeCtx, Proposal{Operation: SecretProposeCreate}, &arguments, "")
+}
+
+func (s *Session) HandleCredentialCount(ctx context.Context) (string, error) {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	counts, err := s.config.Operations.Counts(activeCtx)
+	return operationResult(SecretCount, counts, err)
+}
+
+func (s *Session) HandleCredentialList(ctx context.Context) (string, error) {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	records, err := s.config.Operations.List(activeCtx, "", 100)
+	return operationResult(SecretList, records, err)
+}
+
+func (s *Session) HandleCredentialValueRead(ctx context.Context, reference string) (string, error) {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	var message string
+	err = s.config.Operations.ReadValue(activeCtx, reference, func(record credentials.SecretRecord, value []byte) error {
+		message = fmt.Sprintf("Aegis authoritative credential value (%s): %s", record.Reference, strconv.Quote(string(value)))
+		return nil
+	})
+	return message, err
+}
+
+// HandleCreateIntentWithValue executes a deterministic authenticated create
+// without involving the conversational model. This keeps an already-clear
+// typed operation from poisoning or being vetoed by the Hermes conversation.
+func (s *Session) HandleCreateIntentWithValue(ctx context.Context, text string, arguments CreateArguments, value []byte) (string, error) {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err = validateCreate(arguments); err != nil || len(value) == 0 || len(value) > 1<<20 {
+		return "", errors.New(ReasonProposalInvalid)
+	}
+	finding := s.config.Guard.Inspect(activeCtx, ContentEnvelope{Source: SourceUser, SubjectID: s.config.SubjectID, SessionID: s.config.SessionID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "trusted-local-credential-turn", RouteClass: "local", Content: []byte(text), PlaintextAuthorized: true})
+	if finding.Decision != AllowLocal {
+		return "", errors.New(finding.Reason)
+	}
+	return s.storeCreateValue(activeCtx, arguments, value)
 }
 
 // HandleStream releases only the message field of a canonical message-only
@@ -267,6 +319,22 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 	}
 }
 
+func (s *Session) executeCreateValue(ctx context.Context, arguments CreateArguments, value []byte) (string, error) {
+	ok, err := s.config.Confirm(ctx, createPreview(arguments))
+	if err != nil || !ok {
+		if err == nil {
+			err = errors.New("manager proposal declined")
+		}
+		return "", err
+	}
+	return s.storeCreateValue(ctx, arguments, value)
+}
+
+func (s *Session) storeCreateValue(ctx context.Context, arguments CreateArguments, value []byte) (string, error) {
+	result, err := s.config.Operations.Create(ctx, arguments, value)
+	return operationResult(SecretProposeCreate, result, err)
+}
+
 func (s *Session) Close(ctx context.Context, reason string) error {
 	s.mu.Lock()
 	if s.closed {
@@ -320,7 +388,7 @@ func preview(operation Operation, target string) string {
 	return fmt.Sprintf("%s target=%s", operation, target)
 }
 func createPreview(arguments CreateArguments) string {
-	return fmt.Sprintf("create protected credential\nreference: %s\nkind: %s\ndisclosure: protected\nvalue intake: Aegis protected no-echo prompt; never Hermes/model chat", arguments.Reference, arguments.Kind)
+	return fmt.Sprintf("create protected credential\nreference: %s\nkind: %s\ndisclosure: protected\nvalue handling: current authenticated exact-local-model session when supplied conversationally, otherwise protected no-echo intake; encrypted authority persists, plaintext session state is purged on close", arguments.Reference, arguments.Kind)
 }
 func validateCreate(a CreateArguments) error {
 	if !credentials.ValidateIdentifier(a.Reference) || !credentials.ValidateIdentifier(a.Kind) || a.Disclosure != "protected" {
