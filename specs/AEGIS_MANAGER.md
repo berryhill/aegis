@@ -368,6 +368,8 @@ For a high-confidence finding, Aegis MUST:
 6. require the user to enter the value again through protected intake;
 7. never silently store the accidentally pasted bytes.
 
+A clear create request MAY be reduced by deterministic Aegis application code to a metadata-only create proposal using documented safe defaults (`opaque` unless key/token context selects `api-key`, and always `protected`). This parsing MUST NOT authorize the operation, retain an inline value, send the request to Hermes, or bypass the exact metadata confirmation and fresh protected intake. Questions and explanatory discussion MUST NOT become mutation proposals.
+
 Required user-facing shape:
 
 ```text
@@ -810,7 +812,7 @@ manager:
   hermes:
     context_length: 65536
     gateway_start_timeout: 20s
-    turn_timeout: 120s
+    turn_timeout: 5m
     maximum_response_bytes: 1048576
   inference:
     runtime: ollama
@@ -821,7 +823,7 @@ manager:
     model_digest: sha256:...
     keep_alive: 5m
     start_timeout: 30s
-    request_timeout: 120s
+    request_timeout: 5m
     maximum_request_bytes: 4194304
     maximum_response_bytes: 4194304
   ingress:

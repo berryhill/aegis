@@ -93,31 +93,28 @@ func (s *Session) Handle(ctx context.Context, text string) (string, error) {
 	return message, err
 }
 
+// HandleCreateIntent executes an Aegis-parsed metadata-only create proposal.
+// The credential value is still collected by the configured protected intake.
+func (s *Session) HandleCreateIntent(ctx context.Context, arguments CreateArguments) (string, error) {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := validateCreate(arguments); err != nil {
+		return "", err
+	}
+	return s.execute(activeCtx, Proposal{Operation: SecretProposeCreate}, &arguments, "")
+}
+
 // HandleStream releases only the message field of a canonical message-only
 // envelope. Proposal envelopes and non-canonical responses remain completely
 // buffered. The returned bool reports whether any assistant text was released.
 func (s *Session) HandleStream(ctx context.Context, text string, emit func(string) error) (string, bool, error) {
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return "", false, err
-		}
-	}
-	s.mu.Lock()
-	if s.closing || s.closed {
-		s.mu.Unlock()
-		return "", false, errors.New("manager session is closing")
-	}
-	s.mu.Unlock()
-	if !s.config.Now().Before(s.config.Route.ExpiresAt) {
-		_ = s.Close(context.Background(), ReasonSessionExpired)
-		return "", false, errors.New(ReasonSessionExpired)
-	}
-	if ctx == nil {
-		ctx = s.ctx
-	}
-	if err := ctx.Err(); err != nil {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
 		return "", false, err
 	}
+	ctx = activeCtx
 	finding := s.config.Guard.Inspect(ctx, ContentEnvelope{Source: SourceUser, SubjectID: s.config.SubjectID, SessionID: s.config.SessionID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(text)})
 	if err := ctx.Err(); err != nil {
 		return "", false, err
@@ -127,7 +124,6 @@ func (s *Session) HandleStream(ctx context.Context, text string, emit func(strin
 	}
 	preview := newMessagePreview(s.config.MaximumResponseBytes)
 	var responseBytes []byte
-	var err error
 	if gateway, ok := s.config.Gateway.(streamingGateway); ok && emit != nil {
 		responseBytes, err = gateway.TurnStream(ctx, s.config.GatewaySessionID, text, s.config.MaximumResponseBytes, func(chunk []byte) error {
 			return preview.Feed(chunk, emit)
@@ -152,6 +148,31 @@ func (s *Session) HandleStream(ctx context.Context, text string, emit func(strin
 	}
 	message, err := s.execute(ctx, *response.Proposal, arguments, response.Message)
 	return message, false, err
+}
+
+func (s *Session) activeContext(ctx context.Context) (context.Context, error) {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	s.mu.Lock()
+	if s.closing || s.closed {
+		s.mu.Unlock()
+		return nil, errors.New("manager session is closing")
+	}
+	s.mu.Unlock()
+	if !s.config.Now().Before(s.config.Route.ExpiresAt) {
+		_ = s.Close(context.Background(), ReasonSessionExpired)
+		return nil, errors.New(ReasonSessionExpired)
+	}
+	if ctx == nil {
+		ctx = s.ctx
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return ctx, nil
 }
 
 func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any, message string) (string, error) {
@@ -183,7 +204,7 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 		if err := validateCreate(a); err != nil {
 			return "", err
 		}
-		ok, err := s.config.Confirm(ctx, preview(proposal.Operation, a.Reference))
+		ok, err := s.config.Confirm(ctx, createPreview(a))
 		if err != nil || !ok {
 			if err == nil {
 				err = errors.New("manager proposal declined")
@@ -297,6 +318,9 @@ func boundedLimit(v int) int {
 }
 func preview(operation Operation, target string) string {
 	return fmt.Sprintf("%s target=%s", operation, target)
+}
+func createPreview(arguments CreateArguments) string {
+	return fmt.Sprintf("create protected credential\nreference: %s\nkind: %s\ndisclosure: protected\nvalue intake: Aegis protected no-echo prompt; never Hermes/model chat", arguments.Reference, arguments.Kind)
 }
 func validateCreate(a CreateArguments) error {
 	if !credentials.ValidateIdentifier(a.Reference) || !credentials.ValidateIdentifier(a.Kind) || a.Disclosure != "protected" {

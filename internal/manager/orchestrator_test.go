@@ -115,6 +115,35 @@ func TestSessionLifecycleAndRandomCanaryBoundary(t *testing.T) {
 	}
 }
 
+func TestSessionHandlesAegisParsedCreateWithoutGateway(t *testing.T) {
+	gateway := &fakeGateway{}
+	ops := &fakeOperations{}
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	var confirmation string
+	session, err := NewSession(context.Background(), SessionConfig{
+		SessionID: "session-natural-create", SubjectID: "local-uid:1", PrincipalID: "principal",
+		Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-natural-create", Guard: guard, Operations: ops,
+		Confirm: func(_ context.Context, preview string) (bool, error) { confirmation = preview; return true, nil },
+		Intake:  func(context.Context, string) ([]byte, error) { return []byte("disposable-protected-value"), nil },
+		Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := session.HandleCreateIntent(context.Background(), CreateArguments{Reference: "google-drive-person-example-com", Kind: "api-key", Disclosure: "protected"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ops.created != 1 || len(gateway.inputs) != 0 || !strings.Contains(message, "secret-created") {
+		t.Fatalf("created=%d gateway_inputs=%v message=%q", ops.created, gateway.inputs, message)
+	}
+	for _, expected := range []string{"create protected credential", "reference: google-drive-person-example-com", "kind: api-key", "protected no-echo", "never Hermes/model chat"} {
+		if !strings.Contains(confirmation, expected) {
+			t.Fatalf("confirmation %q missing %q", confirmation, expected)
+		}
+	}
+}
+
 func TestSessionBlocksSecretBeforeGatewayAndDeclineDenies(t *testing.T) {
 	gateway := &fakeGateway{outputs: [][]byte{envelope(SecretProposeRevoke, RevokeArguments{RecordID: "secret-one", Reason: "operator-request"})}}
 	ops := &fakeOperations{}

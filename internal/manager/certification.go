@@ -56,7 +56,7 @@ type ConformanceExecutor interface {
 	Execute(context.Context, ConformanceCase) ([]byte, error)
 }
 
-const conversationalConformanceAttempts = 10
+const conversationalConformanceAttempts = 3
 
 // CertificationOptions controls diagnostic execution without weakening the
 // requirement that every corpus case pass before a certification is returned.
@@ -100,7 +100,11 @@ func RunCertificationWithOptions(ctx context.Context, executor ConformanceExecut
 		result := ConformanceResult{CaseID: test.ID}
 		var caseFailure error
 		for attempt := 0; attempt < conversationalConformanceAttempts; attempt++ {
-			output, err := executor.Execute(ctx, test)
+			executionCase := test
+			if attempt > 0 && test.RetryInput != "" {
+				executionCase.Input = test.RetryInput
+			}
+			output, err := executor.Execute(ctx, executionCase)
 			if err != nil {
 				reason := ReasonGatewayProtocol
 				var failure *ConformanceFailure

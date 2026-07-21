@@ -16,6 +16,11 @@ import (
 var ErrInputTooLarge = errors.New("composer input exceeds configured limit")
 var ErrInterrupted = errors.New("composer input interrupted")
 
+const (
+	bracketedPasteEnable  = "\x1b[?2004h"
+	bracketedPasteDisable = "\x1b[?2004l"
+)
+
 type Composer struct {
 	mu              sync.Mutex
 	input           io.Reader
@@ -48,12 +53,15 @@ func (composer *Composer) Read(ctx context.Context, prompt string, capabilities 
 		return "", false, err
 	}
 	defer term.Restore(int(file.Fd()), state)
+	_, _ = io.WriteString(composer.output, bracketedPasteEnable)
+	defer func() { _, _ = io.WriteString(composer.output, bracketedPasteDisable) }()
 	_, _ = io.WriteString(composer.output, prompt+" (Enter submit; Ctrl+J newline; ? help; Ctrl-D exit) ")
 	buffer := make([]byte, 0, min(composer.maximum, 4096))
 	one := make([]byte, 1)
 	historyIndex := len(composer.history)
 	paste := false
 	pasteStart := 0
+	pasteLastCR := false
 	for {
 		if err := ctx.Err(); err != nil {
 			if paste {
@@ -74,6 +82,41 @@ func (composer *Composer) Read(ctx context.Context, prompt string, capabilities 
 			return "", false, readErr
 		}
 		value := one[0]
+		if paste {
+			if value == 0x1b {
+				sequence := readEscapeSequence(ctx, file)
+				if sequence == "[201~" {
+					paste = false
+					pasteLastCR = false
+					_, _ = fmt.Fprintf(composer.output, "[paste: %d bytes guarded on submit]", len(buffer)-pasteStart)
+					continue
+				}
+				pasted := append([]byte{value}, sequence...)
+				if len(buffer)+len(pasted) > composer.maximum {
+					wipe(buffer)
+					wipe(pasted)
+					return "", false, ErrInputTooLarge
+				}
+				buffer = append(buffer, pasted...)
+				wipe(pasted)
+				pasteLastCR = false
+				continue
+			}
+			if value == '\n' && pasteLastCR {
+				pasteLastCR = false
+				continue
+			}
+			pasteLastCR = value == '\r'
+			if value == '\r' {
+				value = '\n'
+			}
+			if len(buffer) >= composer.maximum {
+				wipe(buffer)
+				return "", false, ErrInputTooLarge
+			}
+			buffer = append(buffer, value)
+			continue
+		}
 		if value == 0x04 && len(buffer) == 0 {
 			_, _ = io.WriteString(composer.output, "\r\n")
 			return "", true, nil
@@ -93,11 +136,7 @@ func (composer *Composer) Read(ctx context.Context, prompt string, capabilities 
 				if sequence == "[200~" {
 					paste = true
 					pasteStart = len(buffer)
-					continue
-				}
-				if sequence == "[201~" {
-					paste = false
-					_, _ = fmt.Fprintf(composer.output, "[paste: %d bytes guarded on submit]", len(buffer)-pasteStart)
+					pasteLastCR = false
 					continue
 				}
 				if sequence == "[13;2u" {

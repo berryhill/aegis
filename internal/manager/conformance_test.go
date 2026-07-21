@@ -68,9 +68,11 @@ func (e *countingConformanceExecutor) Execute(_ context.Context, test Conformanc
 type conversationalRetryExecutor struct {
 	countingConformanceExecutor
 	missingByCase map[string]int
+	inputs        []string
 }
 
 func (e *conversationalRetryExecutor) Execute(ctx context.Context, test ConformanceCase) ([]byte, error) {
+	e.inputs = append(e.inputs, test.Input)
 	if e.missingByCase[test.ID] > 0 {
 		e.calls = append(e.calls, test.ID)
 		e.missingByCase[test.ID]--
@@ -170,6 +172,16 @@ func TestCertificationRetriesMissingConversationalContentWithFreshExecution(t *t
 	}
 	if storageCalls != conversationalConformanceAttempts {
 		t.Fatalf("storage-capability calls=%d want %d", storageCalls, conversationalConformanceAttempts)
+	}
+	storage := ConformanceCorpus()[2]
+	var storageInputs []string
+	for index, id := range executor.calls {
+		if id == storage.ID {
+			storageInputs = append(storageInputs, executor.inputs[index])
+		}
+	}
+	if len(storageInputs) != conversationalConformanceAttempts || storageInputs[0] != storage.Input || storageInputs[1] != storage.RetryInput || storageInputs[2] != storage.RetryInput {
+		t.Fatalf("storage retries did not use corrective input: %q", storageInputs)
 	}
 }
 

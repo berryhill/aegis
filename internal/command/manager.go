@@ -260,7 +260,12 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		if detection == slash.LiteralSlash {
 			line = slash.UnescapeLiteral(line)
 		}
-		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(line)})
+		createIntent, createRequested := managerdomain.ParseCreateIntent(line)
+		guardedLine := line
+		if createRequested {
+			guardedLine = createIntent.SafeInput
+		}
+		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(guardedLine)})
 		if sessionCtx.Err() != nil {
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
 			break
@@ -271,6 +276,22 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		}
 		if finding.Decision != managerdomain.AllowLocal {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Aegis blocked the message:", finding.Reason)
+			continue
+		}
+		if createRequested && conversation != nil {
+			if createIntent.ValueRemoved {
+				_ = presentation.Emit(tui.Event{Kind: tui.InputDiscarded, Origin: tui.AegisAuthoritative, Reason: "Aegis blocked a possible credential. The message was not sent to Hermes and was not retained. Review the metadata proposal, then enter the value again only through protected no-echo intake."})
+			} else {
+				composer.Remember(createIntent.SafeInput)
+				_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: createIntent.SafeInput})
+			}
+			_ = presentation.Emit(tui.Event{Kind: tui.ProposalValidated, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("natural create request mapped locally: reference=%s kind=%s disclosure=protected", createIntent.Arguments.Reference, createIntent.Arguments.Kind)})
+			message, createErr := conversation.session.HandleCreateIntent(sessionCtx, createIntent.Arguments)
+			if createErr != nil {
+				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: createErr.Error()})
+				continue
+			}
+			_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
 			continue
 		}
 		composer.Remember(line)

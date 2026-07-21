@@ -6,7 +6,7 @@ principal:
   name: Example Principal
   uid: "REPLACE_WITH_LOCAL_UID"
   user: REPLACE_WITH_LOCAL_USERNAME
-  auth_ttl: 5m
+  auth_ttl: 15m
 api:
   listen: 127.0.0.1:8443
   # Set for kernel-authenticated local API callers. TCP bearer tokens only
@@ -34,7 +34,7 @@ manager:
   hermes:
     context_length: 65536
     gateway_start_timeout: 20s
-    turn_timeout: 120s
+    turn_timeout: 5m
     maximum_response_bytes: 1048576
   inference:
     runtime: ollama
@@ -46,7 +46,7 @@ manager:
     certification: ""
     keep_alive: 5m
     start_timeout: 30s
-    request_timeout: 120s
+    request_timeout: 5m
     maximum_request_bytes: 4194304
     maximum_response_bytes: 4194304
   ingress:

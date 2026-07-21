@@ -66,8 +66,8 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	if err = candidate.Validate(); err != nil {
 		return Plan{}, fmt.Errorf("generated configuration is invalid: %w", err)
 	}
-	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: 5m\naudit:\n  checkpoint_dir: %s\n",
-		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), strconv.Quote(candidate.Audit.CheckpointDir)))
+	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: %s\naudit:\n  checkpoint_dir: %s\n",
+		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), principal.AuthTTL, strconv.Quote(candidate.Audit.CheckpointDir)))
 	return Plan{ConfigPath: inspection.Path, StatePath: statePath, Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...)}, nil
 }
 

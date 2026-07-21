@@ -84,7 +84,11 @@ func TestGuardBlocksSecretsAndFailures(t *testing.T) {
 	if finding := guard.Inspect(context.Background(), envelope); finding.Decision != AllowLocal {
 		t.Fatalf("benign blocked: %#v", finding)
 	}
-	cases := []string{"Authorization: Bearer abcdefghijklmnopqrstuvwxyz", "password=correct-horse-battery-staple", "postgres://user:password@localhost/db", "-----BEGIN PRIVATE KEY-----", "token=QUtJQUFCQ0RFRkdISUpLTE1OT1BRUlNUVVZX"}
+	envelope.Content = []byte("first benign line\nsecond benign line")
+	if finding := guard.Inspect(context.Background(), envelope); finding.Decision != AllowLocal {
+		t.Fatalf("benign multiline input blocked: %#v", finding)
+	}
+	cases := []string{"Authorization: Bearer abcdefghijklmnopqrstuvwxyz", "password=correct-horse-battery-staple", "postgres://user:password@localhost/db", "-----BEGIN PRIVATE KEY-----", "token=QUtJQUFCQ0RFRkdISUpLTE1OT1BRUlNUVVZX", "first line\npassword=correct-horse-battery-staple\nlast line"}
 	for _, input := range cases {
 		envelope.Content = []byte(input)
 		if finding := guard.Inspect(context.Background(), envelope); finding.Decision != BlockSecret {

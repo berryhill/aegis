@@ -75,7 +75,7 @@ func TestLiteralArgisDefaultsIgnoreXDGScattering(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults := Defaults()
-	if path != filepath.Join(home, ".argis", "aegis.yaml") || defaults.StateDir != filepath.Join(home, ".argis", "state") || defaults.Audit.CheckpointDir != filepath.Join(home, ".argis", "state", "audit-checkpoints") {
+	if path != filepath.Join(home, ".argis", "aegis.yaml") || defaults.StateDir != filepath.Join(home, ".argis", "state") || defaults.Audit.CheckpointDir != filepath.Join(home, ".argis", "state", "audit-checkpoints") || defaults.Principal.AuthTTL != 15*time.Minute || defaults.Manager.Hermes.TurnTimeout != 5*time.Minute || defaults.Manager.Inference.RequestTimeout != 5*time.Minute {
 		t.Fatalf("scattered defaults: path=%q state=%q checkpoints=%q", path, defaults.StateDir, defaults.Audit.CheckpointDir)
 	}
 }

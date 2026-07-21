@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/berryhill/aegis/internal/config"
@@ -27,6 +28,17 @@ func testService(t *testing.T) *Service {
 			value := copy
 			return &value, nil
 		},
+	}
+}
+
+func TestPlanUsesConfiguredPrincipalAuthorityDefault(t *testing.T) {
+	root := t.TempDir()
+	plan, err := testService(t).Plan(filepath.Join(root, "aegis.yaml"), filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Principal.AuthTTL != config.Defaults().Principal.AuthTTL || !strings.Contains(string(plan.Document), "auth_ttl: "+plan.Principal.AuthTTL.String()+"\n") {
+		t.Fatalf("planned authority lifetime=%s document=%q", plan.Principal.AuthTTL, plan.Document)
 	}
 }
 

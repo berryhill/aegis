@@ -4,11 +4,16 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Made clear natural-language credential-save requests enter a deterministic Aegis-owned metadata proposal without requiring operators to understand `reference`, `kind`, or `disclosure`; inline quoted values are discarded before retention or model context and must be re-entered through protected no-echo intake after exact confirmation.
+- Enabled terminal bracketed-paste mode in the rich manager composer, retained multiline clipboard text as one guarded submission with normalized CRLF, restored terminal paste mode on every exit, and verified that the ingress guard scans the complete multiline envelope for secrets.
+
 ## [0.1.24] - 2026-07-20
 
 ### Fixed
 
-- Made conversational certification retry up to ten fresh executions, accepted equivalent truthful encrypted-custody/out-of-model wording instead of requiring the exact phrase `protected intake`, and added `manager certify --continue-on-error` to execute the remaining corpus diagnostically without ever publishing a failed or partial certification.
+- Made conversational certification use a bounded three-execution loop with direct case-specific requests instead of repeating ambiguous wording until principal authority expires, accepted equivalent truthful encrypted-custody/out-of-model wording instead of requiring the exact phrase `protected intake`, raised the principal authority default to its validated 15-minute maximum and the manager turn/Ollama request defaults to five minutes so the complete local corpus can finish on supported CPU-bound deployments, and added `manager certify --continue-on-error` to execute the remaining corpus diagnostically without ever publishing a failed or partial certification.
 
 ## [0.1.23] - 2026-07-20
 
