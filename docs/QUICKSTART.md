@@ -86,6 +86,8 @@ To create a credential, use ordinary language such as `store a cred named demo w
 
 If a natural create request omits the credential name, Aegis prompts locally for an exact reference before starting protected value intake. It never silently stores a generic placeholder reference.
 
+At `Secret value:`, bracketed paste accepts a complete multiline credential document as one no-echo value. Paste the block, press Enter, then paste and submit the same block at confirmation. A mismatch flushes any queued protected lines before the composer returns. Do not paste credentials at the ordinary composer: Aegis blocks detected credential-bearing submissions locally before Hermes and asks you to restart protected intake.
+
 Authenticated read-only questions execute immediately without model negotiation. `how many secrets do we have?` returns exact total, active, and record-level revoked counts from the authority; `list my credentials` returns metadata only. Neither request asks for confirmation or reaches the model.
 
 An explicit request such as `what is the value for credential: "demo"` decrypts and renders that exact reference directly in the authenticated terminal session without reaching the model. The value is terminal-escaped, audit remains metadata-only, retained TUI state is purged on close, and terminal scrollback is outside Aegis cleanup. Missing, ambiguous, or revoked references fail closed.

@@ -11,6 +11,8 @@ import (
 
 const protectedIntakeCancellationSafe = false
 
+func discardProtectedTerminalInput(*os.File) {}
+
 func readProtectedTerminalLine(ctx context.Context, file *os.File, _ int) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

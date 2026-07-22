@@ -272,7 +272,7 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		return approved, e
 	}, Intake: func(ctx context.Context, _ string) ([]byte, error) {
 		if presentation != nil {
-			if emitErr := presentation.Emit(tui.Event{Kind: tui.IntakeStarted, Origin: tui.AegisAuthoritative, Message: "protected no-echo intake started; secret content is excluded from presentation state"}); emitErr != nil {
+			if emitErr := presentation.Emit(tui.Event{Kind: tui.IntakeStarted, Origin: tui.AegisAuthoritative, Message: "protected no-echo intake started; type one line or paste a complete multiline value and press Enter; secret content is excluded from presentation state"}); emitErr != nil {
 				return nil, emitErr
 			}
 		}

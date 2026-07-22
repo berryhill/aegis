@@ -268,9 +268,9 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
 			break
 		}
-		if finding.Decision == managerdomain.BlockSecret {
+		if managerCredentialInputBlocked(finding, createRequested) {
 			createIntent.Wipe()
-			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "possible credential blocked; message was not sent to Hermes and was not retained; use protected intake"})
+			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "possible credential blocked; message was not sent to Hermes and was not retained; restart the create request and paste it only at protected intake"})
 			continue
 		}
 		if finding.Decision != managerdomain.AllowLocal {
@@ -422,6 +422,10 @@ func readManagerCredentialReference(ctx context.Context, composer *tui.Composer,
 		fmt.Fprintln(output, "[AEGIS / authoritative] invalid credential reference; use 1-255 letters, numbers, dot, underscore, colon, slash, or hyphen")
 	}
 	return "", errors.New("credential creation cancelled: valid reference not provided")
+}
+
+func managerCredentialInputBlocked(finding managerdomain.Finding, createRequested bool) bool {
+	return finding.Decision == managerdomain.BlockSecret || (!createRequested && finding.DetectorID != "")
 }
 
 func managerInputEndReason(ctx context.Context, eof bool, readErr error) (string, bool) {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/tui"
@@ -39,6 +40,30 @@ func TestManagerMissingCredentialReferenceCanBeCancelled(t *testing.T) {
 	composer := tui.NewComposer(strings.NewReader("\n"), &output, 255)
 	if _, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive}); err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestManagerCredentialPasteIsBlockedBeforeHermesEvenWhenLocalPlaintextIsAuthorized(t *testing.T) {
+	guard, err := managerdomain.NewGuard(4096, 4096, 1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := guard.Inspect(context.Background(), managerdomain.ContentEnvelope{
+		Source:              managerdomain.SourceUser,
+		ManagerID:           managerdomain.LogicalAgentID,
+		SecurityContext:     managerdomain.SecurityContext,
+		RouteClass:          "local",
+		PlaintextAuthorized: true,
+		Content:             []byte("aws_secret_access_key=synthetic0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\nregion=us-east-1"),
+	})
+	if finding.Decision != managerdomain.AllowLocal || finding.DetectorID == "" {
+		t.Fatalf("finding=%#v", finding)
+	}
+	if !managerCredentialInputBlocked(finding, false) {
+		t.Fatal("credential paste could reach Hermes")
+	}
+	if managerCredentialInputBlocked(finding, true) {
+		t.Fatal("recognized deterministic create was blocked after redaction")
 	}
 }
 

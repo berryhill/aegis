@@ -19,7 +19,11 @@ import (
 	"golang.org/x/term"
 )
 
-const maximumIntakeBytes = 1 << 20
+const (
+	maximumIntakeBytes    = 1 << 20
+	protectedPasteEnable  = "\x1b[?2004h"
+	protectedPasteDisable = "\x1b[?2004l"
+)
 
 type secretOptions struct {
 	stdin        bool
@@ -387,6 +391,7 @@ func readSecretContext(ctx context.Context, cmd *cobra.Command, fromStdin bool, 
 	defer wipeSecret(second)
 	if !bytes.Equal(first, second) {
 		wipeSecret(first)
+		discardProtectedTerminalInput(file)
 		return nil, errors.New("secret confirmation does not match")
 	}
 	return first, nil
@@ -407,8 +412,16 @@ func readTerminalSecretBounded(ctx context.Context, file *os.File, output io.Wri
 			_ = restore()
 		}
 	}()
-	fmt.Fprint(output, prompt)
+	pasteDisabled := false
+	defer func() {
+		if !pasteDisabled {
+			_, _ = io.WriteString(output, protectedPasteDisable)
+		}
+	}()
+	fmt.Fprint(output, protectedPasteEnable, prompt)
 	value, err = readProtectedTerminalLine(ctx, file, maximum)
+	_, _ = io.WriteString(output, protectedPasteDisable)
+	pasteDisabled = true
 	restoreErr := restore()
 	restored = true
 	fmt.Fprintln(output)

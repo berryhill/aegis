@@ -128,6 +128,61 @@ func TestProtectedManagerIntakeDoesNotEchoOnPTY(t *testing.T) {
 	assertCommandPTYRestored(t, slave, initial)
 }
 
+func TestProtectedManagerIntakeAcceptsBracketedMultilinePasteWithoutLeakingTrailingInput(t *testing.T) {
+	master, slave := openCommandPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	initial, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := &cobra.Command{}
+	cmd.SetIn(slave)
+	cmd.SetOut(slave)
+	cmd.SetErr(slave)
+	random := make([]byte, 24)
+	_, _ = rand.Read(random)
+	canary := "aws_secret_access_key=" + hex.EncodeToString(random)
+	value := []byte("aws_access_key_id=synthetic\n" + canary + "\nregion=us-east-1")
+	framed := append([]byte("\x1b[200~"), value...)
+	framed = append(framed, []byte("\x1b[201~\n")...)
+	result := make(chan []byte, 1)
+	failures := make(chan error, 1)
+	go func() {
+		secret, readErr := readSecret(cmd, false, "Secret value: ", "Confirm secret value: ")
+		if readErr != nil {
+			failures <- readErr
+			return
+		}
+		result <- secret
+	}()
+	var capture bytes.Buffer
+	readCommandPTYUntil(t, master, &capture, "Secret value: ", 3*time.Second)
+	_, _ = master.Write(framed)
+	readCommandPTYUntil(t, master, &capture, "Confirm secret value: ", 3*time.Second)
+	_, _ = master.Write(framed)
+	select {
+	case err = <-failures:
+		t.Fatal(err)
+	case secret := <-result:
+		if !bytes.Equal(secret, value) {
+			t.Fatalf("multiline protected intake changed value: got %d bytes want %d", len(secret), len(value))
+		}
+		wipeSecret(secret)
+	case <-time.After(3 * time.Second):
+		t.Fatal("multiline protected intake timed out")
+	}
+	if strings.Contains(capture.String(), canary) {
+		t.Fatal("multiline protected value appeared in PTY capture")
+	}
+	_, _ = master.Write([]byte("next-command\n"))
+	next, eof, err := newTerminalInput(slave).ReadLine(context.Background(), 128)
+	if err != nil || eof || next != "next-command" {
+		t.Fatalf("protected paste leaked trailing input: next=%q eof=%v err=%v", next, eof, err)
+	}
+	assertCommandPTYRestored(t, slave, initial)
+}
+
 func TestProtectedManagerIntakeMismatchRestoresPTY(t *testing.T) {
 	master, slave := openCommandPTY(t)
 	defer master.Close()
@@ -149,7 +204,10 @@ func TestProtectedManagerIntakeMismatchRestoresPTY(t *testing.T) {
 	readCommandPTYUntil(t, master, &capture, "Secret value: ", 2*time.Second)
 	_, _ = master.Write([]byte("first-random-value\n"))
 	readCommandPTYUntil(t, master, &capture, "Confirm secret value: ", 2*time.Second)
-	_, _ = master.Write([]byte("different-random-value\n"))
+	random := make([]byte, 24)
+	_, _ = rand.Read(random)
+	queuedCanary := "queued-canary-" + hex.EncodeToString(random)
+	_, _ = master.Write([]byte("different-random-value\n" + queuedCanary + "\n"))
 	select {
 	case err = <-result:
 		if err == nil || !strings.Contains(err.Error(), "does not match") {
@@ -157,6 +215,14 @@ func TestProtectedManagerIntakeMismatchRestoresPTY(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("mismatch intake remained blocked")
+	}
+	if strings.Contains(capture.String(), queuedCanary) {
+		t.Fatal("queued credential content appeared in PTY capture")
+	}
+	_, _ = master.Write([]byte("next-command\n"))
+	next, eof, err := newTerminalInput(slave).ReadLine(context.Background(), 128)
+	if err != nil || eof || next != "next-command" {
+		t.Fatalf("mismatch left protected input queued: next=%q eof=%v err=%v", next, eof, err)
 	}
 	assertCommandPTYRestored(t, slave, initial)
 }
