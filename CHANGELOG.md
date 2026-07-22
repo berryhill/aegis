@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.28] - 2026-07-21
+
 ### Fixed
 
 - Made the group-writable development-reset fixture create nested directories in deterministic parent-first order, eliminating the clean-CI and race-test failure caused by randomized Go map iteration.
