@@ -402,6 +402,33 @@ func TestUnsafeAndChangedArtifactsFailClosed(t *testing.T) {
 			t.Fatalf("error=%v", err)
 		}
 	})
+	t.Run("exact development repository state", func(t *testing.T) {
+		f := newFixture(t)
+		repository := filepath.Join(f.home, "source")
+		if err := os.MkdirAll(filepath.Join(repository, ".git"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		writeOwned(t, filepath.Join(repository, "source.go"), "package source")
+		developmentRoot := filepath.Join(repository, ".aegis")
+		configPath := filepath.Join(developmentRoot, "aegis.yaml")
+		writeOwned(t, configPath, "principal: [\n")
+		f.service.RepositoryResetRoot = developmentRoot
+		plan, err := f.service.Plan(context.Background(), configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = f.service.Apply(context.Background(), plan); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = os.Stat(filepath.Join(repository, "source.go")); err != nil {
+			t.Fatalf("source file changed by development reset: %v", err)
+		}
+		outside := filepath.Join(repository, "other", "aegis.yaml")
+		writeOwned(t, outside, "principal: [\n")
+		if _, err = f.service.Plan(context.Background(), outside); err == nil || !strings.Contains(err.Error(), "repository") {
+			t.Fatalf("repository exception escaped development root: %v", err)
+		}
+	})
 	t.Run("custom state outside authenticated home", func(t *testing.T) {
 		f := newFixture(t)
 		outside := filepath.Join(filepath.Dir(f.home), "outside-state")

@@ -29,16 +29,18 @@ import (
 )
 
 type Dependencies struct {
-	In          io.Reader
-	Out, Err    io.Writer
-	Logger      *slog.Logger
-	Version     string
-	IsTerminal  func(io.Reader, io.Writer) bool
-	Updater     UpdateService
-	Initializer *initialize.Service
-	Resetter    *resetdomain.Service
-	Migrator    *migration.Service
-	Passphrases AuthorityPassphraseProvider
+	In              io.Reader
+	Out, Err        io.Writer
+	Logger          *slog.Logger
+	Version         string
+	IsTerminal      func(io.Reader, io.Writer) bool
+	Updater         UpdateService
+	Initializer     *initialize.Service
+	Resetter        *resetdomain.Service
+	Migrator        *migration.Service
+	Passphrases     AuthorityPassphraseProvider
+	Profile         ExecutionProfile
+	DevelopmentRoot string
 }
 type rootOptions struct{ configFile, stateDir, hermesExecutable, pinentryExecutable, runtime string }
 
@@ -103,7 +105,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	if deps.Migrator == nil {
 		deps.Migrator = migration.New()
 	}
+	profileLayout, profileErr := resolveExecutionProfile(deps.Profile, deps.DevelopmentRoot)
 	o := &rootOptions{}
+	if deps.Profile == DevelopmentProfile && profileErr == nil {
+		o.configFile = profileLayout.Config
+		o.stateDir = profileLayout.State
+		deps.Resetter.RepositoryResetRoot = profileLayout.Root
+	}
 	passphrases := deps.Passphrases
 	if passphrases == nil {
 		passphrases = newAuthorityPassphraseService(func() string { return o.pinentryExecutable })
@@ -115,8 +123,8 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.SetOut(deps.Out)
 	root.SetErr(deps.Err)
 	f := root.PersistentFlags()
-	f.StringVar(&o.configFile, "config", "", "configuration file")
-	f.StringVar(&o.stateDir, "state-dir", "", "Aegis state directory")
+	f.StringVar(&o.configFile, "config", o.configFile, "configuration file")
+	f.StringVar(&o.stateDir, "state-dir", o.stateDir, "Aegis state directory")
 	f.StringVar(&o.hermesExecutable, "hermes-executable", "", "Hermes executable")
 	f.StringVar(&o.pinentryExecutable, "pinentry-executable", "", "absolute path to a protected pinentry executable")
 	f.StringVar(&o.runtime, "runtime", "", "explicit runtime (hermes)")
@@ -140,6 +148,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if cmd.Flags().Changed("state-dir") || cmd.InheritedFlags().Changed("state-dir") {
 			cfg.StateDir = o.stateDir
 		}
+		if err = validateConfiguredPathsProfile(deps.Profile, map[string]string{
+			"state":                 cfg.StateDir,
+			"audit checkpoints":     cfg.Audit.CheckpointDir,
+			"credential database":   cfg.Credentials.Authority.Database,
+			"credential KEK":        cfg.Credentials.Authority.KEKFile,
+			"manager certification": cfg.Manager.Inference.Certification,
+		}); err != nil {
+			return nil, usage(err)
+		}
 		if cmd.Flags().Changed("hermes-executable") || cmd.InheritedFlags().Changed("hermes-executable") {
 			cfg.HermesExecutable = o.hermesExecutable
 		}
@@ -162,6 +179,12 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
+		if profileErr != nil {
+			return usage(profileErr)
+		}
+		if err := validateExecutionProfile(deps.Profile, profileLayout, o, cmd.Name() == "reset"); err != nil {
+			return usage(err)
+		}
 		if updateAlias && cmd != root {
 			return usage(errors.New("--update is valid only as a root action without a positional command"))
 		}
@@ -182,6 +205,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			}
 			return usage(fmt.Errorf("%s: interactive terminal required; no prompts or mutations were performed", reason))
 		}
+		if deps.Profile != "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS] execution profile: %s; root: %s\n", deps.Profile, profileLayout.Root)
+		}
 		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
 		if snapshot.State != "ready" {
 			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
@@ -191,7 +217,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
 	return root
 }
 

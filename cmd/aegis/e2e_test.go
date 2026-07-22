@@ -22,7 +22,7 @@ func TestCLIEndToEndHermetic(t *testing.T) {
 	}
 	root := t.TempDir()
 	binary := filepath.Join(root, "aegis")
-	build := exec.Command("go", "build", "-o", binary, ".")
+	build := exec.Command("go", "build", "-ldflags=-X=github.com/berryhill/aegis/internal/buildinfo.Version=test", "-o", binary, ".")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)

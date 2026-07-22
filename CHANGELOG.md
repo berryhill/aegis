@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Bound stable release binaries to an isolated `production` profile at `~/.argis` and ordinary source-built `dev` binaries to a visible, Git-ignored `development` profile at `<repository>/.aegis`. Development execution verifies that the binary resides in the real Aegis module/worktree root and fails closed if copied. Configuration, credential authority/deployment identity, audit/checkpoint data, manager certification, runtime state, and cleanup targets no longer share defaults; development rejects production paths, and reset is restricted to its own exact layout. Development reset uses the exact preview and default-deny `yes` confirmation without a passphrase prompt. Production reset authenticates the existing minimum-12-byte authority passphrase before confirmation and independently again after `yes` before deleting credential records or a local encrypted KEK.
+
 ## [0.1.26] - 2026-07-21
 
 ### Changed

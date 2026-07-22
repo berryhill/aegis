@@ -7,7 +7,7 @@ cleanup() { rm -rf "$work"; }
 trap cleanup EXIT HUP INT TERM
 
 cd "$repo"
-go build -o "$work/aegis" ./cmd/aegis
+go build -ldflags='-X github.com/berryhill/aegis/internal/buildinfo.Version=test' -o "$work/aegis" ./cmd/aegis
 cp examples/aegis.yaml "$work/aegis.yaml"
 cp examples/office-charter.json "$work/office-charter.json"
 chmod 0600 "$work/aegis.yaml" "$work/office-charter.json"

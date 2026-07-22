@@ -177,7 +177,7 @@ func TestManagerCore15ProductionPathInIsolatedDegradedSession(t *testing.T) {
 
 func buildTestBinary(t *testing.T, path string) {
 	t.Helper()
-	command := exec.Command("go", "build", "-o", path, ".")
+	command := exec.Command("go", "build", "-ldflags=-X=github.com/berryhill/aegis/internal/buildinfo.Version=test", "-o", path, ".")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, output)
 	}

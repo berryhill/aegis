@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +14,10 @@ import (
 	"testing"
 
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/credentials"
+	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
+	"github.com/spf13/cobra"
 )
 
 type resetCommandFixture struct {
@@ -158,6 +162,172 @@ func TestResetCommandDetectsChangeBetweenPreviewAndApply(t *testing.T) {
 	if _, statErr := os.Stat(fixture.config); statErr != nil {
 		t.Fatalf("config changed: %v", statErr)
 	}
+}
+
+func TestResetCredentialAuthorityRequiresExistingPassphrase(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	passphrase := make([]byte, 24)
+	if _, err := rand.Read(passphrase); err != nil {
+		t.Fatal(err)
+	}
+	kekPath := filepath.Join(fixture.state, "credentials", "authority.kek")
+	if err := credentials.CreatePassphraseKey(kekPath, "reset-test-kek", passphrase); err != nil {
+		t.Fatal(err)
+	}
+	document, err := os.ReadFile(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database := filepath.Join(fixture.state, "credentials", "authority.db")
+	document = append(document, []byte(fmt.Sprintf("credentials:\n  authority:\n    database: %q\n    deployment_id: reset-test\n    custody: passphrase-file\n    kek_file: %q\n", database, kekPath))...)
+	if err = os.WriteFile(fixture.config, document, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan := resetdomain.Plan{ConfigPath: fixture.config, CredentialRecords: true, LocalKEK: true}
+	command := &cobra.Command{}
+	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...)}}
+	command.SetContext(context.WithValue(context.Background(), authorityPassphraseContextKey{}, AuthorityPassphraseProvider(provider)))
+	command.SetIn(strings.NewReader(""))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err = authenticateResetAuthority(command, plan); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 {
+		t.Fatalf("passphrase requests=%d want 1", provider.calls)
+	}
+
+	wrong := make([]byte, len(passphrase))
+	if _, err = rand.Read(wrong); err != nil {
+		t.Fatal(err)
+	}
+	provider = &sequencePassphrases{values: [][]byte{wrong, wrong, wrong}}
+	command.SetContext(context.WithValue(context.Background(), authorityPassphraseContextKey{}, AuthorityPassphraseProvider(provider)))
+	if err = authenticateResetAuthority(command, plan); err == nil || !strings.Contains(err.Error(), resetdomain.ReasonRequiresAuthority) {
+		t.Fatalf("wrong passphrase accepted: %v", err)
+	}
+	if _, err = os.Stat(kekPath); err != nil {
+		t.Fatalf("failed authentication mutated authority: %v", err)
+	}
+}
+
+func TestResetAuthenticationPolicyDiffersByExecutionProfile(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		profile      ExecutionProfile
+		wantCalls    int
+		wantRequired bool
+		confirmation string
+	}{
+		{name: "production authenticates twice", profile: ProductionProfile, wantCalls: 2, wantRequired: true, confirmation: "authority passphrase, then y/yes, then authority passphrase again"},
+		{name: "development skips authentication", profile: DevelopmentProfile, wantCalls: 0, wantRequired: false, confirmation: "y/yes"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newResetCommandFixture(t, true)
+			_ = addResetPassphraseAuthority(t, fixture)
+			calls := 0
+			authenticate := func(*cobra.Command, resetdomain.Plan) error {
+				calls++
+				return nil
+			}
+			var output bytes.Buffer
+			command := resetCmdWithAuthenticator(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, test.profile, authenticate)
+			command.SetIn(strings.NewReader("yes\n"))
+			command.SetOut(&output)
+			command.SetErr(io.Discard)
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if calls != test.wantCalls {
+				t.Fatalf("authority authentications=%d want %d", calls, test.wantCalls)
+			}
+			preview := output.String()
+			if !strings.Contains(preview, fmt.Sprintf(`"authority_passphrase_required": %t`, test.wantRequired)) || !strings.Contains(preview, fmt.Sprintf(`"authority_passphrase_authentications": %d`, test.wantCalls)) || !strings.Contains(preview, fmt.Sprintf(`"confirmation_required": %q`, test.confirmation)) {
+				t.Fatalf("incorrect authentication preview: %s", preview)
+			}
+		})
+	}
+}
+
+func TestProductionResetSecondAuthenticationFailureWritesNothing(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	_ = addResetPassphraseAuthority(t, fixture)
+	calls := 0
+	authenticate := func(*cobra.Command, resetdomain.Plan) error {
+		calls++
+		if calls == 2 {
+			return errors.New("second authentication rejected")
+		}
+		return nil
+	}
+	command := resetCmdWithAuthenticator(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile, authenticate)
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "second authentication rejected") {
+		t.Fatalf("second authentication failure not returned: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("authority authentications=%d want 2", calls)
+	}
+	for _, path := range []string{fixture.config, filepath.Join(fixture.state, "credentials", "authority.db"), filepath.Join(fixture.state, "credentials", "authority.kek")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("second authentication failure changed %s: %v", path, err)
+		}
+	}
+}
+
+func TestProductionResetAuthenticatesRealAuthorityTwice(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	passphrase := addResetPassphraseAuthority(t, fixture)
+	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
+	command := resetCmd(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile)
+	command.SetContext(context.WithValue(context.Background(), authorityPassphraseContextKey{}, AuthorityPassphraseProvider(provider)))
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("authority passphrase requests=%d want 2", provider.calls)
+	}
+}
+
+func addResetPassphraseAuthority(t *testing.T, fixture resetCommandFixture) []byte {
+	t.Helper()
+	passphrase := make([]byte, 24)
+	if _, err := rand.Read(passphrase); err != nil {
+		t.Fatal(err)
+	}
+	database := filepath.Join(fixture.state, "credentials", "authority.db")
+	kekPath := filepath.Join(fixture.state, "credentials", "authority.kek")
+	if err := credentials.CreatePassphraseKey(kekPath, "reset-policy-kek", passphrase); err != nil {
+		t.Fatal(err)
+	}
+	custodian, err := credentials.LoadPassphraseCustodian(kekPath, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := credentialbolt.Open(context.Background(), database, "reset-policy", custodian)
+	if err != nil {
+		custodian.Close()
+		t.Fatal(err)
+	}
+	if err = authority.Close(); err != nil {
+		custodian.Close()
+		t.Fatal(err)
+	}
+	custodian.Close()
+	document, err := os.ReadFile(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document = append(document, []byte(fmt.Sprintf("credentials:\n  authority:\n    database: %q\n    deployment_id: reset-policy\n    custody: passphrase-file\n    kek_file: %q\n", database, kekPath))...)
+	if err = os.WriteFile(fixture.config, document, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return passphrase
 }
 
 func TestResetThenBareOnboardingAndNonTTYBoundary(t *testing.T) {

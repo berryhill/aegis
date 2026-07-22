@@ -1,8 +1,8 @@
 # Local Path Layout
 
-## Canonical per-operator defaults
+## Per-operator production and development defaults
 
-The literal local root is `~/.argis`. Aegis resolves `~` to the authenticated effective operator's clean, absolute, owned home before filesystem use; it never passes a tilde to filesystem APIs. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` do not alter these defaults.
+Stable release binaries use the literal production root `~/.argis`. Source-built binaries whose version is `dev` use `.aegis` in the Aegis repository root containing the executable. Aegis verifies the development executable directory using a real matching `go.mod`, a non-symlink `.git` worktree marker, and containment below the authenticated operator home; a copied development binary fails closed. A pre-rename `.aegis-dev` tree is detected and denied rather than silently merged, copied, or deleted. It resolves `~` for production to the authenticated effective operator's clean, absolute, owned home and never passes a tilde to filesystem APIs. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` do not alter either profile.
 
 ```text
 ~/.argis/                                      0700
@@ -21,11 +21,17 @@ The literal local root is `~/.argis`. Aegis resolves `~` to the authenticated ef
 ~/.argis/state/sessions/
 ~/.argis/state/receipts/
 ~/.argis/state/provisioned/
+
+<repository>/.aegis/                           0700, Git-ignored
+<repository>/.aegis/aegis.yaml                0600
+<repository>/.aegis/state/                    0700
+# same state children as production, but a distinct authority,
+# deployment identifier, audit chain, certification, and runtime
 ```
 
 Directories are created only when implemented behavior needs them. Atomic configuration and manager-configuration files are created beside their destination. Disposable Hermes and managed Ollama homes are created below `state/runtime`. Store atomic files are created beside their state destination. Sensitive regular files are mode `0600`; Aegis-owned directories are mode `0700`.
 
-The typed resolver in `internal/layout` is the source for the root, config, state, checkpoints, authority database, host KEK, certification, managed-model, and runtime defaults. Configuration loading remains separate. Explicit `--config`, `--state-dir`, supported `AEGIS_*` overrides, and administrator-selected `/etc/aegis` or `/var/lib/aegis` deployments are not silently redirected; they are explicit deployments with their own validation and reset authority rules.
+The typed resolver in `internal/layout` is the source for both profile roots and their config, state, checkpoints, authority database, host KEK, certification, managed-model, and runtime defaults. Configuration loading remains separate. An executable refuses configuration or state beneath the opposing profile root, including values loaded indirectly from configuration. Explicit deployments outside both local profile roots retain their existing validation, but destructive reset is restricted to the executable's own exact profile layout.
 
 ## Path classification
 
@@ -33,6 +39,7 @@ The typed resolver in `internal/layout` is the source for the root, config, stat
 |---|---|
 | `~/.argis/aegis.yaml` | canonical Aegis-owned local configuration |
 | `~/.argis/state` and implemented children above | canonical Aegis-owned local state |
+| `<repository>/.aegis/aegis.yaml` and `<repository>/.aegis/state` | isolated, Git-ignored development configuration and state for source-built `dev` binaries residing in the verified worktree root |
 | adjacent `.aegis-*` temporaries | ephemeral Aegis-owned transaction data at the canonical destination |
 | `state/runtime/design-*`, `stanza-*`, `manager-*`, `ollama-*` | ephemeral Aegis-owned runtime data |
 | `state/manager/ollama-models` | Aegis-managed model data; preserved by reset |
@@ -48,7 +55,7 @@ The typed resolver in `internal/layout` is the source for the root, config, stat
 
 ## Discovery and compatibility
 
-With no explicit `--config`, discovery is artifact-derived and read-only:
+For a release binary with no explicit `--config`, production discovery is artifact-derived and read-only. A development binary supplies its fixed development configuration path and never performs production/legacy discovery:
 
 - no canonical installation or meaningful legacy artifacts: `uninitialized`, and bootstrap uses only `~/.argis`; an empty canonical root/state or a state tree containing only the deliberately preserved managed-model store is not an installation;
 - canonical only: validate and use canonical state;
@@ -64,6 +71,6 @@ Migration does not copy or render credential values. Credential database/KEK and
 
 ## Reset authority
 
-Canonical reset authorizes only validated known artifacts below `~/.argis`, preserves the managed model store and all external dependencies, and removes configuration last. If no preserved model data remains it also removes the empty canonical root; otherwise default discovery ignores the model-only retained tree so reset still returns `uninitialized`. Legacy reset accepts only exact recognized defaults. It does not require or perform `chmod` on external XDG parents. A mode-`0775` `~/.local/state` is traversal context, not an Aegis artifact or deletion root: every removal is opened relative to the validated Aegis child descriptor with no-follow and device/inode checks. Where deleting the child entry through that external parent is unsafe, reset truthfully retains the empty child. Empty retained roots are ignored by default discovery, so successful reset is `uninitialized`.
+Production reset authorizes only validated known artifacts below `~/.argis`; development reset authorizes only validated known artifacts below the exact verified `<repository>/.aegis`. Neither executable accepts an arbitrary explicit deployment as reset authority. The repository exception applies only to that ignored subtree; source files and every sibling repository path remain prohibited. Reset preserves the managed model store and all external dependencies and removes configuration last. If no preserved model data remains it also removes the empty canonical root; otherwise default discovery ignores the model-only retained tree so reset still returns `uninitialized`. Legacy reset accepts only exact recognized defaults. It does not require or perform `chmod` on external XDG parents. A mode-`0775` `~/.local/state` is traversal context, not an Aegis artifact or deletion root: every removal is opened relative to the validated Aegis child descriptor with no-follow and device/inode checks. Where deleting the child entry through that external parent is unsafe, reset truthfully retains the empty child. Empty retained roots are ignored by default discovery, so successful reset is `uninitialized`.
 
-Both reset paths retain bounded inventory, exact plan digest, real-TTY default-deny `[y/N]` confirmation, reauthentication, identity revalidation, unknown-artifact denial, hard-link/symlink denial, repository/root/home denial, and postcondition verification. Pathname checks alone are not claimed as race safety.
+All reset paths retain bounded inventory, exact plan digest, real-TTY default-deny `[y/N]` confirmation, identity revalidation, unknown-artifact denial, hard-link/symlink denial, repository/root/home denial, and postcondition verification. Development reset intentionally skips authority-passphrase authentication. If a production reset would delete credential records or local encrypted KEK material, it authenticates the existing minimum-12-byte passphrase-file authority before confirmation and independently again after `yes`; missing, incorrect, malformed, or different custody denies before mutation. Pathname checks alone are not claimed as race safety.

@@ -21,7 +21,7 @@ import (
 func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 	root := t.TempDir()
 	binary := filepath.Join(root, "aegis")
-	build := exec.Command("go", "build", "-o", binary, ".")
+	build := exec.Command("go", "build", "-ldflags=-X=github.com/berryhill/aegis/internal/buildinfo.Version=test", "-o", binary, ".")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build lifecycle fixture: %v\n%s", err, output)
 	}

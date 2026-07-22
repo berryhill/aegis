@@ -20,7 +20,7 @@ func run() int {
 	ctx, stopSignals := managerSignalContext()
 	defer stopSignals()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	cmd := command.NewRoot(command.Dependencies{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Logger: log, Version: version})
+	cmd := command.NewRoot(command.Dependencies{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Logger: log, Version: version, Profile: command.ProfileForVersion(version)})
 	err := cmd.ExecuteContext(ctx)
 	if err != nil {
 		command.RenderError(os.Stderr, err)

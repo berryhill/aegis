@@ -24,7 +24,9 @@ coverage.out
 .env
 *.local.yaml
 *.local.yml
-.aegis/
+/.aegis/
+# Retain until any pre-rename development state has been migrated explicitly.
+/.aegis-dev/
 
 # Editor and operating-system files
 .idea/

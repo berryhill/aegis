@@ -9,7 +9,10 @@ import (
 	"syscall"
 )
 
-const CanonicalDirectory = ".argis"
+const (
+	CanonicalDirectory   = ".argis"
+	DevelopmentDirectory = ".aegis"
+)
 
 type HomeResolver func() (string, error)
 

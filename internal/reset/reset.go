@@ -29,15 +29,16 @@ import (
 )
 
 const (
-	ReasonDenied      = "reset_denied"
-	ReasonChanged     = "reset_plan_changed"
-	ReasonIncomplete  = "reset_incomplete"
-	ReasonDeclined    = "reset_declined"
-	ReasonRequiresTTY = "reset_requires_tty"
-	Confirmation      = "yes"
-	maximumArtifacts  = 10000
-	maximumPathBytes  = 4096
-	maximumPathDepth  = 64
+	ReasonDenied            = "reset_denied"
+	ReasonChanged           = "reset_plan_changed"
+	ReasonIncomplete        = "reset_incomplete"
+	ReasonDeclined          = "reset_declined"
+	ReasonRequiresTTY       = "reset_requires_tty"
+	ReasonRequiresAuthority = "reset_requires_authority_passphrase"
+	Confirmation            = "yes"
+	maximumArtifacts        = 10000
+	maximumPathBytes        = 4096
+	maximumPathDepth        = 64
 )
 
 type Identity struct {
@@ -80,10 +81,11 @@ type Plan struct {
 }
 
 type Service struct {
-	Current     func() (*user.User, error)
-	LookupID    func(string) (*user.User, error)
-	HomeDir     func() (string, error)
-	BeforeApply func(Plan)
+	Current             func() (*user.User, error)
+	LookupID            func(string) (*user.User, error)
+	HomeDir             func() (string, error)
+	BeforeApply         func(Plan)
+	RepositoryResetRoot string
 }
 
 func New() *Service {
@@ -128,7 +130,7 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 	if inspection.Path == "" {
 		return Plan{}, deny(errors.New("configuration path is unresolved"))
 	}
-	if err = validateScopedPath(inspection.Path, home); err != nil {
+	if err = validateScopedPath(inspection.Path, home, s.RepositoryResetRoot); err != nil {
 		return Plan{}, deny(fmt.Errorf("configuration path: %w", err))
 	}
 
@@ -365,7 +367,7 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 		return deny(fmt.Errorf("resolve checkpoint directory: %w", err))
 	}
 	for _, root := range []string{state, checkpoint} {
-		if err = validateScopedPath(root, home); err != nil {
+		if err = validateScopedPath(root, home, s.RepositoryResetRoot); err != nil {
 			return deny(err)
 		}
 	}
@@ -398,7 +400,7 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 	}
 	modelStore := filepath.Join(state, "manager", "ollama-models")
 	if existsNoFollow(modelStore) {
-		if validationErr := validateScopedPath(modelStore, home); validationErr != nil {
+		if validationErr := validateScopedPath(modelStore, home, s.RepositoryResetRoot); validationErr != nil {
 			return deny(fmt.Errorf("unsafe managed model store: %w", validationErr))
 		}
 		protected[modelStore] = true
@@ -901,7 +903,7 @@ func identity(info os.FileInfo, directory bool) (Identity, error) {
 	return identified, nil
 }
 
-func validateScopedPath(path, home string) error {
+func validateScopedPath(path, home, repositoryResetRoot string) error {
 	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
 		return errors.New("path must be clean and absolute")
 	}
@@ -939,9 +941,13 @@ func validateScopedPath(path, home string) error {
 			}
 		}
 	}
+	repositoryTargetAllowed := repositoryResetRoot != "" && (path == repositoryResetRoot || within(repositoryResetRoot, path))
 	for current := filepath.Dir(path); within(home, current) || current == home; current = filepath.Dir(current) {
 		if existsNoFollow(filepath.Join(current, ".git")) {
-			return fmt.Errorf("repository paths are never reset targets: %s", current)
+			if !repositoryTargetAllowed {
+				return fmt.Errorf("repository paths are never reset targets: %s", current)
+			}
+			break
 		}
 		if current == home {
 			break
