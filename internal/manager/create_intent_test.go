@@ -21,6 +21,7 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 		{name: "label and value", input: `store this secret: "test" with a value of "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "basic trusted local interaction", input: `let's store a cred named test with a value of 1234`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "named credential value is", input: `i want to store a new cred named test.. value is 1234`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
+		{name: "missing space before named", input: `I want to store a new secretnamed test with a value of 1234`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "plural names typo", input: `I want to save a test credential names "test" with a value of "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "paired key and secret fields", input: `I want to store a test secret.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "typo tolerant paired fields", input: `I want to stay a test cred.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},

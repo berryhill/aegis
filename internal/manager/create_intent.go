@@ -8,7 +8,7 @@ import (
 var (
 	createActionPattern   = regexp.MustCompile(`(?i)\b(store|save|stash|add|create|make|remember|keep|here(?:'s| is)|want to store)\b`)
 	createStayTypoPattern = regexp.MustCompile(`(?i)\bwant[	 ]+to[	 ]+stay\b`)
-	createObjectPattern   = regexp.MustCompile(`(?i)\b(secret|credential|credentials|cred|password|passphrase|token|api[ _-]*key|key|g[ _-]*drive|google[ _-]*drive)\b`)
+	createObjectPattern   = regexp.MustCompile(`(?i)\b(secret|credential|credentials|cred|password|passphrase|token|api[ _-]*key|key|g[ _-]*drive|google[ _-]*drive|(?:secret|credential|cred)name(?:d|s)?)\b`)
 	createQuestionPattern = regexp.MustCompile(`(?i)^\s*(how|what|why|when|where|can|could|should|would|do|does|is|are)\b`)
 	createLabelPattern    = regexp.MustCompile(`(?i)\b(?:secret|credential|cred)\s*(?::|=|name(?:d|s)?\s+|called\s+)[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([a-z0-9][a-z0-9._-]{0,254}))`)
 	keyFieldPattern       = regexp.MustCompile(`(?i)\bkey[	 ]*:[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([^\s,;]{1,255}))`)

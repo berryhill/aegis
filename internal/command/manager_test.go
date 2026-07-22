@@ -62,22 +62,28 @@ func TestManagerMakeCredentialInputNeverFallsThroughToHermes(t *testing.T) {
 		t.Fatal(err)
 	}
 	canary := hex.EncodeToString(canaryBytes)
-	input := "alright, I want to make a new cred named test with a value of " + canary + "\nexit\n"
-	var output bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader(input), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
-	root.SetArgs([]string{"--config", managerTestConfig(t), "manager"})
-	if err := root.Execute(); err != nil {
-		t.Fatal(err)
-	}
-	text := output.String()
-	if strings.Contains(text, canary) {
-		t.Fatal("credential value reached retained manager output")
-	}
-	if !strings.Contains(text, "credential-bearing input requires the active authenticated exact-local-model session; input was not retained") {
-		t.Fatalf("make credential input did not take deterministic create route: %s", text)
-	}
-	if strings.Contains(text, "credential-bearing create syntax was not recognized") || strings.Contains(text, "The local Aegis management model is unavailable") {
-		t.Fatalf("make credential input fell through deterministic create routing: %s", text)
+	for _, input := range []string{
+		"alright, I want to make a new cred named test with a value of " + canary,
+		"I want to store a new secretnamed test with a value of " + canary,
+	} {
+		t.Run(input[:strings.Index(input, " with a value")], func(t *testing.T) {
+			var output bytes.Buffer
+			root := NewRoot(Dependencies{In: strings.NewReader(input + "\nexit\n"), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+			root.SetArgs([]string{"--config", managerTestConfig(t), "manager"})
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			text := output.String()
+			if strings.Contains(text, canary) {
+				t.Fatal("credential value reached retained manager output")
+			}
+			if !strings.Contains(text, "credential-bearing input requires the active authenticated exact-local-model session; input was not retained") {
+				t.Fatalf("credential input did not take deterministic create route: %s", text)
+			}
+			if strings.Contains(text, "credential-bearing create syntax was not recognized") || strings.Contains(text, "The local Aegis management model is unavailable") {
+				t.Fatalf("credential input fell through deterministic create routing: %s", text)
+			}
+		})
 	}
 }
 
