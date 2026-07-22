@@ -2,6 +2,8 @@ package manager
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 	}{
 		{name: "label and value", input: `store this secret: "test" with a value of "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "basic trusted local interaction", input: `let's store a cred named test with a value of 1234`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
+		{name: "named credential value is", input: `i want to store a new cred named test.. value is 1234`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "plural names typo", input: `I want to save a test credential names "test" with a value of "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "paired key and secret fields", input: `I want to store a test secret.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "typo tolerant paired fields", input: `I want to stay a test cred.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
@@ -65,5 +68,32 @@ func TestParseCreateIntentDoesNotTurnQuestionsIntoMutations(t *testing.T) {
 		if _, ok := ParseCreateIntent(input); ok {
 			t.Fatalf("discussion parsed as create intent: %q", input)
 		}
+	}
+}
+
+func TestParseMakeCredentialIntentRedactsInlineValue(t *testing.T) {
+	canaryBytes := make([]byte, 16)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	canary := hex.EncodeToString(canaryBytes)
+	input := "alright, I want to make a new cred named test with a value of " + canary
+	intent, ok := ParseCreateIntent(input)
+	if !ok || intent.Arguments.Reference != "test" || !intent.ValueRemoved || string(intent.Value) != canary {
+		t.Fatalf("intent=%+v matched=%t", intent.Arguments, ok)
+	}
+	if strings.Contains(intent.SafeInput, canary) {
+		t.Fatal("inline credential value remained in safe presentation input")
+	}
+	intent.Wipe()
+}
+
+func TestUnrecognizedInlineCredentialSyntaxFailsClosed(t *testing.T) {
+	input := "frobnicate a credential named test with a value of generated-canary"
+	if _, ok := ParseCreateIntent(input); ok {
+		t.Fatal("unknown create verb unexpectedly mapped")
+	}
+	if !ContainsInlineCredentialValue(input) {
+		t.Fatal("unknown credential-bearing syntax would reach Hermes")
 	}
 }

@@ -21,6 +21,34 @@ func TestBuildVersionSelectsFixedExecutionProfile(t *testing.T) {
 	}
 }
 
+func TestStableCheckoutExecutableSelectsDevelopmentProfile(t *testing.T) {
+	home := t.TempDir()
+	repository := filepath.Join(home, "repository")
+	if err := os.MkdirAll(filepath.Join(repository, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "go.mod"), []byte("module github.com/berryhill/aegis\n\ngo 1.26\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	executable := filepath.Join(repository, "aegis")
+	if err := os.WriteFile(executable, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := ProfileForExecutable("0.1.27", executable); got != DevelopmentProfile {
+		t.Fatalf("stable checkout profile=%q", got)
+	}
+	installed := filepath.Join(home, "bin", "aegis")
+	if err := os.MkdirAll(filepath.Dir(installed), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(installed, []byte("binary"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := ProfileForExecutable("0.1.27", installed); got != ProductionProfile {
+		t.Fatalf("installed stable profile=%q", got)
+	}
+}
+
 func TestDevelopmentProfileUsesRepositoryAndRejectsProductionPaths(t *testing.T) {
 	base := t.TempDir()
 	home := filepath.Join(base, "home")

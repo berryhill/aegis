@@ -221,16 +221,8 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		} else {
 			line, eof, readErr = composer.Read(sessionCtx, "\n[composer] > ", capabilities)
 		}
-		if readErr != nil {
-			if sessionCtx.Err() != nil {
-				endReason = managerdomain.EndReasonFromContext(sessionCtx)
-			} else {
-				endReason = managerdomain.EndRuntimeFailed
-			}
-			break
-		}
-		if eof {
-			endReason = managerdomain.EndTerminalEOF
+		if reason, ended := managerInputEndReason(sessionCtx, eof, readErr); ended {
+			endReason = reason
 			break
 		}
 		trimmed := strings.TrimSpace(line)
@@ -261,6 +253,10 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		createIntent, createRequested := managerdomain.ParseCreateIntent(line)
 		valueReference, valueReadRequested := managerdomain.ParseCredentialValueReadIntent(line)
 		readIntent := managerdomain.ParseAuthorityReadIntent(line)
+		if !createRequested && managerdomain.ContainsInlineCredentialValue(line) {
+			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "credential-bearing create syntax was not recognized; input was not sent to Hermes or retained"})
+			continue
+		}
 		guardedLine := line
 		if createRequested {
 			guardedLine = createIntent.SafeInput
@@ -378,7 +374,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 	defer cleanupCancel()
 	var cleanupErr error
 	if conversation != nil {
-		_ = presentation.Emit(tui.Event{Kind: tui.CleanupStage, Origin: tui.AegisAuthoritative, Stage: "bounded runtime teardown", Message: "stopping Hermes, closing proxy, unloading exact model, removing disposable state, finalizing receipt"})
+		_ = presentation.Emit(tui.Event{Kind: tui.CleanupStage, Origin: tui.AegisAuthoritative, Stage: "bounded runtime teardown", Message: "invalidating inference capability, tearing down exact model/runtime and Hermes, removing disposable state, finalizing receipt"})
 		cleanupErr = conversation.Close(cleanupCtx, endReason)
 	} else {
 		cleanupErr = service.AuditManagerSession(cleanupCtx, subject, "ok", endReason, map[string]string{"cleanup": "complete", "runtime": "degraded"})
@@ -398,6 +394,19 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 	_ = presentation.Emit(tui.Event{Kind: tui.CleanupCompleted, Origin: tui.AegisAuthoritative, Message: "bounded cleanup and terminal restoration complete"})
 	fmt.Fprintln(cmd.OutOrStdout(), "Aegis manager stopped; cleanup complete.")
 	return nil
+}
+
+func managerInputEndReason(ctx context.Context, eof bool, readErr error) (string, bool) {
+	if readErr == nil && !eof {
+		return "", false
+	}
+	if eof || errors.Is(readErr, io.EOF) {
+		return managerdomain.EndTerminalEOF, true
+	}
+	if ctx.Err() != nil {
+		return managerdomain.EndReasonFromContext(ctx), true
+	}
+	return managerdomain.EndRuntimeFailed, true
 }
 
 func localDirective(ctx context.Context, cmd *cobra.Command, service *app.Service, registry *slash.Registry, commands *slash.Service, subject core.Subject, line string, readiness managerReadiness, conversational bool, presentation *tui.Controller) (bool, error) {

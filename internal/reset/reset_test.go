@@ -48,6 +48,28 @@ func newFixture(t *testing.T) fixture {
 	return fixture{home: home, config: filepath.Join(home, ".config", "aegis", "aegis.yaml"), state: filepath.Join(home, "custom-state"), checkpoints: filepath.Join(home, "custom-checkpoints"), service: service, current: current}
 }
 
+func TestDevelopmentResetAllowsGroupWritableWorkspaceParentOnly(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	workspace := filepath.Join(home, "workspace")
+	repository := filepath.Join(workspace, "aegis")
+	root := filepath.Join(repository, ".aegis")
+	configPath := filepath.Join(root, "aegis.yaml")
+	for path, mode := range map[string]os.FileMode{home: 0700, workspace: 0775, repository: 0755, root: 0700} {
+		if err := os.Mkdir(path, mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(configPath, []byte("configuration"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateScopedPath(configPath, home, root); err != nil {
+		t.Fatalf("development repository context rejected: %v", err)
+	}
+	if err := validateScopedPath(configPath, home, ""); err == nil || !strings.Contains(err.Error(), "writable by group or others") {
+		t.Fatalf("production-style scope accepted unsafe parent: %v", err)
+	}
+}
+
 func TestCanonicalResetRemovesUnifiedRootAndReturnsUninitialized(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("HOME", f.home)

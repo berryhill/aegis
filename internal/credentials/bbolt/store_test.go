@@ -60,6 +60,17 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = authority.Create(ctx, "provider/test", "api-token", "principal-1", []byte("must-not-overwrite")); !errors.Is(err, credentials.ErrConflict) {
+		t.Fatalf("duplicate create error=%v", err)
+	}
+	if err = authority.ReadValue(ctx, "provider/test", func(_ credentials.SecretRecord, value []byte) error {
+		if !bytes.Equal(value, firstSecret) {
+			t.Fatal("duplicate create overwrote existing value")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if counts, countErr := authority.Counts(ctx); countErr != nil || counts != (credentials.SecretCounts{Total: 1, Active: 1}) {
 		t.Fatalf("active credential counts=%+v err=%v", counts, countErr)
 	}

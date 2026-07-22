@@ -114,3 +114,26 @@ func TestCleanupFailuresExposeOnlyStableStageNames(t *testing.T) {
 		t.Fatalf("cleanup failures=%q", failures)
 	}
 }
+
+func TestExternalCleanupInvalidatesProxyAndUnloadsBeforeHermesWait(t *testing.T) {
+	runtime := &conversationalRuntime{
+		proxy:  &managerdomain.Proxy{},
+		ollama: &managerdomain.OllamaClient{},
+		model:  "exact:model",
+		hermes: &managerdomain.HermesProcess{},
+	}
+	operations := runtime.runtimeCleanupOperations(context.Background())
+	want := []string{
+		"invalidating inference capability and closing proxy",
+		"unloading and verifying exact model removal",
+		"stopping Hermes and removing disposable state",
+	}
+	if len(operations) != len(want) {
+		t.Fatalf("cleanup operations=%d want=%d", len(operations), len(want))
+	}
+	for index := range want {
+		if operations[index].stage != want[index] {
+			t.Fatalf("cleanup operation %d=%q want=%q", index, operations[index].stage, want[index])
+		}
+	}
+}

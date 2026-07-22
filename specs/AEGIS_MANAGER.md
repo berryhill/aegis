@@ -124,8 +124,8 @@ The initial manager MAY perform only these classes of operation:
 - initialize the configured encrypted credential authority;
 - list and search credential metadata;
 - inspect one credential record and immutable version metadata;
-- conversationally supply a new credential value to the exact trusted-local model and propose encrypted storage;
-- propose credential creation and enter protected intake when no value was supplied conversationally;
+- conversationally supply a new credential value and execute an exact deterministic insert without redundant approval;
+- request credential creation and enter protected intake directly when no value was supplied conversationally;
 - propose metadata changes supported by the authority;
 - propose rotation and enter protected intake;
 - propose revocation of a version or record;
@@ -180,8 +180,8 @@ manager proposal
 trusted-local create turn
   <-> authenticated exact-model proxy
   <-> session-scoped plaintext model context
-  <-> matching metadata-only proposal
-  <-> principal confirmation and encrypted authority write
+  <-> deterministic Aegis create intent
+  <-> insert-only encrypted authority write
 ```
 
 ### 5.2 Aegis MUST own terminal input
@@ -376,7 +376,9 @@ The built-in manager is an explicitly authenticated trusted-local plaintext sess
 
 The model response MUST NOT authorize the operation. Authorization comes from the authenticated principal's unambiguous imperative and is limited to the exact deterministic target/value parsed from that turn.
 
-Low-ambiguity authenticated read intents such as credential count, metadata list, and exact-reference value retrieval MUST execute directly through Aegis authority operations without a model round trip or confirmation. Count MUST be exact rather than inferred from a bounded list and MUST distinguish total, active, and record-level revoked records. Count/list output and all audit MUST remain metadata-only. Value retrieval MUST require an explicit exact reference, reject missing or revoked records, terminal-escape rendered plaintext, and retain it only in session-scoped presentation state. Terminal scrollback remains outside cleanup. Questions and explanatory discussion MUST NOT become mutation proposals. If no inline value is supplied, the existing confirmed protected no-echo intake path applies. Authority passphrases, KEKs, provider credentials, and values from other sessions remain unauthorized for model admission.
+The deterministic create grammar MUST cover documented natural imperatives, including `store`, `save`, `create`, and `make`. Independently of successful intent mapping, explicit credential-value syntax MUST fail closed before model dispatch: an unrecognized create verb may produce a local retry diagnostic but MUST NOT send or retain the value-bearing input.
+
+Low-ambiguity authenticated read intents such as credential count, metadata list, and exact-reference value retrieval MUST execute directly through Aegis authority operations without a model round trip or confirmation. Count MUST be exact rather than inferred from a bounded list and MUST distinguish total, active, and record-level revoked records. Count/list output and all audit MUST remain metadata-only. Value retrieval MUST require an explicit exact reference, reject missing or revoked records, terminal-escape rendered plaintext, and retain it only in session-scoped presentation state. Terminal scrollback remains outside cleanup. Questions and explanatory discussion MUST NOT become mutation proposals. If no inline value is supplied, the authenticated imperative proceeds directly to protected no-echo intake without a separate mutation approval. Create MUST be atomic insert-only; an existing reference MUST fail without replacement, and rotation/replacement retains confirmation. Authority passphrases, KEKs, provider credentials, and values from other sessions remain unauthorized for model admission.
 
 The UI MUST visibly state that terminal scrollback is outside Aegis's purge guarantee. Direct typed create/value-read operations MUST bypass the model. Model output MUST still be denied if it contains any tracked session value.
 
@@ -428,8 +430,8 @@ State transition:
 
 ```text
 conversation
-  -> validated create/rotate proposal
-  -> authenticated confirmation of non-secret metadata
+  -> validated create or rotate proposal
+  -> create: direct protected intake; rotate: authenticated confirmation
   -> protected intake state
   -> no-echo value
   -> no-echo confirmation where applicable
@@ -456,9 +458,9 @@ Values collected through this protected-intake alternative MUST NOT enter:
 - temporary plaintext files;
 - charter or manager configuration.
 
-### 8.3 Confirmation
+### 8.3 Confirmation policy
 
-Before value collection, Aegis MUST display the complete non-secret target:
+For rotation/replacement, revocation, binding, and other non-insert mutations, before value collection or execution Aegis MUST display the complete non-secret target:
 
 - operation;
 - reference or record ID;
@@ -469,7 +471,7 @@ Before value collection, Aegis MUST display the complete non-secret target:
 - disclosure mode, initially `brokered` or `stored-only`;
 - statement that no-echo-intake and complete inline-create values are not sent to Hermes/model.
 
-The model cannot supply the confirmation. The authenticated principal must confirm through the Aegis UI.
+First-time insert-only create requires no redundant confirmation: the authenticated principal's unambiguous imperative authorizes the exact parsed reference and supplied or protected-intake value. A duplicate reference fails atomically and MUST direct the principal to the confirmed rotation path. Where confirmation remains required, the model cannot supply it; the authenticated principal must confirm through the Aegis UI.
 
 ### 8.4 Failure
 

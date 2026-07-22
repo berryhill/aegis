@@ -154,11 +154,14 @@ func TestSessionHandlesAegisParsedCreateWithoutGateway(t *testing.T) {
 	gateway := &fakeGateway{}
 	ops := &fakeOperations{}
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
-	var confirmation string
+	confirmationCalls := 0
 	session, err := NewSession(context.Background(), SessionConfig{
 		SessionID: "session-natural-create", SubjectID: "local-uid:1", PrincipalID: "principal",
 		Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-natural-create", Guard: guard, Operations: ops,
-		Confirm: func(_ context.Context, preview string) (bool, error) { confirmation = preview; return true, nil },
+		Confirm: func(context.Context, string) (bool, error) {
+			confirmationCalls++
+			return false, errors.New("new create must not prompt")
+		},
 		Intake:  func(context.Context, string) ([]byte, error) { return []byte("disposable-protected-value"), nil },
 		Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20,
 	})
@@ -169,13 +172,8 @@ func TestSessionHandlesAegisParsedCreateWithoutGateway(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ops.created != 1 || len(gateway.inputs) != 0 || !strings.Contains(message, "secret-created") {
-		t.Fatalf("created=%d gateway_inputs=%v message=%q", ops.created, gateway.inputs, message)
-	}
-	for _, expected := range []string{"create protected credential", "reference: google-drive-person-example-com", "kind: api-key", "protected no-echo", "plaintext session state is purged on close"} {
-		if !strings.Contains(confirmation, expected) {
-			t.Fatalf("confirmation %q missing %q", confirmation, expected)
-		}
+	if ops.created != 1 || confirmationCalls != 0 || len(gateway.inputs) != 0 || !strings.Contains(message, "secret-created") {
+		t.Fatalf("created=%d confirmations=%d gateway_inputs=%v message=%q", ops.created, confirmationCalls, gateway.inputs, message)
 	}
 }
 
@@ -202,10 +200,10 @@ func TestSessionTrustedLocalCreateBypassesModelAndStoresOriginalValue(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := `I want to store a test secret.. key: "test" secret: "` + canary + `"`
+	text := "alright, I want to make a new cred named test with a value of " + canary
 	intent, ok := ParseCreateIntent(text)
 	if !ok {
-		t.Fatal("paired key/secret create intent was not recognized")
+		t.Fatal("natural make create intent was not recognized")
 	}
 	defer intent.Wipe()
 	message, err := session.HandleCreateIntentWithValue(context.Background(), text, intent.Arguments, intent.Value)

@@ -3,6 +3,8 @@ package command
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,8 +14,72 @@ import (
 	"strings"
 	"testing"
 
+	managerdomain "github.com/berryhill/aegis/internal/manager"
 	selfupdate "github.com/berryhill/aegis/internal/update"
 )
+
+func TestManagerInputEndReasonTreatsComposerEOFAsNormalExit(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		eof     bool
+		err     error
+		want    string
+		context func() context.Context
+	}{
+		{name: "EOF flag", eof: true, want: managerdomain.EndTerminalEOF},
+		{name: "EOF error", err: io.EOF, want: managerdomain.EndTerminalEOF},
+		{name: "read failure", err: errors.New("terminal failed"), want: managerdomain.EndRuntimeFailed},
+		{name: "explicit EOF wins race", err: io.EOF, want: managerdomain.EndTerminalEOF, context: func() context.Context {
+			ctx, cancel := context.WithCancelCause(context.Background())
+			cancel(managerdomain.ErrInterrupt)
+			return ctx
+		}},
+		{name: "context cancellation", err: context.Canceled, want: managerdomain.EndInterrupt, context: func() context.Context {
+			ctx, cancel := context.WithCancelCause(context.Background())
+			cancel(managerdomain.ErrInterrupt)
+			return ctx
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			if test.context != nil {
+				ctx = test.context()
+			}
+			got, ended := managerInputEndReason(ctx, test.eof, test.err)
+			if !ended || got != test.want {
+				t.Fatalf("reason=%q ended=%t want=%q", got, ended, test.want)
+			}
+		})
+	}
+	if reason, ended := managerInputEndReason(context.Background(), false, nil); ended || reason != "" {
+		t.Fatalf("ordinary input ended: reason=%q ended=%t", reason, ended)
+	}
+}
+
+func TestManagerMakeCredentialInputNeverFallsThroughToHermes(t *testing.T) {
+	canaryBytes := make([]byte, 16)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	canary := hex.EncodeToString(canaryBytes)
+	input := "alright, I want to make a new cred named test with a value of " + canary + "\nexit\n"
+	var output bytes.Buffer
+	root := NewRoot(Dependencies{In: strings.NewReader(input), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	root.SetArgs([]string{"--config", managerTestConfig(t), "manager"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	if strings.Contains(text, canary) {
+		t.Fatal("credential value reached retained manager output")
+	}
+	if !strings.Contains(text, "credential-bearing input requires the active authenticated exact-local-model session; input was not retained") {
+		t.Fatalf("make credential input did not take deterministic create route: %s", text)
+	}
+	if strings.Contains(text, "credential-bearing create syntax was not recognized") || strings.Contains(text, "The local Aegis management model is unavailable") {
+		t.Fatalf("make credential input fell through deterministic create routing: %s", text)
+	}
+}
 
 func managerTestConfig(t *testing.T) string {
 	t.Helper()

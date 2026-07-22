@@ -27,6 +27,33 @@ func ProfileForVersion(version string) ExecutionProfile {
 	return ProductionProfile
 }
 
+// ProfileForExecutable prevents a source-checkout build from becoming a
+// production executable merely because Go embeds the checkout's tagged module
+// version. Stable binaries outside a worktree remain production binaries.
+func ProfileForExecutable(version, executable string) ExecutionProfile {
+	profile := ProfileForVersion(version)
+	if profile != ProductionProfile {
+		return profile
+	}
+	resolved, err := filepath.EvalSymlinks(executable)
+	if err != nil {
+		return ExecutionProfile("unresolved")
+	}
+	root := filepath.Dir(resolved)
+	modulePath := filepath.Join(root, "go.mod")
+	gitPath := filepath.Join(root, ".git")
+	if !pathExistsNoFollow(modulePath) && !pathExistsNoFollow(gitPath) {
+		return ProductionProfile
+	}
+	moduleInfo, moduleErr := os.Lstat(modulePath)
+	module, readErr := os.ReadFile(modulePath)
+	gitInfo, gitErr := os.Lstat(gitPath)
+	if moduleErr != nil || readErr != nil || !moduleInfo.Mode().IsRegular() || moduleInfo.Mode()&os.ModeSymlink != 0 || !strings.HasPrefix(strings.TrimSpace(string(module)), "module github.com/berryhill/aegis\n") || gitErr != nil || gitInfo.Mode()&os.ModeSymlink != 0 || !gitInfo.IsDir() && !gitInfo.Mode().IsRegular() {
+		return ExecutionProfile("unresolved")
+	}
+	return DevelopmentProfile
+}
+
 func resolveExecutionProfile(profile ExecutionProfile, developmentRoot string) (layout.Layout, error) {
 	switch profile {
 	case ProductionProfile:

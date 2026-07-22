@@ -914,6 +914,7 @@ func validateScopedPath(path, home, repositoryResetRoot string) error {
 	if !within(home, path) {
 		return errors.New("path is outside the authenticated operator home")
 	}
+	repositoryTargetAllowed := repositoryResetRoot != "" && (path == repositoryResetRoot || within(repositoryResetRoot, path))
 	current := home
 	relative, err := filepath.Rel(home, path)
 	if err != nil {
@@ -936,12 +937,14 @@ func validateScopedPath(path, home, repositoryResetRoot string) error {
 			if !info.IsDir() {
 				return fmt.Errorf("path contains non-directory parent %s", current)
 			}
-			if _, identityErr := identity(info, true); identityErr != nil {
-				return fmt.Errorf("unsafe parent %s: %w", current, identityErr)
+			strictArtifactParent := !repositoryTargetAllowed || current == repositoryResetRoot || within(repositoryResetRoot, current)
+			if strictArtifactParent {
+				if _, identityErr := identity(info, true); identityErr != nil {
+					return fmt.Errorf("unsafe parent %s: %w", current, identityErr)
+				}
 			}
 		}
 	}
-	repositoryTargetAllowed := repositoryResetRoot != "" && (path == repositoryResetRoot || within(repositoryResetRoot, path))
 	for current := filepath.Dir(path); within(home, current) || current == home; current = filepath.Dir(current) {
 		if existsNoFollow(filepath.Join(current, ".git")) {
 			if !repositoryTargetAllowed {

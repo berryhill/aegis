@@ -56,7 +56,7 @@ func (m managerOperations) Create(ctx context.Context, a managerdomain.CreateArg
 	if err != nil {
 		return record, err
 	}
-	if err = m.service.AuditCredentialOperation(ctx, m.subject, "credential_created", "ok", "manager_confirmed", record.ID); err != nil {
+	if err = m.service.AuditCredentialOperation(ctx, m.subject, "credential_created", "ok", "authenticated_direct_create", record.ID); err != nil {
 		return credentials.SecretRecord{}, err
 	}
 	return record, nil
@@ -121,6 +121,11 @@ type conversationalRuntime struct {
 	testFinalize   func(context.Context, string, string) error
 	cleanupEvent   func(string, string)
 	cleanupFailed  []string
+}
+
+type cleanupOperation struct {
+	stage string
+	run   func() error
 }
 
 func startConversationalManager(ctx context.Context, service *app.Service, subject core.Subject, guard *managerdomain.Guard, cmd *cobra.Command, input *terminalInput, presentation *tui.Controller, stage func(string)) (runtime *conversationalRuntime, err error) {
@@ -339,17 +344,8 @@ func (r *conversationalRuntime) Close(ctx context.Context, reason string) error 
 		if r.session != nil {
 			joined = errors.Join(joined, r.cleanupStep("closing Aegis session", func() error { return r.session.Close(ctx, reason) }))
 		}
-		if r.hermes != nil {
-			joined = errors.Join(joined, r.cleanupStep("stopping Hermes and removing disposable state", func() error { return r.hermes.Close(ctx) }))
-		}
-		if r.proxy != nil {
-			joined = errors.Join(joined, r.cleanupStep("invalidating inference capability and closing proxy", func() error { return r.proxy.Close(ctx) }))
-		}
-		if r.managed == nil && r.ollama != nil && r.model != "" {
-			joined = errors.Join(joined, r.cleanupStep("unloading and verifying exact model removal", func() error { return r.ollama.UnloadAndVerify(ctx, r.model) }))
-		}
-		if r.managed != nil {
-			joined = errors.Join(joined, r.cleanupStep("stopping Aegis-managed Ollama", func() error { return r.managed.Close(ctx) }))
+		for _, operation := range r.runtimeCleanupOperations(ctx) {
+			joined = errors.Join(joined, r.cleanupStep(operation.stage, operation.run))
 		}
 		if r.authorityClose != nil {
 			joined = errors.Join(joined, r.cleanupStep("closing credential authority", r.authorityClose))
@@ -366,6 +362,24 @@ func (r *conversationalRuntime) Close(ctx context.Context, reason string) error 
 	})
 	return r.closeErr
 }
+
+func (r *conversationalRuntime) runtimeCleanupOperations(ctx context.Context) []cleanupOperation {
+	operations := make([]cleanupOperation, 0, 4)
+	if r.proxy != nil {
+		operations = append(operations, cleanupOperation{"invalidating inference capability and closing proxy", func() error { return r.proxy.Close(ctx) }})
+	}
+	if r.managed == nil && r.ollama != nil && r.model != "" {
+		operations = append(operations, cleanupOperation{"unloading and verifying exact model removal", func() error { return r.ollama.UnloadAndVerify(ctx, r.model) }})
+	}
+	if r.hermes != nil {
+		operations = append(operations, cleanupOperation{"stopping Hermes and removing disposable state", func() error { return r.hermes.Close(ctx) }})
+	}
+	if r.managed != nil {
+		operations = append(operations, cleanupOperation{"stopping Aegis-managed Ollama", func() error { return r.managed.Close(ctx) }})
+	}
+	return operations
+}
+
 func (r *conversationalRuntime) cleanupStep(stage string, operation func() error) error {
 	if r.cleanupEvent != nil {
 		r.cleanupEvent(stage, "started")

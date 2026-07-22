@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	createActionPattern   = regexp.MustCompile(`(?i)\b(store|save|stash|add|create|remember|keep|here(?:'s| is)|want to store)\b`)
+	createActionPattern   = regexp.MustCompile(`(?i)\b(store|save|stash|add|create|make|remember|keep|here(?:'s| is)|want to store)\b`)
 	createStayTypoPattern = regexp.MustCompile(`(?i)\bwant[	 ]+to[	 ]+stay\b`)
 	createObjectPattern   = regexp.MustCompile(`(?i)\b(secret|credential|credentials|cred|password|passphrase|token|api[ _-]*key|key|g[ _-]*drive|google[ _-]*drive)\b`)
 	createQuestionPattern = regexp.MustCompile(`(?i)^\s*(how|what|why|when|where|can|could|should|would|do|does|is|are)\b`)
@@ -14,14 +14,14 @@ var (
 	keyFieldPattern       = regexp.MustCompile(`(?i)\bkey[	 ]*:[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([^\s,;]{1,255}))`)
 	secretFieldPattern    = regexp.MustCompile(`(?i)\bsecret[	 ]*:[	 ]*(?:"([^"\r\n]{1,1000})"|'([^'\r\n]{1,1000})'|([^\s,;]{1,1000}))`)
 	inlineValuePattern    = regexp.MustCompile(`(?i)\b(value\s+of|password|passphrase|token|api[\s_-]*key|key)(\s+(?:for|to)\s+[^:\r\n]{1,160})?\s*(?:is|=|:)?\s*(["'])([^"'\r\n]{1,1000})(["'])`)
-	unquotedValuePattern  = regexp.MustCompile(`(?i)\b(?:with[	 ]+)?(?:a[	 ]+)?value[	 ]+of[	 ]+([^\s,;]{1,1000})`)
+	unquotedValuePattern  = regexp.MustCompile(`(?i)\b(?:with[	 ]+)?(?:a[	 ]+)?value(?:[	 ]+of|[	 ]+is|[	 ]*[=:])[	 ]+([^\s,;]{1,1000})`)
 	emailPattern          = regexp.MustCompile(`(?i)\b[a-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\b`)
 )
 
 // CreateIntent is a deterministic interpretation of a clear operator request
 // to create a credential. SafeInput replaces any inline value for retained
 // presentation/history; Value is the session-scoped copy admitted only to the
-// authenticated exact-local-model create path.
+// deterministic authenticated authority create path.
 type CreateIntent struct {
 	Arguments    CreateArguments
 	SafeInput    string
@@ -158,6 +158,12 @@ func (intent *CreateIntent) Wipe() {
 		intent.Value[index] = 0
 	}
 	intent.Value = nil
+}
+
+// ContainsInlineCredentialValue identifies explicit credential-value syntax
+// that must fail closed instead of reaching Hermes when no create grammar maps it.
+func ContainsInlineCredentialValue(input string) bool {
+	return createObjectPattern.MatchString(input) && (inlineValuePattern.MatchString(input) || unquotedValuePattern.MatchString(input) || secretFieldPattern.MatchString(input))
 }
 
 func identifierSlug(input string) string {

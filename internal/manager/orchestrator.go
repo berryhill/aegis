@@ -106,7 +106,12 @@ func (s *Session) HandleCreateIntent(ctx context.Context, arguments CreateArgume
 	if err := validateCreate(arguments); err != nil {
 		return "", err
 	}
-	return s.execute(activeCtx, Proposal{Operation: SecretProposeCreate}, &arguments, "")
+	value, err := s.config.Intake(activeCtx, "new secret value")
+	if err != nil {
+		return "", err
+	}
+	defer wipe(value)
+	return s.storeCreateValue(activeCtx, arguments, value)
 }
 
 func (s *Session) HandleCredentialCount(ctx context.Context) (string, error) {

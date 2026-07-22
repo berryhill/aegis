@@ -4,11 +4,17 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Classified Ctrl-D/composer EOF as normal `terminal_eof`, including an EOF/cancellation race, instead of `runtime_failed`. External-local teardown now invalidates the proxy and performs exact-model unload verification before waiting for disposable Hermes cleanup, so earlier stages do not consume the shared bounded cleanup interval; genuine verification failure remains fatal.
+- Removed redundant approval friction from deterministic first-time manager credential creation. Clear authenticated create imperatives now store an inline value directly or proceed to protected no-echo intake; create remains atomic insert-only, while replacement/rotation, revocation, and binding retain approval. The parser now recognizes natural `make a new cred` and unquoted `value is VALUE` phrasing without retaining the value in presentation history. Explicit credential-value syntax that misses deterministic create grammar now fails closed before Hermes dispatch.
+- Classified a binary located in the verified source checkout as development even when a clean tagged checkout causes `go build` to embed a stable module version. Development reset may traverse ordinary group-writable workspace parents while retaining strict checks on the `.aegis` root and all reset artifacts; production receives no such exception.
+
 ## [0.1.27] - 2026-07-21
 
 ### Added
 
-- Bound stable release binaries to an isolated `production` profile at `~/.argis` and ordinary source-built `dev` binaries to a visible, Git-ignored `development` profile at `<repository>/.aegis`. Development execution verifies that the binary resides in the real Aegis module/worktree root and fails closed if copied. Configuration, credential authority/deployment identity, audit/checkpoint data, manager certification, runtime state, and cleanup targets no longer share defaults; development rejects production paths, and reset is restricted to its own exact layout. Development reset uses the exact preview and default-deny `yes` confirmation without a passphrase prompt. Production reset authenticates the existing minimum-12-byte authority passphrase before confirmation and independently again after `yes` before deleting credential records or a local encrypted KEK.
+- Bound stable release binaries to an isolated `production` profile at `~/.argis` and ordinary source-built `dev` binaries to a visible, Git-ignored `development` profile at `<repository>/.aegis`. Development execution verifies that the binary resides in the real Aegis module/worktree root, overrides any clean tag version embedded by a local `go build`, and fails closed if copied to an unrecognized worktree. Configuration, credential authority/deployment identity, audit/checkpoint data, manager certification, runtime state, and cleanup targets no longer share defaults; development rejects production paths, and reset is restricted to its own exact layout. Development reset uses the exact preview and default-deny `yes` confirmation without a passphrase prompt. Production reset authenticates the existing minimum-12-byte authority passphrase before confirmation and independently again after `yes` before deleting credential records or a local encrypted KEK.
 
 ## [0.1.26] - 2026-07-21
 

@@ -20,7 +20,16 @@ func run() int {
 	ctx, stopSignals := managerSignalContext()
 	defer stopSignals()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	cmd := command.NewRoot(command.Dependencies{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Logger: log, Version: version, Profile: command.ProfileForVersion(version)})
+	executable, executableErr := os.Executable()
+	profile := command.ExecutionProfile("unresolved")
+	if executableErr == nil {
+		profile = command.ProfileForExecutable(version, executable)
+	}
+	effectiveVersion := version
+	if profile == command.DevelopmentProfile {
+		effectiveVersion = "dev"
+	}
+	cmd := command.NewRoot(command.Dependencies{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Logger: log, Version: effectiveVersion, Profile: profile})
 	err := cmd.ExecuteContext(ctx)
 	if err != nil {
 		command.RenderError(os.Stderr, err)

@@ -248,7 +248,7 @@ The aliases MUST work in active and degraded modes.
 
 ### 6.4 EOF
 
-Terminal EOF MUST select `terminal_eof`, run bounded cleanup, and emit one concise shutdown result. It MUST not silently bypass cleanup.
+Terminal EOF, including Ctrl-D reported as either an EOF flag or `io.EOF`, MUST select `terminal_eof`, run bounded cleanup, and emit one concise shutdown result. An EOF observed concurrently with runtime cancellation remains an explicit terminal exit rather than being relabeled `runtime_failed`. It MUST not silently bypass cleanup.
 
 ## 7. Signal behavior
 
