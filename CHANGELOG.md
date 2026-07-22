@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.33] - 2026-07-22
+
 ### Fixed
 
 - Added no-echo bracketed multiline paste to protected credential intake, consuming the complete framed value and confirmation before returning to the composer. Confirmation mismatch now flushes queued protected input, and credential-bearing composer submissions fail before Hermes even when trusted-local plaintext routing is otherwise active.
