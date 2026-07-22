@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.30] - 2026-07-22
+
 ### Fixed
 
 - Kept natural inline credential creation on the deterministic Aegis authority path when the operator omits the space in forms such as `secretnamed`, preventing the value-bearing request from falling through to Hermes.
