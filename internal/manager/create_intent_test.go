@@ -15,6 +15,7 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 		input      string
 		reference  string
 		kind       string
+		missing    bool
 		removed    bool
 		notPresent string
 	}{
@@ -28,7 +29,7 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 		{name: "paired key and secret fields", input: `I want to store a test secret.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "typo tolerant paired fields", input: `I want to stay a test cred.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "natural google drive key", input: `hey, here's my personal g drive key for person@example.com: "disposable-test-value"`, reference: "google-drive-person-example-com", kind: "api-key", removed: true, notPresent: "disposable-test-value"},
-		{name: "no schema vocabulary required", input: "I want to store a new credential", reference: "new-credential", kind: "opaque"},
+		{name: "missing reference requires intake", input: "I want to store a new credential", reference: "", kind: "opaque", missing: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -36,7 +37,7 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 			if !ok {
 				t.Fatal("create intent not recognized")
 			}
-			if intent.Arguments.Reference != test.reference || intent.Arguments.Kind != test.kind || intent.Arguments.Disclosure != "protected" || intent.ValueRemoved != test.removed {
+			if intent.Arguments.Reference != test.reference || intent.Arguments.Kind != test.kind || intent.Arguments.Disclosure != "protected" || intent.ReferenceMissing != test.missing || intent.ValueRemoved != test.removed {
 				t.Fatalf("intent=%#v", intent)
 			}
 			if test.notPresent != "" && strings.Contains(intent.SafeInput, test.notPresent) {

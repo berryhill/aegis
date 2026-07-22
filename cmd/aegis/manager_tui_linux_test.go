@@ -76,6 +76,7 @@ func TestManagerAccessiblePlainPTYStatusHelpAndExit(t *testing.T) {
 	capture := readPTYUntil(t, master, nil, "[composer] > ", 5*time.Second)
 	_, _ = master.Write([]byte("/status\n"))
 	capture = readPTYUntil(t, master, capture, "Origin: AEGIS / authoritative", 3*time.Second)
+	capture = readPTYUntilCount(t, master, capture, "[composer] > ", 2, 5*time.Second)
 	if strings.Contains(string(capture), "\x1b[") {
 		t.Fatalf("plain profile emitted cursor controls: %q", capture)
 	}
@@ -130,7 +131,7 @@ func TestManagerSlashRoutingConsumesUnknownMalformedAndLeadingWhitespaceLocally(
 	defer slave.Close()
 	capture := readPTYUntil(t, master, nil, "Conversational local inference unavailable", 5*time.Second)
 	capture = readPTYUntil(t, master, capture, "Enter submit; Ctrl+J newline", 5*time.Second)
-	for _, test := range []struct{ input, marker string }{
+	for index, test := range []struct{ input, marker string }{
 		{"  /unknown\r", "unknown local slash command /unknown"},
 		{"\t/status extra\r", "usage: /status"},
 		{"/help a|b\r", "shell operator"},
@@ -141,6 +142,7 @@ func TestManagerSlashRoutingConsumesUnknownMalformedAndLeadingWhitespaceLocally(
 		if strings.Count(string(capture), "The local Aegis management model is unavailable (") != before {
 			t.Fatalf("local slash input reached ordinary/model path: %q", test.input)
 		}
+		capture = readPTYUntilCount(t, master, capture, "Enter submit; Ctrl+J newline", index+2, 5*time.Second)
 	}
 	_, _ = master.Write([]byte("//status\r"))
 	capture = readPTYUntil(t, master, capture, "The local Aegis management model is unavailable (", 3*time.Second)

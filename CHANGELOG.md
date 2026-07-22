@@ -4,6 +4,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Prompt for an exact credential reference before protected value intake when a natural create request omits the name, instead of silently persisting the placeholder `new-credential`.
+- Synchronized remaining multi-command PTY tests with composer restoration so commands cannot lose their submit key during prompt handoff under race-test load.
+
 ## [0.1.31] - 2026-07-22
 
 ### Fixed

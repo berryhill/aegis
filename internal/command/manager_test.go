@@ -15,8 +15,32 @@ import (
 	"testing"
 
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/tui"
 	selfupdate "github.com/berryhill/aegis/internal/update"
 )
+
+func TestManagerMissingCredentialReferenceIsCollectedLocally(t *testing.T) {
+	var output bytes.Buffer
+	composer := tui.NewComposer(strings.NewReader("not valid\ntest\n"), &output, 255)
+	reference, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference != "test" {
+		t.Fatalf("reference=%q", reference)
+	}
+	if !strings.Contains(output.String(), "credential reference > ") || !strings.Contains(output.String(), "invalid credential reference") {
+		t.Fatalf("output=%q", output.String())
+	}
+}
+
+func TestManagerMissingCredentialReferenceCanBeCancelled(t *testing.T) {
+	var output bytes.Buffer
+	composer := tui.NewComposer(strings.NewReader("\n"), &output, 255)
+	if _, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive}); err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("err=%v", err)
+	}
+}
 
 func TestManagerInputEndReasonTreatsComposerEOFAsNormalExit(t *testing.T) {
 	for _, test := range []struct {

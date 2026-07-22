@@ -14,6 +14,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/slash"
@@ -307,6 +308,15 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			continue
 		}
 		if createRequested && conversation != nil {
+			if createIntent.ReferenceMissing {
+				reference, referenceErr := readManagerCredentialReference(sessionCtx, composer, cmd.OutOrStdout(), capabilities)
+				if referenceErr != nil {
+					createIntent.Wipe()
+					_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: referenceErr.Error()})
+					continue
+				}
+				createIntent.Arguments.Reference = reference
+			}
 			composer.Remember(createIntent.SafeInput)
 			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: createIntent.SafeInput})
 			_ = presentation.Emit(tui.Event{Kind: tui.ProposalValidated, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("natural create request mapped locally: reference=%s kind=%s disclosure=protected", createIntent.Arguments.Reference, createIntent.Arguments.Kind)})
@@ -394,6 +404,24 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 	_ = presentation.Emit(tui.Event{Kind: tui.CleanupCompleted, Origin: tui.AegisAuthoritative, Message: "bounded cleanup and terminal restoration complete"})
 	fmt.Fprintln(cmd.OutOrStdout(), "Aegis manager stopped; cleanup complete.")
 	return nil
+}
+
+func readManagerCredentialReference(ctx context.Context, composer *tui.Composer, output io.Writer, capabilities tui.Capabilities) (string, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		reference, eof, err := composer.Read(ctx, "\n[AEGIS / authoritative] credential reference > ", capabilities)
+		if err != nil {
+			return "", err
+		}
+		reference = strings.TrimSpace(reference)
+		if eof || reference == "" {
+			return "", errors.New("credential creation cancelled: reference is required")
+		}
+		if credentials.ValidateIdentifier(reference) {
+			return reference, nil
+		}
+		fmt.Fprintln(output, "[AEGIS / authoritative] invalid credential reference; use 1-255 letters, numbers, dot, underscore, colon, slash, or hyphen")
+	}
+	return "", errors.New("credential creation cancelled: valid reference not provided")
 }
 
 func managerInputEndReason(ctx context.Context, eof bool, readErr error) (string, bool) {

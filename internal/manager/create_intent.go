@@ -23,10 +23,11 @@ var (
 // presentation/history; Value is the session-scoped copy admitted only to the
 // deterministic authenticated authority create path.
 type CreateIntent struct {
-	Arguments    CreateArguments
-	SafeInput    string
-	ValueRemoved bool
-	Value        []byte
+	Arguments        CreateArguments
+	SafeInput        string
+	ReferenceMissing bool
+	ValueRemoved     bool
+	Value            []byte
 }
 
 func ParseCreateIntent(input string) (CreateIntent, bool) {
@@ -37,7 +38,7 @@ func ParseCreateIntent(input string) (CreateIntent, bool) {
 	}
 
 	safe, value, removed := redactInlineValues(input)
-	reference := "new-credential"
+	reference := ""
 	pairedReference, pairedValue, pairedSafe, paired := pairedKeySecretFields(input)
 	if paired {
 		reference, value, safe, removed = identifierSlug(pairedReference), pairedValue, pairedSafe, true
@@ -71,19 +72,18 @@ func ParseCreateIntent(input string) (CreateIntent, bool) {
 			reference = service
 		}
 	}
-	if reference == "" {
-		reference = "new-credential"
-	}
+	referenceMissing := reference == ""
 	kind := "opaque"
 	lower := strings.ToLower(safe)
 	if !paired && (strings.Contains(lower, "key") || strings.Contains(lower, "token")) {
 		kind = "api-key"
 	}
 	return CreateIntent{
-		Arguments:    CreateArguments{Reference: reference, Kind: kind, Disclosure: "protected"},
-		SafeInput:    safe,
-		ValueRemoved: removed,
-		Value:        value,
+		Arguments:        CreateArguments{Reference: reference, Kind: kind, Disclosure: "protected"},
+		SafeInput:        safe,
+		ReferenceMissing: referenceMissing,
+		ValueRemoved:     removed,
+		Value:            value,
 	}, true
 }
 

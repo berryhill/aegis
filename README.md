@@ -102,6 +102,8 @@ In the MVP, a charter `grant.tools` entry is a Hermes toolset ID because toolset
 
 ## Encrypted credential authority
 
+Natural create requests that omit a credential name prompt locally for an exact reference before any protected value intake; Aegis does not silently persist a placeholder reference.
+
 Ctrl-D at an empty manager composer is a normal `terminal_eof` shutdown, not `runtime_failed`. Bounded teardown first invalidates the inference capability and closes the proxy, then gives external-model unload verification its configured opportunity before disposable Hermes cleanup; genuine verification failure remains visible.
 
 Deterministic first-time create grammar includes natural `store`, `save`, `create`, and `make` imperatives. Explicit credential-value syntax that does not match a known create grammar fails closed and is neither retained nor sent to Hermes.
