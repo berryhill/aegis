@@ -54,8 +54,11 @@ func TestDevelopmentResetAllowsGroupWritableWorkspaceParentOnly(t *testing.T) {
 	repository := filepath.Join(workspace, "aegis")
 	root := filepath.Join(repository, ".aegis")
 	configPath := filepath.Join(root, "aegis.yaml")
-	for path, mode := range map[string]os.FileMode{home: 0700, workspace: 0775, repository: 0755, root: 0700} {
-		if err := os.Mkdir(path, mode); err != nil {
+	for _, directory := range []struct {
+		path string
+		mode os.FileMode
+	}{{path: home, mode: 0700}, {path: workspace, mode: 0775}, {path: repository, mode: 0755}, {path: root, mode: 0700}} {
+		if err := os.Mkdir(directory.path, directory.mode); err != nil {
 			t.Fatal(err)
 		}
 	}
