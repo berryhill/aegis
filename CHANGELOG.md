@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Applied exact modes in the group-writable development-reset fixture independently of process umask, eliminating the GitHub runner umask `0022` failure in normal and race tests.
+
 ## [0.1.28] - 2026-07-21
 
 ### Fixed

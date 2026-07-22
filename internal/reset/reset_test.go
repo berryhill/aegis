@@ -61,6 +61,9 @@ func TestDevelopmentResetAllowsGroupWritableWorkspaceParentOnly(t *testing.T) {
 		if err := os.Mkdir(directory.path, directory.mode); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.Chmod(directory.path, directory.mode); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := os.WriteFile(configPath, []byte("configuration"), 0600); err != nil {
 		t.Fatal(err)
