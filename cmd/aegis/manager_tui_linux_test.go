@@ -108,6 +108,7 @@ func TestManagerRandomCredentialCanaryPasteIsNotCapturedOrRemembered(t *testing.
 	if strings.Contains(string(capture), canary) {
 		t.Fatal("credential canary entered terminal capture")
 	}
+	capture = readPTYUntilCount(t, master, capture, "Enter submit; Ctrl+J newline", 2, 5*time.Second)
 	_, _ = master.Write([]byte("/status\r"))
 	capture = readPTYUntil(t, master, capture, "Origin: AEGIS / authoritative", 3*time.Second)
 	capture = readPTYUntilCount(t, master, capture, "Enter submit; Ctrl+J newline", 3, 5*time.Second)

@@ -13,8 +13,8 @@ var (
 	createLabelPattern    = regexp.MustCompile(`(?i)\b(?:secret|credential|cred)\s*(?::|=|name(?:d|s)?\s+|called\s+)[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([a-z0-9][a-z0-9._-]{0,254}))`)
 	keyFieldPattern       = regexp.MustCompile(`(?i)\bkey[	 ]*:[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([^\s,;]{1,255}))`)
 	secretFieldPattern    = regexp.MustCompile(`(?i)\bsecret[	 ]*:[	 ]*(?:"([^"\r\n]{1,1000})"|'([^'\r\n]{1,1000})'|([^\s,;]{1,1000}))`)
-	inlineValuePattern    = regexp.MustCompile(`(?i)\b(value\s+of|password|passphrase|token|api[\s_-]*key|key)(\s+(?:for|to)\s+[^:\r\n]{1,160})?\s*(?:is|=|:)?\s*(["'])([^"'\r\n]{1,1000})(["'])`)
-	unquotedValuePattern  = regexp.MustCompile(`(?i)\b(?:with[	 ]+)?(?:a[	 ]+)?value(?:[	 ]+of|[	 ]+is|[	 ]*[=:])[	 ]+([^\s,;]{1,1000})`)
+	inlineValuePattern    = regexp.MustCompile(`(?i)\b(value\s+of|secret[	 ]+of|password|passphrase|token|api[\s_-]*key|key)(\s+(?:for|to)\s+[^:\r\n]{1,160})?\s*(?:is|=|:)?\s*(["'])([^"'\r\n]{1,1000})(["'])`)
+	unquotedValuePattern  = regexp.MustCompile(`(?i)\b(?:(?:with[	 ]+)?(?:a[	 ]+)?value(?:[	 ]+of|[	 ]+is|[	 ]*[=:])|(?:with[	 ]+)?(?:a[	 ]+)?secret[	 ]+of)[	 ]+([^\s,;]{1,1000})`)
 	emailPattern          = regexp.MustCompile(`(?i)\b[a-z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\b`)
 )
 

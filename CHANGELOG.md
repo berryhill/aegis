@@ -4,6 +4,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Recognized natural `with a secret of ...` create phrasing as inline credential value syntax, keeping the value on the deterministic encrypted-authority path instead of unexpectedly prompting for protected re-entry.
+- Synchronized the random-canary PTY test with the restored composer before submitting `/status`, eliminating the CI timing race where the command could be typed during prompt restoration and never submitted.
+
 ## [0.1.30] - 2026-07-22
 
 ### Fixed

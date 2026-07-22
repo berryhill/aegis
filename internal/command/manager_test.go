@@ -62,13 +62,17 @@ func TestManagerMakeCredentialInputNeverFallsThroughToHermes(t *testing.T) {
 		t.Fatal(err)
 	}
 	canary := hex.EncodeToString(canaryBytes)
-	for _, input := range []string{
-		"alright, I want to make a new cred named test with a value of " + canary,
-		"I want to store a new secretnamed test with a value of " + canary,
+	for _, test := range []struct {
+		name  string
+		input string
+	}{
+		{name: "value of", input: "alright, I want to make a new cred named test with a value of " + canary},
+		{name: "secret of", input: `I want to make a new cred named "test" with a secret of "` + canary + `"`},
+		{name: "missing space before named", input: "I want to store a new secretnamed test with a value of " + canary},
 	} {
-		t.Run(input[:strings.Index(input, " with a value")], func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			var output bytes.Buffer
-			root := NewRoot(Dependencies{In: strings.NewReader(input + "\nexit\n"), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+			root := NewRoot(Dependencies{In: strings.NewReader(test.input + "\nexit\n"), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 			root.SetArgs([]string{"--config", managerTestConfig(t), "manager"})
 			if err := root.Execute(); err != nil {
 				t.Fatal(err)
