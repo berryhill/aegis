@@ -67,6 +67,18 @@ func TestManagerCredentialReferenceAcceptsFullNamedCreatePhrase(t *testing.T) {
 	}
 }
 
+func TestManagerCredentialReferenceAcceptsConversationalNameReply(t *testing.T) {
+	var output bytes.Buffer
+	composer := tui.NewComposer(strings.NewReader("named bd-site-doppler-prod\n"), &output, 255)
+	reference, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference != "bd-site-doppler-prod" || !strings.Contains(output.String(), "using credential reference bd-site-doppler-prod") {
+		t.Fatalf("reference=%q output=%q", reference, output.String())
+	}
+}
+
 func TestManagerCredentialPasteIsBlockedBeforeHermesEvenWhenLocalPlaintextIsAuthorized(t *testing.T) {
 	guard, err := managerdomain.NewGuard(4096, 4096, 1, time.Second)
 	if err != nil {

@@ -44,12 +44,14 @@ type fakeOperations struct {
 	created, rotated, revoked int
 	valueHash                 string
 	readValue                 []byte
+	listQuery                 string
 }
 
 func (f *fakeOperations) Status(context.Context) (map[string]any, error) {
 	return map[string]any{"status": "active"}, nil
 }
-func (f *fakeOperations) List(context.Context, string, int) ([]credentials.SecretRecord, error) {
+func (f *fakeOperations) List(_ context.Context, query string, _ int) ([]credentials.SecretRecord, error) {
+	f.listQuery = query
 	return f.records, nil
 }
 func (f *fakeOperations) Counts(context.Context) (credentials.SecretCounts, error) {
@@ -253,8 +255,22 @@ func TestSessionCredentialCountExecutesWithoutModelOrConfirmation(t *testing.T) 
 		t.Fatal(err)
 	}
 	message, err := session.HandleCredentialCount(context.Background())
-	if err != nil || len(gateway.inputs) != 0 || !strings.Contains(message, `"total":3`) || !strings.Contains(message, `"active":2`) || !strings.Contains(message, `"revoked":1`) {
+	if err != nil || len(gateway.inputs) != 0 || !strings.Contains(message, "Credential inventory") || !strings.Contains(message, "total    3") || !strings.Contains(message, "active   2") || !strings.Contains(message, "revoked  1") {
 		t.Fatalf("count was not immediate and authoritative: message=%q err=%v gateway_inputs=%q", message, err, gateway.inputs)
+	}
+}
+
+func TestSessionCredentialSearchExecutesExactFilterWithoutModel(t *testing.T) {
+	gateway := &fakeGateway{}
+	ops := &fakeOperations{records: []credentials.SecretRecord{{Reference: "bd-site-doppler-prod", Status: credentials.StatusActive}}}
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	session, err := NewSession(context.Background(), SessionConfig{SessionID: "session-search", SubjectID: "local-uid:1", PrincipalID: "principal", Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-search", Guard: guard, Operations: ops, Confirm: func(context.Context, string) (bool, error) { return false, errors.New("search must not prompt") }, Intake: func(context.Context, string) ([]byte, error) { return nil, errors.New("search must not intake") }, Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, err := session.HandleCredentialSearch(context.Background(), "doppler")
+	if err != nil || ops.listQuery != "doppler" || len(gateway.inputs) != 0 || !strings.Contains(message, `Credentials matching "doppler" (1)`) || !strings.Contains(message, "1. bd-site-doppler-prod") || strings.Contains(message, `{"reference"`) {
+		t.Fatalf("search was not immediate and filtered: query=%q message=%q err=%v gateway_inputs=%q", ops.listQuery, message, err, gateway.inputs)
 	}
 }
 

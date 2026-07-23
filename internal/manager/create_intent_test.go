@@ -85,6 +85,24 @@ func TestNormalizeCredentialReferenceAcceptsHumanName(t *testing.T) {
 	}
 }
 
+func TestParseCredentialNameReplyStripsPromptLanguage(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "named bd-site-doppler-prod", want: "bd-site-doppler-prod"},
+		{input: `called "Berryhill GHCR token"`, want: "berryhill-ghcr-token"},
+	} {
+		got, ok := ParseCredentialNameReply(test.input)
+		if !ok || got != test.want {
+			t.Errorf("ParseCredentialNameReply(%q)=(%q,%t) want %q", test.input, got, ok, test.want)
+		}
+	}
+	if got, ok := ParseCredentialNameReply("Berryhill GHCR token"); ok || got != "" {
+		t.Fatalf("bare name unexpectedly parsed as prompt language: (%q,%t)", got, ok)
+	}
+}
+
 func TestParseMakeCredentialIntentRedactsInlineValue(t *testing.T) {
 	canaryBytes := make([]byte, 16)
 	if _, err := rand.Read(canaryBytes); err != nil {

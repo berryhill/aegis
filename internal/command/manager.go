@@ -299,6 +299,13 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 				message, operationErr = conversation.session.HandleCredentialCount(sessionCtx)
 			case managerdomain.AuthorityReadList:
 				message, operationErr = conversation.session.HandleCredentialList(sessionCtx)
+			case managerdomain.AuthorityReadSearch:
+				query, ok := managerdomain.ParseCredentialSearchIntent(line)
+				if !ok {
+					operationErr = errors.New(managerdomain.ReasonProposalInvalid)
+					break
+				}
+				message, operationErr = conversation.session.HandleCredentialSearch(sessionCtx, query)
 			}
 			if operationErr != nil {
 				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
@@ -428,6 +435,12 @@ func readManagerCredentialReference(ctx context.Context, composer *tui.Composer,
 			}
 			fmt.Fprintf(output, "[AEGIS / authoritative] using credential reference %s\n", intent.Arguments.Reference)
 			return intent.Arguments.Reference, nil
+		}
+		if normalized, ok := managerdomain.ParseCredentialNameReply(reference); ok {
+			if credentials.ValidateIdentifier(normalized) {
+				fmt.Fprintf(output, "[AEGIS / authoritative] using credential reference %s\n", normalized)
+				return normalized, nil
+			}
 		}
 		if credentials.ValidateIdentifier(reference) {
 			return reference, nil

@@ -12,12 +12,33 @@ func TestParseAuthorityReadIntent(t *testing.T) {
 		{input: "give me the count of credentials", want: AuthorityReadCount},
 		{input: "list my secrets", want: AuthorityReadList},
 		{input: "show all credentials", want: AuthorityReadList},
+		{input: "can you show me all doppler secrets?", want: AuthorityReadSearch},
+		{input: "find credentials matching github", want: AuthorityReadSearch},
 		{input: "what secrets do we have?", want: AuthorityReadList},
 		{input: "explain how credentials work", want: AuthorityReadUnknown},
 		{input: "hello", want: AuthorityReadUnknown},
 	} {
 		if got := ParseAuthorityReadIntent(test.input); got != test.want {
 			t.Errorf("ParseAuthorityReadIntent(%q)=%v want %v", test.input, got, test.want)
+		}
+	}
+}
+
+func TestParseCredentialSearchIntent(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		query string
+		ok    bool
+	}{
+		{input: "can you show me all doppler secrets?", query: "doppler", ok: true},
+		{input: `list "github production" credentials`, query: "github production", ok: true},
+		{input: "find credentials matching github", query: "github", ok: true},
+		{input: "show all credentials"},
+		{input: "list my secrets"},
+	} {
+		query, ok := ParseCredentialSearchIntent(test.input)
+		if query != test.query || ok != test.ok {
+			t.Errorf("ParseCredentialSearchIntent(%q)=(%q,%t) want (%q,%t)", test.input, query, ok, test.query, test.ok)
 		}
 	}
 }

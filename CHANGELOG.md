@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Treat conversational answers such as `named NAME` at the dedicated credential-name prompt as the requested name instead of persisting a `named-` prefix, route filtered metadata requests such as `show me all doppler secrets` to authoritative `secret.search` rather than silently returning the unfiltered list, and render manager credential counts, lists, searches, details, history, mutations, and terminal-only values as readable labeled views instead of dense raw JSON.
+
 ## [0.1.36] - 2026-07-22
 
 ### Fixed

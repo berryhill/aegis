@@ -13,6 +13,7 @@ var (
 	createObjectPattern   = regexp.MustCompile(`(?i)\b(secret|credential|credentials|cred|password|passphrase|token|api[ _-]*key|key|g[ _-]*drive|google[ _-]*drive|(?:secret|credential|cred)name(?:d|s)?)\b`)
 	createQuestionPattern = regexp.MustCompile(`(?i)^\s*(how|what|why|when|where|can|could|should|would|do|does|is|are)\b`)
 	createLabelPattern    = regexp.MustCompile(`(?i)\b(?:secret|credential|cred)\s*(?::|=|name(?:d|s)?\s+|called\s+)[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([a-z0-9][a-z0-9._-]{0,254}))`)
+	credentialNameReply   = regexp.MustCompile(`(?i)^\s*(?:name(?:d)?|called)\s+(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([^\r\n]{1,255}))\s*$`)
 	keyFieldPattern       = regexp.MustCompile(`(?i)\bkey[	 ]*:[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([^\s,;]{1,255}))`)
 	secretFieldPattern    = regexp.MustCompile(`(?i)\bsecret[	 ]*:[	 ]*(?:"([^"\r\n]{1,1000})"|'([^'\r\n]{1,1000})'|([^\s,;]{1,1000}))`)
 	inlineValuePattern    = regexp.MustCompile(`(?i)\b(value\s+of|secret[	 ]+of|password|passphrase|token|api[\s_-]*key|key)(\s+(?:for|to)\s+[^:\r\n]{1,160})?\s*(?:is|=|:)?\s*(["'])([^"'\r\n]{1,1000})(["'])`)
@@ -194,4 +195,20 @@ func identifierSlug(input string) string {
 // same deterministic reference form used by natural create parsing.
 func NormalizeCredentialReference(input string) string {
 	return identifierSlug(input)
+}
+
+// ParseCredentialNameReply accepts a conversational answer to Aegis's
+// credential-name prompt without treating words such as "named" as part of the
+// durable reference. It is deliberately limited to the dedicated local prompt.
+func ParseCredentialNameReply(input string) (string, bool) {
+	match := credentialNameReply.FindStringSubmatch(input)
+	if len(match) != 4 {
+		return "", false
+	}
+	for _, candidate := range match[1:] {
+		if reference := identifierSlug(candidate); reference != "" {
+			return reference, true
+		}
+	}
+	return "", false
 }

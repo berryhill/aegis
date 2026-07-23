@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,7 +120,7 @@ func (s *Session) HandleCredentialCount(ctx context.Context) (string, error) {
 		return "", err
 	}
 	counts, err := s.config.Operations.Counts(activeCtx)
-	return operationResult(SecretCount, counts, err)
+	return credentialCountResult(counts, err)
 }
 
 func (s *Session) HandleCredentialList(ctx context.Context) (string, error) {
@@ -129,7 +129,19 @@ func (s *Session) HandleCredentialList(ctx context.Context) (string, error) {
 		return "", err
 	}
 	records, err := s.config.Operations.List(activeCtx, "", 100)
-	return operationResult(SecretList, records, err)
+	return credentialListResult(records, "", err)
+}
+
+func (s *Session) HandleCredentialSearch(ctx context.Context, query string) (string, error) {
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(query) == "" {
+		return "", errors.New(ReasonProposalInvalid)
+	}
+	records, err := s.config.Operations.List(activeCtx, query, 100)
+	return credentialListResult(records, query, err)
 }
 
 func (s *Session) HandleCredentialValueRead(ctx context.Context, reference string) (string, error) {
@@ -139,7 +151,7 @@ func (s *Session) HandleCredentialValueRead(ctx context.Context, reference strin
 	}
 	var message string
 	err = s.config.Operations.ReadValue(activeCtx, reference, func(record credentials.SecretRecord, value []byte) error {
-		message = fmt.Sprintf("Aegis authoritative credential value (%s): %s", record.Reference, strconv.Quote(string(value)))
+		message = credentialValueResult(record, value)
 		return nil
 	})
 	return message, err
@@ -241,17 +253,17 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 		a := arguments.(*PageArguments)
 		limit := boundedLimit(a.Limit)
 		result, err := s.config.Operations.List(ctx, "", limit)
-		return operationResult(proposal.Operation, result, err)
+		return credentialListResult(result, "", err)
 	case SecretSearch:
 		a := arguments.(*SearchArguments)
 		result, err := s.config.Operations.List(ctx, a.Query, boundedLimit(a.Limit))
-		return operationResult(proposal.Operation, result, err)
+		return credentialListResult(result, a.Query, err)
 	case SecretMetadata:
 		result, err := s.config.Operations.Metadata(ctx, arguments.(*RecordArguments).RecordID)
-		return operationResult(proposal.Operation, result, err)
+		return credentialRecordResult("Credential details", result, err)
 	case SecretHistory:
 		result, err := s.config.Operations.History(ctx, arguments.(*RecordArguments).RecordID, 100)
-		return operationResult(proposal.Operation, result, err)
+		return credentialHistoryResult(result, err)
 	case AuditVerify:
 		return message, s.config.Operations.VerifyAudit(ctx)
 	case SessionExit:
@@ -274,7 +286,7 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 		}
 		defer wipe(value)
 		result, err := s.config.Operations.Create(ctx, a, value)
-		return operationResult(proposal.Operation, result, err)
+		return credentialRecordResult("Credential created", result, err)
 	case SecretProposeRotate:
 		a := *arguments.(*RotateArguments)
 		if !credentials.ValidateIdentifier(a.RecordID) {
@@ -293,7 +305,7 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 		}
 		defer wipe(value)
 		result, err := s.config.Operations.Rotate(ctx, a, value)
-		return operationResult(proposal.Operation, result, err)
+		return credentialRecordResult("Credential rotated", result, err)
 	case SecretProposeRevoke:
 		a := *arguments.(*RevokeArguments)
 		if !credentials.ValidateIdentifier(a.RecordID) || !credentials.ValidateIdentifier(a.Reason) {
@@ -307,7 +319,10 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 			return "", err
 		}
 		err = s.config.Operations.Revoke(ctx, a)
-		return operationResult(proposal.Operation, map[string]any{"record_id": a.RecordID, "version": a.Version, "status": "revoked"}, err)
+		if err != nil {
+			return "", err
+		}
+		return credentialMutationResult("Credential revoked", a.RecordID, a.Version), nil
 	case SecretProposeBinding:
 		a := *arguments.(*BindingArguments)
 		ok, err := s.config.Confirm(ctx, preview(proposal.Operation, a.RecordID))
@@ -318,7 +333,10 @@ func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any,
 			return "", err
 		}
 		err = s.config.Operations.Bind(ctx, a)
-		return operationResult(proposal.Operation, map[string]any{"record_id": a.RecordID, "status": "bound"}, err)
+		if err != nil {
+			return "", err
+		}
+		return credentialMutationResult("Credential binding created", a.RecordID, 0), nil
 	default:
 		return "", errors.New(ReasonProposalInvalid)
 	}
@@ -337,7 +355,7 @@ func (s *Session) executeCreateValue(ctx context.Context, arguments CreateArgume
 
 func (s *Session) storeCreateValue(ctx context.Context, arguments CreateArguments, value []byte) (string, error) {
 	result, err := s.config.Operations.Create(ctx, arguments, value)
-	return operationResult(SecretProposeCreate, result, err)
+	return credentialRecordResult("Credential created", result, err)
 }
 
 func (s *Session) Close(ctx context.Context, reason string) error {
