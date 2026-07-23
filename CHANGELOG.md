@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.34] - 2026-07-22
+
 ### Fixed
 
 - Recognize explicit reference-leading credential retrieval requests such as `I need to see the bdp-dev cred value` and execute them directly through Aegis authority instead of routing them to Hermes.
