@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.1.35] - 2026-07-22
+
+### Fixed
+
+- Stabilized Unix peer-authentication coverage under CI load by using the shared bounded Unix HTTP client instead of an arbitrary one-second request deadline during real Hermes runtime discovery.
+
 ## [0.1.34] - 2026-07-22
 
 ### Fixed
