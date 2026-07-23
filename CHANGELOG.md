@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Recognize explicit reference-leading credential retrieval requests such as `I need to see the bdp-dev cred value` and execute them directly through Aegis authority instead of routing them to Hermes.
+- Route terse authenticated requests such as `new cred` directly into local reference and protected-value intake, defaulting disclosure to protected instead of letting the model repeatedly negotiate metadata it does not authorize. Human credential names entered at the reference prompt are normalized to a visible hyphenated reference.
+- Skip a redundant external Ollama unload mutation when the exact runner is already absent, avoiding a scheduler request that can exhaust cleanup after a crashed or cancelled turn while retaining exact running-model verification.
+
 ## [0.1.33] - 2026-07-22
 
 ### Fixed

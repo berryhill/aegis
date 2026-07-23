@@ -30,6 +30,8 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 		{name: "typo tolerant paired fields", input: `I want to stay a test cred.. key: "test" secret: "1234"`, reference: "test", kind: "opaque", removed: true, notPresent: "1234"},
 		{name: "natural google drive key", input: `hey, here's my personal g drive key for person@example.com: "disposable-test-value"`, reference: "google-drive-person-example-com", kind: "api-key", removed: true, notPresent: "disposable-test-value"},
 		{name: "missing reference requires intake", input: "I want to store a new credential", reference: "", kind: "opaque", missing: true},
+		{name: "terse new cred starts direct intake", input: "new cred", reference: "", kind: "opaque", missing: true},
+		{name: "terse add token starts direct intake", input: "add token", reference: "", kind: "api-key", missing: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -72,6 +74,12 @@ func TestParseCreateIntentDoesNotTurnQuestionsIntoMutations(t *testing.T) {
 		if _, ok := ParseCreateIntent(input); ok {
 			t.Fatalf("discussion parsed as create intent: %q", input)
 		}
+	}
+}
+
+func TestNormalizeCredentialReferenceAcceptsHumanName(t *testing.T) {
+	if got := NormalizeCredentialReference("  Berryhill GHCR token  "); got != "berryhill-ghcr-token" {
+		t.Fatalf("reference=%q", got)
 	}
 }
 

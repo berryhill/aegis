@@ -102,11 +102,13 @@ In the MVP, a charter `grant.tools` entry is a Hermes toolset ID because toolset
 
 ## Encrypted credential authority
 
-Natural create requests that omit a credential name prompt locally for an exact reference before any protected value intake; Aegis does not silently persist a placeholder reference.
+Natural create requests that omit a credential name—including terse `new cred`—prompt locally for a name before any protected value intake; spaces and punctuation are normalized to a visible hyphenated reference, and Aegis does not silently persist a placeholder reference. Kind defaults deterministically from the request and disclosure is always protected; the model is not asked to negotiate either field.
 
 Protected intake accepts bracketed multiline paste as one opaque no-echo value: paste the complete credential block and press Enter, then repeat it for confirmation. A mismatch discards queued protected input before the manager composer resumes. Credential-bearing text entered at the ordinary composer is blocked locally and never sent to Hermes; restart the create request and paste only at the protected prompt.
 
-Ctrl-D at an empty manager composer is a normal `terminal_eof` shutdown, not `runtime_failed`. Bounded teardown first invalidates the inference capability and closes the proxy, then gives external-model unload verification its configured opportunity before disposable Hermes cleanup; genuine verification failure remains visible.
+Explicit value requests such as `what is the value for credential: "bdp-dev"` and `I need to see the bdp-dev cred value` execute directly through authenticated Aegis authority. The value is rendered only in the terminal as an escaped quoted string; it is not sent to Hermes, and terminal scrollback remains outside Aegis cleanup.
+
+Ctrl-D at an empty manager composer is a normal `terminal_eof` shutdown, not `runtime_failed`. Bounded teardown first invalidates the inference capability and closes the proxy, then checks the external runner and requests unload only when it is still present before disposable Hermes cleanup; genuine verification failure remains visible.
 
 Deterministic first-time create grammar includes natural `store`, `save`, `create`, and `make` imperatives. Explicit credential-value syntax that does not match a known create grammar fails closed and is neither retained nor sent to Hermes.
 

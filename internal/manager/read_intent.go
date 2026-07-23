@@ -1,6 +1,9 @@
 package manager
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 type AuthorityReadIntent uint8
 
@@ -14,10 +17,11 @@ var (
 	credentialObjectPattern = `(?:secrets?|credentials?|creds?|passwords?|passphrases?|tokens?|keys?)`
 	credentialCountPattern  = regexp.MustCompile(`(?i)\b(?:how[	 ]*many|count|number[	 ]+of)\b[^\r\n]{0,80}\b` + credentialObjectPattern + `\b`)
 	credentialListPattern   = regexp.MustCompile(`(?i)(?:\b(?:list|show)\b[^\r\n]{0,80}\b` + credentialObjectPattern + `\b|\bwhat\b[^\r\n]{0,80}\b` + credentialObjectPattern + `\b[^\r\n]{0,40}\b(?:have|stored)\b)`)
-	credentialValueAction   = regexp.MustCompile(`(?i)\b(?:what[	 ]+is|show|give|retrieve|get|reveal|tell)\b`)
+	credentialValueAction   = regexp.MustCompile(`(?i)\b(?:what[	 ]+is|show|give|retrieve|get|reveal|tell|see|view|display)\b`)
 	credentialValueObject   = regexp.MustCompile(`(?i)\b(?:value|password|secret[	 ]+value|credential[	 ]+value)\b`)
 	credentialNamedRef      = regexp.MustCompile(`(?i)\b(?:credential|secret|cred)[	 ]*(?::|name(?:d|s)?[	 ]+|called[	 ]+)[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([a-z0-9][a-z0-9._/-]{0,254}))`)
 	credentialValueRef      = regexp.MustCompile(`(?i)\b(?:value|password)[	 ]+(?:for|of)[	 ]+(?:the[	 ]+)?(?:credential|secret|cred)?[	 ]*:?[	 ]*(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([a-z0-9][a-z0-9._/-]{0,254}))`)
+	credentialLeadingRef    = regexp.MustCompile(`(?i)(?:^|[	 ])(?:the[	 ]+)?(?:"([^"\r\n]{1,255})"|'([^'\r\n]{1,255})'|([a-z0-9][a-z0-9._/-]{0,254}))[	 ]+(?:credential|secret|cred)(?:'s)?[	 ]+(?:value|password)\b`)
 )
 
 func ParseAuthorityReadIntent(input string) AuthorityReadIntent {
@@ -34,16 +38,28 @@ func ParseCredentialValueReadIntent(input string) (string, bool) {
 	if !credentialValueAction.MatchString(input) || !credentialValueObject.MatchString(input) {
 		return "", false
 	}
-	for _, pattern := range []*regexp.Regexp{credentialNamedRef, credentialValueRef} {
+	for _, pattern := range []*regexp.Regexp{credentialNamedRef, credentialValueRef, credentialLeadingRef} {
 		matches := pattern.FindAllStringSubmatch(input, -1)
 		if len(matches) != 1 {
 			continue
 		}
-		for _, candidate := range matches[0][1:] {
+		for index, candidate := range matches[0][1:] {
+			if index == 2 && ambiguousUnquotedReference(candidate) {
+				continue
+			}
 			if reference := identifierSlug(candidate); reference != "" {
 				return reference, true
 			}
 		}
 	}
 	return "", false
+}
+
+func ambiguousUnquotedReference(candidate string) bool {
+	switch strings.ToLower(candidate) {
+	case "a", "an", "my", "that", "the", "this":
+		return true
+	default:
+		return false
+	}
 }

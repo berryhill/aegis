@@ -256,6 +256,16 @@ func (c *OllamaClient) RunningModels(ctx context.Context) ([]OllamaModel, error)
 // state Ollama exposes: the exact model no longer appears in the running-model
 // inventory. Dedicated managed mode additionally terminates the daemon.
 func (c *OllamaClient) UnloadAndVerify(ctx context.Context, model string) error {
+	// A crashed or cancelled turn may already have released the runner. Avoid
+	// submitting another scheduler mutation in that case: on a busy external
+	// daemon even a redundant unload can consume the complete cleanup deadline.
+	loaded, err := c.modelRunning(ctx, model)
+	if err != nil {
+		return err
+	}
+	if !loaded {
+		return nil
+	}
 	if err := c.Unload(ctx, model); err != nil {
 		return err
 	}
@@ -280,6 +290,19 @@ func (c *OllamaClient) UnloadAndVerify(ctx context.Context, model string) error 
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+func (c *OllamaClient) modelRunning(ctx context.Context, model string) (bool, error) {
+	models, err := c.RunningModels(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range models {
+		if item.Name == model || item.Model == model {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func parseVersion(value string) ([3]int, error) {

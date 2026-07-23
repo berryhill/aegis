@@ -408,7 +408,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 
 func readManagerCredentialReference(ctx context.Context, composer *tui.Composer, output io.Writer, capabilities tui.Capabilities) (string, error) {
 	for attempt := 0; attempt < 3; attempt++ {
-		reference, eof, err := composer.Read(ctx, "\n[AEGIS / authoritative] credential reference > ", capabilities)
+		reference, eof, err := composer.Read(ctx, "\n[AEGIS / authoritative] credential name > ", capabilities)
 		if err != nil {
 			return "", err
 		}
@@ -419,7 +419,12 @@ func readManagerCredentialReference(ctx context.Context, composer *tui.Composer,
 		if credentials.ValidateIdentifier(reference) {
 			return reference, nil
 		}
-		fmt.Fprintln(output, "[AEGIS / authoritative] invalid credential reference; use 1-255 letters, numbers, dot, underscore, colon, slash, or hyphen")
+		normalized := managerdomain.NormalizeCredentialReference(reference)
+		if credentials.ValidateIdentifier(normalized) {
+			fmt.Fprintf(output, "[AEGIS / authoritative] using credential reference %s\n", normalized)
+			return normalized, nil
+		}
+		fmt.Fprintln(output, "[AEGIS / authoritative] invalid credential name; enter at least one letter or number")
 	}
 	return "", errors.New("credential creation cancelled: valid reference not provided")
 }

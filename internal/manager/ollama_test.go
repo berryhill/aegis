@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,31 @@ import (
 	"testing"
 	"time"
 )
+
+func TestUnloadAndVerifySkipsRedundantUnloadWhenModelIsAbsent(t *testing.T) {
+	var unloadRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/ps" && request.Method == http.MethodGet {
+			_ = json.NewEncoder(writer).Encode(map[string]any{"models": []any{}})
+			return
+		}
+		if request.URL.Path == "/api/generate" {
+			unloadRequests++
+		}
+		http.Error(writer, "unexpected request", http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	client, err := NewOllamaClient(server.URL, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = client.UnloadAndVerify(context.Background(), "exact:model"); err != nil {
+		t.Fatal(err)
+	}
+	if unloadRequests != 0 {
+		t.Fatalf("redundant unload requests=%d", unloadRequests)
+	}
+}
 
 func TestOllamaPullStreamsProgressAndRequiresSuccess(t *testing.T) {
 	for _, test := range []struct {

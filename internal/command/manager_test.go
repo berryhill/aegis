@@ -22,15 +22,15 @@ import (
 
 func TestManagerMissingCredentialReferenceIsCollectedLocally(t *testing.T) {
 	var output bytes.Buffer
-	composer := tui.NewComposer(strings.NewReader("not valid\ntest\n"), &output, 255)
+	composer := tui.NewComposer(strings.NewReader("---\nBerryhill GHCR token\n"), &output, 255)
 	reference, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reference != "test" {
+	if reference != "berryhill-ghcr-token" {
 		t.Fatalf("reference=%q", reference)
 	}
-	if !strings.Contains(output.String(), "credential reference > ") || !strings.Contains(output.String(), "invalid credential reference") {
+	if !strings.Contains(output.String(), "credential name > ") || !strings.Contains(output.String(), "invalid credential name") || !strings.Contains(output.String(), "using credential reference berryhill-ghcr-token") {
 		t.Fatalf("output=%q", output.String())
 	}
 }
@@ -40,6 +40,18 @@ func TestManagerMissingCredentialReferenceCanBeCancelled(t *testing.T) {
 	composer := tui.NewComposer(strings.NewReader("\n"), &output, 255)
 	if _, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive}); err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestManagerCredentialReferencePreservesValidExactReference(t *testing.T) {
+	var output bytes.Buffer
+	composer := tui.NewComposer(strings.NewReader("github/team.token\n"), &output, 255)
+	reference, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference != "github/team.token" || strings.Contains(output.String(), "using credential reference") {
+		t.Fatalf("reference=%q output=%q", reference, output.String())
 	}
 }
 

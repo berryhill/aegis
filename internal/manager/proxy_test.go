@@ -199,7 +199,7 @@ func TestOllamaFixtureDigestAndLocality(t *testing.T) {
 	if err := client.Load(context.Background(), "exact:1", 65536, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.UnloadAndVerify(context.Background(), "exact:1"); err != nil || generateCalls != 2 {
+	if err := client.UnloadAndVerify(context.Background(), "exact:1"); err != nil || generateCalls != 1 {
 		t.Fatalf("unload err=%v calls=%d", err, generateCalls)
 	}
 	if _, err := NewOllamaClient("http://example.com:11434", time.Second); err == nil {

@@ -31,8 +31,12 @@ func TestParseCredentialValueReadIntent(t *testing.T) {
 		{input: `what is the secret value for test?`, reference: "test", ok: true},
 		{input: `what is the value for the credential: "test"`, reference: "test", ok: true},
 		{input: `show me the password for credential named github`, reference: "github", ok: true},
+		{input: `I need to see the bdp-dev cred value`, reference: "bdp-dev", ok: true},
+		{input: `display "bdp-dev" credential's value`, reference: "bdp-dev", ok: true},
+		{input: `show me the bdp-dev credential value`, reference: "bdp-dev", ok: true},
 		{input: `what credentials do we have?`},
 		{input: `explain secret values`},
+		{input: `I need to see the credential value`},
 	} {
 		reference, ok := ParseCredentialValueReadIntent(test.input)
 		if ok != test.ok || reference != test.reference {
