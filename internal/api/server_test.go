@@ -110,10 +110,7 @@ func TestUnixPeerAuthenticationAndBearerSeparation(t *testing.T) {
 	telemetry := &telemetryRecorder{}
 	go func() { done <- ServeWithTelemetry(ctx, svc, telemetry) }()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
-	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", svc.Config.API.UnixSocket)
-	}}
-	client := &http.Client{Transport: transport, Timeout: time.Second}
+	client := unixClient(svc.Config.API.UnixSocket)
 
 	request, _ := http.NewRequest(http.MethodGet, "http://unix/v1/runtime", nil)
 	response, err := client.Do(request)
