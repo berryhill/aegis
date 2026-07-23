@@ -55,6 +55,18 @@ func TestManagerCredentialReferencePreservesValidExactReference(t *testing.T) {
 	}
 }
 
+func TestManagerCredentialReferenceAcceptsFullNamedCreatePhrase(t *testing.T) {
+	var output bytes.Buffer
+	composer := tui.NewComposer(strings.NewReader("new cred named berryhill-gh-ghcr\n"), &output, 255)
+	reference, err := readManagerCredentialReference(context.Background(), composer, &output, tui.Capabilities{Profile: tui.PlainInteractive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reference != "berryhill-gh-ghcr" || !strings.Contains(output.String(), "using credential reference berryhill-gh-ghcr") {
+		t.Fatalf("reference=%q output=%q", reference, output.String())
+	}
+}
+
 func TestManagerCredentialPasteIsBlockedBeforeHermesEvenWhenLocalPlaintextIsAuthorized(t *testing.T) {
 	guard, err := managerdomain.NewGuard(4096, 4096, 1, time.Second)
 	if err != nil {
@@ -76,6 +88,22 @@ func TestManagerCredentialPasteIsBlockedBeforeHermesEvenWhenLocalPlaintextIsAuth
 	}
 	if managerCredentialInputBlocked(finding, true) {
 		t.Fatal("recognized deterministic create was blocked after redaction")
+	}
+}
+
+func TestManagerDopplerTokenIsBlockedBeforeHermes(t *testing.T) {
+	guard, err := managerdomain.NewGuard(4096, 4096, 1, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := guard.Inspect(context.Background(), managerdomain.ContentEnvelope{
+		Source: managerdomain.SourceUser, ManagerID: managerdomain.LogicalAgentID,
+		SecurityContext: managerdomain.SecurityContext, RouteClass: "local",
+		PlaintextAuthorized: true,
+		Content:             []byte("dp.st.synthetic0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+	})
+	if finding.Decision != managerdomain.AllowLocal || finding.DetectorID != "known_token_prefix" || !managerCredentialInputBlocked(finding, false) {
+		t.Fatalf("finding=%#v", finding)
 	}
 }
 

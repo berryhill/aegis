@@ -102,7 +102,7 @@ In the MVP, a charter `grant.tools` entry is a Hermes toolset ID because toolset
 
 ## Encrypted credential authority
 
-Natural create requests that omit a credential name—including terse `new cred`—prompt locally for a name before any protected value intake; spaces and punctuation are normalized to a visible hyphenated reference, and Aegis does not silently persist a placeholder reference. Kind defaults deterministically from the request and disclosure is always protected; the model is not asked to negotiate either field.
+Natural create requests—including `new cred named NAME`—execute locally without a model turn. Terse `new cred` prompts for a name before protected value intake; the name prompt accepts either the name alone or that full named-create phrase, strips the command words rather than storing them in the reference, and visibly normalizes other human text to a hyphenated reference. Kind defaults deterministically and disclosure is always protected; the model is not asked to negotiate either field.
 
 Protected intake accepts bracketed multiline paste as one opaque no-echo value: paste the complete credential block and press Enter, then repeat it for confirmation. A mismatch discards queued protected input before the manager composer resumes. Credential-bearing text entered at the ordinary composer is blocked locally and never sent to Hermes; restart the create request and paste only at the protected prompt.
 

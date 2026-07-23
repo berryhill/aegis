@@ -133,7 +133,7 @@ func (g *Guard) Inspect(ctx context.Context, envelope ContentEnvelope) (finding 
 
 var (
 	privateKeyPattern  = regexp.MustCompile(`(?i)-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----`)
-	knownPrefixPattern = regexp.MustCompile(`(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:live-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})`)
+	knownPrefixPattern = regexp.MustCompile(`(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:live-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|dp\.[a-z]{2}\.[A-Za-z0-9]{32,})`)
 	assignmentPattern  = regexp.MustCompile(`(?i)(?:authorization\s*:\s*(?:bearer|basic)\s+|(?:password|passwd|api[_-]?key|access[_-]?token|client[_-]?secret|connection[_-]?string)\s*[:=]\s*)[^\s"']{8,}`)
 	connectionPattern  = regexp.MustCompile(`(?i)(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s/@:]+:[^\s/@]+@`)
 	jwtPattern         = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)

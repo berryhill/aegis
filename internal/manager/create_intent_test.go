@@ -32,6 +32,7 @@ func TestParseCreateIntentProducesSafeMetadataOnlyProposal(t *testing.T) {
 		{name: "missing reference requires intake", input: "I want to store a new credential", reference: "", kind: "opaque", missing: true},
 		{name: "terse new cred starts direct intake", input: "new cred", reference: "", kind: "opaque", missing: true},
 		{name: "terse add token starts direct intake", input: "add token", reference: "", kind: "api-key", missing: true},
+		{name: "terse named cred bypasses model", input: "new cred named bd-site-doppler-prod", reference: "bd-site-doppler-prod", kind: "opaque"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -69,6 +70,7 @@ func TestParseCreateIntentDoesNotTurnQuestionsIntoMutations(t *testing.T) {
 		"How do I store a credential?",
 		"Can you explain API keys?",
 		"Tell me about encrypted storage.",
+		"Tell me about a new credential.",
 		"I want to stay a test credential.",
 	} {
 		if _, ok := ParseCreateIntent(input); ok {

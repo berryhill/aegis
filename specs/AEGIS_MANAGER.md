@@ -125,7 +125,7 @@ The initial manager MAY perform only these classes of operation:
 - list and search credential metadata;
 - inspect one credential record and immutable version metadata;
 - conversationally supply a new credential value and execute an exact deterministic insert without redundant approval;
-- request credential creation, including the terse imperative `new cred`, and enter deterministic local name/reference collection followed by protected intake when no value was supplied conversationally; kind and protected disclosure defaults MUST be application-owned rather than model-negotiated;
+- request credential creation, including `new cred` and `new cred named NAME`, and enter deterministic local name/reference collection followed by protected intake when no value was supplied conversationally; a full named-create phrase entered at the name prompt MUST yield only `NAME` as the reference, and kind/protected-disclosure defaults MUST be application-owned rather than model-negotiated;
 - propose metadata changes supported by the authority;
 - propose rotation and enter protected intake;
 - propose revocation of a version or record;

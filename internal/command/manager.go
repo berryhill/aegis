@@ -416,6 +416,19 @@ func readManagerCredentialReference(ctx context.Context, composer *tui.Composer,
 		if eof || reference == "" {
 			return "", errors.New("credential creation cancelled: reference is required")
 		}
+		if intent, createRequested := managerdomain.ParseCreateIntent(reference); createRequested {
+			if intent.ValueRemoved {
+				intent.Wipe()
+				fmt.Fprintln(output, "[AEGIS / authoritative] credential value rejected at name prompt; enter the name only, then use protected intake")
+				continue
+			}
+			if intent.ReferenceMissing {
+				fmt.Fprintln(output, "[AEGIS / authoritative] enter the credential name only, or use: new cred named NAME")
+				continue
+			}
+			fmt.Fprintf(output, "[AEGIS / authoritative] using credential reference %s\n", intent.Arguments.Reference)
+			return intent.Arguments.Reference, nil
+		}
 		if credentials.ValidateIdentifier(reference) {
 			return reference, nil
 		}

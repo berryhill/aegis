@@ -8,6 +8,7 @@ import (
 var (
 	createActionPattern   = regexp.MustCompile(`(?i)\b(store|save|stash|add|create|make|remember|keep|here(?:'s| is)|want to store)\b`)
 	createTersePattern    = regexp.MustCompile(`(?i)^\s*(?:new|add|create|make)(?:[	 ]+a)?(?:[	 ]+new)?[	 ]+(?:secret|credential|cred|password|passphrase|token|api[ _-]*key|key)\s*[.!?]*\s*$`)
+	createNamedPattern    = regexp.MustCompile(`(?i)^\s*new(?:[	 ]+a)?[	 ]+(?:secret|credential|cred|password|passphrase|token|api[ _-]*key|key)[	 ]+(?:name(?:d|s)?|called)[	 ]+(?:"[^"\r\n]{1,255}"|'[^'\r\n]{1,255}'|[a-z0-9][a-z0-9._-]{0,254})\s*[.!?]*\s*$`)
 	createStayTypoPattern = regexp.MustCompile(`(?i)\bwant[	 ]+to[	 ]+stay\b`)
 	createObjectPattern   = regexp.MustCompile(`(?i)\b(secret|credential|credentials|cred|password|passphrase|token|api[ _-]*key|key|g[ _-]*drive|google[ _-]*drive|(?:secret|credential|cred)name(?:d|s)?)\b`)
 	createQuestionPattern = regexp.MustCompile(`(?i)^\s*(how|what|why|when|where|can|could|should|would|do|does|is|are)\b`)
@@ -34,8 +35,9 @@ type CreateIntent struct {
 func ParseCreateIntent(input string) (CreateIntent, bool) {
 	trimmed := strings.TrimSpace(input)
 	terseAction := createTersePattern.MatchString(trimmed)
+	namedAction := createNamedPattern.MatchString(trimmed)
 	typoAction := createStayTypoPattern.MatchString(trimmed) && keyFieldPattern.MatchString(trimmed) && secretFieldPattern.MatchString(trimmed)
-	if trimmed == "" || createQuestionPattern.MatchString(trimmed) || (!createActionPattern.MatchString(trimmed) && !terseAction && !typoAction) || !createObjectPattern.MatchString(trimmed) {
+	if trimmed == "" || createQuestionPattern.MatchString(trimmed) || (!createActionPattern.MatchString(trimmed) && !terseAction && !namedAction && !typoAction) || !createObjectPattern.MatchString(trimmed) {
 		return CreateIntent{}, false
 	}
 
