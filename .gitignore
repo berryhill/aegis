@@ -19,6 +19,8 @@ govulncheck
 *.coverprofile
 *.worktrees
 coverage.out
+__pycache__/
+*.pyc
 
 # Local runtime state and configuration
 .env
@@ -27,6 +29,7 @@ coverage.out
 /.aegis/
 # Retain until any pre-rename development state has been migrated explicitly.
 /.aegis-dev/
+/operator-acceptance-evidence-*/
 
 # Editor and operating-system files
 .idea/
