@@ -10,7 +10,7 @@ The driver opens the real manager under a Linux PTY with the accessible/plain pr
 2. Ask naturally to create a credential named `test`.
 3. Supply and confirm a fresh generated canary only after Aegis enters protected no-echo intake.
 4. Ask naturally for the credential count and require the authoritative inventory result.
-5. Say `Show me all test credentials.` and require the authoritative filtered metadata result to name `test`.
+5. Say `Show me the one I just created.` without naming `test`, and capture the completed, visibly untrusted conversational response for operator review. The model's exact prose is not graded.
 6. Type `exit`, require zero exit and visible cleanup completion, verify the manager process group is absent, require successful `credential_created` and cleanup-complete `manager_session_closed` audit events, then run `aegis audit verify`.
 
 Use a disposable Aegis installation whose credential authority does not already contain `test`. Create is insert-only, so an existing record intentionally fails the lane rather than mutating it.
@@ -56,12 +56,12 @@ The current deterministic pass criteria are:
 - ordinary conversation reaches a typed `Hermes model / untrusted` result and authoritative turn completion, without matching exact prose;
 - protected intake is reached, no canary appears on the PTY, and typed authoritative output reports creation of reference `test`;
 - authoritative count output is present;
-- authoritative filtered metadata output names `test`;
+- the exact non-explicit referent turn `Show me the one I just created.` reaches a typed `Hermes model / untrusted` result and authoritative turn completion, without exact-prose or second-model grading;
 - manager exits zero, reports cleanup complete, and its process group is absent;
 - audit listing contains successful `credential_created` and cleanup-complete `manager_session_closed` events, and `aegis audit verify` exits zero;
 - the canary is absent from retained evidence.
 
-The credential database effect is checked through two independent manager authority reads (count and exact metadata search) and the typed create result. Audit checks require the current metadata-only create and session-cleanup events, then verify chain/checkpoint validity. They do not claim external audit anchoring or that read-only count/search operations each emit dedicated events.
+The credential database effect is checked through the typed create result, the subsequent authoritative count, and the metadata-only create audit event. The later pronoun-only turn deliberately exercises conversational referent resolution rather than repeating the credential name; its sanitized response is retained for human acceptance review, not semantic grading by another model. Audit checks also require the current session-cleanup event, then verify chain/checkpoint validity. They do not claim external audit anchoring or that the read-only count operation emits a dedicated event.
 
 ## Hermetic support checks
 

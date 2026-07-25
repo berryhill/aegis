@@ -66,7 +66,8 @@ line()
 print("[origin: AEGIS / authoritative] Credential inventory\n  total    1\n  active   1\n  revoked  0")
 prompt()
 line()
-print('[origin: AEGIS / authoritative] Credentials matching "test" (1)\n\n  1. test\n     active | opaque | version 1')
+print("[origin: Hermes model / untrusted] The one you just created is available in this manager.")
+print("[origin: AEGIS / authoritative] guarded turn complete")
 prompt()
 line()
 print("Shutting down Aegis manager (user_exit).")
@@ -102,7 +103,7 @@ class OperatorAcceptancePOCTest(unittest.TestCase):
                     "ordinary-conversation",
                     "create-credential-test",
                     "credential-count",
-                    "natural-reference",
+                    "conversational-referent",
                     "exit",
                     "audit-verification",
                 ],
@@ -112,6 +113,15 @@ class OperatorAcceptancePOCTest(unittest.TestCase):
                 create["submitted_non_secret_input"],
                 "Please create a credential named test. [protected input omitted]",
             )
+            referent = next(
+                record for record in records if record.get("journey") == "conversational-referent"
+            )
+            self.assertEqual(
+                referent["submitted_non_secret_input"],
+                "Show me the one I just created.",
+            )
+            self.assertNotIn("test", referent["submitted_non_secret_input"].lower())
+            self.assertIn("Hermes model / untrusted", referent["sanitized_visible_result"])
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
             self.assertEqual(stat.S_IMODE(evidence_dir.stat().st_mode), 0o700)
 

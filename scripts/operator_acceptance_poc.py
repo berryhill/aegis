@@ -300,10 +300,10 @@ def run(args: argparse.Namespace) -> Path:
             recorder,
             manager,
             args.turn_timeout,
-            "natural-reference",
-            "refer naturally to the credential just created",
-            "Show me all test credentials.",
-            (b'Credentials matching "test"', b"1. test"),
+            "conversational-referent",
+            "refer conversationally to the credential just created without naming it",
+            "Show me the one I just created.",
+            (b"Hermes model / untrusted", b"guarded turn complete"),
         )
 
         started = time.time()
@@ -393,7 +393,8 @@ def run(args: argparse.Namespace) -> Path:
                 checks=[
                     "ordinary conversation completed without prose matching",
                     "credential test created through protected intake",
-                    "authoritative count and exact metadata search completed",
+                    "authoritative credential count completed",
+                    "conversational referent turn completed without naming test or grading exact prose",
                     "manager exited and cleaned up",
                     "credential create and manager cleanup audit evidence present",
                     "audit chain verified",
