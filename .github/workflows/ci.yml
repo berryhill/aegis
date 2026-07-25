@@ -29,7 +29,9 @@ jobs:
       - name: Build
         run: go build ./cmd/aegis
       - name: Test
-        run: go test ./...
+        run: |
+          python3 -m unittest scripts/operator_acceptance_poc_test.py
+          go test ./...
       - name: Vet
         run: go vet ./...
 

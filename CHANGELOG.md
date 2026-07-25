@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added an opt-in Linux PTY operator-acceptance POC for one current `aegis manager` journey: ordinary conversation, protected creation of credential `test`, authoritative count and natural metadata reference, clean exit, audit verification, bounded JSONL evidence, and generated-canary non-leak checks. Hermetic CI tests only the recorder and forced-leak denial; live Hermes/Ollama/model execution remains explicitly manual.
+
 ### Fixed
 
 - Treat conversational answers such as `named NAME` at the dedicated credential-name prompt as the requested name instead of persisting a `named-` prefix, route filtered metadata requests such as `show me all doppler secrets` to authoritative `secret.search` rather than silently returning the unfiltered list, and render manager credential counts, lists, searches, details, history, mutations, and terminal-only values as readable labeled views instead of dense raw JSON.

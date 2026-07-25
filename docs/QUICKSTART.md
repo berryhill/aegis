@@ -90,6 +90,8 @@ At `Secret value:`, bracketed paste accepts a complete multiline credential docu
 
 Authenticated read-only questions execute immediately without model negotiation. `how many secrets do we have?` returns a labeled total/active/revoked summary from the authority; `list my credentials` returns a readable numbered metadata list, while `show me all doppler secrets` performs a metadata search using `doppler` and clearly identifies an empty result. Detail, history, creation, rotation, revocation, binding, and explicit terminal-only value results use the same human-readable manager presentation rather than raw JSON. None of these requests asks for confirmation or reaches the model.
 
+After this local manager is fully ready, an operator can run the explicitly gated [human-to-manager acceptance POC](OPERATOR_ACCEPTANCE_POC.md) against a disposable installation. It creates a generated canary credential named `test`, records only sanitized non-secret JSONL evidence, checks authority reads/cleanup/audit, and is intentionally excluded from ordinary hermetic CI.
+
 An explicit request such as `what is the value for credential: "demo"` or `I need to see the demo cred value` decrypts and renders that exact reference directly in the authenticated terminal session without reaching the model. The value is terminal-escaped, audit remains metadata-only, retained TUI state is purged on close, and terminal scrollback is outside Aegis cleanup. Missing, ambiguous, or revoked references fail closed.
 
 ## Provider boundary
