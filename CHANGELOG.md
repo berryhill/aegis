@@ -8,6 +8,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 - Added an opt-in Linux PTY operator-acceptance POC for one current `aegis manager` journey: ordinary conversation, protected creation of credential `test`, authoritative count, a pronoun-only conversational reference to the just-created credential, clean exit, audit verification, bounded JSONL evidence, and generated-canary non-leak checks. Hermetic CI tests only the recorder and forced-leak denial; live Hermes/Ollama/model execution remains explicitly manual.
 - Defined the participant-centric plumbing aggregate and fail-closed Go validator for the authenticated causal chain from ingress and exact trust-stanza selection through immutable authority, attempts, typed work, evidence, delivery, and terminal disposition. The new domain remains an unintegrated facade contract; current runtime launch and provisioning behavior is unchanged.
+- Added narrow state-store primitives for atomic create-only JSON records and exact-byte content-addressed blobs. Records reject replacement, traversal, and symlinked paths; blobs use canonical `sha256:` references, verify existing and read content before acceptance, and fail closed on malformed references or detected corruption. These primitives are not yet wired into a public command or plumbing persistence adapter.
 
 ### Fixed
 
