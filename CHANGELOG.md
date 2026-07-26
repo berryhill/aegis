@@ -15,6 +15,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Repaired the executable no-key demonstration for the enforced development/production profile split. It now builds a normally classified checkout binary in the repository root, uses an ignored disposable repository-local workspace, reports the `dev` profile, preserves an honest no-provider boundary, cleans up its artifacts, and has a CI regression test.
 - Treat conversational answers such as `named NAME` at the dedicated credential-name prompt as the requested name instead of persisting a `named-` prefix, route filtered metadata requests such as `show me all doppler secrets` to authoritative `secret.search` rather than silently returning the unfiltered list, and render manager credential counts, lists, searches, details, history, mutations, and terminal-only values as readable labeled views instead of dense raw JSON.
 
 ## [0.1.36] - 2026-07-22

@@ -30,6 +30,7 @@ jobs:
         run: go build ./cmd/aegis
       - name: Test
         run: |
+          python3 -m unittest scripts/demo_no_key_test.py
           python3 -m unittest scripts/operator_acceptance_poc_test.py
           go test ./...
       - name: Vet

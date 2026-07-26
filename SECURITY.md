@@ -2,7 +2,7 @@
 
 ## Status and supported versions
 
-Aegis is pre-release MVP software. Until the first tagged release, only the current `main` branch receives security fixes. No released version is presently supported for production use.
+Aegis is pre-1.0 MVP software and is not supported for production use. Security fixes are applied to the current `main` branch and are included in subsequent stable releases; older published `0.1.x` releases do not receive backports. The latest published release must not be interpreted as a production-support commitment.
 
 ## Reporting a vulnerability
 
