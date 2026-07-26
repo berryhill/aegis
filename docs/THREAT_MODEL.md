@@ -30,6 +30,9 @@ flowchart LR
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
   Hermes -. untrusted output .-> Aegis
+  Aegis -->|persist by digest| Artifact[(Content-addressed POC artifact)]
+  Artifact -->|fresh read| Verifier[Distinct Aegis verifier]
+  Verifier -->|digest-bound evidence| Aegis
   Terminal -->|Aegis-owned bounded input| Manager[Built-in secrets-manager]
   Manager --> TUI[Typed Aegis terminal controller]
   Gateway -. runtime/model events .-> TUI
@@ -55,6 +58,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Ambient key reaches Hermes | Minimal environment and explicit injection | Proxy/CA environment is intentionally retained |
 | Tool surface exceeds charter | Toolset allowlist and exact launch arguments | No individual-tool post-launch attestation in Hermes 0.18.x |
 | Revoked/expired runtime continues | Supervisor, process start token, process-group termination | Crash recovery depends on persisted PID identity and OS state |
+| Hermes output claims that it verified or completed the POC lifecycle | Aegis constructs the causal records and terminal disposition; runtime output is persisted by digest; a distinct Aegis verifier rereads the blob and emits separately persisted evidence before success | The verifier currently runs in the same process and uses the same local store/account; this is component separation, not independent attestation or separately protected evidence custody |
 | Provisioning escapes state or crashes | Typed effects, containment, symlink rejection, atomic create, durable intent recovery | Same-account filesystem races are not a separate-user sandbox; mismatching recovery artifacts require manual review |
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
 | API token grants principal | Unix peer identity required | TCP principal identity is unavailable without a future mapper |
