@@ -24,7 +24,7 @@ func TestBlobArtifactVerifierReadsStoredBytesAndPersistsReceipt(t *testing.T) {
 	verifier.now = func() time.Time { return observedAt }
 	artifact := plumbing.Artifact{ID: "artifact-1", OwnerID: "owner-1", Digest: digest(content), ContentRef: reference}
 
-	evidence, err := verifier.Verify(context.Background(), artifact)
+	evidence, err := verifier.Verify(context.Background(), artifact, artifact.Digest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,8 @@ func TestBlobArtifactVerifierReadsStoredBytesAndPersistsReceipt(t *testing.T) {
 
 func TestBlobArtifactVerifierFailsClosedForUnresolvableOrMismatchedArtifact(t *testing.T) {
 	records := openTestStore(t)
-	storedRef, err := records.PutBlob([]byte("stored bytes"))
+	storedBytes := []byte("stored bytes")
+	storedRef, err := records.PutBlob(storedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,22 +58,31 @@ func TestBlobArtifactVerifierFailsClosedForUnresolvableOrMismatchedArtifact(t *t
 	tests := []struct {
 		name     string
 		artifact plumbing.Artifact
+		expected string
 		category string
 	}{
 		{
 			name:     "missing content",
 			artifact: plumbing.Artifact{ID: "artifact-missing", OwnerID: "owner-1", Digest: digest([]byte("missing")), ContentRef: "sha256:" + digest([]byte("missing"))},
+			expected: digest([]byte("missing")),
 			category: "artifact_unreadable_or_corrupt",
 		},
 		{
 			name:     "claimed digest mismatch",
 			artifact: plumbing.Artifact{ID: "artifact-mismatch", OwnerID: "owner-1", Digest: digest([]byte("different bytes")), ContentRef: storedRef},
+			expected: digest(storedBytes),
 			category: "artifact_digest_mismatch",
+		},
+		{
+			name:     "expected output mismatch",
+			artifact: plumbing.Artifact{ID: "artifact-unexpected", OwnerID: "owner-1", Digest: digest(storedBytes), ContentRef: storedRef},
+			expected: digest([]byte("different expected output")),
+			category: "expected_output_mismatch",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			evidence, verifyErr := verifier.Verify(context.Background(), test.artifact)
+			evidence, verifyErr := verifier.Verify(context.Background(), test.artifact, test.expected)
 			if verifyErr != nil {
 				t.Fatal(verifyErr)
 			}
@@ -102,7 +112,7 @@ func TestBlobArtifactVerifierHonorsCancellationBeforeStorageRead(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = verifier.Verify(ctx, plumbing.Artifact{ID: "artifact-1"})
+	_, err = verifier.Verify(ctx, plumbing.Artifact{ID: "artifact-1"}, "")
 	if err != context.Canceled {
 		t.Fatalf("error = %v, want context canceled", err)
 	}

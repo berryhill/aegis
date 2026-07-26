@@ -43,6 +43,14 @@ type noopTelemetry struct{}
 
 func (noopTelemetry) ObserveHTTP(context.Context, HTTPObservation) {}
 
+type plumbingPOCBody struct {
+	Prompt      string `json:"prompt"`
+	Expected    string `json:"expected"`
+	Provider    string `json:"provider"`
+	Model       string `json:"model"`
+	Acknowledge bool   `json:"acknowledge_plumbing_unrestricted"`
+}
+
 type envelope struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
@@ -533,6 +541,35 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusOK, map[string]string{"status": "terminated"})
+	})
+	g.POST("/plumbing/poc", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input plumbingPOCBody
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if !input.Acknowledge || strings.TrimSpace(input.Prompt) == "" || strings.TrimSpace(input.Expected) == "" || strings.TrimSpace(input.Provider) == "" || strings.TrimSpace(input.Model) == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "acknowledgement, prompt, expected, provider, and model are required")
+		}
+		result, err := svc.RunPlumbingPOC(c.Request().Context(), subject, app.PlumbingPOCInput{Prompt: input.Prompt, Expected: input.Expected, Provider: input.Provider, Model: input.Model, Acknowledge: input.Acknowledge})
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, result)
+	})
+	g.GET("/graph-runs/:id", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		result, err := svc.ReadGraphRun(c.Request().Context(), subject, c.Param("id"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, result)
 	})
 	g.GET("/audit", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

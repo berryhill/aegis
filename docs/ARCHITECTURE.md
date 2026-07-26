@@ -2,8 +2,8 @@
 
 ```mermaid
 flowchart TB
-  CLI[Cobra CLI] --> Service[Shared application service]
-  API[Echo v5 API] -->|Bearer + Unix SO_PEERCRED| Service
+  CLI[Cobra CLI, including principal-only plumbing proof/readback] --> Service[Shared application service]
+  API[Echo v5 API, including plumbing proof/readback] -->|Bearer + Unix SO_PEERCRED| Service
   OS[Local OS identity] --> Service
   Service --> Validator[Strict charter validation and canonical digest]
   Service --> Selector[Single-stanza selector]
@@ -12,14 +12,17 @@ flowchart TB
   Service --> Mandate[Short-lived mandate issuer]
   Mandate --> Adapter[Hermes 0.18.x adapter]
   Adapter -->|safe mode, or isolated exact Aegis bridge| Hermes[Fresh Hermes process + disposable home]
-  Mandate --> POC[Internal one-attempt POC orchestrator]
+  Mandate --> POC[Explicit non-production one-attempt POC orchestrator]
   POC -->|exactly one bounded child attempt| Adapter
   Hermes -. untrusted output .-> POC
   POC -->|content-addressed blob| State
   State -->|fresh blob read| Verifier[Distinct Aegis artifact verifier]
   Verifier -->|digest-bound evidence| POC
+  POC -->|create-only aggregate, artifact, and evidence records| State
   POC -->|terminal lifecycle event| Audit
-  Service --> State[(Charters, plans, approvals, receipts, sessions)]
+  State -->|validated terminal GraphRun readback| CLI
+  State -->|validated terminal GraphRun readback| API
+  Service --> State[(Charters, plans, approvals, receipts, sessions, GraphRuns)]
   Service --> Audit[(Hash-linked audit)]
   Audit --> Checkpoint[(Ed25519 checkpoints)]
   Design[Hermes design gateway] -. proposal only .-> Validator
@@ -72,7 +75,7 @@ Provisioning currently supports only atomic creation of deterministic Aegis-owne
 
 Operational launch resolves one stanza into one mandate, one credential binding, one set of Hermes toolset arguments, and one clean process/home. Selection evaluates verified subject, method, issuer, freshness, and trusted environment data; a requested stanza only filters already-authorized matches. Zero matches, overlapping policy, stale authentication, and multiple matches fail closed. Stored charter bytes and digests are revalidated before use, and mandate authority is compared exactly with the selected stanza before launch. `toolset_verification: launch_arguments` records argument-level verification rather than individual-tool runtime attestation.
 
-The internal POC orchestration surface composes, but does not replace, those authority and runtime boundaries. It accepts an aggregate produced by the trusted Aegis authority path, revalidates its exactly-one-stanza decision, authority digest, Hermes binding, lifetime, revocation state, and successful parent dispatch, then invokes exactly one bounded child Attempt turn. Successful runtime output is stored as a content-addressed blob before a distinct Aegis-controlled verifier performs a fresh store read and emits digest-bound evidence. Aegis—not Hermes—constructs the operation, request, artifact, delivery, terminal disposition, and authoritative audit event. “Distinct verifier” is a component and data-flow separation in this POC, not a separate process, account, storage authority, or external attestation boundary. The service is internal and is not yet wired to CLI, API, provisioning, or activation.
+The explicitly non-production POC orchestration surface composes, but does not replace, those authority and runtime boundaries. Its principal-only CLI/API entry points synthesize one named `explicit-unrestricted-poc` stanza only after the caller acknowledges that this proof authority is non-restrictive and unsuitable for production. The service revalidates the exactly-one-stanza decision, authority digest, Hermes binding, lifetime, revocation state, and successful parent dispatch, then invokes exactly one bounded child Attempt turn. Successful runtime output is stored as a content-addressed blob before a distinct Aegis-controlled verifier performs a fresh store read and emits separately persisted digest-bound evidence. Aegis—not Hermes—constructs the operation, request, artifact, delivery, terminal disposition, and authoritative audit event. CLI/API readback reports completion only after reconstructing one unique terminal aggregate and validating its authority, artifact bytes, evidence, delivery/disposition bindings, and audit chain; incomplete, corrupt, ambiguous, mismatched, or unverified state denies. “Distinct verifier” is a component and data-flow separation in this POC, not a separate process, account, storage authority, or external attestation boundary. These endpoints do not provision or activate an agent.
 
 The optional credential authority is a separate administrative data path. It stores independently encrypted immutable versions, exact agent/stanza/deployment/scope bindings, revocations, and metadata in one deployment-bound bbolt file. It validates schema, structural integrity, filesystem ownership/mode, and a KEK-authenticated sentinel before serving administration. The injected passphrase service is the single authority-passphrase edge for onboarding, secret administration, manager startup, and service opening. It selects an explicit validated absolute helper or conventional `pinentry`, executes it directly with an allowlisted desktop/session environment, bounds and validates the Assuan exchange, and returns process-local bytes only. Create uses two fresh interactions; unlock retries only envelope-authentication failure. Pre-`GETPIN` unavailability may use a real-terminal no-echo fallback, while cancellation and post-interaction failures fail closed. Systemd custody is a two-boundary resumable transaction: Aegis first records the exact external prerequisite, then—only after systemd delivers the KEK and the principal separately confirms—creates the database without copying or modifying the credential. Authority passphrase and administrative CLI intake remain outside the model and avoid argv; manager inline credential-create values may enter only the authenticated exact-local-model session described below. Inspection returns metadata only. Consistent backups use bbolt read transactions and do not include the KEK.
 

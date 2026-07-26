@@ -30,28 +30,31 @@ type verificationReceipt struct {
 	ArtifactID      string                       `json:"artifact_id"`
 	ClaimedDigest   string                       `json:"claimed_digest"`
 	ObservedDigest  string                       `json:"observed_digest,omitempty"`
+	ExpectedDigest  string                       `json:"expected_digest"`
 	Outcome         plumbing.VerificationOutcome `json:"outcome"`
 	FailureCategory string                       `json:"failure_category,omitempty"`
 }
 
-func (v *BlobArtifactVerifier) Verify(ctx context.Context, artifact plumbing.Artifact) (plumbing.VerificationEvidence, error) {
+func (v *BlobArtifactVerifier) Verify(ctx context.Context, artifact plumbing.Artifact, expectedDigest string) (plumbing.VerificationEvidence, error) {
 	if err := ctx.Err(); err != nil {
 		return plumbing.VerificationEvidence{}, err
 	}
 	at := v.now().UTC()
 	receipt := verificationReceipt{
 		Version: "aegis.dev/artifact-verification/v1alpha1", ArtifactID: artifact.ID,
-		ClaimedDigest: artifact.Digest, Outcome: plumbing.VerificationFailed,
+		ClaimedDigest: artifact.Digest, ExpectedDigest: expectedDigest, Outcome: plumbing.VerificationFailed,
 	}
 	content, err := v.store.GetBlob(artifact.ContentRef)
 	if err != nil {
 		receipt.FailureCategory = "artifact_unreadable_or_corrupt"
 	} else {
 		receipt.ObservedDigest = digest(content)
-		if receipt.ObservedDigest == artifact.Digest && artifact.ContentRef == "sha256:"+artifact.Digest {
+		if receipt.ObservedDigest == artifact.Digest && receipt.ObservedDigest == expectedDigest && artifact.ContentRef == "sha256:"+artifact.Digest {
 			receipt.Outcome = plumbing.VerificationPassed
-		} else {
+		} else if receipt.ObservedDigest != artifact.Digest || artifact.ContentRef != "sha256:"+artifact.Digest {
 			receipt.FailureCategory = "artifact_digest_mismatch"
+		} else {
+			receipt.FailureCategory = "expected_output_mismatch"
 		}
 	}
 	encoded, err := json.Marshal(receipt)
