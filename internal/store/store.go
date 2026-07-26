@@ -2,6 +2,7 @@ package store
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -107,6 +108,82 @@ func writeAtomic(path string, v any) error {
 	}
 	defer dir.Close()
 	return dir.Sync()
+}
+
+var (
+	ErrAlreadyExists        = errors.New("store record already exists")
+	ErrInvalidBlobReference = errors.New("invalid blob reference")
+	ErrBlobCorrupt          = errors.New("stored blob is corrupt")
+)
+
+// secureStoreDirectory verifies each component beneath the store root and,
+// when create is true, creates missing directories without accepting symlinks.
+func (s *Store) secureStoreDirectory(path string, create bool) error {
+	relative, err := filepath.Rel(s.root, filepath.Clean(path))
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) || filepath.IsAbs(relative) {
+		return errors.New("store path is outside state root")
+	}
+	current := s.root
+	components := []string{}
+	if relative != "." {
+		components = strings.Split(relative, string(os.PathSeparator))
+	}
+	for _, component := range append([]string{""}, components...) {
+		if component != "" {
+			current = filepath.Join(current, component)
+		}
+		info, statErr := os.Lstat(current)
+		if errors.Is(statErr, os.ErrNotExist) && create {
+			if mkdirErr := os.Mkdir(current, 0700); mkdirErr != nil && !errors.Is(mkdirErr, os.ErrExist) {
+				return mkdirErr
+			}
+			info, statErr = os.Lstat(current)
+		}
+		if statErr != nil {
+			return statErr
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return errors.New("store path contains a non-directory or symlink component")
+		}
+	}
+	return nil
+}
+
+// writeBytesCreateOnly durably publishes bytes without replacing any existing
+// directory entry. The temporary file and target share a filesystem, so Link
+// is an atomic create-only commit.
+func writeBytesCreateOnly(path string, content []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".aegis-create-*")
+	if err != nil {
+		return err
+	}
+	temporary := f.Name()
+	defer os.Remove(temporary)
+	if err = f.Chmod(0600); err == nil {
+		_, err = f.Write(content)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = os.Link(temporary, path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrAlreadyExists
+		}
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 // PublishProvisioned atomically creates one new artifact under the
@@ -306,6 +383,119 @@ func (s *Store) Save(kind, id string, v any) error {
 	}
 	return s.withLock(func() error { return writeAtomic(p, v) })
 }
+
+// Create writes a JSON record exactly once. It never replaces an existing
+// record, including one created concurrently by another Store process.
+func (s *Store) Create(kind, id string, v any) error {
+	p, err := s.objectPath(kind, id)
+	if err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	b = append(b, '\n')
+	return s.withLock(func() error {
+		if err := s.secureStoreDirectory(filepath.Dir(p), true); err != nil {
+			return err
+		}
+		if info, statErr := os.Lstat(p); statErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return errors.New("store record target is a symlink")
+			}
+			return ErrAlreadyExists
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
+		return writeBytesCreateOnly(p, b)
+	})
+}
+
+const blobReferencePrefix = "sha256:"
+
+func parseBlobReference(reference string) (string, error) {
+	if len(reference) != len(blobReferencePrefix)+sha256.Size*2 || !strings.HasPrefix(reference, blobReferencePrefix) {
+		return "", ErrInvalidBlobReference
+	}
+	digest := strings.TrimPrefix(reference, blobReferencePrefix)
+	decoded, err := hex.DecodeString(digest)
+	if err != nil || len(decoded) != sha256.Size || digest != strings.ToLower(digest) {
+		return "", ErrInvalidBlobReference
+	}
+	return digest, nil
+}
+
+func (s *Store) blobPath(digest string) string {
+	return filepath.Join(s.root, "blobs", "sha256", digest)
+}
+
+// PutBlob stores exact bytes by SHA-256 identity. Existing content is accepted
+// only after its bytes and digest have been verified.
+func (s *Store) PutBlob(content []byte) (string, error) {
+	sum := sha256.Sum256(content)
+	digest := hex.EncodeToString(sum[:])
+	reference := blobReferencePrefix + digest
+	path := s.blobPath(digest)
+	err := s.withLock(func() error {
+		if err := s.secureStoreDirectory(filepath.Dir(path), true); err != nil {
+			return err
+		}
+		info, statErr := os.Lstat(path)
+		if statErr == nil {
+			if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+				return ErrBlobCorrupt
+			}
+			existing, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			existingSum := sha256.Sum256(existing)
+			if existingSum != sum || !bytes.Equal(existing, content) {
+				return ErrBlobCorrupt
+			}
+			return nil
+		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return statErr
+		}
+		return writeBytesCreateOnly(path, content)
+	})
+	if err != nil {
+		return "", err
+	}
+	return reference, nil
+}
+
+// GetBlob returns exact stored bytes after validating both the reference and
+// the content digest. Corrupt, symlinked, or non-regular targets fail closed.
+func (s *Store) GetBlob(reference string) ([]byte, error) {
+	digest, err := parseBlobReference(reference)
+	if err != nil {
+		return nil, err
+	}
+	path := s.blobPath(digest)
+	if err = s.secureStoreDirectory(filepath.Dir(path), false); err != nil {
+		return nil, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, ErrBlobCorrupt
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(content)
+	if hex.EncodeToString(sum[:]) != digest {
+		return nil, ErrBlobCorrupt
+	}
+	return content, nil
+}
+
 func (s *Store) Load(kind, id string, v any) error {
 	p, err := s.objectPath(kind, id)
 	if err != nil {
