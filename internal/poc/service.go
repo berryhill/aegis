@@ -4,9 +4,11 @@
 package poc
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,7 +26,10 @@ const (
 	evidenceRecordKind  = "poc-evidence"
 )
 
-var ErrDenied = errors.New("POC execution denied")
+var (
+	ErrDenied          = errors.New("POC execution denied")
+	ErrInvalidReadback = errors.New("POC readback is invalid")
+)
 
 // AttemptRunner is deliberately one-turn shaped. The POC cannot ask a runtime
 // to retry, select another stanza, or create a second session implicitly.
@@ -35,7 +40,7 @@ type AttemptRunner interface {
 // ArtifactVerifier is a separate Aegis-controlled component. It receives only
 // persisted artifact metadata and cannot trust the runtime response in memory.
 type ArtifactVerifier interface {
-	Verify(context.Context, plumbing.Artifact) (plumbing.VerificationEvidence, error)
+	Verify(context.Context, plumbing.Artifact, string) (plumbing.VerificationEvidence, error)
 }
 
 type Service struct {
@@ -59,6 +64,7 @@ type RunInput struct {
 	ParentAttemptID string
 	StateRoot       string
 	Prompt          string
+	Expected        string
 	OperationType   string
 	OperationSchema string
 	Destination     string
@@ -139,7 +145,7 @@ func (s *Service) Run(ctx context.Context, input RunInput) (plumbing.Aggregate, 
 		Provenance: provenance(aggregate.OwnerID, plumbing.ProducerRuntimeAdapter, "hermes-attempt:"+result.Attempt.RuntimeAttemptID, factAt),
 	}
 
-	evidence, err := s.verifier.Verify(ctx, artifact)
+	evidence, err := s.verifier.Verify(ctx, artifact, digest([]byte(input.Expected)))
 	if err != nil {
 		return plumbing.Aggregate{}, err
 	}
@@ -170,6 +176,73 @@ func (s *Service) Run(ctx context.Context, input RunInput) (plumbing.Aggregate, 
 	}
 	if state != plumbing.DispositionSucceeded {
 		return aggregate, errors.New("artifact verification failed")
+	}
+	return aggregate, nil
+}
+
+// Read reconstructs one terminal lifecycle from create-only records. A record
+// is returned only after the aggregate, separately persisted artifact and
+// evidence records, and the authoritative audit chain all agree.
+func (s *Service) Read(ctx context.Context, id string) (plumbing.Aggregate, error) {
+	if err := ctx.Err(); err != nil {
+		return plumbing.Aggregate{}, err
+	}
+	if strings.TrimSpace(id) == "" {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: aggregate ID is required", ErrInvalidReadback)
+	}
+	var matches []plumbing.Aggregate
+	err := s.store.List(aggregateRecordKind, func(raw json.RawMessage) error {
+		var aggregate plumbing.Aggregate
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&aggregate); err != nil {
+			return err
+		}
+		if aggregate.ID == id {
+			matches = append(matches, aggregate)
+		}
+		return nil
+	})
+	if err != nil {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: %v", ErrInvalidReadback, err)
+	}
+	if len(matches) != 1 {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: expected one terminal aggregate, found %d", ErrInvalidReadback, len(matches))
+	}
+	aggregate := matches[0]
+	if aggregate.Disposition == nil {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: aggregate is not terminal", ErrInvalidReadback)
+	}
+	if err := plumbing.Validate(aggregate); err != nil {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: aggregate: %v", ErrInvalidReadback, err)
+	}
+	for _, artifact := range aggregate.Artifacts {
+		var stored plumbing.Artifact
+		if err := s.store.Load(artifactRecordKind, artifact.ID, &stored); err != nil || stored != artifact {
+			return plumbing.Aggregate{}, fmt.Errorf("%w: artifact %q is missing or mismatched", ErrInvalidReadback, artifact.ID)
+		}
+	}
+	for _, evidence := range aggregate.Evidence {
+		var stored plumbing.VerificationEvidence
+		if err := s.store.Load(evidenceRecordKind, evidence.ID, &stored); err != nil || stored != evidence {
+			return plumbing.Aggregate{}, fmt.Errorf("%w: evidence %q is missing or mismatched", ErrInvalidReadback, evidence.ID)
+		}
+	}
+	if err := s.store.VerifyAudit(); err != nil {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: audit chain: %v", ErrInvalidReadback, err)
+	}
+	events, err := s.store.AuditEvents()
+	if err != nil {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: audit events: %v", ErrInvalidReadback, err)
+	}
+	auditMatches := 0
+	for _, event := range events {
+		if event.Type == "poc.lifecycle.terminal" && event.Metadata["aggregate_id"] == aggregate.ID && event.Metadata["revision"] == fmt.Sprint(aggregate.Revision) && event.Metadata["disposition_id"] == aggregate.Disposition.ID && event.Outcome == string(aggregate.Disposition.State) && event.Reason == aggregate.Disposition.Reason {
+			auditMatches++
+		}
+	}
+	if auditMatches != 1 {
+		return plumbing.Aggregate{}, fmt.Errorf("%w: expected one matching terminal audit event, found %d", ErrInvalidReadback, auditMatches)
 	}
 	return aggregate, nil
 }

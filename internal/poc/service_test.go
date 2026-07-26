@@ -31,15 +31,17 @@ func (r *recordingRunner) AttemptTurn(_ context.Context, request hermes.AttemptT
 }
 
 type recordingVerifier struct {
-	calls     int
-	artifacts []plumbing.Artifact
-	result    plumbing.VerificationEvidence
-	err       error
+	calls           int
+	artifacts       []plumbing.Artifact
+	expectedDigests []string
+	result          plumbing.VerificationEvidence
+	err             error
 }
 
-func (v *recordingVerifier) Verify(_ context.Context, artifact plumbing.Artifact) (plumbing.VerificationEvidence, error) {
+func (v *recordingVerifier) Verify(_ context.Context, artifact plumbing.Artifact, expectedDigest string) (plumbing.VerificationEvidence, error) {
 	v.calls++
 	v.artifacts = append(v.artifacts, artifact)
+	v.expectedDigests = append(v.expectedDigests, expectedDigest)
 	result := v.result
 	if result.SubjectID == "use-artifact-id" {
 		result.SubjectID = artifact.ID
@@ -74,6 +76,9 @@ func TestServiceRunPersistsOneCausallyBoundVerifiedLifecycle(t *testing.T) {
 	}
 	if verifier.calls != 1 || len(verifier.artifacts) != 1 {
 		t.Fatalf("verifier calls = %d, want exactly one", verifier.calls)
+	}
+	if len(verifier.expectedDigests) != 1 || verifier.expectedDigests[0] != digest([]byte("persist this exact output")) {
+		t.Fatalf("verifier expected digest = %v", verifier.expectedDigests)
 	}
 	request := runner.requests[0]
 	if request.Aggregate.Authority.ID != aggregate.Authority.ID || request.ParentAttemptID != "dispatch-1" || request.Input != "produce proof" {
@@ -123,6 +128,70 @@ func TestServiceRunPersistsOneCausallyBoundVerifiedLifecycle(t *testing.T) {
 	}
 	if err = records.VerifyAudit(); err != nil {
 		t.Fatalf("audit chain verification failed: %v", err)
+	}
+	readback, err := service.Read(context.Background(), got.ID)
+	if err != nil {
+		t.Fatalf("validated readback failed: %v", err)
+	}
+	if readback.ID != got.ID || readback.Revision != got.Revision || readback.Disposition.ID != got.Disposition.ID || readback.Authority.Digest != got.Authority.Digest {
+		t.Fatalf("readback did not reconstruct terminal chain: got=%#v readback=%#v", got, readback)
+	}
+}
+
+func TestServiceReadFailsClosedForIncompleteOrAmbiguousStoredLifecycle(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *store.Store, plumbing.Aggregate)
+	}{
+		{
+			name: "missing artifact record",
+			mutate: func(t *testing.T, records *store.Store, aggregate plumbing.Aggregate) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(records.Root(), artifactRecordKind, aggregate.Artifacts[0].ID+".json")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "missing evidence record",
+			mutate: func(t *testing.T, records *store.Store, aggregate plumbing.Aggregate) {
+				t.Helper()
+				if err := os.Remove(filepath.Join(records.Root(), evidenceRecordKind, aggregate.Evidence[0].ID+".json")); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "ambiguous terminal aggregate",
+			mutate: func(t *testing.T, records *store.Store, aggregate plumbing.Aggregate) {
+				t.Helper()
+				if err := records.Create(aggregateRecordKind, "duplicate-terminal", aggregate); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Now().UTC()
+			initial := activeAggregate(now)
+			finishedAt := now.Add(time.Second)
+			runner := &recordingRunner{result: hermes.AttemptTurnResult{Attempt: successfulSessionAttempt("use-request-id", initial, finishedAt), Output: "persist this exact output"}}
+			verifier := &recordingVerifier{result: validEvidence(initial.OwnerID, finishedAt.Add(time.Millisecond), plumbing.VerificationPassed)}
+			records := openTestStore(t)
+			service, err := New(runner, verifier, records)
+			if err != nil {
+				t.Fatal(err)
+			}
+			terminal, err := service.Run(context.Background(), validRunInput(initial, records.Root()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(t, records, terminal)
+			if _, err = service.Read(context.Background(), terminal.ID); !errors.Is(err, ErrInvalidReadback) {
+				t.Fatalf("read error = %v, want ErrInvalidReadback", err)
+			}
+		})
 	}
 }
 
@@ -271,7 +340,7 @@ func validEvidence(owner string, observedAt time.Time, outcome plumbing.Verifica
 }
 
 func validRunInput(aggregate plumbing.Aggregate, root string) RunInput {
-	return RunInput{Aggregate: aggregate, ParentAttemptID: "dispatch-1", StateRoot: filepath.Join(root, "runtime-state"), Prompt: "produce proof", OperationType: "poc.produce", OperationSchema: "v1", Destination: "participant:participant-1", Bounds: hermes.AttemptBounds{InputBytes: 1024, OutputBytes: 1024, Duration: time.Second}}
+	return RunInput{Aggregate: aggregate, ParentAttemptID: "dispatch-1", StateRoot: filepath.Join(root, "runtime-state"), Prompt: "produce proof", Expected: "persist this exact output", OperationType: "poc.produce", OperationSchema: "v1", Destination: "participant:participant-1", Bounds: hermes.AttemptBounds{InputBytes: 1024, OutputBytes: 1024, Duration: time.Second}}
 }
 
 func pocProvenance(owner, source string, at time.Time) plumbing.Provenance {

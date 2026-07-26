@@ -217,7 +217,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), plumbingCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
 	return root
 }
 
