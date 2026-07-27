@@ -2,8 +2,6 @@ package hermes
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -13,8 +11,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/berryhill/aegis/internal/plumbing"
+	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/execution"
 )
+
+type attemptAdmission struct {
+	allowed bool
+	digest  string
+	err     error
+}
+
+func (a attemptAdmission) CheckRuntimeAdmission(_ context.Context, launch execution.LaunchContract, at time.Time) (execution.AdmissionDecision, error) {
+	if a.err != nil {
+		return execution.AdmissionDecision{}, a.err
+	}
+	digest := a.digest
+	if digest == "" {
+		digest = launch.AuthorityContext.Digest
+	}
+	return execution.AdmissionDecision{
+		Allowed: a.allowed, AuthorityContextID: launch.AuthorityContext.ID,
+		AuthorityContextDigest: digest, CheckedAt: at, Reason: "test",
+	}, nil
+}
 
 func TestAttemptTurnExecutesOneBoundedGatewayTurn(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
@@ -37,19 +56,14 @@ while read rest; do :; done
 	if result.Output != "bounded answer" {
 		t.Fatalf("output = %q", result.Output)
 	}
-	if result.Attempt.State != plumbing.AttemptSucceeded || result.Attempt.RuntimeAttemptID != "runtime-session-1" {
+	if result.Attempt.State != execution.StateSucceeded || result.Attempt.RuntimeSessionID != "runtime-session-1" {
 		t.Fatalf("attempt = %#v", result.Attempt)
 	}
 	if result.Attempt.StartedAt == nil || result.Attempt.FinishedAt == nil || result.Attempt.FinishedAt.Before(*result.Attempt.StartedAt) {
 		t.Fatalf("attempt timestamps are incomplete or reversed: %#v", result.Attempt)
 	}
-	if result.Attempt.Provenance.Producer != plumbing.ProducerRuntimeAdapter || result.Attempt.Provenance.OwnerID != request.Aggregate.OwnerID {
-		t.Fatalf("attempt provenance = %#v", result.Attempt.Provenance)
-	}
-	request.Aggregate.Attempts = append(request.Aggregate.Attempts, result.Attempt)
-	request.Aggregate.UpdatedAt = *result.Attempt.FinishedAt
-	if err = plumbing.Validate(request.Aggregate); err != nil {
-		t.Fatalf("result does not form a valid plumbing aggregate: %v", err)
+	if result.Attempt.AuthorityContextID != request.Launch.AuthorityContext.ID || result.Attempt.DispatchID != request.Launch.ParentDispatch.ID {
+		t.Fatalf("turn bindings = %#v", result.Attempt)
 	}
 	entries, err := os.ReadDir(filepath.Join(root, "state", "runtime"))
 	if err != nil {
@@ -61,29 +75,16 @@ while read rest; do :; done
 }
 
 func TestAttemptTurnFailsClosedBeforeRuntimeExecution(t *testing.T) {
-	now := time.Now().UTC()
 	tests := []struct {
 		name string
 		edit func(*AttemptTurnRequest)
 	}{
-		{"missing authority", func(r *AttemptTurnRequest) { r.Aggregate.Authority = nil }},
-		{"ambiguous stanza", func(r *AttemptTurnRequest) { r.Aggregate.Decision.MatchingCount = 2 }},
-		{"mismatched stanza", func(r *AttemptTurnRequest) {
-			r.Aggregate.Decision.SelectedStanzaID = "teamwide"
-		}},
-		{"expired authority", func(r *AttemptTurnRequest) {
-			r.Aggregate.Authority.ExpiresAt = now.Add(-time.Second)
-			r.Aggregate.Authority.Digest = plumbing.AuthorityDigest(*r.Aggregate.Authority)
-		}},
-		{"revoked authority", func(r *AttemptTurnRequest) {
-			revokedAt := now.Add(-time.Second)
-			r.Aggregate.Revocations = []plumbing.AuthorityRevocation{{
-				ID: "revocation-1", AuthorityContextID: r.Aggregate.Authority.ID,
-				Reason: "operator_revoked", RevokedAt: revokedAt,
-				Provenance: attemptProvenance(r.Aggregate.OwnerID, "revocation:1", revokedAt),
-			}}
-		}},
-		{"missing parent dispatch", func(r *AttemptTurnRequest) { r.ParentAttemptID = "unknown-dispatch" }},
+		{"missing admission source", func(r *AttemptTurnRequest) { r.Admission = nil }},
+		{"tampered authority digest", func(r *AttemptTurnRequest) { r.Launch.AuthorityContext.Digest = "sha256:tampered" }},
+		{"denied live admission", func(r *AttemptTurnRequest) { r.Admission = attemptAdmission{allowed: false} }},
+		{"stale projected admission digest", func(r *AttemptTurnRequest) { r.Admission = attemptAdmission{allowed: true, digest: "sha256:stale"} }},
+		{"mismatched parent dispatch", func(r *AttemptTurnRequest) { r.ParentAttemptID = "unknown-dispatch" }},
+		{"wrong authority parent", func(r *AttemptTurnRequest) { r.Launch.ParentDispatch.AuthorityContextID = "other-authority" }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -132,7 +133,7 @@ while read rest; do :; done
 		if !errors.Is(err, ErrAttemptOutputBound) {
 			t.Fatalf("error = %v, want ErrAttemptOutputBound", err)
 		}
-		if result.Attempt.State != plumbing.AttemptFailed || result.Attempt.Reason != "output_bound_exceeded" || result.Output != "" {
+		if result.Attempt.State != execution.StateFailed || result.Attempt.Reason != "output_bound_exceeded" || result.Output != "" {
 			t.Fatalf("result = %#v", result)
 		}
 	})
@@ -154,7 +155,7 @@ sleep 10
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want context deadline exceeded", err)
 	}
-	if result.Attempt.State != plumbing.AttemptCancelled || result.Attempt.Reason != "turn_cancelled_or_timed_out" {
+	if result.Attempt.State != execution.StateCancelled || result.Attempt.Reason != "turn_cancelled_or_timed_out" {
 		t.Fatalf("attempt = %#v", result.Attempt)
 	}
 	if elapsed := time.Since(started); elapsed > 3*time.Second {
@@ -189,52 +190,34 @@ func attemptTestAdapter(t *testing.T, gatewayScript string) (*Adapter, string) {
 
 func validAttemptTurnRequest(root string) AttemptTurnRequest {
 	now := time.Now().UTC()
-	createdAt := now.Add(-2 * time.Minute)
-	authenticatedAt := createdAt
-	ingressAt := createdAt.Add(time.Second)
-	decisionAt := createdAt.Add(2 * time.Second)
-	issuedAt := createdAt.Add(3 * time.Second)
-	dispatchRequestedAt := createdAt.Add(4 * time.Second)
-	dispatchStartedAt := createdAt.Add(5 * time.Second)
-	dispatchFinishedAt := createdAt.Add(6 * time.Second)
-	owner := "owner-1"
-	charterDigest := attemptDigest("charter")
-	authority := plumbing.AuthorityContext{
-		ID: "authority-1", MandateID: "mandate-1", DecisionID: "decision-1",
-		ParticipantID: "participant-1", AgentID: "agent-1", StanzaID: "principal",
-		CharterRevision: 1, CharterDigest: charterDigest, Runtime: "hermes-agent", RuntimeVersion: "0.18.2",
-		Capabilities: []string{"chat"}, Tools: []string{"no_mcp"}, MemoryScopes: []string{}, CredentialScopes: []string{},
-		IssuedAt: issuedAt, ExpiresAt: now.Add(5 * time.Minute),
-		Provenance: attemptProvenance(owner, "mandate:mandate-1", issuedAt),
+	issuedAt := now.Add(-time.Minute)
+	expiresAt := now.Add(5 * time.Minute)
+	runtime := core.RuntimeDescriptor{Name: "Hermes Agent", Runtime: "hermes-agent", Version: "0.18.2"}
+	mandate := core.Mandate{
+		ID: "mandate-1", Subject: core.Subject{ID: "subject-1", Kind: "human", PrincipalID: "principal-1", Issuer: "local-os", Method: "local-os", AuthenticatedAt: issuedAt, ExpiresAt: expiresAt},
+		AgentID: "agent-1", StanzaID: "principal", CharterRevision: 1, CharterDigest: "sha256:charter",
+		Runtime: runtime, Capabilities: []string{"chat"}, Tools: []string{"no_mcp"},
+		Scopes: core.Scopes{}, Hermes: core.HermesConfig{Toolsets: []string{"no_mcp"}}, IssuedAt: issuedAt, ExpiresAt: expiresAt,
 	}
-	authority.Digest = plumbing.AuthorityDigest(authority)
-	aggregate := plumbing.Aggregate{
-		SchemaVersion: plumbing.SchemaVersion, ID: "lifecycle-1", Revision: 1, OwnerID: owner,
-		Participant: plumbing.Participant{
-			ID: "participant-1", Kind: "human", PrincipalID: "principal-1",
-			Authentication: plumbing.Authentication{EvidenceID: "auth-evidence-1", Issuer: "local-os", Method: "local-os", AuthenticatedAt: authenticatedAt, ExpiresAt: now.Add(10 * time.Minute), ClaimsDigest: attemptDigest("claims")},
-			Provenance:     attemptProvenance(owner, "peercred:1", authenticatedAt),
-		},
-		Ingress:   plumbing.IngressFact{ID: "ingress-1", ParticipantID: "participant-1", ContactID: "contact-1", ChannelID: "channel-1", ChannelKind: "unix-socket", EndpointRef: "listener:control", ObservedAt: ingressAt, Provenance: attemptProvenance(owner, "peercred:1", ingressAt)},
-		Decision:  plumbing.StanzaDecision{ID: "decision-1", ParticipantID: "participant-1", IngressFactID: "ingress-1", AgentID: "agent-1", CharterRevision: 1, CharterDigest: charterDigest, Allowed: true, MatchingCount: 1, SelectedStanzaID: "principal", Reason: "exact_authorized_match", DecidedAt: decisionAt, Provenance: attemptProvenance(owner, "selector:decision-1", decisionAt)},
-		Authority: &authority,
-		Attempts:  []plumbing.Attempt{{ID: "dispatch-1", Kind: plumbing.AttemptDispatch, AuthorityContextID: authority.ID, RuntimeAttemptID: "runtime-dispatch-1", State: plumbing.AttemptSucceeded, RequestedAt: dispatchRequestedAt, StartedAt: &dispatchStartedAt, FinishedAt: &dispatchFinishedAt, Provenance: attemptProvenance(owner, "dispatcher:1", dispatchFinishedAt)}},
-		CreatedAt: createdAt, UpdatedAt: now,
+	authority := core.AuthorityContext{
+		ID: "authority-1", MandateID: mandate.ID, SessionID: "session-1", SubjectID: mandate.Subject.ID,
+		AgentID: mandate.AgentID, CharterRevision: mandate.CharterRevision, CharterDigest: mandate.CharterDigest,
+		Runtime: runtime, Authority: core.EffectiveAuthority{StanzaID: mandate.StanzaID, Capabilities: []string{"chat"}, Tools: []string{"no_mcp"}, Hermes: mandate.Hermes},
+		IssuedAt: issuedAt, ExpiresAt: expiresAt,
+	}
+	authority.Digest = core.AuthorityContextDigest(authority)
+	dispatchStarted := now.Add(-30 * time.Second)
+	dispatchFinished := now.Add(-29 * time.Second)
+	dispatch := execution.Dispatch{
+		ID: "dispatch-1", AuthorityContextID: authority.ID, State: execution.StateSucceeded,
+		RequestedAt: now.Add(-31 * time.Second), StartedAt: &dispatchStarted, FinishedAt: &dispatchFinished,
 	}
 	return AttemptTurnRequest{
-		Aggregate: aggregate, AttemptID: "session-attempt-2", ParentAttemptID: "dispatch-1",
+		Launch:    execution.LaunchContract{OwnerID: "owner-1", Mandate: mandate, AuthorityContext: authority, ParentDispatch: dispatch},
+		Admission: attemptAdmission{allowed: true}, AttemptID: "turn-1", ParentAttemptID: dispatch.ID,
 		StateRoot: filepath.Join(root, "state"), Input: "hello",
 		Bounds: AttemptBounds{InputBytes: 1024, OutputBytes: 1024, Duration: time.Second},
 	}
-}
-
-func attemptProvenance(owner, source string, at time.Time) plumbing.Provenance {
-	return plumbing.Provenance{OwnerID: owner, Producer: plumbing.ProducerControlPlane, SourceRef: source, RecordedAt: at}
-}
-
-func attemptDigest(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
 }
 
 func TestAppendBoundedCountsBytesAcrossDeltas(t *testing.T) {
