@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/berryhill/aegis/internal/plumbing"
+	"github.com/berryhill/aegis/internal/execution"
 )
 
 const (
@@ -35,12 +35,12 @@ type AttemptBounds struct {
 	Duration    time.Duration
 }
 
-// AttemptTurnRequest binds one Hermes turn to an already authenticated,
-// exactly-one-stanza plumbing aggregate. Aggregate must be a current
-// control-plane read; the adapter rechecks its authority immediately before it
-// starts Hermes. Input and output bodies are deliberately absent from Attempt.
+// AttemptTurnRequest binds one Hermes turn to a narrow immutable launch
+// contract. Admission is consulted immediately before process start; neither
+// the contract nor runtime output can select or widen authority.
 type AttemptTurnRequest struct {
-	Aggregate       plumbing.Aggregate
+	Launch          execution.LaunchContract
+	Admission       execution.AdmissionChecker
 	AttemptID       string
 	ParentAttemptID string
 	StateRoot       string
@@ -52,7 +52,7 @@ type AttemptTurnRequest struct {
 }
 
 type AttemptTurnResult struct {
-	Attempt plumbing.Attempt
+	Attempt execution.Turn
 	Output  string
 }
 
@@ -63,9 +63,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	if err := validateAttemptRequest(request); err != nil {
 		return AttemptTurnResult{}, err
 	}
-	authority := *request.Aggregate.Authority
+	authority := request.Launch.AuthorityContext
 	now := time.Now().UTC()
-	if err := liveAuthorityCheck(request.Aggregate, now); err != nil {
+	if err := checkAdmission(ctx, request, now); err != nil {
 		return AttemptTurnResult{}, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -85,19 +85,19 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	if err != nil {
 		return AttemptTurnResult{}, err
 	}
-	if descriptor.Runtime != authority.Runtime || descriptor.Version != authority.RuntimeVersion {
+	if descriptor.Runtime != authority.Runtime.Runtime || descriptor.Version != authority.Runtime.Version {
 		return AttemptTurnResult{}, fmt.Errorf("%w: runtime binding does not match authority context", ErrAttemptDenied)
 	}
 	python := gatewayPython(descriptor)
 	if python == "" {
 		return AttemptTurnResult{}, errors.New("Hermes TUI gateway Python executable not found")
 	}
-	tools, err := ResolveTools(authority.Tools)
+	tools, err := ResolveTools(authority.Authority.Tools)
 	if err != nil {
 		return AttemptTurnResult{}, fmt.Errorf("%w: %v", ErrAttemptDenied, err)
 	}
 	for _, credential := range request.Credentials {
-		if !containsString(authority.CredentialScopes, credential.Reference) {
+		if !containsString(authority.Authority.Credentials, credential.Reference) {
 			return AttemptTurnResult{}, fmt.Errorf("%w: credential %q is outside authority", ErrAttemptDenied, credential.Reference)
 		}
 	}
@@ -144,28 +144,27 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return AttemptTurnResult{}, err
 	}
 
-	// Recheck as close as possible to the authority-bearing process start. The
-	// aggregate is the caller's authoritative live snapshot, not model input.
+	// Recheck through the authoritative source as close as possible to process
+	// start. Historical projections and model input cannot satisfy this gate.
 	startedAt := time.Now().UTC()
-	if err = liveAuthorityCheck(request.Aggregate, startedAt); err != nil {
+	if err = checkAdmission(ctx, request, startedAt); err != nil {
 		return AttemptTurnResult{}, err
 	}
-	attempt := plumbing.Attempt{
+	attempt := execution.Turn{
 		ID:                 request.AttemptID,
-		Kind:               plumbing.AttemptSession,
-		ParentAttemptID:    request.ParentAttemptID,
+		DispatchID:         request.ParentAttemptID,
 		AuthorityContextID: authority.ID,
-		State:              plumbing.AttemptRequested,
+		State:              execution.StateRequested,
 		RequestedAt:        now,
 	}
-	if !plumbing.CanTransitionAttempt(attempt.State, plumbing.AttemptStarted) {
+	if !execution.CanTransition(attempt.State, execution.StateStarted) {
 		return AttemptTurnResult{}, errors.New("invalid requested-to-started attempt transition")
 	}
-	attempt.State = plumbing.AttemptStarted
+	attempt.State = execution.StateStarted
 	attempt.StartedAt = &startedAt
 
 	if err = command.Start(); err != nil {
-		return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "runtime_start_failed", err)
+		return finishAttempt(attempt, execution.StateFailed, "runtime_start_failed", err)
 	}
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
 	done := make(chan error, 1)
@@ -178,30 +177,30 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	if _, err = waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
 		return message.Method == "event" && message.Params.Type == "gateway.ready"
 	}); err != nil {
-		return finishContextError(attempt, request.Aggregate.OwnerID, authority.ExpiresAt, turnContext, err)
+		return finishContextError(attempt, authority.ExpiresAt, turnContext, err)
 	}
 	if err = writeGateway(stdin, "create", "session.create", map[string]any{"cols": 100, "source": "aegis-attempt"}); err != nil {
-		return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "session_create_write_failed", err)
+		return finishAttempt(attempt, execution.StateFailed, "session_create_write_failed", err)
 	}
 	created, err := waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
 		return fmt.Sprint(message.ID) == "create"
 	})
 	if err != nil {
-		return finishContextError(attempt, request.Aggregate.OwnerID, authority.ExpiresAt, turnContext, err)
+		return finishContextError(attempt, authority.ExpiresAt, turnContext, err)
 	}
 	if created.Error != nil {
-		return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "session_create_failed", errors.New("Hermes session.create failed"))
+		return finishAttempt(attempt, execution.StateFailed, "session_create_failed", errors.New("Hermes session.create failed"))
 	}
 	sessionID := fmt.Sprint(created.Result["session_id"])
 	if sessionID == "" || sessionID == "<nil>" {
 		sessionID = fmt.Sprint(created.Result["id"])
 	}
 	if sessionID == "" || sessionID == "<nil>" {
-		return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "session_id_missing", errors.New("Hermes session.create returned no session ID"))
+		return finishAttempt(attempt, execution.StateFailed, "session_id_missing", errors.New("Hermes session.create returned no session ID"))
 	}
-	attempt.RuntimeAttemptID = sessionID
+	attempt.RuntimeSessionID = sessionID
 	if err = writeGateway(stdin, "prompt", "prompt.submit", map[string]any{"session_id": sessionID, "text": request.Input}); err != nil {
-		return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "prompt_write_failed", err)
+		return finishAttempt(attempt, execution.StateFailed, "prompt_write_failed", err)
 	}
 
 	var output strings.Builder
@@ -211,10 +210,10 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			return (message.Method == "event" && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
 		})
 		if waitErr != nil {
-			return finishContextError(attempt, request.Aggregate.OwnerID, authority.ExpiresAt, turnContext, waitErr)
+			return finishContextError(attempt, authority.ExpiresAt, turnContext, waitErr)
 		}
 		if message.Error != nil {
-			return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "prompt_rejected", errors.New("Hermes prompt failed"))
+			return finishAttempt(attempt, execution.StateFailed, "prompt_rejected", errors.New("Hermes prompt failed"))
 		}
 		switch message.Params.Type {
 		case "message.start":
@@ -222,25 +221,28 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		case "message.delta":
 			if messageStarted {
 				if err = appendBounded(&output, attemptPayloadText(message.Params.Payload), request.Bounds.OutputBytes); err != nil {
-					return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "output_bound_exceeded", err)
+					return finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
 				}
 			}
 		case "error":
-			return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "runtime_turn_failed", errors.New("Hermes turn failed"))
+			return finishAttempt(attempt, execution.StateFailed, "runtime_turn_failed", errors.New("Hermes turn failed"))
 		case "message.complete":
 			if !messageStarted {
 				continue
 			}
 			if output.Len() == 0 {
 				if err = appendBounded(&output, attemptPayloadText(message.Params.Payload), request.Bounds.OutputBytes); err != nil {
-					return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptFailed, "output_bound_exceeded", err)
+					return finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
 				}
 			}
 			finishedAt := time.Now().UTC()
 			if !finishedAt.Before(authority.ExpiresAt) {
-				return finishAttempt(attempt, request.Aggregate.OwnerID, plumbing.AttemptExpired, "authority_expired", ErrAttemptDenied)
+				return finishAttempt(attempt, execution.StateExpired, "authority_expired", ErrAttemptDenied)
 			}
-			result, finishErr := finishAttemptAt(attempt, request.Aggregate.OwnerID, plumbing.AttemptSucceeded, "turn_completed", finishedAt, nil)
+			if err = checkAdmission(turnContext, request, finishedAt); err != nil {
+				return finishAttemptAt(attempt, execution.StateDenied, "authority_no_longer_effective", finishedAt, err)
+			}
+			result, finishErr := finishAttemptAt(attempt, execution.StateSucceeded, "turn_completed", finishedAt, nil)
 			result.Output = output.String()
 			return result, finishErr
 		}
@@ -248,29 +250,23 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 }
 
 func validateAttemptRequest(request AttemptTurnRequest) error {
-	if err := plumbing.Validate(request.Aggregate); err != nil {
-		return fmt.Errorf("%w: invalid authority aggregate: %v", ErrAttemptDenied, err)
+	if request.Admission == nil {
+		return fmt.Errorf("%w: authoritative admission checker is required", ErrAttemptDenied)
 	}
-	if request.Aggregate.Authority == nil || request.Aggregate.Disposition != nil {
-		return fmt.Errorf("%w: authority is missing or lifecycle is terminal", ErrAttemptDenied)
+	if request.Launch.OwnerID == "" || request.Launch.AuthorityContext.Runtime.Runtime != "hermes-agent" {
+		return fmt.Errorf("%w: immutable owner and Hermes authority are required", ErrAttemptDenied)
 	}
-	if request.Aggregate.Authority.Runtime != "hermes-agent" {
-		return fmt.Errorf("%w: authority does not select Hermes", ErrAttemptDenied)
+	if err := execution.ValidateDispatch(request.Launch.ParentDispatch, request.Launch.AuthorityContext); err != nil {
+		return fmt.Errorf("%w: %v", ErrAttemptDenied, err)
+	}
+	if request.ParentAttemptID != request.Launch.ParentDispatch.ID {
+		return fmt.Errorf("%w: parent dispatch binding is mismatched", ErrAttemptDenied)
 	}
 	if strings.TrimSpace(request.AttemptID) == "" || len(request.AttemptID) > 255 || strings.TrimSpace(request.ParentAttemptID) == "" {
 		return errors.New("attempt and parent attempt identifiers are required and bounded")
 	}
-	parentOK := false
-	for _, attempt := range request.Aggregate.Attempts {
-		if attempt.ID == request.AttemptID {
-			return errors.New("attempt identifier already exists")
-		}
-		if attempt.ID == request.ParentAttemptID && attempt.Kind == plumbing.AttemptDispatch && attempt.State == plumbing.AttemptSucceeded && attempt.AuthorityContextID == request.Aggregate.Authority.ID {
-			parentOK = true
-		}
-	}
-	if !parentOK {
-		return fmt.Errorf("%w: successful parent dispatch is missing or mismatched", ErrAttemptDenied)
+	if request.AttemptID == request.ParentAttemptID {
+		return errors.New("turn identifier must differ from parent dispatch")
 	}
 	if request.Bounds.InputBytes <= 0 || request.Bounds.InputBytes > MaxAttemptInputBytes || request.Bounds.OutputBytes <= 0 || request.Bounds.OutputBytes > MaxAttemptOutputBytes || request.Bounds.Duration <= 0 || request.Bounds.Duration > MaxAttemptDuration {
 		return errors.New("attempt bounds are missing or exceed hard ceilings")
@@ -284,18 +280,13 @@ func validateAttemptRequest(request AttemptTurnRequest) error {
 	return nil
 }
 
-func liveAuthorityCheck(aggregate plumbing.Aggregate, now time.Time) error {
-	if aggregate.Authority == nil || !aggregate.Decision.Allowed || aggregate.Decision.MatchingCount != 1 || aggregate.Decision.SelectedStanzaID == "" {
-		return fmt.Errorf("%w: authority is missing or stanza selection is not exact", ErrAttemptDenied)
+func checkAdmission(ctx context.Context, request AttemptTurnRequest, now time.Time) error {
+	decision, err := request.Admission.CheckRuntimeAdmission(ctx, request.Launch, now)
+	if err != nil {
+		return fmt.Errorf("%w: live authority check failed: %v", ErrAttemptDenied, err)
 	}
-	authority := aggregate.Authority
-	if authority.Digest != plumbing.AuthorityDigest(*authority) || now.Before(authority.IssuedAt) || !now.Before(authority.ExpiresAt) {
-		return fmt.Errorf("%w: authority is invalid or expired", ErrAttemptDenied)
-	}
-	for _, revocation := range aggregate.Revocations {
-		if revocation.AuthorityContextID == authority.ID && !now.Before(revocation.RevokedAt) {
-			return fmt.Errorf("%w: authority is revoked", ErrAttemptDenied)
-		}
+	if err = execution.ValidateAdmission(request.Launch, decision, now); err != nil {
+		return fmt.Errorf("%w: %v", ErrAttemptDenied, err)
 	}
 	return nil
 }
@@ -317,33 +308,27 @@ func attemptPayloadText(payload map[string]any) string {
 	return ""
 }
 
-func finishContextError(attempt plumbing.Attempt, owner string, expiresAt time.Time, ctx context.Context, err error) (AttemptTurnResult, error) {
+func finishContextError(attempt execution.Turn, expiresAt time.Time, ctx context.Context, err error) (AttemptTurnResult, error) {
 	if ctx.Err() != nil {
 		if !time.Now().UTC().Before(expiresAt) {
-			return finishAttempt(attempt, owner, plumbing.AttemptExpired, "authority_expired", ctx.Err())
+			return finishAttempt(attempt, execution.StateExpired, "authority_expired", ctx.Err())
 		}
-		return finishAttempt(attempt, owner, plumbing.AttemptCancelled, "turn_cancelled_or_timed_out", ctx.Err())
+		return finishAttempt(attempt, execution.StateCancelled, "turn_cancelled_or_timed_out", ctx.Err())
 	}
-	return finishAttempt(attempt, owner, plumbing.AttemptFailed, "runtime_gateway_failed", err)
+	return finishAttempt(attempt, execution.StateFailed, "runtime_gateway_failed", err)
 }
 
-func finishAttempt(attempt plumbing.Attempt, owner string, state plumbing.AttemptState, reason string, cause error) (AttemptTurnResult, error) {
-	return finishAttemptAt(attempt, owner, state, reason, time.Now().UTC(), cause)
+func finishAttempt(attempt execution.Turn, state execution.State, reason string, cause error) (AttemptTurnResult, error) {
+	return finishAttemptAt(attempt, state, reason, time.Now().UTC(), cause)
 }
 
-func finishAttemptAt(attempt plumbing.Attempt, owner string, state plumbing.AttemptState, reason string, finishedAt time.Time, cause error) (AttemptTurnResult, error) {
-	if !plumbing.CanTransitionAttempt(attempt.State, state) {
+func finishAttemptAt(attempt execution.Turn, state execution.State, reason string, finishedAt time.Time, cause error) (AttemptTurnResult, error) {
+	if !execution.CanTransition(attempt.State, state) {
 		return AttemptTurnResult{}, errors.New("invalid started-to-terminal attempt transition")
 	}
 	attempt.State = state
 	attempt.FinishedAt = &finishedAt
 	attempt.Reason = reason
-	attempt.Provenance = plumbing.Provenance{
-		OwnerID:    owner,
-		Producer:   plumbing.ProducerRuntimeAdapter,
-		SourceRef:  "hermes-attempt:" + attempt.RuntimeAttemptID,
-		RecordedAt: finishedAt,
-	}
 	return AttemptTurnResult{Attempt: attempt}, cause
 }
 

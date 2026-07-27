@@ -379,7 +379,10 @@ func (a *Adapter) RunDesignForeground(ctx context.Context, stateRoot string, ret
 	return home, nil
 }
 
-func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, credentials []Credential, bridge BrokerBridge) (string, string, int, []string, error) {
+func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, authority core.AuthorityContext, credentials []Credential, bridge BrokerBridge) (string, string, int, []string, error) {
+	if err := core.ValidateAuthorityContext(authority, m); err != nil {
+		return "", "", 0, nil, fmt.Errorf("runtime launch denied: %w", err)
+	}
 	id := store.ID("hermes-session")
 	runtimeRoot := filepath.Join(stateRoot, "runtime")
 	if err := os.MkdirAll(runtimeRoot, 0700); err != nil {

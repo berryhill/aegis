@@ -30,9 +30,10 @@ flowchart LR
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
   Hermes -. untrusted output .-> Aegis
-  Aegis -->|persist by digest| Artifact[(Content-addressed POC artifact)]
-  Artifact -->|fresh read| Verifier[Distinct Aegis verifier]
-  Verifier -->|digest-bound evidence| Aegis
+  Aegis -->|exact context ID/digest + fresh admission| Hermes
+  Aegis -->|persist by digest| Artifact[(Runtime artifact)]
+  Artifact -->|fresh read| Verifier[Claim-specific verifier]
+  Verifier -->|replay-resistant receipt| Aegis
   Terminal -->|Aegis-owned bounded input| Manager[Built-in secrets-manager]
   Manager --> TUI[Typed Aegis terminal controller]
   Gateway -. runtime/model events .-> TUI
@@ -58,8 +59,8 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Ambient key reaches Hermes | Minimal environment and explicit injection | Proxy/CA environment is intentionally retained |
 | Tool surface exceeds charter | Toolset allowlist and exact launch arguments | No individual-tool post-launch attestation in Hermes 0.18.x |
 | Revoked/expired runtime continues | Supervisor, process start token, process-group termination | Crash recovery depends on persisted PID identity and OS state |
-| Hermes output claims that it verified or completed the POC lifecycle, or corrupt/incomplete stored state is presented as a completed run | Aegis constructs the causal records and terminal disposition; runtime output is persisted by digest; a distinct Aegis verifier rereads the blob and emits separately persisted evidence before success; principal-only CLI/API readback requires one unique terminal aggregate and revalidates authority, artifact bytes, evidence, delivery/disposition bindings, and the authoritative audit chain | The verifier currently runs in the same process and uses the same local store/account; this is component separation, not independent attestation or separately protected evidence custody |
-| A caller treats the plumbing POC's synthetic unrestricted stanza as production authority | CLI/API execution requires principal authentication plus an explicit non-production unrestricted-proof acknowledgement; the stanza is fixed to the narrow proof service and does not provision or activate an agent | The proof intentionally runs Hermes with non-restrictive synthetic authority; operators must not expose or reuse it as a production policy pattern |
+| Runtime input, historical state, or model output widens authority or presents stale authority as current | One immutable per-session authority context is bound exactly to its canonical mandate, charter revision, runtime, and effective authority; each runtime effect requires a fresh authoritative admission decision for the exact context ID/digest; append-only revocation and half-open expiry deny stale use | Authority contexts persisted before a failed launch can remain as orphan evidence; they do not create a session or grant a running process authority, but transactional cleanup remains desirable |
+| Runtime output or a stored filename is treated as verification | Runtime output is stored by content digest; a claim-specific verifier rereads the blob and emits a receipt bound to artifact, action, run, owner, authority context, expected digest, verifier, and policy version | The verifier currently runs in the same process and uses the same local store/account; this is component separation, not independent attestation or separately protected evidence custody |
 | Provisioning escapes state or crashes | Typed effects, containment, symlink rejection, atomic create, durable intent recovery | Same-account filesystem races are not a separate-user sandbox; mismatching recovery artifacts require manual review |
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
 | API token grants principal | Unix peer identity required | TCP principal identity is unavailable without a future mapper |

@@ -143,24 +143,22 @@ type EffectiveAuthority struct {
 	Hermes       HermesConfig   `json:"hermes"`
 }
 type Mandate struct {
-	ID               string            `json:"id"`
-	Subject          Subject           `json:"subject"`
-	AgentID          string            `json:"agent_id"`
-	StanzaID         string            `json:"stanza_id"`
-	CharterRevision  uint64            `json:"charter_revision"`
-	CharterDigest    string            `json:"charter_digest"`
-	Runtime          RuntimeDescriptor `json:"runtime"`
-	Target           string            `json:"target"`
-	DeploymentID     string            `json:"deployment_id,omitempty"`
-	Environment      Environment       `json:"environment"`
-	Capabilities     []string          `json:"capabilities"`
-	Tools            []string          `json:"tools"`
-	Scopes           Scopes            `json:"scopes"`
-	Hermes           HermesConfig      `json:"hermes"`
-	IssuedAt         time.Time         `json:"issued_at"`
-	ExpiresAt        time.Time         `json:"expires_at"`
-	RevokedAt        *time.Time        `json:"revoked_at,omitempty"`
-	RevocationReason string            `json:"revocation_reason,omitempty"`
+	ID              string            `json:"id"`
+	Subject         Subject           `json:"subject"`
+	AgentID         string            `json:"agent_id"`
+	StanzaID        string            `json:"stanza_id"`
+	CharterRevision uint64            `json:"charter_revision"`
+	CharterDigest   string            `json:"charter_digest"`
+	Runtime         RuntimeDescriptor `json:"runtime"`
+	Target          string            `json:"target"`
+	DeploymentID    string            `json:"deployment_id,omitempty"`
+	Environment     Environment       `json:"environment"`
+	Capabilities    []string          `json:"capabilities"`
+	Tools           []string          `json:"tools"`
+	Scopes          Scopes            `json:"scopes"`
+	Hermes          HermesConfig      `json:"hermes"`
+	IssuedAt        time.Time         `json:"issued_at"`
+	ExpiresAt       time.Time         `json:"expires_at"`
 }
 type Session struct {
 	ID                  string     `json:"id"`

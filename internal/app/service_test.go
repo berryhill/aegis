@@ -472,6 +472,22 @@ func TestCleanSessionsAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var contexts []core.AuthorityContext
+	if err = s.Store.List("authority-contexts", func(raw json.RawMessage) error {
+		var authority core.AuthorityContext
+		if decodeErr := json.Unmarshal(raw, &authority); decodeErr != nil {
+			return decodeErr
+		}
+		if authority.SessionID == x1.ID {
+			contexts = append(contexts, authority)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(contexts) != 1 || contexts[0].MandateID != m1.ID || contexts[0].Digest != core.AuthorityContextDigest(contexts[0]) {
+		t.Fatalf("session did not receive exactly one reviewable authority context: %#v", contexts)
+	}
 	if x1.ToolsetVerification != "launch_arguments" || len(x1.VerifiedToolsets) != 1 || x1.VerifiedToolsets[0] != "no_mcp" {
 		t.Fatalf("launched toolset verification=%+v", x1)
 	}
@@ -496,6 +512,20 @@ func TestCleanSessionsAndRevocation(t *testing.T) {
 	}
 	if err = s.RevokeSession(ctx, x1.ID, "test"); err != nil {
 		t.Fatal(err)
+	}
+	storedMandate, err := s.GetMandate(m1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if core.Digest(storedMandate) != core.Digest(m1) {
+		t.Fatal("revocation mutated the canonical mandate")
+	}
+	revocations, err := s.mandateRevocations(m1.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(revocations) != 1 || revocations[0].Reason != "test" || revocations[0].RecordedBy != s.Config.Principal.ID {
+		t.Fatalf("append-only revocation fact missing: %#v", revocations)
 	}
 	_, alive, err := s.InspectSession(x1.ID)
 	if err != nil {

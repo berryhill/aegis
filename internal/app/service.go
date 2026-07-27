@@ -1028,10 +1028,32 @@ func (s *Service) GetMandate(id string) (core.Mandate, error) {
 	var m core.Mandate
 	return m, s.Store.Load("mandates", id, &m)
 }
+
+func (s *Service) mandateRevocations(mandateID string) ([]core.AuthorityRevocation, error) {
+	var revocations []core.AuthorityRevocation
+	err := s.Store.List("authority-revocations", func(raw json.RawMessage) error {
+		var revocation core.AuthorityRevocation
+		if err := json.Unmarshal(raw, &revocation); err != nil {
+			return err
+		}
+		if revocation.MandateID == mandateID {
+			revocations = append(revocations, revocation)
+		}
+		return nil
+	})
+	return revocations, err
+}
+
 func (s *Service) validateMandate(m core.Mandate) error {
 	now := s.Now()
-	if m.RevokedAt != nil {
-		return fmt.Errorf("%w: mandate revoked", ErrDenied)
+	revocations, err := s.mandateRevocations(m.ID)
+	if err != nil {
+		return err
+	}
+	for _, revocation := range revocations {
+		if !now.Before(revocation.RevokedAt) {
+			return fmt.Errorf("%w: mandate revoked", ErrDenied)
+		}
 	}
 	if !now.Before(m.ExpiresAt) || !now.Before(m.Subject.ExpiresAt) {
 		return ErrExpired
@@ -1111,7 +1133,28 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		}
 		bridge = hermes.BrokerBridge{Enabled: true, Executable: executable, Timeout: s.Config.Credentials.Authority.Broker.Timeout}
 	}
-	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, credentials, bridge)
+	sessionID := store.ID("session")
+	issuedAt := s.Now().UTC()
+	authority := core.AuthorityContext{
+		ID: store.ID("authority-context"), MandateID: m.ID, SessionID: sessionID,
+		SubjectID: m.Subject.ID, AgentID: m.AgentID, CharterRevision: m.CharterRevision,
+		CharterDigest: m.CharterDigest, Runtime: m.Runtime,
+		Authority: core.EffectiveAuthority{
+			StanzaID: m.StanzaID, Capabilities: append([]string(nil), m.Capabilities...),
+			Tools: append([]string(nil), m.Tools...), Memory: append([]string(nil), m.Scopes.Memory...),
+			Credentials: append([]string(nil), m.Scopes.Credentials...), Hermes: m.Hermes,
+		},
+		IssuedAt: issuedAt, ExpiresAt: m.ExpiresAt,
+	}
+	authority.Digest = core.AuthorityContextDigest(authority)
+	if err = s.Store.Create("authority-contexts", authority.ID, authority); err != nil {
+		return core.Session{}, err
+	}
+	// A fresh authoritative revocation/expiry read immediately precedes launch.
+	if err = s.validateMandate(m); err != nil {
+		return core.Session{}, err
+	}
+	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, authority, credentials, bridge)
 	if err != nil {
 		return core.Session{}, err
 	}
@@ -1128,7 +1171,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if bridge.Enabled {
 		verification = "exact_registered_aegis_bridge_tool"
 	}
-	sess := core.Session{ID: store.ID("session"), Mandate: m, RuntimeSessionID: id, RuntimePID: pid, ProcessStart: processStartToken(pid), RuntimeHome: home, VerifiedToolsets: launchedToolsets, ToolsetVerification: verification, Status: "running", StartedAt: s.Now()}
+	sess := core.Session{ID: sessionID, Mandate: m, RuntimeSessionID: id, RuntimePID: pid, ProcessStart: processStartToken(pid), RuntimeHome: home, VerifiedToolsets: launchedToolsets, ToolsetVerification: verification, Status: "running", StartedAt: s.Now()}
 	if sess.ProcessStart == "" {
 		stop, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1251,16 +1294,14 @@ func (s *Service) endSession(ctx context.Context, id, status, reason string, rev
 		return err
 	}
 	if revoke {
-		var m core.Mandate
-		_ = s.Store.Update("mandates", sess.Mandate.ID, func(b []byte) (any, error) {
-			if err := json.Unmarshal(b, &m); err != nil {
-				return nil, err
-			}
-			now := s.Now()
-			m.RevokedAt = &now
-			m.RevocationReason = reason
-			return m, nil
-		})
+		now := s.Now()
+		revocation := core.AuthorityRevocation{
+			ID: store.ID("revocation"), MandateID: sess.Mandate.ID,
+			Reason: reason, RevokedAt: now, RecordedBy: s.Config.Principal.ID,
+		}
+		if err := s.Store.Create("authority-revocations", revocation.ID, revocation); err != nil {
+			return err
+		}
 	}
 	s.revokeBrokerCapabilities(sess.ID)
 	stop, cancel := context.WithTimeout(ctx, 5*time.Second)
