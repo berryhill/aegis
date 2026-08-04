@@ -103,8 +103,11 @@ func ParseVersionOutput(output []byte) (InstalledVersion, error) {
 			continue
 		}
 	}
-	if installed.Version == "" || !SupportedVersion(installed.Version) {
+	if installed.Version == "" {
 		return InstalledVersion{}, fmt.Errorf("unsupported Hermes version output: adapter supports %s", core.HermesVersionConstraint)
+	}
+	if !SupportedVersion(installed.Version) {
+		return InstalledVersion{}, fmt.Errorf("unsupported Hermes version %s: adapter supports %s", installed.Version, core.HermesVersionConstraint)
 	}
 	return installed, nil
 }

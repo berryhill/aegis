@@ -15,6 +15,17 @@ func TestParseVersionOutputAcceptsQualifiedHermes(t *testing.T) {
 	}
 }
 
+func TestParseVersionOutputIdentifiesUnsupportedHermesVersion(t *testing.T) {
+	_, err := ParseVersionOutput([]byte("Hermes Agent v0.14.0\n"))
+	if err == nil {
+		t.Fatal("unsupported Hermes version accepted")
+	}
+	want := "unsupported Hermes version 0.14.0: adapter supports >=0.18.0,<0.19.0"
+	if err.Error() != want {
+		t.Fatalf("unexpected unsupported-version error: got %q, want %q", err, want)
+	}
+}
+
 func TestParseVersionOutputFailsClosed(t *testing.T) {
 	tests := map[string]string{
 		"empty":                  "",
