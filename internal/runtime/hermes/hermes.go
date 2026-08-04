@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,7 +24,10 @@ import (
 
 var AdapterVersion = buildinfo.Version
 
-var versionRE = regexp.MustCompile(`Hermes Agent v([0-9]+)\.([0-9]+)\.([0-9]+)[^\n]*`)
+const maximumVersionOutput = 64 << 10
+
+var versionRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$`)
+var requiredCapabilities = []string{"design-stdio", "process-isolation", "disposable-home", "lifecycle-termination", "toolset-selection", "safe-mode", "no-ambient-mcp", "no-ambient-plugins"}
 var supportedToolsets = map[string]bool{
 	"web": true, "browser": true, "terminal": true, "file": true,
 	"code_execution": true, "vision": true, "session_search": true,
@@ -63,6 +65,77 @@ type BrokerBridge struct {
 	Timeout    time.Duration
 }
 
+type InstalledVersion struct {
+	Version      string
+	Installation string
+}
+
+// ParseVersionOutput accepts the bounded, documented Hermes --version shape.
+// Duplicate or malformed identity/install records are ambiguous and denied.
+func ParseVersionOutput(output []byte) (InstalledVersion, error) {
+	if len(output) == 0 || len(output) > maximumVersionOutput || strings.IndexByte(string(output), 0) >= 0 {
+		return InstalledVersion{}, errors.New("unsupported Hermes version output")
+	}
+	var installed InstalledVersion
+	for _, raw := range strings.Split(strings.ReplaceAll(string(output), "\r\n", "\n"), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if match := versionRE.FindStringSubmatch(line); len(match) == 4 {
+			if installed.Version != "" {
+				return InstalledVersion{}, errors.New("ambiguous Hermes version output")
+			}
+			installed.Version = strings.Join(match[1:], ".")
+			continue
+		}
+		if strings.HasPrefix(line, "Hermes Agent") {
+			return InstalledVersion{}, errors.New("unsupported Hermes identity output")
+		}
+		if strings.HasPrefix(line, "Install directory:") {
+			if installed.Installation != "" {
+				return InstalledVersion{}, errors.New("ambiguous Hermes installation output")
+			}
+			installed.Installation = strings.TrimSpace(strings.TrimPrefix(line, "Install directory:"))
+			if installed.Installation == "" || !filepath.IsAbs(installed.Installation) {
+				return InstalledVersion{}, errors.New("unsupported Hermes installation output")
+			}
+			continue
+		}
+	}
+	if installed.Version == "" {
+		return InstalledVersion{}, fmt.Errorf("unsupported Hermes version output: adapter supports %s", core.HermesVersionConstraint)
+	}
+	if !SupportedVersion(installed.Version) {
+		return InstalledVersion{}, fmt.Errorf("unsupported Hermes version %s: adapter supports %s", installed.Version, core.HermesVersionConstraint)
+	}
+	return installed, nil
+}
+
+// SupportedVersion implements the exact qualified Hermes range without
+// accepting prereleases, partial versions, or alternate constraint syntax.
+func SupportedVersion(version string) bool {
+	match := versionRE.FindStringSubmatch("Hermes Agent v" + version)
+	return len(match) == 4 && match[1] == "0" && match[2] == "18"
+}
+
+// ValidateCapabilities makes adapter assumptions reviewable and testable.
+func ValidateCapabilities(capabilities []string) error {
+	seen := make(map[string]bool, len(capabilities))
+	for _, capability := range capabilities {
+		if capability == "" || seen[capability] {
+			return errors.New("Hermes capabilities are empty or ambiguous")
+		}
+		seen[capability] = true
+	}
+	for _, required := range requiredCapabilities {
+		if !seen[required] {
+			return fmt.Errorf("Hermes required capability %q is unavailable", required)
+		}
+	}
+	return nil
+}
+
 func New(executable string, log *slog.Logger) *Adapter {
 	return &Adapter{executable: executable, log: log.With("component", "runtime.hermes"), processes: map[string]*processState{}}
 }
@@ -83,23 +156,15 @@ func (a *Adapter) Discover(ctx context.Context) (core.RuntimeDescriptor, error) 
 	if err != nil {
 		return core.RuntimeDescriptor{}, fmt.Errorf("Hermes version: %w", err)
 	}
-	m := versionRE.FindStringSubmatch(string(b))
-	if len(m) != 4 {
-		return core.RuntimeDescriptor{}, fmt.Errorf("unsupported Hermes version output")
+	installed, err := ParseVersionOutput(b)
+	if err != nil {
+		return core.RuntimeDescriptor{}, err
 	}
-	maj, _ := strconv.Atoi(m[1])
-	min, _ := strconv.Atoi(m[2])
-	if maj != 0 || min != 18 {
-		return core.RuntimeDescriptor{}, fmt.Errorf("unsupported Hermes version %s: adapter supports >=0.18.0,<0.19.0", m[1]+"."+m[2]+"."+m[3])
+	caps := append([]string(nil), requiredCapabilities...)
+	if err = ValidateCapabilities(caps); err != nil {
+		return core.RuntimeDescriptor{}, err
 	}
-	install := ""
-	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, "Install directory:") {
-			install = strings.TrimSpace(strings.TrimPrefix(line, "Install directory:"))
-		}
-	}
-	caps := []string{"design-stdio", "process-isolation", "disposable-home", "lifecycle-termination", "toolset-selection", "safe-mode", "no-ambient-mcp", "no-ambient-plugins"}
-	return core.RuntimeDescriptor{Name: "Hermes Agent", Runtime: "hermes-agent", Version: m[1] + "." + m[2] + "." + m[3], Executable: p, Installation: install, AdapterVersion: AdapterVersion, Capabilities: caps}, nil
+	return core.RuntimeDescriptor{Name: "Hermes Agent", Runtime: "hermes-agent", Version: installed.Version, Executable: p, Installation: installed.Installation, AdapterVersion: AdapterVersion, Capabilities: caps}, nil
 }
 func ResolveTools(requested []string) ([]string, error) {
 	seen := map[string]bool{}

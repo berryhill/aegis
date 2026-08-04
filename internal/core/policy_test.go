@@ -81,6 +81,23 @@ func TestCharterRejectsWildcardUnsupportedRuntimeAndAuthentication(t *testing.T)
 	}
 }
 
+func TestCharterRequiresExactQualifiedHermesVersionConstraint(t *testing.T) {
+	charter := completePolicyCharter()
+	charter.Runtime.VersionConstraint = HermesVersionConstraint
+	if err := ValidateCharter(charter); err != nil {
+		t.Fatalf("qualified runtime constraint rejected: %v", err)
+	}
+	for _, constraint := range []string{"", ">=0.18.0", ">=0.18.0, <0.19.0", "^0.18.0", ">=0.18.0,<0.20.0"} {
+		t.Run(constraint, func(t *testing.T) {
+			changed := completePolicyCharter()
+			changed.Runtime.VersionConstraint = constraint
+			if err := ValidateCharter(changed); err == nil {
+				t.Fatalf("unqualified runtime constraint %q accepted", constraint)
+			}
+		})
+	}
+}
+
 func TestAuthorityRelevantMutationsChangeCanonicalDigest(t *testing.T) {
 	base := completePolicyCharter()
 	canonical, err := Canonicalize(base)
