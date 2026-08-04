@@ -16,6 +16,11 @@ import (
 
 const SchemaVersion = "aegis.dev/v1alpha1"
 
+// HermesVersionConstraint is the sole runtime range qualified by the MVP.
+// Charter text is authority-bearing, so equivalent-looking or broader
+// expressions are not accepted implicitly.
+const HermesVersionConstraint = ">=0.18.0,<0.19.0"
+
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 type RuntimeConstraint struct {
@@ -377,8 +382,8 @@ func ValidateCharter(c Charter) error {
 	if c.CreatedBy == "" || c.CreatedAt.IsZero() {
 		add("creation identity and timestamp are required")
 	}
-	if c.Runtime.Adapter != "hermes" || c.Runtime.Runtime != "hermes-agent" || c.Runtime.VersionConstraint == "" || c.Runtime.Target == "" {
-		add("explicit Hermes runtime, version constraint, and target are required")
+	if c.Runtime.Adapter != "hermes" || c.Runtime.Runtime != "hermes-agent" || c.Runtime.VersionConstraint != HermesVersionConstraint || c.Runtime.Target == "" {
+		add("explicit Hermes runtime, qualified version constraint " + HermesVersionConstraint + ", and target are required")
 	}
 	if len(c.Stanzas) == 0 {
 		add("at least one stanza is required")
