@@ -19,6 +19,8 @@ import (
 
 const designSystemInstruction = `You are in an Aegis design-only session. You cannot authorize, provision, activate, write retained project artifacts, manage profiles, install plugins or MCP servers, or change external systems. Produce one complete Aegis charter JSON object matching the supplied requirements. Return only the JSON wrapped exactly in <aegis-charter> and </aegis-charter>. Do not use markdown fences.`
 
+const maximumDesignBytes = 1 << 20
+
 type gatewayMessage struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      any    `json:"id,omitempty"`
@@ -38,6 +40,9 @@ type gatewayMessage struct {
 // protocol directly. Hermes can only return proposal bytes; Aegis owns strict
 // decoding, validation, canonicalization, persistence, and provisioning.
 func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements string, retain bool, credentials []Credential) (proposal, home string, err error) {
+	if len(requirements) == 0 || len(requirements) > maximumDesignBytes {
+		return "", "", errors.New("design requirements must be between 1 byte and 1 MiB")
+	}
 	descriptor, err := a.Discover(ctx)
 	if err != nil {
 		return "", "", err
@@ -66,7 +71,7 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Env = append(minimalEnv(home, credentials),
 		"HERMES_PYTHON_SRC_ROOT="+descriptor.Installation,
-		"HERMES_TUI_TOOLSETS=web",
+		"HERMES_TUI_TOOLSETS=no_mcp",
 		"HERMES_TUI_SKILLS=",
 		"HERMES_DISABLE_AUTO_SKILLS=1",
 	)
@@ -149,7 +154,11 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 			started = true
 		case "message.delta":
 			if started {
-				response.WriteString(payloadText(message.Params.Payload))
+				delta := payloadText(message.Params.Payload)
+				if response.Len()+len(delta) > maximumDesignBytes {
+					return "", home, errors.New("Hermes charter proposal exceeds 1 MiB limit")
+				}
+				response.WriteString(delta)
 			}
 		case "error":
 			return "", home, fmt.Errorf("Hermes design turn failed: %s", payloadText(message.Params.Payload))
@@ -158,7 +167,11 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 				continue
 			}
 			if response.Len() == 0 {
-				response.WriteString(payloadText(message.Params.Payload))
+				complete := payloadText(message.Params.Payload)
+				if len(complete) > maximumDesignBytes {
+					return "", home, errors.New("Hermes charter proposal exceeds 1 MiB limit")
+				}
+				response.WriteString(complete)
 			}
 			proposal, err = extractCharter(response.String())
 			if err != nil {
@@ -232,13 +245,19 @@ func payloadText(payload map[string]any) string {
 func extractCharter(output string) (string, error) {
 	const open, close = "<aegis-charter>", "</aegis-charter>"
 	start := strings.Index(output, open)
-	end := strings.LastIndex(output, close)
+	end := strings.Index(output, close)
 	if start < 0 || end < 0 || end <= start+len(open) {
 		return "", errors.New("Hermes response did not contain a structured Aegis charter proposal")
+	}
+	if strings.Contains(output[start+len(open):end], open) || strings.Contains(output[end+len(close):], open) || strings.Contains(output[end+len(close):], close) {
+		return "", errors.New("Hermes response contained multiple charter proposal envelopes")
 	}
 	proposal := strings.TrimSpace(output[start+len(open) : end])
 	if proposal == "" {
 		return "", errors.New("Hermes returned an empty charter proposal")
+	}
+	if len(proposal) > maximumDesignBytes {
+		return "", errors.New("Hermes charter proposal exceeds 1 MiB limit")
 	}
 	return proposal, nil
 }

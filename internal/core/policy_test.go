@@ -59,6 +59,13 @@ func TestDecodeCharterRequiresEveryPolicyStanza(t *testing.T) {
 	}
 }
 
+func TestDecodeCharterRejectsOversizedInput(t *testing.T) {
+	input := bytes.NewReader(bytes.Repeat([]byte("x"), MaximumCharterBytes+1))
+	if _, err := DecodeCharter(input); err == nil || !strings.Contains(err.Error(), "1 MiB limit") {
+		t.Fatalf("oversized charter error=%v", err)
+	}
+}
+
 func TestCharterRejectsWildcardUnsupportedRuntimeAndAuthentication(t *testing.T) {
 	tests := []struct {
 		name string

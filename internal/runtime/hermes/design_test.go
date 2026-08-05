@@ -24,6 +24,9 @@ func TestDesignProposalUsesGatewayAndCleansHome(t *testing.T) {
 	}
 	python := filepath.Join(installation, "venv", "bin", "python")
 	gatewayScript := `#!/bin/sh
+if [ "$HERMES_TUI_TOOLSETS" != "no_mcp" ] || [ -n "$HERMES_TUI_SKILLS" ] || [ "$HERMES_DISABLE_AUTO_SKILLS" != "1" ]; then
+  exit 9
+fi
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"design-1"}}'
@@ -64,6 +67,22 @@ func TestExtractCharterRejectsUnstructuredOutput(t *testing.T) {
 	proposal, err := extractCharter("noise<aegis-charter>{}</aegis-charter>noise")
 	if err != nil || proposal != "{}" {
 		t.Fatalf("proposal=%q err=%v", proposal, err)
+	}
+	if _, err = extractCharter("<aegis-charter>{}</aegis-charter><aegis-charter>{}</aegis-charter>"); err == nil {
+		t.Fatal("accepted multiple charter proposal envelopes")
+	}
+	oversized := "<aegis-charter>" + strings.Repeat("x", maximumDesignBytes+1) + "</aegis-charter>"
+	if _, err = extractCharter(oversized); err == nil {
+		t.Fatal("accepted oversized charter proposal")
+	}
+}
+
+func TestDesignProposalRejectsEmptyAndOversizedRequirementsBeforeRuntime(t *testing.T) {
+	adapter := New(filepath.Join(t.TempDir(), "missing-hermes"), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for _, requirements := range []string{"", strings.Repeat("x", maximumDesignBytes+1)} {
+		if _, _, err := adapter.DesignProposal(context.Background(), t.TempDir(), requirements, false, nil); err == nil || !strings.Contains(err.Error(), "requirements") {
+			t.Fatalf("requirements length %d error=%v", len(requirements), err)
+		}
 	}
 }
 

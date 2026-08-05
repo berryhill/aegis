@@ -595,6 +595,20 @@ func (s *Service) charterDiff(c core.CanonicalCharter) (string, error) {
 }
 
 func (s *Service) PreviewPlan(ctx context.Context, agent string, rev uint64, env core.Environment) (core.Review, error) {
+	sub, err := s.Authenticate(ctx)
+	if err != nil {
+		return core.Review{}, err
+	}
+	return s.PreviewPlanAs(ctx, sub, agent, rev, env)
+}
+
+func (s *Service) PreviewPlanAs(ctx context.Context, sub core.Subject, agent string, rev uint64, env core.Environment) (core.Review, error) {
+	if err := s.requirePrincipal(sub); err != nil {
+		return core.Review{}, err
+	}
+	if env.Name != "local" || env.Host != "" || env.Tenant != "" {
+		return core.Review{}, fmt.Errorf("%w: provisioning plan requires the exact local environment", ErrDenied)
+	}
 	c, err := s.GetCharter(agent, rev)
 	if err != nil {
 		return core.Review{}, err
@@ -715,7 +729,11 @@ func (s *Service) RequestApprovalAs(ctx context.Context, sub core.Subject, planI
 	if err != nil {
 		return core.Approval{}, err
 	}
-	a := core.Approval{ID: store.ID("approval"), PlanDigest: p.Digest, CharterDigest: p.CharterDigest, Runtime: p.Runtime.Runtime, RuntimeVersion: p.Runtime.Version, Environment: p.Environment, Status: "pending", RequestedBy: sub.PrincipalID, RequestedAt: s.Now(), ExpiresAt: s.Now().Add(ttl)}
+	c, err := s.GetCharter(p.AgentID, p.Revision)
+	if err != nil || c.Digest != p.CharterDigest {
+		return core.Approval{}, fmt.Errorf("%w: plan is not bound to the current canonical charter", ErrConflict)
+	}
+	a := core.Approval{ID: store.ID("approval"), PlanID: p.ID, PlanDigest: p.Digest, CharterDigest: p.CharterDigest, Runtime: p.Runtime.Runtime, RuntimeVersion: p.Runtime.Version, Environment: p.Environment, Status: "pending", RequestedBy: sub.PrincipalID, RequestedAt: s.Now(), ExpiresAt: s.Now().Add(ttl)}
 	if err = s.Store.Save("approvals", a.ID, a); err != nil {
 		return a, err
 	}
@@ -749,6 +767,18 @@ func (s *Service) DecideApprovalAs(ctx context.Context, sub core.Subject, id str
 	var err error
 	if err = s.requirePrincipal(sub); err != nil {
 		return core.Approval{}, err
+	}
+	pending, err := s.GetApproval(id)
+	if err != nil {
+		return core.Approval{}, err
+	}
+	plan, err := s.GetPlan(pending.PlanID)
+	if err != nil || pending.PlanDigest != plan.Digest || pending.CharterDigest != plan.CharterDigest || pending.Runtime != plan.Runtime.Runtime || pending.RuntimeVersion != plan.Runtime.Version || pending.Environment != plan.Environment {
+		return core.Approval{}, fmt.Errorf("%w: approval is not bound to the exact current plan", ErrConflict)
+	}
+	charter, err := s.GetCharter(plan.AgentID, plan.Revision)
+	if err != nil || charter.Digest != plan.CharterDigest {
+		return core.Approval{}, fmt.Errorf("%w: approval is not bound to the current canonical charter", ErrConflict)
 	}
 	var out core.Approval
 	err = s.Store.Update("approvals", id, func(b []byte) (any, error) {
@@ -815,7 +845,7 @@ func (s *Service) ApplyAs(ctx context.Context, sub core.Subject, planID, approva
 		return core.Receipt{}, fmt.Errorf("%w: charter changed", ErrConflict)
 	}
 	var a core.Approval
-	r := core.Receipt{ID: store.ID("receipt"), PlanID: p.ID, ApprovalID: approvalID, CharterDigest: c.Digest, Status: "provisioning", StartedAt: s.Now()}
+	r := core.Receipt{ID: store.ID("receipt"), PlanID: p.ID, PlanDigest: p.Digest, ApprovalID: approvalID, CharterDigest: c.Digest, Status: "provisioning", StartedAt: s.Now()}
 	err = s.Store.UpdateWithIntent("approvals", approvalID, "receipts", r.ID, r, func(b []byte) (any, error) {
 		if err := json.Unmarshal(b, &a); err != nil {
 			return nil, err
@@ -827,7 +857,7 @@ func (s *Service) ApplyAs(ctx context.Context, sub core.Subject, planID, approva
 			a.Status = "expired"
 			return a, ErrExpired
 		}
-		if a.PlanDigest != p.Digest || a.CharterDigest != p.CharterDigest || a.Runtime != p.Runtime.Runtime || a.RuntimeVersion != p.Runtime.Version || a.Environment != p.Environment {
+		if a.PlanID != p.ID || a.PlanDigest != p.Digest || a.CharterDigest != p.CharterDigest || a.Runtime != p.Runtime.Runtime || a.RuntimeVersion != p.Runtime.Version || a.Environment != p.Environment {
 			return nil, fmt.Errorf("%w: exact approval binding mismatch", ErrConflict)
 		}
 		now := s.Now()
@@ -947,7 +977,15 @@ func (s *Service) RecoverProvisioning(ctx context.Context) error {
 		receipt.Status = "failed"
 		receipt.Failure = "interrupted provisioning recovered"
 		plan, planErr := s.GetPlan(receipt.PlanID)
+		bindingValid := false
 		if planErr == nil {
+			approval, approvalErr := s.GetApproval(receipt.ApprovalID)
+			bindingValid = receipt.PlanDigest != "" && receipt.PlanDigest == plan.Digest && receipt.CharterDigest == plan.CharterDigest && approvalErr == nil && approval.Status == "consumed" && approval.PlanID == plan.ID && approval.PlanDigest == plan.Digest && approval.CharterDigest == plan.CharterDigest && approval.Runtime == plan.Runtime.Runtime && approval.RuntimeVersion == plan.Runtime.Version && approval.Environment == plan.Environment
+			if !bindingValid {
+				receipt.Failure = "interrupted provisioning authority binding is unavailable or corrupt; manual intervention required"
+			}
+		}
+		if planErr == nil && bindingValid {
 			for _, effect := range plan.Effects {
 				if effect.Kind != core.EffectCreateFile {
 					continue
@@ -971,7 +1009,7 @@ func (s *Service) RecoverProvisioning(ctx context.Context) error {
 					return removeErr
 				}
 			}
-		} else {
+		} else if planErr != nil {
 			receipt.Failure = "interrupted provisioning plan is unavailable or corrupt; manual intervention required"
 		}
 		receipt.FinishedAt = s.Now()
