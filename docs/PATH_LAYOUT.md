@@ -21,6 +21,7 @@ Stable release binaries use the literal production root `~/.argis`. Source-built
 ~/.argis/state/persistence/authority-v1/ACTIVE 0600
 ~/.argis/state/persistence/authority-v1/CLEAN  0600 when closed
 ~/.argis/state/persistence/authority-v1/DIRTY  0600 while open
+~/.argis/state/persistence/authority-v1/MAINTENANCE 0600 cooperative lifecycle lock
 ~/.argis/state/persistence/authority-v1/stores/store-<generation>.badger/
 ~/.argis/state/persistence/authority-v1/staging/
 ~/.argis/state/persistence/authority-v1/retired/
@@ -34,7 +35,7 @@ Stable release binaries use the literal production root `~/.argis`. Source-built
 # deployment identifier, audit chain, certification, and runtime
 ```
 
-Directories are created only when implemented behavior needs them. A clean first-run initialization creates the generation-managed Badger authority root at `state/persistence/authority-v1`. Its `ACTIVE` marker selects one digest-bound generation; `DIRTY` replaces `CLEAN` while that generation is open, and a successful sync/close restores `CLEAN`. Atomic configuration and manager-configuration files are created beside their destination. Disposable Hermes and managed Ollama homes are created below `state/runtime`. Store atomic files are created beside their state destination. Sensitive regular files are mode `0600`; Aegis-owned directories are mode `0700`.
+Directories are created only when implemented behavior needs them. A clean first-run initialization creates the generation-managed Badger authority root at `state/persistence/authority-v1`. Its `ACTIVE` marker selects one digest-bound generation; `DIRTY` replaces `CLEAN` while that generation is open, and a successful sync/close restores `CLEAN`. The no-follow mode-`0600` `MAINTENANCE` file provides a cooperative cross-process `flock`: open stores retain a shared lease for their lifetime, while initialization, export, import, activation, rollback, and garbage collection require the exclusive lease and respect context cancellation. Imported generations are first built under `staging`, then published inactive under `stores`; replaced active generations move to `retired`. Export destinations must be absolute, outside this live authority root, and are atomically created without replacement. Atomic configuration and manager-configuration files are created beside their destination. Disposable Hermes and managed Ollama homes are created below `state/runtime`. Store atomic files are created beside their state destination. Sensitive regular files are mode `0600`; Aegis-owned directories are mode `0700`.
 
 The typed resolver in `internal/layout` is the source for both profile roots and their config, state, checkpoints, generation-managed authority persistence, separate credential-authority database, host KEK, certification, managed-model, and runtime defaults. Changing `--state-dir` rederives every state-rooted default unless that field has an explicit override. Configuration loading remains separate. An executable refuses configuration or state beneath the opposing profile root, including values loaded indirectly from configuration. Explicit deployments outside both local profile roots retain their existing validation, but destructive reset is restricted to the executable's own exact profile layout.
 

@@ -163,6 +163,23 @@ func writeOwned(t *testing.T, path, value string) {
 	}
 }
 
+func TestResetRecognizesAuthorityMaintenanceCoordinatorOnlyByExactName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "MAINTENANCE")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authorityPersistenceArtifact([]string{"persistence", "authority-v1", "MAINTENANCE"}, info) {
+		t.Fatal("authority maintenance coordinator was not recognized as an Aegis-owned reset artifact")
+	}
+	if authorityPersistenceArtifact([]string{"persistence", "authority-v1", "MAINTENANCE-other"}, info) {
+		t.Fatal("non-exact maintenance filename was accepted as Aegis-owned")
+	}
+}
+
 func TestCompleteResetAndFirstRunReplay(t *testing.T) {
 	f := newFixture(t)
 	f.writeConfig(t, "")
