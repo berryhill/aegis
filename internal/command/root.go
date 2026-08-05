@@ -107,9 +107,11 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	profileLayout, profileErr := resolveExecutionProfile(deps.Profile, deps.DevelopmentRoot)
 	o := &rootOptions{}
-	if deps.Profile == DevelopmentProfile && profileErr == nil {
+	if deps.Profile != "" && profileErr == nil {
 		o.configFile = profileLayout.Config
 		o.stateDir = profileLayout.State
+	}
+	if deps.Profile == DevelopmentProfile && profileErr == nil {
 		deps.Resetter.RepositoryResetRoot = profileLayout.Root
 	}
 	passphrases := deps.Passphrases
@@ -185,6 +187,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if err := validateExecutionProfile(deps.Profile, profileLayout, o, cmd.Name() == "reset"); err != nil {
 			return usage(err)
 		}
+		lifecycleConfig := o.configFile
+		if deps.Profile == ProductionProfile && !cmd.Flags().Changed("config") && !cmd.InheritedFlags().Changed("config") {
+			// Empty selects canonical-plus-legacy artifact discovery. The resolved
+			// profile path remains fixed in options for the selected operation.
+			lifecycleConfig = ""
+		}
+		if _, _, err := classifyLifecycle(cmd, lifecycleConfig); err != nil {
+			return usage(err)
+		}
 		if updateAlias && cmd != root {
 			return usage(errors.New("--update is valid only as a root action without a positional command"))
 		}
@@ -217,7 +228,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
 	return root
 }
 

@@ -125,10 +125,16 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	if err = ensureSecureDirectory(filepath.Dir(plan.ConfigPath)); err != nil {
 		return err
 	}
+	if err = ensureSecureDirectory(plan.StatePath); err != nil {
+		return err
+	}
 	for _, partial := range inspection.Partials {
 		if err = removeOwnedPartial(partial); err != nil {
 			return fmt.Errorf("%s: %w", ReasonPartial, err)
 		}
+	}
+	if err = ensureAuthorityPersistence(ctx, plan.AuthorityPath); err != nil {
+		return fmt.Errorf("initialize authority persistence: %w", err)
 	}
 	if err = ctx.Err(); err != nil {
 		return err
@@ -154,6 +160,13 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	if err = ctx.Err(); err != nil {
 		return err
 	}
+	revalidated, err := s.verifiedCurrent()
+	if err != nil {
+		return err
+	}
+	if revalidated.Uid != plan.Principal.UID || revalidated.Username != plan.Principal.User {
+		return errors.New("authenticated local operator changed immediately before configuration publication")
+	}
 	if err = os.Link(temporaryPath, plan.ConfigPath); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("configuration %s appeared during initialization and was not overwritten", plan.ConfigPath)
@@ -161,9 +174,16 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 		return fmt.Errorf("publish configuration %s atomically: %w", plan.ConfigPath, err)
 	}
 	_ = os.Remove(temporaryPath)
-	if directory, openErr := os.Open(filepath.Dir(plan.ConfigPath)); openErr == nil {
-		_ = directory.Sync()
+	directory, openErr := os.Open(filepath.Dir(plan.ConfigPath))
+	if openErr != nil {
+		return fmt.Errorf("open configuration directory for sync: %w", openErr)
+	}
+	if syncErr := directory.Sync(); syncErr != nil {
 		_ = directory.Close()
+		return fmt.Errorf("sync published configuration directory: %w", syncErr)
+	}
+	if closeErr := directory.Close(); closeErr != nil {
+		return fmt.Errorf("close published configuration directory: %w", closeErr)
 	}
 	verified := config.Inspect(plan.ConfigPath)
 	if verified.State != config.StateValid {
@@ -173,11 +193,31 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 		}
 		return fmt.Errorf("verify initialized configuration: state %s", verified.State)
 	}
-	if _, err = authoritybadger.Initialize(ctx, plan.AuthorityPath); err != nil {
-		if removeErr := os.Remove(plan.ConfigPath); removeErr != nil {
-			return fmt.Errorf("initialize authority persistence: %w; configuration rollback failed: %v", err, removeErr)
-		}
-		return fmt.Errorf("initialize authority persistence: %w", err)
+	return nil
+}
+
+// ensureAuthorityPersistence makes configuration publication resumable. The
+// authority generation is published first; a cancellation before the final
+// configuration link leaves a verified generation that the next run reopens
+// rather than replacing. Existing invalid or unopenable state denies.
+func ensureAuthorityPersistence(ctx context.Context, path string) error {
+	if _, err := authoritybadger.Initialize(ctx, path); err == nil {
+		return nil
+	} else if !errors.Is(err, authoritybadger.ErrAlreadyInitialized) {
+		return err
+	}
+	store, err := authoritybadger.Open(ctx, path)
+	if err != nil {
+		return fmt.Errorf("verify resumable authority persistence: %w", err)
+	}
+	mandates, mandateErr := store.ListMandates(ctx)
+	contexts, contextErr := store.ListAuthorityContexts(ctx)
+	if mandateErr != nil || contextErr != nil || len(mandates) != 0 || len(contexts) != 0 {
+		closeErr := store.Close()
+		return errors.Join(errors.New("resumable authority persistence is not an empty initialization generation"), mandateErr, contextErr, closeErr)
+	}
+	if err = store.Close(); err != nil {
+		return fmt.Errorf("close verified resumable authority persistence: %w", err)
 	}
 	return nil
 }

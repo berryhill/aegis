@@ -98,6 +98,36 @@ func TestDevelopmentProfileUsesRepositoryAndRejectsProductionPaths(t *testing.T)
 	}
 }
 
+func TestDevelopmentProfileDerivesEveryOperationalPathFromRepositoryCustody(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repository := filepath.Join(home, "repository")
+	if err := os.Mkdir(repository, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(repository, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "go.mod"), []byte("module github.com/berryhill/aegis\n\ngo 1.26\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveExecutionProfile(DevelopmentProfile, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(repository, ".aegis")
+	for name, path := range map[string]string{
+		"config": got.Config, "state": got.State, "audit": got.AuditCheckpoints,
+		"authority": got.AuthorityPersistence, "credentials": got.CredentialDatabase,
+		"kek": got.HostKEK, "certifications": got.ManagerCertifications,
+		"models": got.ManagedModels, "runtime": got.Runtime,
+	} {
+		if path != root && !strings.HasPrefix(path, root+string(filepath.Separator)) {
+			t.Errorf("%s escaped development custody: %q", name, path)
+		}
+	}
+}
+
 func TestDevelopmentProfileRequiresAegisRepositoryRoot(t *testing.T) {
 	root := t.TempDir()
 	if _, err := resolveExecutionProfile(DevelopmentProfile, root); err == nil {
