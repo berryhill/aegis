@@ -663,7 +663,7 @@ func authorityPersistenceArtifact(parts []string, info os.FileInfo) bool {
 		if info.IsDir() {
 			return parts[2] == "stores" || parts[2] == "staging" || parts[2] == "retired"
 		}
-		return parts[2] == "ACTIVE" || parts[2] == "CLEAN" || parts[2] == "DIRTY" || strings.HasPrefix(parts[2], ".ACTIVE-") || strings.HasPrefix(parts[2], ".CLEAN-") || strings.HasPrefix(parts[2], ".DIRTY-")
+		return parts[2] == "ACTIVE" || parts[2] == "CLEAN" || parts[2] == "DIRTY" || parts[2] == "MAINTENANCE" || strings.HasPrefix(parts[2], ".ACTIVE-") || strings.HasPrefix(parts[2], ".CLEAN-") || strings.HasPrefix(parts[2], ".DIRTY-")
 	}
 	if parts[2] != "stores" && parts[2] != "staging" && parts[2] != "retired" {
 		return false

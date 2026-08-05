@@ -45,6 +45,7 @@ type Store struct {
 	db         *badgerdb.DB
 	root       string
 	generation Generation
+	lease      *maintenanceLease
 	mu         sync.Mutex
 	closed     bool
 	closeErr   error
@@ -62,12 +63,22 @@ func Initialize(ctx context.Context, root string) (Generation, error) {
 	if _, err = authoritypersistence.ClassifyLegacyAuthority(stateRoot); err != nil {
 		return Generation{}, err
 	}
+	for _, path := range []string{stateRoot, filepath.Dir(root), root} {
+		if err = secureMkdir(path); err != nil {
+			return Generation{}, err
+		}
+	}
+	lease, err := acquireMaintenance(ctx, root, true)
+	if err != nil {
+		return Generation{}, err
+	}
+	defer lease.release()
 	if _, err = os.Lstat(filepath.Join(root, "ACTIVE")); err == nil {
 		return Generation{}, ErrAlreadyInitialized
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return Generation{}, fmt.Errorf("inspect ACTIVE: %w", err)
 	}
-	for _, path := range []string{stateRoot, filepath.Dir(root), root, filepath.Join(root, "stores"), filepath.Join(root, "staging"), filepath.Join(root, "retired")} {
+	for _, path := range []string{filepath.Join(root, "stores"), filepath.Join(root, "staging"), filepath.Join(root, "retired")} {
 		if err = secureMkdir(path); err != nil {
 			return Generation{}, err
 		}
@@ -157,6 +168,21 @@ func Open(ctx context.Context, root string) (*Store, error) {
 	if _, err = authoritypersistence.ClassifyLegacyAuthority(filepath.Dir(filepath.Dir(root))); err != nil {
 		return nil, err
 	}
+	if _, err = os.Lstat(root); errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNotInitialized
+	} else if err != nil {
+		return nil, err
+	}
+	lease, err := acquireMaintenance(ctx, root, false)
+	if err != nil {
+		return nil, err
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			lease.release()
+		}
+	}()
 	generation, err := readMarker(filepath.Join(root, "ACTIVE"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotInitialized
@@ -184,7 +210,8 @@ func Open(ctx context.Context, root string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open selected authority generation: %w", err)
 	}
-	return &Store{db: db, root: root, generation: generation}, nil
+	opened = true
+	return &Store{db: db, root: root, generation: generation, lease: lease}, nil
 }
 
 func (s *Store) Generation() Generation { return s.generation }
@@ -196,6 +223,7 @@ func (s *Store) Close() error {
 		return s.closeErr
 	}
 	s.closed = true
+	defer s.lease.release()
 	if err := s.db.Sync(); err != nil {
 		s.closeErr = err
 		return err
