@@ -9,6 +9,15 @@
 
 Install the latest tagged Aegis source with `go install github.com/berryhill/aegis/cmd/aegis@latest`, or continue below to build a checkout. Self-update requires a published, non-draft stable GitHub release with assets, not merely a local or remote Git tag; until publication completes it correctly reports the previous published stable version. `aegis --update` is the strict root-only alias for `aegis update`; both use the same checksum-verifying service.
 
+Maintainers can exercise the exact release packaging path without publishing anything:
+
+```sh
+./scripts/verify_installed_mvi_test.sh
+./scripts/verify-installed-mvi.sh
+```
+
+The second command builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, verifies their checksums, extracts the native archive, verifies its injected stable version, and runs the installed binary with an isolated `HOME`. The expected bare non-TTY result is `manager_not_initialized` with exit status 2 and no `.argis` creation. Supplying a version and empty output directory, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist`, retains the archives and `SHA256SUMS`; never point it at a directory containing retained files.
+
 ## Build and configure
 
 ```sh

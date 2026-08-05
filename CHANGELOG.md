@@ -6,6 +6,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Added one repository-owned installed-MVI verifier used by CI and release publication. It builds release-shaped Linux/macOS archives for amd64/arm64, generates and verifies `SHA256SUMS`, checks the extracted native binary's injected stable version, and proves bare non-TTY first run reports `manager_not_initialized` without creating production state. Focused denial tests reject invalid versions, non-empty output, and symlink output before mutation.
 - Added immutable per-session authority contexts bound exactly to canonical subjects, mandates, charter revisions, runtime descriptors, and effective authority.
 - Added append-only authority-revocation facts, bounded dispatch/turn lifecycle records, fresh exact-context runtime admission, content-addressed runtime artifacts, and claim-specific verification receipts that cannot grant authority or declare domain success.
 - Added a focused Hermes runtime-adapter operation for exactly one bounded turn under an immutable launch contract and fresh authoritative admission decision. The operation remains internal; it adds no provisioning or activation surface.
@@ -26,6 +27,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Preserved atomic no-replace Badger generation publication in cross-platform release builds by using `renameat2(RENAME_NOREPLACE)` on Linux and `renameatx_np(RENAME_EXCL)` on macOS instead of compiling the Linux-only primitive into every target.
 - Removed the authority-bearing proxy token from the manager Hermes environment. Hermes now receives only a fixed non-secret parser-compatibility API-key string, while the loopback inference proxy fails closed until it is bound to the exact launched Hermes process through Linux pidfd custody and verifies each accepted TCP connection against that process. Manager Hermes launches now request the real empty `no_mcp` toolset rather than the capability-bearing `context_engine` toolset.
 - Repaired the executable no-key demonstration for the enforced development/production profile split. It now builds a normally classified checkout binary in the repository root, uses an ignored disposable repository-local workspace, reports the `dev` profile, preserves an honest no-provider boundary, cleans up its artifacts, and has a CI regression test.
 - Treat conversational answers such as `named NAME` at the dedicated credential-name prompt as the requested name instead of persisting a `named-` prefix, route filtered metadata requests such as `show me all doppler secrets` to authoritative `secret.search` rather than silently returning the unfiltered list, and render manager credential counts, lists, searches, details, history, mutations, and terminal-only values as readable labeled views instead of dense raw JSON.

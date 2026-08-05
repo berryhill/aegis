@@ -32,6 +32,8 @@ jobs:
         run: |
           python3 -m unittest scripts/demo_no_key_test.py
           python3 -m unittest scripts/operator_acceptance_poc_test.py
+          ./scripts/verify_installed_mvi_test.sh
+          ./scripts/verify-installed-mvi.sh
           go test ./...
       - name: Vet
         run: go vet ./...
