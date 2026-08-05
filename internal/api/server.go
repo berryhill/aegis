@@ -198,9 +198,13 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	e.GET("/livez", func(c *echo.Context) error { return c.JSON(http.StatusOK, map[string]string{"status": "live"}) })
 	e.GET("/readyz", func(c *echo.Context) error {
 		if !ready.Load() {
-			return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "draining"})
+			return c.JSON(http.StatusServiceUnavailable, map[string]any{"status": "draining", "audit": core.AuditDeliveryStatus{State: "unverifiable", Reason: "service_draining", Verifiable: false}})
 		}
-		return c.JSON(http.StatusOK, map[string]string{"status": "ready"})
+		auditStatus := svc.AuditDeliveryReadiness()
+		if !auditStatus.Current {
+			return c.JSON(http.StatusServiceUnavailable, map[string]any{"status": "not_ready", "audit": auditStatus})
+		}
+		return c.JSON(http.StatusOK, map[string]any{"status": "ready", "audit": auditStatus})
 	})
 	protected := func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -554,6 +558,59 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusOK, map[string]bool{"valid": true})
+	})
+	g.GET("/audit/delivery/status", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		status, err := svc.AuditDeliveryStatusAs(subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, status)
+	})
+	g.POST("/audit/delivery", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input struct {
+			Limit int `json:"limit"`
+		}
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		result, err := svc.DeliverAuditAs(c.Request().Context(), subject, input.Limit)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, result)
+	})
+	g.GET("/audit/delivery/verify", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		if err = svc.VerifyAuditProjectionAs(subject); err != nil {
+			return err
+		}
+		status, err := svc.AuditDeliveryStatusAs(subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, map[string]bool{"valid": true, "current": status.Current})
+	})
+	g.POST("/audit/projection/rebuild", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		status, err := svc.RebuildAuditProjectionAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, status)
 	})
 	g.POST("/authorization/explain", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

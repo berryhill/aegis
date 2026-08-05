@@ -90,9 +90,12 @@ Live certification remains deliberately opt-in and is never part of default test
 ./aegis --config .aegis.yaml session show SESSION_ID
 ./aegis --config .aegis.yaml session revoke SESSION_ID --reason operator_request
 ./aegis --config .aegis.yaml audit verify
+./aegis --config .aegis.yaml audit delivery-status
+./aegis --config .aegis.yaml audit deliver --limit 100
+./aegis --config .aegis.yaml audit verify-delivery
 ```
 
-All command results are JSON on stdout. Diagnostics and the explicit design-mode warning go to stderr. A stanza flag is only a narrowing request and never identity evidence. `charter explain` and denied session previews retain the shared machine-readable decision on stdout; `charter effective` authenticates and authorizes the caller before returning only the selected stanza's capabilities, tools, memory and credential scopes, session/approval limits, and Hermes mapping.
+All command results are JSON on stdout. Diagnostics and the explicit design-mode warning go to stderr. Audit delivery is a bounded, principal-authenticated projection of the verified canonical audit chain: `delivery-status` reports sanitized aggregate health, `deliver` advances at most 1–1000 events in canonical order, and `verify-delivery` verifies the derived projection without replacing canonical verification. `rebuild-projection` is an explicit recovery operation that verifies the canonical chain before replacing only derived outbox/projection state. API readiness is unavailable while delivery is pending, degraded, or unverifiable. A stanza flag is only a narrowing request and never identity evidence. `charter explain` and denied session previews retain the shared machine-readable decision on stdout; `charter effective` authenticates and authorizes the caller before returning only the selected stanza's capabilities, tools, memory and credential scopes, session/approval limits, and Hermes mapping.
 
 ## Charter representation
 

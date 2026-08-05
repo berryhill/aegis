@@ -60,6 +60,13 @@ type AuditAuthority interface {
 	VerifyAudit() error
 }
 
+type AuditDeliveryAuthority interface {
+	AuditDeliveryStatus() core.AuditDeliveryStatus
+	DeliverAudit(context.Context, int) (core.AuditDeliveryResult, error)
+	VerifyAuditProjection() error
+	RebuildAuditProjection(context.Context) (core.AuditDeliveryStatus, error)
+}
+
 func New(cfg config.Config, st *store.Store, h *hermes.Adapter, log *slog.Logger) *Service {
 	return &Service{Config: cfg, Store: st, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
 }
@@ -1239,6 +1246,68 @@ func (s *Service) VerifyAuditAs(subject core.Subject) error {
 		return err
 	}
 	return s.Audit.VerifyAudit()
+}
+
+func (s *Service) auditDeliveryAuthority() (AuditDeliveryAuthority, error) {
+	authority, ok := s.Audit.(AuditDeliveryAuthority)
+	if !ok {
+		return nil, errors.New("audit delivery authority is unavailable")
+	}
+	return authority, nil
+}
+
+// AuditDeliveryReadiness is intentionally unauthenticated and sanitized for
+// readiness. Mutating and detailed paths require the configured principal.
+func (s *Service) AuditDeliveryReadiness() core.AuditDeliveryStatus {
+	authority, err := s.auditDeliveryAuthority()
+	if err != nil {
+		return core.AuditDeliveryStatus{State: "unverifiable", Reason: "audit_delivery_unavailable", Verifiable: false}
+	}
+	return authority.AuditDeliveryStatus()
+}
+
+func (s *Service) AuditDeliveryStatusAs(subject core.Subject) (core.AuditDeliveryStatus, error) {
+	if err := s.requirePrincipal(subject); err != nil {
+		return core.AuditDeliveryStatus{}, err
+	}
+	authority, err := s.auditDeliveryAuthority()
+	if err != nil {
+		return core.AuditDeliveryStatus{}, err
+	}
+	return authority.AuditDeliveryStatus(), nil
+}
+
+func (s *Service) DeliverAuditAs(ctx context.Context, subject core.Subject, limit int) (core.AuditDeliveryResult, error) {
+	if err := s.requirePrincipal(subject); err != nil {
+		return core.AuditDeliveryResult{}, err
+	}
+	authority, err := s.auditDeliveryAuthority()
+	if err != nil {
+		return core.AuditDeliveryResult{}, err
+	}
+	return authority.DeliverAudit(ctx, limit)
+}
+
+func (s *Service) VerifyAuditProjectionAs(subject core.Subject) error {
+	if err := s.requirePrincipal(subject); err != nil {
+		return err
+	}
+	authority, err := s.auditDeliveryAuthority()
+	if err != nil {
+		return err
+	}
+	return authority.VerifyAuditProjection()
+}
+
+func (s *Service) RebuildAuditProjectionAs(ctx context.Context, subject core.Subject) (core.AuditDeliveryStatus, error) {
+	if err := s.requirePrincipal(subject); err != nil {
+		return core.AuditDeliveryStatus{}, err
+	}
+	authority, err := s.auditDeliveryAuthority()
+	if err != nil {
+		return core.AuditDeliveryStatus{}, err
+	}
+	return authority.RebuildAuditProjection(ctx)
 }
 
 func processAlive(pid int) bool {

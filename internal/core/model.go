@@ -282,6 +282,26 @@ type AuditEvent struct {
 	Metadata        map[string]string `json:"metadata,omitempty"`
 }
 
+// AuditDeliveryStatus is a sanitized aggregate view of the durable audit
+// outbox and its derived projection. It deliberately contains no event IDs,
+// payloads, paths, or underlying error text so it is safe for readiness use.
+type AuditDeliveryStatus struct {
+	State             string `json:"state"`
+	Reason            string `json:"reason"`
+	CanonicalEvents   int    `json:"canonical_events"`
+	ProjectedEvents   int    `json:"projected_events"`
+	Pending           int    `json:"pending"`
+	RetryableFailures int    `json:"retryable_failures"`
+	TerminalFailures  int    `json:"terminal_failures"`
+	Current           bool   `json:"current"`
+	Verifiable        bool   `json:"verifiable"`
+}
+
+type AuditDeliveryResult struct {
+	Delivered int                 `json:"delivered"`
+	Status    AuditDeliveryStatus `json:"status"`
+}
+
 func DecodeCharter(r io.Reader) (Charter, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {

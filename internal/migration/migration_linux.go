@@ -267,7 +267,7 @@ func inventory(ctx context.Context, source, destination string, state bool) ([]A
 }
 func allowedStateTop(name string) bool {
 	switch name {
-	case ".lock", "audit.jsonl", "plans", "approvals", "receipts", "mandates", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints", "credentials":
+	case ".lock", "audit.jsonl", "audit-outbox.json", "audit-projection.jsonl", "plans", "approvals", "receipts", "mandates", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints", "credentials":
 		return true
 	}
 	return strings.HasPrefix(name, ".aegis-")

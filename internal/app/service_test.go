@@ -334,6 +334,35 @@ func TestAuditInspectionRequiresPrincipal(t *testing.T) {
 	if err := s.VerifyAuditAs(nonPrincipal); !errors.Is(err, ErrDenied) {
 		t.Fatalf("non-principal audit verification error=%v", err)
 	}
+	if _, err := s.AuditDeliveryStatusAs(nonPrincipal); !errors.Is(err, ErrDenied) {
+		t.Fatalf("non-principal delivery status error=%v", err)
+	}
+	if _, err := s.DeliverAuditAs(context.Background(), nonPrincipal, 100); !errors.Is(err, ErrDenied) {
+		t.Fatalf("non-principal delivery mutation error=%v", err)
+	}
+	if err := s.VerifyAuditProjectionAs(nonPrincipal); !errors.Is(err, ErrDenied) {
+		t.Fatalf("non-principal projection verification error=%v", err)
+	}
+	if _, err := s.RebuildAuditProjectionAs(context.Background(), nonPrincipal); !errors.Is(err, ErrDenied) {
+		t.Fatalf("non-principal projection rebuild error=%v", err)
+	}
+}
+
+func TestAuditDeliveryReadinessIsSanitizedAndFailsClosed(t *testing.T) {
+	s := testService(t)
+	if err := s.Store.AppendAudit(context.Background(), core.AuditEvent{Type: "readiness_test", Outcome: "ok", Reason: "pending_delivery"}); err != nil {
+		t.Fatal(err)
+	}
+	status := s.AuditDeliveryReadiness()
+	if status.State != "pending" || status.Reason != "audit_delivery_pending" || status.Pending != 1 || status.Current || !status.Verifiable {
+		t.Fatalf("pending readiness = %+v", status)
+	}
+
+	s.Audit = &auditFixture{}
+	status = s.AuditDeliveryReadiness()
+	if status.State != "unverifiable" || status.Reason != "audit_delivery_unavailable" || status.Verifiable || status.Current {
+		t.Fatalf("unavailable readiness = %+v", status)
+	}
 }
 
 func TestAuditAuthorityIsAnInjectableNarrowBoundary(t *testing.T) {

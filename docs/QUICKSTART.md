@@ -34,6 +34,17 @@ The copied files are local working files and should not be committed.
 
 Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the API token is shown as `[REDACTED]`.
 
+After any workflow that emits canonical audit events, verify and advance the local derived delivery projection with:
+
+```sh
+./aegis --config .aegis.yaml audit verify
+./aegis --config .aegis.yaml audit delivery-status
+./aegis --config .aegis.yaml audit deliver --limit 100
+./aegis --config .aegis.yaml audit verify-delivery
+```
+
+Delivery is principal-only, bounded to 1–1000 canonical-order events, and safe to resume after interruption. `audit rebuild-projection` is recovery for derived outbox/projection corruption or loss; it first verifies the canonical chain and never rewrites canonical events or signed checkpoints. A serving control plane reports `/readyz` unavailable until this projection is current and verifiable.
+
 Alternatively, a genuinely new installation can run a bare executable in a terminal. An installed tagged release `aegis` uses the production defaults `~/.argis/aegis.yaml` and `~/.argis/state`. A repository-built development `./aegis` reports `dev` and uses ignored repository-local defaults `.aegis/aegis.yaml` and `.aegis/state`. It must remain in the real Aegis module/worktree root, and it rejects production paths. Review each displayed plan and press Enter to accept its `[Y/n]` default. First-run initialization creates a generation-managed Badger authority root at `state/persistence/authority-v1`; it refuses to initialize if any legacy `mandates`, `authority-contexts`, `authority-revocations`, or `sessions` tree is populated or cannot be securely proven empty. After plan authorization, bare onboarding asks for and confirms an authority passphrase in two fresh pinentry windows for the separate encrypted bbolt credential authority. It prefers an explicit absolute `--pinentry-executable`, otherwise conventional `pinentry`, and uses terminal-backed no-echo input only if pinentry is unavailable before interaction. It generates a random KEK, persists only its Argon2id plus XChaCha20-Poly1305 encrypted envelope, creates and verifies the credential authority database, and continues to runtime/model/certification checks. It never sends the passphrase or KEK to Hermes, Ollama, or a model. Pinentry cancellation does not fall back; headless services should use systemd credential custody.
 
 Verify the initialized non-interactive manager boundary without starting Hermes or Ollama:

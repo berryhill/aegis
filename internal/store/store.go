@@ -705,7 +705,25 @@ func (s *Store) AppendAudit(ctx context.Context, e core.AuditEvent) error {
 		if err = f.Close(); err != nil {
 			return err
 		}
-		return s.writeCheckpoint(count+1, e.EventDigest)
+		if err = s.writeCheckpoint(count+1, e.EventDigest); err != nil {
+			return err
+		}
+		// The canonical append is authoritative. Persist a metadata-only outbox
+		// cursor before returning so normal operation observes the new pending
+		// delivery; a missing cursor after interruption is rebuilt from the chain.
+		events, err := s.AuditEvents()
+		if err != nil {
+			return err
+		}
+		out, err := loadAuditOutbox(s.outboxPath())
+		if err != nil {
+			return err
+		}
+		out, err = reconcileAuditOutbox(events, out)
+		if err != nil {
+			return err
+		}
+		return writeAtomic(s.outboxPath(), out)
 	})
 }
 func (s *Store) AuditEvents() ([]core.AuditEvent, error) {

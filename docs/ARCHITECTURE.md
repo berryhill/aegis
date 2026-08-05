@@ -27,6 +27,9 @@ flowchart TB
   AuthorityPersistence -->|ACTIVE selects; DIRTY while open; CLEAN after sync/close| AuthorityMarkers[Lifecycle markers]
   Service --> Audit[(Hash-linked audit)]
   Audit --> Checkpoint[(Ed25519 checkpoints)]
+  Audit --> Outbox[(Metadata-only delivery outbox)]
+  Outbox --> Projection[(Derived local audit projection)]
+  Projection --> Readiness[Aggregate delivery readiness]
   Design[Hermes design gateway] -. proposal only .-> Validator
   Credentials[Configured environment bindings] -->|selected provider only| Adapter
   SecretCLI[Principal-only secret administration] --> Passphrase[Injected authority passphrase service]
@@ -85,7 +88,7 @@ The optional Linux broker is an active model-visible authority-to-downstream edg
 
 The API uses the same services as Cobra. Bearer authentication is transport-only; Linux Unix peer credentials create the Aegis subject. TCP TLS is optional transport encryption and does not map a principal identity.
 
-Application services depend on a narrow audit-authority interface for append, inspection, and verification. The local MVP injects the file/checkpoint store; hardened deployment must place the same boundary behind a separately supervised process or OS account. Hermes processes receive neither that interface nor an audit credential. This service boundary does not by itself make the default same-account deployment externally tamper-proof.
+Application services depend on a narrow audit-authority interface for append, inspection, verification, bounded delivery, delivery status, projection verification, and derived-state rebuild. The local MVP injects the file/checkpoint store. Each canonical event receives one ID/digest-bound outbox entry and is projected in canonical order; projection-first publication plus outbox reconciliation makes interrupted retries idempotent. Readiness is false unless the canonical chain and derived prefixes are verifiable and current. Rebuild verifies the canonical chain and replaces only the outbox/projection, never canonical events or checkpoints. Hardened deployment must place the authority boundary behind a separately supervised process or OS account. Hermes processes receive neither that interface nor an audit credential. This local projection is operational derived state, not an external sink, and does not make the default same-account deployment externally tamper-proof.
 
 Provisioning intent is persisted before approval consumption. Startup recovery finalizes interrupted receipts and removes only artifacts whose decoded content still matches the approved effect digest; mismatching files are retained and reported for manual intervention.
 

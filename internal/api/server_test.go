@@ -353,6 +353,25 @@ func TestUnixAPICompleteOperationalWorkflow(t *testing.T) {
 	apiRequest(t, client, http.MethodPost, "/v1/sessions/start", map[string]string{"mandate_id": preview.Mandate.ID}, &session, http.StatusCreated)
 	apiRequest(t, client, http.MethodPost, "/v1/sessions/"+session.ID+"/terminate", map[string]string{"reason": "api_e2e_complete"}, &map[string]string{}, http.StatusOK)
 	apiRequest(t, client, http.MethodGet, "/v1/audit/verify", nil, &map[string]bool{}, http.StatusOK)
+	var deliveryStatus core.AuditDeliveryStatus
+	apiRequest(t, client, http.MethodGet, "/v1/audit/delivery/status", nil, &deliveryStatus, http.StatusOK)
+	if deliveryStatus.Pending == 0 || deliveryStatus.Current {
+		t.Fatalf("audit delivery did not expose pending work: %+v", deliveryStatus)
+	}
+	var deliveryResult core.AuditDeliveryResult
+	apiRequest(t, client, http.MethodPost, "/v1/audit/delivery", map[string]int{"limit": 1000}, &deliveryResult, http.StatusOK)
+	if deliveryResult.Delivered == 0 || !deliveryResult.Status.Current {
+		t.Fatalf("audit delivery result = %+v", deliveryResult)
+	}
+	var verification map[string]bool
+	apiRequest(t, client, http.MethodGet, "/v1/audit/delivery/verify", nil, &verification, http.StatusOK)
+	if !verification["valid"] || verification["current"] {
+		t.Fatalf("verification must distinguish valid lag from current delivery: %+v", verification)
+	}
+	apiRequest(t, client, http.MethodPost, "/v1/audit/projection/rebuild", map[string]string{}, &deliveryStatus, http.StatusOK)
+	if !deliveryStatus.Current || !deliveryStatus.Verifiable {
+		t.Fatalf("rebuilt audit delivery status = %+v", deliveryStatus)
+	}
 	telemetry.mu.Lock()
 	defer telemetry.mu.Unlock()
 	foundTemplate := false
