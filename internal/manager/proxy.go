@@ -3,9 +3,7 @@ package manager
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -28,11 +26,57 @@ type ProxyConfig struct {
 	Timeout                  time.Duration
 	Guard                    *Guard
 	SessionActive            func() bool
+	ProcessAuthorizer        *ProcessAuthorizer
 	CapabilityExpires        time.Time
 	ConsumeCapability        func() bool
 	RequireSystemInstruction bool
 	AllowPlaintextRequests   bool
 	Sensitive                *SensitiveTracker
+}
+
+// HermesCompatibilityAPIKey satisfies Hermes's provider parser. It is public,
+// non-secret compatibility data and grants no inference authority.
+const HermesCompatibilityAPIKey = "aegis-local-parser-compatibility"
+
+// ProcessAuthorizer binds proxy access to one Aegis-custodied process. It is
+// created unbound because the proxy must listen before Hermes starts; requests
+// fail closed until Bind succeeds.
+type ProcessAuthorizer struct {
+	mu      sync.RWMutex
+	custody *ProcessCustody
+}
+
+func NewProcessAuthorizer() *ProcessAuthorizer { return &ProcessAuthorizer{} }
+
+func (a *ProcessAuthorizer) Bind(custody *ProcessCustody) error {
+	if a == nil || custody == nil || !custody.Alive() {
+		return errors.New("cannot bind inactive Hermes process custody")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.custody != nil {
+		return errors.New("Hermes process custody is already bound")
+	}
+	a.custody = custody
+	return nil
+}
+
+func (a *ProcessAuthorizer) Authorize(request *http.Request) bool {
+	if a == nil || request == nil {
+		return false
+	}
+	local, ok := request.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if !ok {
+		return false
+	}
+	remote, err := net.ResolveTCPAddr("tcp", request.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	a.mu.RLock()
+	custody := a.custody
+	a.mu.RUnlock()
+	return custody != nil && custody.OwnsTCPConnection(remote, local)
 }
 
 // SensitiveTracker retains only session-lifetime copies needed to prevent the
@@ -82,11 +126,9 @@ func (s *SensitiveTracker) Clear() {
 
 type Proxy struct {
 	config                            ProxyConfig
-	token                             string
 	server                            *http.Server
 	listen                            net.Listener
 	once                              sync.Once
-	mu                                sync.RWMutex
 	closeErr                          error
 	reached, ollamaReached, forwarded atomic.Bool
 	lastSafe                          atomic.Value
@@ -160,7 +202,7 @@ type openAIChatStreamChunk struct {
 }
 
 func StartProxy(ctx context.Context, config ProxyConfig) (*Proxy, error) {
-	if config.Guard == nil || config.Model == "" || config.RouteDigest == "" || config.MaximumRequestBytes < 1024 || config.MaximumRequestBytes > 16<<20 || config.MaximumResponseBytes < 1024 || config.MaximumResponseBytes > 16<<20 || config.Timeout <= 0 || config.Timeout > 5*time.Minute || config.SessionActive == nil {
+	if config.Guard == nil || config.Model == "" || config.RouteDigest == "" || config.MaximumRequestBytes < 1024 || config.MaximumRequestBytes > 16<<20 || config.MaximumResponseBytes < 1024 || config.MaximumResponseBytes > 16<<20 || config.Timeout <= 0 || config.Timeout > 5*time.Minute || config.SessionActive == nil || config.ProcessAuthorizer == nil {
 		return nil, errors.New("invalid inference proxy configuration")
 	}
 	target, err := url.Parse(config.Target)
@@ -171,12 +213,7 @@ func StartProxy(ctx context.Context, config ProxyConfig) (*Proxy, error) {
 	if err != nil {
 		return nil, err
 	}
-	tokenBytes := make([]byte, 32)
-	if _, err = rand.Read(tokenBytes); err != nil {
-		listener.Close()
-		return nil, errors.New("generate proxy authentication")
-	}
-	proxy := &Proxy{config: config, token: base64.RawURLEncoding.EncodeToString(tokenBytes), listen: listener}
+	proxy := &Proxy{config: config, listen: listener}
 	proxy.server = &http.Server{Handler: http.HandlerFunc(proxy.handle), ReadHeaderTimeout: 2 * time.Second, ReadTimeout: config.Timeout, WriteTimeout: config.Timeout, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { _ = proxy.server.Serve(listener) }()
 	go func() {
@@ -189,11 +226,6 @@ func StartProxy(ctx context.Context, config ProxyConfig) (*Proxy, error) {
 }
 
 func (p *Proxy) Endpoint() string { return "http://" + p.listen.Addr().String() }
-func (p *Proxy) Token() string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.token
-}
 
 // LastSafeDiagnostic exposes routing metadata without request or response data.
 func (p *Proxy) LastSafeDiagnostic() string {
@@ -214,9 +246,6 @@ func (p *Proxy) LastSafeDiagnostic() string {
 
 func (p *Proxy) Close(ctx context.Context) error {
 	p.once.Do(func() {
-		p.mu.Lock()
-		p.token = ""
-		p.mu.Unlock()
 		p.closeErr = p.server.Shutdown(ctx)
 		_ = p.listen.Close()
 		p.config.Sensitive.Clear()
@@ -229,7 +258,7 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 	p.lastSafe.Store("proxy_reached")
 	writer.Header().Set("Cache-Control", "no-store")
 	capabilityValid := p.config.CapabilityExpires.IsZero() || time.Now().Before(p.config.CapabilityExpires)
-	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || !jsonContentType(request.Header.Get("Content-Type")) || !p.config.SessionActive() || !capabilityValid || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), p.Token()) {
+	if request.Method != http.MethodPost || request.URL.Path != "/v1/chat/completions" || request.URL.RawQuery != "" || !jsonContentType(request.Header.Get("Content-Type")) || !p.config.SessionActive() || !capabilityValid || !p.config.ProcessAuthorizer.Authorize(request) || !constantToken(strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer "), HermesCompatibilityAPIKey) {
 		p.lastSafe.Store("route_or_auth_rejected")
 		http.Error(writer, "route denied", http.StatusForbidden)
 		return

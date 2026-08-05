@@ -215,7 +215,8 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	var budget atomic.Int32
 	attemptSum := sha256.Sum256([]byte(cfg.Inference.Model + "\x00" + cfg.Inference.ModelDigest + "\x00" + descriptor.Version + "\x00" + version + "\x00" + managerdomain.CorpusDigest()))
 	attemptDigest := "sha256:" + hex.EncodeToString(attemptSum[:])
-	proxy, err := managerdomain.StartProxy(cmd.Context(), managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: attemptDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: func() bool { return consumeCertificationBudget(&budget) }, RequireSystemInstruction: true, AllowPlaintextRequests: true})
+	processAuthorizer := managerdomain.NewProcessAuthorizer()
+	proxy, err := managerdomain.StartProxy(cmd.Context(), managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: attemptDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: active.Load, ProcessAuthorizer: processAuthorizer, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: func() bool { return consumeCertificationBudget(&budget) }, RequireSystemInstruction: true, AllowPlaintextRequests: true})
 	if err != nil {
 		return err
 	}
@@ -224,11 +225,14 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if python == "" {
 		return errors.New("Hermes gateway Python executable not found")
 	}
-	hermes, err := managerdomain.StartHermesProcess(cmd.Context(), managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: proxy.Endpoint(), ProxyToken: proxy.Token(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
+	hermes, err := managerdomain.StartHermesProcess(cmd.Context(), managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
 	if err != nil {
 		return err
 	}
 	cleanup.add(func() { closeHermesBounded(hermes, cfg.CleanupTimeout) })
+	if err = processAuthorizer.Bind(hermes.Custody()); err != nil {
+		return err
+	}
 	certificationCtx, cancelCertification := context.WithDeadline(cmd.Context(), subject.ExpiresAt)
 	defer cancelCertification()
 	if err = certificationCtx.Err(); err != nil {

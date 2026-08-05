@@ -69,12 +69,15 @@ done
 	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", ProxyToken: "capability", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
+	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !process.Custody().Alive() {
+		t.Fatal("Hermes pidfd custody is not live")
+	}
 	environment := strings.Join(process.command.Env, "\n")
-	for _, required := range []string{"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_HOME=", "HERMES_TUI_TOOLSETS=context_engine", "HERMES_MAX_TOKENS=192", "HERMES_TUI_PROVIDER=openrouter", "OPENROUTER_BASE_URL=http://127.0.0.1:1/v1", "OPENROUTER_API_KEY=capability"} {
+	for _, required := range []string{"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1", "HERMES_HOME=", "HERMES_TUI_TOOLSETS=no_mcp", "HERMES_MAX_TOKENS=192", "HERMES_TUI_PROVIDER=openrouter", "OPENROUTER_BASE_URL=http://127.0.0.1:1/v1", "OPENROUTER_API_KEY=" + HermesCompatibilityAPIKey} {
 		if !strings.Contains(environment, required) {
 			t.Fatalf("missing Hermes isolation environment %q", required)
 		}
@@ -94,6 +97,9 @@ done
 		}
 	}
 	concurrentClose(t, func() error { return process.Close(context.Background()) })
+	if process.Custody().Alive() {
+		t.Fatal("Hermes pidfd custody remained live after process exit")
+	}
 	if _, err := os.Stat(home); !os.IsNotExist(err) {
 		t.Fatalf("Hermes home retained: %v", err)
 	}
@@ -136,7 +142,7 @@ while :; do sleep 1; done
 	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", ProxyToken: "fixture-capability", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
+	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}

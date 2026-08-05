@@ -22,6 +22,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Removed the authority-bearing proxy token from the manager Hermes environment. Hermes now receives only a fixed non-secret parser-compatibility API-key string, while the loopback inference proxy fails closed until it is bound to the exact launched Hermes process through Linux pidfd custody and verifies each accepted TCP connection against that process. Manager Hermes launches now request the real empty `no_mcp` toolset rather than the capability-bearing `context_engine` toolset.
 - Repaired the executable no-key demonstration for the enforced development/production profile split. It now builds a normally classified checkout binary in the repository root, uses an ignored disposable repository-local workspace, reports the `dev` profile, preserves an honest no-provider boundary, cleans up its artifacts, and has a CI regression test.
 - Treat conversational answers such as `named NAME` at the dedicated credential-name prompt as the requested name instead of persisting a `named-` prefix, route filtered metadata requests such as `show me all doppler secrets` to authoritative `secret.search` rather than silently returning the unfiltered list, and render manager credential counts, lists, searches, details, history, mutations, and terminal-only values as readable labeled views instead of dense raw JSON.
 
