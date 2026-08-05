@@ -109,3 +109,29 @@ func equalStrings(left, right []string) bool {
 	}
 	return true
 }
+
+func FuzzBinaryKeyDecodeCanonicalRoundTrip(f *testing.F) {
+	valid, err := encodeKey(KeyTransitionFact, []string{"authority-fuzz"}, 7)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(valid)
+	f.Add([]byte{keyVersionV1})
+	f.Add([]byte{keyVersionV1, 0xff, 0, 1, 'x'})
+	f.Fuzz(func(t *testing.T, input []byte) {
+		if len(input) > maxKeyIdentifier+32 {
+			t.Skip()
+		}
+		decoded, err := DecodeKey(input)
+		if err != nil {
+			return
+		}
+		reencoded, err := encodeKey(decoded.Family, decoded.Identifiers, decoded.Sequence)
+		if err != nil {
+			t.Fatalf("decoded key cannot be encoded: %+v: %v", decoded, err)
+		}
+		if !bytes.Equal(reencoded, input) {
+			t.Fatalf("decoder accepted non-canonical key: input=%x canonical=%x", input, reencoded)
+		}
+	})
+}
