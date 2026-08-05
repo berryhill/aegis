@@ -20,6 +20,10 @@ flowchart LR
   Token[Bearer token] -->|transport only| Aegis
   Aegis --> Store[(Aegis state)]
   Aegis --> AuthorityState[(Badger authority generation)]
+  Command[Authenticated closed authority command] --> Replay[Strict command/fact replay]
+  AuthorityState --> Replay
+  Replay -->|derived only| AuthorityProjection[Authority projection]
+  Replay -. evidence only .-> AuthorityReceipt[Processing receipt]
   Env[Environment-backed provider binding] --> Hermes[Disposable Hermes process]
   Principal -->|static protected request| Pinentry[Compatible local pinentry]
   Pinentry -->|bounded Assuan data; process-local only| Authority[(Encrypted bbolt authority)]
@@ -63,6 +67,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Tool surface exceeds charter | Toolset allowlist and exact launch arguments | No individual-tool post-launch attestation in Hermes 0.18.x |
 | Revoked/expired runtime continues | Supervisor, process start token, process-group termination | Crash recovery depends on persisted PID identity and OS state |
 | Runtime input, historical state, or model output widens authority or presents stale authority as current | One immutable per-session authority context is bound exactly to its canonical mandate, charter revision, runtime, and effective authority; each runtime effect requires a fresh authoritative admission decision for the exact context ID/digest; append-only revocation and half-open expiry deny stale use | Authority contexts persisted before a failed launch can remain as orphan evidence; they do not create a session or grant a running process authority, but transactional cleanup remains desirable |
+| Malformed, replayed, reordered, substituted, cross-context, expired, or ambiguous lifecycle intent changes authority | Closed activate/revoke/expire command vocabulary; authenticated actor and acceptance window; exact sequence/previous-digest preconditions; one-to-one command/fact identity; strict versioned codecs; controller-authored immutable facts; complete digest-linked replay with legal transition and uniqueness checks; receipts and projections are non-authoritative | The codec is currently an internal domain contract rather than a wired CLI/API command-acceptance transaction; same-account/root replacement remains outside the application boundary |
 | Runtime output or a stored filename is treated as verification | Runtime output is stored by content digest; a claim-specific verifier rereads the blob and emits a receipt bound to artifact, action, run, owner, authority context, expected digest, verifier, and policy version | The verifier currently runs in the same process and uses the same local store/account; this is component separation, not independent attestation or separately protected evidence custody |
 | Provisioning escapes state or crashes | Typed effects, containment, symlink rejection, atomic create, and durable intent recovery that removes matching owned artifacts only while the consumed approval still has the exact plan/charter/runtime/environment binding | Same-account filesystem races are not a separate-user sandbox; missing/corrupt authority bindings and mismatching recovery artifacts require manual review |
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
