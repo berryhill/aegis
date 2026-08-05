@@ -22,6 +22,7 @@ type Layout struct {
 	Config                string
 	State                 string
 	AuditCheckpoints      string
+	AuthorityPersistence  string
 	CredentialDatabase    string
 	HostKEK               string
 	ManagerCertifications string
@@ -92,6 +93,7 @@ func (r Resolver) Resolve() (Layout, error) {
 	return Layout{
 		Home: home, Root: root, Config: filepath.Join(root, "aegis.yaml"), State: state,
 		AuditCheckpoints:      filepath.Join(state, "audit-checkpoints"),
+		AuthorityPersistence:  filepath.Join(state, "persistence", "authority-v1"),
 		CredentialDatabase:    filepath.Join(state, "credentials", "authority.db"),
 		HostKEK:               filepath.Join(state, "credentials", "authority.kek"),
 		ManagerCertifications: filepath.Join(state, "manager", "certifications"),
@@ -100,6 +102,19 @@ func (r Resolver) Resolve() (Layout, error) {
 		LegacyState:       filepath.Join(home, ".local", "state", "aegis"),
 		LegacyCheckpoints: filepath.Join(home, ".local", "state", "aegis-checkpoints"),
 	}, nil
+}
+
+// ForState rederives every layout value whose default is rooted in state.
+func (l Layout) ForState(state string) Layout {
+	l.State = state
+	l.AuditCheckpoints = filepath.Join(state, "audit-checkpoints")
+	l.AuthorityPersistence = filepath.Join(state, "persistence", "authority-v1")
+	l.CredentialDatabase = filepath.Join(state, "credentials", "authority.db")
+	l.HostKEK = filepath.Join(state, "credentials", "authority.kek")
+	l.ManagerCertifications = filepath.Join(state, "manager", "certifications")
+	l.ManagedModels = filepath.Join(state, "manager", "ollama-models")
+	l.Runtime = filepath.Join(state, "runtime")
+	return l
 }
 
 func (l Layout) Discover() (Discovery, error) {

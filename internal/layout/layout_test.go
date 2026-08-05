@@ -3,6 +3,7 @@ package layout
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -25,14 +26,38 @@ func TestLiteralCanonicalLayoutAndXDGIndependence(t *testing.T) {
 	}
 	expected := map[string]string{
 		"root": filepath.Join(home, ".argis"), "config": filepath.Join(home, ".argis", "aegis.yaml"),
-		"state": filepath.Join(home, ".argis", "state"), "checkpoints": filepath.Join(home, ".argis", "state", "audit-checkpoints"),
+		"state": filepath.Join(home, ".argis", "state"), "checkpoints": filepath.Join(home, ".argis", "state", "audit-checkpoints"), "authority": filepath.Join(home, ".argis", "state", "persistence", "authority-v1"),
 		"database": filepath.Join(home, ".argis", "state", "credentials", "authority.db"), "kek": filepath.Join(home, ".argis", "state", "credentials", "authority.kek"),
 		"certifications": filepath.Join(home, ".argis", "state", "manager", "certifications"), "models": filepath.Join(home, ".argis", "state", "manager", "ollama-models"), "runtime": filepath.Join(home, ".argis", "state", "runtime"),
 	}
-	actual := map[string]string{"root": got.Root, "config": got.Config, "state": got.State, "checkpoints": got.AuditCheckpoints, "database": got.CredentialDatabase, "kek": got.HostKEK, "certifications": got.ManagerCertifications, "models": got.ManagedModels, "runtime": got.Runtime}
+	actual := map[string]string{"root": got.Root, "config": got.Config, "state": got.State, "checkpoints": got.AuditCheckpoints, "authority": got.AuthorityPersistence, "database": got.CredentialDatabase, "kek": got.HostKEK, "certifications": got.ManagerCertifications, "models": got.ManagedModels, "runtime": got.Runtime}
 	for name, want := range expected {
 		if actual[name] != want {
 			t.Fatalf("%s=%q want %q", name, actual[name], want)
+		}
+	}
+}
+
+func TestForStateRederivesEveryStateRootedPath(t *testing.T) {
+	resolver, _ := temporaryResolver(t)
+	resolved, err := resolver.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := filepath.Join(t.TempDir(), "custom-state")
+	got := resolved.ForState(state)
+	for name, value := range map[string]string{
+		"state":                  got.State,
+		"audit":                  got.AuditCheckpoints,
+		"authority":              got.AuthorityPersistence,
+		"credential database":    got.CredentialDatabase,
+		"host KEK":               got.HostKEK,
+		"manager certifications": got.ManagerCertifications,
+		"managed models":         got.ManagedModels,
+		"runtime":                got.Runtime,
+	} {
+		if value != state && !strings.HasPrefix(value, state+string(filepath.Separator)) {
+			t.Errorf("%s path %q was not rederived from %q", name, value, state)
 		}
 	}
 }

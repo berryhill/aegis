@@ -605,7 +605,10 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 			}
 		}
 		switch parts[0] {
-		case "plans", "approvals", "receipts", "mandates", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints":
+		case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints", "persistence":
+			if parts[0] == "persistence" {
+				return authorityPersistenceArtifact(parts, info)
+			}
 			if parts[0] == "runtime" && len(parts) >= 2 && !runtimeName(parts[1]) {
 				return false
 			}
@@ -627,8 +630,10 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 		return parts[0] == ".lock" || parts[0] == "audit.jsonl"
 	}
 	switch parts[0] {
-	case "plans", "approvals", "receipts", "mandates", "sessions":
+	case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions":
 		return len(parts) == 2 && strings.HasSuffix(parts[1], ".json")
+	case "persistence":
+		return authorityPersistenceArtifact(parts, info)
 	case "charters":
 		return len(parts) == 3 && strings.HasSuffix(parts[2], ".json")
 	case "provisioned":
@@ -642,6 +647,38 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 	default:
 		return false
 	}
+}
+
+func authorityPersistenceArtifact(parts []string, info os.FileInfo) bool {
+	if len(parts) == 1 {
+		return info.IsDir()
+	}
+	if parts[1] != "authority-v1" {
+		return false
+	}
+	if len(parts) == 2 {
+		return info.IsDir()
+	}
+	if len(parts) == 3 {
+		if info.IsDir() {
+			return parts[2] == "stores" || parts[2] == "staging" || parts[2] == "retired"
+		}
+		return parts[2] == "ACTIVE" || parts[2] == "CLEAN" || parts[2] == "DIRTY" || strings.HasPrefix(parts[2], ".ACTIVE-") || strings.HasPrefix(parts[2], ".CLEAN-") || strings.HasPrefix(parts[2], ".DIRTY-")
+	}
+	if parts[2] != "stores" && parts[2] != "staging" && parts[2] != "retired" {
+		return false
+	}
+	if !strings.HasPrefix(parts[3], "store-") || !strings.HasSuffix(parts[3], ".badger") || len(parts[3]) != len("store-")+32+len(".badger") {
+		return false
+	}
+	if len(parts) == 4 {
+		return info.IsDir()
+	}
+	if info.IsDir() || len(parts) != 5 {
+		return false
+	}
+	name := parts[4]
+	return name == "MANIFEST" || name == "KEYREGISTRY" || name == "LOCK" || name == "DISCARD" || strings.HasSuffix(name, ".sst") || strings.HasSuffix(name, ".vlog")
 }
 
 func runtimeName(name string) bool {

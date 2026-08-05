@@ -12,11 +12,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Added an opt-in Linux PTY operator-acceptance POC for one current `aegis manager` journey: ordinary conversation, protected creation of credential `test`, authoritative count, a pronoun-only conversational reference to the just-created credential, clean exit, audit verification, bounded JSONL evidence, and generated-canary non-leak checks. Hermetic CI tests only the recorder and forced-leak denial; live Hermes/Ollama/model execution remains explicitly manual.
 - Added narrow state-store primitives for atomic create-only JSON records and exact-byte content-addressed blobs. Records reject replacement, traversal, and symlinked paths; blobs use canonical `sha256:` references, verify existing and reread content before acceptance, and fail closed on malformed references or detected corruption.
 - Added a typed authority repository with create-only mandates and per-session contexts, strict schema/kind-discriminated canonical codecs and qualified SHA-256 identities, append-only per-context activation/revocation/expiry facts, fail-closed complete-chain replay, and deterministic non-authoritative transition roots.
+- Added generation-managed Badger session-authority persistence under `state/persistence/authority-v1`, with staged no-replace publication, embedded identity verification, digest-bound `ACTIVE` selection, and explicit `CLEAN`/`DIRTY` open-close lifecycle markers.
 
 ### Changed
 
 - Replaced the experimental cross-domain plumbing aggregate and universal validator with bounded canonical `core`, `execution`, and `evidence` responsibilities. Existing subject, decision, effective-authority, mandate, session, provisioning-artifact, and receipt types remain canonical instead of being duplicated.
 - Removed the experimental `aegis plumbing` command, plumbing/GraphRun API routes, POC orchestration service, and production imports of `internal/plumbing` and `internal/poc`; these were not stable compatibility surfaces.
+- Made the typed layout rederive every state-rooted default after a state-directory override, and added one fail-closed clean-install classifier for legacy mandates, authority contexts, authority revocations, and sessions. Initialization permits only absent or securely proven empty legacy trees and revalidates immediately before apply.
 
 ### Fixed
 

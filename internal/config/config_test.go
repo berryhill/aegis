@@ -80,6 +80,21 @@ func TestLiteralArgisDefaultsIgnoreXDGScattering(t *testing.T) {
 	}
 }
 
+func TestWithStateDirRederivesDefaultAndPreservesExplicitCheckpointPath(t *testing.T) {
+	configuration := Defaults()
+	state := filepath.Join(t.TempDir(), "state")
+	got := configuration.WithStateDir(state)
+	if got.StateDir != state || got.Audit.CheckpointDir != filepath.Join(state, "audit-checkpoints") {
+		t.Fatalf("state defaults were not rederived: %#v", got)
+	}
+	explicit := filepath.Join(t.TempDir(), "explicit-checkpoints")
+	configuration.Audit.CheckpointDir = explicit
+	got = configuration.WithStateDir(state)
+	if got.Audit.CheckpointDir != explicit {
+		t.Fatalf("explicit checkpoint path changed to %q", got.Audit.CheckpointDir)
+	}
+}
+
 func TestDefaultInspectionDetectsLegacyAndCanonicalAmbiguity(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

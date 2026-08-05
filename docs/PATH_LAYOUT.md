@@ -17,8 +17,13 @@ Stable release binaries use the literal production root `~/.argis`. Source-built
 ~/.argis/state/charters/
 ~/.argis/state/plans/
 ~/.argis/state/approvals/
-~/.argis/state/mandates/
-~/.argis/state/sessions/
+~/.argis/state/persistence/authority-v1/        0700
+~/.argis/state/persistence/authority-v1/ACTIVE 0600
+~/.argis/state/persistence/authority-v1/CLEAN  0600 when closed
+~/.argis/state/persistence/authority-v1/DIRTY  0600 while open
+~/.argis/state/persistence/authority-v1/stores/store-<generation>.badger/
+~/.argis/state/persistence/authority-v1/staging/
+~/.argis/state/persistence/authority-v1/retired/
 ~/.argis/state/receipts/
 ~/.argis/state/provisioned/
 
@@ -29,9 +34,9 @@ Stable release binaries use the literal production root `~/.argis`. Source-built
 # deployment identifier, audit chain, certification, and runtime
 ```
 
-Directories are created only when implemented behavior needs them. Atomic configuration and manager-configuration files are created beside their destination. Disposable Hermes and managed Ollama homes are created below `state/runtime`. Store atomic files are created beside their state destination. Sensitive regular files are mode `0600`; Aegis-owned directories are mode `0700`.
+Directories are created only when implemented behavior needs them. A clean first-run initialization creates the generation-managed Badger authority root at `state/persistence/authority-v1`. Its `ACTIVE` marker selects one digest-bound generation; `DIRTY` replaces `CLEAN` while that generation is open, and a successful sync/close restores `CLEAN`. Atomic configuration and manager-configuration files are created beside their destination. Disposable Hermes and managed Ollama homes are created below `state/runtime`. Store atomic files are created beside their state destination. Sensitive regular files are mode `0600`; Aegis-owned directories are mode `0700`.
 
-The typed resolver in `internal/layout` is the source for both profile roots and their config, state, checkpoints, authority database, host KEK, certification, managed-model, and runtime defaults. Configuration loading remains separate. An executable refuses configuration or state beneath the opposing profile root, including values loaded indirectly from configuration. Explicit deployments outside both local profile roots retain their existing validation, but destructive reset is restricted to the executable's own exact profile layout.
+The typed resolver in `internal/layout` is the source for both profile roots and their config, state, checkpoints, generation-managed authority persistence, separate credential-authority database, host KEK, certification, managed-model, and runtime defaults. Changing `--state-dir` rederives every state-rooted default unless that field has an explicit override. Configuration loading remains separate. An executable refuses configuration or state beneath the opposing profile root, including values loaded indirectly from configuration. Explicit deployments outside both local profile roots retain their existing validation, but destructive reset is restricted to the executable's own exact profile layout.
 
 ## Path classification
 
@@ -39,6 +44,8 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 |---|---|
 | `~/.argis/aegis.yaml` | canonical Aegis-owned local configuration |
 | `~/.argis/state` and implemented children above | canonical Aegis-owned local state |
+| `state/persistence/authority-v1` | generation-managed Badger session-authority persistence; separate from the bbolt credential authority |
+| `state/mandates`, `state/authority-contexts`, `state/authority-revocations`, `state/sessions` | legacy authority JSON collision surfaces; accepted for a clean install only when absent or recursively proven to contain only real operator-owned mode-`0700` directories |
 | `<repository>/.aegis/aegis.yaml` and `<repository>/.aegis/state` | isolated, Git-ignored development configuration and state for source-built `dev` binaries residing in the verified worktree root |
 | adjacent `.aegis-*` temporaries | ephemeral Aegis-owned transaction data at the canonical destination |
 | `state/runtime/design-*`, `stanza-*`, `manager-*`, `ollama-*` | ephemeral Aegis-owned runtime data |
@@ -58,6 +65,7 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 For a release binary with no explicit `--config`, production discovery is artifact-derived and read-only. A development binary supplies its fixed development configuration path and never performs production/legacy discovery:
 
 - no canonical installation or meaningful legacy artifacts: `uninitialized`, and bootstrap uses only `~/.argis`; an empty canonical root/state or a state tree containing only the deliberately preserved managed-model store is not an installation;
+- before configuration publication and again at apply time, initialization classifies all four legacy authority JSON surfaces together; populated, unreadable, symlinked, non-directory, wrong-owner, or wrong-mode paths deny rather than being merged into the Badger store;
 - canonical only: validate and use canonical state;
 - legacy only: `legacy-layout-detected`; do not initialize a second installation;
 - canonical plus legacy: fail closed as `canonical_and_legacy_layout_ambiguous`;
