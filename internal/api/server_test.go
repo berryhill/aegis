@@ -71,7 +71,7 @@ func apiService(t *testing.T) *app.Service {
 	cfg.Principal = config.Principal{ID: "principal-1", Name: "Principal Operator", UID: strconv.Itoa(os.Getuid()), User: current.Username, AuthTTL: time.Minute}
 	cfg.API.Token = "transport-secret"
 	cfg.API.UnixSocket = filepath.Join(root, "aegis.sock")
-	cfg.Credentials.ProviderAuth["test"] = config.CredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
+	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := app.New(cfg, state, hermes.New(executable, logger), logger)
 	svc.LookupEnv = func(name string) (string, bool) {

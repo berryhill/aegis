@@ -1,17 +1,31 @@
-// Package qualification defines the reviewed persistence envelope. It does
-// not open a database or infer support from the host: callers must present an
-// exact qualified combination and unknown combinations are denied.
+// Package qualification freezes the reviewed persistence combinations for the
+// MVI. It is a declarative qualification record, not host discovery: unknown
+// planes, engines, versions, platforms, filesystems, and durability modes deny.
 package qualification
 
 import (
 	"errors"
+	"fmt"
 	"time"
 )
 
+type Plane string
+
+type Status string
+
 const (
-	BackendBBolt       = "bbolt"
-	BBoltModulePath    = "go.etcd.io/bbolt"
-	BBoltModuleVersion = "v1.5.0"
+	PlaneSessionAuthority Plane = "session-authority"
+	PlaneCredentials      Plane = "credential-custody"
+
+	StatusQualified Status = "qualified"
+
+	BackendBadger = "badger"
+	BackendBBolt  = "bbolt"
+
+	BadgerModulePath    = "github.com/dgraph-io/badger/v4"
+	BadgerModuleVersion = "v4.9.5"
+	BBoltModulePath     = "go.etcd.io/bbolt"
+	BBoltModuleVersion  = "v1.5.0"
 
 	QualifiedGOOS       = "linux"
 	QualifiedGOARCH     = "amd64"
@@ -19,9 +33,12 @@ const (
 	AuthorityModel      = "single-aegis-process"
 )
 
-// Contract is the complete reviewed persistence combination. These fields
-// are deliberately concrete rather than ranges or capability claims.
+// Contract is one complete reviewed storage combination. Engine-specific
+// switches remain separate so that a setting meaningful to one engine cannot
+// be mistaken for a generic durability promise.
 type Contract struct {
+	Plane         Plane
+	Status        Status
 	Backend       string
 	ModulePath    string
 	ModuleVersion string
@@ -31,15 +48,36 @@ type Contract struct {
 	Authority     string
 	DirectoryMode uint32
 	FileMode      uint32
-	LockTimeout   time.Duration
-	SingleWriter  bool
-	NoSync        bool
-	NoGrowSync    bool
+
+	// Badger-only controls.
+	SyncWrites      bool
+	DetectConflicts bool
+
+	// bbolt-only controls.
+	LockTimeout time.Duration
+	NoSync      bool
+	NoGrowSync  bool
 }
 
-// Baseline returns the only persistence combination qualified for the MVP.
-func Baseline() Contract {
-	return Contract{
+var qualified = map[Plane]Contract{
+	PlaneSessionAuthority: {
+		Plane:           PlaneSessionAuthority,
+		Status:          StatusQualified,
+		Backend:         BackendBadger,
+		ModulePath:      BadgerModulePath,
+		ModuleVersion:   BadgerModuleVersion,
+		GOOS:            QualifiedGOOS,
+		GOARCH:          QualifiedGOARCH,
+		Filesystem:      QualifiedFilesystem,
+		Authority:       AuthorityModel,
+		DirectoryMode:   0700,
+		FileMode:        0600,
+		SyncWrites:      true,
+		DetectConflicts: true,
+	},
+	PlaneCredentials: {
+		Plane:         PlaneCredentials,
+		Status:        StatusQualified,
 		Backend:       BackendBBolt,
 		ModulePath:    BBoltModulePath,
 		ModuleVersion: BBoltModuleVersion,
@@ -50,16 +88,31 @@ func Baseline() Contract {
 		DirectoryMode: 0700,
 		FileMode:      0600,
 		LockTimeout:   2 * time.Second,
-		SingleWriter:  true,
-	}
+	},
 }
 
-// Validate fails closed unless the complete input exactly matches the
-// reviewed baseline. Adding a dependency, platform, filesystem, or authority
-// mode therefore requires an explicit qualification change.
+// Baseline returns a copy of the only qualified contract for plane.
+func Baseline(plane Plane) (Contract, error) {
+	contract, ok := qualified[plane]
+	if !ok {
+		return Contract{}, fmt.Errorf("persistence plane %q is not qualified", plane)
+	}
+	return contract, nil
+}
+
+// Matrix returns the complete MVI qualification matrix in stable plane order.
+func Matrix() []Contract {
+	return []Contract{qualified[PlaneSessionAuthority], qualified[PlaneCredentials]}
+}
+
+// Validate fails closed unless input exactly matches its reviewed baseline.
 func Validate(contract Contract) error {
-	if contract != Baseline() {
-		return errors.New("persistence dependency, platform, filesystem, or authority combination is not qualified")
+	baseline, err := Baseline(contract.Plane)
+	if err != nil {
+		return err
+	}
+	if contract != baseline {
+		return errors.New("persistence engine, version, platform, filesystem, authority, or durability combination is not qualified")
 	}
 	return nil
 }

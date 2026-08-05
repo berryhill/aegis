@@ -215,6 +215,13 @@ The release is not complete unless tests demonstrate:
 - Revocation prevents a revoked session from continuing through Aegis.
 - Audit events identify the authenticated subject, stanza, runtime, and charter revision.
 
+## 16a. Qualified storage boundary
+
+- Apply the exact, fail-closed matrix in `specs/STORAGE.md`: Badger `v4.9.5` owns session-authority persistence and bbolt `v1.5.0` owns credential custody on the qualified Linux/amd64/ext4 host profile.
+- Keep canonical authority facts, credential custody, ordinary canonical documents, rebuildable projections, blobs, operational metadata, and runtime state distinct.
+- Never treat a projection, lifecycle marker, runtime home, model narration, or cross-store partial write as authority.
+- Require explicit requalification for a new engine version, platform, filesystem, writer model, or relaxed durability option. Cross-built release archives alone are not storage qualification.
+
 ## Explicitly deferred
 
 The following are not required for the first release:

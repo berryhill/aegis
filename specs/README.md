@@ -9,6 +9,7 @@ This directory contains Aegis's normative, implementation-independent Markdown s
 - [Identity and authorization](IDENTITY_AND_AUTHORIZATION.md) — principal authentication and deterministic stanza selection.
 - [Approval and provisioning](APPROVAL_AND_PROVISIONING.md) — exact review, approval, deterministic effects, receipts, and recovery.
 - [Runtime and sessions](RUNTIME_AND_SESSIONS.md) — explicit Hermes integration, mandates, launch isolation, and lifecycle.
+- [Storage](STORAGE.md) — post-Track-A storage classes, exact qualified persistence combinations, schema ownership, cross-store denial, and migration boundary.
 - [Canonical domain boundaries](CANONICAL_DOMAINS.md) — identity/authority, execution, evidence, and provisioning ownership without a cross-domain mutation aggregate.
 - [Built-in Aegis manager](AEGIS_MANAGER.md) — bare-command manager UX, secure prompt boundary, protected credential intake, local Ollama lifecycle, and implementation completion gates.
 - [Base manager end-to-end local session](BASE_MANAGER_END_TO_END.md) — focused implementation profile for wiring the manager UI, Hermes gateway, Aegis inference proxy, pinned Ollama route, typed proposals, protected credential operations, and bounded cleanup.

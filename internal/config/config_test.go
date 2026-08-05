@@ -129,19 +129,19 @@ func TestInspectRejectsPartialEnvironmentConfigurationAsAmbiguous(t *testing.T) 
 	}
 }
 
-func TestCredentialBindingsFailClosed(t *testing.T) {
+func TestEnvironmentCredentialBindingsFailClosed(t *testing.T) {
 	tests := []struct {
 		name string
 		edit func(*Config)
 	}{
 		{"unsupported type", func(c *Config) {
-			c.Credentials.ProviderAuth["test"] = CredentialBinding{Type: "file", SourceEnv: "TEST_KEY", TargetEnv: "TEST_KEY"}
+			c.Credentials.ProviderAuth["test"] = EnvironmentCredentialBinding{Type: "file", SourceEnv: "TEST_KEY", TargetEnv: "TEST_KEY"}
 		}},
 		{"reserved target", func(c *Config) {
-			c.Credentials.ProviderAuth["test"] = CredentialBinding{Type: "environment", SourceEnv: "TEST_KEY", TargetEnv: "HERMES_HOME"}
+			c.Credentials.ProviderAuth["test"] = EnvironmentCredentialBinding{Type: "environment", SourceEnv: "TEST_KEY", TargetEnv: "HERMES_HOME"}
 		}},
 		{"invalid source", func(c *Config) {
-			c.Credentials.ProviderAuth["test"] = CredentialBinding{Type: "environment", SourceEnv: "lowercase", TargetEnv: "TEST_KEY"}
+			c.Credentials.ProviderAuth["test"] = EnvironmentCredentialBinding{Type: "environment", SourceEnv: "lowercase", TargetEnv: "TEST_KEY"}
 		}},
 		{"missing design provider", func(c *Config) { c.Credentials.DesignProvider = "missing" }},
 		{"incomplete TLS identity", func(c *Config) { c.API.TLSCertFile = "server.crt" }},
