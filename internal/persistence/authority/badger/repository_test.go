@@ -3,7 +3,9 @@ package badger
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +77,48 @@ func TestAuthorityRepositorySessionIndexAndContextCreationAreAtomic(t *testing.T
 	stored, err := store.GetAuthorityContext(ctx, first.ID)
 	if err != nil || stored.SessionID != first.SessionID {
 		t.Fatalf("original immutable session binding changed: authority=%+v err=%v", stored, err)
+	}
+}
+
+func TestConcurrentAuthorityCreationNeverCreatesAmbiguousSession(t *testing.T) {
+	store := openAuthorityStore(t)
+	ctx := context.Background()
+	mandate, template := badgerAuthorityBinding("mandate-race", "authority-race", "session-race")
+	if err := store.CreateMandate(ctx, mandate); err != nil {
+		t.Fatal(err)
+	}
+
+	const candidates = 16
+	start := make(chan struct{})
+	results := make(chan error, candidates)
+	var wait sync.WaitGroup
+	for candidate := 0; candidate < candidates; candidate++ {
+		wait.Add(1)
+		go func(candidate int) {
+			defer wait.Done()
+			<-start
+			authority := template
+			authority.ID = fmt.Sprintf("authority-race-%d", candidate)
+			authority.Digest = core.AuthorityContextDigest(authority)
+			results <- store.CreateAuthorityContext(ctx, authority)
+		}(candidate)
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+
+	successes := 0
+	for err := range results {
+		if err == nil {
+			successes++
+		}
+	}
+	if successes != 1 {
+		t.Fatalf("concurrent session authority creations succeeded %d times, want exactly one", successes)
+	}
+	authorities, err := store.ListAuthorityContexts(ctx)
+	if err != nil || len(authorities) != 1 || authorities[0].SessionID != template.SessionID {
+		t.Fatalf("concurrent authority state is ambiguous: authorities=%+v err=%v", authorities, err)
 	}
 }
 
@@ -167,6 +211,74 @@ func TestAuthorityRepositoryFailsClosedOnMalformedRegisteredFamilyKey(t *testing
 	if _, err := store.ListMandates(context.Background()); !errors.Is(err, ErrCorruptRecord) {
 		t.Fatalf("malformed family key error = %v, want ErrCorruptRecord", err)
 	}
+}
+
+func TestAuthorityRepositoryRejectsMalformedTruncatedAndSubstitutedState(t *testing.T) {
+	t.Run("malformed and truncated mandate", func(t *testing.T) {
+		store := openAuthorityStore(t)
+		mandate, _ := badgerAuthorityBinding("mandate-corrupt", "authority-corrupt", "session-corrupt")
+		if err := store.CreateMandate(context.Background(), mandate); err != nil {
+			t.Fatal(err)
+		}
+		key, err := encodeKey(KeyMandate, []string{mandate.ID}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, corrupt := range [][]byte{[]byte("{"), []byte(`{"id":"mandate-corrupt"}`)} {
+			if err = store.db.Update(func(txn *badgerdb.Txn) error { return txn.Set(key, corrupt) }); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = store.GetMandate(context.Background(), mandate.ID); !errors.Is(err, ErrCorruptRecord) {
+				t.Fatalf("corrupt mandate error=%v, want ErrCorruptRecord", err)
+			}
+		}
+	})
+
+	t.Run("substituted session index", func(t *testing.T) {
+		store := openAuthorityStore(t)
+		mandate, authority := badgerAuthorityBinding("mandate-index", "authority-index", "session-index")
+		if err := store.CreateMandate(context.Background(), mandate); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateAuthorityContext(context.Background(), authority); err != nil {
+			t.Fatal(err)
+		}
+		indexKey, err := encodeKey(KeyContextBySession, []string{authority.SessionID}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.db.Update(func(txn *badgerdb.Txn) error { return txn.Set(indexKey, []byte("authority-substituted")) }); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = store.GetAuthorityContext(context.Background(), authority.ID); !errors.Is(err, ErrCorruptRecord) {
+			t.Fatalf("substituted index error=%v, want ErrCorruptRecord", err)
+		}
+	})
+
+	t.Run("transition root without fact", func(t *testing.T) {
+		store := openAuthorityStore(t)
+		mandate, authority := badgerAuthorityBinding("mandate-root", "authority-root", "session-root")
+		if err := store.CreateMandate(context.Background(), mandate); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.CreateAuthorityContext(context.Background(), authority); err != nil {
+			t.Fatal(err)
+		}
+		fact := badgerTransitionFact("fact-root", 1, authority, "", core.AuthorityStateActive, authority.IssuedAt, "")
+		if _, err := store.AppendAuthorityTransitionFact(context.Background(), fact); err != nil {
+			t.Fatal(err)
+		}
+		factKey, err := encodeKey(KeyTransitionFact, []string{authority.ID}, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.db.Update(func(txn *badgerdb.Txn) error { return txn.Delete(factKey) }); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = store.AuthorityTransitionRoot(context.Background(), authority.ID); !errors.Is(err, ErrCorruptRecord) {
+			t.Fatalf("orphan transition root error=%v, want ErrCorruptRecord", err)
+		}
+	})
 }
 
 func TestAuthorityRepositoryHonorsCanceledContextAndClosedStore(t *testing.T) {
