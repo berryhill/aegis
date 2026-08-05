@@ -230,6 +230,7 @@ type Review struct {
 }
 type Approval struct {
 	ID             string      `json:"id"`
+	PlanID         string      `json:"plan_id"`
 	PlanDigest     string      `json:"plan_digest"`
 	CharterDigest  string      `json:"charter_digest"`
 	Runtime        string      `json:"runtime"`
@@ -252,6 +253,7 @@ type Artifact struct {
 type Receipt struct {
 	ID            string     `json:"id"`
 	PlanID        string     `json:"plan_id"`
+	PlanDigest    string     `json:"plan_digest"`
 	ApprovalID    string     `json:"approval_id"`
 	CharterDigest string     `json:"charter_digest"`
 	Status        string     `json:"status"`
@@ -302,10 +304,15 @@ type AuditDeliveryResult struct {
 	Status    AuditDeliveryStatus `json:"status"`
 }
 
+const MaximumCharterBytes = 1 << 20
+
 func DecodeCharter(r io.Reader) (Charter, error) {
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(io.LimitReader(r, MaximumCharterBytes+1))
 	if err != nil {
 		return Charter{}, fmt.Errorf("decode charter: %w", err)
+	}
+	if len(data) > MaximumCharterBytes {
+		return Charter{}, errors.New("decode charter: input exceeds 1 MiB limit")
 	}
 	if err = validateRequiredCharterFields(data); err != nil {
 		return Charter{}, err

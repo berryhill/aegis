@@ -335,15 +335,19 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.JSON(http.StatusCreated, charter)
 	})
 	g.POST("/plans/preview", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
 		var input struct {
 			Agent       string           `json:"agent"`
 			Revision    uint64           `json:"revision"`
 			Environment core.Environment `json:"environment"`
 		}
-		if err := decode(c, &input); err != nil {
+		if err = decode(c, &input); err != nil {
 			return err
 		}
-		review, err := svc.PreviewPlan(c.Request().Context(), input.Agent, input.Revision, input.Environment)
+		review, err := svc.PreviewPlanAs(c.Request().Context(), subject, input.Agent, input.Revision, input.Environment)
 		if err != nil {
 			return err
 		}

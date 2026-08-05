@@ -216,6 +216,9 @@ func TestApprovalExactSingleUseAndMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if a.PlanID != review.Plan.ID || a.PlanDigest != review.Plan.Digest {
+		t.Fatalf("approval lacks exact plan binding: %+v", a)
+	}
 	a, err = s.DecideApproval(ctx, a.ID, true)
 	if err != nil {
 		t.Fatal(err)
@@ -235,8 +238,69 @@ func TestApprovalExactSingleUseAndMutation(t *testing.T) {
 	if r.Status != "verified" {
 		t.Fatalf("receipt=%+v", r)
 	}
+	if r.PlanID != review.Plan.ID || r.PlanDigest != review.Plan.Digest || r.ApprovalID != a.ID {
+		t.Fatalf("receipt lacks exact recovery binding: %+v", r)
+	}
 	if _, err = s.Apply(ctx, review.Plan.ID, a.ID); err == nil {
 		t.Fatal("consumed approval replay succeeded")
+	}
+}
+
+func TestPlanPreviewRequiresPrincipalAndExactLocalEnvironment(t *testing.T) {
+	s := testService(t)
+	canonical, err := core.Canonicalize(testCharter(s.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.SaveCharter(canonical); err != nil {
+		t.Fatal(err)
+	}
+	nonPrincipal := core.Subject{ID: "team-user", Kind: "human", Issuer: "local-os", Method: "local-os", AuthenticatedAt: s.Now(), ExpiresAt: s.Now().Add(time.Minute)}
+	if _, err = s.PreviewPlanAs(context.Background(), nonPrincipal, "office", 1, core.Environment{Name: "local"}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("non-principal plan preview error=%v", err)
+	}
+	principal, err := s.Authenticate(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, environment := range []core.Environment{{}, {Name: "remote"}, {Name: "local", Host: "other"}, {Name: "local", Tenant: "other"}} {
+		if _, err = s.PreviewPlanAs(context.Background(), principal, "office", 1, environment); !errors.Is(err, ErrDenied) {
+			t.Fatalf("environment %+v preview error=%v", environment, err)
+		}
+	}
+}
+
+func TestApprovalDecisionReconcilesExactPersistedPlanBinding(t *testing.T) {
+	s := testService(t)
+	ctx := context.Background()
+	canonical, err := core.Canonicalize(testCharter(s.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.SaveCharter(canonical); err != nil {
+		t.Fatal(err)
+	}
+	review, err := s.PreviewPlan(ctx, "office", 1, core.Environment{Name: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	approval, err := s.RequestApproval(ctx, review.Plan.ID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Store.Update("approvals", approval.ID, func(data []byte) (any, error) {
+		var persisted core.Approval
+		if decodeErr := json.Unmarshal(data, &persisted); decodeErr != nil {
+			return nil, decodeErr
+		}
+		persisted.PlanID = "different-plan"
+		return persisted, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.DecideApproval(ctx, approval.ID, true); !errors.Is(err, ErrConflict) {
+		t.Fatalf("corrupt approval decision error=%v", err)
 	}
 }
 
@@ -426,7 +490,11 @@ func TestInterruptedProvisioningRecoveryRollsBackMatchingArtifact(t *testing.T) 
 	if err = s.Store.PublishProvisioned(target, payload); err != nil {
 		t.Fatal(err)
 	}
-	receipt := core.Receipt{ID: "interrupted", PlanID: review.Plan.ID, ApprovalID: "approval", CharterDigest: canonical.Digest, Status: "provisioning", StartedAt: s.Now()}
+	approval := core.Approval{ID: "approval", PlanID: review.Plan.ID, PlanDigest: review.Plan.Digest, CharterDigest: canonical.Digest, Runtime: review.Plan.Runtime.Runtime, RuntimeVersion: review.Plan.Runtime.Version, Environment: review.Plan.Environment, Status: "consumed"}
+	if err = s.Store.Save("approvals", approval.ID, approval); err != nil {
+		t.Fatal(err)
+	}
+	receipt := core.Receipt{ID: "interrupted", PlanID: review.Plan.ID, PlanDigest: review.Plan.Digest, ApprovalID: approval.ID, CharterDigest: canonical.Digest, Status: "provisioning", StartedAt: s.Now()}
 	if err = s.Store.Save("receipts", receipt.ID, receipt); err != nil {
 		t.Fatal(err)
 	}
@@ -442,6 +510,44 @@ func TestInterruptedProvisioningRecoveryRollsBackMatchingArtifact(t *testing.T) 
 	}
 	if recovered.Status != "failed" || recovered.FinishedAt.IsZero() || recovered.Failure != "interrupted provisioning recovered" {
 		t.Fatalf("recovered receipt=%+v", recovered)
+	}
+}
+
+func TestInterruptedProvisioningRecoveryPreservesArtifactWithoutExactAuthorityBinding(t *testing.T) {
+	s := testService(t)
+	ctx := context.Background()
+	canonical, err := core.Canonicalize(testCharter(s.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.SaveCharter(canonical); err != nil {
+		t.Fatal(err)
+	}
+	review, err := s.PreviewPlan(ctx, "office", 1, core.Environment{Name: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := map[string]any{"agent_id": canonical.Charter.AgentID, "revision": canonical.Charter.Revision, "charter_digest": canonical.Digest, "runtime": canonical.Charter.Runtime, "stanzas": canonical.Charter.Stanzas}
+	target := review.Plan.Effects[0].Target
+	if err = s.Store.PublishProvisioned(target, payload); err != nil {
+		t.Fatal(err)
+	}
+	receipt := core.Receipt{ID: "corrupt-binding", PlanID: review.Plan.ID, PlanDigest: review.Plan.Digest, ApprovalID: "missing-approval", CharterDigest: canonical.Digest, Status: "provisioning", StartedAt: s.Now()}
+	if err = s.Store.Save("receipts", receipt.ID, receipt); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecoverProvisioning(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(target); err != nil {
+		t.Fatalf("artifact was removed without exact authority binding: %v", err)
+	}
+	recovered, err := s.GetReceipt(receipt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Status != "failed" || !strings.Contains(recovered.Failure, "manual intervention required") {
+		t.Fatalf("corrupt recovery receipt=%+v", recovered)
 	}
 }
 

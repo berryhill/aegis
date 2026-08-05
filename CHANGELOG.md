@@ -21,6 +21,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Changed
 
+- Closed the authenticated design-to-provisioning chain: design now uses `no_mcp`, bounds requirements/proposals and charter import to 1 MiB, and rejects multiple proposal envelopes; plan preview requires fresh configured-principal authentication and the exact local environment; approvals bind an immutable plan ID plus the current charter, complete plan digest, runtime, and environment at request, decision, and apply; and interrupted-provisioning recovery removes owned artifacts only when that consumed authority binding remains intact.
 - Replaced the experimental cross-domain plumbing aggregate and universal validator with bounded canonical `core`, `execution`, and `evidence` responsibilities. Existing subject, decision, effective-authority, mandate, session, provisioning-artifact, and receipt types remain canonical instead of being duplicated.
 - Removed the experimental `aegis plumbing` command, plumbing/GraphRun API routes, POC orchestration service, and production imports of `internal/plumbing` and `internal/poc`; these were not stable compatibility surfaces.
 - Made the typed layout rederive every state-rooted default after a state-directory override, and added one fail-closed clean-install classifier for legacy mandates, authority contexts, authority revocations, and sessions. Initialization permits only absent or securely proven empty legacy trees and revalidates immediately before apply.

@@ -7,7 +7,7 @@ flowchart TB
   OS[Local OS identity] --> Service
   Service --> Validator[Strict charter validation and canonical digest]
   Service --> Selector[Single-stanza selector]
-  Service --> Approval[Exact single-use approval transaction]
+  Service --> Approval[Exact plan-ID/digest-bound single-use approval transaction]
   Service --> Provisioner[Typed deterministic provisioner]
   Service --> Mandate[Short-lived mandate issuer]
   Mandate --> Context[Immutable per-session authority context]
@@ -83,7 +83,7 @@ flowchart TB
   Reset -. preserve daemon and models .-> Ollama
 ```
 
-The model proposes; it never authenticates, approves, or provisions. Design uses a disposable Hermes gateway process and returns an enveloped charter proposal. Aegis strictly decodes, validates, canonicalizes, digests, and persists it.
+The model proposes; it never authenticates, approves, or provisions. Design uses a disposable Hermes gateway process with the empty `no_mcp` toolset, bounds requirements and accumulated proposal output to 1 MiB, and accepts exactly one enveloped charter proposal. Aegis separately bounds import, then strictly decodes, validates, canonicalizes, digests, and persists it.
 
 Provisioning currently supports only atomic creation of deterministic Aegis-owned mapping files. File modification, Hermes profile creation, MCP/plugin configuration, gateways, services, cron, and external network effects are explicitly classified and denied.
 
@@ -103,7 +103,7 @@ The API uses the same services as Cobra. Bearer authentication is transport-only
 
 Application services depend on a narrow audit-authority interface for append, inspection, verification, bounded delivery, delivery status, projection verification, and derived-state rebuild. The local MVP injects the file/checkpoint store. Each canonical event receives one ID/digest-bound outbox entry and is projected in canonical order; projection-first publication plus outbox reconciliation makes interrupted retries idempotent. Readiness is false unless the canonical chain and derived prefixes are verifiable and current. Rebuild verifies the canonical chain and replaces only the outbox/projection, never canonical events or checkpoints. Hardened deployment must place the authority boundary behind a separately supervised process or OS account. Hermes processes receive neither that interface nor an audit credential. This local projection is operational derived state, not an external sink, and does not make the default same-account deployment externally tamper-proof.
 
-Provisioning intent is persisted before approval consumption. Startup recovery finalizes interrupted receipts and removes only artifacts whose decoded content still matches the approved effect digest; mismatching files are retained and reported for manual intervention.
+Provisioning-plan preview requires a freshly authenticated configured principal and the exact local environment. Approval request and decision revalidate the current canonical charter and exact immutable plan; the approval records the plan ID/digest, charter digest, runtime, version, and environment. Provisioning intent records that exact plan digest before approval consumption. Startup recovery finalizes interrupted receipts and removes only artifacts whose decoded content still matches the approved effect digest while the consumed approval retains the same complete authority binding. Missing/corrupt bindings and mismatching files are retained and reported for manual intervention.
 
 Self-update is an installation operation outside the application service and agent authority model. It accepts only published non-draft stable SemVer releases with exact metadata from the fixed Aegis GitHub repository, rejects API and untrusted or multi-hop download redirects and downgrades, follows only GitHub's bounded HTTPS release-asset redirect, bounds and validates the single-file archive, verifies its published SHA-256 checksum, and atomically replaces the current executable when its directory is writable. Local and remote Git tags are not updater discovery inputs.
 
