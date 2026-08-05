@@ -210,16 +210,17 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonModelLoadFailed, err)
 	}
 	now := time.Now().UTC()
-	route := managerdomain.RoutePlan{SchemaVersion: "aegis.manager.route.v1", ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, HermesPath: descriptor.Executable, HermesVersion: descriptor.Version, OllamaMode: cfg.Inference.Mode, OllamaEndpoint: endpoint, OllamaVersion: ollamaVersion, Model: certification.Identity(), ProxyIdentity: "ephemeral-session-capability", IssuedAt: now, ExpiresAt: subject.ExpiresAt}
+	route := managerdomain.RoutePlan{SchemaVersion: "aegis.manager.route.v1", ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, HermesPath: descriptor.Executable, HermesVersion: descriptor.Version, OllamaMode: cfg.Inference.Mode, OllamaEndpoint: endpoint, OllamaVersion: ollamaVersion, Model: certification.Identity(), ProxyIdentity: "linux-pidfd-process-custody", IssuedAt: now, ExpiresAt: subject.ExpiresAt}
 	routeDigest, err := route.Digest()
 	if err != nil {
 		return nil, err
 	}
 	sensitive := &managerdomain.SensitiveTracker{}
 	armed := &armedGateway{sensitive: sensitive}
+	processAuthorizer := managerdomain.NewProcessAuthorizer()
 	runtime.active.Store(true)
 	stage("opening authenticated inference route")
-	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume, RequireSystemInstruction: true, AllowPlaintextRequests: true, Sensitive: sensitive})
+	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, ProcessAuthorizer: processAuthorizer, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume, RequireSystemInstruction: true, AllowPlaintextRequests: true, Sensitive: sensitive})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
 	}
@@ -228,9 +229,12 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		return nil, errors.New(managerdomain.ReasonRuntimeUnsupported + ": Hermes gateway Python executable not found")
 	}
 	stage("starting disposable Hermes runtime")
-	runtime.hermes, err = managerdomain.StartHermesProcess(ctx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), ProxyToken: runtime.proxy.Token(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
+	runtime.hermes, err = managerdomain.StartHermesProcess(ctx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
+	}
+	if err = processAuthorizer.Bind(runtime.hermes.Custody()); err != nil {
+		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
 	}
 	armed.client = runtime.hermes.Client()
 	gatewaySession, err := armed.client.CreateSession(ctx, "aegis-manager")

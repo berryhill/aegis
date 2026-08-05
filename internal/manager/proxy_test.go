@@ -7,10 +7,80 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func testProcessAuthorizer(t *testing.T) *ProcessAuthorizer {
+	t.Helper()
+	custody, err := AcquireProcessCustody(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = custody.Close() })
+	authorizer := NewProcessAuthorizer()
+	if err = authorizer.Bind(custody); err != nil {
+		t.Fatal(err)
+	}
+	return authorizer
+}
+
+func TestProxyFailsClosedUntilProcessCustodyIsBound(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"x","model":"exact:1","choices":[{"index":0,"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	authorizer := NewProcessAuthorizer()
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: authorizer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close(context.Background())
+
+	request := func() int {
+		req, requestErr := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}]}`))
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
+		response, requestErr := http.DefaultClient.Do(req)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		defer response.Body.Close()
+		return response.StatusCode
+	}
+	if status := request(); status != http.StatusForbidden {
+		t.Fatalf("unbound process custody status %d", status)
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("unbound request reached upstream %d times", upstreamCalls)
+	}
+	custody, err := AcquireProcessCustody(os.Getpid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer custody.Close()
+	if err = authorizer.Bind(custody); err != nil {
+		t.Fatal(err)
+	}
+	if err = authorizer.Bind(custody); err == nil {
+		t.Fatal("second process-custody binding succeeded")
+	}
+	if status := request(); status != http.StatusOK {
+		t.Fatalf("bound process custody status %d", status)
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("bound request reached upstream %d times", upstreamCalls)
+	}
+}
 
 func TestProxyAuthenticationModelAndCanaryBoundary(t *testing.T) {
 	var upstreamBody string
@@ -24,7 +94,7 @@ func TestProxyAuthenticationModelAndCanaryBoundary(t *testing.T) {
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	proxy, err := StartProxy(ctx, ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }})
+	proxy, err := StartProxy(ctx, ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,17 +117,17 @@ func TestProxyAuthenticationModelAndCanaryBoundary(t *testing.T) {
 	if status := request("wrong", "exact:1", ""); status != http.StatusForbidden {
 		t.Fatalf("unauthenticated status %d", status)
 	}
-	if status := request(proxy.Token(), "other:1", ""); status != http.StatusForbidden {
+	if status := request(HermesCompatibilityAPIKey, "other:1", ""); status != http.StatusForbidden {
 		t.Fatalf("alternate model status %d", status)
 	}
 	canary := "Authorization: Bearer abcdefghijklmnopqrstuvwxyz"
-	if status := request(proxy.Token(), "exact:1", `{"model":"exact:1","messages":[{"role":"user","content":"`+canary+`"}]}`); status != http.StatusForbidden {
+	if status := request(HermesCompatibilityAPIKey, "exact:1", `{"model":"exact:1","messages":[{"role":"user","content":"`+canary+`"}]}`); status != http.StatusForbidden {
 		t.Fatalf("canary status %d", status)
 	}
 	if strings.Contains(upstreamBody, canary) {
 		t.Fatal("blocked canary reached upstream")
 	}
-	if status := request(proxy.Token(), "exact:1", ""); status != http.StatusOK {
+	if status := request(HermesCompatibilityAPIKey, "exact:1", ""); status != http.StatusOK {
 		t.Fatalf("valid status %d", status)
 	}
 }
@@ -81,7 +151,7 @@ func TestTrustedLocalProxyAllowsPlaintextRequestRejectsEchoAndWipesTracker(t *te
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
 	tracker := &SensitiveTracker{}
 	tracker.Add([]byte(canary))
-	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, AllowPlaintextRequests: true, Sensitive: tracker})
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t), AllowPlaintextRequests: true, Sensitive: tracker})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +159,7 @@ func TestTrustedLocalProxyAllowsPlaintextRequestRejectsEchoAndWipesTracker(t *te
 		body := `{"model":"exact:1","messages":[{"role":"user","content":"` + content + `"}]}`
 		req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+proxy.Token())
+		req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
 		response, requestErr := http.DefaultClient.Do(req)
 		if requestErr != nil {
 			t.Fatal(requestErr)
@@ -121,7 +191,7 @@ func TestProxyExpiredAndReplayedCapabilitiesFailClosed(t *testing.T) {
 	defer upstream.Close()
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
 	budget := 1
-	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, CapabilityExpires: time.Now().Add(time.Minute), ConsumeCapability: func() bool {
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t), CapabilityExpires: time.Now().Add(time.Minute), ConsumeCapability: func() bool {
 		if budget == 0 {
 			return false
 		}
@@ -135,7 +205,7 @@ func TestProxyExpiredAndReplayedCapabilitiesFailClosed(t *testing.T) {
 	call := func() int {
 		req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}]}`))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+proxy.Token())
+		req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
 		response, requestErr := http.DefaultClient.Do(req)
 		if requestErr != nil {
 			t.Fatal(requestErr)
@@ -146,14 +216,14 @@ func TestProxyExpiredAndReplayedCapabilitiesFailClosed(t *testing.T) {
 	if call() != http.StatusOK || call() != http.StatusForbidden || upstreamCalls != 1 {
 		t.Fatalf("replay was not denied; upstream calls=%d", upstreamCalls)
 	}
-	expired, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, CapabilityExpires: time.Now().Add(-time.Second)})
+	expired, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t), CapabilityExpires: time.Now().Add(-time.Second)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer expired.Close(context.Background())
 	req, _ := http.NewRequest(http.MethodPost, expired.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+expired.Token())
+	req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -238,14 +308,14 @@ func TestProxyAcceptsOpenAIJSONContentTypeParameters(t *testing.T) {
 	}))
 	defer upstream.Close()
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
-	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }})
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer proxy.Close(context.Background())
 	req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}]}`))
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("Authorization", "Bearer "+proxy.Token())
+	req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -271,14 +341,14 @@ func TestProxyBuffersValidatesAndScansOpenAIStream(t *testing.T) {
 	}))
 	defer upstream.Close()
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
-	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }})
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer proxy.Close(context.Background())
 	req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+proxy.Token())
+	req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -297,14 +367,14 @@ func TestProxyRejectsMalformedOpenAIStream(t *testing.T) {
 	}))
 	defer upstream.Close()
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
-	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }})
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer proxy.Close(context.Background())
 	req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"stream":true}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+proxy.Token())
+	req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

@@ -18,6 +18,7 @@ type HermesProcess struct {
 	client    *GatewayClient
 	done      chan error
 	home      string
+	custody   *ProcessCustody
 	closeOnce sync.Once
 	closeErr  error
 }
@@ -27,14 +28,13 @@ type HermesProcessConfig struct {
 	Installation        string
 	StateRoot           string
 	ProxyEndpoint       string
-	ProxyToken          string
 	Model               string
 	MaximumMessageBytes int
 	StartTimeout        time.Duration
 }
 
 func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*HermesProcess, error) {
-	if config.Python == "" || config.Installation == "" || config.ProxyEndpoint == "" || config.ProxyToken == "" || config.Model == "" {
+	if config.Python == "" || config.Installation == "" || config.ProxyEndpoint == "" || config.Model == "" {
 		return nil, errors.New("Hermes manager process configuration is incomplete")
 	}
 	homeRoot := filepath.Join(config.StateRoot, "runtime")
@@ -52,10 +52,10 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 		"PATH=" + os.Getenv("PATH"), "HOME=" + home, "HERMES_HOME=" + home,
 		"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1",
 		"HERMES_PYTHON_SRC_ROOT=" + config.Installation, "HERMES_ENABLE_PROJECT_PLUGINS=false",
-		"HERMES_DISABLE_AUTO_SKILLS=1", "HERMES_TUI_TOOLSETS=context_engine", "HERMES_TUI_SKILLS=",
+		"HERMES_DISABLE_AUTO_SKILLS=1", "HERMES_TUI_TOOLSETS=no_mcp", "HERMES_TUI_SKILLS=",
 		"HERMES_SKIP_VERSION_CHECK=1", "HERMES_YOLO_MODE=0", "HERMES_MAX_TOKENS=192", "PYTHONDONTWRITEBYTECODE=1",
 		"HERMES_MODEL=" + config.Model, "HERMES_TUI_PROVIDER=openrouter", "OPENROUTER_BASE_URL=" + config.ProxyEndpoint + "/v1",
-		"OPENROUTER_API_KEY=" + config.ProxyToken, "HERMES_EPHEMERAL_SYSTEM_PROMPT=" + SystemInstruction,
+		"OPENROUTER_API_KEY=" + HermesCompatibilityAPIKey, "HERMES_EPHEMERAL_SYSTEM_PROMPT=" + SystemInstruction,
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
@@ -76,9 +76,21 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 		_ = os.RemoveAll(home)
 		return nil, err
 	}
-	process := &HermesProcess{command: command, stdin: stdin, done: make(chan error, 1), home: home}
+	custody, err := AcquireProcessCustody(command.Process.Pid)
+	if err != nil {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = command.Wait()
+		_ = os.RemoveAll(home)
+		return nil, err
+	}
+	process := &HermesProcess{command: command, stdin: stdin, done: make(chan error, 1), home: home, custody: custody}
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
-	go func() { process.done <- command.Wait(); close(process.done) }()
+	go func() {
+		waitErr := command.Wait()
+		_ = custody.Close()
+		process.done <- waitErr
+		close(process.done)
+	}()
 	client, err := NewGatewayClient(stdout, stdin, config.MaximumMessageBytes)
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -98,8 +110,9 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 	return process, nil
 }
 
-func (p *HermesProcess) Client() *GatewayClient { return p.client }
-func (p *HermesProcess) Done() <-chan error     { return p.done }
+func (p *HermesProcess) Client() *GatewayClient   { return p.client }
+func (p *HermesProcess) Done() <-chan error       { return p.done }
+func (p *HermesProcess) Custody() *ProcessCustody { return p.custody }
 func (p *HermesProcess) Close(ctx context.Context) error {
 	if p == nil {
 		return nil
@@ -109,12 +122,14 @@ func (p *HermesProcess) Close(ctx context.Context) error {
 			_ = p.stdin.Close()
 		}
 		if p.command != nil && p.command.Process != nil {
+			_ = p.custody.Signal(syscall.SIGTERM)
 			_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGTERM)
 		}
 		select {
 		case <-p.done:
 		case <-time.After(2 * time.Second):
 			if p.command != nil && p.command.Process != nil {
+				_ = p.custody.Signal(syscall.SIGKILL)
 				_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGKILL)
 			}
 			select {
@@ -124,6 +139,7 @@ func (p *HermesProcess) Close(ctx context.Context) error {
 			}
 		case <-ctx.Done():
 			if p.command != nil && p.command.Process != nil {
+				_ = p.custody.Signal(syscall.SIGKILL)
 				_ = syscall.Kill(-p.command.Process.Pid, syscall.SIGKILL)
 			}
 			p.closeErr = ctx.Err()
