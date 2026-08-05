@@ -30,6 +30,8 @@ flowchart LR
   Bridge -->|exact live one-tool registration| Hermes
   Aegis --> Audit[(Audit log)]
   Audit --> Checkpoint[(Signed checkpoint retention)]
+  Audit --> Outbox[(Metadata-only delivery outbox)]
+  Outbox --> Projection[(Derived local audit projection)]
   Hermes -. untrusted output .-> Aegis
   Aegis -->|exact context ID/digest + fresh admission| Hermes
   Aegis -->|persist by digest| Artifact[(Runtime artifact)]
@@ -64,6 +66,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Runtime output or a stored filename is treated as verification | Runtime output is stored by content digest; a claim-specific verifier rereads the blob and emits a receipt bound to artifact, action, run, owner, authority context, expected digest, verifier, and policy version | The verifier currently runs in the same process and uses the same local store/account; this is component separation, not independent attestation or separately protected evidence custody |
 | Provisioning escapes state or crashes | Typed effects, containment, symlink rejection, atomic create, durable intent recovery | Same-account filesystem races are not a separate-user sandbox; mismatching recovery artifacts require manual review |
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
+| Audit delivery is interrupted, reordered, duplicated, or its derived state is tampered with | ID/digest-bound durable outbox, canonical-prefix validation, projection-first idempotent reconciliation, bounded ordered delivery, fail-closed readiness, and canonical-chain-first projection verification/rebuild | Outbox and projection share the same local account/filesystem boundary as canonical audit; they are operational derived state, not independent retention or external anchoring |
 | API token grants principal | Unix peer identity required | TCP principal identity is unavailable without a future mapper |
 | Self-update installs a corrupted or unpublished archive | Fixed repository identity, published stable SemVer metadata, no API or untrusted download redirects, an allowlisted HTTPS GitHub release-asset redirect, no downgrades, bounded archive parsing, release checksum verification, atomic replacement; Git tags alone are ignored | GitHub release metadata and checksum delivery are one trust domain; no independent signature/transparency verification |
 | Interrupted release is resumed from a moved or forged tag | Existing annotated tag signature, exact annotation/object/peeled commit, reproducible changelog-only commit, local-main and remote-main relationship, and tagged-source verification; no force push or tag recreation | Git signing trust and operator repository access remain release-authority dependencies; ambiguous states require manual review |

@@ -627,7 +627,7 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 		return true
 	}
 	if len(parts) == 1 {
-		return parts[0] == ".lock" || parts[0] == "audit.jsonl"
+		return parts[0] == ".lock" || parts[0] == "audit.jsonl" || parts[0] == "audit-outbox.json" || parts[0] == "audit-projection.jsonl"
 	}
 	switch parts[0] {
 	case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions":

@@ -668,7 +668,15 @@ func sessionCmd(build builder) *cobra.Command {
 	return c
 }
 func auditCmd(build builder) *cobra.Command {
-	c := &cobra.Command{Use: "audit", Short: "Inspect and verify tamper-evident audit"}
+	c := &cobra.Command{Use: "audit", Short: "Inspect, deliver, and verify tamper-evident audit"}
+	withPrincipal := func(cmd *cobra.Command) (*app.Service, core.Subject, error) {
+		s, err := build(cmd)
+		if err != nil {
+			return nil, core.Subject{}, err
+		}
+		subject, err := s.Authenticate(cmd.Context())
+		return s, subject, err
+	}
 	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, e := build(cmd)
 		if e != nil {
@@ -690,7 +698,56 @@ func auditCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, map[string]any{"valid": true})
 	}}
-	c.AddCommand(list, verify)
+	status := &cobra.Command{Use: "delivery-status", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		s, subject, e := withPrincipal(cmd)
+		if e != nil {
+			return e
+		}
+		value, e := s.AuditDeliveryStatusAs(subject)
+		if e != nil {
+			return e
+		}
+		return output(cmd, value)
+	}}
+	limit := 100
+	deliver := &cobra.Command{Use: "deliver", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		s, subject, e := withPrincipal(cmd)
+		if e != nil {
+			return e
+		}
+		value, e := s.DeliverAuditAs(cmd.Context(), subject, limit)
+		if e != nil {
+			return e
+		}
+		return output(cmd, value)
+	}}
+	deliver.Flags().IntVar(&limit, "limit", 100, "maximum ordered events to deliver (1-1000)")
+	verifyDelivery := &cobra.Command{Use: "verify-delivery", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		s, subject, e := withPrincipal(cmd)
+		if e != nil {
+			return e
+		}
+		if e = s.VerifyAuditProjectionAs(subject); e != nil {
+			return e
+		}
+		status, e := s.AuditDeliveryStatusAs(subject)
+		if e != nil {
+			return e
+		}
+		return output(cmd, map[string]any{"valid": true, "current": status.Current})
+	}}
+	rebuild := &cobra.Command{Use: "rebuild-projection", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		s, subject, e := withPrincipal(cmd)
+		if e != nil {
+			return e
+		}
+		value, e := s.RebuildAuditProjectionAs(cmd.Context(), subject)
+		if e != nil {
+			return e
+		}
+		return output(cmd, value)
+	}}
+	c.AddCommand(list, verify, status, deliver, verifyDelivery, rebuild)
 	return c
 }
 func serveCmd(build builder) *cobra.Command {
