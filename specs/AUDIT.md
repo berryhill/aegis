@@ -20,6 +20,8 @@ Each canonical event has one durable metadata-only outbox entry bound to its eve
 
 The projection and outbox are derived local state, not a second source of audit authority or an external transparency service. Their verification first verifies the canonical chain, then requires the projection and outbox to be exact canonical prefixes. An explicit principal-only rebuild verifies the canonical chain before replacing only those derived files; it MUST NOT rewrite canonical events or checkpoints. Service readiness fails closed unless delivery is current and verifiable. Hermes and deployed runtimes receive no delivery, rebuild, or audit-authority capability.
 
+Audit storage is a canonical operational-document plane under `STORAGE.md`, distinct from Badger session authority and bbolt credential custody. A cross-store operation cannot use an audit event or delivered marker to complete, replace, or reconstruct missing authority. Audit records contain identifiers and sanitized metadata only; credential plaintext, encrypted payloads, key material, runtime-home paths, and broker capabilities are excluded.
+
 ## Deployment boundary
 
 The default implementation is in-process and same-account local storage; it is not an external transparency service. Stronger append separation requires deploying the audit authority behind a separately supervised process or OS account and retaining checkpoints on independently protected storage.

@@ -62,6 +62,8 @@ Provisioning continues to use exact approved charter and plan digests, typed det
 
 Application services may compose bounded domain records for one operation, but no production service may recreate a universal cross-domain mutation aggregate or validator. Transport and runtime adapters call shared services and receive only their narrow contracts.
 
+Persistence follows the same boundary. `internal/core` owns session-authority and audit schemas; `internal/credentials` owns secret metadata, encrypted-version, and binding schemas. Badger and bbolt adapters persist those records without redefining them. Canonical facts, rebuildable projections, blobs, operational metadata, runtime state, and credential custody remain separate as specified in `STORAGE.md`; no engine or projection is a universal domain owner.
+
 The removed experimental surfaces are not compatibility APIs:
 
 - `internal/plumbing` and its aggregate/universal validator;

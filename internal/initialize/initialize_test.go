@@ -150,6 +150,9 @@ func TestApplyPublishesSecureLayoutAndResumesEmptyAuthorityGeneration(t *testing
 
 func TestApplyRevalidatesIdentityImmediatelyBeforePublication(t *testing.T) {
 	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(root, "aegis.yaml")
 	service := testService(t)
 	plan, err := service.Plan(path, filepath.Join(root, "state"))

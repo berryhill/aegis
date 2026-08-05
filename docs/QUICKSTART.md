@@ -18,6 +18,8 @@ Maintainers can exercise the exact release packaging path without publishing any
 
 The second command builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, verifies their checksums, extracts the native archive, verifies its injected stable version, and runs the installed binary with an isolated `HOME`. The expected bare non-TTY result is `manager_not_initialized` with exit status 2 and no `.argis` creation. Supplying a version and empty output directory, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist`, retains the archives and `SHA256SUMS`; never point it at a directory containing retained files.
 
+That four-target result is packaging evidence only. The post-Track-A persistence contract is qualified on Linux/amd64/ext4 with exact Badger `v4.9.5` session-authority and bbolt `v1.5.0` credential-custody settings; see `specs/STORAGE.md`. Do not infer storage qualification for macOS, arm64, another filesystem, or another engine version from a successful cross-build.
+
 ## Build and configure
 
 ```sh

@@ -128,6 +128,7 @@ Prove this vertical slice:
 - `docs/product/BIG_IDEA.md` — product thesis, conceptual model, and long-term direction.
 - `specs/MVP.md` — minimum viable feature set, invariants, and deferred scope.
 - `specs/*.md` — normative, implementation-independent product and security specifications.
+- `specs/STORAGE.md` — normative post-Track-A storage classes, qualification matrix, ownership, and migration boundary.
 - `research/GO_RESEARCH.md` — consolidated Go, Cobra, Viper, Echo, and runtime-integration recommendations.
 - `specs/DEPLOYMENT_PROJECTION.md` — selective per-deployment projection and fleet synchronization architecture.
 - `research/2026-07-17-embedded-bbolt-credential-authority.md` — normative host-native bbolt credential authority, encryption, key-custody, broker, and Infisical migration specification.
@@ -163,3 +164,5 @@ When behavior, command syntax, configuration, architecture, trust boundaries, de
 The working Go implementation is under `cmd/aegis` and `internal/`. Build with `go build -o aegis ./cmd/aegis`. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, and `serve`. See `README.md` and `examples/` for the executable workflow.
 
 The Hermes adapter supports `>=0.18.0,<0.19.0`, uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.
+
+The qualified persistence envelope is deliberately narrower than the release build matrix: session authority uses Badger and credential custody uses bbolt only in the exact combinations listed in `specs/STORAGE.md`. Canonical facts, rebuildable projections, operational metadata, blobs, runtime state, and credential custody are separate classes; no derived state or cross-store partial result may grant authority.

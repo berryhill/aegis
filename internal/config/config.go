@@ -232,16 +232,19 @@ type Retention struct {
 type Audit struct {
 	CheckpointDir string `mapstructure:"checkpoint_dir" json:"checkpoint_dir"`
 }
-type CredentialBinding struct {
+
+// EnvironmentCredentialBinding describes legacy environment projection into a
+// runtime. It is configuration, not a credential-custody binding or authority fact.
+type EnvironmentCredentialBinding struct {
 	Type      string `mapstructure:"type" json:"type"`
 	SourceEnv string `mapstructure:"source_env" json:"source_env"`
 	TargetEnv string `mapstructure:"target_env" json:"target_env"`
 }
 type Credentials struct {
-	References     map[string]CredentialBinding `mapstructure:"references" json:"references"`
-	ProviderAuth   map[string]CredentialBinding `mapstructure:"provider_auth" json:"provider_auth"`
-	DesignProvider string                       `mapstructure:"design_provider" json:"design_provider,omitempty"`
-	Authority      CredentialAuthority          `mapstructure:"authority" json:"authority"`
+	References     map[string]EnvironmentCredentialBinding `mapstructure:"references" json:"references"`
+	ProviderAuth   map[string]EnvironmentCredentialBinding `mapstructure:"provider_auth" json:"provider_auth"`
+	DesignProvider string                                  `mapstructure:"design_provider" json:"design_provider,omitempty"`
+	Authority      CredentialAuthority                     `mapstructure:"authority" json:"authority"`
 }
 
 type CredentialAuthority struct {
@@ -270,10 +273,10 @@ type BrokerDestination struct {
 
 func (c Credentials) MarshalJSON() ([]byte, error) {
 	type credentialOutput struct {
-		References     map[string]CredentialBinding `json:"references"`
-		ProviderAuth   map[string]CredentialBinding `json:"provider_auth"`
-		DesignProvider string                       `json:"design_provider,omitempty"`
-		Authority      *CredentialAuthority         `json:"authority,omitempty"`
+		References     map[string]EnvironmentCredentialBinding `json:"references"`
+		ProviderAuth   map[string]EnvironmentCredentialBinding `json:"provider_auth"`
+		DesignProvider string                                  `json:"design_provider,omitempty"`
+		Authority      *CredentialAuthority                    `json:"authority,omitempty"`
 	}
 	var authority *CredentialAuthority
 	if c.Authority.Database != "" || c.Authority.DeploymentID != "" || c.Authority.Custody != "" || c.Authority.KEKCredential != "" || c.Authority.KEKFile != "" || c.Authority.Broker.Socket != "" || len(c.Authority.Broker.Destinations) != 0 {
@@ -301,7 +304,7 @@ func Defaults() Config {
 }
 
 func DefaultsFor(resolved layout.Layout) Config {
-	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
+	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
 
 // WithStateDir changes the state root while preserving explicit paths.
@@ -376,7 +379,7 @@ func (c Config) Validate() error {
 	if manager.Ingress.MaximumMessageBytes < 1024 || manager.Ingress.MaximumMessageBytes > 4<<20 || manager.Ingress.MaximumMessageRunes < 1024 || manager.Ingress.MaximumMessageRunes > 4<<20 || manager.Ingress.ScanTimeout <= 0 || manager.Ingress.ScanTimeout > time.Second || manager.Ingress.BoundedDecodeDepth < 0 || manager.Ingress.BoundedDecodeDepth > 3 || manager.Transcript.Retention != "session" {
 		es = append(es, errors.New("manager ingress or transcript configuration is invalid"))
 	}
-	validateBinding := func(name string, binding CredentialBinding) {
+	validateBinding := func(name string, binding EnvironmentCredentialBinding) {
 		reserved := map[string]bool{"PATH": true, "HOME": true, "HERMES_HOME": true, "HERMES_PYTHON_SRC_ROOT": true, "HERMES_TUI_TOOLSETS": true, "HERMES_TUI_SKILLS": true, "LD_PRELOAD": true, "PYTHONPATH": true}
 		if binding.Type != "environment" || !validEnvironmentName(binding.SourceEnv) || !validEnvironmentName(binding.TargetEnv) || reserved[binding.TargetEnv] {
 			es = append(es, fmt.Errorf("credential %q must use type environment with source_env and target_env", name))

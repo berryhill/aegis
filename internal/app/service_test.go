@@ -77,7 +77,7 @@ while read rest; do :; done
 	cfg.StateDir = st.Root()
 	cfg.HermesExecutable = exe
 	cfg.Principal = config.Principal{ID: "principal-1", Name: "Principal Operator", UID: "4242", User: "operator", AuthTTL: 5 * time.Minute}
-	cfg.Credentials.ProviderAuth["test"] = config.CredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEST_PROVIDER_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
+	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEST_PROVIDER_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s := New(cfg, st, hermes.New(exe, log), log)
 	s.Now = func() time.Time { return time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC) }
@@ -110,7 +110,7 @@ func TestAuthenticationDoesNotAcceptPromptOrStanzaAuthority(t *testing.T) {
 
 func TestCredentialResolutionIsExplicitScopedAndSecretSafe(t *testing.T) {
 	s := testService(t)
-	s.Config.Credentials.ProviderAuth["team"] = config.CredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEAM_KEY", TargetEnv: "TEAM_PROVIDER_KEY"}
+	s.Config.Credentials.ProviderAuth["team"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEAM_KEY", TargetEnv: "TEAM_PROVIDER_KEY"}
 	s.LookupEnv = func(name string) (string, bool) {
 		values := map[string]string{"AEGIS_TEST_PROVIDER_KEY": "principal-secret-sentinel", "AEGIS_TEAM_KEY": "team-secret-sentinel"}
 		value, ok := values[name]

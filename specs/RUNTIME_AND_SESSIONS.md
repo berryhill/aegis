@@ -25,3 +25,5 @@ This is process and Hermes-state isolation, not host filesystem, network, contai
 ## Lifecycle
 
 Session records bind the mandate, process identity, clean runtime home, start time, status, and termination reason. Revocation is an append-only authority fact rather than an in-place mutation of a mandate or authority context. Expired, revoked, invalid, missing, or PID-reused runtimes are terminated and fail closed through Aegis. Stanza changes, downshifts, and all other material authority changes require a newly issued mandate, newly instantiated authority context, and clean session; authority is never switched or expanded in place.
+
+Runtime admission reads the verified session-authority relationship defined in `STORAGE.md`; it does not admit from a cached transition root, runtime home, session projection, lifecycle marker, or model statement. A missing, dirty, substituted, cross-family, ambiguous, expired, or revoked relationship denies. Hermes runtime state is disposable and never becomes canonical session authority.
