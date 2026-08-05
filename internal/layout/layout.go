@@ -89,19 +89,28 @@ func (r Resolver) Resolve() (Layout, error) {
 	} else if !errors.Is(statErr, os.ErrNotExist) {
 		return Layout{}, fmt.Errorf("inspect canonical root: %w", statErr)
 	}
+	return ForRoot(home, root), nil
+}
+
+// ForRoot derives the complete operational path set for one execution profile.
+// Callers must establish custody of scope and root before using the result.
+// Keeping this derivation here prevents pre-configuration and ordinary command
+// paths from silently using different locations.
+func ForRoot(scope, root string) Layout {
 	state := filepath.Join(root, "state")
 	return Layout{
-		Home: home, Root: root, Config: filepath.Join(root, "aegis.yaml"), State: state,
+		Home: scope, Root: root, Config: filepath.Join(root, "aegis.yaml"), State: state,
 		AuditCheckpoints:      filepath.Join(state, "audit-checkpoints"),
 		AuthorityPersistence:  filepath.Join(state, "persistence", "authority-v1"),
 		CredentialDatabase:    filepath.Join(state, "credentials", "authority.db"),
 		HostKEK:               filepath.Join(state, "credentials", "authority.kek"),
 		ManagerCertifications: filepath.Join(state, "manager", "certifications"),
-		ManagedModels:         filepath.Join(state, "manager", "ollama-models"), Runtime: filepath.Join(state, "runtime"),
-		LegacyConfig:      filepath.Join(home, ".config", "aegis", "aegis.yaml"),
-		LegacyState:       filepath.Join(home, ".local", "state", "aegis"),
-		LegacyCheckpoints: filepath.Join(home, ".local", "state", "aegis-checkpoints"),
-	}, nil
+		ManagedModels:         filepath.Join(state, "manager", "ollama-models"),
+		Runtime:               filepath.Join(state, "runtime"),
+		LegacyConfig:          filepath.Join(scope, ".config", "aegis", "aegis.yaml"),
+		LegacyState:           filepath.Join(scope, ".local", "state", "aegis"),
+		LegacyCheckpoints:     filepath.Join(scope, ".local", "state", "aegis-checkpoints"),
+	}
 }
 
 // ForState rederives every layout value whose default is rooted in state.

@@ -57,11 +57,7 @@ func ProfileForExecutable(version, executable string) ExecutionProfile {
 func resolveExecutionProfile(profile ExecutionProfile, developmentRoot string) (layout.Layout, error) {
 	switch profile {
 	case ProductionProfile:
-		home, err := profileHome()
-		if err != nil {
-			return layout.Layout{}, err
-		}
-		return profileLayout(home, filepath.Join(home, layout.CanonicalDirectory)), nil
+		return layout.New().Resolve()
 	case DevelopmentProfile:
 		root, err := resolveDevelopmentRepository(developmentRoot)
 		if err != nil {
@@ -145,15 +141,14 @@ func pathExistsNoFollow(path string) bool {
 }
 
 func profileLayout(scope, root string) layout.Layout {
-	state := filepath.Join(root, "state")
-	return layout.Layout{Home: scope, Root: root, Config: filepath.Join(root, "aegis.yaml"), State: state}
+	return layout.ForRoot(scope, root)
 }
 
 func validateExecutionProfile(profile ExecutionProfile, resolved layout.Layout, options *rootOptions, destructive bool) error {
 	if profile == "" {
 		return nil
 	}
-	if resolved.Root == "" || resolved.Config == "" || resolved.State == "" {
+	if resolved.Root == "" || resolved.Config == "" || resolved.State == "" || resolved.AuditCheckpoints == "" || resolved.AuthorityPersistence == "" || resolved.CredentialDatabase == "" || resolved.HostKEK == "" || resolved.ManagerCertifications == "" || resolved.ManagedModels == "" || resolved.Runtime == "" {
 		return errors.New("execution profile layout is unresolved")
 	}
 	if destructive {

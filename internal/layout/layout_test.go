@@ -38,6 +38,38 @@ func TestLiteralCanonicalLayoutAndXDGIndependence(t *testing.T) {
 	}
 }
 
+func TestForRootDerivesCompleteProfileSpecificOperationalLayout(t *testing.T) {
+	scope := filepath.Join(t.TempDir(), "scope")
+	root := filepath.Join(scope, "profile")
+	got := ForRoot(scope, root)
+	want := map[string]string{
+		"home": scope, "root": root, "config": filepath.Join(root, "aegis.yaml"),
+		"state": filepath.Join(root, "state"), "audit checkpoints": filepath.Join(root, "state", "audit-checkpoints"),
+		"authority persistence":  filepath.Join(root, "state", "persistence", "authority-v1"),
+		"credential database":    filepath.Join(root, "state", "credentials", "authority.db"),
+		"host KEK":               filepath.Join(root, "state", "credentials", "authority.kek"),
+		"manager certifications": filepath.Join(root, "state", "manager", "certifications"),
+		"managed models":         filepath.Join(root, "state", "manager", "ollama-models"),
+		"runtime":                filepath.Join(root, "state", "runtime"),
+		"legacy config":          filepath.Join(scope, ".config", "aegis", "aegis.yaml"),
+		"legacy state":           filepath.Join(scope, ".local", "state", "aegis"),
+		"legacy checkpoints":     filepath.Join(scope, ".local", "state", "aegis-checkpoints"),
+	}
+	actual := map[string]string{
+		"home": got.Home, "root": got.Root, "config": got.Config, "state": got.State,
+		"audit checkpoints": got.AuditCheckpoints, "authority persistence": got.AuthorityPersistence,
+		"credential database": got.CredentialDatabase, "host KEK": got.HostKEK,
+		"manager certifications": got.ManagerCertifications, "managed models": got.ManagedModels,
+		"runtime": got.Runtime, "legacy config": got.LegacyConfig, "legacy state": got.LegacyState,
+		"legacy checkpoints": got.LegacyCheckpoints,
+	}
+	for name, expected := range want {
+		if actual[name] != expected {
+			t.Errorf("%s=%q want %q", name, actual[name], expected)
+		}
+	}
+}
+
 func TestForStateRederivesEveryStateRootedPath(t *testing.T) {
 	resolver, _ := temporaryResolver(t)
 	resolved, err := resolver.Resolve()

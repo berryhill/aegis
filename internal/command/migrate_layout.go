@@ -10,13 +10,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func migrateLayoutCmd(service *migration.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions) *cobra.Command {
+func migrateLayoutCmd(service *migration.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile) *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate-layout",
 		Short: "Migrate an exact legacy local installation to ~/.argis",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if options.configFile != "" {
+			if profile == DevelopmentProfile {
+				return usage(errors.New("development executable refuses to migrate the production profile; use an installed production executable"))
+			}
+			if (cmd.Flags().Changed("config") || cmd.InheritedFlags().Changed("config")) && options.configFile != "" {
 				return usage(errors.New("migrate-layout does not infer migration authority from --config; inspect that explicit deployment manually"))
 			}
 			plan, err := service.Plan(cmd.Context())

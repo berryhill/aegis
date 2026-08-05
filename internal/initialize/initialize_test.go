@@ -108,6 +108,81 @@ func TestApplyRefusesAuthorityCollisionCreatedAfterPreview(t *testing.T) {
 	}
 }
 
+func TestApplyPublishesSecureLayoutAndResumesEmptyAuthorityGeneration(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "profile")
+	path := filepath.Join(root, "aegis.yaml")
+	state := filepath.Join(root, "state")
+	service := testService(t)
+	plan, err := service.Plan(path, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = ensureAuthorityPersistence(context.Background(), plan.AuthorityPath); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.Apply(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	if got := config.Inspect(path); got.State != config.StateValid {
+		t.Fatalf("published configuration=%+v", got)
+	}
+	for _, directory := range []string{root, state, filepath.Dir(plan.AuthorityPath), plan.AuthorityPath} {
+		info, statErr := os.Stat(directory)
+		if statErr != nil {
+			t.Errorf("stat %s: %v", directory, statErr)
+			continue
+		}
+		if info.Mode().Perm()&0077 != 0 {
+			t.Errorf("directory %s mode=%#o", directory, info.Mode().Perm())
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("configuration mode=%#o", info.Mode().Perm())
+	}
+}
+
+func TestApplyRevalidatesIdentityImmediatelyBeforePublication(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "aegis.yaml")
+	service := testService(t)
+	plan, err := service.Plan(path, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalCurrent := service.Current
+	calls := 0
+	var last *user.User
+	service.Current = func() (*user.User, error) {
+		calls++
+		current, currentErr := originalCurrent()
+		if currentErr == nil && calls >= 2 {
+			current.Username += "-changed"
+		}
+		last = current
+		return current, currentErr
+	}
+	service.LookupID = func(uid string) (*user.User, error) {
+		if last == nil || last.Uid != uid {
+			return nil, errors.New("unexpected uid")
+		}
+		copy := *last
+		return &copy, nil
+	}
+	if err = service.Apply(context.Background(), plan); err == nil || !strings.Contains(err.Error(), "changed immediately before configuration publication") {
+		t.Fatalf("identity change accepted: %v", err)
+	}
+	if _, err = os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("denied publication wrote config: %v", err)
+	}
+}
+
 func TestPlanRejectsAmbiguousHostIdentity(t *testing.T) {
 	service := testService(t)
 	service.LookupID = func(string) (*user.User, error) {
