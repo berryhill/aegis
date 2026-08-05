@@ -146,7 +146,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			return nil, usage(err)
 		}
 		if cmd.Flags().Changed("state-dir") || cmd.InheritedFlags().Changed("state-dir") {
-			cfg.StateDir = o.stateDir
+			cfg = cfg.WithStateDir(o.stateDir)
 		}
 		if err = validateConfiguredPathsProfile(deps.Profile, map[string]string{
 			"state":                 cfg.StateDir,

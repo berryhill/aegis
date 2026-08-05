@@ -11,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/persistence/authority"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 )
 
 const (
@@ -19,11 +21,12 @@ const (
 )
 
 type Plan struct {
-	ConfigPath string
-	StatePath  string
-	Principal  config.Principal
-	Document   []byte
-	Partials   []string
+	ConfigPath    string
+	StatePath     string
+	AuthorityPath string
+	Principal     config.Principal
+	Document      []byte
+	Partials      []string
 }
 
 type Service struct {
@@ -54,6 +57,9 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	if err != nil {
 		return Plan{}, fmt.Errorf("resolve state path: %w", err)
 	}
+	if _, err = authority.ClassifyLegacyAuthority(statePath); err != nil {
+		return Plan{}, fmt.Errorf("authority persistence initialization denied: %w", err)
+	}
 	principalName := current.Name
 	if principalName == "" {
 		principalName = current.Username
@@ -68,7 +74,7 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	}
 	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: %s\naudit:\n  checkpoint_dir: %s\n",
 		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), principal.AuthTTL, strconv.Quote(candidate.Audit.CheckpointDir)))
-	return Plan{ConfigPath: inspection.Path, StatePath: statePath, Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...)}, nil
+	return Plan{ConfigPath: inspection.Path, StatePath: statePath, AuthorityPath: filepath.Join(statePath, "persistence", "authority-v1"), Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...)}, nil
 }
 
 func (s *Service) verifiedCurrent() (*user.User, error) {
@@ -105,6 +111,9 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	}
 	if current.Uid != plan.Principal.UID || current.Username != plan.Principal.User {
 		return errors.New("authenticated local operator changed during initialization")
+	}
+	if _, err = authority.ClassifyLegacyAuthority(plan.StatePath); err != nil {
+		return fmt.Errorf("authority persistence changed during initialization: %w", err)
 	}
 	inspection := config.Inspect(plan.ConfigPath)
 	if inspection.State != config.StateAbsent && inspection.State != config.StatePartial {
@@ -163,6 +172,12 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 			return fmt.Errorf("verify initialized configuration: %w", verified.Err)
 		}
 		return fmt.Errorf("verify initialized configuration: state %s", verified.State)
+	}
+	if _, err = authoritybadger.Initialize(ctx, plan.AuthorityPath); err != nil {
+		if removeErr := os.Remove(plan.ConfigPath); removeErr != nil {
+			return fmt.Errorf("initialize authority persistence: %w; configuration rollback failed: %v", err, removeErr)
+		}
+		return fmt.Errorf("initialize authority persistence: %w", err)
 	}
 	return nil
 }

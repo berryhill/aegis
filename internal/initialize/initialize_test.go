@@ -82,6 +82,32 @@ func TestApplyRefusesConfigurationCreatedAfterPreview(t *testing.T) {
 	}
 }
 
+func TestApplyRefusesAuthorityCollisionCreatedAfterPreview(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "aegis.yaml")
+	state := filepath.Join(root, "state")
+	service := testService(t)
+	plan, err := service.Plan(path, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Join(state, "sessions"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(state, "sessions", "retained.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.Apply(context.Background(), plan); err == nil {
+		t.Fatal("authority collision created after preview was accepted")
+	}
+	if got := config.Inspect(path); got.State != config.StateAbsent {
+		t.Fatalf("denied apply wrote configuration: %+v", got)
+	}
+	if _, err = os.Stat(plan.AuthorityPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("denied apply created authority persistence: %v", err)
+	}
+}
+
 func TestPlanRejectsAmbiguousHostIdentity(t *testing.T) {
 	service := testService(t)
 	service.LookupID = func(string) (*user.User, error) {

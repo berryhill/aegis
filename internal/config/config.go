@@ -303,6 +303,26 @@ func Defaults() Config {
 func DefaultsFor(resolved layout.Layout) Config {
 	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]CredentialBinding{}, ProviderAuth: map[string]CredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
+
+// WithStateDir changes the state root while preserving explicit paths.
+func (c Config) WithStateDir(state string) Config {
+	old := c.StateDir
+	if c.Audit.CheckpointDir == filepath.Join(old, "audit-checkpoints") {
+		c.Audit.CheckpointDir = filepath.Join(state, "audit-checkpoints")
+	}
+	if c.Credentials.Authority.Database == filepath.Join(old, "credentials", "authority.db") {
+		c.Credentials.Authority.Database = filepath.Join(state, "credentials", "authority.db")
+	}
+	if c.Credentials.Authority.KEKFile == filepath.Join(old, "credentials", "authority.kek") {
+		c.Credentials.Authority.KEKFile = filepath.Join(state, "credentials", "authority.kek")
+	}
+	if c.Manager.Inference.Certification == filepath.Join(old, "manager", "certifications") {
+		c.Manager.Inference.Certification = filepath.Join(state, "manager", "certifications")
+	}
+	c.StateDir = state
+	return c
+}
+
 func (c Config) Validate() error {
 	var es []error
 	if c.StateDir == "" {
@@ -469,11 +489,25 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 	if err := v.UnmarshalExact(&c); err != nil {
 		return Config{}, fmt.Errorf("strict config decode: %w", err)
 	}
+	if !configurationValueSet(v, flags, "audit.checkpoint_dir", "AEGIS_AUDIT_CHECKPOINT_DIR") {
+		c.Audit.CheckpointDir = filepath.Join(c.StateDir, "audit-checkpoints")
+	}
 	if err := c.Validate(); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
 	return c, nil
 }
+
+func configurationValueSet(v *viper.Viper, flags *pflag.FlagSet, key, environment string) bool {
+	if v.InConfig(key) {
+		return true
+	}
+	if _, ok := os.LookupEnv(environment); ok {
+		return true
+	}
+	return flags != nil && flags.Lookup(key) != nil && flags.Changed(key)
+}
+
 func Redacted(c Config) Config {
 	if c.API.Token != "" {
 		c.API.Token = "[REDACTED]"
