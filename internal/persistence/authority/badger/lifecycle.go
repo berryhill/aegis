@@ -104,13 +104,13 @@ func Initialize(ctx context.Context, root string) (Generation, error) {
 		}
 	}()
 	if err = db.Update(func(txn *badgerdb.Txn) error {
-		if err := txn.Set([]byte("\x01meta/store-id"), []byte(storeID)); err != nil {
+		if err := txn.Set(mustMetadataKey(KeyMetadataStoreID), []byte(storeID)); err != nil {
 			return err
 		}
-		if err := txn.Set([]byte("\x01meta/schema"), []byte(SchemaVersion)); err != nil {
+		if err := txn.Set(mustMetadataKey(KeyMetadataSchema), []byte(SchemaVersion)); err != nil {
 			return err
 		}
-		return txn.Set([]byte("\x01meta/codec"), []byte(CodecVersion))
+		return txn.Set(mustMetadataKey(KeyMetadataCodec), []byte(CodecVersion))
 	}); err != nil {
 		return Generation{}, fmt.Errorf("write authority identity: %w", err)
 	}
@@ -312,8 +312,13 @@ func verifyStoreIdentity(path string, generation Generation) error {
 	}
 	defer db.Close()
 	return db.View(func(txn *badgerdb.Txn) error {
-		for key, want := range map[string]string{"\x01meta/store-id": generation.StoreID, "\x01meta/schema": generation.Schema, "\x01meta/codec": generation.Codec} {
-			item, getErr := txn.Get([]byte(key))
+		for family, want := range map[KeyFamily]string{KeyMetadataStoreID: generation.StoreID, KeyMetadataSchema: generation.Schema, KeyMetadataCodec: generation.Codec} {
+			key := mustMetadataKey(family)
+			decoded, decodeErr := DecodeKey(key)
+			if decodeErr != nil || decoded.Family != family {
+				return ErrCorruptGeneration
+			}
+			item, getErr := txn.Get(key)
 			if getErr != nil {
 				return ErrCorruptGeneration
 			}
