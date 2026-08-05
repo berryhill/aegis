@@ -16,7 +16,6 @@ import (
 
 	authoritypersistence "github.com/berryhill/aegis/internal/persistence/authority"
 	badgerdb "github.com/dgraph-io/badger/v4"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -431,7 +430,7 @@ func renameNoReplace(fromDir, from, toDir, to string) error {
 		return err
 	}
 	defer destination.Close()
-	return unix.Renameat2(int(source.Fd()), from, int(destination.Fd()), to, unix.RENAME_NOREPLACE)
+	return renameNoReplaceAt(int(source.Fd()), from, int(destination.Fd()), to)
 }
 
 func syncDirectory(path string) error {

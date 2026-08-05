@@ -18,6 +18,8 @@ go vet ./...
 go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 govulncheck ./...
 test -z "$(gofmt -l ./cmd ./internal)"
+./scripts/verify_installed_mvi_test.sh
+./scripts/verify-installed-mvi.sh
 ```
 
 Run focused tests while developing, for example `go test -run TestUnixAPICompleteOperationalWorkflow ./internal/api` or `go test -race ./internal/credentials/...`. Tests must use temporary Aegis state and disposable `HERMES_HOME`; never modify a developer's normal Hermes profile. Credential tests must generate random fixture values in memory, verify that values do not enter databases/logs/errors/output, and never use real credentials. Authority-passphrase tests must inject or build a fake pinentry, isolate display/session environment, and must never discover or invoke the developer's real helper, GPG/GPG-agent state, desktop keyring, or authority. Keep authority databases on local filesystems and KEK fixtures separate from backup fixtures.
@@ -60,6 +62,6 @@ If an atomic push fails after the local release commit and signed annotated tag 
 
 Invoking non-dry-run `make release` is the operator's publication authorization. Use `RELEASE_DRY_RUN=1 make release VERSION=...` to run locally safe classification and verification and print the exact action without changing worktree files, refs, or remotes. Dry-run does not create a signing preflight signature; recovery still verifies the existing signature.
 
-The tag-triggered release workflow reruns formatting, tests, race tests, vet, and vulnerability checks; cross-builds Linux/macOS archives for amd64/arm64; verifies the embedded version and checksums; and creates the GitHub release. Tag creation and pushing are never delegated to Hermes. Until that workflow publishes a non-draft stable release, `aegis update` correctly continues to report the previous published version; it never treats local or remote Git tags as release assets.
+The tag-triggered release workflow reruns formatting, tests, race tests, vet, and vulnerability checks; then uses the same `scripts/verify-installed-mvi.sh` path as ordinary CI to cross-build Linux/macOS archives for amd64/arm64, verify checksums and the extracted native binary's embedded version, and prove isolated bare non-TTY first run fails closed without production-state creation. It then creates the GitHub release. Tag creation and pushing are never delegated to Hermes. Until that workflow publishes a non-draft stable release, `aegis update` correctly continues to report the previous published version; it never treats local or remote Git tags as release assets.
 
 Do not move, delete, replace, or reuse a suspicious or remotely published release tag. The resumable path is only for the exact already-created signed local release artifact described above; all other failed-tag states require inspection and explicit manual remediation.
