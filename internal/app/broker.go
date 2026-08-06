@@ -179,18 +179,11 @@ func (s *Service) ExecuteBroker(ctx context.Context, peer broker.Peer, request b
 		return deny("mandate_invalid")
 	}
 	authority, err := s.authorityContextForSession(ctx, session.ID)
-	if err != nil || authority.MandateID != mandate.ID {
+	if err != nil || authority.MandateID != mandate.ID || core.ValidateAuthorityContext(authority, mandate) != nil {
 		return deny("authority_context_invalid")
-	}
-	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, now)
-	if err != nil || !admission.Admitted {
-		return deny("authority_inactive")
 	}
 	if !processMatches(capability.RuntimePID, capability.ProcessStart) || !processDescendsFrom(int(peer.PID), capability.RuntimePID, capability.ProcessStart) {
 		return deny("runtime_process_identity_lost")
-	}
-	if !contains(mandate.Capabilities, broker.ActionGitHubGetRepository) || !contains(mandate.Scopes.Credentials, broker.GitHubScope) {
-		return deny("operation_or_scope_denied")
 	}
 	destination, ok := cfg.Destinations[broker.GitHubDestination]
 	if !ok {
@@ -205,6 +198,30 @@ func (s *Service) ExecuteBroker(ctx context.Context, peer broker.Peer, request b
 	}
 	if !approvedRepository {
 		return deny("repository_denied")
+	}
+	// Take one replay-verified canonical authority snapshot immediately before
+	// credential resolution. All effect planes are checked against this same
+	// immutable context; mandate or stored projection fields never grant alone.
+	admissionAt := s.Now()
+	if !admissionAt.Before(request.Deadline) || request.Deadline.After(admissionAt.Add(cfg.Timeout)) {
+		return deny("request_expired_or_unbounded")
+	}
+	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, admissionAt)
+	if err != nil || !admission.Admitted || admission.EvaluatedAt != admissionAt ||
+		admission.AuthorityContext.ID != authority.ID || admission.AuthorityContext.Digest != authority.Digest ||
+		admission.AuthorityContext.SessionID != session.ID || admission.AuthorityContext.MandateID != mandate.ID ||
+		core.ValidateAuthorityContext(admission.AuthorityContext, mandate) != nil {
+		return deny("authority_inactive_or_inconsistent")
+	}
+	effective := admission.AuthorityContext.Authority
+	if !contains(effective.Capabilities, broker.ActionGitHubGetRepository) {
+		return deny("operation_capability_denied")
+	}
+	if !contains(effective.Tools, "aegis") || !contains(effective.Hermes.Toolsets, "aegis") || !contains(session.VerifiedToolsets, "aegis") {
+		return deny("runtime_tool_capability_denied")
+	}
+	if !contains(effective.Credentials, broker.GitHubScope) {
+		return deny("credential_scope_denied")
 	}
 	key := credentials.CredentialBindingKey{AgentID: mandate.AgentID, StanzaID: mandate.StanzaID, DeploymentID: mandate.DeploymentID, Scope: broker.GitHubScope}
 	var result broker.Result
