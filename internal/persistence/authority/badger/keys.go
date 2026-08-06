@@ -21,11 +21,16 @@ const (
 	KeyMetadataSchema  KeyFamily = 0x02
 	KeyMetadataCodec   KeyFamily = 0x03
 
-	KeyMandate          KeyFamily = 0x10
-	KeyAuthorityContext KeyFamily = 0x11
-	KeyContextBySession KeyFamily = 0x12
-	KeyTransitionFact   KeyFamily = 0x13
-	KeyTransitionRoot   KeyFamily = 0x14
+	KeyMandate             KeyFamily = 0x10
+	KeyAuthorityContext    KeyFamily = 0x11
+	KeyContextBySession    KeyFamily = 0x12
+	KeyTransitionFact      KeyFamily = 0x13
+	KeyTransitionRoot      KeyFamily = 0x14
+	KeyAuthorityCommand    KeyFamily = 0x15
+	KeyAuthorityFact       KeyFamily = 0x16
+	KeyAuthorityReceipt    KeyFamily = 0x17
+	KeyAuthorityProjection KeyFamily = 0x18
+	KeyAuthorityOutbox     KeyFamily = 0x19
 )
 
 var (
@@ -40,14 +45,19 @@ type keyShape struct {
 }
 
 var keyRegistry = map[KeyFamily]keyShape{
-	KeyMetadataStoreID:  {identifiers: 0},
-	KeyMetadataSchema:   {identifiers: 0},
-	KeyMetadataCodec:    {identifiers: 0},
-	KeyMandate:          {identifiers: 1},
-	KeyAuthorityContext: {identifiers: 1},
-	KeyContextBySession: {identifiers: 1},
-	KeyTransitionFact:   {identifiers: 1, sequence: true},
-	KeyTransitionRoot:   {identifiers: 1},
+	KeyMetadataStoreID:     {identifiers: 0},
+	KeyMetadataSchema:      {identifiers: 0},
+	KeyMetadataCodec:       {identifiers: 0},
+	KeyMandate:             {identifiers: 1},
+	KeyAuthorityContext:    {identifiers: 1},
+	KeyContextBySession:    {identifiers: 1},
+	KeyTransitionFact:      {identifiers: 1, sequence: true},
+	KeyTransitionRoot:      {identifiers: 1},
+	KeyAuthorityCommand:    {identifiers: 1},
+	KeyAuthorityFact:       {identifiers: 1, sequence: true},
+	KeyAuthorityReceipt:    {identifiers: 1},
+	KeyAuthorityProjection: {identifiers: 1},
+	KeyAuthorityOutbox:     {identifiers: 1, sequence: true},
 }
 
 // BinaryKey is the strictly decoded representation of one registry key.

@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // AuthorityRepository is the only persistence contract authority-domain callers
 // should depend on. The contract deliberately exposes no generic kind, update,
@@ -15,4 +18,15 @@ type AuthorityRepository interface {
 	AppendAuthorityTransitionFact(context.Context, AuthorityTransitionFact) (AuthorityTransitionRoot, error)
 	AuthorityTransitionFacts(context.Context, string) ([]AuthorityTransitionFact, error)
 	AuthorityTransitionRoot(context.Context, string) (AuthorityTransitionRoot, error)
+}
+
+// AuthorityCommandRepository is the narrow transactional authority-command
+// boundary. It deliberately exposes no generic mutation or projection-replace
+// operation; admission always re-verifies canonical command/fact history.
+type AuthorityCommandRepository interface {
+	ProcessAuthorityCommand(context.Context, AuthorityCommand, time.Time, string) (AuthorityReceipt, error)
+	GetAuthorityReceipt(context.Context, string) (AuthorityReceipt, error)
+	CurrentAuthorityProjection(context.Context, string) (AuthorityProjection, error)
+	AuthorityOutbox(context.Context, string) ([]AuthorityOutboxEntry, error)
+	AuthorityAdmission(context.Context, string, string, time.Time) (AuthorityAdmissionView, error)
 }

@@ -12,6 +12,7 @@ const (
 	AuthorityRecordReceipt    = "authority_receipt"
 	AuthorityRecordProjection = "authority_projection"
 	AuthorityRecordReplay     = "authority_replay"
+	AuthorityRecordOutbox     = "authority_outbox"
 )
 
 // AuthorityCommandKind is a closed controller command vocabulary. Adding a
@@ -98,6 +99,32 @@ type AuthorityReplay struct {
 	Receipts []AuthorityReceipt `json:"receipts,omitempty"`
 }
 
+// AuthorityOutboxEntry is durable derived work emitted by the same transaction
+// as an accepted command. Canonical commands and facts remain authoritative.
+type AuthorityOutboxEntry struct {
+	ID                 string    `json:"id"`
+	AuthorityContextID string    `json:"authority_context_id"`
+	Sequence           uint64    `json:"sequence"`
+	CommandID          string    `json:"command_id"`
+	CommandDigest      string    `json:"command_digest"`
+	FactID             string    `json:"fact_id"`
+	FactDigest         string    `json:"fact_digest"`
+	ReceiptID          string    `json:"receipt_id"`
+	ProjectionDigest   string    `json:"projection_digest"`
+	RecordedAt         time.Time `json:"recorded_at"`
+	Digest             string    `json:"digest"`
+}
+
+// AuthorityAdmissionView is one transactionally consistent replay-verified
+// view used at an effect boundary. Stored projections never grant authority.
+type AuthorityAdmissionView struct {
+	AuthorityContext AuthorityContext    `json:"authority_context"`
+	Projection       AuthorityProjection `json:"projection"`
+	EvaluatedAt      time.Time           `json:"evaluated_at"`
+	Admitted         bool                `json:"admitted"`
+	ReasonCode       string              `json:"reason_code"`
+}
+
 func EncodeAuthorityCommandCanonical(value AuthorityCommand) ([]byte, error) {
 	return encodeAuthorityRecord(AuthorityRecordCommand, value)
 }
@@ -127,6 +154,12 @@ func EncodeAuthorityReplayCanonical(value AuthorityReplay) ([]byte, error) {
 }
 func DecodeAuthorityReplayCanonical(data []byte) (AuthorityReplay, error) {
 	return decodeAuthorityRecord[AuthorityReplay](data, AuthorityRecordReplay)
+}
+func EncodeAuthorityOutboxEntryCanonical(value AuthorityOutboxEntry) ([]byte, error) {
+	return encodeAuthorityRecord(AuthorityRecordOutbox, value)
+}
+func DecodeAuthorityOutboxEntryCanonical(data []byte) (AuthorityOutboxEntry, error) {
+	return decodeAuthorityRecord[AuthorityOutboxEntry](data, AuthorityRecordOutbox)
 }
 
 func AuthorityCommandDigest(value AuthorityCommand) string {
@@ -161,6 +194,14 @@ func AuthorityProjectionDigest(value AuthorityProjection) string {
 	}
 	return CanonicalAuthorityDigest(encoded)
 }
+func AuthorityOutboxEntryDigest(value AuthorityOutboxEntry) string {
+	value.Digest = ""
+	encoded, err := EncodeAuthorityOutboxEntryCanonical(value)
+	if err != nil {
+		return ""
+	}
+	return CanonicalAuthorityDigest(encoded)
+}
 
 func validAuthorityCommandKind(kind AuthorityCommandKind) bool {
 	return kind == AuthorityCommandActivate || kind == AuthorityCommandRevoke || kind == AuthorityCommandExpire
@@ -189,7 +230,7 @@ func ValidateAuthorityCommandAt(command AuthorityCommand, now time.Time) error {
 	if err := ValidateAuthorityCommand(command); err != nil {
 		return err
 	}
-	if now.IsZero() || now.Before(command.IssuedAt) || now.After(command.ExpiresAt) {
+	if now.IsZero() || now.Before(command.IssuedAt) || !now.Before(command.ExpiresAt) {
 		return errors.New("authority command is outside its acceptance window")
 	}
 	return nil
@@ -313,6 +354,15 @@ func ValidateAuthorityReceipt(receipt AuthorityReceipt) error {
 		}
 	} else if receipt.FactID != "" || receipt.FactDigest != "" || receipt.ProjectionDigest != "" {
 		return errors.New("rejected authority receipt claims an authority result")
+	}
+	return nil
+}
+
+func ValidateAuthorityOutboxEntry(entry AuthorityOutboxEntry) error {
+	if entry.ID == "" || entry.AuthorityContextID == "" || entry.Sequence == 0 || entry.CommandID == "" || entry.CommandDigest == "" ||
+		entry.FactID == "" || entry.FactDigest == "" || entry.ReceiptID == "" || entry.ProjectionDigest == "" || entry.RecordedAt.IsZero() ||
+		entry.Digest == "" || entry.Digest != AuthorityOutboxEntryDigest(entry) {
+		return errors.New("authority outbox entry is incomplete or has an invalid digest")
 	}
 	return nil
 }

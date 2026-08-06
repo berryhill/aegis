@@ -178,6 +178,9 @@ func TestCanonicalAuthorityDecodersRejectWrongEnvelopeAndTrailingData(t *testing
 func TestRejectedAuthorityReceiptCannotClaimAuthority(t *testing.T) {
 	issued := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
 	command := canonicalCommand("command-1", AuthorityCommandActivate, 1, "", issued)
+	if err := ValidateAuthorityCommandAt(command, command.ExpiresAt); err == nil {
+		t.Fatal("authority command was accepted at its exclusive expiry boundary")
+	}
 	if err := ValidateAuthorityCommandAt(command, command.ExpiresAt.Add(time.Nanosecond)); err == nil {
 		t.Fatal("expired authority command was accepted")
 	}
