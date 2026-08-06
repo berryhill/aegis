@@ -402,3 +402,70 @@ func assertNoCommandResult(t *testing.T, store *Store, contextID, commandID stri
 		t.Fatalf("denied command left fact: %v", err)
 	}
 }
+
+func TestRebuildAuthorityProjectionsReplacesDerivedStateFromCanonicalRecords(t *testing.T) {
+	store, authority := openCommandStore(t)
+	ctx := context.Background()
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	command := badgerAuthorityCommand("command-rebuild", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	if _, err := store.ProcessAuthorityCommand(ctx, command, recordedAt, "controller"); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := encodeKey(KeyAuthorityProjection, []string{authority.ID}, 0)
+	if err := store.db.Update(func(txn *badgerdb.Txn) error { return txn.Set(key, []byte("{}")) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CurrentAuthorityProjection(ctx, authority.ID); !errors.Is(err, ErrCorruptRecord) {
+		t.Fatalf("corrupt projection remained readable before rebuild: %v", err)
+	}
+
+	rebuilt, err := store.RebuildAuthorityProjections(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rebuilt) != 1 || rebuilt[0].AuthorityContextID != authority.ID || rebuilt[0].State != core.AuthorityStateActive {
+		t.Fatalf("unexpected rebuilt projections: %+v", rebuilt)
+	}
+	projection, err := store.CurrentAuthorityProjection(ctx, authority.ID)
+	if err != nil || projection != rebuilt[0] {
+		t.Fatalf("rebuilt projection was not durable: projection=%+v err=%v", projection, err)
+	}
+}
+
+func TestRebuildAuthorityProjectionsIsAtomicOnCorruptCanonicalState(t *testing.T) {
+	store, authority := openCommandStore(t)
+	ctx := context.Background()
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	command := badgerAuthorityCommand("command-rebuild-denied", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	if _, err := store.ProcessAuthorityCommand(ctx, command, recordedAt, "controller"); err != nil {
+		t.Fatal(err)
+	}
+	projectionKey, _ := encodeKey(KeyAuthorityProjection, []string{authority.ID}, 0)
+	factKey, _ := encodeKey(KeyAuthorityFact, []string{authority.ID}, 1)
+	var before []byte
+	if err := store.db.Update(func(txn *badgerdb.Txn) error {
+		var err error
+		before, err = getValue(txn, projectionKey)
+		if err != nil {
+			return err
+		}
+		return txn.Set(factKey, []byte("{}"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RebuildAuthorityProjections(ctx); !errors.Is(err, ErrCorruptRecord) {
+		t.Fatalf("canonical corruption error=%v, want ErrCorruptRecord", err)
+	}
+	if err := store.db.View(func(txn *badgerdb.Txn) error {
+		after, err := getValue(txn, projectionKey)
+		if err != nil {
+			return err
+		}
+		if string(after) != string(before) {
+			return errors.New("failed rebuild changed derived projection")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

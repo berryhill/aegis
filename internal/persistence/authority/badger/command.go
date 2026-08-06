@@ -275,6 +275,56 @@ func (s *Store) CurrentAuthorityProjection(ctx context.Context, contextID string
 	return projection, err
 }
 
+// RebuildAuthorityProjections replaces only derived projections after replaying
+// canonical commands and facts. Invalid canonical state aborts atomically.
+func (s *Store) RebuildAuthorityProjections(ctx context.Context) ([]core.AuthorityProjection, error) {
+	var projections []core.AuthorityProjection
+	err := s.withUpdate(ctx, func(txn *badgerdb.Txn) error {
+		var err error
+		projections, err = rebuildAuthorityProjectionsTxn(txn)
+		return err
+	})
+	return projections, err
+}
+
+func rebuildAuthorityProjectionsTxn(txn *badgerdb.Txn) ([]core.AuthorityProjection, error) {
+	contextIDs := make([]string, 0)
+	if err := scanFamily(txn, KeyAuthorityContext, func(key BinaryKey, _ []byte) error {
+		contextIDs = append(contextIDs, key.Identifiers[0])
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	sort.Strings(contextIDs)
+	projections := make([]core.AuthorityProjection, 0, len(contextIDs))
+	for _, contextID := range contextIDs {
+		commands, facts, err := canonicalAuthorityFromTxn(txn, contextID)
+		if err != nil {
+			return nil, err
+		}
+		key, _ := encodeKey(KeyAuthorityProjection, []string{contextID}, 0)
+		if len(commands) == 0 && len(facts) == 0 {
+			if err = txn.Delete(key); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		projection, err := core.ReplayCanonicalAuthority(commands, facts)
+		if err != nil {
+			return nil, fmt.Errorf("%w: canonical authority replay failed: %v", ErrCorruptRecord, err)
+		}
+		encoded, err := core.EncodeAuthorityProjectionCanonical(projection)
+		if err != nil {
+			return nil, err
+		}
+		if err = txn.Set(key, encoded); err != nil {
+			return nil, err
+		}
+		projections = append(projections, projection)
+	}
+	return projections, nil
+}
+
 func verifiedAuthorityOutboxFromTxn(txn *badgerdb.Txn, contextID string) ([]core.AuthorityOutboxEntry, core.AuthorityProjection, error) {
 	entries := make([]core.AuthorityOutboxEntry, 0)
 	projection, err := verifiedProjectionFromTxn(txn, contextID)

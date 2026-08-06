@@ -23,17 +23,19 @@ import (
 )
 
 const (
-	BackupFormat         = "aegis-authority-backup-v1"
-	maximumBackupBytes   = int64(256 << 20)
-	maximumBackupRecords = uint64(1_000_000)
-	maximumBackupKey     = uint32(4096)
-	maximumBackupValue   = uint32(64 << 20)
+	BackupFormat            = "aegis-authority-backup-v1"
+	MinimumDiskReserveBytes = uint64(256 << 20)
+	maximumBackupBytes      = int64(256 << 20)
+	maximumBackupRecords    = uint64(1_000_000)
+	maximumBackupKey        = uint32(4096)
+	maximumBackupValue      = uint32(64 << 20)
 )
 
 var (
 	ErrMaintenanceUnsafe = errors.New("authority maintenance requires one closed, clean, unambiguous generation")
 	ErrBackupCorrupt     = errors.New("authority backup is corrupt")
 	ErrGenerationActive  = errors.New("authority generation is active")
+	ErrDiskReserve       = errors.New("authority maintenance disk reserve is unavailable")
 )
 
 var backupMagic = [16]byte{'A', 'E', 'G', 'I', 'S', '-', 'A', 'U', 'T', 'H', '-', 'B', 'K', 'P', '1', 0}
@@ -44,6 +46,37 @@ type BackupManifest struct {
 	RecordCount   uint64     `json:"record_count"`
 	PayloadBytes  int64      `json:"payload_bytes"`
 	PayloadSHA256 string     `json:"payload_sha256"`
+}
+
+type ActivationOutcome struct {
+	Generation
+	Previous           Generation `json:"previous"`
+	SelectionCommitted bool       `json:"selection_committed"`
+	PreviousRetired    bool       `json:"previous_retired"`
+}
+
+type RecoveryKind string
+
+const (
+	RecoveryLogical RecoveryKind = "logical"
+	RecoveryNative  RecoveryKind = "native"
+)
+
+type RecoveryOutcome struct {
+	Kind       RecoveryKind       `json:"kind"`
+	Imported   *Generation        `json:"imported,omitempty"`
+	Activation *ActivationOutcome `json:"activation,omitempty"`
+}
+
+func CheckDiskReserve(path string, requiredBytes uint64) error {
+	available, err := availableBytes(path)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrDiskReserve, err)
+	}
+	if requiredBytes > ^uint64(0)-MinimumDiskReserveBytes || available < requiredBytes+MinimumDiskReserveBytes {
+		return ErrDiskReserve
+	}
+	return nil
 }
 
 type maintenanceLease struct {
@@ -159,6 +192,9 @@ func Export(ctx context.Context, root, destination string) (BackupManifest, erro
 		return BackupManifest{}, err
 	}
 	if err = secureMkdir(filepath.Dir(destination)); err != nil {
+		return BackupManifest{}, err
+	}
+	if err = CheckDiskReserve(filepath.Dir(destination), uint64(maximumBackupBytes)); err != nil {
 		return BackupManifest{}, err
 	}
 	if _, err = os.Lstat(destination); err == nil {
@@ -326,6 +362,16 @@ func Import(ctx context.Context, root, source string) (Generation, error) {
 	if err != nil {
 		return Generation{}, err
 	}
+	sourceInfo, err := os.Lstat(source)
+	if err != nil {
+		return Generation{}, err
+	}
+	if sourceInfo.Size() < 0 {
+		return Generation{}, ErrBackupCorrupt
+	}
+	if err = CheckDiskReserve(root, uint64(sourceInfo.Size())); err != nil {
+		return Generation{}, err
+	}
 	manifest, records, closeRecords, err := openBackup(source)
 	if err != nil {
 		return Generation{}, err
@@ -348,7 +394,7 @@ func Import(ctx context.Context, root, source string) (Generation, error) {
 	published := false
 	defer func() {
 		if !published {
-			_ = os.RemoveAll(staged)
+			_ = removeTreeAt(filepath.Join(root, "staging"), generation.Directory)
 		}
 	}()
 	db, err := badgerdb.Open(options(staged))
@@ -370,6 +416,12 @@ func Import(ctx context.Context, root, source string) (Generation, error) {
 		err = batch.Flush()
 	} else {
 		batch.Cancel()
+	}
+	if err == nil {
+		err = db.Update(func(txn *badgerdb.Txn) error {
+			_, rebuildErr := rebuildAuthorityProjectionsTxn(txn)
+			return rebuildErr
+		})
 	}
 	if err == nil {
 		err = db.Sync()
@@ -482,6 +534,9 @@ func importRecords(ctx context.Context, records *backupRecords, manifest BackupM
 			records.identity[decoded.Family] = string(value)
 			continue
 		}
+		if decoded.Family == KeyAuthorityProjection {
+			continue
+		}
 		if err := batch.Set(key, value); err != nil {
 			return err
 		}
@@ -498,80 +553,101 @@ func importRecords(ctx context.Context, records *backupRecords, manifest BackupM
 	return nil
 }
 
-// Activate atomically selects an exact verified inactive generation. The prior
-// active generation is retained for an explicit rollback.
-func Activate(ctx context.Context, root string, candidate Generation) (Generation, error) {
+// Activate atomically selects an exact verified inactive generation. The typed
+// outcome distinguishes pre-publication failure from committed selection whose
+// best-effort retirement cleanup still failed.
+func Activate(ctx context.Context, root string, candidate Generation) (ActivationOutcome, error) {
 	return selectGeneration(ctx, root, candidate)
 }
 
-// Rollback uses the same fail-closed selection path as activation and requires
-// the caller to name the exact retained generation; it never guesses.
-func Rollback(ctx context.Context, root string, target Generation) (Generation, error) {
+func Rollback(ctx context.Context, root string, target Generation) (ActivationOutcome, error) {
 	return selectGeneration(ctx, root, target)
 }
 
-func selectGeneration(ctx context.Context, root string, target Generation) (Generation, error) {
+func selectGeneration(ctx context.Context, root string, target Generation) (ActivationOutcome, error) {
 	root, err := cleanRoot(root)
 	if err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	if err = validateGeneration(target); err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	lease, err := acquireMaintenance(ctx, root, true)
 	if err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	defer lease.release()
 	active, err := inspectClosedGeneration(root)
 	if err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	if active.GenerationID == target.GenerationID {
-		return Generation{}, ErrGenerationActive
+		return ActivationOutcome{}, ErrGenerationActive
 	}
 	retiredActive := filepath.Join(root, "retired", active.Directory)
 	if _, err = os.Lstat(retiredActive); err == nil {
-		return Generation{}, fmt.Errorf("%w: prior generation retirement target already exists", ErrMaintenanceUnsafe)
+		return ActivationOutcome{}, fmt.Errorf("%w: prior generation retirement target already exists", ErrMaintenanceUnsafe)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	location := filepath.Join(root, "stores", target.Directory)
 	if _, err = os.Lstat(location); errors.Is(err, os.ErrNotExist) {
 		retired := filepath.Join(root, "retired", target.Directory)
 		if err = verifyStoreIdentity(retired, target); err != nil {
-			return Generation{}, err
+			return ActivationOutcome{}, err
 		}
 		if err = renameNoReplace(filepath.Join(root, "retired"), target.Directory, filepath.Join(root, "stores"), target.Directory); err != nil {
-			return Generation{}, err
+			return ActivationOutcome{}, err
+		}
+		if err = syncDirectory(filepath.Join(root, "retired")); err != nil {
+			return ActivationOutcome{}, err
+		}
+		if err = syncDirectory(filepath.Join(root, "stores")); err != nil {
+			return ActivationOutcome{}, err
 		}
 		location = filepath.Join(root, "stores", target.Directory)
 	} else if err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	if err = verifyStoreIdentity(location, target); err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	if err = ctx.Err(); err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
 	target.Activation = active.Activation + 1
 	target.Digest = generationDigest(target)
 	if err = writeMarker(root, "ACTIVE", target); err != nil {
-		return Generation{}, err
+		return ActivationOutcome{}, err
 	}
+	outcome := ActivationOutcome{Generation: target, Previous: active, SelectionCommitted: true}
 	if err = writeMarker(root, "CLEAN", target); err != nil {
-		return Generation{}, err
+		return outcome, err
 	}
 	if err = renameNoReplace(filepath.Join(root, "stores"), active.Directory, filepath.Join(root, "retired"), active.Directory); err != nil {
-		// Selection is already durable and safe. Retention failure is surfaced;
-		// the old non-active generation remains verified under stores.
-		return Generation{}, fmt.Errorf("generation activated but prior generation was not retired: %w", err)
+		return outcome, fmt.Errorf("generation activated but prior generation was not retired: %w", err)
+	}
+	outcome.PreviousRetired = true
+	if err = syncDirectory(filepath.Join(root, "stores")); err != nil {
+		return outcome, err
 	}
 	if err = syncDirectory(filepath.Join(root, "retired")); err != nil {
-		return Generation{}, err
+		return outcome, err
 	}
-	return target, nil
+	return outcome, nil
+}
+
+func RecoverLogical(ctx context.Context, root, source string) (RecoveryOutcome, error) {
+	generation, err := Import(ctx, root, source)
+	if err != nil {
+		return RecoveryOutcome{}, err
+	}
+	return RecoveryOutcome{Kind: RecoveryLogical, Imported: &generation}, nil
+}
+
+func RecoverNative(ctx context.Context, root string, target Generation) (RecoveryOutcome, error) {
+	outcome, err := selectGeneration(ctx, root, target)
+	return RecoveryOutcome{Kind: RecoveryNative, Activation: &outcome}, err
 }
 
 // GarbageCollect removes only verified non-active generations. retainNewest is
@@ -597,6 +673,8 @@ func GarbageCollect(ctx context.Context, root string, retainNewest int) ([]strin
 		directory string
 		parent    string
 		modified  time.Time
+		device    uint64
+		inode     uint64
 	}
 	candidates := make([]candidate, 0)
 	for _, parent := range []string{"stores", "retired"} {
@@ -622,7 +700,11 @@ func GarbageCollect(ctx context.Context, root string, retainNewest int) ([]strin
 			if infoErr != nil {
 				return nil, infoErr
 			}
-			candidates = append(candidates, candidate{directory: entry.Name(), parent: parent, modified: info.ModTime()})
+			device, inode, identityErr := fileIdentity(info)
+			if identityErr != nil {
+				return nil, fmt.Errorf("%w: %v", ErrMaintenanceUnsafe, identityErr)
+			}
+			candidates = append(candidates, candidate{directory: entry.Name(), parent: parent, modified: info.ModTime(), device: device, inode: inode})
 		}
 	}
 	sort.Slice(candidates, func(i, j int) bool {
@@ -636,8 +718,7 @@ func GarbageCollect(ctx context.Context, root string, retainNewest int) ([]strin
 		if index < retainNewest {
 			continue
 		}
-		path := filepath.Join(root, candidate.parent, candidate.directory)
-		if err = os.RemoveAll(path); err != nil {
+		if err = removeTreeAtVerified(filepath.Join(root, candidate.parent), candidate.directory, candidate.device, candidate.inode); err != nil {
 			return removed, err
 		}
 		removed = append(removed, candidate.directory)
