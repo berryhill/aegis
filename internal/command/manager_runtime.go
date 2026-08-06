@@ -229,12 +229,9 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		return nil, errors.New(managerdomain.ReasonRuntimeUnsupported + ": Hermes gateway Python executable not found")
 	}
 	stage("starting disposable Hermes runtime")
-	runtime.hermes, err = managerdomain.StartHermesProcess(ctx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
+	runtime.hermes, err = managerdomain.StartHermesProcess(ctx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout, AuthorizeRelease: processAuthorizer.Bind})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
-	}
-	if err = processAuthorizer.Bind(runtime.hermes.Custody()); err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
 	}
 	armed.client = runtime.hermes.Client()
 	gatewaySession, err := armed.client.CreateSession(ctx, "aegis-manager")

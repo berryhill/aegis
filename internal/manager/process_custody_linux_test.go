@@ -23,6 +23,15 @@ func TestProcessCustodyBindsExactLoopbackSocketOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer custody.Close()
+	bootID, err := currentBootID()
+	if err != nil || custody.bootID != bootID {
+		t.Fatalf("custody boot identity=%q current=%q err=%v", custody.bootID, bootID, err)
+	}
+	custody.bootID = "stale-boot-identity"
+	if custody.Alive() || custody.Signal(0) == nil {
+		t.Fatal("custody from another host boot remained authoritative")
+	}
+	custody.bootID = bootID
 
 	client, err := net.Dial("tcp", listener.Addr().String())
 	if err != nil {
