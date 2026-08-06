@@ -275,72 +275,224 @@ func (s *Store) CurrentAuthorityProjection(ctx context.Context, contextID string
 	return projection, err
 }
 
-func (s *Store) AuthorityOutbox(ctx context.Context, contextID string) ([]core.AuthorityOutboxEntry, error) {
+func verifiedAuthorityOutboxFromTxn(txn *badgerdb.Txn, contextID string) ([]core.AuthorityOutboxEntry, core.AuthorityProjection, error) {
 	entries := make([]core.AuthorityOutboxEntry, 0)
+	projection, err := verifiedProjectionFromTxn(txn, contextID)
+	if err != nil {
+		return nil, core.AuthorityProjection{}, err
+	}
+	commands, facts, err := canonicalAuthorityFromTxn(txn, contextID)
+	if err != nil {
+		return nil, core.AuthorityProjection{}, err
+	}
+	prefix, err := identifierPrefix(KeyAuthorityOutbox, contextID)
+	if err != nil {
+		return nil, core.AuthorityProjection{}, err
+	}
+	iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+	defer iterator.Close()
+	for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+		key, keyErr := DecodeKey(iterator.Item().Key())
+		encoded, valueErr := iterator.Item().ValueCopy(nil)
+		entry, decodeErr := core.DecodeAuthorityOutboxEntryCanonical(encoded)
+		index := len(entries)
+		if keyErr != nil || valueErr != nil || decodeErr != nil || key.Sequence != uint64(index+1) || entry.AuthorityContextID != contextID || entry.Sequence != key.Sequence || core.ValidateAuthorityOutboxEntry(entry) != nil || index >= len(commands) || index >= len(facts) {
+			return nil, core.AuthorityProjection{}, fmt.Errorf("%w: invalid authority outbox", ErrCorruptRecord)
+		}
+		command, fact := commands[index], facts[index]
+		receipt, receiptErr := authorityReceiptFromTxn(txn, command.ID)
+		prefixProjection, replayErr := core.ReplayCanonicalAuthority(commands[:index+1], facts[:index+1])
+		if receiptErr != nil || replayErr != nil || !receipt.Accepted || entry.CommandID != command.ID || entry.CommandDigest != command.Digest ||
+			entry.FactID != fact.ID || entry.FactDigest != fact.Digest || entry.ReceiptID != receipt.ID || entry.ProjectionDigest != prefixProjection.Digest ||
+			receipt.FactID != fact.ID || receipt.FactDigest != fact.Digest || receipt.ProjectionDigest != prefixProjection.Digest || entry.RecordedAt != receipt.RecordedAt {
+			return nil, core.AuthorityProjection{}, fmt.Errorf("%w: authority outbox does not bind canonical command result", ErrCorruptRecord)
+		}
+		entries = append(entries, entry)
+	}
+	if len(entries) != int(projection.SourceSequence) || len(entries) == 0 || entries[len(entries)-1].ProjectionDigest != projection.Digest {
+		return nil, core.AuthorityProjection{}, fmt.Errorf("%w: authority outbox is not current", ErrCorruptRecord)
+	}
+	return entries, projection, nil
+}
+
+func (s *Store) AuthorityOutbox(ctx context.Context, contextID string) ([]core.AuthorityOutboxEntry, error) {
+	var entries []core.AuthorityOutboxEntry
 	err := s.withView(ctx, func(txn *badgerdb.Txn) error {
-		projection, err := verifiedProjectionFromTxn(txn, contextID)
+		var err error
+		entries, _, err = verifiedAuthorityOutboxFromTxn(txn, contextID)
+		return err
+	})
+	return entries, err
+}
+
+func positionFromOutbox(entry core.AuthorityOutboxEntry) core.CommittedAuthorityPosition {
+	position := core.CommittedAuthorityPosition{AuthorityContextID: entry.AuthorityContextID, Sequence: entry.Sequence, FactDigest: entry.FactDigest, ProjectionDigest: entry.ProjectionDigest}
+	position.Digest = core.CommittedAuthorityPositionDigest(position)
+	return position
+}
+
+func authorityAuditEvidenceFromTxn(txn *badgerdb.Txn, contextID string, outbox []core.AuthorityOutboxEntry) ([]core.AuthorityAuditEvidence, error) {
+	evidence := make([]core.AuthorityAuditEvidence, 0)
+	prefix, err := identifierPrefix(KeyAuthorityAudit, contextID)
+	if err != nil {
+		return nil, err
+	}
+	iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+	defer iterator.Close()
+	for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+		key, keyErr := DecodeKey(iterator.Item().Key())
+		encoded, valueErr := iterator.Item().ValueCopy(nil)
+		record, decodeErr := core.DecodeAuthorityAuditEvidenceCanonical(encoded)
+		index := len(evidence)
+		if keyErr != nil || valueErr != nil || decodeErr != nil || key.Family != KeyAuthorityAudit || key.Sequence != uint64(index+1) || index >= len(outbox) || core.ValidateAuthorityAuditEvidence(record) != nil {
+			return nil, fmt.Errorf("%w: invalid authority audit evidence", ErrCorruptRecord)
+		}
+		entry := outbox[index]
+		expectedPosition := positionFromOutbox(entry)
+		if record.ID != "audit-"+entry.ID || record.Position != expectedPosition || record.AuthorityOutboxDigest != entry.Digest || record.RecordedAt != entry.RecordedAt {
+			return nil, fmt.Errorf("%w: authority audit evidence does not bind committed authority", ErrCorruptRecord)
+		}
+		evidence = append(evidence, record)
+	}
+	return evidence, nil
+}
+
+func (s *Store) CommittedAuthorityPosition(ctx context.Context, contextID string) (core.CommittedAuthorityPosition, error) {
+	var position core.CommittedAuthorityPosition
+	err := s.withView(ctx, func(txn *badgerdb.Txn) error {
+		outbox, projection, err := verifiedAuthorityOutboxFromTxn(txn, contextID)
 		if err != nil {
 			return err
 		}
-		commands, facts, err := canonicalAuthorityFromTxn(txn, contextID)
-		if err != nil {
-			return err
-		}
-		prefix, err := identifierPrefix(KeyAuthorityOutbox, contextID)
-		if err != nil {
-			return err
-		}
-		iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
-		defer iterator.Close()
-		for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
-			key, keyErr := DecodeKey(iterator.Item().Key())
-			encoded, valueErr := iterator.Item().ValueCopy(nil)
-			entry, decodeErr := core.DecodeAuthorityOutboxEntryCanonical(encoded)
-			index := len(entries)
-			if keyErr != nil || valueErr != nil || decodeErr != nil || key.Sequence != uint64(index+1) || entry.AuthorityContextID != contextID || entry.Sequence != key.Sequence || core.ValidateAuthorityOutboxEntry(entry) != nil || index >= len(commands) || index >= len(facts) {
-				return fmt.Errorf("%w: invalid authority outbox", ErrCorruptRecord)
-			}
-			command, fact := commands[index], facts[index]
-			receipt, receiptErr := authorityReceiptFromTxn(txn, command.ID)
-			prefixProjection, replayErr := core.ReplayCanonicalAuthority(commands[:index+1], facts[:index+1])
-			if receiptErr != nil || replayErr != nil || !receipt.Accepted || entry.CommandID != command.ID || entry.CommandDigest != command.Digest ||
-				entry.FactID != fact.ID || entry.FactDigest != fact.Digest || entry.ReceiptID != receipt.ID || entry.ProjectionDigest != prefixProjection.Digest ||
-				receipt.FactID != fact.ID || receipt.FactDigest != fact.Digest || receipt.ProjectionDigest != prefixProjection.Digest || entry.RecordedAt != receipt.RecordedAt {
-				return fmt.Errorf("%w: authority outbox does not bind canonical command result", ErrCorruptRecord)
-			}
-			entries = append(entries, entry)
-		}
-		if len(entries) != int(projection.SourceSequence) || entries[len(entries)-1].ProjectionDigest != projection.Digest {
-			return fmt.Errorf("%w: authority outbox is not current", ErrCorruptRecord)
+		position = positionFromOutbox(outbox[len(outbox)-1])
+		if position.Sequence != projection.SourceSequence || position.FactDigest != projection.SourceFactDigest || position.ProjectionDigest != projection.Digest || core.ValidateCommittedAuthorityPosition(position) != nil {
+			return fmt.Errorf("%w: committed authority position diverges from replay", ErrCorruptRecord)
 		}
 		return nil
 	})
-	return entries, err
+	return position, err
+}
+
+// DeliverAuthorityAudit consumes replay-verified outbox entries in strict
+// sequence. Evidence is deterministic and create-only, so an exact retry emits
+// no duplicate record and a gap or substituted record fails closed.
+func (s *Store) DeliverAuthorityAudit(ctx context.Context, contextID string, limit int) ([]core.AuthorityAuditEvidence, error) {
+	if limit == 0 {
+		limit = 100
+	}
+	if limit < 0 || limit > 1000 {
+		return nil, errors.New("authority audit delivery batch exceeds limit")
+	}
+	delivered := make([]core.AuthorityAuditEvidence, 0)
+	err := s.withUpdate(ctx, func(txn *badgerdb.Txn) error {
+		outbox, _, err := verifiedAuthorityOutboxFromTxn(txn, contextID)
+		if err != nil {
+			return err
+		}
+		existing, err := authorityAuditEvidenceFromTxn(txn, contextID, outbox)
+		if err != nil {
+			return err
+		}
+		for index := len(existing); index < len(outbox) && len(delivered) < limit; index++ {
+			entry := outbox[index]
+			record := core.AuthorityAuditEvidence{ID: "audit-" + entry.ID, Position: positionFromOutbox(entry), AuthorityOutboxDigest: entry.Digest, RecordedAt: entry.RecordedAt}
+			record.Digest = core.AuthorityAuditEvidenceDigest(record)
+			if core.ValidateAuthorityAuditEvidence(record) != nil {
+				return fmt.Errorf("%w: generated invalid authority audit evidence", ErrCorruptRecord)
+			}
+			encoded, encodeErr := core.EncodeAuthorityAuditEvidenceCanonical(record)
+			if encodeErr != nil {
+				return encodeErr
+			}
+			key, keyErr := encodeKey(KeyAuthorityAudit, []string{contextID}, entry.Sequence)
+			if keyErr != nil {
+				return keyErr
+			}
+			if createErr := createValue(txn, key, encoded); createErr != nil {
+				return createErr
+			}
+			delivered = append(delivered, record)
+		}
+		return nil
+	})
+	return delivered, err
+}
+
+func (s *Store) AuthorityAuditEvidence(ctx context.Context, contextID string) ([]core.AuthorityAuditEvidence, error) {
+	var evidence []core.AuthorityAuditEvidence
+	err := s.withView(ctx, func(txn *badgerdb.Txn) error {
+		outbox, _, err := verifiedAuthorityOutboxFromTxn(txn, contextID)
+		if err != nil {
+			return err
+		}
+		evidence, err = authorityAuditEvidenceFromTxn(txn, contextID, outbox)
+		return err
+	})
+	return evidence, err
+}
+
+func authorityAdmissionFromTxn(txn *badgerdb.Txn, contextID, contextDigest string, at time.Time) (core.AuthorityAdmissionView, error) {
+	view := core.AuthorityAdmissionView{EvaluatedAt: at, ReasonCode: "denied"}
+	authority, err := authorityContextFromTxn(txn, contextID)
+	if err != nil {
+		return view, err
+	}
+	projection, err := verifiedProjectionFromTxn(txn, contextID)
+	if err != nil {
+		return view, err
+	}
+	view.AuthorityContext, view.Projection = authority, projection
+	switch {
+	case at.IsZero() || contextDigest == "" || authority.Digest != contextDigest:
+		view.ReasonCode = "context_mismatch"
+	case at.Before(authority.IssuedAt) || !at.Before(authority.ExpiresAt):
+		view.ReasonCode = "outside_lifetime"
+	case projection.State != core.AuthorityStateActive:
+		view.ReasonCode = "authority_inactive"
+	default:
+		view.Admitted, view.ReasonCode = true, "admitted"
+	}
+	return view, nil
+}
+
+// AuthorityReadiness is the grant-producing read boundary. It admits only when
+// canonical audit evidence has reached the exact replay-verified committed
+// position observed in the same Badger snapshot.
+func (s *Store) AuthorityReadiness(ctx context.Context, contextID, contextDigest string, at time.Time) (core.AuthorityAdmissionView, core.CommittedAuthorityPosition, error) {
+	view := core.AuthorityAdmissionView{EvaluatedAt: at, ReasonCode: "denied"}
+	var position core.CommittedAuthorityPosition
+	err := s.withView(ctx, func(txn *badgerdb.Txn) error {
+		var err error
+		view, err = authorityAdmissionFromTxn(txn, contextID, contextDigest, at)
+		if err != nil || !view.Admitted {
+			return err
+		}
+		outbox, projection, err := verifiedAuthorityOutboxFromTxn(txn, contextID)
+		if err != nil {
+			view.Admitted, view.ReasonCode = false, "audit_unverifiable"
+			return err
+		}
+		evidence, err := authorityAuditEvidenceFromTxn(txn, contextID, outbox)
+		if err != nil {
+			view.Admitted, view.ReasonCode = false, "audit_unverifiable"
+			return err
+		}
+		position = positionFromOutbox(outbox[len(outbox)-1])
+		if len(evidence) != len(outbox) || evidence[len(evidence)-1].Position != position || position.Sequence != projection.SourceSequence || position.FactDigest != projection.SourceFactDigest || position.ProjectionDigest != projection.Digest {
+			view.Admitted, view.ReasonCode = false, "audit_delivery_lagging"
+			position = core.CommittedAuthorityPosition{}
+		}
+		return nil
+	})
+	return view, position, err
 }
 
 func (s *Store) AuthorityAdmission(ctx context.Context, contextID, contextDigest string, at time.Time) (core.AuthorityAdmissionView, error) {
 	view := core.AuthorityAdmissionView{EvaluatedAt: at, ReasonCode: "denied"}
 	err := s.withView(ctx, func(txn *badgerdb.Txn) error {
-		authority, err := authorityContextFromTxn(txn, contextID)
-		if err != nil {
-			return err
-		}
-		projection, err := verifiedProjectionFromTxn(txn, contextID)
-		if err != nil {
-			return err
-		}
-		view.AuthorityContext, view.Projection = authority, projection
-		switch {
-		case at.IsZero() || contextDigest == "" || authority.Digest != contextDigest:
-			view.ReasonCode = "context_mismatch"
-		case at.Before(authority.IssuedAt) || !at.Before(authority.ExpiresAt):
-			view.ReasonCode = "outside_lifetime"
-		case projection.State != core.AuthorityStateActive:
-			view.ReasonCode = "authority_inactive"
-		default:
-			view.Admitted, view.ReasonCode = true, "admitted"
-		}
-		return nil
+		var err error
+		view, err = authorityAdmissionFromTxn(txn, contextID, contextDigest, at)
+		return err
 	})
 	return view, err
 }

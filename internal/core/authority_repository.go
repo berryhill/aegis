@@ -28,5 +28,9 @@ type AuthorityCommandRepository interface {
 	GetAuthorityReceipt(context.Context, string) (AuthorityReceipt, error)
 	CurrentAuthorityProjection(context.Context, string) (AuthorityProjection, error)
 	AuthorityOutbox(context.Context, string) ([]AuthorityOutboxEntry, error)
+	CommittedAuthorityPosition(context.Context, string) (CommittedAuthorityPosition, error)
+	DeliverAuthorityAudit(context.Context, string, int) ([]AuthorityAuditEvidence, error)
+	AuthorityAuditEvidence(context.Context, string) ([]AuthorityAuditEvidence, error)
+	AuthorityReadiness(context.Context, string, string, time.Time) (AuthorityAdmissionView, CommittedAuthorityPosition, error)
 	AuthorityAdmission(context.Context, string, string, time.Time) (AuthorityAdmissionView, error)
 }

@@ -13,6 +13,8 @@ const (
 	AuthorityRecordProjection = "authority_projection"
 	AuthorityRecordReplay     = "authority_replay"
 	AuthorityRecordOutbox     = "authority_outbox"
+	AuthorityRecordPosition   = "committed_authority_position"
+	AuthorityRecordAudit      = "authority_audit_evidence"
 )
 
 // AuthorityCommandKind is a closed controller command vocabulary. Adding a
@@ -115,6 +117,29 @@ type AuthorityOutboxEntry struct {
 	Digest             string    `json:"digest"`
 }
 
+// CommittedAuthorityPosition is the immutable identity of a canonical
+// authority boundary. Persistence adapters may return a position only after
+// replaying the canonical command/fact prefix and verifying its projection;
+// a caller-composed value is not evidence of commitment.
+type CommittedAuthorityPosition struct {
+	AuthorityContextID string `json:"authority_context_id"`
+	Sequence           uint64 `json:"sequence"`
+	FactDigest         string `json:"fact_digest"`
+	ProjectionDigest   string `json:"projection_digest"`
+	Digest             string `json:"digest"`
+}
+
+// AuthorityAuditEvidence is metadata-only canonical-delivery evidence for one
+// verified authority outbox entry. It contains identities and digests, never
+// command reasons, actor authentication data, or runtime/model content.
+type AuthorityAuditEvidence struct {
+	ID                    string                     `json:"id"`
+	Position              CommittedAuthorityPosition `json:"position"`
+	AuthorityOutboxDigest string                     `json:"authority_outbox_digest"`
+	RecordedAt            time.Time                  `json:"recorded_at"`
+	Digest                string                     `json:"digest"`
+}
+
 // AuthorityAdmissionView is one transactionally consistent replay-verified
 // view used at an effect boundary. Stored projections never grant authority.
 type AuthorityAdmissionView struct {
@@ -161,6 +186,18 @@ func EncodeAuthorityOutboxEntryCanonical(value AuthorityOutboxEntry) ([]byte, er
 func DecodeAuthorityOutboxEntryCanonical(data []byte) (AuthorityOutboxEntry, error) {
 	return decodeAuthorityRecord[AuthorityOutboxEntry](data, AuthorityRecordOutbox)
 }
+func EncodeCommittedAuthorityPositionCanonical(value CommittedAuthorityPosition) ([]byte, error) {
+	return encodeAuthorityRecord(AuthorityRecordPosition, value)
+}
+func DecodeCommittedAuthorityPositionCanonical(data []byte) (CommittedAuthorityPosition, error) {
+	return decodeAuthorityRecord[CommittedAuthorityPosition](data, AuthorityRecordPosition)
+}
+func EncodeAuthorityAuditEvidenceCanonical(value AuthorityAuditEvidence) ([]byte, error) {
+	return encodeAuthorityRecord(AuthorityRecordAudit, value)
+}
+func DecodeAuthorityAuditEvidenceCanonical(data []byte) (AuthorityAuditEvidence, error) {
+	return decodeAuthorityRecord[AuthorityAuditEvidence](data, AuthorityRecordAudit)
+}
 
 func AuthorityCommandDigest(value AuthorityCommand) string {
 	value.Digest = ""
@@ -197,6 +234,22 @@ func AuthorityProjectionDigest(value AuthorityProjection) string {
 func AuthorityOutboxEntryDigest(value AuthorityOutboxEntry) string {
 	value.Digest = ""
 	encoded, err := EncodeAuthorityOutboxEntryCanonical(value)
+	if err != nil {
+		return ""
+	}
+	return CanonicalAuthorityDigest(encoded)
+}
+func CommittedAuthorityPositionDigest(value CommittedAuthorityPosition) string {
+	value.Digest = ""
+	encoded, err := EncodeCommittedAuthorityPositionCanonical(value)
+	if err != nil {
+		return ""
+	}
+	return CanonicalAuthorityDigest(encoded)
+}
+func AuthorityAuditEvidenceDigest(value AuthorityAuditEvidence) string {
+	value.Digest = ""
+	encoded, err := EncodeAuthorityAuditEvidenceCanonical(value)
 	if err != nil {
 		return ""
 	}
@@ -363,6 +416,22 @@ func ValidateAuthorityOutboxEntry(entry AuthorityOutboxEntry) error {
 		entry.FactID == "" || entry.FactDigest == "" || entry.ReceiptID == "" || entry.ProjectionDigest == "" || entry.RecordedAt.IsZero() ||
 		entry.Digest == "" || entry.Digest != AuthorityOutboxEntryDigest(entry) {
 		return errors.New("authority outbox entry is incomplete or has an invalid digest")
+	}
+	return nil
+}
+
+func ValidateCommittedAuthorityPosition(position CommittedAuthorityPosition) error {
+	if position.AuthorityContextID == "" || position.Sequence == 0 || position.FactDigest == "" || position.ProjectionDigest == "" ||
+		position.Digest == "" || position.Digest != CommittedAuthorityPositionDigest(position) {
+		return errors.New("committed authority position is incomplete or has an invalid digest")
+	}
+	return nil
+}
+
+func ValidateAuthorityAuditEvidence(evidence AuthorityAuditEvidence) error {
+	if evidence.ID == "" || ValidateCommittedAuthorityPosition(evidence.Position) != nil || evidence.AuthorityOutboxDigest == "" || evidence.RecordedAt.IsZero() ||
+		evidence.Digest == "" || evidence.Digest != AuthorityAuditEvidenceDigest(evidence) {
+		return errors.New("authority audit evidence is incomplete or has an invalid digest")
 	}
 	return nil
 }
