@@ -74,6 +74,50 @@ func TestCanonicalAuthorityRecordCodecsAreDeterministicAndStrict(t *testing.T) {
 	}
 }
 
+func TestCommittedAuthorityPositionAndAuditEvidenceAreCanonicalAndStrict(t *testing.T) {
+	position := CommittedAuthorityPosition{
+		AuthorityContextID: "context-1",
+		Sequence:           3,
+		FactDigest:         "sha256:fact",
+		ProjectionDigest:   "sha256:projection",
+	}
+	position.Digest = CommittedAuthorityPositionDigest(position)
+	if err := ValidateCommittedAuthorityPosition(position); err != nil {
+		t.Fatal(err)
+	}
+
+	recordedAt := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
+	evidence := AuthorityAuditEvidence{
+		ID:                    "audit-outbox-command-3",
+		Position:              position,
+		AuthorityOutboxDigest: "sha256:outbox",
+		RecordedAt:            recordedAt,
+	}
+	evidence.Digest = AuthorityAuditEvidenceDigest(evidence)
+	encoded, err := EncodeAuthorityAuditEvidenceCanonical(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeAuthorityAuditEvidenceCanonical(encoded)
+	if err != nil || decoded != evidence || ValidateAuthorityAuditEvidence(decoded) != nil {
+		t.Fatalf("audit evidence did not round trip canonically: evidence=%+v err=%v", decoded, err)
+	}
+	for _, forbidden := range [][]byte{[]byte("actor_authentication"), []byte("reason"), []byte("runtime_output"), []byte("model_output")} {
+		if bytes.Contains(encoded, forbidden) {
+			t.Fatalf("metadata-only audit evidence contains forbidden payload field %q: %s", forbidden, encoded)
+		}
+	}
+
+	substituted := position
+	substituted.FactDigest = "sha256:substituted"
+	if err := ValidateCommittedAuthorityPosition(substituted); err == nil {
+		t.Fatal("position digest did not reject a substituted canonical fact")
+	}
+	if _, err := DecodeCommittedAuthorityPositionCanonical(encoded); err == nil {
+		t.Fatal("audit evidence envelope decoded as a committed authority position")
+	}
+}
+
 func TestReplayCanonicalAuthorityBindsCommandsFactsAndProjection(t *testing.T) {
 	issued := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
 	activate := canonicalCommand("command-1", AuthorityCommandActivate, 1, "", issued)

@@ -31,6 +31,7 @@ const (
 	KeyAuthorityReceipt    KeyFamily = 0x17
 	KeyAuthorityProjection KeyFamily = 0x18
 	KeyAuthorityOutbox     KeyFamily = 0x19
+	KeyAuthorityAudit      KeyFamily = 0x1a
 )
 
 var (
@@ -58,6 +59,7 @@ var keyRegistry = map[KeyFamily]keyShape{
 	KeyAuthorityReceipt:    {identifiers: 1},
 	KeyAuthorityProjection: {identifiers: 1},
 	KeyAuthorityOutbox:     {identifiers: 1, sequence: true},
+	KeyAuthorityAudit:      {identifiers: 1, sequence: true},
 }
 
 // BinaryKey is the strictly decoded representation of one registry key.
