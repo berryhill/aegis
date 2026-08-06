@@ -18,6 +18,23 @@ Maintainers can exercise the exact release packaging path without publishing any
 
 The second command builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, verifies their checksums, extracts the native archive, verifies its injected stable version, and runs the installed binary with an isolated `HOME`. The expected bare non-TTY result is `manager_not_initialized` with exit status 2 and no `.argis` creation. Supplying a version and empty output directory, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist`, retains the archives and `SHA256SUMS`; never point it at a directory containing retained files.
 
+An exact pre-publication candidate proof is deliberately explicit and must run from a clean committed revision. Create a decision file outside the evidence workspace with exactly these fields (no extras):
+
+```json
+{"schema_version":1,"candidate_version":"1.2.3","source_revision":"EXACT_40_HEX_HEAD","decision":"hold","decided_by":"authenticated operator identity","rationale":"reason for release, hold, or withdrawal"}
+```
+
+Then run:
+
+```sh
+revision=$(git rev-parse HEAD)
+hermes=$(command -v hermes)
+./scripts/verify_release_candidate_test.sh
+./scripts/verify-release-candidate.sh 1.2.3 "$revision" "$hermes" .aegis-release-candidate-1.2.3 ./decision.json
+```
+
+The decision must be exactly `release`, `hold`, or `withdraw`; Aegis does not infer it. The script requires a real non-symlink executable, an exact clean `HEAD`, a strict decision of at most 16 KiB, and an empty non-symlink workspace inside the repository. It builds the four archives once, extracts and SHA-256 binds one native candidate, binds the exact Hermes executable and canonical decision, repeats all candidate checks against that binary, rehearses local replacement plus exact rollback, clears a local publication-staging copy to rehearse withdrawal, and writes `release-candidate-evidence.json`. It never modifies `~/.argis`, an installed executable, Git refs, remotes, or GitHub. The decision record is not authenticated by this script; non-dry-run `make release` remains publication authorization.
+
 That four-target result is packaging evidence only. The post-Track-A persistence contract is qualified on Linux/amd64/ext4 with exact Badger `v4.9.5` session-authority and bbolt `v1.5.0` credential-custody settings; see `specs/STORAGE.md`. Do not infer storage qualification for macOS, arm64, another filesystem, or another engine version from a successful cross-build.
 
 ## Build and configure

@@ -13,6 +13,7 @@ verify:
 	go build ./cmd/aegis
 	python3 -m unittest scripts/operator_acceptance_poc_test.py
 	./scripts/verify_installed_mvi_test.sh
+	./scripts/verify_release_candidate_test.sh
 	./scripts/verify-installed-mvi.sh
 	go test ./...
 	go test -race ./...
