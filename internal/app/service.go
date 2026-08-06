@@ -1167,8 +1167,8 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	wantsBrokerTool := contains(m.Hermes.Toolsets, "aegis")
 	hasBrokerAuthority := contains(m.Capabilities, broker.ActionGitHubGetRepository) && contains(m.Scopes.Credentials, broker.GitHubScope)
 	brokerAvailable := s.CredentialAuthority != nil && s.Config.Credentials.Authority.Broker.Socket != ""
-	if wantsBrokerTool != hasBrokerAuthority || wantsBrokerTool != brokerAvailable {
-		return core.Session{}, fmt.Errorf("%w: Aegis broker tool, capability, credential scope, and configured authority must match exactly", ErrDenied)
+	if wantsBrokerTool != hasBrokerAuthority || (wantsBrokerTool && !brokerAvailable) {
+		return core.Session{}, fmt.Errorf("%w: Aegis broker tool, capability, and credential scope must match exactly and require configured authority", ErrDenied)
 	}
 	bridge := hermes.BrokerBridge{}
 	if wantsBrokerTool {
@@ -1229,7 +1229,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		_ = s.Hermes.Terminate(stop, id, !s.Config.Retention.SessionHomes)
 		return sess, err
 	}
-	if s.CredentialAuthority != nil && s.Config.Credentials.Authority.Broker.Socket != "" {
+	if wantsBrokerTool {
 		if err = s.issueBrokerCapability(&sess); err != nil {
 			_ = s.endSession(context.Background(), sess.ID, "failed", "broker_capability_materialization_failed", true)
 			return sess, err

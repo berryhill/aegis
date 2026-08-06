@@ -47,6 +47,25 @@ func (custodian *brokerTestCustodian) KEK(_ context.Context, id string, version 
 func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentials.Authority) {
 	t.Helper()
 	s := testService(t)
+	s.Config.Credentials.ProviderAuth["team"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEAM_PROVIDER_KEY", TargetEnv: "TEAM_PROVIDER_KEY"}
+	principalProvider := make([]byte, 32)
+	teamProvider := make([]byte, 32)
+	if _, err := rand.Read(principalProvider); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rand.Read(teamProvider); err != nil {
+		t.Fatal(err)
+	}
+	s.LookupEnv = func(name string) (string, bool) {
+		switch name {
+		case "AEGIS_TEST_PROVIDER_KEY":
+			return hex.EncodeToString(principalProvider), true
+		case "AEGIS_TEAM_PROVIDER_KEY":
+			return hex.EncodeToString(teamProvider), true
+		default:
+			return "", false
+		}
+	}
 	directory := filepath.Join(t.TempDir(), "authority")
 	if err := os.Mkdir(directory, 0700); err != nil {
 		t.Fatal(err)
@@ -68,7 +87,11 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 	s.Config.Credentials.Authority.Broker.AllowedGID = uint32(os.Getgid())
 	s.Config.Credentials.Authority.Broker.Timeout = 10 * time.Second
 	s.Config.Credentials.Authority.Broker.Destinations = map[string]config.BrokerDestination{broker.GitHubDestination: {URL: "http://127.0.0.1/fixed", Repositories: []string{"approved-owner/approved-repository"}}}
-	canary := "authority-canary-never-return"
+	canaryBytes := make([]byte, 32)
+	if _, err := rand.Read(canaryBytes); err != nil {
+		t.Fatal(err)
+	}
+	canary := hex.EncodeToString(canaryBytes)
 	record, err := authority.Create(context.Background(), "local/api", "api-token", "principal-1", []byte(canary))
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +107,9 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 	charter.Stanzas[0].Grant.Capabilities = append(charter.Stanzas[0].Grant.Capabilities, broker.ActionGitHubGetRepository)
 	charter.Stanzas[0].Grant.Tools = []string{"aegis"}
 	charter.Stanzas[0].Hermes.Toolsets = []string{"aegis"}
+	charter.Stanzas[1].Authentication.Selectors = []core.IdentitySelector{{SubjectIDs: []string{"local-uid:4343"}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}
+	charter.Stanzas[1].Scopes.Credentials = []string{"provider:team"}
+	charter.Stanzas[1].Hermes.Provider = "team"
 	canonical, _ := core.Canonicalize(charter)
 	if err = s.Store.SaveCharter(canonical); err != nil {
 		t.Fatal(err)
@@ -285,6 +311,91 @@ func TestOperationalSessionBrokerLifecycleEndToEnd(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(session.RuntimeHome, broker.CapabilityFileName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("session cleanup retained capability material: %v", err)
+	}
+}
+
+func TestTwoAuthenticatedSubjectsCleanStanzasExactRegistryAndTypedGitHubOperation(t *testing.T) {
+	s, _, canary, _ := brokerAuthorizedService(t)
+	s.Config.Credentials.Authority.Broker.Socket = filepath.Join(t.TempDir(), "credential-broker.sock")
+	s.Config.Credentials.Authority.Broker.CapabilityTTL = time.Minute
+	ctx := context.Background()
+
+	principal, err := s.Authenticate(ctx)
+	if err != nil || principal.PrincipalID != s.Config.Principal.ID {
+		t.Fatalf("configured principal authentication=%+v err=%v", principal, err)
+	}
+	team, err := s.AuthenticateUnixPeer(ctx, 4343)
+	if err != nil || team.ID == principal.ID || team.PrincipalID != "" {
+		t.Fatalf("separate team authentication=%+v err=%v", team, err)
+	}
+
+	principalMandate, principalDecision, err := s.PreviewSessionAs(ctx, principal, "office", 1, "", core.Environment{Name: "local"})
+	if err != nil || !principalDecision.Allowed || principalDecision.MatchingCount != 1 || principalMandate.StanzaID != "principal" {
+		t.Fatalf("principal stanza decision=%+v mandate=%+v err=%v", principalDecision, principalMandate, err)
+	}
+	teamMandate, teamDecision, err := s.PreviewSessionAs(ctx, team, "office", 1, "", core.Environment{Name: "local"})
+	if err != nil || !teamDecision.Allowed || teamDecision.MatchingCount != 1 || teamMandate.StanzaID != "teamwide" {
+		t.Fatalf("team stanza decision=%+v mandate=%+v err=%v", teamDecision, teamMandate, err)
+	}
+	if _, denied, denyErr := s.PreviewSessionAs(ctx, team, "office", 1, "principal", core.Environment{Name: "local"}); !errors.Is(denyErr, ErrDenied) || denied.Allowed || denied.Selected != nil {
+		t.Fatalf("team requested principal stanza decision=%+v err=%v", denied, denyErr)
+	}
+
+	principalSession, err := s.StartSessionAs(ctx, principal, principalMandate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.TerminateSessionAs(context.Background(), principal, principalSession.ID, "test-cleanup") }()
+	teamSession, err := s.StartSessionAs(ctx, team, teamMandate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.TerminateSessionAs(context.Background(), team, teamSession.ID, "test-cleanup") }()
+
+	if principalSession.RuntimeHome == teamSession.RuntimeHome || principalSession.RuntimeSessionID == teamSession.RuntimeSessionID || principalSession.RuntimePID == teamSession.RuntimePID {
+		t.Fatal("principal and team stanzas reused a Hermes runtime context")
+	}
+	if principalSession.ToolsetVerification != "exact_registered_aegis_bridge_tool" || len(principalSession.VerifiedToolsets) != 1 || principalSession.VerifiedToolsets[0] != "aegis" {
+		t.Fatalf("principal live Hermes registry proof=%+v", principalSession)
+	}
+	if teamSession.ToolsetVerification != "launch_arguments" || len(teamSession.VerifiedToolsets) != 1 || teamSession.VerifiedToolsets[0] != "web" {
+		t.Fatalf("team Hermes authority=%+v", teamSession)
+	}
+	if contains(teamSession.Mandate.Capabilities, broker.ActionGitHubGetRepository) || contains(teamSession.Mandate.Scopes.Credentials, broker.GitHubScope) || contains(teamSession.Mandate.Scopes.Credentials, "provider:test") || contains(teamSession.Mandate.Scopes.Memory, "principal-memory") {
+		t.Fatalf("team session inherited principal authority: %+v", teamSession.Mandate)
+	}
+	if _, statErr := os.Stat(filepath.Join(teamSession.RuntimeHome, broker.CapabilityFileName)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("team session received broker capability material: %v", statErr)
+	}
+
+	material, err := os.ReadFile(filepath.Join(principalSession.RuntimeHome, broker.CapabilityFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Capability string `json:"capability"`
+	}
+	if json.Unmarshal(material, &envelope) != nil || len(envelope.Capability) != 64 || bytes.Contains(material, []byte(canary)) {
+		t.Fatal("principal broker material is malformed or contains reusable credential plaintext")
+	}
+	request := validBrokerRequest(envelope.Capability, s.Now())
+	principalPeer := broker.Peer{PID: int32(principalSession.RuntimePID), UID: uint32(os.Getuid()), GID: uint32(os.Getgid())}
+	result, err := s.ExecuteBroker(ctx, principalPeer, request, func(_ context.Context, plaintext []byte, grant broker.Grant) (broker.Result, error) {
+		if string(plaintext) != canary || grant.SubjectID != principal.ID || grant.StanzaID != "principal" || grant.Operation != broker.ActionGitHubGetRepository {
+			t.Fatalf("typed GitHub grant or credential binding=%+v", grant)
+		}
+		return broker.Result{StatusCode: 200, Outcome: "credential_applied", RequestID: grant.RequestID, Repository: broker.Repository{Owner: "approved-owner", Name: "approved-repository", DefaultBranch: "main", Visibility: "private", UpdatedAt: "2026-07-17T12:00:00Z"}}, nil
+	})
+	if err != nil || result.Repository.Owner != "approved-owner" || result.Repository.Name != "approved-repository" {
+		t.Fatalf("typed GitHub operation result=%+v err=%v", result, err)
+	}
+	teamRequest := nextBrokerRequest(request, 0x7f)
+	teamPeer := broker.Peer{PID: int32(teamSession.RuntimePID), UID: uint32(os.Getuid()), GID: uint32(os.Getgid())}
+	if _, err = s.ExecuteBroker(ctx, teamPeer, teamRequest, func(context.Context, []byte, broker.Grant) (broker.Result, error) {
+		t.Fatal("team session reached principal credential executor")
+		return broker.Result{}, nil
+	}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("team reuse of principal capability=%v", err)
 	}
 }
 
