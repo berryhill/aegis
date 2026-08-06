@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/migration"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
@@ -142,6 +144,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return err
 	})
+	var openedAuthority *authoritybadger.Store
 	build := func(cmd *cobra.Command) (*app.Service, error) {
 		cfg, err := config.Load(o.configFile, nil)
 		if err != nil {
@@ -172,12 +175,27 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if err != nil {
 			return nil, err
 		}
+		authority, err := authoritybadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "authority-v1"))
+		if err != nil {
+			return nil, fmt.Errorf("open operational authority repository: %w", err)
+		}
+		openedAuthority = authority
 		h := hermes.New(cfg.HermesExecutable, deps.Logger)
-		service := app.New(cfg, st, h, deps.Logger)
+		service := app.New(cfg, st, authority, authority, h, deps.Logger)
 		if err = service.RecoverProvisioning(cmd.Context()); err != nil {
+			_ = authority.Close()
+			openedAuthority = nil
 			return nil, err
 		}
 		return service, nil
+	}
+	root.PersistentPostRunE = func(*cobra.Command, []string) error {
+		if openedAuthority == nil {
+			return nil
+		}
+		err := openedAuthority.Close()
+		openedAuthority = nil
+		return err
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
@@ -229,6 +247,24 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		return runManager(cmd, build)
 	}
 	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
+	var wrapAuthorityCleanup func(*cobra.Command)
+	wrapAuthorityCleanup = func(command *cobra.Command) {
+		if run := command.RunE; run != nil {
+			command.RunE = func(cmd *cobra.Command, args []string) (runErr error) {
+				defer func() {
+					if openedAuthority != nil {
+						runErr = errors.Join(runErr, openedAuthority.Close())
+						openedAuthority = nil
+					}
+				}()
+				return run(cmd, args)
+			}
+		}
+		for _, child := range command.Commands() {
+			wrapAuthorityCleanup(child)
+		}
+	}
+	wrapAuthorityCleanup(root)
 	return root
 }
 

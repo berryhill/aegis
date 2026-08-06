@@ -26,6 +26,19 @@ func TestClassifyLegacyAuthority(t *testing.T) {
 	}
 }
 
+func TestClassifyLegacyAuthorityAllowsCanonicalOperationalSessions(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(filepath.Join(state, "sessions"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "sessions", "session.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ClassifyLegacyAuthority(state); err != nil || got.State != CollisionAbsent {
+		t.Fatalf("canonical operational sessions collided with Badger authority: classification=%+v err=%v", got, err)
+	}
+}
+
 func TestClassifyLegacyAuthorityRejectsSymlinkAndInsecureMode(t *testing.T) {
 	for _, test := range []struct {
 		name    string
@@ -36,9 +49,9 @@ func TestClassifyLegacyAuthorityRejectsSymlinkAndInsecureMode(t *testing.T) {
 			if err := os.Mkdir(target, 0700); err != nil {
 				return err
 			}
-			return os.Symlink(target, filepath.Join(state, "sessions"))
+			return os.Symlink(target, filepath.Join(state, "authority-contexts"))
 		}},
-		{"mode", func(state string) error { return os.Mkdir(filepath.Join(state, "sessions"), 0750) }},
+		{"mode", func(state string) error { return os.Mkdir(filepath.Join(state, "authority-contexts"), 0750) }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state := filepath.Join(t.TempDir(), "state")

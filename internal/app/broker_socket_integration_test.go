@@ -5,7 +5,6 @@ package app
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
@@ -21,22 +20,8 @@ import (
 )
 
 func TestPathnameSocketCredentialBrokerEndToEnd(t *testing.T) {
-	s, token, canary, _ := brokerAuthorizedService(t)
 	now := time.Now().UTC()
-	s.Now = func() time.Time { return now }
-	digest := sha256.Sum256([]byte(token))
-	capability := s.capabilities[digest]
-	capability.IssuedAt, capability.ExpiresAt = now, now.Add(time.Minute)
-	s.capabilities[digest] = capability
-	mandate, err := s.GetMandate(capability.MandateID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mandate.IssuedAt, mandate.ExpiresAt = now, now.Add(time.Minute)
-	mandate.Subject.AuthenticatedAt, mandate.Subject.ExpiresAt = now, now.Add(time.Minute)
-	if err = s.Store.Save("mandates", mandate.ID, mandate); err != nil {
-		t.Fatal(err)
-	}
+	s, token, canary, _ := brokerAuthorizedServiceAt(t, now)
 	receivedAuthorization := make(chan string, 1)
 	downstream := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		receivedAuthorization <- request.Header.Get("Authorization")

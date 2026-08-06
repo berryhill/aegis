@@ -20,6 +20,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -73,7 +74,16 @@ func apiService(t *testing.T) *app.Service {
 	cfg.API.UnixSocket = filepath.Join(root, "aegis.sock")
 	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := app.New(cfg, state, hermes.New(executable, logger), logger)
+	authorityPath := filepath.Join(state.Root(), "persistence", "authority-v1")
+	if _, err = authoritybadger.Initialize(context.Background(), authorityPath); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := authoritybadger.Open(context.Background(), authorityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = authority.Close() })
+	svc := app.New(cfg, state, authority, authority, hermes.New(executable, logger), logger)
 	svc.LookupEnv = func(name string) (string, bool) {
 		if name == "AEGIS_API_TEST_KEY" {
 			return "api-test-secret", true
