@@ -77,10 +77,10 @@ func assertSecureGenerationModes(t *testing.T, root string) {
 func TestGenerationFailsClosed(t *testing.T) {
 	root := authorityRoot(t)
 	state := filepath.Dir(filepath.Dir(root))
-	if err := os.Mkdir(filepath.Join(state, "sessions"), 0700); err != nil {
+	if err := os.Mkdir(filepath.Join(state, "authority-contexts"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(state, "sessions", "legacy.json"), []byte("{}"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(state, "authority-contexts", "legacy.json"), []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Initialize(context.Background(), root); err == nil {

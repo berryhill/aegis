@@ -46,7 +46,8 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 | `~/.argis/aegis.yaml` | canonical Aegis-owned local configuration |
 | `~/.argis/state` and implemented children above | canonical Aegis-owned local state |
 | `state/persistence/authority-v1` | generation-managed Badger session-authority persistence; separate from the bbolt credential authority |
-| `state/mandates`, `state/authority-contexts`, `state/authority-revocations`, `state/sessions` | legacy authority JSON collision surfaces; accepted for a clean install only when absent or recursively proven to contain only real operator-owned mode-`0700` directories |
+| `state/mandates`, `state/authority-contexts`, `state/authority-revocations` | legacy authority JSON collision surfaces; accepted for a clean install only when absent or recursively proven to contain only real operator-owned mode-`0700` directories |
+| `state/sessions` | bounded execution-session operational state; not canonical authority and not a legacy authority collision surface |
 | `<repository>/.aegis/aegis.yaml` and `<repository>/.aegis/state` | isolated, Git-ignored development configuration and state for source-built `dev` binaries residing in the verified worktree root |
 | adjacent `.aegis-*` temporaries | ephemeral Aegis-owned transaction data at the canonical destination |
 | `state/runtime/design-*`, `stanza-*`, `manager-*`, `ollama-*` | ephemeral Aegis-owned runtime data |
@@ -66,7 +67,7 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 Before ordinary service construction, root dispatch classifies exactly one lifecycle path from the complete profile-owned layout: initialization, exact legacy migration, reset, repair denial, a utility command, or normal startup. For a release binary with no explicit `--config`, production discovery is artifact-derived and read-only. A development binary supplies its fixed development configuration path, never performs production/legacy discovery, and explicitly refuses `migrate-layout`:
 
 - no canonical installation or meaningful legacy artifacts: `uninitialized`, and bootstrap uses only `~/.argis`; an empty canonical root/state or a state tree containing only the deliberately preserved managed-model store is not an installation;
-- before configuration publication and again at apply time, initialization classifies all four legacy authority JSON surfaces together; populated, unreadable, symlinked, non-directory, wrong-owner, or wrong-mode paths deny rather than being merged into the Badger store;
+- before configuration publication and again at apply time, initialization classifies all three legacy authority JSON surfaces together; populated, unreadable, symlinked, non-directory, wrong-owner, or wrong-mode paths deny rather than being merged into the Badger store;
 - canonical only: validate and use canonical state;
 - legacy only: `legacy-layout-detected`; do not initialize a second installation;
 - canonical plus legacy: fail closed as `canonical_and_legacy_layout_ambiguous`;

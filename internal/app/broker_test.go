@@ -21,6 +21,7 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/credentials/broker"
+	"github.com/berryhill/aegis/internal/store"
 )
 
 type brokerTestCustodian struct{ key []byte }
@@ -45,8 +46,19 @@ func (custodian *brokerTestCustodian) KEK(_ context.Context, id string, version 
 }
 
 func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentials.Authority) {
+	return brokerAuthorizedServiceAt(t, time.Time{})
+}
+
+func brokerAuthorizedServiceAt(t *testing.T, testNow time.Time) (*Service, string, string, *credentials.Authority) {
+	return brokerServiceWithAuthority(t, testNow, nil, nil)
+}
+
+func brokerServiceWithAuthority(t *testing.T, testNow time.Time, mutateStanza func(*core.TrustStanza), mutateSession func(*core.Session)) (*Service, string, string, *credentials.Authority) {
 	t.Helper()
 	s := testService(t)
+	if !testNow.IsZero() {
+		s.Now = func() time.Time { return testNow }
+	}
 	s.Config.Credentials.ProviderAuth["team"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEAM_PROVIDER_KEY", TargetEnv: "TEAM_PROVIDER_KEY"}
 	principalProvider := make([]byte, 32)
 	teamProvider := make([]byte, 32)
@@ -107,6 +119,9 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 	charter.Stanzas[0].Grant.Capabilities = append(charter.Stanzas[0].Grant.Capabilities, broker.ActionGitHubGetRepository)
 	charter.Stanzas[0].Grant.Tools = []string{"aegis"}
 	charter.Stanzas[0].Hermes.Toolsets = []string{"aegis"}
+	if mutateStanza != nil {
+		mutateStanza(&charter.Stanzas[0])
+	}
 	charter.Stanzas[1].Authentication.Selectors = []core.IdentitySelector{{SubjectIDs: []string{"local-uid:4343"}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}
 	charter.Stanzas[1].Scopes.Credentials = []string{"provider:team"}
 	charter.Stanzas[1].Hermes.Provider = "team"
@@ -122,8 +137,25 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 		t.Fatal(err)
 	}
 	pid := os.Getpid()
-	session := core.Session{ID: "session-broker", Mandate: mandate, RuntimePID: pid, ProcessStart: processStartToken(pid), Status: "running", StartedAt: now, RuntimeHome: t.TempDir()}
+	session := core.Session{ID: "session-broker", Mandate: mandate, RuntimePID: pid, ProcessStart: processStartToken(pid), VerifiedToolsets: []string{"aegis"}, Status: "running", StartedAt: now, RuntimeHome: t.TempDir()}
+	if mutateSession != nil {
+		mutateSession(&session)
+	}
 	if err = s.Store.Save("sessions", session.ID, session); err != nil {
+		t.Fatal(err)
+	}
+	authorityContext := core.AuthorityContext{
+		ID: store.ID("authority-context"), MandateID: mandate.ID, SessionID: session.ID,
+		SubjectID: mandate.Subject.ID, AgentID: mandate.AgentID, CharterRevision: mandate.CharterRevision,
+		CharterDigest: mandate.CharterDigest, Runtime: mandate.Runtime,
+		Authority: core.EffectiveAuthority{StanzaID: mandate.StanzaID, Capabilities: mandate.Capabilities, Tools: mandate.Tools, Memory: mandate.Scopes.Memory, Credentials: mandate.Scopes.Credentials, Hermes: mandate.Hermes},
+		IssuedAt:  now, ExpiresAt: mandate.ExpiresAt,
+	}
+	authorityContext.Digest = core.AuthorityContextDigest(authorityContext)
+	if err = s.Authority.CreateAuthorityContext(context.Background(), authorityContext); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.processAuthorityCommand(context.Background(), core.AuthorityCommandActivate, authorityContext, "broker_test_session_start"); err != nil {
 		t.Fatal(err)
 	}
 	tokenBytes := make([]byte, 32)
@@ -135,6 +167,89 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 	s.capabilities[digest] = broker.Capability{SessionID: session.ID, MandateID: mandate.ID, SubjectID: subject.ID, AgentID: mandate.AgentID, StanzaID: mandate.StanzaID, DeploymentID: mandate.DeploymentID, CharterDigest: mandate.CharterDigest, IssuedAt: now, ExpiresAt: now.Add(time.Minute), RuntimePID: pid, ProcessStart: session.ProcessStart}
 	s.brokerRequests[digest] = make(map[[32]byte]struct{})
 	return s, token, canary, authority
+}
+
+func TestBrokerAdmissionEnforcesActionToolAndCredentialPlanes(t *testing.T) {
+	tests := []struct {
+		name          string
+		mutateStanza  func(*core.TrustStanza)
+		mutateSession func(*core.Session)
+	}{
+		{name: "action capability", mutateStanza: func(stanza *core.TrustStanza) { stanza.Grant.Capabilities = nil }},
+		{name: "declared runtime tool", mutateStanza: func(stanza *core.TrustStanza) { stanza.Grant.Tools, stanza.Hermes.Toolsets = nil, nil }},
+		{name: "verified runtime tool", mutateSession: func(session *core.Session) { session.VerifiedToolsets = nil }},
+		{name: "credential scope", mutateStanza: func(stanza *core.TrustStanza) { stanza.Scopes.Credentials = []string{"provider:test"} }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s, token, _, _ := brokerServiceWithAuthority(t, time.Time{}, test.mutateStanza, test.mutateSession)
+			peer := broker.Peer{PID: int32(os.Getpid()), UID: uint32(os.Getuid()), GID: uint32(os.Getgid())}
+			called := false
+			_, err := s.ExecuteBroker(context.Background(), peer, validBrokerRequest(token, s.Now()), func(context.Context, []byte, broker.Grant) (broker.Result, error) {
+				called = true
+				return broker.Result{}, nil
+			})
+			if !errors.Is(err, ErrDenied) || called {
+				t.Fatalf("missing %s was not denied before credential use: called=%v err=%v", test.name, called, err)
+			}
+		})
+	}
+}
+
+func TestBrokerAdmissionUsesFreshCanonicalAuthorityState(t *testing.T) {
+	s, token, _, _ := brokerAuthorizedService(t)
+	authority, err := s.authorityContextForSession(context.Background(), "session-broker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.processAuthorityCommand(context.Background(), core.AuthorityCommandRevoke, authority, "test_revocation"); err != nil {
+		t.Fatal(err)
+	}
+	peer := broker.Peer{PID: int32(os.Getpid()), UID: uint32(os.Getuid()), GID: uint32(os.Getgid())}
+	called := false
+	_, err = s.ExecuteBroker(context.Background(), peer, validBrokerRequest(token, s.Now()), func(context.Context, []byte, broker.Grant) (broker.Result, error) {
+		called = true
+		return broker.Result{}, nil
+	})
+	if !errors.Is(err, ErrDenied) || called {
+		t.Fatalf("revoked canonical authority reached credential use: called=%v err=%v", called, err)
+	}
+}
+
+func TestBrokerAdmissionRechecksAuthorityImmediatelyBeforeCredentialResolution(t *testing.T) {
+	s, token, _, _ := brokerAuthorizedService(t)
+	authority, err := s.authorityContextForSession(context.Background(), "session-broker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := s.Now()
+	request := validBrokerRequest(token, now)
+	calls := 0
+	revoked := false
+	var revokeErr error
+	s.Now = func() time.Time {
+		calls++
+		if calls == 2 && !revoked {
+			revoked = true
+			revokeErr = s.processAuthorityCommand(context.Background(), core.AuthorityCommandRevoke, authority, "test_between_validation_and_resolution")
+		}
+		return now
+	}
+	peer := broker.Peer{PID: int32(os.Getpid()), UID: uint32(os.Getuid()), GID: uint32(os.Getgid())}
+	credentialUsed := false
+	_, err = s.ExecuteBroker(context.Background(), peer, request, func(context.Context, []byte, broker.Grant) (broker.Result, error) {
+		credentialUsed = true
+		return broker.Result{}, nil
+	})
+	if revokeErr != nil {
+		t.Fatal(revokeErr)
+	}
+	if !revoked || calls < 2 {
+		t.Fatalf("test did not exercise the pre-resolution admission boundary: revoked=%v clock_calls=%d", revoked, calls)
+	}
+	if !errors.Is(err, ErrDenied) || credentialUsed {
+		t.Fatalf("authority revoked after initial validation reached credential use: called=%v err=%v", credentialUsed, err)
+	}
 }
 
 func TestBrokerFullTupleAndReplayRevocation(t *testing.T) {
@@ -452,21 +567,15 @@ func TestBrokerCapabilitySessionIsolationExpiryAndProcessLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalExpiry := mandate.ExpiresAt
-	mandate.ExpiresAt = s.Now()
-	if err = s.Store.Save("mandates", mandate.ID, mandate); err != nil {
-		t.Fatal(err)
-	}
+	originalNow := s.Now
+	s.Now = func() time.Time { return mandate.ExpiresAt }
 	s.capabilities[digest] = capability
 	marker++
 	request = nextBrokerRequest(request, marker)
 	if _, err = s.ExecuteBroker(context.Background(), peer, request, func(context.Context, []byte, broker.Grant) (broker.Result, error) { return broker.Result{}, nil }); !errors.Is(err, ErrDenied) {
 		t.Fatal("expired mandate was accepted")
 	}
-	mandate.ExpiresAt = originalExpiry
-	if err = s.Store.Save("mandates", mandate.ID, mandate); err != nil {
-		t.Fatal(err)
-	}
+	s.Now = originalNow
 	capability.ExpiresAt = s.Now().Add(-time.Second)
 	s.capabilities[digest] = capability
 	marker++

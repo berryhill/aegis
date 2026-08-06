@@ -17,6 +17,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -79,7 +80,16 @@ while read rest; do :; done
 	cfg.Principal = config.Principal{ID: "principal-1", Name: "Principal Operator", UID: "4242", User: "operator", AuthTTL: 5 * time.Minute}
 	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEST_PROVIDER_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := New(cfg, st, hermes.New(exe, log), log)
+	authorityPath := filepath.Join(st.Root(), "persistence", "authority-v1")
+	if _, err = authoritybadger.Initialize(context.Background(), authorityPath); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := authoritybadger.Open(context.Background(), authorityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = authority.Close() })
+	s := New(cfg, st, authority, authority, hermes.New(exe, log), log)
 	s.Now = func() time.Time { return time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC) }
 	s.Current = func() (*user.User, error) { return &user.User{Uid: "4242", Username: "operator"}, nil }
 	s.LookupEnv = func(name string) (string, bool) {
@@ -607,18 +617,15 @@ func TestCleanSessionsAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	storedContexts, err := s.Authority.ListAuthorityContexts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var contexts []core.AuthorityContext
-	if err = s.Store.List("authority-contexts", func(raw json.RawMessage) error {
-		var authority core.AuthorityContext
-		if decodeErr := json.Unmarshal(raw, &authority); decodeErr != nil {
-			return decodeErr
-		}
+	for _, authority := range storedContexts {
 		if authority.SessionID == x1.ID {
 			contexts = append(contexts, authority)
 		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
 	if len(contexts) != 1 || contexts[0].MandateID != m1.ID || contexts[0].Digest != core.AuthorityContextDigest(contexts[0]) {
 		t.Fatalf("session did not receive exactly one reviewable authority context: %#v", contexts)
@@ -655,12 +662,26 @@ func TestCleanSessionsAndRevocation(t *testing.T) {
 	if core.Digest(storedMandate) != core.Digest(m1) {
 		t.Fatal("revocation mutated the canonical mandate")
 	}
-	revocations, err := s.mandateRevocations(m1.ID)
+	projection, err := s.AuthorityCommands.CurrentAuthorityProjection(ctx, contexts[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(revocations) != 1 || revocations[0].Reason != "test" || revocations[0].RecordedBy != s.Config.Principal.ID {
-		t.Fatalf("append-only revocation fact missing: %#v", revocations)
+	if projection.State != core.AuthorityStateRevoked || projection.SourceSequence != 2 {
+		t.Fatalf("Badger authority command projection did not record revocation: %#v", projection)
+	}
+	evidence, err := s.AuthorityCommands.AuthorityAuditEvidence(ctx, contexts[0].ID)
+	if err != nil || len(evidence) != 2 || evidence[1].Position.Sequence != 2 || evidence[1].Position.ProjectionDigest != projection.Digest {
+		t.Fatalf("application lifecycle did not deliver exact canonical authority evidence: evidence=%#v err=%v", evidence, err)
+	}
+	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, contexts[0].ID, contexts[0].Digest, s.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if admission.Admitted || admission.ReasonCode != "authority_inactive" {
+		t.Fatalf("revoked Badger authority was admitted: %#v", admission)
+	}
+	if _, err = os.Stat(filepath.Join(s.Store.Root(), "authority-revocations")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy filesystem revocation family was written: %v", err)
 	}
 	_, alive, err := s.InspectSession(x1.ID)
 	if err != nil {
