@@ -50,6 +50,66 @@ HTTPServer((host,int(port)),H).serve_forever()'
 	}
 }
 
+func authorizeTestHermesRelease(t *testing.T) func(*ProcessCustody) error {
+	t.Helper()
+	authorizer := NewProcessAuthorizer()
+	return authorizer.Bind
+}
+
+func TestHermesCannotExecuteBeforeDurableReleaseAuthorization(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "executed")
+	executable := filepath.Join(dir, "fake-hermes-python")
+	script := "#!/bin/sh\n: > " + marker + "\nprintf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"gateway.ready\",\"payload\":{}}}'\nwhile IFS= read -r line; do :; done\n"
+	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	authorizer := NewProcessAuthorizer()
+	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{
+		Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"),
+		ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20,
+		StartTimeout: time.Second, AuthorizeRelease: func(custody *ProcessCustody) error {
+			time.Sleep(25 * time.Millisecond)
+			if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+				return errors.New("Hermes executed before release authorization")
+			}
+			return authorizer.Bind(custody)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer process.Close(context.Background())
+	if _, err = os.Stat(marker); err != nil {
+		t.Fatalf("authorized Hermes did not execute: %v", err)
+	}
+}
+
+func TestDeniedHermesReleaseNeverExecutesAndCleansState(t *testing.T) {
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "executed")
+	executable := filepath.Join(dir, "fake-hermes-python")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\n: > "+marker+"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	denied := errors.New("release denied")
+	_, err := StartHermesProcess(context.Background(), HermesProcessConfig{
+		Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"),
+		ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20,
+		StartTimeout: time.Second, AuthorizeRelease: func(*ProcessCustody) error { return denied },
+	})
+	if !errors.Is(err, denied) {
+		t.Fatalf("release denial error=%v", err)
+	}
+	if _, statErr := os.Stat(marker); !os.IsNotExist(statErr) {
+		t.Fatalf("denied Hermes executed: %v", statErr)
+	}
+	entries, readErr := os.ReadDir(filepath.Join(dir, "state", "runtime"))
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("denied launch retained runtime state: entries=%d err=%v", len(entries), readErr)
+	}
+}
+
 func TestFakeHermesProcessMultiTurnAndDisposableHome(t *testing.T) {
 	dir := t.TempDir()
 	executable := filepath.Join(dir, "fake-hermes-python")
@@ -69,7 +129,7 @@ done
 	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
+	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second, AuthorizeRelease: authorizeTestHermesRelease(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +202,7 @@ while :; do sleep 1; done
 	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second})
+	process, err := StartHermesProcess(context.Background(), HermesProcessConfig{Python: executable, Installation: dir, StateRoot: filepath.Join(dir, "state"), ProxyEndpoint: "http://127.0.0.1:1", Model: "exact:1", MaximumMessageBytes: 1 << 20, StartTimeout: time.Second, AuthorizeRelease: authorizeTestHermesRelease(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

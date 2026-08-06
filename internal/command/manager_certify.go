@@ -225,14 +225,11 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if python == "" {
 		return errors.New("Hermes gateway Python executable not found")
 	}
-	hermes, err := managerdomain.StartHermesProcess(cmd.Context(), managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout})
+	hermes, err := managerdomain.StartHermesProcess(cmd.Context(), managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout, AuthorizeRelease: processAuthorizer.Bind})
 	if err != nil {
 		return err
 	}
 	cleanup.add(func() { closeHermesBounded(hermes, cfg.CleanupTimeout) })
-	if err = processAuthorizer.Bind(hermes.Custody()); err != nil {
-		return err
-	}
 	certificationCtx, cancelCertification := context.WithDeadline(cmd.Context(), subject.ExpiresAt)
 	defer cancelCertification()
 	if err = certificationCtx.Err(); err != nil {

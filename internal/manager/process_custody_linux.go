@@ -19,9 +19,10 @@ import (
 // ProcessCustody retains a pidfd for one exact process. The pidfd prevents PID
 // reuse from changing the process to which this authority is bound.
 type ProcessCustody struct {
-	mu    sync.RWMutex
-	pid   int
-	pidfd int
+	mu     sync.RWMutex
+	pid    int
+	pidfd  int
+	bootID string
 }
 
 func AcquireProcessCustody(pid int) (*ProcessCustody, error) {
@@ -32,7 +33,12 @@ func AcquireProcessCustody(pid int) (*ProcessCustody, error) {
 	if err != nil {
 		return nil, fmt.Errorf("acquire Hermes pidfd custody: %w", err)
 	}
-	return &ProcessCustody{pid: pid, pidfd: fd}, nil
+	bootID, err := currentBootID()
+	if err != nil {
+		_ = unix.Close(fd)
+		return nil, fmt.Errorf("acquire host boot identity for Hermes custody: %w", err)
+	}
+	return &ProcessCustody{pid: pid, pidfd: fd, bootID: bootID}, nil
 }
 
 func (c *ProcessCustody) Alive() bool {
@@ -41,7 +47,7 @@ func (c *ProcessCustody) Alive() bool {
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.pidfd >= 0 && unix.PidfdSendSignal(c.pidfd, 0, nil, 0) == nil
+	return c.pidfd >= 0 && sameBoot(c.bootID) && unix.PidfdSendSignal(c.pidfd, 0, nil, 0) == nil
 }
 
 func (c *ProcessCustody) Signal(signal syscall.Signal) error {
@@ -52,6 +58,9 @@ func (c *ProcessCustody) Signal(signal syscall.Signal) error {
 	defer c.mu.RUnlock()
 	if c.pidfd < 0 {
 		return errors.New("process custody is closed")
+	}
+	if !sameBoot(c.bootID) {
+		return errors.New("process custody belongs to another host boot")
 	}
 	return unix.PidfdSendSignal(c.pidfd, unix.Signal(signal), nil, 0)
 }
@@ -147,4 +156,21 @@ func processSocketInodes(pid int) (map[string]bool, error) {
 		}
 	}
 	return inodes, nil
+}
+
+func currentBootID() (string, error) {
+	data, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", err
+	}
+	bootID := strings.TrimSpace(string(data))
+	if bootID == "" {
+		return "", errors.New("empty host boot identity")
+	}
+	return bootID, nil
+}
+
+func sameBoot(expected string) bool {
+	bootID, err := currentBootID()
+	return err == nil && expected != "" && bootID == expected
 }

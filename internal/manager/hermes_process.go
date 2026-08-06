@@ -31,10 +31,14 @@ type HermesProcessConfig struct {
 	Model               string
 	MaximumMessageBytes int
 	StartTimeout        time.Duration
+	// AuthorizeRelease must bind the exact pidfd-custodied process to its
+	// inference route. Hermes remains behind a one-shot inherited pipe gate
+	// until this durable authorization succeeds.
+	AuthorizeRelease func(*ProcessCustody) error
 }
 
 func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*HermesProcess, error) {
-	if config.Python == "" || config.Installation == "" || config.ProxyEndpoint == "" || config.Model == "" {
+	if config.Python == "" || config.Installation == "" || config.ProxyEndpoint == "" || config.Model == "" || config.AuthorizeRelease == nil {
 		return nil, errors.New("Hermes manager process configuration is incomplete")
 	}
 	homeRoot := filepath.Join(config.StateRoot, "runtime")
@@ -45,9 +49,20 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 	if err != nil {
 		return nil, err
 	}
-	command := exec.Command(config.Python, "-m", "tui_gateway.entry")
+	releaseReader, releaseWriter, err := os.Pipe()
+	if err != nil {
+		_ = os.RemoveAll(home)
+		return nil, err
+	}
+	defer releaseReader.Close()
+	defer releaseWriter.Close()
+	// This process performs no runtime work: it blocks on an Aegis-owned pipe
+	// and replaces itself with Hermes only after exact-process authorization.
+	// EOF and malformed release input fail closed.
+	command := exec.Command("/bin/sh", "-c", `IFS= read -r aegis_release <&3 && [ "$aegis_release" = "aegis-hermes-release-v1" ] && exec 3<&- && exec "$@"`, "aegis-hermes-gate", config.Python, "-m", "tui_gateway.entry")
 	command.Dir = home
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.ExtraFiles = []*os.File{releaseReader}
 	command.Env = []string{
 		"PATH=" + os.Getenv("PATH"), "HOME=" + home, "HERMES_HOME=" + home,
 		"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1",
@@ -76,12 +91,30 @@ func StartHermesProcess(ctx context.Context, config HermesProcessConfig) (*Herme
 		_ = os.RemoveAll(home)
 		return nil, err
 	}
+	_ = releaseReader.Close()
 	custody, err := AcquireProcessCustody(command.Process.Pid)
 	if err != nil {
 		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		_ = command.Wait()
 		_ = os.RemoveAll(home)
 		return nil, err
+	}
+	abortBlocked := func(cause error) (*HermesProcess, error) {
+		_ = releaseWriter.Close()
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		_ = command.Wait()
+		_ = custody.Close()
+		_ = os.RemoveAll(home)
+		return nil, cause
+	}
+	if err = config.AuthorizeRelease(custody); err != nil {
+		return abortBlocked(err)
+	}
+	if _, err = io.WriteString(releaseWriter, "aegis-hermes-release-v1\n"); err != nil {
+		return abortBlocked(err)
+	}
+	if err = releaseWriter.Close(); err != nil {
+		return abortBlocked(err)
 	}
 	process := &HermesProcess{command: command, stdin: stdin, done: make(chan error, 1), home: home, custody: custody}
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
