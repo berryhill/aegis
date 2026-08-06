@@ -82,6 +82,9 @@ func Initialize(ctx context.Context, root string) (Generation, error) {
 			return Generation{}, err
 		}
 	}
+	if err = CheckDiskReserve(root, uint64(maximumBackupBytes)); err != nil {
+		return Generation{}, err
+	}
 	generationID, err := randomID()
 	if err != nil {
 		return Generation{}, err
@@ -98,7 +101,7 @@ func Initialize(ctx context.Context, root string) (Generation, error) {
 	published := false
 	defer func() {
 		if !published {
-			_ = os.RemoveAll(staged)
+			_ = removeTreeAt(filepath.Join(root, "staging"), basename)
 		}
 	}()
 	generation := Generation{GenerationID: generationID, StoreID: storeID, Schema: SchemaVersion, Codec: CodecVersion, Directory: basename, Activation: 1}
@@ -196,10 +199,7 @@ func Open(ctx context.Context, root string) (*Store, error) {
 	if err = verifyStoreIdentity(selected, generation); err != nil {
 		return nil, err
 	}
-	if err = os.Remove(filepath.Join(root, "CLEAN")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if err = syncDirectory(root); err != nil {
+	if err = removeFileAt(root, "CLEAN"); err != nil {
 		return nil, err
 	}
 	if err = writeMarker(root, "DIRTY", generation); err != nil {
@@ -235,11 +235,7 @@ func (s *Store) Close() error {
 		s.closeErr = err
 		return err
 	}
-	if err := os.Remove(filepath.Join(s.root, "DIRTY")); err != nil && !errors.Is(err, os.ErrNotExist) {
-		s.closeErr = err
-		return err
-	}
-	if err := syncDirectory(s.root); err != nil {
+	if err := removeFileAt(s.root, "DIRTY"); err != nil {
 		s.closeErr = err
 		return err
 	}
@@ -367,28 +363,7 @@ func writeMarker(root, name string, generation Generation) error {
 		return err
 	}
 	content = append(content, '\n')
-	file, err := os.CreateTemp(root, "."+name+"-*")
-	if err != nil {
-		return err
-	}
-	temporary := file.Name()
-	defer os.Remove(temporary)
-	if err = file.Chmod(0600); err == nil {
-		_, err = file.Write(content)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(temporary, filepath.Join(root, name)); err != nil {
-		return err
-	}
-	return syncDirectory(root)
+	return writeFileAtomicAt(root, name, content)
 }
 
 func readMarker(path string) (Generation, error) {
@@ -420,12 +395,12 @@ func readMarker(path string) (Generation, error) {
 }
 
 func renameNoReplace(fromDir, from, toDir, to string) error {
-	source, err := os.Open(fromDir)
+	source, err := openDirectoryNoFollow(fromDir)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
-	destination, err := os.Open(toDir)
+	destination, err := openDirectoryNoFollow(toDir)
 	if err != nil {
 		return err
 	}
@@ -434,7 +409,7 @@ func renameNoReplace(fromDir, from, toDir, to string) error {
 }
 
 func syncDirectory(path string) error {
-	directory, err := os.Open(path)
+	directory, err := openDirectoryNoFollow(path)
 	if err != nil {
 		return err
 	}

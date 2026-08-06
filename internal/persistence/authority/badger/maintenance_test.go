@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/berryhill/aegis/internal/core"
+	badgerdb "github.com/dgraph-io/badger/v4"
 )
 
 func TestMaintenanceBackupRestoreActivateRollbackAndGarbageCollect(t *testing.T) {
@@ -58,7 +61,7 @@ func TestMaintenanceBackupRestoreActivateRollbackAndGarbageCollect(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if activated.GenerationID != restored.GenerationID || activated.Activation != original.Activation+1 {
+	if !activated.SelectionCommitted || !activated.PreviousRetired || activated.Previous != original || activated.GenerationID != restored.GenerationID || activated.Activation != original.Activation+1 {
 		t.Fatalf("unexpected activation: %+v", activated)
 	}
 	assertStoredMandate(t, root, mandate.ID)
@@ -67,7 +70,7 @@ func TestMaintenanceBackupRestoreActivateRollbackAndGarbageCollect(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rolledBack.GenerationID != original.GenerationID || rolledBack.Activation != activated.Activation+1 {
+	if !rolledBack.SelectionCommitted || !rolledBack.PreviousRetired || rolledBack.Previous.GenerationID != restored.GenerationID || rolledBack.GenerationID != original.GenerationID || rolledBack.Activation != activated.Activation+1 {
 		t.Fatalf("unexpected rollback: %+v", rolledBack)
 	}
 	assertStoredMandate(t, root, mandate.ID)
@@ -219,5 +222,115 @@ func TestGarbageCollectFailsClosedOnUnknownGeneration(t *testing.T) {
 		if _, err = os.Stat(path); err != nil {
 			t.Fatalf("fail-closed GC changed %s: %v", path, err)
 		}
+	}
+}
+
+func TestRecoveryKindsKeepLogicalImportSeparateFromExactNativeSelection(t *testing.T) {
+	ctx := context.Background()
+	root := authorityRoot(t)
+	original, err := Initialize(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backup := secureTestPath(t, "recovery.backup")
+	if _, err = Export(ctx, root, backup); err != nil {
+		t.Fatal(err)
+	}
+
+	logical, err := RecoverLogical(ctx, root, backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logical.Kind != RecoveryLogical || logical.Imported == nil || logical.Activation != nil {
+		t.Fatalf("logical recovery returned ambiguous outcome: %+v", logical)
+	}
+	active, err := readMarker(filepath.Join(root, "ACTIVE"))
+	if err != nil || active != original {
+		t.Fatalf("logical recovery selected imported state: active=%+v err=%v", active, err)
+	}
+
+	native, err := RecoverNative(ctx, root, *logical.Imported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if native.Kind != RecoveryNative || native.Imported != nil || native.Activation == nil || !native.Activation.SelectionCommitted || native.Activation.Previous != original {
+		t.Fatalf("native recovery returned ambiguous outcome: %+v", native)
+	}
+
+	tampered := original
+	tampered.StoreID = "store-substituted"
+	tampered.Digest = generationDigest(tampered)
+	denied, err := RecoverNative(ctx, root, tampered)
+	if err == nil || denied.Kind != RecoveryNative || denied.Activation == nil || denied.Activation.SelectionCommitted {
+		t.Fatalf("native recovery did not deny an inexact generation: outcome=%+v err=%v", denied, err)
+	}
+}
+
+func TestDiskReserveFailsClosedForUnmeasurableAndOverflowingRequirements(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if err := CheckDiskReserve(missing, 0); !errors.Is(err, ErrDiskReserve) {
+		t.Fatalf("unmeasurable reserve error=%v, want ErrDiskReserve", err)
+	}
+	if err := CheckDiskReserve(t.TempDir(), ^uint64(0)); !errors.Is(err, ErrDiskReserve) {
+		t.Fatalf("overflowing reserve error=%v, want ErrDiskReserve", err)
+	}
+}
+
+func TestLogicalRecoveryDiscardsBackupProjectionAndRebuildsFromCanonicalState(t *testing.T) {
+	ctx := context.Background()
+	root := authorityRoot(t)
+	original, err := Initialize(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mandate, authority := badgerAuthorityBinding("mandate-logical", "authority-logical", "session-logical")
+	if err = store.CreateMandate(ctx, mandate); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CreateAuthorityContext(ctx, authority); err != nil {
+		t.Fatal(err)
+	}
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	command := badgerAuthorityCommand("command-logical", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	if _, err = store.ProcessAuthorityCommand(ctx, command, recordedAt, "controller"); err != nil {
+		t.Fatal(err)
+	}
+	projectionKey, _ := encodeKey(KeyAuthorityProjection, []string{authority.ID}, 0)
+	if err = store.db.Update(func(txn *badgerdb.Txn) error { return txn.Set(projectionKey, []byte("{}")) }); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	backup := secureTestPath(t, "logical-projection.backup")
+	if _, err = Export(ctx, root, backup); err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := RecoverLogical(ctx, root, backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovery.Imported == nil {
+		t.Fatal("logical recovery did not return imported generation")
+	}
+	if active, err := readMarker(filepath.Join(root, "ACTIVE")); err != nil || active != original {
+		t.Fatalf("logical recovery selected candidate: active=%+v err=%v", active, err)
+	}
+	if _, err = RecoverNative(ctx, root, *recovery.Imported); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	projection, err := restored.CurrentAuthorityProjection(ctx, authority.ID)
+	if err != nil || projection.State != core.AuthorityStateActive || projection.AuthorityContextID != authority.ID {
+		t.Fatalf("logical recovery did not rebuild canonical projection: projection=%+v err=%v", projection, err)
 	}
 }
