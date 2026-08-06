@@ -270,9 +270,11 @@ func lifecycleConfigTTL(t *testing.T, root, ttl string) string {
 		t.Fatal(err)
 	}
 	path := filepath.Join(root, "aegis.yaml")
-	data := fmt.Sprintf("state_dir: %q\nprincipal:\n  id: principal\n  name: Principal\n  uid: %q\n  user: %q\n  auth_ttl: %s\naudit:\n  checkpoint_dir: %q\n", filepath.Join(root, "state"), current.Uid, current.Username, ttl, filepath.Join(root, "checkpoints"))
+	statePath := filepath.Join(root, "state")
+	data := fmt.Sprintf("state_dir: %q\nprincipal:\n  id: principal\n  name: Principal\n  uid: %q\n  user: %q\n  auth_ttl: %s\naudit:\n  checkpoint_dir: %q\n", statePath, current.Uid, current.Username, ttl, filepath.Join(root, "checkpoints"))
 	if err = os.WriteFile(path, []byte(data), 0600); err != nil {
 		t.Fatal(err)
 	}
+	initializeOperationalAuthority(t, statePath)
 	return path
 }

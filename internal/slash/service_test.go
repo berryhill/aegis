@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -36,7 +37,16 @@ func serviceFixture(t *testing.T) (*Service, *Registry, Context) {
 	cfg.HermesExecutable = executable
 	cfg.Principal = config.Principal{ID: "principal", Name: "Principal", UID: "4242", User: "operator", AuthTTL: 5 * time.Minute}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	application := app.New(cfg, state, hermes.New(executable, logger), logger)
+	authorityPath := filepath.Join(state.Root(), "persistence", "authority-v1")
+	if _, err = authoritybadger.Initialize(context.Background(), authorityPath); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := authoritybadger.Open(context.Background(), authorityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = authority.Close() })
+	application := app.New(cfg, state, authority, authority, hermes.New(executable, logger), logger)
 	application.Current = func() (*user.User, error) { return &user.User{Uid: "4242", Username: "operator"}, nil }
 	registry := testRegistry(t)
 	service := NewService(application, registry)

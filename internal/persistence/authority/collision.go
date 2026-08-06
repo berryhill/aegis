@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-var LegacyDirectories = [...]string{"mandates", "authority-contexts", "authority-revocations", "sessions"}
+var LegacyDirectories = [...]string{"mandates", "authority-contexts", "authority-revocations"}
 
 type CollisionState string
 

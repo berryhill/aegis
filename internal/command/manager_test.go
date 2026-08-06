@@ -16,6 +16,7 @@ import (
 	"time"
 
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/tui"
 	selfupdate "github.com/berryhill/aegis/internal/update"
 )
@@ -199,9 +200,13 @@ func managerTestConfig(t *testing.T) string {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state")
 	path := filepath.Join(dir, "aegis.yaml")
-	data := fmt.Sprintf("state_dir: %s\nprincipal:\n  id: principal\n  name: Principal\n  uid: %q\n  user: %q\n  auth_ttl: 5m\naudit:\n  checkpoint_dir: %s\n", filepath.Join(dir, "state"), current.Uid, current.Username, filepath.Join(dir, "checkpoints"))
+	data := fmt.Sprintf("state_dir: %s\nprincipal:\n  id: principal\n  name: Principal\n  uid: %q\n  user: %q\n  auth_ttl: 5m\naudit:\n  checkpoint_dir: %s\n", statePath, current.Uid, current.Username, filepath.Join(dir, "checkpoints"))
 	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = authoritybadger.Initialize(context.Background(), filepath.Join(statePath, "persistence", "authority-v1")); err != nil {
 		t.Fatal(err)
 	}
 	return path

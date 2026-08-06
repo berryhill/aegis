@@ -1,6 +1,6 @@
 # Terminal Recording
 
-The recording source is `scripts/demo-no-key.sh`. It uses ignored disposable paths inside the checkout, derives only the local UID/username, sets the copied configuration and charter to mode `0600`, prints no credential values, and removes its workspace and demonstration executable.
+The recording source is `scripts/demo-no-key.sh`. It uses ignored disposable paths inside the checkout, initializes an empty generation-managed Badger authority only in its disposable workspace, derives only the local UID/username, sets the copied configuration and charter to mode `0600`, prints no credential values, and removes its workspace and demonstration executable.
 
 The retained recording is:
 
