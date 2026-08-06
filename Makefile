@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 VERSION ?= 0.1.0
-GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
+GOVULNCHECK ?= GOTOOLCHAIN="$$(go env GOVERSION)" go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
 .PHONY: verify authority-denial-matrix release-review release
 

@@ -110,7 +110,7 @@ A public release is a no-go until every required gate is either verified or expl
 - [ ] `go test ./...` passes.
 - [ ] `go test -race ./...` passes on supported CI runners.
 - [ ] `go vet ./...` passes.
-- [ ] A freshly installed, supported `govulncheck ./...` passes.
+- [ ] `GOTOOLCHAIN="$(go env GOVERSION)" go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...` passes under the repository-resolved Go toolchain.
 - [ ] Hermetic CLI end-to-end tests pass.
 - [ ] The no-key demo leaves no Aegis or Hermes process running.
 - [ ] Release builds succeed for every declared operating-system and architecture pair.
