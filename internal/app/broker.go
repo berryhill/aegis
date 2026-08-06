@@ -206,11 +206,12 @@ func (s *Service) ExecuteBroker(ctx context.Context, peer broker.Peer, request b
 	if !admissionAt.Before(request.Deadline) || request.Deadline.After(admissionAt.Add(cfg.Timeout)) {
 		return deny("request_expired_or_unbounded")
 	}
-	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, admissionAt)
+	admission, position, err := s.AuthorityCommands.AuthorityReadiness(ctx, authority.ID, authority.Digest, admissionAt)
 	if err != nil || !admission.Admitted || admission.EvaluatedAt != admissionAt ||
 		admission.AuthorityContext.ID != authority.ID || admission.AuthorityContext.Digest != authority.Digest ||
 		admission.AuthorityContext.SessionID != session.ID || admission.AuthorityContext.MandateID != mandate.ID ||
-		core.ValidateAuthorityContext(admission.AuthorityContext, mandate) != nil {
+		core.ValidateAuthorityContext(admission.AuthorityContext, mandate) != nil || core.ValidateCommittedAuthorityPosition(position) != nil ||
+		position.AuthorityContextID != authority.ID {
 		return deny("authority_inactive_or_inconsistent")
 	}
 	effective := admission.AuthorityContext.Authority

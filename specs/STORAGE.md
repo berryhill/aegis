@@ -24,7 +24,7 @@ No transaction may silently span these classes or engines. Cross-store operation
 
 | Plane | Canonical records | Engine and module | Qualified host | Authority | Required durability | Owner |
 |---|---|---|---|---|---|---|
-| Session authority | mandate, authority context, transition facts; transition root is derived | Badger `github.com/dgraph-io/badger/v4` `v4.9.5` | Linux/amd64, ext4 | one Aegis process | directory `0700`, files `0600`, `SyncWrites=true`, `DetectConflicts=true`, generation publication with synced markers and no-replace activation | `internal/persistence/authority/badger` |
+| Session authority | mandate, authority context, transition facts; transition root and current authority projection are derived | Badger `github.com/dgraph-io/badger/v4` `v4.9.5` | Linux/amd64, ext4 | one Aegis process | directory `0700`, files `0600`, `SyncWrites=true`, `DetectConflicts=true`, no-follow descriptor-relative lifecycle mutation, generation publication with synced markers and no-replace activation, and a fixed 256 MiB reserve beyond bounded candidate output | `internal/persistence/authority/badger` |
 | Credential custody | metadata, encrypted versions, bindings, revocations | bbolt `go.etcd.io/bbolt` `v1.5.0` | Linux/amd64, ext4 | one Aegis process | directory `0700`, file `0600`, two-second lock timeout, `NoSync=false`, `NoGrowSync=false`, encrypted values only | `internal/credentials/bbolt` |
 
 The executable form is `internal/persistence/qualification/contract.go`. `internal/architecture/boundaries_test.go` pins module versions, engine ownership, canonical persistent type ownership, and classification of every top-level production package family.
@@ -45,7 +45,7 @@ Credential use independently reauthorizes the session/mandate/context, exact bin
 
 ## Migration and recovery
 
-Legacy authority JSON is collision input only; it is never merged into Badger. A generation is activated only through the implemented staged, synced, no-replace publication protocol. Dirty lifecycle evidence requires verified maintenance/recovery before operational open. Credential backup/recovery remains a separate bbolt and key-custody procedure; copying one engine does not constitute a complete Aegis backup.
+Legacy authority JSON is collision input only; it is never merged into Badger. A generation is activated only through the implemented staged, synced, no-replace publication protocol. Dirty lifecycle evidence requires verified maintenance/recovery before operational open. Logical authority recovery imports verified canonical records into a fresh inactive generation and rebuilds, rather than trusts, derived authority projections. Native recovery requires exact identity for an already retained generation. Selection returns an explicit durable-commit outcome so a failure after marker publication cannot be interpreted as pre-activation failure. Credential backup/recovery remains a separate bbolt and key-custody procedure; copying one engine does not constitute a complete Aegis backup.
 
 A future migration MUST identify source and destination schemas, preserve immutable IDs/digests or record an explicit mapping, verify the complete source before activation, publish the destination crash-safely, retain rollback evidence, and deny mixed-source operation. No model or runtime may authorize or execute migration.
 

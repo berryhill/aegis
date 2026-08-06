@@ -81,6 +81,108 @@ func TestProcessAuthorityCommandCommitsReceiptProjectionOutboxAndAdmission(t *te
 	}
 }
 
+func TestAuthorityAuditDeliveryGatesGrantReadinessAtCommittedPosition(t *testing.T) {
+	store, authority := openCommandStore(t)
+	ctx := context.Background()
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	activate := badgerAuthorityCommand("command-audit-ready", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	receipt, err := store.ProcessAuthorityCommand(ctx, activate, recordedAt, "aegis-controller")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	committed, err := store.CommittedAuthorityPosition(ctx, authority.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if committed.AuthorityContextID != authority.ID || committed.Sequence != 1 || committed.FactDigest != receipt.FactDigest || committed.ProjectionDigest != receipt.ProjectionDigest || core.ValidateCommittedAuthorityPosition(committed) != nil {
+		t.Fatalf("committed position does not bind replay-verified authority: %+v", committed)
+	}
+
+	view, grantedAt, err := store.AuthorityReadiness(ctx, authority.ID, authority.Digest, recordedAt)
+	if err != nil || view.Admitted || view.ReasonCode != "audit_delivery_lagging" || grantedAt != (core.CommittedAuthorityPosition{}) {
+		t.Fatalf("authority granted before canonical audit delivery: view=%+v position=%+v err=%v", view, grantedAt, err)
+	}
+
+	delivered, err := store.DeliverAuthorityAudit(ctx, authority.ID, 1)
+	if err != nil || len(delivered) != 1 {
+		t.Fatalf("canonical audit delivery failed: evidence=%+v err=%v", delivered, err)
+	}
+	evidence := delivered[0]
+	if evidence.Position != committed || evidence.AuthorityOutboxDigest == "" || evidence.RecordedAt != recordedAt || core.ValidateAuthorityAuditEvidence(evidence) != nil {
+		t.Fatalf("audit evidence does not bind exact committed position: %+v", evidence)
+	}
+
+	view, grantedAt, err = store.AuthorityReadiness(ctx, authority.ID, authority.Digest, recordedAt)
+	if err != nil || !view.Admitted || view.ReasonCode != "admitted" || grantedAt != committed {
+		t.Fatalf("delivered authority did not grant at the committed position: view=%+v position=%+v err=%v", view, grantedAt, err)
+	}
+
+	retry, err := store.DeliverAuthorityAudit(ctx, authority.ID, 1)
+	if err != nil || len(retry) != 0 {
+		t.Fatalf("exact audit retry was not idempotent: evidence=%+v err=%v", retry, err)
+	}
+	stored, err := store.AuthorityAuditEvidence(ctx, authority.ID)
+	if err != nil || len(stored) != 1 || stored[0] != evidence {
+		t.Fatalf("audit retry changed canonical evidence: evidence=%+v err=%v", stored, err)
+	}
+}
+
+func TestAuthorityAuditDeliveryAndReadinessFailClosedOnSubstitution(t *testing.T) {
+	store, authority := openCommandStore(t)
+	ctx := context.Background()
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	activate := badgerAuthorityCommand("command-audit-corrupt", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	if _, err := store.ProcessAuthorityCommand(ctx, activate, recordedAt, "aegis-controller"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DeliverAuthorityAudit(ctx, authority.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	key, _ := encodeKey(KeyAuthorityAudit, []string{authority.ID}, 1)
+	if err := store.db.Update(func(txn *badgerdb.Txn) error {
+		encoded, err := getValue(txn, key)
+		if err != nil {
+			return err
+		}
+		evidence, err := core.DecodeAuthorityAuditEvidenceCanonical(encoded)
+		if err != nil {
+			return err
+		}
+		evidence.Position.ProjectionDigest = "sha256:substituted"
+		evidence.Position.Digest = core.CommittedAuthorityPositionDigest(evidence.Position)
+		evidence.Digest = core.AuthorityAuditEvidenceDigest(evidence)
+		encoded, err = core.EncodeAuthorityAuditEvidenceCanonical(evidence)
+		if err != nil {
+			return err
+		}
+		return txn.Set(key, encoded)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.AuthorityAuditEvidence(ctx, authority.ID); !errors.Is(err, ErrCorruptRecord) {
+		t.Fatalf("substituted audit evidence error=%v, want ErrCorruptRecord", err)
+	}
+	view, position, err := store.AuthorityReadiness(ctx, authority.ID, authority.Digest, recordedAt)
+	if !errors.Is(err, ErrCorruptRecord) || view.Admitted || view.ReasonCode != "audit_unverifiable" || position != (core.CommittedAuthorityPosition{}) {
+		t.Fatalf("substituted audit evidence did not fail readiness closed: view=%+v position=%+v err=%v", view, position, err)
+	}
+	if _, err = store.DeliverAuthorityAudit(ctx, authority.ID, 1); !errors.Is(err, ErrCorruptRecord) {
+		t.Fatalf("delivery accepted substituted existing evidence: %v", err)
+	}
+}
+
+func TestAuthorityAuditDeliveryRejectsInvalidBatchLimits(t *testing.T) {
+	store, authority := openCommandStore(t)
+	for _, limit := range []int{-1, 1001} {
+		if _, err := store.DeliverAuthorityAudit(context.Background(), authority.ID, limit); err == nil {
+			t.Fatalf("invalid audit delivery limit %d was accepted", limit)
+		}
+	}
+}
+
 func TestProcessAuthorityCommandConcurrentExactRetriesDeduplicate(t *testing.T) {
 	store, authority := openCommandStore(t)
 	ctx := context.Background()
@@ -298,5 +400,72 @@ func assertNoCommandResult(t *testing.T, store *Store, contextID, commandID stri
 		return err
 	}); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("denied command left fact: %v", err)
+	}
+}
+
+func TestRebuildAuthorityProjectionsReplacesDerivedStateFromCanonicalRecords(t *testing.T) {
+	store, authority := openCommandStore(t)
+	ctx := context.Background()
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	command := badgerAuthorityCommand("command-rebuild", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	if _, err := store.ProcessAuthorityCommand(ctx, command, recordedAt, "controller"); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := encodeKey(KeyAuthorityProjection, []string{authority.ID}, 0)
+	if err := store.db.Update(func(txn *badgerdb.Txn) error { return txn.Set(key, []byte("{}")) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.CurrentAuthorityProjection(ctx, authority.ID); !errors.Is(err, ErrCorruptRecord) {
+		t.Fatalf("corrupt projection remained readable before rebuild: %v", err)
+	}
+
+	rebuilt, err := store.RebuildAuthorityProjections(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rebuilt) != 1 || rebuilt[0].AuthorityContextID != authority.ID || rebuilt[0].State != core.AuthorityStateActive {
+		t.Fatalf("unexpected rebuilt projections: %+v", rebuilt)
+	}
+	projection, err := store.CurrentAuthorityProjection(ctx, authority.ID)
+	if err != nil || projection != rebuilt[0] {
+		t.Fatalf("rebuilt projection was not durable: projection=%+v err=%v", projection, err)
+	}
+}
+
+func TestRebuildAuthorityProjectionsIsAtomicOnCorruptCanonicalState(t *testing.T) {
+	store, authority := openCommandStore(t)
+	ctx := context.Background()
+	recordedAt := authority.IssuedAt.Add(10 * time.Second)
+	command := badgerAuthorityCommand("command-rebuild-denied", core.AuthorityCommandActivate, authority, 1, "", recordedAt.Add(-time.Second))
+	if _, err := store.ProcessAuthorityCommand(ctx, command, recordedAt, "controller"); err != nil {
+		t.Fatal(err)
+	}
+	projectionKey, _ := encodeKey(KeyAuthorityProjection, []string{authority.ID}, 0)
+	factKey, _ := encodeKey(KeyAuthorityFact, []string{authority.ID}, 1)
+	var before []byte
+	if err := store.db.Update(func(txn *badgerdb.Txn) error {
+		var err error
+		before, err = getValue(txn, projectionKey)
+		if err != nil {
+			return err
+		}
+		return txn.Set(factKey, []byte("{}"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RebuildAuthorityProjections(ctx); !errors.Is(err, ErrCorruptRecord) {
+		t.Fatalf("canonical corruption error=%v, want ErrCorruptRecord", err)
+	}
+	if err := store.db.View(func(txn *badgerdb.Txn) error {
+		after, err := getValue(txn, projectionKey)
+		if err != nil {
+			return err
+		}
+		if string(after) != string(before) {
+			return errors.New("failed rebuild changed derived projection")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -1115,7 +1115,12 @@ func (s *Service) processAuthorityCommand(ctx context.Context, kind core.Authori
 		command.ExpectedPreviousDigest = projection.SourceFactDigest
 	}
 	command.Digest = core.AuthorityCommandDigest(command)
-	_, err := s.AuthorityCommands.ProcessAuthorityCommand(ctx, command, now, s.Config.Principal.ID)
+	if _, err := s.AuthorityCommands.ProcessAuthorityCommand(ctx, command, now, s.Config.Principal.ID); err != nil {
+		return err
+	}
+	// Lifecycle processing may commit authority but never makes that position
+	// grant-ready until its canonical metadata evidence is durably delivered.
+	_, err := s.AuthorityCommands.DeliverAuthorityAudit(ctx, authority.ID, 1000)
 	return err
 }
 
@@ -1188,8 +1193,8 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	wantsBrokerTool := contains(m.Hermes.Toolsets, "aegis")
 	hasBrokerAuthority := contains(m.Capabilities, broker.ActionGitHubGetRepository) && contains(m.Scopes.Credentials, broker.GitHubScope)
 	brokerAvailable := s.CredentialAuthority != nil && s.Config.Credentials.Authority.Broker.Socket != ""
-	if wantsBrokerTool != hasBrokerAuthority || wantsBrokerTool != brokerAvailable {
-		return core.Session{}, fmt.Errorf("%w: Aegis broker tool, capability, credential scope, and configured authority must match exactly", ErrDenied)
+	if wantsBrokerTool != hasBrokerAuthority || (wantsBrokerTool && !brokerAvailable) {
+		return core.Session{}, fmt.Errorf("%w: Aegis broker tool, capability, and credential scope must match exactly and require configured authority", ErrDenied)
 	}
 	bridge := hermes.BrokerBridge{}
 	if wantsBrokerTool {
@@ -1223,8 +1228,8 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err = s.validateMandate(m); err != nil {
 		return core.Session{}, err
 	}
-	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, s.Now())
-	if err != nil || !admission.Admitted {
+	admission, position, err := s.AuthorityCommands.AuthorityReadiness(ctx, authority.ID, authority.Digest, s.Now())
+	if err != nil || !admission.Admitted || core.ValidateCommittedAuthorityPosition(position) != nil {
 		if err == nil {
 			err = fmt.Errorf("%w: authority admission denied: %s", ErrDenied, admission.ReasonCode)
 		}
@@ -1260,7 +1265,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		_ = s.Hermes.Terminate(stop, id, !s.Config.Retention.SessionHomes)
 		return sess, err
 	}
-	if s.CredentialAuthority != nil && s.Config.Credentials.Authority.Broker.Socket != "" {
+	if wantsBrokerTool {
 		if err = s.issueBrokerCapability(&sess); err != nil {
 			_ = s.endSession(context.Background(), sess.ID, "failed", "broker_capability_materialization_failed", true)
 			return sess, err

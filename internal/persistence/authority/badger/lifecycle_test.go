@@ -198,3 +198,34 @@ func TestAuthorityCrashHelper(t *testing.T) {
 		time.Sleep(time.Hour)
 	}
 }
+
+func TestOpenRefusesSymlinkedCleanMarkerWithoutRemovingTarget(t *testing.T) {
+	root := authorityRoot(t)
+	if _, err := Initialize(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "operator-marker")
+	active, err := os.ReadFile(filepath.Join(root, "ACTIVE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(target, active, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(filepath.Join(root, "CLEAN")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(target, filepath.Join(root, "CLEAN")); err != nil {
+		t.Fatal(err)
+	}
+	if store, err := Open(context.Background(), root); err == nil {
+		_ = store.Close()
+		t.Fatal("open accepted a symlinked CLEAN marker")
+	}
+	if content, err := os.ReadFile(target); err != nil || string(content) != string(active) {
+		t.Fatalf("marker target changed: content=%q err=%v", content, err)
+	}
+	if info, err := os.Lstat(filepath.Join(root, "CLEAN")); err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("denial removed or replaced symlink: info=%v err=%v", info, err)
+	}
+}

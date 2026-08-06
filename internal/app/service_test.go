@@ -669,6 +669,10 @@ func TestCleanSessionsAndRevocation(t *testing.T) {
 	if projection.State != core.AuthorityStateRevoked || projection.SourceSequence != 2 {
 		t.Fatalf("Badger authority command projection did not record revocation: %#v", projection)
 	}
+	evidence, err := s.AuthorityCommands.AuthorityAuditEvidence(ctx, contexts[0].ID)
+	if err != nil || len(evidence) != 2 || evidence[1].Position.Sequence != 2 || evidence[1].Position.ProjectionDigest != projection.Digest {
+		t.Fatalf("application lifecycle did not deliver exact canonical authority evidence: evidence=%#v err=%v", evidence, err)
+	}
 	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, contexts[0].ID, contexts[0].Digest, s.Now())
 	if err != nil {
 		t.Fatal(err)
