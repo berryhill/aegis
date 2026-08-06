@@ -1,10 +1,16 @@
 package badger
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -294,6 +300,72 @@ func TestAuthorityRepositoryHonorsCanceledContextAndClosedStore(t *testing.T) {
 	}
 	if err := store.CreateMandate(context.Background(), mandate); !errors.Is(err, ErrClosed) {
 		t.Fatalf("closed create error = %v, want ErrClosed", err)
+	}
+}
+
+func TestAuthorityRepositoryThreeCanaryDenialsLeaveNoSecretBytes(t *testing.T) {
+	store := openAuthorityStore(t)
+	ctx := context.Background()
+	canaries := make([]string, 3)
+	for index := range canaries {
+		value := make([]byte, 32)
+		if _, err := rand.Read(value); err != nil {
+			t.Fatal("generate canary")
+		}
+		canaries[index] = base64.RawURLEncoding.EncodeToString(value)
+	}
+
+	mandate, authority := badgerAuthorityBinding("mandate-canary", "authority-canary", "session-canary")
+	invalidMandate := mandate
+	invalidMandate.ID = canaries[0] + "\n"
+	assertCanaryDenial(t, 1, canaries[0], store.CreateMandate(ctx, invalidMandate))
+
+	if err := store.CreateMandate(ctx, mandate); err != nil {
+		t.Fatal(err)
+	}
+	invalidAuthority := authority
+	invalidAuthority.ID = canaries[1] + "\n"
+	invalidAuthority.Digest = core.AuthorityContextDigest(invalidAuthority)
+	assertCanaryDenial(t, 2, canaries[1], store.CreateAuthorityContext(ctx, invalidAuthority))
+
+	if err := store.CreateAuthorityContext(ctx, authority); err != nil {
+		t.Fatal(err)
+	}
+	invalidFact := badgerTransitionFact("fact-canary", 1, authority, "", core.AuthorityStateActive, authority.IssuedAt, "")
+	invalidFact.AuthorityContextID = canaries[2] + "\n"
+	_, err := store.AppendAuthorityTransitionFact(ctx, invalidFact)
+	assertCanaryDenial(t, 3, canaries[2], err)
+
+	root := store.root
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return walkErr
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		for index, canary := range canaries {
+			if bytes.Contains(content, []byte(canary)) {
+				t.Errorf("denied canary campaign %d reached persisted authority bytes", index+1)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertCanaryDenial(t *testing.T, campaign int, canary string, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("canary campaign %d was accepted", campaign)
+	}
+	if strings.Contains(err.Error(), canary) {
+		t.Fatalf("canary campaign %d leaked into diagnostics", campaign)
 	}
 }
 

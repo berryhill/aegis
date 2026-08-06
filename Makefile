@@ -3,7 +3,7 @@ SHELL := /bin/sh
 VERSION ?= 0.1.0
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
-.PHONY: verify release-review release
+.PHONY: verify authority-denial-matrix release-review release
 
 verify:
 	go mod tidy
@@ -18,6 +18,9 @@ verify:
 	go test -race ./...
 	go vet ./...
 	$(GOVULNCHECK) ./...
+
+authority-denial-matrix:
+	./scripts/verify-authority-denial-matrix.sh
 
 release-review:
 	@context="$$(git status --short; git diff -- CHANGELOG.md; git log -1 --oneline; git show HEAD:Makefile; git show HEAD:scripts/release.sh; git show HEAD:.github/workflows/release.yml)"; \
