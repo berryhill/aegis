@@ -75,6 +75,10 @@ setup_repo() {
 - Pending release change.
 EOF
     "$real_git" init -q -b main "$repo"
+    # Keep the release fixture hermetic from operator-global Git hooks. Those
+    # hooks protect real commits but must not reinterpret this disposable repo.
+    mkdir -p "$root/$name/empty-hooks"
+    "$real_git" -C "$repo" config core.hooksPath "$root/$name/empty-hooks"
     "$real_git" -C "$repo" config user.name 'Release Test'
     "$real_git" -C "$repo" config user.email 'release-test@example.invalid'
     "$real_git" -C "$repo" add CHANGELOG.md scripts/release.sh
@@ -235,6 +239,8 @@ setup_repo conflict
 (
     other="$root/conflict/other"
     "$real_git" clone -q --branch main "$origin" "$other"
+    mkdir -p "$root/conflict/other-hooks"
+    "$real_git" -C "$other" config core.hooksPath "$root/conflict/other-hooks"
     "$real_git" -C "$other" config user.name 'Other Release Test'
     "$real_git" -C "$other" config user.email 'other@example.invalid'
     "$real_git" -C "$other" tag -a v9.8.7 -m 'Aegis v9.8.7'
@@ -341,6 +347,8 @@ setup_repo divergent-origin
 (
     other="$root/divergent-origin/other"
     "$real_git" clone -q --branch main "$origin" "$other"
+    mkdir -p "$root/divergent-origin/other-hooks"
+    "$real_git" -C "$other" config core.hooksPath "$root/divergent-origin/other-hooks"
     "$real_git" -C "$other" config user.name 'Other Release Test'
     "$real_git" -C "$other" config user.email 'other@example.invalid'
     printf 'remote divergence\n' >"$other/remote.txt"
