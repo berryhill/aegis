@@ -36,14 +36,16 @@ var (
 )
 
 type Service struct {
-	Config    config.Config
-	Store     *store.Store
-	Audit     AuditAuthority
-	Hermes    *hermes.Adapter
-	Log       *slog.Logger
-	Now       func() time.Time
-	Current   func() (*user.User, error)
-	LookupEnv func(string) (string, bool)
+	Config            config.Config
+	Store             *store.Store
+	Authority         core.AuthorityRepository
+	AuthorityCommands core.AuthorityCommandRepository
+	Audit             AuditAuthority
+	Hermes            *hermes.Adapter
+	Log               *slog.Logger
+	Now               func() time.Time
+	Current           func() (*user.User, error)
+	LookupEnv         func(string) (string, bool)
 
 	CredentialAuthority *credentials.Authority
 	capMu               sync.RWMutex
@@ -67,8 +69,8 @@ type AuditDeliveryAuthority interface {
 	RebuildAuditProjection(context.Context) (core.AuditDeliveryStatus, error)
 }
 
-func New(cfg config.Config, st *store.Store, h *hermes.Adapter, log *slog.Logger) *Service {
-	return &Service{Config: cfg, Store: st, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
+func New(cfg config.Config, st *store.Store, authority core.AuthorityRepository, authorityCommands core.AuthorityCommandRepository, h *hermes.Adapter, log *slog.Logger) *Service {
+	return &Service{Config: cfg, Store: st, Authority: authority, AuthorityCommands: authorityCommands, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
 }
 
 func (s *Service) resolveProviderCredential(provider string, scopes []string) ([]hermes.Credential, error) {
@@ -1063,43 +1065,62 @@ func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent 
 	}
 	m := core.Mandate{ID: store.ID("mandate"), Subject: sub, AgentID: agent, StanzaID: st.ID, CharterRevision: c.Charter.Revision, CharterDigest: c.Digest, Runtime: rt, Target: c.Charter.Runtime.Target, DeploymentID: s.Config.Credentials.Authority.DeploymentID, Environment: env, Capabilities: append([]string(nil), st.Grant.Capabilities...), Tools: append([]string(nil), st.Grant.Tools...), Scopes: st.Scopes, Hermes: st.Hermes, IssuedAt: now, ExpiresAt: expires}
 	m.Hermes.Toolsets = toolsets
-	if err = s.Store.Save("mandates", m.ID, m); err != nil {
+	if err = s.Authority.CreateMandate(ctx, m); err != nil {
 		return m, d, err
 	}
 	_ = s.audit(ctx, core.AuditEvent{Type: "session", SubjectID: sub.ID, PrincipalID: sub.PrincipalID, AgentID: agent, StanzaID: st.ID, MandateID: m.ID, CharterRevision: c.Charter.Revision, CharterDigest: c.Digest, Runtime: rt.Runtime, Outcome: "success", Reason: "mandate_issued"})
 	return m, d, nil
 }
 func (s *Service) GetMandate(id string) (core.Mandate, error) {
-	var m core.Mandate
-	return m, s.Store.Load("mandates", id, &m)
+	return s.Authority.GetMandate(context.Background(), id)
 }
 
-func (s *Service) mandateRevocations(mandateID string) ([]core.AuthorityRevocation, error) {
-	var revocations []core.AuthorityRevocation
-	err := s.Store.List("authority-revocations", func(raw json.RawMessage) error {
-		var revocation core.AuthorityRevocation
-		if err := json.Unmarshal(raw, &revocation); err != nil {
+func (s *Service) authorityContextForSession(ctx context.Context, sessionID string) (core.AuthorityContext, error) {
+	contexts, err := s.Authority.ListAuthorityContexts(ctx)
+	if err != nil {
+		return core.AuthorityContext{}, err
+	}
+	var matched core.AuthorityContext
+	for _, authority := range contexts {
+		if authority.SessionID != sessionID {
+			continue
+		}
+		if matched.ID != "" {
+			return core.AuthorityContext{}, errors.New("runtime session has ambiguous authority contexts")
+		}
+		matched = authority
+	}
+	if matched.ID == "" {
+		return core.AuthorityContext{}, errors.New("runtime session authority context is unavailable")
+	}
+	return matched, nil
+}
+
+func (s *Service) processAuthorityCommand(ctx context.Context, kind core.AuthorityCommandKind, authority core.AuthorityContext, reason string) error {
+	now := s.Now().UTC()
+	command := core.AuthorityCommand{
+		ID: "authority-" + string(kind) + "-" + store.ID("command"), Kind: kind,
+		MandateID: authority.MandateID, AuthorityContextID: authority.ID,
+		ActorSubjectID: authority.SubjectID, ActorAuthentication: "aegis-controller",
+		IssuedAt: now, ExpiresAt: authority.ExpiresAt, Reason: reason,
+	}
+	if kind == core.AuthorityCommandActivate {
+		command.ExpectedSequence = 1
+	} else {
+		projection, err := s.AuthorityCommands.CurrentAuthorityProjection(ctx, authority.ID)
+		if err != nil {
 			return err
 		}
-		if revocation.MandateID == mandateID {
-			revocations = append(revocations, revocation)
-		}
-		return nil
-	})
-	return revocations, err
+		command.ExpectedSequence = projection.SourceSequence + 1
+		command.ExpectedPreviousDigest = projection.SourceFactDigest
+	}
+	command.Digest = core.AuthorityCommandDigest(command)
+	_, err := s.AuthorityCommands.ProcessAuthorityCommand(ctx, command, now, s.Config.Principal.ID)
+	return err
 }
 
 func (s *Service) validateMandate(m core.Mandate) error {
 	now := s.Now()
-	revocations, err := s.mandateRevocations(m.ID)
-	if err != nil {
-		return err
-	}
-	for _, revocation := range revocations {
-		if !now.Before(revocation.RevokedAt) {
-			return fmt.Errorf("%w: mandate revoked", ErrDenied)
-		}
-	}
 	if !now.Before(m.ExpiresAt) || !now.Before(m.Subject.ExpiresAt) {
 		return ErrExpired
 	}
@@ -1192,11 +1213,21 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		IssuedAt: issuedAt, ExpiresAt: m.ExpiresAt,
 	}
 	authority.Digest = core.AuthorityContextDigest(authority)
-	if err = s.Store.Create("authority-contexts", authority.ID, authority); err != nil {
+	if err = s.Authority.CreateAuthorityContext(ctx, authority); err != nil {
+		return core.Session{}, err
+	}
+	if err = s.processAuthorityCommand(ctx, core.AuthorityCommandActivate, authority, "runtime_session_start"); err != nil {
 		return core.Session{}, err
 	}
 	// A fresh authoritative revocation/expiry read immediately precedes launch.
 	if err = s.validateMandate(m); err != nil {
+		return core.Session{}, err
+	}
+	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, s.Now())
+	if err != nil || !admission.Admitted {
+		if err == nil {
+			err = fmt.Errorf("%w: authority admission denied: %s", ErrDenied, admission.ReasonCode)
+		}
 		return core.Session{}, err
 	}
 	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, authority, credentials, bridge)
@@ -1384,6 +1415,17 @@ func (s *Service) InspectSession(id string) (core.Session, bool, error) {
 	return x, processMatches(x.RuntimePID, x.ProcessStart), nil
 }
 func (s *Service) endSession(ctx context.Context, id, status, reason string, revoke bool) error {
+	authority, err := s.authorityContextForSession(ctx, id)
+	if err != nil {
+		return err
+	}
+	kind := core.AuthorityCommandRevoke
+	if status == "expired" {
+		kind = core.AuthorityCommandExpire
+	}
+	if err = s.processAuthorityCommand(ctx, kind, authority, reason); err != nil {
+		return err
+	}
 	var sess core.Session
 	if err := s.Store.Update("sessions", id, func(b []byte) (any, error) {
 		if err := json.Unmarshal(b, &sess); err != nil {
@@ -1399,16 +1441,6 @@ func (s *Service) endSession(ctx context.Context, id, status, reason string, rev
 		return sess, nil
 	}); err != nil {
 		return err
-	}
-	if revoke {
-		now := s.Now()
-		revocation := core.AuthorityRevocation{
-			ID: store.ID("revocation"), MandateID: sess.Mandate.ID,
-			Reason: reason, RevokedAt: now, RecordedBy: s.Config.Principal.ID,
-		}
-		if err := s.Store.Create("authority-revocations", revocation.ID, revocation); err != nil {
-			return err
-		}
 	}
 	s.revokeBrokerCapabilities(sess.ID)
 	stop, cancel := context.WithTimeout(ctx, 5*time.Second)

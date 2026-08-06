@@ -23,6 +23,8 @@ uid=$(id -u)
 user=$(id -un)
 sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" "$work/aegis.yaml" "$work/office-charter.json"
 cd "$work"
+mkdir -m 0700 "$work/.aegis"
+go run "$repo/scripts/demo-authority-init" "$work/.aegis/state/persistence/authority-v1"
 
 sanitize() {
   sed \
