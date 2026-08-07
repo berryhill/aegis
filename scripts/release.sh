@@ -101,7 +101,16 @@ if existing:
     raise SystemExit(f"CHANGELOG.md already contains a {version} release heading")
 if not pending.strip():
     raise SystemExit("CHANGELOG.md has no unreleased entries")
-destination.write_text(before + marker + "\n\n" + heading + after)
+# Place the new release heading AFTER the existing Unreleased entries so
+# the resulting file keeps Unreleased on top with the released entries
+# appended as a new section, not interleaved between heading markers.
+if next_release < 0:
+    body_before_next = after
+    body_after_next = ""
+else:
+    body_before_next = after[:next_release]
+    body_after_next = after[next_release:]
+destination.write_text(before + marker + body_before_next.rstrip("\n") + "\n\n" + heading + "\n" + body_after_next)
 '
 }
 

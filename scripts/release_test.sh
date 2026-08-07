@@ -97,7 +97,21 @@ import os
 from pathlib import Path
 p = Path("CHANGELOG.md")
 t = p.read_text()
-p.write_text(t.replace("## Unreleased\n", "## Unreleased\n\n## [9.8.7] - " + os.environ["RELEASE_DATE"] + "\n", 1))
+# Mirror scripts/release.sh prepare_changelog: place the release heading
+# AFTER the existing Unreleased entries, not directly after the marker.
+marker = "## Unreleased"
+if t.count(marker) != 1:
+    raise SystemExit("test fixture CHANGELOG.md must contain exactly one Unreleased heading")
+before, after = t.split(marker, 1)
+next_release = after.find("\n## ")
+if next_release < 0:
+    body_before_next = after
+    body_after_next = ""
+else:
+    body_before_next = after[:next_release]
+    body_after_next = after[next_release:]
+release_heading = "## [9.8.7] - " + os.environ["RELEASE_DATE"]
+p.write_text(before + marker + body_before_next.rstrip("\n") + "\n\n" + release_heading + "\n" + body_after_next)
 '
     "$real_git" add CHANGELOG.md
     "$real_git" commit -q -m 'Prepare v9.8.7 release'
