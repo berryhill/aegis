@@ -19,6 +19,7 @@ go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 govulncheck ./...
 test -z "$(gofmt -l ./cmd ./internal)"
 ./scripts/verify_installed_mvi_test.sh
+./scripts/verify_release_candidate_test.sh
 ./scripts/verify-installed-mvi.sh
 ```
 
@@ -61,6 +62,8 @@ The target validates exact stable SemVer and classifies fresh, resumable-local, 
 If an atomic push fails after the local release commit and signed annotated tag are created, rerun the same command. Recovery accepts only the exact fail-closed state: the immutable tag signature and annotation verify; local `main` is its target; the single-parent release commit changes only the changelog, preserves the parent changelog outside additive Unreleased entries, and reproduces the release transformation; and `origin/main` is either that commit or its verified parent. The script then re-verifies the exact tagged source and tag signature without regenerating the changelog, committing, moving, deleting, recreating, or re-signing the tag. It atomically pushes `main` and the tag when the remote is at the parent, or pushes only the existing tag when remote `main` already has the commit. A matching remote tag is reported without republication; any object/peeled-commit conflict, lightweight or bad tag, unexpected release file, staged state, or divergent remote fails with manual remediation. Force pushes are never used.
 
 Invoking non-dry-run `make release` is the operator's publication authorization. Use `RELEASE_DRY_RUN=1 make release VERSION=...` to run locally safe classification and verification and print the exact action without changing worktree files, refs, or remotes. Dry-run does not create a signing preflight signature; recovery still verifies the existing signature.
+
+For an owner-selected candidate, first run `scripts/verify-release-candidate.sh` exactly as documented in `docs/QUICKSTART.md`. Its five explicit inputs bind a stable version, clean `HEAD`, real non-symlink Hermes executable, empty repository-local evidence workspace, and strict bounded decision record. The verifier builds the four archives once, reuses the extracted native binary by digest, rehearses replacement/rollback and withdrawal only below that workspace, and records `published=false`. A `release` value in this local record does not push a tag, authenticate the author, or replace the non-dry-run `make release` authorization boundary. `hold` and `withdraw` likewise record a decision without moving or deleting any repository or GitHub release ref.
 
 The tag-triggered release workflow reruns formatting, tests, race tests, vet, and vulnerability checks; then uses the same `scripts/verify-installed-mvi.sh` path as ordinary CI to cross-build Linux/macOS archives for amd64/arm64, verify checksums and the extracted native binary's embedded version, and prove isolated bare non-TTY first run fails closed without production-state creation. It then creates the GitHub release. Tag creation and pushing are never delegated to Hermes. Until that workflow publishes a non-draft stable release, `aegis update` correctly continues to report the previous published version; it never treats local or remote Git tags as release assets.
 

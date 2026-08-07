@@ -16,6 +16,8 @@ go install github.com/berryhill/aegis/cmd/aegis@latest
 
 Alternatively, download the matching archive and `SHA256SUMS` from the GitHub release. Release archives support Linux and macOS on amd64 and arm64. The release workflow and ordinary CI use the same repository-owned `scripts/verify-installed-mvi.sh` path to build all four archives, verify `SHA256SUMS`, extract the native archive, check its injected stable version, and prove that bare non-TTY first run fails closed without creating `~/.argis`. A release-archive installation can check for or atomically install the latest release:
 
+Before publication, maintainers can run the separately gated `scripts/verify-release-candidate.sh` against an explicit clean source revision, supported Hermes executable, empty repository-local evidence workspace, and exact operator-authored decision JSON. It builds once, reuses one digest-bound native candidate, rehearses rollback and local-staging withdrawal, and records that no publication or production installation was mutated. The decision record is evidence of supplied intent, not authentication or publication authorization; `make release` remains the separate operator-controlled publication transaction. See the quickstart for the exact schema and invocation.
+
 ```sh
 aegis update --check
 aegis update
@@ -156,6 +158,7 @@ Audit records are cross-process locked, hash-linked, and checked against Ed25519
 gofmt -w cmd internal
 go build ./cmd/aegis
 ./scripts/verify_installed_mvi_test.sh
+./scripts/verify_release_candidate_test.sh
 ./scripts/verify-installed-mvi.sh
 go test ./...
 go test -race ./...
