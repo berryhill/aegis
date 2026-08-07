@@ -77,6 +77,10 @@ func TestFakePinentryProcess(t *testing.T) {
 				fmt.Fprintln(os.Stdout, "OK")
 			case "post-failure":
 				fmt.Fprintln(os.Stdout, "WHAT")
+			case "s-status-before-data":
+				fmt.Fprintln(os.Stdout, "S ERROR fake status before data")
+				fmt.Fprintln(os.Stdout, "D "+assuanEncode([]byte(payload)))
+				fmt.Fprintln(os.Stdout, "OK")
 			case "oversized-line":
 				fmt.Fprintln(os.Stdout, strings.Repeat("x", pinentryLineLimit+1))
 			case "oversized-stderr":
@@ -182,6 +186,19 @@ func TestPinentryPolicyBoundsUseBytes(t *testing.T) {
 				t.Fatalf("valid=%t err=%v", err == nil, err)
 			}
 		})
+	}
+}
+
+func TestPinentrySStatusBeforeDataOK(t *testing.T) {
+	canary := "twelve-byte-value"
+	service := testPassphraseService(t, func() string { return "s-status-before-data" }, func() string { return canary }, "")
+	value, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: AuthorityPassphraseUnlock, Input: bytes.NewReader(nil), Diagnostic: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wipeSecret(value)
+	if string(value) != canary {
+		t.Fatal("decoded value mismatch after S status line")
 	}
 }
 
