@@ -49,6 +49,17 @@ jobs:
           cache: true
       - run: go test -race ./...
 
+  authority-denial-matrix:
+    name: Authority denial matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: ./scripts/verify-authority-denial-matrix.sh
+
   vulnerability-scan:
     name: Vulnerability scan
     runs-on: ubuntu-latest
