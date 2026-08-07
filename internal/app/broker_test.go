@@ -21,6 +21,7 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/credentials/broker"
+	"github.com/berryhill/aegis/internal/store"
 )
 
 type brokerTestCustodian struct{ key []byte }
@@ -124,6 +125,23 @@ func brokerAuthorizedService(t *testing.T) (*Service, string, string, *credentia
 	pid := os.Getpid()
 	session := core.Session{ID: "session-broker", Mandate: mandate, RuntimePID: pid, ProcessStart: processStartToken(pid), Status: "running", StartedAt: now, RuntimeHome: t.TempDir()}
 	if err = s.Store.Save("sessions", session.ID, session); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Store.Save("sessions", session.ID, session); err != nil {
+		t.Fatal(err)
+	}
+	authorityContext := core.AuthorityContext{
+		ID: store.ID("authority-context"), MandateID: mandate.ID, SessionID: session.ID,
+		SubjectID: mandate.Subject.ID, AgentID: mandate.AgentID, CharterRevision: mandate.CharterRevision,
+		CharterDigest: mandate.CharterDigest, Runtime: mandate.Runtime,
+		Authority: core.EffectiveAuthority{StanzaID: mandate.StanzaID, Capabilities: mandate.Capabilities, Tools: mandate.Tools, Memory: mandate.Scopes.Memory, Credentials: mandate.Scopes.Credentials, Hermes: mandate.Hermes},
+		IssuedAt:  now, ExpiresAt: mandate.ExpiresAt,
+	}
+	authorityContext.Digest = core.AuthorityContextDigest(authorityContext)
+	if err = s.Authority.CreateAuthorityContext(context.Background(), authorityContext); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.processAuthorityCommand(context.Background(), core.AuthorityCommandActivate, authorityContext, "broker_test_session_start"); err != nil {
 		t.Fatal(err)
 	}
 	tokenBytes := make([]byte, 32)
@@ -452,21 +470,15 @@ func TestBrokerCapabilitySessionIsolationExpiryAndProcessLoss(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalExpiry := mandate.ExpiresAt
-	mandate.ExpiresAt = s.Now()
-	if err = s.Store.Save("mandates", mandate.ID, mandate); err != nil {
-		t.Fatal(err)
-	}
+	originalNow := s.Now
+	s.Now = func() time.Time { return mandate.ExpiresAt }
 	s.capabilities[digest] = capability
 	marker++
 	request = nextBrokerRequest(request, marker)
 	if _, err = s.ExecuteBroker(context.Background(), peer, request, func(context.Context, []byte, broker.Grant) (broker.Result, error) { return broker.Result{}, nil }); !errors.Is(err, ErrDenied) {
 		t.Fatal("expired mandate was accepted")
 	}
-	mandate.ExpiresAt = originalExpiry
-	if err = s.Store.Save("mandates", mandate.ID, mandate); err != nil {
-		t.Fatal(err)
-	}
+	s.Now = originalNow
 	capability.ExpiresAt = s.Now().Add(-time.Second)
 	s.capabilities[digest] = capability
 	marker++

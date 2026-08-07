@@ -57,6 +57,7 @@ wait
 	}
 
 	configPath := filepath.Join(root, "aegis.yaml")
+	statePath := filepath.Join(root, "state")
 	configData := fmt.Sprintf(`state_dir: %s
 runtime_default: hermes
 hermes_executable: %s
@@ -82,10 +83,11 @@ credentials:
   references: {}
   provider_auth:
     test: {type: environment, source_env: AEGIS_E2E_PROVIDER_KEY, target_env: TEST_PROVIDER_KEY}
-`, filepath.Join(root, "state"), hermes, uid, current.Username, filepath.Join(root, "checkpoints"))
+`, statePath, hermes, uid, current.Username, filepath.Join(root, "checkpoints"))
 	if err = os.WriteFile(configPath, []byte(configData), 0600); err != nil {
 		t.Fatal(err)
 	}
+	initializeOperationalAuthority(t, statePath)
 
 	charter := core.Charter{
 		SchemaVersion: core.SchemaVersion,

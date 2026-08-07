@@ -178,6 +178,14 @@ func (s *Service) ExecuteBroker(ctx context.Context, peer broker.Peer, request b
 	if err != nil || s.validateMandate(mandate) != nil || mandate.Subject.ID == "" || mandate.Subject.ID != capability.SubjectID || mandate.AgentID != capability.AgentID || mandate.StanzaID != capability.StanzaID || mandate.DeploymentID != capability.DeploymentID || mandate.CharterDigest != capability.CharterDigest {
 		return deny("mandate_invalid")
 	}
+	authority, err := s.authorityContextForSession(ctx, session.ID)
+	if err != nil || authority.MandateID != mandate.ID {
+		return deny("authority_context_invalid")
+	}
+	admission, err := s.AuthorityCommands.AuthorityAdmission(ctx, authority.ID, authority.Digest, now)
+	if err != nil || !admission.Admitted {
+		return deny("authority_inactive")
+	}
 	if !processMatches(capability.RuntimePID, capability.ProcessStart) || !processDescendsFrom(int(peer.PID), capability.RuntimePID, capability.ProcessStart) {
 		return deny("runtime_process_identity_lost")
 	}
