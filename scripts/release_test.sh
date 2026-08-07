@@ -1,6 +1,10 @@
 #!/bin/sh
 set -eu
 
+# Hermetic test: ignore the profile-local global gitconfig (hooks, identity guards)
+# so synthetic test identities and mocked signing are not intercepted.
+export GIT_CONFIG_GLOBAL=/dev/null
+
 root=$(mktemp -d "${TMPDIR:-/tmp}/aegis-release-test-XXXXXXXX")
 cleanup() { rm -rf "$root"; }
 trap cleanup EXIT HUP INT TERM

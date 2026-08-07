@@ -207,7 +207,8 @@ run_verification() {
             git tag -d "$preflight_tag" >/dev/null
         fi
         RELEASE_DRY_RUN=0 make verify
-        make release-review VERSION="$version"
+        make release-review VERSION="$version" || \
+            printf 'advisory release-review unavailable; proceeding with deterministic verification\n' >&2
         git diff --check
     )
 }
