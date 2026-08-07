@@ -91,10 +91,10 @@ func TestApplyRefusesAuthorityCollisionCreatedAfterPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = os.MkdirAll(filepath.Join(state, "sessions"), 0700); err != nil {
+	if err = os.MkdirAll(filepath.Join(state, "mandates"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(filepath.Join(state, "sessions", "retained.json"), []byte("{}"), 0600); err != nil {
+	if err = os.WriteFile(filepath.Join(state, "mandates", "retained.json"), []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err = service.Apply(context.Background(), plan); err == nil {
