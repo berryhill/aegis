@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.1] - 2026-08-07
+
 ### Added
 
 - Added a repository-owned integrated authority denial matrix covering crash/restart, corruption/substitution, race, bounded key-codec fuzz, and three generated secret canary campaigns. The matrix runs in CI and is exposed through `make authority-denial-matrix`; proof state stays in a mode-`0700` repository-local disposable directory and is removed on exit (#29).
