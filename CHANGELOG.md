@@ -4,6 +4,21 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added a repository-owned integrated authority denial matrix covering crash/restart, corruption/substitution, race, bounded key-codec fuzz, and three generated secret canary campaigns. The matrix runs in CI and is exposed through `make authority-denial-matrix`; proof state stays in a mode-`0700` repository-local disposable directory and is removed on exit (#29).
+- Added a separately gated release-candidate acceptance verifier (`scripts/verify-release-candidate.sh` plus its hermetic regression test) that requires an exact stable version, source revision, real Hermes executable, empty repository-local workspace, and strict operator-supplied decision record; builds the release archives once; binds the extracted native candidate, Hermes executable, decision, and source by SHA-256; rehearses exact local rollback and withdrawal without touching production or publication state; and emits a bounded evidence manifest. Named denial tests reject malformed, oversized, substituted, symlinked, and revision-mismatched inputs before a build (#30).
+- Added an explanatory launch-asset pass for the 0.2.1 cycle that documents the new verifier, refreshes the quickstart, recording, demo, and contributor pointers, and pins the Makefile release default to the in-flight version so a bare `make release` prepares the right tag (#30).
+
+### Changed
+
+- Made Badger the exclusive operational authority repository: removed the generic filesystem authority repository and routed production authority/session families through generation-managed Badger. Narrow authority and command repository contracts are now injected into session, broker, command, API, and slash consumers; executable demos, tests, architecture, security, and launch documentation are updated to match the exclusive boundary (#23).
+- Enforced fresh three-plane admission for broker authority resolution: the broker now uses one replay-verified canonical authority snapshot immediately before credential resolution, binds that snapshot exactly to the session, mandate, authority-context identity, digest, and evaluation instant, and independently fails closed on action capability, declared and runtime-verified Aegis tool authority, and credential scope. The dispatcher provides a prerequisite commit-then-quarantine handshake for Aegis tool invocation and the exact context digest becomes the Aegis tool ingress key (#25).
+
+### Fixed
+
+- Tolerated legitimate Assuan `S ` status records in the pinentry GETPIN response loop so `aegis init` succeeds against pinentry backends (e.g. `pinentry-curses` when its `isatty` probe fails, `pinentry-gnome3` falling back from DBus) that emit non-fatal status before the final `ERR` line. The `S ` prefix is informational in the Assuan protocol and is now ignored instead of being classified as a generic protocol failure (#32, closes #31).
+
 ## [0.2.0] - 2026-08-07
 
 ### Added

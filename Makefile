@@ -5,7 +5,7 @@ SHELL := scripts/verify-shell.sh
 # load packages that require go 1.26 (this project).
 export GOTOOLCHAIN := go1.26.5
 
-VERSION ?= 0.2.0
+VERSION ?= 0.2.1
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
 .PHONY: verify authority-denial-matrix release-review release
