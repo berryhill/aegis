@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.0] - 2026-08-07
+
 ### Added
 
 - Added one repository-owned installed-MVI verifier used by CI and release publication. It builds release-shaped Linux/macOS archives for amd64/arm64, generates and verifies `SHA256SUMS`, checks the extracted native binary's injected stable version, and proves bare non-TTY first run reports `manager_not_initialized` without creating production state. Focused denial tests reject invalid versions, non-empty output, and symlink output before mutation.
