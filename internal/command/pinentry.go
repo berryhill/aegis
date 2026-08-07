@@ -351,6 +351,9 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 				return fail(PassphraseCancelled, "authority passphrase entry cancelled")
 			}
 			return fail(PassphraseProtocol, "pinentry rejected protected input")
+		case strings.HasPrefix(line, "S "):
+			// Assuan status lines are informational; ignore them and keep reading.
+			continue
 		default:
 			wipeSecret(data)
 			return fail(PassphraseProtocol, "pinentry returned an unexpected protocol record")
