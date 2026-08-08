@@ -174,7 +174,7 @@ func TestNormativeFleetControlScopeRemainsCompleteAndNonContradictory(t *testing
 		"specs/README.md":            {"Agent Registry", "Loop", "Graph", "Execution Queue"},
 		"specs/CANONICAL_DOMAINS.md": {"## Agent Registry", "## Loops", "## Graphs", "## Execution Queue", "## Disposition"},
 		"specs/PLUMBING.md":          {"new bounded Graph domain", "do not restore the former universal aggregate"},
-		"specs/STORAGE.md":           {"Fleet-control definitions", "Fleet-control lifecycle", "UNQUALIFIED — adapter not selected"},
+		"specs/STORAGE.md":           {"Fleet-control definitions", "Fleet-control lifecycle", "shared `state/persistence/fleet-v1`", "Badger `github.com/dgraph-io/badger/v4` `v4.9.5`", "fixed 256 MiB free reserve"},
 		"specs/CONTROL_PLANE_API.md": {"/v1/agents", "/v1/loops", "/v1/graphs", "/v1/queue", "Readiness is evaluated per attempted action"},
 		"docs/launch/OPEN_SOURCE_LAUNCH_AND_GROWTH_PLAN.md": {"implemented substrate", "installed fixture proves Registry", "atomic single-winner claim/lease"},
 	}

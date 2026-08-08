@@ -81,8 +81,8 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
-- A complete or externally supported Agent Registry, Loop, Graph, or Execution Queue product surface or route. The Registry domain foundation is internal, fixture-backed, and in-memory only.
-- Qualified fleet-control definition storage or atomic queue claim/lease persistence.
+- A complete or externally supported Agent Registry, Loop, Graph, or Execution Queue product surface or route. The Registry domain foundation is internal, fixture-backed, and in-memory only; the other product domains and all external routes remain unimplemented.
+- Implemented fleet-control persistence adapters, migration/backup operations, or atomic queue claim/lease behavior; only their exact qualified storage lifecycle contract exists.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
 ## Launch gates
