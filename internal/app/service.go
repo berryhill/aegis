@@ -238,6 +238,16 @@ func (s *Service) requirePrincipal(sub core.Subject) error {
 	return nil
 }
 
+// RequirePrincipal exposes the shared principal freshness decision to trusted
+// transports. It does not accept browser- or model-selected identity fields.
+func (s *Service) RequirePrincipal(sub core.Subject) error { return s.requirePrincipal(sub) }
+
+// AuditConsoleSession emits metadata-only browser authentication evidence.
+// Session, bootstrap, CSRF, cookie, and bearer material are never accepted.
+func (s *Service) AuditConsoleSession(ctx context.Context, subject core.Subject, outcome, reason string) error {
+	return s.audit(ctx, core.AuditEvent{Type: "console_session", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason})
+}
+
 func (s *Service) Runtime(ctx context.Context) (core.RuntimeDescriptor, error) {
 	return s.Hermes.Discover(ctx)
 }

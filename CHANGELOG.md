@@ -7,6 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ### Added
 
 - Added one standard-library-only shared reference layer for immutable identity/digest and identity/revision/digest bindings. Its deterministic versioned JSON codecs validate complete bindings and reject malformed identifiers or digests, unsupported schemas, zero revisions, unknown fields, duplicate object keys, invalid UTF-8, and trailing values; architecture tests enforce canonical ownership and inward-only dependency direction. References confer no authority and the fleet-control domains remain unimplemented.
+- Added an embedded accessible `/console` shell with responsive Agent Registry list/detail/inspector primitives and explicit loading, empty, unavailable, and error states. Browser access is derived only from an already authenticated principal through a random single-use bootstrap and a short-lived in-memory `HttpOnly` cookie session; exact-origin, CSRF, restrictive browser headers, bounded pagination, loopback-only plaintext, and reusable-bearer exclusion fail closed. The shell is presentation and transport substrate, not a completed fleet-control domain or runtime mandate.
 
 ### Changed
 

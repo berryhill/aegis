@@ -62,6 +62,12 @@ The copied files are local working files and should not be committed.
 
 Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the API token is shown as `[REDACTED]`.
 
+## Verify the console contract
+
+The example configuration serves the embedded shell at `http://127.0.0.1:8443/console` and restricts plaintext use to loopback. Start the foreground service with `./aegis --config .aegis.yaml serve`. Loading the shell alone does not authenticate the browser. An already authenticated principal must request `/v1/console/bootstrap` through the protected local API transport and enter that single-use value at the exact configured origin. Do not put the bootstrap or API bearer in a URL, command history, recording, or browser storage. The bootstrap expires after 30 seconds by default; the resulting volatile browser session expires after five minutes or when the source subject expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback.
+
+The shell currently proves the authenticated transport and accessible Agent Registry list/detail/inspector primitives, including loading, empty, unavailable, and error states. Loop, Graph, and Execution Queue links are product navigation only; their services and stable routes remain unimplemented. The dependency-free static contract can be checked locally with `python3 scripts/console_security_test.py`; the network and denial behavior is covered by `go test ./internal/api ./internal/console -count=1`.
+
 After any workflow that emits canonical audit events, verify and advance the local derived delivery projection with:
 
 ```sh

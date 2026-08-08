@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,6 +226,13 @@ type API struct {
 	WriteTimeout    time.Duration `mapstructure:"write_timeout" json:"write_timeout"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout" json:"shutdown_timeout"`
 	MaxBodyBytes    int64         `mapstructure:"max_body_bytes" json:"max_body_bytes"`
+	Console         APIConsole    `mapstructure:"console" json:"console"`
+}
+type APIConsole struct {
+	Origin       string        `mapstructure:"origin" json:"origin"`
+	SessionTTL   time.Duration `mapstructure:"session_ttl" json:"session_ttl"`
+	BootstrapTTL time.Duration `mapstructure:"bootstrap_ttl" json:"bootstrap_ttl"`
+	MaxPageSize  int           `mapstructure:"max_page_size" json:"max_page_size"`
 }
 type Retention struct {
 	DesignHomes  bool `mapstructure:"design_homes" json:"design_homes"`
@@ -304,7 +313,7 @@ func Defaults() Config {
 }
 
 func DefaultsFor(resolved layout.Layout) Config {
-	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
+	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20, Console: APIConsole{Origin: "http://127.0.0.1:8443", SessionTTL: 5 * time.Minute, BootstrapTTL: 30 * time.Second, MaxPageSize: 100}}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
 
 // WithStateDir changes the state root while preserving explicit paths.
@@ -349,8 +358,23 @@ func (c Config) Validate() error {
 	if (c.API.TLSCertFile == "") != (c.API.TLSKeyFile == "") {
 		es = append(es, errors.New("api.tls_cert_file and api.tls_key_file must be configured together"))
 	}
-	if c.API.UnixSocket != "" && c.API.TLSCertFile != "" {
-		es = append(es, errors.New("API TLS is only supported for TCP listeners"))
+	consoleOrigin, consoleErr := url.Parse(c.API.Console.Origin)
+	if consoleErr != nil || consoleOrigin.Host == "" || consoleOrigin.Path != "" || consoleOrigin.RawQuery != "" || consoleOrigin.Fragment != "" || consoleOrigin.User != nil || consoleOrigin.Scheme != "http" && consoleOrigin.Scheme != "https" {
+		es = append(es, errors.New("api.console.origin must be an absolute HTTP origin"))
+	} else if consoleOrigin.Scheme != "https" {
+		host := consoleOrigin.Hostname()
+		ip := net.ParseIP(host)
+		if !strings.EqualFold(host, "localhost") && (ip == nil || !ip.IsLoopback()) {
+			es = append(es, errors.New("plaintext api.console.origin is restricted to loopback"))
+		}
+		listenHost, _, listenErr := net.SplitHostPort(c.API.Listen)
+		listenIP := net.ParseIP(listenHost)
+		if listenErr != nil || !strings.EqualFold(listenHost, "localhost") && (listenIP == nil || !listenIP.IsLoopback()) {
+			es = append(es, errors.New("plaintext API console requires a loopback TCP listener"))
+		}
+	}
+	if c.API.Console.SessionTTL <= 0 || c.API.Console.SessionTTL > 15*time.Minute || c.API.Console.BootstrapTTL <= 0 || c.API.Console.BootstrapTTL > time.Minute || c.API.Console.MaxPageSize < 1 || c.API.Console.MaxPageSize > 1000 {
+		es = append(es, errors.New("API console limits must be positive and bounded"))
 	}
 	if c.Audit.CheckpointDir == "" {
 		es = append(es, errors.New("audit.checkpoint_dir is required"))
@@ -470,11 +494,15 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 	v.SetDefault("api.write_timeout", d.API.WriteTimeout)
 	v.SetDefault("api.shutdown_timeout", d.API.ShutdownTimeout)
 	v.SetDefault("api.max_body_bytes", d.API.MaxBodyBytes)
+	v.SetDefault("api.console.origin", d.API.Console.Origin)
+	v.SetDefault("api.console.session_ttl", d.API.Console.SessionTTL)
+	v.SetDefault("api.console.bootstrap_ttl", d.API.Console.BootstrapTTL)
+	v.SetDefault("api.console.max_page_size", d.API.Console.MaxPageSize)
 	v.SetDefault("audit.checkpoint_dir", d.Audit.CheckpointDir)
 	v.SetDefault("manager", d.Manager)
 	v.SetEnvPrefix("AEGIS")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
+	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "api.console.origin", "api.console.session_ttl", "api.console.bootstrap_ttl", "api.console.max_page_size", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
 		_ = v.BindEnv(k)
 	}
 	if flags != nil {

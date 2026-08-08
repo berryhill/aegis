@@ -8,6 +8,8 @@ The current fleet-control MVI target is Agent Registry → immutable Loop revisi
 
 Start with the [five-minute quickstart](docs/QUICKSTART.md) or executable [no-key demonstration](docs/DEMO_NO_KEY.md). Normative behavior is defined in the [Markdown specifications](specs/README.md). Security boundaries are detailed in the [security policy](SECURITY.md), [threat model](docs/THREAT_MODEL.md), and [architecture](docs/ARCHITECTURE.md). See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and the repository-local [early contributor backlog](docs/contributing/ISSUE_BACKLOG.md).
 
+The serving control plane includes an embedded accessible shell at `/console`. It is a narrow authenticated view of the currently implemented registry adapter, not proof that the four fleet-control domains are complete. A browser cannot establish principal identity: an already authenticated principal must request a single-use bootstrap through the protected `/v1/console/bootstrap` API path, then exchange it from the configured exact console origin. The resulting in-memory cookie session is short-lived, bounded by the originating subject, `HttpOnly`, `SameSite=Strict`, and never persisted in browser storage; mutations additionally require exact-origin and CSRF checks. Plain HTTP is accepted only when both the origin and TCP listener are loopback. Configure TLS for every non-loopback deployment.
+
 ## Install and update
 
 Tagged releases use stable Semantic Versioning tags (`vMAJOR.MINOR.PATCH`). Install directly with Go:
