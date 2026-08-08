@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added one standard-library-only shared reference layer for immutable identity/digest and identity/revision/digest bindings. Its deterministic versioned JSON codecs validate complete bindings and reject malformed identifiers or digests, unsupported schemas, zero revisions, unknown fields, duplicate object keys, invalid UTF-8, and trailing values; architecture tests enforce canonical ownership and inward-only dependency direction. References confer no authority and the fleet-control domains remain unimplemented.
+
 ### Changed
 
 - Re-baselined the normative MVI around the bounded Agent Registry, Loop, Graph, and Execution Queue domains while preserving exact stanza/mandate authority, immutable revision references, fresh effect-boundary admission, and the prohibition on a universal mutable aggregate. Defined action-specific readiness, stable fleet-control resource roots, separate evidence/disposition ownership, and explicit unqualified storage gates for immutable definitions and atomic queue claim/lease lifecycle. Credential custody and the typed GitHub broker remain supported infrastructure but are no longer release-defining or a global prerequisite. Current launch documentation states that the fleet-control domains and routes are not implemented yet.

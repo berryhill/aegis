@@ -21,9 +21,10 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 // packages executable. A missing entry deliberately means that the package is
 // an outer composition package rather than a protected inner layer.
 var allowedInternalImports = map[string][]string{
+	"internal/reference":   {},
 	"internal/core":        {},
-	"internal/execution":   {"internal/core"},
-	"internal/evidence":    {"internal/store"},
+	"internal/execution":   {"internal/core", "internal/reference"},
+	"internal/evidence":    {"internal/reference", "internal/store"},
 	"internal/store":       {"internal/core"},
 	"internal/persistence": {"internal/core", "internal/persistence"},
 	"internal/credentials": {"internal/credentials"},
@@ -38,7 +39,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 	"core": {}, "credentials": {}, "evidence": {}, "execution": {},
 	"initialize": {}, "layout": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "persistence": {}, "reset": {}, "runtime": {},
-	"safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
+	"reference": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 }
 
 var externalDependencyOwners = map[string][]string{
@@ -47,6 +48,8 @@ var externalDependencyOwners = map[string][]string{
 }
 
 var canonicalTypeOwners = map[string]string{
+	"DigestRef":               "internal/reference",
+	"RevisionRef":             "internal/reference",
 	"Mandate":                 "internal/core",
 	"AuthorityContext":        "internal/core",
 	"AuthorityTransitionFact": "internal/core",
@@ -60,6 +63,10 @@ var canonicalTypeOwners = map[string]string{
 	"SecretRecord":            "internal/credentials",
 	"EncryptedSecretVersion":  "internal/credentials",
 	"CredentialBinding":       "internal/credentials",
+}
+
+var standardLibraryOnlyLayers = map[string]struct{}{
+	"internal/reference": {},
 }
 
 func TestProtectedPackagesRespectDependencyDirection(t *testing.T) {
@@ -99,6 +106,9 @@ func inspectProductionImports(root string) ([]string, error) {
 				return err
 			}
 			if !strings.HasPrefix(importPath, moduleInternal) {
+				if _, standardLibraryOnly := standardLibraryOnlyLayers[protected]; standardLibraryOnly && strings.Contains(strings.Split(importPath, "/")[0], ".") {
+					violations = append(violations, fmt.Sprintf("%s imports non-standard dependency %s: protected layer %s is standard-library-only", filepath.ToSlash(path), importPath, protected))
+				}
 				continue
 			}
 			target := "internal/" + strings.TrimPrefix(importPath, moduleInternal)
@@ -212,6 +222,42 @@ func TestBoundaryClassifierRejectsOutwardDependency(t *testing.T) {
 	}
 	if len(violations) != 2 || !strings.Contains(violations[0], "protected layer internal/core") || !strings.Contains(violations[1], "outer CLI adapter") {
 		t.Fatalf("prohibited dependency did not fail deterministically: %v", violations)
+	}
+}
+
+func TestReferenceLayerRejectsInternalAndThirdPartyDependencies(t *testing.T) {
+	cases := map[string]struct {
+		importPath string
+		want       string
+	}{
+		"internal dependency": {
+			importPath: "github.com/berryhill/aegis/internal/core",
+			want:       "protected layer internal/reference allows only []",
+		},
+		"third-party dependency": {
+			importPath: "github.com/example/dependency",
+			want:       "protected layer internal/reference is standard-library-only",
+		},
+	}
+	for name, test := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			directory := filepath.Join(root, "internal", "reference")
+			if err := os.MkdirAll(directory, 0700); err != nil {
+				t.Fatal(err)
+			}
+			fixture := []byte(fmt.Sprintf("package reference\nimport _ %q\n", test.importPath))
+			if err := os.WriteFile(filepath.Join(directory, "violation.go"), fixture, 0600); err != nil {
+				t.Fatal(err)
+			}
+			violations, err := inspectProductionImports(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(violations) != 1 || !strings.Contains(violations[0], test.want) {
+				t.Fatalf("reference dependency violation did not fail deterministically: %v", violations)
+			}
+		})
 	}
 }
 
