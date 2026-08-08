@@ -151,6 +151,44 @@ func repositoryRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 }
 
+func TestNormativeFleetControlScopeRemainsCompleteAndNonContradictory(t *testing.T) {
+	root := repositoryRoot(t)
+	required := map[string][]string{
+		"AGENTS.md":                  {"Agent Registry", "Loop", "Graph", "Execution Queue", "not release-defining fleet-control gates"},
+		"specs/MVP.md":               {"Agent Registry", "Loops", "Graphs", "Execution Queue", "/v1/agents", "/v1/loops", "/v1/graphs", "/v1/queue", "supporting infrastructure, not release-defining gates"},
+		"specs/README.md":            {"Agent Registry", "Loop", "Graph", "Execution Queue"},
+		"specs/CANONICAL_DOMAINS.md": {"## Agent Registry", "## Loops", "## Graphs", "## Execution Queue", "## Disposition"},
+		"specs/PLUMBING.md":          {"new bounded Graph domain", "do not restore the former universal aggregate"},
+		"specs/STORAGE.md":           {"Fleet-control definitions", "Fleet-control lifecycle", "UNQUALIFIED — adapter not selected"},
+		"specs/CONTROL_PLANE_API.md": {"/v1/agents", "/v1/loops", "/v1/graphs", "/v1/queue", "Readiness is evaluated per attempted action"},
+		"docs/launch/OPEN_SOURCE_LAUNCH_AND_GROWTH_PLAN.md": {"implemented substrate", "installed fixture proves Registry", "atomic single-winner claim/lease"},
+	}
+	for name, terms := range required {
+		content, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read normative surface %s: %v", name, err)
+		}
+		for _, term := range terms {
+			if !strings.Contains(string(content), term) {
+				t.Errorf("normative surface %s lost required fleet-control term %q", name, term)
+			}
+		}
+	}
+
+	mvp, err := os.ReadFile(filepath.Join(root, "specs", "MVP.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, contradiction := range []string{
+		"The release-defining use edge is the typed `github.get_repository.v1` operation",
+		"A configured principal can place one personal credential under encrypted Aegis custody, approve one exact grant",
+	} {
+		if strings.Contains(string(mvp), contradiction) {
+			t.Errorf("credential-centric release contradiction remains in specs/MVP.md: %q", contradiction)
+		}
+	}
+}
+
 func TestBoundaryClassifierRejectsOutwardDependency(t *testing.T) {
 	if matchesAnyLayer("internal/command", allowedInternalImports["internal/core"]) {
 		t.Fatal("core unexpectedly permits the CLI adapter")

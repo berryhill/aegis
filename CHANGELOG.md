@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+
+- Re-baselined the normative MVI around the bounded Agent Registry, Loop, Graph, and Execution Queue domains while preserving exact stanza/mandate authority, immutable revision references, fresh effect-boundary admission, and the prohibition on a universal mutable aggregate. Defined action-specific readiness, stable fleet-control resource roots, separate evidence/disposition ownership, and explicit unqualified storage gates for immutable definitions and atomic queue claim/lease lifecycle. Credential custody and the typed GitHub broker remain supported infrastructure but are no longer release-defining or a global prerequisite. Current launch documentation states that the fleet-control domains and routes are not implemented yet.
+
 ## [0.2.1] - 2026-08-07
 
 ### Added

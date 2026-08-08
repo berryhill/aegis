@@ -52,7 +52,9 @@ Thirty-second explanation:
 
 > Prompts and agent profiles can describe roles, but they do not authenticate callers. Aegis is an experimental Go control plane that maps authenticated identity to one reviewed trust stanza, binds authority to an exact charter and mandate, and launches Hermes Agent in a fresh runtime home with the approved configuration. It controls session authority and runtime materialization; it is not a host or network sandbox.
 
-## Defensible alpha claim
+## Defensible current substrate claim
+
+The fleet-control MVI is Agent Registry → immutable Loop revision → immutable Graph revision → authority-bound Execution Queue → evidence-gated disposition. Until that exact installed proof passes, release material must label the capabilities below as implemented substrate rather than claim fleet-control completion.
 
 The first release may claim that Aegis provides:
 
@@ -78,6 +80,9 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
+- Implemented Agent Registry, Loop, Graph, or Execution Queue product domains or routes.
+- Qualified fleet-control definition storage or atomic queue claim/lease persistence.
+- Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
 ## Launch gates
 
@@ -102,6 +107,9 @@ A public release is a no-go until every required gate is either verified or expl
 - [ ] Contribution guide and code of conduct have owner-approved contact and enforcement details.
 - [ ] Changelog matches the release commit.
 - [ ] Historical and future architecture documents are clearly labeled.
+- [ ] Agent Registry, Loop, Graph, and Execution Queue each have bounded domain ownership, immutable reference rules, and strict service/transport contracts.
+- [ ] `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue` call shared services and return distinct denied, unavailable, degraded, and genuinely empty states.
+- [ ] Credential-independent fleet actions and the installed acceptance proof run without downstream credential setup.
 
 ### Engineering verification
 
@@ -116,6 +124,8 @@ A public release is a no-go until every required gate is either verified or expl
 - [ ] Release builds succeed for every declared operating-system and architecture pair.
 - [ ] Generated checksums verify against all release artifacts.
 - [ ] The terminal recording is replayed and checked for secrets and personal paths.
+- [ ] One installed fixture proves Registry → Loop → Graph → Queue → fresh runtime admission → evidence-gated disposition, including durable denial and historical-drift reconstruction.
+- [ ] The exact fleet-control definition and queue persistence adapters are qualified for immutable publication, atomic single-winner claim/lease, crash recovery, retry, cancellation, and projection replay.
 
 ### Release operations
 

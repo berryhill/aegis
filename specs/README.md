@@ -10,7 +10,7 @@ This directory contains Aegis's normative, implementation-independent Markdown s
 - [Approval and provisioning](APPROVAL_AND_PROVISIONING.md) — exact review, approval, deterministic effects, receipts, and recovery.
 - [Runtime and sessions](RUNTIME_AND_SESSIONS.md) — explicit Hermes integration, mandates, launch isolation, and lifecycle.
 - [Storage](STORAGE.md) — post-Track-A storage classes, exact qualified persistence combinations, schema ownership, cross-store denial, and migration boundary.
-- [Canonical domain boundaries](CANONICAL_DOMAINS.md) — identity/authority, execution, evidence, and provisioning ownership without a cross-domain mutation aggregate.
+- [Canonical domain boundaries](CANONICAL_DOMAINS.md) — Registry, Loop, Graph, Queue, identity/authority, execution, evidence, disposition, and provisioning ownership without a cross-domain mutation aggregate.
 - [Built-in Aegis manager](AEGIS_MANAGER.md) — bare-command manager UX, secure prompt boundary, protected credential intake, local Ollama lifecycle, and implementation completion gates.
 - [Base manager end-to-end local session](BASE_MANAGER_END_TO_END.md) — focused implementation profile for wiring the manager UI, Hermes gateway, Aegis inference proxy, pinned Ollama route, typed proposals, protected credential operations, and bounded cleanup.
 - [Manager lifecycle and onboarding remediation](MANAGER_LIFECYCLE_AND_ONBOARDING.md) — focused remediation for cancellation-safe terminal input, graceful signal handling, bounded cleanup, protected-intake restoration, truthful degraded mode, and deterministic local-model onboarding.
@@ -22,4 +22,4 @@ This directory contains Aegis's normative, implementation-independent Markdown s
 
 The production Go implementation lives under `internal/` and `cmd/aegis/`. Executable tests enforce these contracts. The pre-implementation Go contract package formerly under `specs/` is retained only for provenance under `docs/archive/go-contracts/` as non-compiled `.go.txt` files; it is not a second authoritative domain model.
 
-When prose and code diverge, resolve the mismatch deliberately. Authority order is `AGENTS.md`, `specs/MVP.md`, the focused specifications above, and then supporting research.
+When prose and code diverge, resolve the mismatch deliberately. Authority order is `AGENTS.md`, `specs/MVP.md`, the focused specifications above, and then supporting research. The current MVI product center is Agent Registry, Loop, Graph, and Execution Queue. Credential custody is supporting infrastructure and cannot be interpreted as a prerequisite for credential-independent fleet control.
