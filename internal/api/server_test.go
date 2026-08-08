@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -71,6 +72,7 @@ func apiService(t *testing.T) *app.Service {
 	cfg.HermesExecutable = executable
 	cfg.Principal = config.Principal{ID: "principal-1", Name: "Principal Operator", UID: strconv.Itoa(os.Getuid()), User: current.Username, AuthTTL: time.Minute}
 	cfg.API.Token = "transport-secret"
+	cfg.API.Listen = "127.0.0.1:0"
 	cfg.API.UnixSocket = filepath.Join(root, "aegis.sock")
 	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -182,6 +184,89 @@ func TestBearerAloneCannotCreatePrincipalIdentity(t *testing.T) {
 		t.Fatalf("bearer-only TCP status = %d, want 401", response.StatusCode)
 	}
 	_ = response.Body.Close()
+	cancel()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
+	svc := apiService(t)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.Listen = address
+	svc.Config.API.Console.Origin = "http://" + address
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	waitFor(t, "tcp", address)
+
+	var issued struct {
+		Bootstrap string `json:"bootstrap"`
+	}
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
+	if issued.Bootstrap == "" {
+		t.Fatal("server issued empty browser bootstrap")
+	}
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	shell, err := client.Get("http://" + address + "/console")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shellBody, _ := io.ReadAll(shell.Body)
+	_ = shell.Body.Close()
+	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authenticated control plane") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("unsafe console shell status=%d headers=%v", shell.StatusCode, shell.Header)
+	}
+	exchangeBody, _ := json.Marshal(map[string]string{"bootstrap": issued.Bootstrap})
+	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", bytes.NewReader(exchangeBody))
+	exchange.Header.Set("Content-Type", "application/json")
+	exchange.Header.Set("Origin", "http://"+address)
+	response, err := client.Do(exchange)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var established struct {
+		CSRF string `json:"csrf"`
+	}
+	if err = json.NewDecoder(response.Body).Decode(&established); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusCreated || established.CSRF == "" || strings.Contains(string(shellBody), issued.Bootstrap) {
+		t.Fatalf("session exchange status=%d csrf=%t", response.StatusCode, established.CSRF != "")
+	}
+	state, err := client.Get("http://" + address + "/console/api/state?limit=10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.StatusCode != http.StatusOK || state.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("authenticated state status=%d headers=%v", state.StatusCode, state.Header)
+	}
+	_ = state.Body.Close()
+	excess, _ := client.Get("http://" + address + "/console/api/state?limit=100000")
+	if excess.StatusCode != http.StatusBadRequest {
+		t.Fatalf("excessive page size status=%d", excess.StatusCode)
+	}
+	_ = excess.Body.Close()
+	logout, _ := http.NewRequest(http.MethodDelete, "http://"+address+"/console/session", nil)
+	logout.Header.Set("Origin", "http://attacker.example")
+	logout.Header.Set("X-CSRF-Token", established.CSRF)
+	denied, err := client.Do(logout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin logout status=%d", denied.StatusCode)
+	}
+	_ = denied.Body.Close()
+
 	cancel()
 	if err = <-done; err != nil {
 		t.Fatal(err)

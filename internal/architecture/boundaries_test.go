@@ -23,6 +23,7 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 var allowedInternalImports = map[string][]string{
 	"internal/reference":   {},
 	"internal/registry":    {"internal/reference"},
+	"internal/loop":        {},
 	"internal/core":        {},
 	"internal/execution":   {"internal/core", "internal/reference"},
 	"internal/evidence":    {"internal/reference", "internal/store"},
@@ -32,13 +33,14 @@ var allowedInternalImports = map[string][]string{
 	"internal/manager":     {"internal/config", "internal/credentials"},
 	"internal/runtime":     {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
 	"internal/app":         {"internal/config", "internal/core", "internal/credentials", "internal/runtime", "internal/store"},
-	"internal/api":         {"internal/app", "internal/config", "internal/core"},
+	"internal/console":     {"internal/core"},
+	"internal/api":         {"internal/app", "internal/config", "internal/console", "internal/core"},
 }
 
 var classifiedProductionFamilies = map[string]struct{}{
-	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {},
+	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "evidence": {}, "execution": {},
-	"initialize": {}, "layout": {}, "manager": {}, "migration": {},
+	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "persistence": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 }
@@ -54,6 +56,8 @@ var canonicalTypeOwners = map[string]string{
 	"AgentRevision":           "internal/registry",
 	"AgentRegistration":       "internal/registry",
 	"FleetSource":             "internal/registry",
+	"LoopRevision":            "internal/loop",
+	"LoopValidationResult":    "internal/loop",
 	"Mandate":                 "internal/core",
 	"AuthorityContext":        "internal/core",
 	"AuthorityTransitionFact": "internal/core",
@@ -72,6 +76,7 @@ var canonicalTypeOwners = map[string]string{
 var standardLibraryOnlyLayers = map[string]struct{}{
 	"internal/reference": {},
 	"internal/registry":  {},
+	"internal/loop":      {},
 }
 
 func TestProtectedPackagesRespectDependencyDirection(t *testing.T) {
