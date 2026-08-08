@@ -6,7 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
-- Added one standard-library-only shared reference layer for immutable identity/digest and identity/revision/digest bindings. Its deterministic versioned JSON codecs validate complete bindings and reject malformed identifiers or digests, unsupported schemas, zero revisions, unknown fields, duplicate object keys, invalid UTF-8, and trailing values; architecture tests enforce canonical ownership and inward-only dependency direction. References confer no authority and the fleet-control domains remain unimplemented.
+- Added the bounded `internal/registry` Agent Registry domain slice with a strict deterministic current-fleet fixture adapter, immutable source-identity registration, canonical content-digested Agent revisions, create-only sequential revision publication, exact idempotent replay, conflict denial, and fail-closed exact enabled-revision resolution. The source and records grant no authority; the current repository is in-memory and no CLI/API, audit, authenticated admission, or qualified durable-storage integration is claimed.
+- Added one standard-library-only shared reference layer for immutable identity/digest and identity/revision/digest bindings. Its deterministic versioned JSON codecs validate complete bindings and reject malformed identifiers or digests, unsupported schemas, zero revisions, unknown fields, duplicate object keys, invalid UTF-8, and trailing values; architecture tests enforce canonical ownership and inward-only dependency direction. References confer no authority; the Agent Registry now consumes them internally, while Loop, Graph, and Execution Queue remain unimplemented.
 
 ### Changed
 

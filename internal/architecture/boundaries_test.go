@@ -22,6 +22,7 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 // an outer composition package rather than a protected inner layer.
 var allowedInternalImports = map[string][]string{
 	"internal/reference":   {},
+	"internal/registry":    {"internal/reference"},
 	"internal/core":        {},
 	"internal/execution":   {"internal/core", "internal/reference"},
 	"internal/evidence":    {"internal/reference", "internal/store"},
@@ -39,7 +40,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 	"core": {}, "credentials": {}, "evidence": {}, "execution": {},
 	"initialize": {}, "layout": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "persistence": {}, "reset": {}, "runtime": {},
-	"reference": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
+	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 }
 
 var externalDependencyOwners = map[string][]string{
@@ -50,6 +51,9 @@ var externalDependencyOwners = map[string][]string{
 var canonicalTypeOwners = map[string]string{
 	"DigestRef":               "internal/reference",
 	"RevisionRef":             "internal/reference",
+	"AgentRevision":           "internal/registry",
+	"AgentRegistration":       "internal/registry",
+	"FleetSource":             "internal/registry",
 	"Mandate":                 "internal/core",
 	"AuthorityContext":        "internal/core",
 	"AuthorityTransitionFact": "internal/core",
@@ -67,6 +71,7 @@ var canonicalTypeOwners = map[string]string{
 
 var standardLibraryOnlyLayers = map[string]struct{}{
 	"internal/reference": {},
+	"internal/registry":  {},
 }
 
 func TestProtectedPackagesRespectDependencyDirection(t *testing.T) {

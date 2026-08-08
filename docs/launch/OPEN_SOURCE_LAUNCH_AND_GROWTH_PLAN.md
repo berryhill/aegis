@@ -70,6 +70,7 @@ The first release may claim that Aegis provides:
 - Session inspection, revocation, and process termination.
 - Local tamper-evident audit verification under the documented checkpoint assumptions.
 - An administrative encrypted credential authority that is not yet a runtime broker.
+- An internal immutable Agent Registry domain slice with deterministic fixture-backed current-fleet discovery, source-identity registration, content-digested revisions, and exact enabled-revision resolution; it is not yet a durable or externally supported product surface.
 
 The first release must not claim:
 
@@ -80,7 +81,7 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
-- Implemented Agent Registry, Loop, Graph, or Execution Queue product domains or routes.
+- A complete or externally supported Agent Registry, Loop, Graph, or Execution Queue product surface or route. The Registry domain foundation is internal, fixture-backed, and in-memory only.
 - Qualified fleet-control definition storage or atomic queue claim/lease persistence.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
