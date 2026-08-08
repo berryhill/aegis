@@ -2,7 +2,7 @@
 
 ## Scope and assets
 
-The MVP protects principal identity, canonical charters, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.
+The MVP protects principal identity, canonical charters, immutable Loop definitions and validation records, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.
 
 ## Actors
 
@@ -67,6 +67,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | Prompt claims principal identity | OS identity/SO_PEERCRED only | Compromised OS account remains authoritative |
 | Stanza flag, profile, display name, or prompt escalates authority | Only verified subject/method/issuer/environment selectors authorize; a request only narrows; zero/multiple deny; no grant union | A legitimately trusted issuer or administrator can still configure an overly broad exact selector |
 | Malformed, overlapping, disabled, or stale stanza policy is used | Strict required-field validation, overlap rejection, stored canonical digest verification, mandate-to-stanza equality, and runtime zero/multiple denial | Same-account state replacement remains possible without a stronger deployment boundary |
+| Malformed or prompt-influenced Loop structure is treated as executable truth | Immutable typed Loop revisions; strict bounded decoding; deterministic digesting; fail-closed validation of identifiers, ports, mappings, transitions, terminals, gates, joins, retries, cycles, and evidence claims; publication records bind the exact validator result | Loop persistence, authenticated publication, queue admission, and execution are not implemented; the current definition layer alone grants no authority and cannot make work executable |
 | Model provisions its proposal | Design uses the empty `no_mcp` toolset, has no provisioning service, bounds requirements/proposal and charter import to 1 MiB, accepts exactly one proposal envelope, and requires strict Aegis import | Hermes process is not a host sandbox |
 | Changed or substituted plan reuses approval | Plan preview requires fresh configured-principal authentication and the exact local environment; approval stores one immutable plan ID and complete typed plan digest, and request, decision, apply, and recovery revalidate the charter/plan/runtime/environment binding before atomic single use | Host admin can rewrite plan and approval state together |
 | Team session receives principal key | Exact `provider:<provider>` scope and typed binding | Granted terminal/file tools can access ambient host resources |
