@@ -6,11 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Added the bounded, standard-library-only Loop definition domain with immutable typed revisions; deterministic canonical encoding and SHA-256 digests; strict decoding; validation for ports, steps, mappings, transitions, exclusive gates, joins, bounded retries, terminals, cycles, and evidence claims; and publication-time records binding the exact validator and validation digest. This layer grants no authority and does not yet add Loop persistence, application services, execution, CLI, or HTTP routes.
 - Added one standard-library-only shared reference layer for immutable identity/digest and identity/revision/digest bindings. Its deterministic versioned JSON codecs validate complete bindings and reject malformed identifiers or digests, unsupported schemas, zero revisions, unknown fields, duplicate object keys, invalid UTF-8, and trailing values; architecture tests enforce canonical ownership and inward-only dependency direction. References confer no authority and the fleet-control domains remain unimplemented.
 
 ### Changed
 
-- Re-baselined the normative MVI around the bounded Agent Registry, Loop, Graph, and Execution Queue domains while preserving exact stanza/mandate authority, immutable revision references, fresh effect-boundary admission, and the prohibition on a universal mutable aggregate. Defined action-specific readiness, stable fleet-control resource roots, separate evidence/disposition ownership, and explicit unqualified storage gates for immutable definitions and atomic queue claim/lease lifecycle. Credential custody and the typed GitHub broker remain supported infrastructure but are no longer release-defining or a global prerequisite. Current launch documentation states that the fleet-control domains and routes are not implemented yet.
+- Re-baselined the normative MVI around the bounded Agent Registry, Loop, Graph, and Execution Queue domains while preserving exact stanza/mandate authority, immutable revision references, fresh effect-boundary admission, and the prohibition on a universal mutable aggregate. Defined action-specific readiness, stable fleet-control resource roots, separate evidence/disposition ownership, and explicit unqualified storage gates for immutable definitions and atomic queue claim/lease lifecycle. Credential custody and the typed GitHub broker remain supported infrastructure but are no longer release-defining or a global prerequisite. Current launch documentation distinguishes the implemented Loop definition/validation layer from the still-missing publication, persistence, service, route, and execution surfaces.
 
 ## [0.2.1] - 2026-08-07
 
