@@ -31,11 +31,12 @@ var allowedInternalImports = map[string][]string{
 	"internal/manager":     {"internal/config", "internal/credentials"},
 	"internal/runtime":     {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
 	"internal/app":         {"internal/config", "internal/core", "internal/credentials", "internal/runtime", "internal/store"},
-	"internal/api":         {"internal/app", "internal/config", "internal/core"},
+	"internal/console":     {"internal/core"},
+	"internal/api":         {"internal/app", "internal/config", "internal/console", "internal/core"},
 }
 
 var classifiedProductionFamilies = map[string]struct{}{
-	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {},
+	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "evidence": {}, "execution": {},
 	"initialize": {}, "layout": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "persistence": {}, "reset": {}, "runtime": {},

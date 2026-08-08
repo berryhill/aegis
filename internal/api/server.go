@@ -22,6 +22,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/labstack/echo/v5"
 )
@@ -129,6 +130,15 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if telemetry == nil {
 		telemetry = noopTelemetry{}
 	}
+	consoleManager, err := console.New(console.Config{
+		Origin:       svc.Config.API.Console.Origin,
+		SessionTTL:   svc.Config.API.Console.SessionTTL,
+		BootstrapTTL: svc.Config.API.Console.BootstrapTTL,
+		MaxPageSize:  svc.Config.API.Console.MaxPageSize,
+	}, svc.Now)
+	if err != nil {
+		return fmt.Errorf("configure console: %w", err)
+	}
 	e := echo.New()
 	var ready atomic.Bool
 	ready.Store(true)
@@ -206,6 +216,109 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, map[string]any{"status": "ready", "audit": auditStatus})
 	})
+	consoleError := func(err error) error {
+		switch {
+		case errors.Is(err, console.ErrUnauthenticated):
+			return app.ErrUnauthenticated
+		case errors.Is(err, console.ErrDenied):
+			return app.ErrDenied
+		case errors.Is(err, console.ErrInvalidInput):
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console input")
+		default:
+			return err
+		}
+	}
+	consoleHeaders := func(c *echo.Context, authenticated bool) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), authenticated)
+		return consoleManager.ValidateOrigin(c.Request(), false)
+	}
+	e.GET("/console", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", console.Shell())
+	})
+	e.GET("/console/assets/app.css", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/css; charset=utf-8", console.Styles())
+	})
+	e.GET("/console/assets/app.js", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.JavaScript())
+	})
+	e.POST("/console/session", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		var input struct {
+			Bootstrap string `json:"bootstrap"`
+		}
+		if err := decode(c, &input); err != nil {
+			return err
+		}
+		sessionValue, csrf, err := consoleManager.Exchange(c.Request(), input.Bootstrap)
+		if err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "browser_session_exchange_denied"); auditErr != nil {
+				return auditErr
+			}
+			return consoleError(err)
+		}
+		if err = svc.AuditConsoleSession(c.Request().Context(), core.Subject{PrincipalID: svc.Config.Principal.ID}, "success", "browser_session_issued"); err != nil {
+			consoleManager.RevokeSessionValue(sessionValue)
+			return err
+		}
+		consoleManager.SetCookie(c.Response(), sessionValue)
+		return c.JSON(http.StatusCreated, map[string]string{"csrf": csrf, "expires": svc.Now().Add(svc.Config.API.Console.SessionTTL).UTC().Format(time.RFC3339)})
+	})
+	e.GET("/console/api/state", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		limit, err := consoleManager.Page(c.QueryParam("limit"))
+		if err != nil {
+			return consoleError(err)
+		}
+		agents, err := svc.ListAgents()
+		if err != nil {
+			return c.JSON(http.StatusServiceUnavailable, map[string]string{"state": "unavailable"})
+		}
+		if len(agents) > limit {
+			agents = agents[:limit]
+		}
+		csrf, err := consoleManager.CSRF(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		state := "ready"
+		if len(agents) == 0 {
+			state = "empty"
+		}
+		return c.JSON(http.StatusOK, map[string]any{"state": state, "agents": agents, "csrf": csrf, "limit": limit})
+	})
+	e.DELETE("/console/session", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		if err = svc.AuditConsoleSession(c.Request().Context(), subject, "success", "browser_session_revoked"); err != nil {
+			return err
+		}
+		consoleManager.Revoke(c.Request())
+		consoleManager.ClearCookie(c.Response())
+		return c.NoContent(http.StatusNoContent)
+	})
 	protected := func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			h := c.Request().Header.Get("Authorization")
@@ -232,6 +345,27 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	}
 	g := e.Group("/v1")
 	g.Use(protected)
+	g.POST("/console/bootstrap", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), subject, "denied", "browser_bootstrap_principal_denied"); auditErr != nil {
+				return auditErr
+			}
+			return err
+		}
+		bootstrap, err := consoleManager.IssueBootstrap(subject)
+		if err != nil {
+			return consoleError(err)
+		}
+		if err = svc.AuditConsoleSession(c.Request().Context(), subject, "success", "browser_bootstrap_issued"); err != nil {
+			consoleManager.RevokeBootstrap(bootstrap)
+			return err
+		}
+		return c.JSON(http.StatusCreated, map[string]string{"bootstrap": bootstrap, "expires": svc.Now().Add(svc.Config.API.Console.BootstrapTTL).UTC().Format(time.RFC3339)})
+	})
 	g.GET("/runtime", func(c *echo.Context) error {
 		x, err := svc.Runtime(c.Request().Context())
 		if err != nil {
@@ -638,7 +772,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.JSON(http.StatusOK, d)
 	})
 	srv := &http.Server{Addr: svc.Config.API.Listen, Handler: e, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: svc.Config.API.ReadTimeout, WriteTimeout: svc.Config.API.WriteTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 256 << 10}
-	var listener net.Listener
+	srv.ConnContext = func(connectionContext context.Context, connection net.Conn) context.Context {
+		if connection.LocalAddr().Network() == "unix" {
+			return unixPeerContext(connectionContext, connection)
+		}
+		return connectionContext
+	}
+	listeners := make([]net.Listener, 0, 2)
+	closeListeners := func() {
+		for _, listener := range listeners {
+			_ = listener.Close()
+		}
+	}
 	if svc.Config.API.UnixSocket != "" {
 		if err := os.MkdirAll(filepath.Dir(svc.Config.API.UnixSocket), 0700); err != nil {
 			return err
@@ -653,42 +798,45 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		var err error
-		listener, err = net.Listen("unix", svc.Config.API.UnixSocket)
+		unixListener, err := net.Listen("unix", svc.Config.API.UnixSocket)
 		if err != nil {
 			return err
 		}
+		listeners = append(listeners, unixListener)
 		if err = os.Chmod(svc.Config.API.UnixSocket, 0600); err != nil {
-			_ = listener.Close()
+			closeListeners()
 			return err
 		}
 		defer os.Remove(svc.Config.API.UnixSocket) //nolint:errcheck
-		srv.ConnContext = unixPeerContext
-	} else {
-		var err error
-		listener, err = net.Listen("tcp", svc.Config.API.Listen)
-		if err != nil {
-			return err
-		}
-		if svc.Config.API.TLSCertFile != "" {
-			certificate, loadErr := tls.LoadX509KeyPair(svc.Config.API.TLSCertFile, svc.Config.API.TLSKeyFile)
-			if loadErr != nil {
-				_ = listener.Close()
-				return fmt.Errorf("load API TLS identity: %w", loadErr)
-			}
-			listener = tls.NewListener(listener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
-		}
 	}
-	defer listener.Close()
+	tcpListener, err := net.Listen("tcp", svc.Config.API.Listen)
+	if err != nil {
+		closeListeners()
+		return err
+	}
+	if svc.Config.API.TLSCertFile != "" {
+		certificate, loadErr := tls.LoadX509KeyPair(svc.Config.API.TLSCertFile, svc.Config.API.TLSKeyFile)
+		if loadErr != nil {
+			_ = tcpListener.Close()
+			closeListeners()
+			return fmt.Errorf("load API TLS identity: %w", loadErr)
+		}
+		tcpListener = tls.NewListener(tcpListener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
+	}
+	listeners = append(listeners, tcpListener)
+	defer closeListeners()
 	supervisorCtx, stopSupervisor := context.WithCancel(ctx)
 	defer stopSupervisor()
 	supervisorErr := make(chan error, 1)
 	go func() { supervisorErr <- svc.Supervise(supervisorCtx) }()
-	errCh := make(chan error, 1)
-	go func() { errCh <- srv.Serve(listener) }()
+	errCh := make(chan error, len(listeners))
+	for _, listener := range listeners {
+		go func(listener net.Listener) { errCh <- srv.Serve(listener) }(listener)
+	}
 	select {
 	case err := <-errCh:
 		stopSupervisor()
+		_ = srv.Close()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
@@ -701,14 +849,15 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			_ = srv.Close()
 			return fmt.Errorf("API shutdown: %w", err)
 		}
-		err := <-errCh
+		for range listeners {
+			if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return err
+			}
+		}
 		if supervisorRunErr := <-supervisorErr; supervisorRunErr != nil {
 			return supervisorRunErr
 		}
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
+		return nil
 	case err := <-supervisorErr:
 		ready.Store(false)
 		_ = srv.Close()

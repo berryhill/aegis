@@ -9,9 +9,9 @@ principal:
   auth_ttl: 15m
 api:
   listen: 127.0.0.1:8443
-  # Set for kernel-authenticated local API callers. TCP bearer tokens only
-  # authenticate transport and cannot grant principal authority.
-  unix_socket: ""
+  # Kernel-authenticated local API transport. The authenticated console
+  # bootstrap must be requested here; TCP bearer possession cannot grant principal authority.
+  unix_socket: ./.aegis/aegis.sock
   token: CHANGE-ME-TO-A-LONG-RANDOM-SECRET
   # Optional TCP TLS identity; configure both files together. Not used for Unix sockets.
   tls_cert_file: ""
@@ -20,6 +20,13 @@ api:
   write_timeout: 30s
   shutdown_timeout: 10s
   max_body_bytes: 1048576
+  console:
+    # Plain HTTP is accepted only when both this origin and api.listen are loopback.
+    # Use an exact https origin and configure both TLS files for remote access.
+    origin: http://127.0.0.1:8443
+    session_ttl: 5m
+    bootstrap_ttl: 30s
+    max_page_size: 100
 retention:
   design_homes: false
   session_homes: false

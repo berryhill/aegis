@@ -145,9 +145,9 @@ func TestEnvironmentCredentialBindingsFailClosed(t *testing.T) {
 		}},
 		{"missing design provider", func(c *Config) { c.Credentials.DesignProvider = "missing" }},
 		{"incomplete TLS identity", func(c *Config) { c.API.TLSCertFile = "server.crt" }},
-		{"TLS on Unix socket", func(c *Config) {
-			c.API.UnixSocket, c.API.TLSCertFile, c.API.TLSKeyFile = "aegis.sock", "server.crt", "server.key"
-		}},
+		{"plaintext non-loopback console", func(c *Config) { c.API.Console.Origin = "http://192.0.2.10:8443" }},
+		{"plaintext console on non-loopback listener", func(c *Config) { c.API.Listen = "0.0.0.0:8443" }},
+		{"unbounded console session", func(c *Config) { c.API.Console.SessionTTL = time.Hour }},
 		{"incomplete credential authority", func(c *Config) {
 			c.Credentials.Authority = CredentialAuthority{Database: "authority.db", Custody: "systemd", KEKCredential: "aegis-kek"}
 		}},
@@ -167,6 +167,14 @@ func TestEnvironmentCredentialBindingsFailClosed(t *testing.T) {
 				t.Fatal("unsafe credential configuration accepted")
 			}
 		})
+	}
+}
+
+func TestConsoleSessionLimitMayExceedPrincipalTTLBecauseIssuedSessionsAreCapped(t *testing.T) {
+	configuration := Defaults()
+	configuration.Principal = Principal{ID: "principal", Name: "Principal", UID: "1000", User: "operator", AuthTTL: time.Second}
+	if err := configuration.Validate(); err != nil {
+		t.Fatalf("short principal authentication TTL rejected by console configuration: %v", err)
 	}
 }
 
