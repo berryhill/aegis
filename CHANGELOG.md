@@ -12,6 +12,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 - Re-baselined the normative MVI around the bounded Agent Registry, Loop, Graph, and Execution Queue domains while preserving exact stanza/mandate authority, immutable revision references, fresh effect-boundary admission, and the prohibition on a universal mutable aggregate. Defined action-specific readiness, stable fleet-control resource roots, separate evidence/disposition ownership, and explicit unqualified storage gates for immutable definitions and atomic queue claim/lease lifecycle. Credential custody and the typed GitHub broker remain supported infrastructure but are no longer release-defining or a global prerequisite. Current launch documentation states that the fleet-control domains and routes are not implemented yet.
 
+### Fixed
+
+- Recognize the decorated version identity emitted by supported Hermes Agent 0.18.2 Git installations while preserving fail-closed rejection of malformed, ambiguous, and unsupported version output.
+
 ## [0.2.1] - 2026-08-07
 
 ### Added

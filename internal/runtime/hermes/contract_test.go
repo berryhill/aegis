@@ -15,6 +15,21 @@ func TestParseVersionOutputAcceptsQualifiedHermes(t *testing.T) {
 	}
 }
 
+func TestParseVersionOutputAcceptsDecoratedHermesVersion(t *testing.T) {
+	output := "Hermes Agent v0.18.2 (2026.7.7.2) · upstream 81413f00 · local 594308d4 (+1 carried commit)\n" +
+		"Install directory: /home/operator/.hermes/hermes-agent\n" +
+		"Install method: git\n" +
+		"Python: 3.11.15\n" +
+		"OpenAI SDK: 2.24.0\n"
+	installed, err := ParseVersionOutput([]byte(output))
+	if err != nil {
+		t.Fatalf("decorated Hermes output rejected: %v", err)
+	}
+	if installed.Version != "0.18.2" || installed.Installation != "/home/operator/.hermes/hermes-agent" {
+		t.Fatalf("unexpected parsed installation: %#v", installed)
+	}
+}
+
 func TestParseVersionOutputIdentifiesUnsupportedHermesVersion(t *testing.T) {
 	_, err := ParseVersionOutput([]byte("Hermes Agent v0.14.0\n"))
 	if err == nil {
@@ -34,6 +49,7 @@ func TestParseVersionOutputFailsClosed(t *testing.T) {
 		"leading zero":           "Hermes Agent v0.18.02\n",
 		"duplicate version":      "Hermes Agent v0.18.1\nHermes Agent v0.18.2\n",
 		"malformed then valid":   "Hermes Agent version unknown\nHermes Agent v0.18.2\n",
+		"malformed decoration":   "Hermes Agent v0.18.2 (release) · upstream unknown · local unknown\n",
 		"duplicate installation": "Hermes Agent v0.18.2\nInstall directory: /one\nInstall directory: /two\n",
 		"relative installation":  "Hermes Agent v0.18.2\nInstall directory: relative\n",
 		"nul":                    "Hermes Agent v0.18.2\x00\n",

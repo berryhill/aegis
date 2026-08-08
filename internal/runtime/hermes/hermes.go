@@ -27,6 +27,7 @@ var AdapterVersion = buildinfo.Version
 const maximumVersionOutput = 64 << 10
 
 var versionRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$`)
+var versionOutputRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)( \(([0-9]+[.]){3}[0-9]+\) · upstream [0-9a-f]{8,40} · local [0-9a-f]{8,40} \(\+[1-9][0-9]* carried commits?\))?$`)
 var requiredCapabilities = []string{"design-stdio", "process-isolation", "disposable-home", "lifecycle-termination", "toolset-selection", "safe-mode", "no-ambient-mcp", "no-ambient-plugins"}
 var supportedToolsets = map[string]bool{
 	"web": true, "browser": true, "terminal": true, "file": true,
@@ -82,11 +83,11 @@ func ParseVersionOutput(output []byte) (InstalledVersion, error) {
 		if line == "" {
 			continue
 		}
-		if match := versionRE.FindStringSubmatch(line); len(match) == 4 {
+		if match := versionOutputRE.FindStringSubmatch(line); len(match) >= 4 {
 			if installed.Version != "" {
 				return InstalledVersion{}, errors.New("ambiguous Hermes version output")
 			}
-			installed.Version = strings.Join(match[1:], ".")
+			installed.Version = strings.Join(match[1:4], ".")
 			continue
 		}
 		if strings.HasPrefix(line, "Hermes Agent") {
