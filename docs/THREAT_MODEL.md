@@ -2,7 +2,7 @@
 
 ## Scope and assets
 
-The MVP protects principal identity, canonical charters, immutable Loop definitions and validation records, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.
+The MVP protects principal identity, canonical charters, immutable registered-Agent provenance and revisions, immutable Loop definitions and validation records, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.
 
 ## Actors
 
@@ -48,6 +48,9 @@ flowchart LR
   Aegis -->|persist by digest| Artifact[(Runtime artifact)]
   Artifact -->|fresh read| Verifier[Claim-specific verifier]
   Verifier -->|replay-resistant receipt| Aegis
+  FleetFixture[Strict current-fleet fixture] -->|proposal; no authority| Registry[Immutable Agent Registry domain]
+  Registry -->|create-only| RegistryMemory[(In-memory Registry repository)]
+  Registry -. exact enabled revision only .-> Aegis
   Terminal -->|Aegis-owned bounded input| Manager[Built-in secrets-manager]
   Manager --> TUI[Typed Aegis terminal controller]
   Gateway -. runtime/model events .-> TUI
@@ -79,6 +82,8 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 | A retry, derived-record substitution, or partial Badger write is mistaken for current authority | Exact command-digest receipt lookup; canonical prefix replay; receipt/fact/projection/outbox linkage; same-transaction publication; collision rollback; current projection and admission reread canonical history in one snapshot; stored projection or outbox divergence fails closed; committed positions are returned only after replay and projection verification | Badger atomicity and replay checks remain inside the same local account/filesystem trust boundary and do not provide independent tamper evidence |
 | Canonical authority audit is missing, reordered, duplicated, substituted, or allowed to lag while a grant is produced | Strict-sequence verified authority outbox consumption; create-only deterministic metadata evidence bound to context, sequence, fact digest, projection digest, and outbox digest; exact retries emit no duplicate; grant-producing readiness compares the latest evidence with the replay-verified committed position in one snapshot and denies lag | Authority audit evidence shares the Badger store and local account/filesystem boundary with canonical authority; it is delivery evidence, not an independent transparency service or a new source of authority |
 | Runtime output or a stored filename is treated as verification | Runtime output is stored by content digest; a claim-specific verifier rereads the blob and emits a receipt bound to artifact, action, run, owner, authority context, expected digest, verifier, and policy version | The verifier currently runs in the same process and uses the same local store/account; this is component separation, not independent attestation or separately protected evidence custody |
+| A discovered current-fleet candidate is treated as authenticated or authorized | The fixture adapter is explicitly proposal-only; it scans no ambient profile, environment, credential, dashboard, or handoff state; application authentication and operator authorization are required before Registry mutation or execution use | The Registry is not yet wired to an authenticated application boundary, so only direct internal callers and tests currently enforce that integration precondition |
+| Fleet-source identity is rebound, an Agent revision is overwritten/substituted, or disabled/retired state is bypassed | Registration binds one stable Agent ID and one immutable source identity to revision 1; strict canonical codecs and content digests reject malformed/substituted records; exact replay is idempotent while conflicts deny; sequential create-only publication forbids overwrite and post-retirement revisions; executable resolution requires exact ID/revision/digest and enabled state with no latest fallback | The current repository is in-memory and unqualified; restart durability, authoritative audit, authenticated transport, and durable concurrency semantics remain launch work |
 | Provisioning escapes state or crashes | Typed effects, containment, symlink rejection, atomic create, and durable intent recovery that removes matching owned artifacts only while the consumed approval still has the exact plan/charter/runtime/environment binding | Same-account filesystem races are not a separate-user sandbox; missing/corrupt authority bindings and mismatching recovery artifacts require manual review |
 | Audit is rewritten | Narrow audit-authority boundary, hash chain, signed retained checkpoints | Default in-process authority and locally retained checkpoints can be replaced together |
 | Audit delivery is interrupted, reordered, duplicated, or its derived state is tampered with | ID/digest-bound durable outbox, canonical-prefix validation, projection-first idempotent reconciliation, bounded ordered delivery, fail-closed readiness, and canonical-chain-first projection verification/rebuild | Outbox and projection share the same local account/filesystem boundary as canonical audit; they are operational derived state, not independent retention or external anchoring |
