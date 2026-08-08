@@ -81,7 +81,7 @@ The first release must not claim:
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
 - Implemented Agent Registry, Loop, Graph, or Execution Queue product domains or routes.
-- Qualified fleet-control definition storage or atomic queue claim/lease persistence.
+- Implemented fleet-control persistence adapters, migration/backup operations, or atomic queue claim/lease behavior; only their exact qualified storage lifecycle contract exists.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
 ## Launch gates
