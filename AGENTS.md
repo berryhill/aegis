@@ -108,20 +108,22 @@ Before consequential project actions:
 - Audit events are emitted authoritatively by Aegis, not accepted from model narration.
 - Do not claim complete zero trust, confinement, or formal least privilege before those properties are actually enforced and tested.
 
-## MVP objective
+## MVI objective
 
-Prove this vertical slice:
+Prove one narrow fleet-control loop across four bounded product domains—Agent Registry, Loop, Graph, and Execution Queue—without weakening the identity and authority substrate:
 
-1. The configured principal authenticates.
-2. Aegis visibly selects Hermes.
-3. A dedicated design session defines one logical agent with 1–N stanzas.
-4. The design session produces but cannot provision a canonical charter.
-5. The configured principal approves the exact charter digest.
-6. Aegis deterministically provisions and verifies the Hermes mapping.
-7. Aegis starts clean principal and teamwide sessions with different effective authority.
-8. Unauthorized escalation and cross-stanza state access fail closed.
-9. Sessions expire or can be revoked.
-10. Audit records reconstruct identity, charter, stanza, mandate, runtime, and provisioning provenance.
+1. An authenticated operator registers one existing fleet agent as an executable participant with immutable fleet, charter, runtime, and ownership provenance.
+2. That registered agent, acting under exactly one authenticated stanza and mandate, publishes one immutable, validated Loop revision.
+3. The agent publishes one immutable, validated Graph revision that binds exact Agent and Loop revisions.
+4. A typed Graph submission resolves exact definition digests, normalized inputs, runtime, mandate, and authority context into an immutable run snapshot.
+5. Invalid or unauthorized work becomes a durable rejection; valid work becomes one durable Execution Queue item.
+6. A deterministic claim creates a bounded attempt, and every consequential runtime effect repeats fresh authority admission.
+7. Parent Graph and child Loop execution records preserve causal identity across retries.
+8. Completion requires content-addressed output and the Graph/Loop revision's exact verification claims; process exit or model narration is insufficient.
+9. Cancellation, expiry, revocation, retry exhaustion, failure, denial, and success remain distinct durable outcomes.
+10. Historical execution remains reconstructable after Agent, Loop, or Graph definitions change.
+
+Charters, deterministic stanza selection, mandates, clean Hermes sessions, provisioning, audit, evidence, and optional credential custody are supporting controls. Credentials and the typed GitHub broker are not release-defining fleet-control gates and MUST NOT block credential-independent Registry, Loop, Graph, or Queue actions.
 
 ## Authoritative project reports
 
@@ -159,9 +161,11 @@ Treat missing required assets, stale commands, unverified examples, inaccurate s
 
 When behavior, command syntax, configuration, architecture, trust boundaries, dependencies, supported Hermes versions, installation, build, testing, security posture, or release packaging changes, update all corresponding launch assets as part of that implementation. Keep the root `README.md` concise and route detailed material to focused documents while preserving a genuine five-minute path to a successful no-key demonstration.
 
-## Implemented MVP command surface
+## Current implemented substrate command surface
 
 The working Go implementation is under `cmd/aegis` and `internal/`. Build with `go build -o aegis ./cmd/aegis`. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, and `serve`. See `README.md` and `examples/` for the executable workflow.
+
+This command surface is not proof of the fleet-control MVI. The Agent Registry, Loop, Graph, and Execution Queue services/routes remain required launch work until their exact end-to-end acceptance proof passes.
 
 The Hermes adapter supports `>=0.18.0,<0.19.0`, uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.
 

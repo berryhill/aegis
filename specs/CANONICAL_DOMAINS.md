@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Aegis represents identity, authority, execution, evidence, provisioning, and session lifecycle through bounded canonical records. It does not admit runtime work through a mutable aggregate that duplicates those records or unions their mutation semantics.
+Aegis represents executable participants, reusable control flow, coordination, queue lifecycle, identity, authority, execution, evidence, disposition, provisioning, and sessions through bounded canonical records. It does not admit runtime work through a mutable aggregate that duplicates those records or unions their mutation semantics.
 
 The controlling invariant remains:
 
@@ -24,10 +24,37 @@ A mandate is not a session authority snapshot. `AuthorityContext` must bind the 
 
 Revocation never rewrites a mandate or authority context. Authority is effective only inside the half-open interval `[issued_at, expires_at)` and only when no applicable revocation fact has become effective.
 
+## Agent Registry (`internal/registry`)
+
+Registry owns stable executable-participant identity. `AgentRegistration` records existing-fleet provenance, runtime-adapter binding, accountability, and enabled/disabled/retired lifecycle. Immutable `AgentRevision` records reference one exact canonical charter revision and digest; display metadata and operational health are not identity or admission authority.
+
+Registration never grants a model authority to create, enable, rebind, or retire a participant. The authenticated operator establishes the initial fleet binding. Later agent-authenticated mutations require one exact authority context and explicit policy. Disabled or retired participants deny new publication, submission, claim, and launch while historical records remain readable.
+
+## Loops (`internal/loop`)
+
+Loop owns reusable internal control-flow definitions. A stable Loop ID has immutable, content-digested `LoopRevision` records with typed inputs/outputs, bounded steps and transitions, entry and terminal states, bounded retries, evidence requirements, and an exact validator/version result. A Loop is not a Graph, Hermes TaskFlow, queue item, session, or runtime attempt.
+
+Publication is create-only. Admission references one exact Loop ID, revision, digest, and validation digest; it never falls back to a mutable current revision.
+
+## Graphs (`internal/graph`)
+
+Graph owns versioned coordination. An immutable `GraphRevision` binds each participant node to one exact Agent revision/digest and each control-flow node or edge to one exact Loop revision/digest. Typed dependencies and input/output mappings are validated against the pinned revisions. Graph structure, participant binding, and admission constraints cannot be changed by prompt or runtime output.
+
+A Graph does not own authority, queue status, artifacts, or disposition. A `GraphRunSnapshot` is a create-only composition record containing normalized typed inputs and the exact immutable references resolved at submission; it preserves historical truth but cannot authorize an effect by itself.
+
+## Execution Queue (`internal/queue`)
+
+Queue owns the authoritative operational lifecycle of submitted work. Canonical records include submission or durable rejection, idempotency/admission key, queue item, append-only transition facts, claim/lease, attempt identity, retry budget, cancellation/expiry, and terminal reason. Queue items reference an exact GraphRunSnapshot and authority context by ID and digest.
+
+Only one qualified atomic writer protocol may win a claim or terminal transition. Retries create new attempts under the same logical Graph and Loop executions. Queue projections and counts are rebuildable read models; they cannot admit work. Missing, stale, duplicate, revoked, expired, or ambiguous control state denies rather than guessing or merging.
+
 ## Execution (`internal/execution`)
 
-Execution owns only dispatch and runtime-turn lifecycle state:
+Execution owns Graph-run and Loop-execution causality plus dispatch and runtime-turn lifecycle state:
 
+- `GraphRun`: parent execution identity bound to one immutable GraphRunSnapshot and queue item.
+- `LoopExecution`: child execution identity bound to one exact Graph node and Loop revision.
+- `Attempt`: one bounded try under a Loop execution and queue claim; retry creates a new Attempt.
 - `Dispatch`: controller-owned parent admission for a runtime session.
 - `Turn`: one runtime turn under a dispatch and authority context.
 - `LaunchContract`: immutable owner, mandate, authority context, and successful parent dispatch supplied to an adapter.
@@ -52,6 +79,10 @@ Evidence owns runtime output and verifier claims:
 
 Verification rereads the content-addressed blob rather than trusting a filename or caller-supplied bytes. A receipt is evidence only: it cannot grant authority, mutate execution state, or declare a larger workflow complete. The MVP verifier remains an in-process component using the local store; this is not independent attestation or separately protected evidence custody.
 
+## Disposition
+
+Disposition is the terminal decision over one exact Graph run or Loop execution. It references queue transitions, attempts, required artifact digests, and verification receipts without copying them. A successful process exit is not completion. Success requires every verification claim required by the pinned revision; failure, denial, cancellation, expiry, revocation, retry exhaustion, and success remain distinct stable reasoned outcomes.
+
 ## Provisioning and receipts (`internal/core` and application services)
 
 `core.Artifact` remains the canonical deterministic provisioning artifact. `core.Receipt` remains the canonical provisioning receipt. Runtime artifacts do not replace or duplicate provisioning artifacts.
@@ -62,7 +93,7 @@ Provisioning continues to use exact approved charter and plan digests, typed det
 
 Application services may compose bounded domain records for one operation, but no production service may recreate a universal cross-domain mutation aggregate or validator. Transport and runtime adapters call shared services and receive only their narrow contracts.
 
-Persistence follows the same boundary. `internal/core` owns session-authority and audit schemas; `internal/credentials` owns secret metadata, encrypted-version, and binding schemas. Badger and bbolt adapters persist those records without redefining them. Canonical facts, rebuildable projections, blobs, operational metadata, runtime state, and credential custody remain separate as specified in `STORAGE.md`; no engine or projection is a universal domain owner.
+Persistence follows the same boundary. Registry, Loop, Graph, Queue, execution, evidence, core authority, and credential packages each own their schemas. Persistence adapters encode those records without redefining them. Canonical definitions and facts, rebuildable projections, blobs, operational metadata, runtime state, and credential custody remain separate as specified in `STORAGE.md`; no engine or projection is a universal domain owner.
 
 The removed experimental surfaces are not compatibility APIs:
 
@@ -72,4 +103,4 @@ The removed experimental surfaces are not compatibility APIs:
 - `POST /v1/plumbing/poc`;
 - `GET /v1/graph-runs/:id`.
 
-Future workflow, delivery, graph, or disposition domains must define their own authoritative state and transition rules. They may reference canonical identity, authority, execution, evidence, and provisioning records by immutable ID/digest; they must not copy them into a mega-aggregate or infer completion from model narration.
+Future delivery or additional workflow domains must define their own authoritative state and transition rules. The MVI Registry, Loop, Graph, Queue, execution, evidence, and disposition domains reference one another by immutable ID/digest; they must not copy one another into a mega-aggregate or infer completion from model narration.

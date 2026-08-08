@@ -2,11 +2,30 @@
 
 ## MVP objective
 
-The first Aegis release should prove one coherent vertical slice:
+The first Aegis release must prove one coherent fleet-control vertical slice:
 
-> A configured principal can place one personal credential under encrypted Aegis custody, approve one exact grant, and start a clean Hermes session bound to exactly one authenticated stanza in which the model can perform one typed useful operation without receiving reusable credential plaintext.
+> Register one existing fleet agent, let that authenticated participant publish immutable Loop and Graph revisions, and operate one typed Graph submission through a durable, authority-bound Execution Queue to evidence-gated disposition.
 
-The design-to-launch workflow, charters, trust stanzas, mandates, and clean runtime boundary remain required enabling controls. The release-defining use edge is the typed `github.get_repository.v1` operation through an Aegis-owned bridge and broker. The MVP should not claim to solve all agent security, generic credential use, or host/network confinement.
+The design-to-launch workflow, charters, trust stanzas, mandates, clean Hermes runtime boundary, audit, and evidence remain required enabling controls. Encrypted credential custody and the existing typed `github.get_repository.v1` broker are reusable supporting infrastructure, not release-defining gates. Credential-independent Registry, Loop, Graph, and Queue actions MUST NOT require credential setup.
+
+## 0. Fleet-control product contract
+
+The MVI has four separate product domains:
+
+- **Agent Registry** owns stable executable-participant identity, existing-fleet provenance, immutable Agent revisions, exact charter/runtime references, accountability, and enabled/disabled/retired lifecycle.
+- **Loops** own reusable bounded control flow, immutable validated revisions, typed ports, retry limits, terminal reasons, and evidence requirements. A Loop is not a Hermes TaskFlow or a running session.
+- **Graphs** own immutable validated coordination revisions, exact participant and Loop-revision bindings, typed dependency mappings, and admission constraints. A Graph never absorbs authority or queue state.
+- **Execution Queue** owns durable submission admission, idempotency, claim/lease, attempt, retry, cancellation/expiry, and evidence-gated terminal lifecycle.
+
+Every accepted submission captures one immutable snapshot of the exact Agent, Graph, Loop, mandate, authority-context, runtime, and normalized-input IDs/digests. Definitions are never resolved from mutable `latest` state after admission. Missing, unknown, disabled, expired, revoked, substituted, ambiguous, or partially persisted control input denies. Permissions from different stanzas are never unioned.
+
+Application services compose these domains by immutable references. No universal mutable participant/workflow/run aggregate may duplicate their authority or mutation semantics.
+
+## 0a. Contextual readiness and public routes
+
+Readiness is action-specific for registration, revision publication, submission, queue claim, and runtime execution. A typed result distinguishes `ready`, `denied`, `unavailable`, and `degraded`; list readback may report `empty` only after an authoritative successful read. Repair guidance is bounded and never mutates state without the required approval. Missing optional credentials do not make credential-independent actions unready.
+
+The shared service surface is exposed through CLI and HTTP resources for `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue`. Transports do not make identity, validation, admission, readiness, or disposition decisions.
 
 ## 1. Principal authentication
 
@@ -182,12 +201,12 @@ The design-to-launch workflow, charters, trust stanzas, mandates, and clean runt
 - Centralize error rendering and exit codes.
 - Make the optional Echo API call the same application services as the CLI.
 
-## 15a. Personal credential custody and typed use
+## 15a. Supporting personal credential custody and typed use
 
 - Store reusable values only through protected intake outside model context and persist only encrypted credential versions.
 - Expose credential metadata, bindings, rotation, revocation, backup, and recovery status without returning plaintext.
 - Require an exact active binding for agent, stanza, deployment, scope, destination, record, and rotation policy before use.
-- Support only `github.get_repository.v1` with `github/read` and exact allowlisted `github-api` repositories in this release.
+- Retain the bounded `github.get_repository.v1` implementation with `github/read` and exact allowlisted `github-api` repositories as supporting infrastructure; the fleet-control acceptance path does not require it.
 - Give Hermes only the typed owner/repository operation. Do not expose GetSecret, arbitrary URLs, headers, methods, record IDs, versions, destinations, or generic proxying.
 - Keep the session capability outside model context, environment, charter, mandate, session JSON, logs, and audit.
 - Verify the live Hermes gateway registers exactly the approved Aegis-owned bridge tool and fail closed on missing or additional tools.
@@ -209,16 +228,21 @@ The release is not complete unless tests demonstrate:
 - The design session cannot provision or modify Hermes artifacts.
 - Provisioning rejects an unapproved or changed charter.
 - The actual launched runtime and effective tool list match the approved charter.
-- The model-visible broker surface contains exactly the approved typed operation and no secret-reading or generic network operation.
-- Replays, stale deadlines, wrong repositories, wrong stanzas, ambiguous bindings, rotation drift, expired sessions, and revoked records/sessions deny.
+- If the optional broker is enabled, its model-visible surface contains exactly the approved typed operation and no secret-reading or generic network operation.
+- For credential-bearing operations, replays, stale deadlines, wrong repositories, wrong stanzas, ambiguous bindings, rotation drift, expired sessions, and revoked records/sessions deny.
 - Random credential canaries do not appear in model-visible tool definitions/results, configuration, argv, environment, logs, audit, errors, or retained terminal state.
 - Revocation prevents a revoked session from continuing through Aegis.
 - Audit events identify the authenticated subject, stanza, runtime, and charter revision.
+- Graph admission rejects any missing, mutable, substituted, or disabled Agent, Loop, Graph, mandate, or authority-context reference.
+- Concurrent workers cannot both claim or successfully complete one queue attempt.
+- Runtime launch, retry, and terminal disposition repeat fresh exact-context admission and propagate cancellation, expiry, and revocation.
+- Process exit, queue projection state, verification evidence, or model narration cannot independently grant authority or declare completion.
 
 ## 16a. Qualified storage boundary
 
 - Apply the exact, fail-closed matrix in `specs/STORAGE.md`: Badger `v4.9.5` owns session-authority persistence and bbolt `v1.5.0` owns credential custody on the qualified Linux/amd64/ext4 host profile.
 - Keep canonical authority facts, credential custody, ordinary canonical documents, rebuildable projections, blobs, operational metadata, and runtime state distinct.
+- Persist immutable Agent, Loop, and Graph revisions separately from append-only submission, queue, run, attempt, and disposition facts. The queue claim/lease path requires its own explicitly qualified atomic writer protocol before release.
 - Never treat a projection, lifecycle marker, runtime home, model narration, or cross-store partial write as authority.
 - Require explicit requalification for a new engine version, platform, filesystem, writer model, or relaxed durability option. Cross-built release archives alone are not storage qualification.
 
@@ -246,25 +270,22 @@ The following are not required for the first release:
 - Generic credential retrieval or arbitrary authenticated HTTP proxying
 - Additional downstream providers beyond the one typed GitHub metadata action
 - Automated Google, email, Drive, banking, or cloud-administration credential use
+- Credential integration into new Graph or Loop definitions and credential-centric fleet-control acceptance
 
 ## MVP success demonstration
 
 A successful MVP demonstration should show:
 
-1. The configured principal authenticates and starts an Aegis design session.
-2. Aegis visibly selects Hermes as the runtime.
-3. The principal designs one logical agent with `principal` and `teamwide` stanzas.
-4. The design session produces a validated charter but cannot modify Hermes.
-5. The principal reviews and approves the exact charter digest.
-6. Aegis provisions the approved Hermes mapping and verifies it.
-7. The principal starts a `principal` session and receives principal-only capabilities.
-8. A separately authenticated team identity starts a clean `teamwide` session.
-9. The teamwide session cannot access principal memory, credentials, or tools.
-10. An attempted stanza escalation is denied and recorded.
-11. The principal revokes a session and Aegis terminates its authority.
-12. The audit trail reconstructs the full identity-to-runtime-to-stanza chain.
-13. The principal enters one generated credential canary through protected intake, reviews an exact GitHub binding, and starts a clean stanza whose live Hermes registry contains only the Aegis GitHub metadata tool.
-14. One allowlisted repository request returns real or deterministic-fixture sanitized metadata while the reusable credential remains absent from model-visible and retained surfaces.
-15. Wrong repository, replay, expiry, rotation drift, record revocation, and session revocation each fail closed and are reconstructable from metadata-only audit events.
+1. The configured principal authenticates, Aegis visibly selects Hermes, and an approved charter establishes one exact stanza and mandate.
+2. Aegis registers one existing fleet fixture and reads back its stable Agent ID, exact revision/digest, fleet provenance, runtime binding, and lifecycle.
+3. The authenticated agent publishes and reads back one valid immutable Loop revision.
+4. The agent publishes and reads back one valid immutable Graph revision pinned to that Loop and Agent revision.
+5. One typed Graph submission persists exact normalized inputs and authority/definition digests, then becomes one admitted queue item.
+6. A worker claims one attempt, fresh admission succeeds, and explicit Graph-run and Loop-execution records reach evidence-gated completion.
+7. A duplicate claim, substituted revision, disabled Agent, invalid input, wrong stanza, and revoked or expired context each fail closed with stable durable reasons.
+8. Cancellation and bounded retry preserve separate attempt history and never produce duplicate successful completion.
+9. Changing current Agent, Loop, and Graph definitions does not change historical run reconstruction.
+10. Agent, Loop, Graph, and Queue routes distinguish denied, unavailable, degraded, and genuinely empty states.
+11. The complete proof runs without downstream credential setup; optional credential tests continue to prove plaintext non-disclosure independently.
 
 That vertical slice proves the defining Aegis concept without pretending the first release is a complete agent-security platform.
