@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added one standard-library-only shared reference layer for immutable identity/digest and identity/revision/digest bindings. Its deterministic versioned JSON codecs validate complete bindings and reject malformed identifiers or digests, unsupported schemas, zero revisions, unknown fields, duplicate object keys, invalid UTF-8, and trailing values; architecture tests enforce canonical ownership and inward-only dependency direction. References confer no authority and the fleet-control domains remain unimplemented.
+
 ### Changed
 
 - Re-baselined the normative MVI around the bounded Agent Registry, Loop, Graph, and Execution Queue domains while preserving exact stanza/mandate authority, immutable revision references, fresh effect-boundary admission, and the prohibition on a universal mutable aggregate. Defined action-specific readiness, stable fleet-control resource roots, and separate evidence/disposition ownership. Qualified the fleet-definition and fleet-lifecycle storage contract on Badger `v4.9.5` for Linux/amd64/ext4 with one shared `fleet-v1` store, exact path and permission rules, an exclusive writer lock, a 256 MiB reserve, and fail-closed migration, backup, dirty-recovery, and readiness policies. This freezes the lifecycle envelope but does not claim the future fleet adapter or atomic claim/lease protocol is implemented. Credential custody and the typed GitHub broker remain supported infrastructure but are no longer release-defining or a global prerequisite. Current launch documentation states that the fleet-control domains and routes are not implemented yet.
