@@ -21,21 +21,22 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 // packages executable. A missing entry deliberately means that the package is
 // an outer composition package rather than a protected inner layer.
 var allowedInternalImports = map[string][]string{
-	"internal/reference":   {},
-	"internal/registry":    {"internal/reference"},
-	"internal/loop":        {},
-	"internal/graph":       {"internal/reference"},
-	"internal/core":        {},
-	"internal/execution":   {"internal/core", "internal/reference"},
-	"internal/evidence":    {"internal/reference", "internal/store"},
-	"internal/store":       {"internal/core"},
-	"internal/persistence": {"internal/core", "internal/persistence"},
-	"internal/credentials": {"internal/credentials"},
-	"internal/manager":     {"internal/config", "internal/credentials"},
-	"internal/runtime":     {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
-	"internal/app":         {"internal/config", "internal/core", "internal/credentials", "internal/runtime", "internal/store"},
-	"internal/console":     {"internal/core"},
-	"internal/api":         {"internal/app", "internal/config", "internal/console", "internal/core"},
+	"internal/reference":         {},
+	"internal/registry":          {"internal/reference"},
+	"internal/loop":              {},
+	"internal/graph":             {"internal/reference"},
+	"internal/core":              {},
+	"internal/execution":         {"internal/core", "internal/reference"},
+	"internal/evidence":          {"internal/reference", "internal/store"},
+	"internal/store":             {"internal/core"},
+	"internal/persistence":       {"internal/core", "internal/persistence"},
+	"internal/persistence/fleet": {"internal/core", "internal/graph", "internal/loop", "internal/persistence", "internal/registry"},
+	"internal/credentials":       {"internal/credentials"},
+	"internal/manager":           {"internal/config", "internal/credentials"},
+	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
+	"internal/app":               {"internal/config", "internal/core", "internal/credentials", "internal/runtime", "internal/store"},
+	"internal/console":           {"internal/core"},
+	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core"},
 }
 
 var classifiedProductionFamilies = map[string]struct{}{
@@ -47,7 +48,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 }
 
 var externalDependencyOwners = map[string][]string{
-	"github.com/dgraph-io/badger/v4": {"internal/persistence/authority/badger"},
+	"github.com/dgraph-io/badger/v4": {"internal/persistence/authority/badger", "internal/persistence/fleet/badger"},
 	"go.etcd.io/bbolt":               {"internal/credentials/bbolt", "internal/reset"},
 }
 
