@@ -69,8 +69,9 @@ The first release may claim that Aegis provides:
 - Approved Hermes toolset launch-argument enforcement.
 - Session inspection, revocation, and process termination.
 - Local tamper-evident audit verification under the documented checkpoint assumptions.
-- An administrative encrypted credential authority that is not yet a runtime broker.
-- An internal immutable Agent Registry domain slice with deterministic fixture-backed current-fleet discovery, source-identity registration, content-digested revisions, and exact enabled-revision resolution; it is not yet a durable or externally supported product surface.
+- An administrative encrypted credential authority that backs one typed local GitHub broker action but is not a generic runtime secret source.
+- Internal immutable Agent Registry, Loop, Graph, Queue, and Execution domain slices with qualified durable fleet persistence for definitions, accepted-or-rejected submission, and initial single-winner claim/attempt facts.
+- Narrow authenticated internal orchestration for registration, Loop/Graph publication, Graph submission admission, durable rejection, and action-specific contextual readiness; it is not yet wired to public routes or runtime execution.
 
 The first release must not claim:
 
@@ -81,8 +82,8 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
-- A complete or externally supported Agent Registry, Loop, Graph, or Execution Queue product surface or route. The Registry domain foundation is internal, fixture-backed, and in-memory only; the other product domains and all external routes remain unimplemented.
-- Implemented fleet-control persistence adapters, migration/backup operations, or atomic queue claim/lease behavior; only their exact qualified storage lifecycle contract exists.
+- A complete or externally supported Agent Registry, Loop, Graph, or Execution Queue product surface or route. Internal domains, persistence, and narrow authenticated orchestration exist, but all external fleet routes, console wiring, actual runtime execution, and installed proof remain launch work.
+- Complete fleet-control lifecycle tooling. Qualified persistence and atomic initial submission/claim facts exist, but migration/backup operations, lease expiry/recovery, later transitions, retries, cancellation, terminal outcomes, and evidence-gated disposition remain unimplemented.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
 ## Launch gates

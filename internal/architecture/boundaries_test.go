@@ -44,7 +44,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "evidence": {}, "execution": {}, "graph": {},
 	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "migration": {},
-	"onboarding": {}, "persistence": {}, "queue": {}, "reset": {}, "runtime": {},
+	"onboarding": {}, "orchestration": {}, "persistence": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 }
 

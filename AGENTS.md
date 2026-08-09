@@ -165,7 +165,7 @@ When behavior, command syntax, configuration, architecture, trust boundaries, de
 
 The working Go implementation is under `cmd/aegis` and `internal/`. Build with `go build -o aegis ./cmd/aegis`. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, and `serve`. See `README.md` and `examples/` for the executable workflow.
 
-This command surface is not proof of the fleet-control MVI. The Agent Registry, Loop, Graph, and Execution Queue services/routes remain required launch work until their exact end-to-end acceptance proof passes.
+This command surface is not proof of the fleet-control MVI. Internal Agent Registry, Loop, Graph, Queue, Execution, persistence, and narrow authenticated orchestration services exist, but their public routes, actual claim/runtime lifecycle wiring, and exact installed end-to-end acceptance proof remain required launch work.
 
 The Hermes adapter supports `>=0.18.0,<0.19.0`, uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.
 
