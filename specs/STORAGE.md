@@ -22,7 +22,7 @@ Aegis keeps these classes distinct:
 
 No transaction may silently span these classes or engines. Cross-store operations use explicit ordering, durable intent/recovery where implemented, and deny readiness while an authoritative write and required projection are inconsistent.
 
-The fleet planes are qualified as one shared Badger store because Graph submission must atomically publish its immutable run snapshot and durable rejection or queue item. This qualification fixes the lifecycle envelope; it does not claim the domain repository and claim/lease protocol are implemented until their separate end-to-end acceptance tests pass. Existing Badger session-authority qualification does not implicitly qualify fleet-control records, and fleet qualification does not permit records to be placed in the authority database. A process lock, filesystem rename, status projection, or passing happy-path test is not evidence of atomic queue claims.
+The fleet planes are qualified as one shared Badger store because Graph submission must atomically publish its immutable run snapshot and durable rejection or queue item. The internal adapter implements this accepted-or-rejected outcome transaction and a single-winner initial claim/attempt transaction. This does not complete authenticated application admission, fresh authority checks, dirty-store lease recovery, later transitions, retries, cancellation, expiry, terminal disposition, or installed end-to-end acceptance. Existing Badger session-authority qualification does not implicitly qualify fleet-control records, and fleet qualification does not permit records in the session-authority store.
 
 ## Qualification matrix
 

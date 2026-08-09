@@ -22,21 +22,31 @@ import (
 )
 
 const (
-	familyRegistration    byte = 0x10
-	familySource               = 0x11
-	familyAgentRevision        = 0x12
-	familyAgentLatest          = 0x13
-	familyLoopRevision         = 0x20
-	familyLoopValidation       = 0x21
-	familyLoopLatest           = 0x22
-	familyLoopRequest          = 0x23
-	familyGraphRevision        = 0x30
-	familyGraphValidation      = 0x31
-	familyGraphLatest          = 0x32
-	familyGraphRequest         = 0x33
-	familySnapshot             = 0x34
-	familySnapshotRequest      = 0x35
-	familyAudit                = 0x40
+	familyRegistration      byte = 0x10
+	familySource                 = 0x11
+	familyAgentRevision          = 0x12
+	familyAgentLatest            = 0x13
+	familyLoopRevision           = 0x20
+	familyLoopValidation         = 0x21
+	familyLoopLatest             = 0x22
+	familyLoopRequest            = 0x23
+	familyGraphRevision          = 0x30
+	familyGraphValidation        = 0x31
+	familyGraphLatest            = 0x32
+	familyGraphRequest           = 0x33
+	familySnapshot               = 0x34
+	familySnapshotRequest        = 0x35
+	familySubmission             = 0x50
+	familySubmissionRequest      = 0x51
+	familyRejection              = 0x52
+	familyQueueItem              = 0x53
+	familyQueueTransition        = 0x54
+	familyClaim                  = 0x55
+	familyClaimByItem            = 0x56
+	familyGraphRun               = 0x60
+	familyLoopExecution          = 0x61
+	familyAttempt                = 0x62
+	familyAudit                  = 0x40
 )
 
 func key(family byte, parts ...string) []byte {
