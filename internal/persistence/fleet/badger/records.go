@@ -1,0 +1,676 @@
+package badger
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/graph"
+	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/registry"
+	badgerdb "github.com/dgraph-io/badger/v4"
+)
+
+const (
+	familyRegistration    byte = 0x10
+	familySource               = 0x11
+	familyAgentRevision        = 0x12
+	familyAgentLatest          = 0x13
+	familyLoopRevision         = 0x20
+	familyLoopValidation       = 0x21
+	familyLoopLatest           = 0x22
+	familyLoopRequest          = 0x23
+	familyGraphRevision        = 0x30
+	familyGraphValidation      = 0x31
+	familyGraphLatest          = 0x32
+	familyGraphRequest         = 0x33
+	familySnapshot             = 0x34
+	familySnapshotRequest      = 0x35
+	familyAudit                = 0x40
+)
+
+func key(family byte, parts ...string) []byte {
+	result := []byte{2, family}
+	for _, part := range parts {
+		var size [2]byte
+		binary.BigEndian.PutUint16(size[:], uint16(len(part)))
+		result = append(result, size[:]...)
+		result = append(result, part...)
+	}
+	return result
+}
+func revisionPart(revision uint64) string {
+	var value [8]byte
+	binary.BigEndian.PutUint64(value[:], revision)
+	return string(value[:])
+}
+func sourcePart(source registry.FleetSource) string {
+	sum := sha256.Sum256([]byte(source.Key()))
+	return hex.EncodeToString(sum[:])
+}
+func get(txn *badgerdb.Txn, key []byte) ([]byte, error) {
+	item, err := txn.Get(key)
+	if errors.Is(err, badgerdb.ErrKeyNotFound) {
+		return nil, fleet.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return item.ValueCopy(nil)
+}
+func optional(txn *badgerdb.Txn, key []byte) ([]byte, bool, error) {
+	value, err := get(txn, key)
+	if errors.Is(err, fleet.ErrNotFound) {
+		return nil, false, nil
+	}
+	return value, err == nil, err
+}
+func create(txn *badgerdb.Txn, key, value []byte) error {
+	if _, found, err := optional(txn, key); err != nil {
+		return err
+	} else if found {
+		return fleet.ErrConflict
+	}
+	return txn.Set(key, value)
+}
+
+func requestBinding(values ...any) ([]byte, error) {
+	wire, err := json.Marshal(values)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(wire)
+	return []byte("sha256:" + hex.EncodeToString(digest[:])), nil
+}
+
+func (s *Store) RegisterAgent(ctx context.Context, registration registry.AgentRegistration, initial registry.AgentRevision, fact fleet.AuditFact) (created bool, err error) {
+	registrationWire, err := registry.MarshalAgentRegistration(registration)
+	if err != nil {
+		return false, err
+	}
+	revisionWire, err := registry.MarshalAgentRevision(initial)
+	if err != nil {
+		return false, err
+	}
+	if initial.AgentID != registration.AgentID || initial.Revision != 1 || initial.Source != registration.Source || initial.Digest != registration.InitialRevision.Digest {
+		return false, errors.New("registration does not bind supplied initial revision")
+	}
+	err = s.update(ctx, func(txn *badgerdb.Txn) error {
+		registrationKey := key(familyRegistration, registration.AgentID)
+		revisionKey := key(familyAgentRevision, registration.AgentID, revisionPart(1))
+		sourceKey := key(familySource, sourcePart(registration.Source))
+		if existing, found, loadErr := optional(txn, registrationKey); loadErr != nil {
+			return loadErr
+		} else if found {
+			storedRevision, _, revisionErr := optional(txn, revisionKey)
+			if revisionErr == nil && bytes.Equal(existing, registrationWire) && bytes.Equal(storedRevision, revisionWire) {
+				created = false
+				return nil
+			}
+			return fleet.ErrConflict
+		}
+		if _, found, loadErr := optional(txn, sourceKey); loadErr != nil {
+			return loadErr
+		} else if found {
+			return fleet.ErrConflict
+		}
+		for _, entry := range []struct{ k, v []byte }{{registrationKey, registrationWire}, {sourceKey, []byte(registration.AgentID)}, {revisionKey, revisionWire}, {key(familyAgentLatest, registration.AgentID), []byte(revisionPart(1))}} {
+			if setErr := create(txn, entry.k, entry.v); setErr != nil {
+				return setErr
+			}
+		}
+		if auditErr := appendAudit(txn, fact); auditErr != nil {
+			return auditErr
+		}
+		created = true
+		return nil
+	})
+	return created, err
+}
+
+func (s *Store) PublishAgentRevision(ctx context.Context, revision registry.AgentRevision, fact fleet.AuditFact) error {
+	wire, err := registry.MarshalAgentRevision(revision)
+	if err != nil {
+		return err
+	}
+	return s.update(ctx, func(txn *badgerdb.Txn) error {
+		registrationWire, err := get(txn, key(familyRegistration, revision.AgentID))
+		if err != nil {
+			return err
+		}
+		registration, err := registry.UnmarshalAgentRegistration(registrationWire)
+		if err != nil {
+			return corrupt(err)
+		}
+		if registration.Source != revision.Source {
+			return fleet.ErrConflict
+		}
+		latest, err := agentLatest(txn, revision.AgentID)
+		if err != nil {
+			return err
+		}
+		if latest.Lifecycle == registry.LifecycleRetired {
+			return registry.ErrRetired
+		}
+		if revision.Revision != latest.Revision+1 {
+			return fleet.ErrConflict
+		}
+		if err = create(txn, key(familyAgentRevision, revision.AgentID, revisionPart(revision.Revision)), wire); err != nil {
+			return err
+		}
+		if err = txn.Set(key(familyAgentLatest, revision.AgentID), []byte(revisionPart(revision.Revision))); err != nil {
+			return err
+		}
+		return appendAudit(txn, fact)
+	})
+}
+
+func agentLatest(txn *badgerdb.Txn, id string) (registry.AgentRevision, error) {
+	value, err := get(txn, key(familyAgentLatest, id))
+	if err != nil {
+		return registry.AgentRevision{}, err
+	}
+	if len(value) != 8 {
+		return registry.AgentRevision{}, corrupt(errors.New("invalid agent latest pointer"))
+	}
+	return agentRevision(txn, id, binary.BigEndian.Uint64(value))
+}
+func agentRevision(txn *badgerdb.Txn, id string, revision uint64) (registry.AgentRevision, error) {
+	value, err := get(txn, key(familyAgentRevision, id, revisionPart(revision)))
+	if err != nil {
+		return registry.AgentRevision{}, err
+	}
+	decoded, err := registry.UnmarshalAgentRevision(value)
+	if err != nil || decoded.AgentID != id || decoded.Revision != revision {
+		return registry.AgentRevision{}, corrupt(err)
+	}
+	return decoded, nil
+}
+func registration(txn *badgerdb.Txn, id string) (registry.AgentRegistration, error) {
+	value, err := get(txn, key(familyRegistration, id))
+	if err != nil {
+		return registry.AgentRegistration{}, err
+	}
+	decoded, err := registry.UnmarshalAgentRegistration(value)
+	if err != nil || decoded.AgentID != id {
+		return registry.AgentRegistration{}, corrupt(err)
+	}
+	return decoded, nil
+}
+func (s *Store) GetAgentRegistration(ctx context.Context, id string) (out registry.AgentRegistration, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = registration(txn, id); return err })
+	return
+}
+func (s *Store) GetAgentRegistrationBySource(ctx context.Context, source registry.FleetSource) (out registry.AgentRegistration, err error) {
+	if err = source.Validate(); err != nil {
+		return
+	}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		agentID, e := get(txn, key(familySource, sourcePart(source)))
+		if e != nil {
+			return e
+		}
+		out, e = registration(txn, string(agentID))
+		if e == nil && out.Source != source {
+			return corrupt(errors.New("source index mismatch"))
+		}
+		return e
+	})
+	return
+}
+func (s *Store) GetAgentRevision(ctx context.Context, id string, revision uint64) (out registry.AgentRevision, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = agentRevision(txn, id, revision); return err })
+	return
+}
+func (s *Store) LatestAgentRevision(ctx context.Context, id string) (out registry.AgentRevision, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = agentLatest(txn, id); return err })
+	return
+}
+func (s *Store) ListAgentRegistrations(ctx context.Context) (out []registry.AgentRegistration, err error) {
+	out = []registry.AgentRegistration{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyRegistration, func(_ []byte, value []byte) error {
+			item, e := registry.UnmarshalAgentRegistration(value)
+			if e != nil {
+				return corrupt(e)
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].AgentID < out[j].AgentID })
+	return
+}
+
+func (s *Store) PublishLoop(ctx context.Context, request loop.PublishRequest, fact fleet.AuditFact) (decision loop.PublicationDecision, err error) {
+	revisionWire, e := loop.MarshalRevision(request.Revision)
+	if e != nil {
+		return decision, e
+	}
+	validationWire, e := loop.MarshalLoopValidationResult(request.Validation)
+	if e != nil {
+		return decision, e
+	}
+	binding, e := requestBinding(revisionWire, validationWire, request.ExpectedPreviousDigest, request.IdempotencyKey, fact.Event)
+	if e != nil {
+		return decision, e
+	}
+	err = s.update(ctx, func(txn *badgerdb.Txn) error {
+		requestKey := key(familyLoopRequest, request.IdempotencyKey)
+		if bound, found, x := optional(txn, requestKey); x != nil {
+			return x
+		} else if found {
+			if bytes.Equal(bound, binding) {
+				decision.Idempotent = true
+				return nil
+			}
+			return fleet.ErrConflict
+		}
+		var previous, existing *loop.LoopRevision
+		if request.Revision.Revision > 1 {
+			v, x := loopRevision(txn, request.Revision.LoopID, request.Revision.Revision-1)
+			if x == nil {
+				previous = &v
+			} else if !errors.Is(x, fleet.ErrNotFound) {
+				return x
+			}
+		}
+		if v, x := loopRevision(txn, request.Revision.LoopID, request.Revision.Revision); x == nil {
+			existing = &v
+		} else if !errors.Is(x, fleet.ErrNotFound) {
+			return x
+		}
+		decision, e = loop.ValidatePublication(request, previous, existing)
+		if e != nil {
+			return e
+		}
+		if decision.Idempotent {
+			return nil
+		}
+		for _, entry := range []struct{ k, v []byte }{{key(familyLoopRevision, request.Revision.LoopID, revisionPart(request.Revision.Revision)), revisionWire}, {key(familyLoopValidation, request.Revision.LoopID, revisionPart(request.Revision.Revision), request.Validation.Digest), validationWire}, {requestKey, binding}} {
+			if x := create(txn, entry.k, entry.v); x != nil {
+				return x
+			}
+		}
+		if e = txn.Set(key(familyLoopLatest, request.Revision.LoopID), []byte(revisionPart(request.Revision.Revision))); e != nil {
+			return e
+		}
+		return appendAudit(txn, fact)
+	})
+	return
+}
+func loopRevision(txn *badgerdb.Txn, id string, revision uint64) (loop.LoopRevision, error) {
+	value, err := get(txn, key(familyLoopRevision, id, revisionPart(revision)))
+	if err != nil {
+		return loop.LoopRevision{}, err
+	}
+	decoded, err := loop.UnmarshalRevision(value)
+	if err != nil || decoded.LoopID != id || decoded.Revision != revision {
+		return loop.LoopRevision{}, corrupt(err)
+	}
+	return decoded, nil
+}
+func (s *Store) GetLoopRevision(ctx context.Context, id string, revision uint64) (out loop.LoopRevision, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = loopRevision(txn, id, revision); return err })
+	return
+}
+func (s *Store) GetLoopValidation(ctx context.Context, id string, revision uint64, digest string) (out loop.LoopValidationResult, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		value, e := get(txn, key(familyLoopValidation, id, revisionPart(revision), digest))
+		if e != nil {
+			return e
+		}
+		out, e = loop.UnmarshalLoopValidationResult(value)
+		if e != nil || out.LoopID != id || out.Revision != revision || out.Digest != digest {
+			return corrupt(e)
+		}
+		return nil
+	})
+	return
+}
+
+func (s *Store) PublishGraph(ctx context.Context, request graph.PublishRequest, fact fleet.AuditFact) (decision graph.PublicationDecision, err error) {
+	revisionWire, e := graph.MarshalRevision(request.Revision)
+	if e != nil {
+		return decision, e
+	}
+	validationWire, e := graph.MarshalValidationResult(request.Validation)
+	if e != nil {
+		return decision, e
+	}
+	binding, e := requestBinding(revisionWire, validationWire, request.ExpectedPreviousDigest, request.IdempotencyKey, fact.Event)
+	if e != nil {
+		return decision, e
+	}
+	err = s.update(ctx, func(txn *badgerdb.Txn) error {
+		requestKey := key(familyGraphRequest, request.IdempotencyKey)
+		if bound, found, x := optional(txn, requestKey); x != nil {
+			return x
+		} else if found {
+			if bytes.Equal(bound, binding) {
+				decision.Idempotent = true
+				return nil
+			}
+			return fleet.ErrConflict
+		}
+		var current, existing *graph.GraphRevision
+		if request.Revision.Revision > 1 {
+			v, x := graphRevision(txn, request.Revision.GraphID, request.Revision.Revision-1)
+			if x == nil {
+				current = &v
+			} else if !errors.Is(x, fleet.ErrNotFound) {
+				return x
+			}
+		}
+		if v, x := graphRevision(txn, request.Revision.GraphID, request.Revision.Revision); x == nil {
+			existing = &v
+		} else if !errors.Is(x, fleet.ErrNotFound) {
+			return x
+		}
+		decision, e = graph.ValidatePublication(request, current, existing)
+		if e != nil {
+			return e
+		}
+		if decision.Idempotent {
+			return nil
+		}
+		for _, entry := range []struct{ k, v []byte }{{key(familyGraphRevision, request.Revision.GraphID, revisionPart(request.Revision.Revision)), revisionWire}, {key(familyGraphValidation, request.Revision.GraphID, revisionPart(request.Revision.Revision), request.Validation.Digest), validationWire}, {requestKey, binding}} {
+			if x := create(txn, entry.k, entry.v); x != nil {
+				return x
+			}
+		}
+		if e = txn.Set(key(familyGraphLatest, request.Revision.GraphID), []byte(revisionPart(request.Revision.Revision))); e != nil {
+			return e
+		}
+		return appendAudit(txn, fact)
+	})
+	return
+}
+func graphRevision(txn *badgerdb.Txn, id string, revision uint64) (graph.GraphRevision, error) {
+	value, err := get(txn, key(familyGraphRevision, id, revisionPart(revision)))
+	if err != nil {
+		return graph.GraphRevision{}, err
+	}
+	decoded, err := graph.UnmarshalRevision(value)
+	if err != nil || decoded.GraphID != id || decoded.Revision != revision {
+		return graph.GraphRevision{}, corrupt(err)
+	}
+	return decoded, nil
+}
+func (s *Store) GetGraphRevision(ctx context.Context, id string, revision uint64) (out graph.GraphRevision, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = graphRevision(txn, id, revision); return err })
+	return
+}
+func (s *Store) GetGraphValidation(ctx context.Context, id string, revision uint64, digest string) (out graph.GraphValidationResult, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		value, e := get(txn, key(familyGraphValidation, id, revisionPart(revision), digest))
+		if e != nil {
+			return e
+		}
+		out, e = graph.UnmarshalValidationResult(value)
+		if e != nil || out.GraphID != id || out.Revision != revision || out.Digest != digest {
+			return corrupt(e)
+		}
+		return nil
+	})
+	return
+}
+func (s *Store) CreateGraphRunSnapshot(ctx context.Context, snapshot graph.GraphRunSnapshot, fact fleet.AuditFact) (created bool, err error) {
+	wire, e := graph.MarshalRunSnapshot(snapshot)
+	if e != nil {
+		return false, e
+	}
+	binding, e := requestBinding(wire, fact.Event)
+	if e != nil {
+		return false, e
+	}
+	err = s.update(ctx, func(txn *badgerdb.Txn) error {
+		snapshotKey := key(familySnapshot, snapshot.SnapshotID)
+		requestKey := key(familySnapshotRequest, snapshot.SnapshotID)
+		if value, found, x := optional(txn, snapshotKey); x != nil {
+			return x
+		} else if found {
+			bound, boundFound, loadErr := optional(txn, requestKey)
+			if loadErr != nil {
+				return loadErr
+			}
+			if bytes.Equal(value, wire) && boundFound && bytes.Equal(bound, binding) {
+				return nil
+			}
+			return fleet.ErrConflict
+		}
+		if x := verifySnapshotReferences(txn, snapshot); x != nil {
+			return x
+		}
+		if x := create(txn, snapshotKey, wire); x != nil {
+			return x
+		}
+		if x := create(txn, requestKey, binding); x != nil {
+			return x
+		}
+		if x := appendAudit(txn, fact); x != nil {
+			return x
+		}
+		created = true
+		return nil
+	})
+	return
+}
+func verifySnapshotReferences(txn *badgerdb.Txn, snapshot graph.GraphRunSnapshot) error {
+	revision, err := graphRevision(txn, snapshot.Graph.ID, snapshot.Graph.Revision)
+	if err != nil {
+		return err
+	}
+	if revision.Digest != snapshot.Graph.Digest {
+		return fleet.ErrConflict
+	}
+	expectedSnapshot, err := graph.NewRunSnapshot(snapshot.SnapshotID, revision, snapshot.Inputs)
+	if err != nil || expectedSnapshot.Digest != snapshot.Digest {
+		return fleet.ErrConflict
+	}
+	if err = requireGraphValidation(txn, revision); err != nil {
+		return err
+	}
+
+	for _, participant := range snapshot.Participants {
+		stored, loadErr := agentRevision(txn, participant.ID, participant.Revision)
+		if loadErr != nil {
+			return loadErr
+		}
+		if stored.Digest != participant.Digest || stored.Lifecycle != registry.LifecycleEnabled {
+			return fleet.ErrConflict
+		}
+	}
+	for _, loopRef := range snapshot.Loops {
+		stored, loadErr := loopRevision(txn, loopRef.ID, loopRef.Revision)
+		if loadErr != nil {
+			return loadErr
+		}
+		if stored.Digest != loopRef.Digest {
+			return fleet.ErrConflict
+		}
+		if loadErr = requireLoopValidation(txn, stored); loadErr != nil {
+			return loadErr
+		}
+	}
+	return nil
+}
+
+func requireGraphValidation(txn *badgerdb.Txn, revision graph.GraphRevision) error {
+	prefix := key(familyGraphValidation, revision.GraphID, revisionPart(revision.Revision))
+	return requireValidation(txn, prefix, func(value []byte) (bool, error) {
+		result, err := graph.UnmarshalValidationResult(value)
+		if err != nil {
+			return false, corrupt(err)
+		}
+		return result.GraphID == revision.GraphID && result.Revision == revision.Revision && result.RevisionDigest == revision.Digest && result.Validator == revision.Validator && result.Outcome == graph.ValidationValid, nil
+	})
+}
+
+func requireLoopValidation(txn *badgerdb.Txn, revision loop.LoopRevision) error {
+	prefix := key(familyLoopValidation, revision.LoopID, revisionPart(revision.Revision))
+	return requireValidation(txn, prefix, func(value []byte) (bool, error) {
+		result, err := loop.UnmarshalLoopValidationResult(value)
+		if err != nil {
+			return false, corrupt(err)
+		}
+		return result.LoopID == revision.LoopID && result.Revision == revision.Revision && result.RevisionDigest == revision.Digest && result.Validator == revision.Validator && result.Outcome == loop.ValidationValid, nil
+	})
+}
+
+func requireValidation(txn *badgerdb.Txn, prefix []byte, matches func([]byte) (bool, error)) error {
+	iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+	defer iterator.Close()
+	found := false
+	for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+		value, err := iterator.Item().ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+		match, err := matches(value)
+		if err != nil {
+			return err
+		}
+		if match {
+			found = true
+		}
+	}
+	if !found {
+		return fleet.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) GetGraphRunSnapshot(ctx context.Context, id string) (out graph.GraphRunSnapshot, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		value, e := get(txn, key(familySnapshot, id))
+		if e != nil {
+			return e
+		}
+		out, e = graph.UnmarshalRunSnapshot(value)
+		if e != nil || out.SnapshotID != id {
+			return corrupt(e)
+		}
+		return nil
+	})
+	return
+}
+
+func appendAudit(txn *badgerdb.Txn, fact fleet.AuditFact) error {
+	event := fact.Event
+	if event.ID != "" || !event.OccurredAt.IsZero() || event.PreviousDigest != "" || event.EventDigest != "" {
+		return errors.New("audit chain fields are repository-assigned")
+	}
+	if event.Type == "" || event.Outcome == "" || event.Reason == "" {
+		return errors.New("authoritative audit type, outcome, and reason are required")
+	}
+	if len(event.Metadata) > 64 {
+		return errors.New("audit metadata exceeds bounded limit")
+	}
+	for k, v := range event.Metadata {
+		if k == "" || len(k) > 128 || len(v) > 1024 {
+			return errors.New("audit metadata is malformed")
+		}
+	}
+	var sequence uint64
+	var previous string
+	prefix := key(familyAudit)
+	iterator := txn.NewIterator(badgerdb.IteratorOptions{PrefetchValues: true, Reverse: true})
+	defer iterator.Close()
+	iterator.Rewind()
+	for ; iterator.Valid(); iterator.Next() {
+		item := iterator.Item()
+		if !bytes.HasPrefix(item.Key(), prefix) {
+			continue
+		}
+		value, e := item.ValueCopy(nil)
+		if e != nil {
+			return e
+		}
+		var prior core.AuditEvent
+		if e = json.Unmarshal(value, &prior); e != nil {
+			return corrupt(e)
+		}
+		sequence = parseAuditSequence(item.Key())
+		previous = prior.EventDigest
+		break
+	}
+	sequence++
+	identifier := make([]byte, 16)
+	if _, e := rand.Read(identifier); e != nil {
+		return e
+	}
+	event.ID = "evt-" + hex.EncodeToString(identifier)
+	event.OccurredAt = time.Now().UTC()
+	event.PreviousDigest = previous
+	event.EventDigest = core.Digest(event)
+	wire, e := json.Marshal(event)
+	if e != nil {
+		return e
+	}
+	return create(txn, key(familyAudit, revisionPart(sequence)), wire)
+}
+func parseAuditSequence(encoded []byte) uint64 {
+	if len(encoded) < 12 {
+		return 0
+	}
+	return binary.BigEndian.Uint64(encoded[len(encoded)-8:])
+}
+func (s *Store) AuditEvents(ctx context.Context) (events []core.AuditEvent, err error) {
+	events = []core.AuditEvent{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyAudit, func(_ []byte, value []byte) error {
+			var event core.AuditEvent
+			if e := json.Unmarshal(value, &event); e != nil {
+				return corrupt(e)
+			}
+			copyEvent := event
+			copyEvent.EventDigest = ""
+			if core.Digest(copyEvent) != event.EventDigest {
+				return corrupt(errors.New("audit digest mismatch"))
+			}
+			if len(events) == 0 {
+				if event.PreviousDigest != "" {
+					return corrupt(errors.New("audit genesis mismatch"))
+				}
+			} else if event.PreviousDigest != events[len(events)-1].EventDigest {
+				return corrupt(errors.New("audit chain mismatch"))
+			}
+			events = append(events, event)
+			return nil
+		})
+	})
+	return
+}
+func scan(txn *badgerdb.Txn, family byte, visit func([]byte, []byte) error) error {
+	prefix := []byte{2, family}
+	iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+	defer iterator.Close()
+	for iterator.Seek(prefix); iterator.ValidForPrefix(prefix); iterator.Next() {
+		item := iterator.Item()
+		value, e := item.ValueCopy(nil)
+		if e != nil {
+			return e
+		}
+		if e = visit(item.KeyCopy(nil), value); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+func corrupt(err error) error {
+	if err == nil {
+		err = errors.New("identity mismatch")
+	}
+	return fmt.Errorf("%w: %v", fleet.ErrCorrupt, err)
+}
