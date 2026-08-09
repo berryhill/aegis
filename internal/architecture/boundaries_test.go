@@ -24,6 +24,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/reference":   {},
 	"internal/registry":    {"internal/reference"},
 	"internal/loop":        {},
+	"internal/graph":       {"internal/reference"},
 	"internal/core":        {},
 	"internal/execution":   {"internal/core", "internal/reference"},
 	"internal/evidence":    {"internal/reference", "internal/store"},
@@ -39,7 +40,7 @@ var allowedInternalImports = map[string][]string{
 
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
-	"core": {}, "credentials": {}, "evidence": {}, "execution": {},
+	"core": {}, "credentials": {}, "evidence": {}, "execution": {}, "graph": {},
 	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "persistence": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
@@ -58,6 +59,9 @@ var canonicalTypeOwners = map[string]string{
 	"FleetSource":             "internal/registry",
 	"LoopRevision":            "internal/loop",
 	"LoopValidationResult":    "internal/loop",
+	"GraphRevision":           "internal/graph",
+	"GraphValidationResult":   "internal/graph",
+	"GraphRunSnapshot":        "internal/graph",
 	"Mandate":                 "internal/core",
 	"AuthorityContext":        "internal/core",
 	"AuthorityTransitionFact": "internal/core",
@@ -77,6 +81,7 @@ var standardLibraryOnlyLayers = map[string]struct{}{
 	"internal/reference": {},
 	"internal/registry":  {},
 	"internal/loop":      {},
+	"internal/graph":     {},
 }
 
 func TestProtectedPackagesRespectDependencyDirection(t *testing.T) {
