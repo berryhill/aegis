@@ -21,8 +21,13 @@ const (
 type State string
 
 const (
-	StateQueued  State = "queued"
-	StateClaimed State = "claimed"
+	StateQueued    State = "queued"
+	StateClaimed   State = "claimed"
+	StateSucceeded State = "succeeded"
+	StateFailed    State = "failed"
+	StateDenied    State = "denied"
+	StateCancelled State = "cancelled"
+	StateExpired   State = "expired"
 )
 
 // Submission is the immutable admitted request. Authority is an exact context

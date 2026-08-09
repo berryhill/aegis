@@ -8,16 +8,19 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/evidence"
+	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
+	"github.com/berryhill/aegis/internal/store"
 )
 
 type fleetServiceRepository struct {
-	FleetRepository
+	fleet.Repository
 	agent          registry.AgentRevision
 	loop           loop.LoopRevision
 	graph          graph.GraphRevision
@@ -27,6 +30,10 @@ type fleetServiceRepository struct {
 	registerFact   fleet.AuditFact
 	loopPublished  bool
 	graphPublished bool
+	loopExecution  execution.LoopExecution
+	claim          queue.Claim
+	attempt        execution.Attempt
+	completion     fleet.Completion
 }
 
 type staticFleetSource []registry.Candidate
@@ -51,6 +58,24 @@ func (repository *fleetServiceRepository) AcceptSubmission(_ context.Context, va
 func (repository *fleetServiceRepository) RejectSubmission(_ context.Context, value queue.Rejection, _ fleet.AuditFact) (bool, error) {
 	repository.rejected = &value
 	return true, nil
+}
+func (repository *fleetServiceRepository) GetQueueItem(context.Context, string) (queue.Item, error) {
+	return repository.accepted.QueueItem, nil
+}
+func (repository *fleetServiceRepository) GetGraphRunSnapshot(context.Context, string) (graph.GraphRunSnapshot, error) {
+	return repository.accepted.Snapshot, nil
+}
+func (repository *fleetServiceRepository) CreateLoopExecution(_ context.Context, value execution.LoopExecution, _ fleet.AuditFact) (bool, error) {
+	repository.loopExecution = value
+	return true, nil
+}
+func (repository *fleetServiceRepository) ClaimQueueItem(_ context.Context, claim queue.Claim, attempt execution.Attempt, _ queue.QueueTransition, _ fleet.AuditFact) error {
+	repository.claim, repository.attempt = claim, attempt
+	return nil
+}
+func (repository *fleetServiceRepository) CompleteQueueItem(_ context.Context, completion fleet.Completion, _ fleet.AuditFact) error {
+	repository.completion = completion
+	return nil
 }
 func (repository *fleetServiceRepository) RegisterAgent(_ context.Context, _ registry.AgentRegistration, _ registry.AgentRevision, fact fleet.AuditFact) (bool, error) {
 	repository.registerFact = fact
@@ -91,6 +116,23 @@ func (commands fleetAuthorityCommands) AuthorityAdmission(_ context.Context, _, 
 		*commands.admissions = *commands.admissions + 1
 	}
 	return core.AuthorityAdmissionView{AuthorityContext: commands.authority, EvaluatedAt: at, Admitted: commands.admitted, ReasonCode: "admitted"}, commands.err
+}
+
+type sequencedAuthorityCommands struct {
+	core.AuthorityCommandRepository
+	authority core.AuthorityContext
+	calls     int
+	admit     int
+}
+
+func (commands *sequencedAuthorityCommands) AuthorityAdmission(_ context.Context, _, _ string, at time.Time) (core.AuthorityAdmissionView, error) {
+	commands.calls++
+	admitted := commands.calls <= commands.admit
+	reason := "admitted"
+	if !admitted {
+		reason = "revoked"
+	}
+	return core.AuthorityAdmissionView{AuthorityContext: commands.authority, EvaluatedAt: at, Admitted: admitted, ReasonCode: reason}, nil
 }
 
 func TestFleetReadinessCoversEveryConsequentialAction(t *testing.T) {
@@ -218,6 +260,96 @@ func TestFleetSubmissionBindsExactAuthorityAndHistoricalDefinitions(t *testing.T
 	}
 }
 
+func TestQueueWorkerRunsNoKeyAdapterToDurableEvidenceDisposition(t *testing.T) {
+	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-worker", IdempotencyKey: "submit-worker", SnapshotID: "snapshot-worker", QueueItemID: "queue-worker", GraphRunID: "run-worker", TransitionID: "queued-worker", RejectionID: "rejected-worker", MaxAttempts: 1})
+	if err != nil || decision.Accepted == nil {
+		t.Fatalf("prepare run: decision=%+v err=%v", decision, err)
+	}
+	blobs, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := evidence.NewBlobVerifier(blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewQueueWorker(repository, service, blobs, verifier, NoKeyAdapter{}, service.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.Process(context.Background(), WorkRequest{Subject: subject, Authority: authorityRef, QueueItemID: "queue-worker", WorkerID: "worker-1", LoopExecutionID: "loop-execution-worker", ClaimID: "claim-worker", AttemptID: "attempt-worker", ClaimTransitionID: "claimed-worker", TerminalTransitionID: "terminal-worker", DispositionID: "disposition-worker", ArtifactID: "artifact-worker", LeaseDuration: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Disposition.State != execution.StateSucceeded || result.Artifact == nil || result.Artifact.ContentRef == "" || len(result.Receipts) != 1 || result.Receipts[0].Outcome != evidence.Passed || repository.completion.Disposition.Digest != result.Disposition.Digest {
+		t.Fatalf("no-key execution did not reach evidence disposition: %+v completion=%+v", result, repository.completion)
+	}
+	if repository.claim.Authority != authorityRef || repository.attempt.LoopExecutionID != repository.loopExecution.LoopExecutionID {
+		t.Fatalf("claim causality or authority was lost: claim=%+v attempt=%+v loop=%+v", repository.claim, repository.attempt, repository.loopExecution)
+	}
+}
+
+func TestQueueWorkerRepeatsAdmissionAndDurablyDeniesRevokedRuntimeEffect(t *testing.T) {
+	service, repository, authority, subject, authorityRef, graphRef := fleetServiceFixture(t)
+	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-revoked", IdempotencyKey: "submit-revoked", SnapshotID: "snapshot-revoked", QueueItemID: "queue-revoked", GraphRunID: "run-revoked", TransitionID: "queued-revoked", RejectionID: "rejected-revoked", MaxAttempts: 1})
+	if err != nil || decision.Accepted == nil {
+		t.Fatalf("prepare run: decision=%+v err=%v", decision, err)
+	}
+	blobs, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := evidence.NewBlobVerifier(blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := &sequencedAuthorityCommands{authority: authority, admit: 1}
+	service.authorityCommands = commands
+	worker, err := NewQueueWorker(repository, service, blobs, verifier, NoKeyAdapter{}, service.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := worker.Process(context.Background(), WorkRequest{Subject: subject, Authority: authorityRef, QueueItemID: "queue-revoked", WorkerID: "worker-1", LoopExecutionID: "loop-execution-revoked", ClaimID: "claim-revoked", AttemptID: "attempt-revoked", ClaimTransitionID: "claimed-revoked", TerminalTransitionID: "terminal-revoked", DispositionID: "disposition-revoked", ArtifactID: "artifact-revoked", LeaseDuration: time.Minute})
+	if !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("runtime revocation was not denied: result=%+v err=%v", result, err)
+	}
+	if commands.calls != 2 || result.Disposition.State != execution.StateDenied || result.Disposition.ReasonCode != "runtime_admission_denied" || result.Artifact != nil || len(result.Receipts) != 0 {
+		t.Fatalf("runtime denial did not preserve fresh admission and empty evidence: calls=%d result=%+v", commands.calls, result)
+	}
+	if repository.completion.Disposition.Digest != result.Disposition.Digest || repository.completion.Transition.To != queue.StateDenied {
+		t.Fatalf("runtime denial was not durably terminal: %+v", repository.completion)
+	}
+}
+
+func TestQueueWorkerRejectsAuthorityDriftBeforeClaim(t *testing.T) {
+	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-drift", IdempotencyKey: "submit-drift", SnapshotID: "snapshot-drift", QueueItemID: "queue-drift", GraphRunID: "run-drift", TransitionID: "queued-drift", RejectionID: "rejected-drift", MaxAttempts: 1})
+	if err != nil || decision.Accepted == nil {
+		t.Fatalf("prepare run: decision=%+v err=%v", decision, err)
+	}
+	blobs, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := evidence.NewBlobVerifier(blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewQueueWorker(repository, service, blobs, verifier, NoKeyAdapter{}, service.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drifted := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: authorityRef.ID, Digest: "sha256:" + strings.Repeat("c", 64)}
+	_, err = worker.Process(context.Background(), WorkRequest{Subject: subject, Authority: drifted, QueueItemID: "queue-drift", WorkerID: "worker-1", LoopExecutionID: "loop-execution-drift", ClaimID: "claim-drift", AttemptID: "attempt-drift", ClaimTransitionID: "claimed-drift", TerminalTransitionID: "terminal-drift", DispositionID: "disposition-drift", ArtifactID: "artifact-drift", LeaseDuration: time.Minute})
+	if !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("authority drift was not denied: %v", err)
+	}
+	if repository.claim.ClaimID != "" || repository.loopExecution.LoopExecutionID != "" || repository.completion.Disposition.DispositionID != "" {
+		t.Fatalf("authority drift produced lifecycle side effects: claim=%+v loop=%+v completion=%+v", repository.claim, repository.loopExecution, repository.completion)
+	}
+}
+
 func TestRegisterFleetAgentUsesAuthenticatedBoundaryAndMetadataOnlyAudit(t *testing.T) {
 	service, repository, _, subject, _, _ := fleetServiceFixture(t)
 	source := staticFleetSource{{AgentID: "agent-1", Source: registry.FleetSource{Kind: "hermes", FleetID: "fleet-1", SourceID: "profile-1"}, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "local"}, Ownership: registry.Ownership{OwnerID: "owner-1", AccountabilityID: "accountability-1"}, Lifecycle: registry.LifecycleEnabled, Charter: revisionReference("agent-1", 1, "a"), CapabilityDeclarations: []string{"fleet.execute"}}}
@@ -239,7 +371,7 @@ func fleetServiceFixture(t *testing.T) (*FleetService, *fleetServiceRepository, 
 	authority := core.AuthorityContext{ID: "authority-1", MandateID: mandate.ID, SessionID: "session-1", SubjectID: subject.ID, AgentID: mandate.AgentID, CharterRevision: mandate.CharterRevision, CharterDigest: mandate.CharterDigest, Runtime: runtime, Authority: core.EffectiveAuthority{StanzaID: mandate.StanzaID}, IssuedAt: mandate.IssuedAt, ExpiresAt: mandate.ExpiresAt}
 	authority.Digest = core.AuthorityContextDigest(authority)
 
-	loopRevision, loopValidation, err := loop.NewRevision(loop.LoopRevision{LoopID: "loop-1", Revision: 1, EntryStepID: "work", Steps: []loop.Step{{ID: "work", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 1}}, {ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}}}, Transitions: []loop.Transition{{ID: "finish", FromStepID: "work", ToStepID: "done"}}})
+	loopRevision, loopValidation, err := loop.NewRevision(loop.LoopRevision{LoopID: "loop-1", Revision: 1, EntryStepID: "work", Steps: []loop.Step{{ID: "work", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 1}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "exact-output", MediaType: "application/json"}}}, {ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}}}, Transitions: []loop.Transition{{ID: "finish", FromStepID: "work", ToStepID: "done"}}, RequiredEvidence: []loop.EvidenceRequirement{{Claim: "exact-output", ProducerStepID: "work"}}})
 	if err != nil {
 		t.Fatalf("%v: %+v", err, loopValidation.Issues)
 	}

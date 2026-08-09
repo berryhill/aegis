@@ -30,6 +30,20 @@ func TestParseVersionOutputAcceptsDecoratedHermesVersion(t *testing.T) {
 	}
 }
 
+func TestParseVersionOutputAcceptsBuildQualifiedHermesVersion(t *testing.T) {
+	output := "Hermes Agent v0.18.2 (2026.7.7.2)\n" +
+		"Project: /home/operator/.hermes/hermes-agent\n" +
+		"Python: 3.11.15\n" +
+		"OpenAI SDK: 2.24.0\n"
+	installed, err := ParseVersionOutput([]byte(output))
+	if err != nil {
+		t.Fatalf("build-qualified Hermes output rejected: %v", err)
+	}
+	if installed.Version != "0.18.2" || installed.Installation != "" {
+		t.Fatalf("unexpected parsed installation: %#v", installed)
+	}
+}
+
 func TestParseVersionOutputIdentifiesUnsupportedHermesVersion(t *testing.T) {
 	_, err := ParseVersionOutput([]byte("Hermes Agent v0.14.0\n"))
 	if err == nil {

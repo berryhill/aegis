@@ -17,8 +17,10 @@ class NoKeyDemoTest(unittest.TestCase):
             hermes = fixture_root / "hermes"
             hermes.write_text(
                 "#!/bin/sh\n"
-                "printf '%s\\n' 'Hermes Agent v0.18.2'\n"
-                f"printf '%s\\n' 'Install directory: {installation}'\n"
+                "printf '%s\\n' 'Hermes Agent v0.18.2 (2026.7.7.2)'\n"
+                f"printf '%s\\n' 'Project: {installation}'\n"
+                "printf '%s\\n' 'Python: 3.11.15'\n"
+                "printf '%s\\n' 'OpenAI SDK: 2.24.0'\n"
             )
             hermes.chmod(0o700)
 

@@ -2,7 +2,11 @@
 // verifier receipts. Neither type grants authority or declares domain success.
 package evidence
 
-import "time"
+import (
+	"errors"
+	"strings"
+	"time"
+)
 
 type Outcome string
 
@@ -45,4 +49,24 @@ type VerificationReceipt struct {
 	FailureCategory        string    `json:"failure_category,omitempty"`
 	EvidenceRef            string    `json:"evidence_ref"`
 	ObservedAt             time.Time `json:"observed_at"`
+}
+
+func (value RuntimeArtifact) Validate() error {
+	if value.ID == "" || value.OwnerID == "" || value.ActionID == "" || value.RunID == "" || value.AuthorityContextID == "" || value.AuthorityContextDigest == "" || !strings.HasPrefix(value.Digest, "sha256:") || value.ContentRef != value.Digest || value.MediaType == "" || value.CreatedAt.IsZero() {
+		return errors.New("invalid runtime artifact")
+	}
+	return nil
+}
+
+func (value VerificationReceipt) Validate() error {
+	if value.ID == "" || value.ArtifactID == "" || value.ActionID == "" || value.RunID == "" || value.OwnerID == "" || value.AuthorityContextID == "" || value.AuthorityContextDigest == "" || value.VerifierID == "" || value.PolicyVersion == "" || value.Claim == "" || value.ExpectedDigest == "" || value.EvidenceRef == "" || value.ObservedAt.IsZero() || (value.Outcome != Passed && value.Outcome != Failed) {
+		return errors.New("invalid verification receipt")
+	}
+	if value.Outcome == Passed && (value.FailureCategory != "" || value.ObservedDigest != value.ExpectedDigest) {
+		return errors.New("invalid passing verification receipt")
+	}
+	if value.Outcome == Failed && value.FailureCategory == "" {
+		return errors.New("failed verification receipt requires category")
+	}
+	return nil
 }
