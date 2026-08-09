@@ -9,12 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
+	badgerdb "github.com/dgraph-io/badger/v4"
 )
 
 func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
@@ -62,6 +65,24 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 		t.Fatalf("attempt readback: got=%+v err=%v", got, err)
 	}
 
+	artifactDigest := "sha256:" + strings.Repeat("a", 64)
+	artifact := evidence.RuntimeArtifact{ID: "artifact-1", OwnerID: "agent-1", ActionID: "work", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
+	receipt := evidence.VerificationReceipt{ID: "receipt-1", ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, EvidenceRef: "sha256:" + strings.Repeat("b", 64), ObservedAt: claim.ClaimedAt}
+	dispositionRecord, err := disposition.New(disposition.Record{DispositionID: "disposition-1", GraphRunID: attempt.GraphRunID, LoopExecutionID: attempt.LoopExecutionID, AttemptID: attempt.AttemptID, QueueItem: attempt.QueueItem, Authority: claim.Authority, State: execution.StateSucceeded, ReasonCode: "evidence_satisfied", ArtifactIDs: []string{artifact.ID}, ReceiptIDs: []string{receipt.ID}, OccurredAt: claim.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := queue.NewTransition(queue.QueueTransition{TransitionID: "transition-terminal-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateSucceeded, ClaimID: claim.ClaimID, Reason: "evidence_satisfied", OccurredAt: claim.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CompleteQueueItem(ctx, fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}, audit("queue.completed", dispositionRecord.DispositionID)); err != nil {
+		t.Fatalf("complete queue item: %v", err)
+	}
+	if got, err := store.GetDisposition(ctx, dispositionRecord.DispositionID); err != nil || got.Digest != dispositionRecord.Digest {
+		t.Fatalf("disposition readback: got=%+v err=%v", got, err)
+	}
+
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +97,86 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 	}
 	if _, err = store.GetAttempt(ctx, attempt.AttemptID); err != nil {
 		t.Fatalf("durable attempt readback: %v", err)
+	}
+	if got, err := store.GetRuntimeArtifact(ctx, artifact.ID); err != nil || got.ID != artifact.ID {
+		t.Fatalf("durable artifact readback: got=%+v err=%v", got, err)
+	}
+	if got, err := store.GetVerificationReceipt(ctx, receipt.ID); err != nil || got.ID != receipt.ID {
+		t.Fatalf("durable receipt readback: got=%+v err=%v", got, err)
+	}
+	if got, err := store.GetDisposition(ctx, dispositionRecord.DispositionID); err != nil || got.Digest != dispositionRecord.Digest {
+		t.Fatalf("durable disposition readback: got=%+v err=%v", got, err)
+	}
+}
+
+func TestCompletionRejectsArtifactCausalitySubstitutionAtomically(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name   string
+		mutate func(*fleet.Completion)
+	}{
+		{
+			name: "authority context ID",
+			mutate: func(completion *fleet.Completion) {
+				completion.Artifact.AuthorityContextID = "authority-substituted"
+				completion.Receipts[0].AuthorityContextID = completion.Artifact.AuthorityContextID
+			},
+		},
+		{
+			name: "authority context digest",
+			mutate: func(completion *fleet.Completion) {
+				completion.Artifact.AuthorityContextDigest = "sha256:" + strings.Repeat("c", 64)
+				completion.Receipts[0].AuthorityContextDigest = completion.Artifact.AuthorityContextDigest
+			},
+		},
+		{
+			name: "run ID",
+			mutate: func(completion *fleet.Completion) {
+				completion.Artifact.RunID = "loop-execution-substituted"
+				completion.Receipts[0].RunID = completion.Artifact.RunID
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store, completion := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
+			defer store.Close()
+			test.mutate(&completion)
+
+			eventsBefore, err := store.AuditEvents(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = store.CompleteQueueItem(ctx, completion, audit("queue.completed", completion.Disposition.DispositionID))
+			if !errors.Is(err, fleet.ErrConflict) {
+				t.Fatalf("substituted %s did not fail closed: %v", test.name, err)
+			}
+			for name, read := range map[string]func() error{
+				"artifact":    func() error { _, e := store.GetRuntimeArtifact(ctx, completion.Artifact.ID); return e },
+				"receipt":     func() error { _, e := store.GetVerificationReceipt(ctx, completion.Receipts[0].ID); return e },
+				"disposition": func() error { _, e := store.GetDisposition(ctx, completion.Disposition.DispositionID); return e },
+			} {
+				if readErr := read(); !errors.Is(readErr, fleet.ErrNotFound) {
+					t.Fatalf("rejected completion persisted %s: %v", name, readErr)
+				}
+			}
+			if err = store.view(ctx, func(txn *badgerdb.Txn) error {
+				_, found, readErr := optional(txn, key(familyQueueTransition, completion.Claim.QueueItem.ID, completion.Transition.TransitionID))
+				if readErr != nil {
+					return readErr
+				}
+				if found {
+					t.Fatal("rejected completion persisted terminal queue transition")
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			eventsAfter, err := store.AuditEvents(ctx)
+			if err != nil || len(eventsAfter) != len(eventsBefore) {
+				t.Fatalf("rejected completion changed audit chain: before=%d after=%d err=%v", len(eventsBefore), len(eventsAfter), err)
+			}
+		})
 	}
 }
 
@@ -199,6 +300,37 @@ func TestConcurrentInitialClaimsHaveExactlyOneWinner(t *testing.T) {
 	if stored != 1 {
 		t.Fatalf("concurrent claim transaction persisted %d claim records", stored)
 	}
+}
+
+func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, fleet.Completion) {
+	t.Helper()
+	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-completion-boundary")
+	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: "loop-execution-completion-boundary", GraphRunID: accepted.GraphRun.GraphRunID, GraphNodeID: "echo", Loop: accepted.Snapshot.Loops[0], Participant: accepted.Snapshot.Participants[0], CreatedAt: accepted.Submission.SubmittedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil {
+		t.Fatal(err)
+	}
+	claim, attempt, claimed := claimFixture(t, accepted, loopExecution, "claim-completion-boundary", "attempt-completion-boundary")
+	if err = store.ClaimQueueItem(ctx, claim, attempt, claimed, audit("queue.claimed", claim.ClaimID)); err != nil {
+		t.Fatal(err)
+	}
+	artifactDigest := "sha256:" + strings.Repeat("a", 64)
+	artifact := evidence.RuntimeArtifact{ID: "artifact-completion-boundary", OwnerID: "agent-1", ActionID: "work", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
+	receipt := evidence.VerificationReceipt{ID: "receipt-completion-boundary", ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, EvidenceRef: "sha256:" + strings.Repeat("b", 64), ObservedAt: claim.ClaimedAt}
+	dispositionRecord, err := disposition.New(disposition.Record{DispositionID: "disposition-completion-boundary", GraphRunID: attempt.GraphRunID, LoopExecutionID: attempt.LoopExecutionID, AttemptID: attempt.AttemptID, QueueItem: attempt.QueueItem, Authority: claim.Authority, State: execution.StateSucceeded, ReasonCode: "evidence_satisfied", ArtifactIDs: []string{artifact.ID}, ReceiptIDs: []string{receipt.ID}, OccurredAt: claim.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := queue.NewTransition(queue.QueueTransition{TransitionID: "transition-terminal-completion-boundary", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateSucceeded, ClaimID: claim.ClaimID, Reason: "evidence_satisfied", OccurredAt: claim.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}
 }
 
 func lifecycleFixture(t *testing.T, ctx context.Context, root, idempotencyKey string) (*Store, fleet.AcceptedSubmission) {

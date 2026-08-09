@@ -8,6 +8,8 @@ import (
 	"errors"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
@@ -36,6 +38,15 @@ type AcceptedSubmission struct {
 	QueueItem         queue.Item
 	GraphRun          execution.GraphRun
 	InitialTransition queue.QueueTransition
+}
+
+// Completion is one all-or-nothing evidence-gated terminal mutation.
+type Completion struct {
+	Claim       queue.Claim
+	Artifact    *evidence.RuntimeArtifact
+	Receipts    []evidence.VerificationReceipt
+	Disposition disposition.Record
+	Transition  queue.QueueTransition
 }
 
 // Repository exposes create-only definition persistence. It deliberately has
@@ -70,6 +81,10 @@ type Repository interface {
 	ClaimQueueItem(context.Context, queue.Claim, execution.Attempt, queue.QueueTransition, AuditFact) error
 	GetClaim(context.Context, string) (queue.Claim, error)
 	GetAttempt(context.Context, string) (execution.Attempt, error)
+	CompleteQueueItem(context.Context, Completion, AuditFact) error
+	GetRuntimeArtifact(context.Context, string) (evidence.RuntimeArtifact, error)
+	GetVerificationReceipt(context.Context, string) (evidence.VerificationReceipt, error)
+	GetDisposition(context.Context, string) (disposition.Record, error)
 
 	AuditEvents(context.Context) ([]core.AuditEvent, error)
 	Close() error

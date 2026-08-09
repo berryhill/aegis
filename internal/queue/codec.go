@@ -85,11 +85,21 @@ func validateClaim(v Claim) error {
 	return validateDigest(v, v.Digest)
 }
 func validateTransition(v QueueTransition) error {
-	legal := (v.From == "" && v.To == StateQueued && v.ClaimID == "") || (v.From == StateQueued && v.To == StateClaimed && validID(v.ClaimID))
+	legal := (v.From == "" && v.To == StateQueued && v.ClaimID == "") ||
+		(v.From == StateQueued && v.To == StateClaimed && validID(v.ClaimID)) ||
+		(v.From == StateClaimed && terminalState(v.To) && validID(v.ClaimID))
 	if v.SchemaVersion != TransitionSchemaVersion || !validID(v.TransitionID) || !validID(v.QueueItemID) || !legal || !validReason(v.Reason) || v.OccurredAt.IsZero() {
-		return errors.New("invalid initial queue transition")
+		return errors.New("invalid queue transition")
 	}
 	return validateDigest(v, v.Digest)
+}
+func terminalState(state State) bool {
+	switch state {
+	case StateSucceeded, StateFailed, StateDenied, StateCancelled, StateExpired:
+		return true
+	default:
+		return false
+	}
 }
 func validID(v string) bool {
 	return utf8.ValidString(v) && strings.TrimSpace(v) == v && idPattern.MatchString(v)

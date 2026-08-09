@@ -29,9 +29,10 @@ var allowedInternalImports = map[string][]string{
 	"internal/core":              {},
 	"internal/execution":         {"internal/core", "internal/reference"},
 	"internal/evidence":          {"internal/reference", "internal/store"},
+	"internal/disposition":       {"internal/execution", "internal/reference"},
 	"internal/store":             {"internal/core"},
 	"internal/persistence":       {"internal/core", "internal/persistence"},
-	"internal/persistence/fleet": {"internal/core", "internal/execution", "internal/graph", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
+	"internal/persistence/fleet": {"internal/core", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
@@ -42,7 +43,7 @@ var allowedInternalImports = map[string][]string{
 
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
-	"core": {}, "credentials": {}, "evidence": {}, "execution": {}, "graph": {},
+	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
 	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
