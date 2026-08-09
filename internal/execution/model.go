@@ -9,6 +9,13 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/reference"
+)
+
+const (
+	GraphRunSchemaVersion      = "aegis.execution.graph-run.v1"
+	LoopExecutionSchemaVersion = "aegis.execution.loop.v1"
+	AttemptSchemaVersion       = "aegis.execution.attempt.v1"
 )
 
 type State string
@@ -22,6 +29,45 @@ const (
 	StateCancelled State = "cancelled"
 	StateExpired   State = "expired"
 )
+
+// GraphRun is the stable parent execution identity for one accepted queue item.
+type GraphRun struct {
+	SchemaVersion string              `json:"schema_version"`
+	GraphRunID    string              `json:"graph_run_id"`
+	QueueItem     reference.DigestRef `json:"queue_item"`
+	Snapshot      reference.DigestRef `json:"snapshot"`
+	Authority     reference.DigestRef `json:"authority"`
+	State         State               `json:"state"`
+	CreatedAt     time.Time           `json:"created_at"`
+	Digest        string              `json:"digest"`
+}
+
+// LoopExecution preserves child causality for one exact Graph node and Loop.
+type LoopExecution struct {
+	SchemaVersion   string                `json:"schema_version"`
+	LoopExecutionID string                `json:"loop_execution_id"`
+	GraphRunID      string                `json:"graph_run_id"`
+	GraphNodeID     string                `json:"graph_node_id"`
+	Loop            reference.RevisionRef `json:"loop"`
+	Participant     reference.RevisionRef `json:"participant"`
+	State           State                 `json:"state"`
+	CreatedAt       time.Time             `json:"created_at"`
+	Digest          string                `json:"digest"`
+}
+
+// Attempt is one bounded try; every retry receives a new identity and number.
+type Attempt struct {
+	SchemaVersion   string              `json:"schema_version"`
+	AttemptID       string              `json:"attempt_id"`
+	GraphRunID      string              `json:"graph_run_id"`
+	LoopExecutionID string              `json:"loop_execution_id"`
+	QueueItem       reference.DigestRef `json:"queue_item"`
+	ClaimID         string              `json:"claim_id"`
+	AttemptNumber   uint32              `json:"attempt_number"`
+	State           State               `json:"state"`
+	CreatedAt       time.Time           `json:"created_at"`
+	Digest          string              `json:"digest"`
+}
 
 func CanTransition(from, to State) bool {
 	switch from {

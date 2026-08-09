@@ -8,8 +8,10 @@ import (
 	"errors"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
+	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/registry"
 )
 
@@ -25,6 +27,15 @@ var (
 // digest in the same transaction as the consequential fleet mutation.
 type AuditFact struct {
 	Event core.AuditEvent
+}
+
+// AcceptedSubmission is one all-or-nothing admission mutation.
+type AcceptedSubmission struct {
+	Snapshot          graph.GraphRunSnapshot
+	Submission        queue.Submission
+	QueueItem         queue.Item
+	GraphRun          execution.GraphRun
+	InitialTransition queue.QueueTransition
 }
 
 // Repository exposes create-only definition persistence. It deliberately has
@@ -47,6 +58,18 @@ type Repository interface {
 	GetGraphValidation(context.Context, string, uint64, string) (graph.GraphValidationResult, error)
 	CreateGraphRunSnapshot(context.Context, graph.GraphRunSnapshot, AuditFact) (bool, error)
 	GetGraphRunSnapshot(context.Context, string) (graph.GraphRunSnapshot, error)
+
+	AcceptSubmission(context.Context, AcceptedSubmission, AuditFact) (bool, error)
+	RejectSubmission(context.Context, queue.Rejection, AuditFact) (bool, error)
+	GetSubmission(context.Context, string) (queue.Submission, error)
+	GetRejection(context.Context, string) (queue.Rejection, error)
+	GetQueueItem(context.Context, string) (queue.Item, error)
+	GetGraphRun(context.Context, string) (execution.GraphRun, error)
+	CreateLoopExecution(context.Context, execution.LoopExecution, AuditFact) (bool, error)
+	GetLoopExecution(context.Context, string) (execution.LoopExecution, error)
+	ClaimQueueItem(context.Context, queue.Claim, execution.Attempt, queue.QueueTransition, AuditFact) error
+	GetClaim(context.Context, string) (queue.Claim, error)
+	GetAttempt(context.Context, string) (execution.Attempt, error)
 
 	AuditEvents(context.Context) ([]core.AuditEvent, error)
 	Close() error
