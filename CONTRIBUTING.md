@@ -19,6 +19,7 @@ go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 govulncheck ./...
 test -z "$(gofmt -l ./cmd ./internal)"
 ./scripts/verify_installed_mvi_test.sh
+python3 -m unittest scripts/verify_release_archive_test.py
 python3 -m unittest scripts/verify_installed_fleet_vertical_test.py
 ./scripts/verify_release_candidate_test.sh
 ./scripts/verify-installed-mvi.sh

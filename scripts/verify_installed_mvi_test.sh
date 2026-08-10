@@ -48,4 +48,12 @@ expect_status_2 'release output must not be a symlink:' \
   "$repo/scripts/verify-installed-mvi.sh" 1.2.3 "$linked_dist"
 [ -z "$(find "$real_dist" -mindepth 1 -maxdepth 1 -print -quit)" ] || fail_test 'symlink target was mutated'
 
+real_parent=$root/real-parent
+linked_parent=$root/linked-parent
+mkdir "$real_parent"
+ln -s "$real_parent" "$linked_parent"
+expect_status_2 'release output must not traverse symlinks:' \
+  "$repo/scripts/verify-installed-mvi.sh" 1.2.3 "$linked_parent/dist"
+[ ! -e "$real_parent/dist" ] || fail_test 'symlink-parent denial mutated its target'
+
 printf 'installed MVI denial tests passed\n'

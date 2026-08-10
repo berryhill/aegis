@@ -25,6 +25,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Hardened installed release acceptance so every generated archive must contain exactly one root `aegis` regular file with mode `0755`; traversal, absolute/nested paths, links, extra members, unsafe modes, and release-output paths traversing symlinked parents fail closed before extraction or target mutation.
 - Recognize the decorated version identity emitted by supported Hermes Agent 0.18.2 Git installations while preserving fail-closed rejection of malformed, ambiguous, and unsupported version output.
 
 ## [0.2.1] - 2026-08-07

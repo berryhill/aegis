@@ -13,10 +13,11 @@ Maintainers can exercise the exact release packaging path without publishing any
 
 ```sh
 ./scripts/verify_installed_mvi_test.sh
+python3 -m unittest scripts/verify_release_archive_test.py
 ./scripts/verify-installed-mvi.sh
 ```
 
-The second command builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, verifies their checksums, extracts the native archive, verifies its injected stable version, and runs the installed binary with an isolated `HOME`. It first requires the bare non-TTY result `manager_not_initialized` with exit status 2 and no `.argis` creation, then drives the extracted native binary through the credential-independent Registry → Loop → Graph → Queue → evidence/disposition vertical. That vertical checks accepted execution, durable wrong-authority rejection, fresh admission, terminal queue readback, and exact historical definition digests. Supplying a version and empty output directory, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist`, retains only the archives and `SHA256SUMS`; the isolated proof state is still removed. Never point it at a directory containing retained files. This does not publish a release.
+The final command builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, requires each archive to contain exactly one root `aegis` regular file with mode `0755`, verifies their checksums, extracts the native archive, verifies its injected stable version, and runs the installed binary with an isolated `HOME`. It first requires the bare non-TTY result `manager_not_initialized` with exit status 2 and no `.argis` creation, then drives the extracted native binary through the credential-independent Registry → Loop → Graph → Queue → evidence/disposition vertical. That vertical checks accepted execution, durable wrong-authority rejection, fresh admission, terminal queue readback, and exact historical definition digests. Supplying a version and empty output directory, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist`, retains only the archives and `SHA256SUMS`; the isolated proof state is still removed. Never point it at a directory containing retained files. This does not publish a release.
 
 An exact pre-publication candidate proof is deliberately explicit and must run from a clean committed revision. Create a decision file outside the evidence workspace with exactly these fields (no extras):
 

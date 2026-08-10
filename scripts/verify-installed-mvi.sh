@@ -28,7 +28,19 @@ if [ -n "$requested_dist" ]; then
     printf 'release output must not be a symlink: %s\n' "$dist" >&2
     exit 2
   fi
+  if DIST=$dist python3 -c 'import os,pathlib,sys; p=pathlib.Path(os.path.abspath(os.environ["DIST"])); sys.exit(1 if any(part.is_symlink() for part in (p, *p.parents)) else 0)'; then
+    :
+  else
+    printf 'release output must not traverse symlinks: %s\n' "$dist" >&2
+    exit 2
+  fi
   mkdir -p "$dist"
+  lexical_dist=$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$dist")
+  physical_dist=$(CDPATH= cd -- "$dist" && pwd -P)
+  if [ "$lexical_dist" != "$physical_dist" ]; then
+    printf 'release output must not traverse symlinks: %s\n' "$dist" >&2
+    exit 2
+  fi
   if [ -n "$(find "$dist" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
     printf 'release output must be empty: %s\n' "$dist" >&2
     exit 2
@@ -48,7 +60,9 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
     -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version" \
     -o "$stage/aegis" ./cmd/aegis
+  chmod 0755 "$stage/aegis"
   tar -C "$stage" -czf "$dist/$name.tar.gz" aegis
+  python3 "$repo/scripts/verify-release-archive.py" "$dist/$name.tar.gz"
   rm -rf "$stage"
 done
 
