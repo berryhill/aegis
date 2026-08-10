@@ -88,6 +88,16 @@ func TestCharterRejectsWildcardUnsupportedRuntimeAndAuthentication(t *testing.T)
 	}
 }
 
+func TestCharterAllowsExplicitNoProviderWithoutCredentialScope(t *testing.T) {
+	charter := completePolicyCharter()
+	charter.Stanzas[0].Hermes.Provider = "none"
+	charter.Stanzas[0].Hermes.Model = "proof-no-key"
+	charter.Stanzas[0].Scopes.Credentials = nil
+	if err := ValidateCharter(charter); err != nil {
+		t.Fatalf("credential-independent provider rejected: %v", err)
+	}
+}
+
 func TestCharterRequiresExactQualifiedHermesVersionConstraint(t *testing.T) {
 	charter := completePolicyCharter()
 	charter.Runtime.VersionConstraint = HermesVersionConstraint

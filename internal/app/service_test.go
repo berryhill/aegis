@@ -118,6 +118,17 @@ func TestAuthenticationDoesNotAcceptPromptOrStanzaAuthority(t *testing.T) {
 	}
 }
 
+func TestNoProviderRequiresNoCredential(t *testing.T) {
+	s := testService(t)
+	credentials, err := s.resolveProviderCredential("none", nil)
+	if err != nil {
+		t.Fatalf("credential-independent provider rejected: %v", err)
+	}
+	if len(credentials) != 0 {
+		t.Fatalf("credential-independent provider resolved credentials: %#v", credentials)
+	}
+}
+
 func TestCredentialResolutionIsExplicitScopedAndSecretSafe(t *testing.T) {
 	s := testService(t)
 	s.Config.Credentials.ProviderAuth["team"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_TEAM_KEY", TargetEnv: "TEAM_PROVIDER_KEY"}

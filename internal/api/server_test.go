@@ -21,7 +21,12 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/evidence"
+	"github.com/berryhill/aegis/internal/orchestration"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
+	"github.com/berryhill/aegis/internal/reference"
+	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -93,6 +98,36 @@ func apiService(t *testing.T) *app.Service {
 		return "", false
 	}
 	return svc
+}
+
+func configureAPIFleet(t *testing.T, svc *app.Service) {
+	t.Helper()
+	fleetStore, err := fleetbadger.Open(context.Background(), filepath.Join(svc.Config.StateDir, "persistence", "fleet-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := fleetStore.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	fleetService, err := orchestration.NewFleetService(fleetStore, svc.Authority, svc.AuthorityCommands, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
+		return svc.RequirePrincipal(subject)
+	}, nil, svc.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := evidence.NewBlobVerifier(svc.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := orchestration.NewQueueWorker(fleetStore, fleetService, svc.Store, verifier, orchestration.NoKeyAdapter{}, svc.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.ConfigureFleet(fleetStore, fleetService, worker); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func waitFor(t *testing.T, network, address string) {
@@ -360,6 +395,92 @@ func apiRequest(t *testing.T, client *http.Client, method, path string, input, o
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestFleetAgentAPIUsesAuthenticatedSharedApplicationBoundary(t *testing.T) {
+	svc := apiService(t)
+	configureAPIFleet(t, svc)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	client := unixClient(svc.Config.API.UnixSocket)
+
+	digest := "sha256:" + strings.Repeat("a", 64)
+	fixture, err := json.Marshal(registry.CurrentFleetFixture{
+		SchemaVersion: registry.CurrentFleetFixtureSchemaVersion,
+		FleetID:       "fleet-primary",
+		Agents: []registry.CurrentFleetAgent{{
+			SourceID:  "fleet-agent-1",
+			AgentID:   "agent-alpha",
+			Runtime:   registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "profile/alpha"},
+			Ownership: registry.Ownership{OwnerID: "operator-primary", AccountabilityID: "team-platform"},
+			Lifecycle: registry.LifecycleEnabled,
+			Charter: reference.RevisionRef{
+				SchemaVersion: reference.RevisionRefSchemaVersion,
+				ID:            "agent-alpha",
+				Revision:      7,
+				Digest:        digest,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := app.RegisterFleetAgentInput{
+		Fixture:  fixture,
+		Identity: registry.FleetSource{FleetID: "fleet-primary", Kind: registry.CurrentFleetSourceKind, SourceID: "fleet-agent-1"},
+	}
+	var created struct {
+		Agent   app.FleetAgent `json:"agent"`
+		Created bool           `json:"created"`
+	}
+	apiRequest(t, client, http.MethodPost, "/v1/agents", input, &created, http.StatusCreated)
+	if !created.Created || created.Agent.Registration.AgentID != "agent-alpha" || created.Agent.Revision.Charter.Digest != digest {
+		t.Fatalf("registered fleet participant lost immutable provenance: %+v", created)
+	}
+
+	var replay struct {
+		Created bool `json:"created"`
+	}
+	apiRequest(t, client, http.MethodPost, "/v1/agents", input, &replay, http.StatusOK)
+	if replay.Created {
+		t.Fatal("exact registration replay created a second fleet participant")
+	}
+	var listed []app.FleetAgent
+	apiRequest(t, client, http.MethodGet, "/v1/agents", nil, &listed, http.StatusOK)
+	if len(listed) != 1 || listed[0].Revision.Digest != created.Agent.Revision.Digest {
+		t.Fatalf("fleet list did not read back the registered immutable revision: %+v", listed)
+	}
+	var shown app.FleetAgent
+	apiRequest(t, client, http.MethodGet, "/v1/agents/agent-alpha?revision=1", nil, &shown, http.StatusOK)
+	if shown.Revision.Digest != created.Agent.Revision.Digest {
+		t.Fatalf("exact revision readback mismatch: got=%q want=%q", shown.Revision.Digest, created.Agent.Revision.Digest)
+	}
+
+	apiRequest(t, client, http.MethodGet, "/v1/agents/agent-alpha?revision=prompt-selected", nil, nil, http.StatusBadRequest)
+	apiRequest(t, client, http.MethodPost, "/v1/agents", map[string]any{"fixture": json.RawMessage(fixture), "identity": input.Identity, "subject": "model-selected"}, nil, http.StatusBadRequest)
+}
+
+func TestFleetAPIUnavailableFailsClosed(t *testing.T) {
+	svc := apiService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodGet, "/v1/agents", nil, nil, http.StatusServiceUnavailable)
 }
 
 func TestUnixAPICompleteOperationalWorkflow(t *testing.T) {

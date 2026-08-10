@@ -33,20 +33,20 @@ type AuditFact struct {
 
 // AcceptedSubmission is one all-or-nothing admission mutation.
 type AcceptedSubmission struct {
-	Snapshot          graph.GraphRunSnapshot
-	Submission        queue.Submission
-	QueueItem         queue.Item
-	GraphRun          execution.GraphRun
-	InitialTransition queue.QueueTransition
+	Snapshot          graph.GraphRunSnapshot `json:"snapshot"`
+	Submission        queue.Submission       `json:"submission"`
+	QueueItem         queue.Item             `json:"queue_item"`
+	GraphRun          execution.GraphRun     `json:"graph_run"`
+	InitialTransition queue.QueueTransition  `json:"initial_transition"`
 }
 
 // Completion is one all-or-nothing evidence-gated terminal mutation.
 type Completion struct {
-	Claim       queue.Claim
-	Artifact    *evidence.RuntimeArtifact
-	Receipts    []evidence.VerificationReceipt
-	Disposition disposition.Record
-	Transition  queue.QueueTransition
+	Claim       queue.Claim                    `json:"claim"`
+	Artifact    *evidence.RuntimeArtifact      `json:"artifact,omitempty"`
+	Receipts    []evidence.VerificationReceipt `json:"receipts"`
+	Disposition disposition.Record             `json:"disposition"`
+	Transition  queue.QueueTransition          `json:"transition"`
 }
 
 type RetryMutation struct {

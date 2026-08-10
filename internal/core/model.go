@@ -491,7 +491,7 @@ func ValidateCharter(c Charter) error {
 			add(p + " persistent profiles, homes, MCP servers, and plugins are unsupported")
 		}
 		expectedCredential := "provider:" + s.Hermes.Provider
-		if len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential) {
+		if s.Hermes.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential)) {
 			add(p + " credential scopes must include " + expectedCredential)
 		}
 		for _, x := range append(append([]string{}, s.Grant.Tools...), s.Grant.Capabilities...) {

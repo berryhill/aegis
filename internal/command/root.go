@@ -19,10 +19,13 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	credentialbridge "github.com/berryhill/aegis/internal/credentials/bridge"
 	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/migration"
+	"github.com/berryhill/aegis/internal/orchestration"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
@@ -145,6 +148,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		return err
 	})
 	var openedAuthority *authoritybadger.Store
+	var openedFleet *fleetbadger.Store
 	build := func(cmd *cobra.Command) (*app.Service, error) {
 		cfg, err := config.Load(o.configFile, nil)
 		if err != nil {
@@ -182,7 +186,41 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		openedAuthority = authority
 		h := hermes.New(cfg.HermesExecutable, deps.Logger)
 		service := app.New(cfg, st, authority, authority, h, deps.Logger)
+		if commandNeedsFleet(cmd) {
+			fleetStore, fleetErr := fleetbadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "fleet-v1"))
+			if fleetErr != nil {
+				_ = authority.Close()
+				openedAuthority = nil
+				return nil, fmt.Errorf("open fleet repository: %w", fleetErr)
+			}
+			openedFleet = fleetStore
+			fleetService, fleetErr := orchestration.NewFleetService(fleetStore, authority, authority, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
+				return service.RequirePrincipal(subject)
+			}, nil, service.Now)
+			if fleetErr == nil {
+				var verifier *evidence.BlobVerifier
+				verifier, fleetErr = evidence.NewBlobVerifier(st)
+				if fleetErr == nil {
+					var worker *orchestration.QueueWorker
+					worker, fleetErr = orchestration.NewQueueWorker(fleetStore, fleetService, st, verifier, orchestration.NoKeyAdapter{}, service.Now)
+					if fleetErr == nil {
+						fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
+					}
+				}
+			}
+			if fleetErr != nil {
+				_ = fleetStore.Close()
+				openedFleet = nil
+				_ = authority.Close()
+				openedAuthority = nil
+				return nil, fmt.Errorf("configure fleet control: %w", fleetErr)
+			}
+		}
 		if err = service.RecoverProvisioning(cmd.Context()); err != nil {
+			if openedFleet != nil {
+				_ = openedFleet.Close()
+				openedFleet = nil
+			}
 			_ = authority.Close()
 			openedAuthority = nil
 			return nil, err
@@ -190,12 +228,16 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		return service, nil
 	}
 	root.PersistentPostRunE = func(*cobra.Command, []string) error {
-		if openedAuthority == nil {
-			return nil
+		var closeErr error
+		if openedFleet != nil {
+			closeErr = openedFleet.Close()
+			openedFleet = nil
 		}
-		err := openedAuthority.Close()
-		openedAuthority = nil
-		return err
+		if openedAuthority != nil {
+			closeErr = errors.Join(closeErr, openedAuthority.Close())
+			openedAuthority = nil
+		}
+		return closeErr
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
@@ -246,12 +288,16 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {
 			command.RunE = func(cmd *cobra.Command, args []string) (runErr error) {
 				defer func() {
+					if openedFleet != nil {
+						runErr = errors.Join(runErr, openedFleet.Close())
+						openedFleet = nil
+					}
 					if openedAuthority != nil {
 						runErr = errors.Join(runErr, openedAuthority.Close())
 						openedAuthority = nil
@@ -358,6 +404,18 @@ type coreEnv = struct {
 func environment(name string) (out struct{ Name, Host, Tenant string }) { out.Name = name; return }
 
 type builder func(*cobra.Command) (*app.Service, error)
+
+func commandNeedsFleet(command *cobra.Command) bool {
+	for current := command; current != nil; current = current.Parent() {
+		switch current.Name() {
+		case "agents", "loops", "graphs", "queue", "serve":
+			return true
+		case "authority":
+			return current.Parent() != nil && current.Parent().Name() == "session"
+		}
+	}
+	return false
+}
 
 func runtimeCmd(build builder, o *rootOptions) *cobra.Command {
 	return &cobra.Command{Use: "runtime", Short: "Discover explicit runtime adapters", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
@@ -687,6 +745,17 @@ func sessionCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, map[string]any{"session": x, "runtime_process_alive": alive})
 	}}
+	authority := &cobra.Command{Use: "authority SESSION_ID", Short: "Resolve the session's exact active fleet authority reference", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, a []string) error {
+		s, e := build(cmd)
+		if e != nil {
+			return e
+		}
+		x, e := s.FleetAuthorityForSession(cmd.Context(), a[0])
+		if e != nil {
+			return e
+		}
+		return output(cmd, x)
+	}}
 	end := func(revoke bool) *cobra.Command {
 		verb := "terminate"
 		if revoke {
@@ -711,7 +780,7 @@ func sessionCmd(build builder) *cobra.Command {
 		x.Flags().StringVar(&reason, "reason", "operator_request", "machine-readable reason")
 		return x
 	}
-	c.AddCommand(preview, start, list, show, end(true), end(false))
+	c.AddCommand(preview, start, list, show, authority, end(true), end(false))
 	return c
 }
 func auditCmd(build builder) *cobra.Command {

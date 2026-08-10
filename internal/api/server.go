@@ -63,6 +63,16 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusConflict, "conflict", "state conflict"
 	case errors.Is(err, app.ErrExpired):
 		return http.StatusConflict, "expired", "authority expired"
+	case app.IsFleetDenied(err):
+		return http.StatusForbidden, "denied", "fleet authority denied"
+	case app.IsFleetUnavailable(err):
+		return http.StatusServiceUnavailable, "unavailable", "fleet control unavailable"
+	case app.IsFleetConflict(err):
+		return http.StatusConflict, "conflict", "immutable fleet record conflict"
+	case app.IsFleetNotFound(err):
+		return http.StatusNotFound, "not_found", "fleet resource not found"
+	case app.IsFleetCorrupt(err):
+		return http.StatusServiceUnavailable, "repair_required", "fleet store repair required"
 	case errors.Is(err, os.ErrNotExist):
 		return http.StatusNotFound, "not_found", "resource not found"
 	}
@@ -377,11 +387,157 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.JSON(http.StatusOK, config.Redacted(svc.Config))
 	})
 	g.GET("/agents", func(c *echo.Context) error {
-		x, err := svc.ListAgents()
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		x, err := svc.ListFleetAgentsAs(c.Request().Context(), subject)
 		if err != nil {
 			return err
 		}
 		return c.JSON(http.StatusOK, x)
+	})
+	g.POST("/agents", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.RegisterFleetAgentInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, created, err := svc.RegisterFleetAgentAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		status := http.StatusOK
+		if created {
+			status = http.StatusCreated
+		}
+		return c.JSON(status, map[string]any{"agent": value, "created": created})
+	})
+	g.GET("/agents/:agent", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		revision, err := optionalRevision(c.QueryParam("revision"))
+		if err != nil {
+			return err
+		}
+		value, err := svc.GetFleetAgentAs(c.Request().Context(), subject, c.Param("agent"), revision)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/loops", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.PublishLoopInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.PublishLoopAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
+	g.GET("/loops/:loop/:revision", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		revision, err := requiredRevision(c.Param("revision"))
+		if err != nil {
+			return err
+		}
+		value, err := svc.GetLoopAs(c.Request().Context(), subject, c.Param("loop"), revision)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/graphs", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.PublishGraphInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.PublishGraphAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
+	g.GET("/graphs/:graph/:revision", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		revision, err := requiredRevision(c.Param("revision"))
+		if err != nil {
+			return err
+		}
+		value, err := svc.GetGraphAs(c.Request().Context(), subject, c.Param("graph"), revision)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.SubmitGraphInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.SubmitGraphAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		status := http.StatusCreated
+		if !value.Created {
+			status = http.StatusOK
+		}
+		return c.JSON(status, value)
+	})
+	g.GET("/queue/:item", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.GetQueueItemAs(c.Request().Context(), subject, c.Param("item"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/process", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.ProcessQueueItemInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		value, err := svc.ProcessQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
 	})
 	g.GET("/agents/:agent/charters", func(c *echo.Context) error {
 		x, err := svc.ListCharters(c.Param("agent"))
@@ -638,6 +794,17 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, map[string]any{"session": x, "runtime_process_alive": alive})
 	})
+	g.GET("/sessions/:id/authority", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.FleetAuthorityForSessionAs(c.Request().Context(), subject, c.Param("id"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
 	g.POST("/sessions/:id/revoke", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -863,6 +1030,21 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		_ = srv.Close()
 		return err
 	}
+}
+
+func optionalRevision(raw string) (uint64, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	return requiredRevision(raw)
+}
+
+func requiredRevision(raw string) (uint64, error) {
+	revision, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || revision == 0 {
+		return 0, echo.NewHTTPError(http.StatusBadRequest, "revision must be a positive integer")
+	}
+	return revision, nil
 }
 
 func requestSubject(c *echo.Context) (core.Subject, error) {
