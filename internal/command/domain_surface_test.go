@@ -20,9 +20,9 @@ func TestRootExposesFleetProductResources(t *testing.T) {
 	root := NewRoot(Dependencies{In: nil, Out: io.Discard, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
 	for _, path := range [][]string{
 		{"agents", "register"}, {"agents", "list"}, {"agents", "show"},
-		{"loops", "publish"}, {"loops", "show"},
-		{"graphs", "publish"}, {"graphs", "show"}, {"graphs", "submit"},
-		{"queue", "show"}, {"queue", "process"},
+		{"loops", "list"}, {"loops", "publish"}, {"loops", "show"},
+		{"graphs", "list"}, {"graphs", "publish"}, {"graphs", "show"}, {"graphs", "submit"},
+		{"queue", "list"}, {"queue", "show"}, {"queue", "process"},
 	} {
 		command, _, err := root.Find(path)
 		if err != nil || command == nil || command.Name() != path[len(path)-1] {

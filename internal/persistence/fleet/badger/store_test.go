@@ -69,6 +69,14 @@ func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	if err != nil || storedLoopValidation.RevisionDigest != loopRevision.Digest {
 		t.Fatalf("Loop validation readback: got=%+v err=%v", storedLoopValidation, err)
 	}
+	loopRevisions, err := store.ListLoopRevisions(ctx)
+	if err != nil || len(loopRevisions) != 1 || loopRevisions[0].Digest != loopRevision.Digest {
+		t.Fatalf("Loop collection readback: got=%+v err=%v", loopRevisions, err)
+	}
+	loopValidations, err := store.ListLoopValidations(ctx)
+	if err != nil || len(loopValidations) != 1 || loopValidations[0].Digest != loopValidation.Digest {
+		t.Fatalf("Loop validation collection readback: got=%+v err=%v", loopValidations, err)
+	}
 
 	graphRevision, graphValidation := graphFixture(t, initial, loopRevision)
 	graphRequest := graph.PublishRequest{Revision: graphRevision, Validation: graphValidation, IdempotencyKey: "graph-publish-1"}
@@ -84,6 +92,14 @@ func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	storedGraph, err := store.GetGraphRevision(ctx, graphRevision.GraphID, 1)
 	if err != nil || storedGraph.Digest != graphRevision.Digest {
 		t.Fatalf("Graph readback: got=%+v err=%v", storedGraph, err)
+	}
+	graphRevisions, err := store.ListGraphRevisions(ctx)
+	if err != nil || len(graphRevisions) != 1 || graphRevisions[0].Digest != graphRevision.Digest {
+		t.Fatalf("Graph collection readback: got=%+v err=%v", graphRevisions, err)
+	}
+	graphValidations, err := store.ListGraphValidations(ctx)
+	if err != nil || len(graphValidations) != 1 || graphValidations[0].Digest != graphValidation.Digest {
+		t.Fatalf("Graph validation collection readback: got=%+v err=%v", graphValidations, err)
 	}
 
 	snapshot, err := graph.NewRunSnapshot("snapshot-1", graphRevision, []graph.NormalizedInput{{PortID: "value", Type: graph.TypeString, Value: json.RawMessage(`"hello"`)}})

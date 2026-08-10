@@ -227,6 +227,7 @@ func TestBearerAloneCannotCreatePrincipalIdentity(t *testing.T) {
 
 func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	svc := apiService(t)
+	configureAPIFleet(t, svc)
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -283,6 +284,22 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	if state.StatusCode != http.StatusOK || state.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("authenticated state status=%d headers=%v", state.StatusCode, state.Header)
+	}
+	var consoleState struct {
+		State   string           `json:"state"`
+		Surface app.FleetSurface `json:"surface"`
+	}
+	if err = json.NewDecoder(state.Body).Decode(&consoleState); err != nil {
+		t.Fatal(err)
+	}
+	if consoleState.State != "ready" || len(consoleState.Surface.Readiness) != 4 {
+		t.Fatalf("console did not return authoritative fleet readiness: %+v", consoleState)
+	}
+	for _, domain := range []string{"registry", "loops", "graphs", "queue"} {
+		readiness := consoleState.Surface.Readiness[domain]
+		if readiness.State != "empty" || !readiness.Authoritative || readiness.Count != 0 {
+			t.Fatalf("empty %s readiness was not authoritative: %+v", domain, readiness)
+		}
 	}
 	_ = state.Body.Close()
 	excess, _ := client.Get("http://" + address + "/console/api/state?limit=100000")
@@ -463,6 +480,17 @@ func TestFleetAgentAPIUsesAuthenticatedSharedApplicationBoundary(t *testing.T) {
 	if shown.Revision.Digest != created.Agent.Revision.Digest {
 		t.Fatalf("exact revision readback mismatch: got=%q want=%q", shown.Revision.Digest, created.Agent.Revision.Digest)
 	}
+	var loops []app.LoopView
+	apiRequest(t, client, http.MethodGet, "/v1/loops", nil, &loops, http.StatusOK)
+	var graphs []app.GraphView
+	apiRequest(t, client, http.MethodGet, "/v1/graphs", nil, &graphs, http.StatusOK)
+	var queueItems []app.QueueExecutionView
+	apiRequest(t, client, http.MethodGet, "/v1/queue", nil, &queueItems, http.StatusOK)
+	var readiness map[string]app.SurfaceReadiness
+	apiRequest(t, client, http.MethodGet, "/v1/fleet/readiness", nil, &readiness, http.StatusOK)
+	if len(loops) != 0 || len(graphs) != 0 || len(queueItems) != 0 || readiness["registry"].Count != 1 || readiness["registry"].State != "ready" {
+		t.Fatalf("live fleet collection routes returned inconsistent state: loops=%d graphs=%d queue=%d readiness=%+v", len(loops), len(graphs), len(queueItems), readiness)
+	}
 
 	apiRequest(t, client, http.MethodGet, "/v1/agents/agent-alpha?revision=prompt-selected", nil, nil, http.StatusBadRequest)
 	apiRequest(t, client, http.MethodPost, "/v1/agents", map[string]any{"fixture": json.RawMessage(fixture), "identity": input.Identity, "subject": "model-selected"}, nil, http.StatusBadRequest)
@@ -480,7 +508,10 @@ func TestFleetAPIUnavailableFailsClosed(t *testing.T) {
 		}
 	}()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodGet, "/v1/agents", nil, nil, http.StatusServiceUnavailable)
+	client := unixClient(svc.Config.API.UnixSocket)
+	for _, path := range []string{"/v1/agents", "/v1/loops", "/v1/graphs", "/v1/queue", "/v1/fleet/readiness"} {
+		apiRequest(t, client, http.MethodGet, path, nil, nil, http.StatusServiceUnavailable)
+	}
 }
 
 func TestUnixAPICompleteOperationalWorkflow(t *testing.T) {

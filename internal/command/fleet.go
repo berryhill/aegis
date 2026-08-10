@@ -80,6 +80,17 @@ func fleetAgentsCmd(build builder) *cobra.Command {
 
 func fleetLoopsCmd(build builder) *cobra.Command {
 	command := &cobra.Command{Use: "loops", Aliases: []string{"loop"}, Short: "Publish and inspect immutable Loop revisions"}
+	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		values, err := service.ListLoops(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return output(cmd, values)
+	}}
 	publish := &cobra.Command{Use: "publish FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.PublishLoopInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
@@ -110,12 +121,23 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(publish, show)
+	command.AddCommand(list, publish, show)
 	return command
 }
 
 func fleetGraphsCmd(build builder) *cobra.Command {
 	command := &cobra.Command{Use: "graphs", Aliases: []string{"graph"}, Short: "Publish, inspect, and submit immutable Graph revisions"}
+	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		values, err := service.ListGraphs(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return output(cmd, values)
+	}}
 	publish := &cobra.Command{Use: "publish FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.PublishGraphInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
@@ -161,12 +183,23 @@ func fleetGraphsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(publish, show, submit)
+	command.AddCommand(list, publish, show, submit)
 	return command
 }
 
 func fleetQueueCmd(build builder) *cobra.Command {
 	command := &cobra.Command{Use: "queue", Short: "Inspect and process authority-bound Execution Queue items"}
+	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		values, err := service.ListQueue(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return output(cmd, values)
+	}}
 	show := &cobra.Command{Use: "show ITEM", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		service, err := build(cmd)
 		if err != nil {
@@ -193,7 +226,7 @@ func fleetQueueCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(show, process)
+	command.AddCommand(list, show, process)
 	return command
 }
 
