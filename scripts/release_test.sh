@@ -1,9 +1,14 @@
 #!/bin/sh
 set -eu
 
-# Hermetic test: ignore the profile-local global gitconfig (hooks, identity guards)
-# so synthetic test identities and mocked signing are not intercepted.
+# Hermetic test: ignore host Git configuration and forbid identity inference so
+# synthetic fixture identities and mocked signing cannot depend on the machine.
 export GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_SYSTEM=/dev/null
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=user.useConfigOnly
+export GIT_CONFIG_VALUE_0=true
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL
 
 root=$(mktemp -d "${TMPDIR:-/tmp}/aegis-release-test-XXXXXXXX")
 cleanup() { rm -rf "$root"; }
@@ -28,7 +33,10 @@ if [ "${1:-}" = tag ] && [ "${2:-}" = -s ]; then
         exit 79
     fi
     shift 2
-    exec "$REAL_GIT" tag -a "$@" -m '-----BEGIN PGP SIGNATURE-----
+    exec "$REAL_GIT" \
+        -c user.name='Release Test' \
+        -c user.email='release-test@example.invalid' \
+        tag -a "$@" -m '-----BEGIN PGP SIGNATURE-----
 fixture-signature
 -----END PGP SIGNATURE-----'
 fi
