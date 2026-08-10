@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -149,6 +150,8 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	})
 	var openedAuthority *authoritybadger.Store
 	var openedFleet *fleetbadger.Store
+	var openedService *app.Service
+	var openedConfig config.Config
 	build := func(cmd *cobra.Command) (*app.Service, error) {
 		cfg, err := config.Load(o.configFile, nil)
 		if err != nil {
@@ -175,6 +178,22 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if err = cfg.Validate(); err != nil {
 			return nil, usage(err)
 		}
+		if openedService != nil && reflect.DeepEqual(openedConfig, cfg) {
+			return openedService, nil
+		}
+		if openedFleet != nil {
+			if err = openedFleet.Close(); err != nil {
+				return nil, err
+			}
+			openedFleet = nil
+		}
+		if openedAuthority != nil {
+			if err = openedAuthority.Close(); err != nil {
+				return nil, err
+			}
+			openedAuthority = nil
+		}
+		openedService = nil
 		st, err := store.OpenWithCheckpoints(cfg.StateDir, cfg.Audit.CheckpointDir)
 		if err != nil {
 			return nil, err
@@ -225,6 +244,8 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			openedAuthority = nil
 			return nil, err
 		}
+		openedService = service
+		openedConfig = cfg
 		return service, nil
 	}
 	root.PersistentPostRunE = func(*cobra.Command, []string) error {
@@ -237,6 +258,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			closeErr = errors.Join(closeErr, openedAuthority.Close())
 			openedAuthority = nil
 		}
+		openedService = nil
 		return closeErr
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
@@ -302,6 +324,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 						runErr = errors.Join(runErr, openedAuthority.Close())
 						openedAuthority = nil
 					}
+					openedService = nil
 				}()
 				return run(cmd, args)
 			}

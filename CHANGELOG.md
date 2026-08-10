@@ -25,6 +25,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Kept command-lifetime application services open and reusable across repeated fresh principal admissions while rebuilding them only when the validated configuration changes, so first-run credential-authority setup can advance into an already-installed Hermes/Ollama model stage without reopening and locking the same Badger authority repository.
 - Made the release state-machine regression suite hermetic on machines without global Git identity by supplying a synthetic `.invalid` identity only to its mocked annotated-tag operation; production release commits and signed tags still require the operator's configured identity and signing authority.
 - Hardened installed release acceptance so every generated archive must contain exactly one root `aegis` regular file with mode `0755`; traversal, absolute/nested paths, links, extra members, unsafe modes, and release-output paths traversing symlinked parents fail closed before extraction or target mutation.
 - Recognize the decorated version identity emitted by supported Hermes Agent 0.18.2 Git installations while preserving fail-closed rejection of malformed, ambiguous, and unsupported version output.
