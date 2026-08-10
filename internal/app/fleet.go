@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
@@ -83,6 +84,38 @@ type PublishedGraph struct {
 	Revision   graph.GraphRevision         `json:"revision"`
 	Validation graph.GraphValidationResult `json:"validation"`
 	Decision   graph.PublicationDecision   `json:"decision"`
+}
+
+type LoopView struct {
+	Revision    loop.LoopRevision           `json:"revision"`
+	Validations []loop.LoopValidationResult `json:"validations"`
+}
+
+type GraphView struct {
+	Revision    graph.GraphRevision           `json:"revision"`
+	Validations []graph.GraphValidationResult `json:"validations"`
+}
+
+type QueueExecutionView struct {
+	Item           queue.Item                `json:"item"`
+	Projection     queue.Projection          `json:"projection"`
+	GraphRun       execution.GraphRun        `json:"graph_run"`
+	LoopExecutions []execution.LoopExecution `json:"loop_executions"`
+	Attempts       []execution.Attempt       `json:"attempts"`
+}
+
+type SurfaceReadiness struct {
+	State         string `json:"state"`
+	Count         int    `json:"count"`
+	Authoritative bool   `json:"authoritative"`
+}
+
+type FleetSurface struct {
+	Agents    []FleetAgent                `json:"agents"`
+	Loops     []LoopView                  `json:"loops"`
+	Graphs    []GraphView                 `json:"graphs"`
+	Queue     []QueueExecutionView        `json:"queue"`
+	Readiness map[string]SurfaceReadiness `json:"readiness"`
 }
 
 // ConfigureFleet installs the single application boundary used by all fleet
@@ -252,6 +285,45 @@ func (s *Service) GetLoop(ctx context.Context, id string, revision uint64) (loop
 	return s.GetLoopAs(ctx, subject, id, revision)
 }
 
+func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]LoopView, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return nil, err
+	}
+	revisions, err := s.FleetRepository.ListLoopRevisions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	validations, err := s.FleetRepository.ListLoopValidations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]LoopView, 0, len(revisions))
+	for _, revision := range revisions {
+		view := LoopView{Revision: revision, Validations: []loop.LoopValidationResult{}}
+		for _, validation := range validations {
+			if validation.LoopID == revision.LoopID && validation.Revision == revision.Revision {
+				if validation.RevisionDigest != revision.Digest {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Validations = append(view.Validations, validation)
+			}
+		}
+		if len(view.Validations) == 0 {
+			return nil, fleet.ErrCorrupt
+		}
+		result = append(result, view)
+	}
+	return result, nil
+}
+
+func (s *Service) ListLoops(ctx context.Context) ([]LoopView, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListLoopsAs(ctx, subject)
+}
+
 func (s *Service) PublishGraphAs(ctx context.Context, subject core.Subject, input PublishGraphInput) (PublishedGraph, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return PublishedGraph{}, err
@@ -291,6 +363,45 @@ func (s *Service) GetGraph(ctx context.Context, id string, revision uint64) (gra
 	return s.GetGraphAs(ctx, subject, id, revision)
 }
 
+func (s *Service) ListGraphsAs(ctx context.Context, subject core.Subject) ([]GraphView, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return nil, err
+	}
+	revisions, err := s.FleetRepository.ListGraphRevisions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	validations, err := s.FleetRepository.ListGraphValidations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]GraphView, 0, len(revisions))
+	for _, revision := range revisions {
+		view := GraphView{Revision: revision, Validations: []graph.GraphValidationResult{}}
+		for _, validation := range validations {
+			if validation.GraphID == revision.GraphID && validation.Revision == revision.Revision {
+				if validation.RevisionDigest != revision.Digest {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Validations = append(view.Validations, validation)
+			}
+		}
+		if len(view.Validations) == 0 {
+			return nil, fleet.ErrCorrupt
+		}
+		result = append(result, view)
+	}
+	return result, nil
+}
+
+func (s *Service) ListGraphs(ctx context.Context) ([]GraphView, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListGraphsAs(ctx, subject)
+}
+
 func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
@@ -328,6 +439,103 @@ func (s *Service) GetQueueItem(ctx context.Context, id string) (QueueItemView, e
 		return QueueItemView{}, err
 	}
 	return s.GetQueueItemAs(ctx, subject, id)
+}
+
+func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]QueueExecutionView, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return nil, err
+	}
+	items, err := s.FleetRepository.ListQueueItems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := s.FleetRepository.ListGraphRuns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	loops, err := s.FleetRepository.ListLoopExecutions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attempts, err := s.FleetRepository.ListAttempts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]QueueExecutionView, 0, len(items))
+	for _, item := range items {
+		projection, loadErr := s.FleetRepository.GetQueueProjection(ctx, item.ItemID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if projection.QueueItemID != item.ItemID {
+			return nil, fleet.ErrCorrupt
+		}
+		view := QueueExecutionView{Item: item, Projection: projection, LoopExecutions: []execution.LoopExecution{}, Attempts: []execution.Attempt{}}
+		foundRun := false
+		for _, run := range runs {
+			if run.GraphRunID == item.GraphRunID {
+				if run.QueueItem.ID != item.ItemID || run.QueueItem.Digest != item.Digest {
+					return nil, fleet.ErrCorrupt
+				}
+				view.GraphRun, foundRun = run, true
+			}
+		}
+		if !foundRun {
+			return nil, fleet.ErrCorrupt
+		}
+		for _, child := range loops {
+			if child.GraphRunID == item.GraphRunID {
+				view.LoopExecutions = append(view.LoopExecutions, child)
+			}
+		}
+		for _, attempt := range attempts {
+			if attempt.GraphRunID == item.GraphRunID {
+				if attempt.QueueItem.ID != item.ItemID || attempt.QueueItem.Digest != item.Digest {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Attempts = append(view.Attempts, attempt)
+			}
+		}
+		result = append(result, view)
+	}
+	return result, nil
+}
+
+func (s *Service) ListQueue(ctx context.Context) ([]QueueExecutionView, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListQueueAs(ctx, subject)
+}
+
+func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (FleetSurface, error) {
+	agents, err := s.ListFleetAgentsAs(ctx, subject)
+	if err != nil {
+		return FleetSurface{}, err
+	}
+	loops, err := s.ListLoopsAs(ctx, subject)
+	if err != nil {
+		return FleetSurface{}, err
+	}
+	graphs, err := s.ListGraphsAs(ctx, subject)
+	if err != nil {
+		return FleetSurface{}, err
+	}
+	items, err := s.ListQueueAs(ctx, subject)
+	if err != nil {
+		return FleetSurface{}, err
+	}
+	state := func(count int) SurfaceReadiness {
+		value := "ready"
+		if count == 0 {
+			value = "empty"
+		}
+		return SurfaceReadiness{State: value, Count: count, Authoritative: true}
+	}
+	return FleetSurface{Agents: agents, Loops: loops, Graphs: graphs, Queue: items, Readiness: map[string]SurfaceReadiness{
+		"registry": state(len(agents)), "loops": state(len(loops)), "graphs": state(len(graphs)), "queue": state(len(items)),
+	}}, nil
 }
 
 func (s *Service) ProcessQueueItemAs(ctx context.Context, subject core.Subject, request orchestration.WorkRequest) (orchestration.WorkResult, error) {

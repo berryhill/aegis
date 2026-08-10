@@ -66,6 +66,27 @@ func key(family byte, parts ...string) []byte {
 	}
 	return result
 }
+
+func decodeKeyParts(recordKey []byte, family byte) ([]string, error) {
+	if len(recordKey) < 2 || recordKey[0] != 2 || recordKey[1] != family {
+		return nil, fleet.ErrCorrupt
+	}
+	parts := []string{}
+	for offset := 2; offset < len(recordKey); {
+		if len(recordKey)-offset < 2 {
+			return nil, fleet.ErrCorrupt
+		}
+		size := int(binary.BigEndian.Uint16(recordKey[offset : offset+2]))
+		offset += 2
+		if size > len(recordKey)-offset {
+			return nil, fleet.ErrCorrupt
+		}
+		parts = append(parts, string(recordKey[offset:offset+size]))
+		offset += size
+	}
+	return parts, nil
+}
+
 func revisionPart(revision uint64) string {
 	var value [8]byte
 	binary.BigEndian.PutUint64(value[:], revision)
@@ -356,6 +377,59 @@ func (s *Store) GetLoopValidation(ctx context.Context, id string, revision uint6
 	return
 }
 
+func (s *Store) ListLoopRevisions(ctx context.Context) (out []loop.LoopRevision, err error) {
+	out = []loop.LoopRevision{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyLoopRevision, func(recordKey []byte, value []byte) error {
+			item, decodeErr := loop.UnmarshalRevision(value)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopRevision)
+			if keyErr != nil || len(parts) != 2 || parts[0] != item.LoopID || parts[1] != revisionPart(item.Revision) {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LoopID == out[j].LoopID {
+			return out[i].Revision < out[j].Revision
+		}
+		return out[i].LoopID < out[j].LoopID
+	})
+	return
+}
+
+func (s *Store) ListLoopValidations(ctx context.Context) (out []loop.LoopValidationResult, err error) {
+	out = []loop.LoopValidationResult{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyLoopValidation, func(recordKey []byte, value []byte) error {
+			item, decodeErr := loop.UnmarshalLoopValidationResult(value)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopValidation)
+			if keyErr != nil || len(parts) != 3 || parts[0] != item.LoopID || parts[1] != revisionPart(item.Revision) || parts[2] != item.Digest {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LoopID == out[j].LoopID {
+			if out[i].Revision == out[j].Revision {
+				return out[i].Digest < out[j].Digest
+			}
+			return out[i].Revision < out[j].Revision
+		}
+		return out[i].LoopID < out[j].LoopID
+	})
+	return
+}
+
 func (s *Store) PublishGraph(ctx context.Context, request graph.PublishRequest, fact fleet.AuditFact) (decision graph.PublicationDecision, err error) {
 	revisionWire, e := graph.MarshalRevision(request.Revision)
 	if e != nil {
@@ -442,6 +516,59 @@ func (s *Store) GetGraphValidation(ctx context.Context, id string, revision uint
 	})
 	return
 }
+func (s *Store) ListGraphRevisions(ctx context.Context) (out []graph.GraphRevision, err error) {
+	out = []graph.GraphRevision{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyGraphRevision, func(recordKey []byte, value []byte) error {
+			item, decodeErr := graph.UnmarshalRevision(value)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyGraphRevision)
+			if keyErr != nil || len(parts) != 2 || parts[0] != item.GraphID || parts[1] != revisionPart(item.Revision) {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].GraphID == out[j].GraphID {
+			return out[i].Revision < out[j].Revision
+		}
+		return out[i].GraphID < out[j].GraphID
+	})
+	return
+}
+
+func (s *Store) ListGraphValidations(ctx context.Context) (out []graph.GraphValidationResult, err error) {
+	out = []graph.GraphValidationResult{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyGraphValidation, func(recordKey []byte, value []byte) error {
+			item, decodeErr := graph.UnmarshalValidationResult(value)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyGraphValidation)
+			if keyErr != nil || len(parts) != 3 || parts[0] != item.GraphID || parts[1] != revisionPart(item.Revision) || parts[2] != item.Digest {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].GraphID == out[j].GraphID {
+			if out[i].Revision == out[j].Revision {
+				return out[i].Digest < out[j].Digest
+			}
+			return out[i].Revision < out[j].Revision
+		}
+		return out[i].GraphID < out[j].GraphID
+	})
+	return
+}
+
 func (s *Store) CreateGraphRunSnapshot(ctx context.Context, snapshot graph.GraphRunSnapshot, fact fleet.AuditFact) (created bool, err error) {
 	wire, e := graph.MarshalRunSnapshot(snapshot)
 	if e != nil {

@@ -296,22 +296,27 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		agents, err := svc.ListAgents()
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
 		if err != nil {
-			return c.JSON(http.StatusServiceUnavailable, map[string]string{"state": "unavailable"})
+			return c.JSON(http.StatusServiceUnavailable, map[string]any{"state": "unavailable", "readiness": map[string]any{"fleet": map[string]any{"state": "unavailable", "authoritative": false}}})
 		}
-		if len(agents) > limit {
-			agents = agents[:limit]
+		if len(surface.Agents) > limit {
+			surface.Agents = surface.Agents[:limit]
+		}
+		if len(surface.Loops) > limit {
+			surface.Loops = surface.Loops[:limit]
+		}
+		if len(surface.Graphs) > limit {
+			surface.Graphs = surface.Graphs[:limit]
+		}
+		if len(surface.Queue) > limit {
+			surface.Queue = surface.Queue[:limit]
 		}
 		csrf, err := consoleManager.CSRF(c.Request())
 		if err != nil {
 			return consoleError(err)
 		}
-		state := "ready"
-		if len(agents) == 0 {
-			state = "empty"
-		}
-		return c.JSON(http.StatusOK, map[string]any{"state": state, "agents": agents, "csrf": csrf, "limit": limit})
+		return c.JSON(http.StatusOK, map[string]any{"state": "ready", "surface": surface, "csrf": csrf, "limit": limit})
 	})
 	e.DELETE("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
@@ -431,6 +436,17 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, value)
 	})
+	g.GET("/loops", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		values, err := svc.ListLoopsAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, values)
+	})
 	g.POST("/loops", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -461,6 +477,17 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, value)
 	})
+	g.GET("/graphs", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		values, err := svc.ListGraphsAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, values)
+	})
 	g.POST("/graphs", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -490,6 +517,28 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusOK, value)
+	})
+	g.GET("/queue", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		values, err := svc.ListQueueAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, values)
+	})
+	g.GET("/fleet/readiness", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value.Readiness)
 	})
 	g.POST("/queue", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

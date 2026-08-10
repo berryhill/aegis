@@ -73,10 +73,14 @@ type Repository interface {
 	PublishLoop(context.Context, loop.PublishRequest, AuditFact) (loop.PublicationDecision, error)
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)
 	GetLoopValidation(context.Context, string, uint64, string) (loop.LoopValidationResult, error)
+	ListLoopRevisions(context.Context) ([]loop.LoopRevision, error)
+	ListLoopValidations(context.Context) ([]loop.LoopValidationResult, error)
 
 	PublishGraph(context.Context, graph.PublishRequest, AuditFact) (graph.PublicationDecision, error)
 	GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error)
 	GetGraphValidation(context.Context, string, uint64, string) (graph.GraphValidationResult, error)
+	ListGraphRevisions(context.Context) ([]graph.GraphRevision, error)
+	ListGraphValidations(context.Context) ([]graph.GraphValidationResult, error)
 	CreateGraphRunSnapshot(context.Context, graph.GraphRunSnapshot, AuditFact) (bool, error)
 	GetGraphRunSnapshot(context.Context, string) (graph.GraphRunSnapshot, error)
 
@@ -85,15 +89,19 @@ type Repository interface {
 	GetSubmission(context.Context, string) (queue.Submission, error)
 	GetRejection(context.Context, string) (queue.Rejection, error)
 	GetQueueItem(context.Context, string) (queue.Item, error)
+	ListQueueItems(context.Context) ([]queue.Item, error)
 	GetGraphRun(context.Context, string) (execution.GraphRun, error)
+	ListGraphRuns(context.Context) ([]execution.GraphRun, error)
 	CreateLoopExecution(context.Context, execution.LoopExecution, AuditFact) (bool, error)
 	GetLoopExecution(context.Context, string) (execution.LoopExecution, error)
+	ListLoopExecutions(context.Context) ([]execution.LoopExecution, error)
 	ClaimQueueItem(context.Context, queue.Claim, execution.Attempt, queue.QueueTransition, AuditFact) error
 	RetryQueueItem(context.Context, RetryMutation, AuditFact) error
 	CancelQueueItem(context.Context, CancellationMutation, AuditFact) error
 	GetClaim(context.Context, string) (queue.Claim, error)
 	GetQueueProjection(context.Context, string) (queue.Projection, error)
 	GetAttempt(context.Context, string) (execution.Attempt, error)
+	ListAttempts(context.Context) ([]execution.Attempt, error)
 	CompleteQueueItem(context.Context, Completion, AuditFact) error
 	GetRuntimeArtifact(context.Context, string) (evidence.RuntimeArtifact, error)
 	GetVerificationReceipt(context.Context, string) (evidence.VerificationReceipt, error)

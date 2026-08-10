@@ -65,6 +65,14 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 	if got, err := store.GetAttempt(ctx, attempt.AttemptID); err != nil || got != attempt {
 		t.Fatalf("attempt readback: got=%+v err=%v", got, err)
 	}
+	loopExecutions, err := store.ListLoopExecutions(ctx)
+	if err != nil || len(loopExecutions) != 1 || loopExecutions[0] != loopExecution {
+		t.Fatalf("Loop execution collection included a binding or lost the record: got=%+v err=%v", loopExecutions, err)
+	}
+	attempts, err := store.ListAttempts(ctx)
+	if err != nil || len(attempts) != 1 || attempts[0] != attempt {
+		t.Fatalf("attempt collection readback: got=%+v err=%v", attempts, err)
+	}
 
 	artifactDigest := "sha256:" + strings.Repeat("a", 64)
 	artifact := evidence.RuntimeArtifact{ID: "artifact-1", OwnerID: "agent-1", ActionID: "work", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
@@ -768,5 +776,13 @@ func assertAcceptedReadback(t *testing.T, store *Store, accepted fleet.AcceptedS
 	}
 	if got, err := store.GetGraphRun(ctx, accepted.GraphRun.GraphRunID); err != nil || got != accepted.GraphRun {
 		t.Fatalf("Graph run readback: got=%+v err=%v", got, err)
+	}
+	items, err := store.ListQueueItems(ctx)
+	if err != nil || len(items) != 1 || !reflect.DeepEqual(items[0], accepted.QueueItem) {
+		t.Fatalf("queue collection readback: got=%+v err=%v", items, err)
+	}
+	runs, err := store.ListGraphRuns(ctx)
+	if err != nil || len(runs) != 1 || runs[0] != accepted.GraphRun {
+		t.Fatalf("Graph run collection readback: got=%+v err=%v", runs, err)
 	}
 }

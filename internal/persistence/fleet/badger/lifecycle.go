@@ -3,6 +3,7 @@ package badger
 import (
 	"bytes"
 	"context"
+	"sort"
 
 	"github.com/berryhill/aegis/internal/disposition"
 	"github.com/berryhill/aegis/internal/execution"
@@ -537,11 +538,92 @@ func (s *Store) GetRejection(ctx context.Context, id string) (queue.Rejection, e
 func (s *Store) GetQueueItem(ctx context.Context, id string) (queue.Item, error) {
 	return readRecord(s, ctx, familyQueueItem, id, queue.UnmarshalItem, func(v queue.Item) string { return v.ItemID })
 }
+func (s *Store) ListQueueItems(ctx context.Context) (out []queue.Item, err error) {
+	out = []queue.Item{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyQueueItem, func(recordKey []byte, wire []byte) error {
+			value, decodeErr := queue.UnmarshalItem(wire)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyQueueItem)
+			if keyErr != nil || len(parts) != 1 || parts[0] != value.ItemID {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, value)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].EnqueuedAt.Equal(out[j].EnqueuedAt) {
+			return out[i].ItemID < out[j].ItemID
+		}
+		return out[i].EnqueuedAt.Before(out[j].EnqueuedAt)
+	})
+	return
+}
 func (s *Store) GetGraphRun(ctx context.Context, id string) (execution.GraphRun, error) {
 	return readRecord(s, ctx, familyGraphRun, id, execution.UnmarshalGraphRun, func(v execution.GraphRun) string { return v.GraphRunID })
 }
+func (s *Store) ListGraphRuns(ctx context.Context) (out []execution.GraphRun, err error) {
+	out = []execution.GraphRun{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyGraphRun, func(recordKey []byte, wire []byte) error {
+			value, decodeErr := execution.UnmarshalGraphRun(wire)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyGraphRun)
+			if keyErr != nil || len(parts) != 1 || parts[0] != value.GraphRunID {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, value)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].GraphRunID < out[j].GraphRunID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return
+}
 func (s *Store) GetLoopExecution(ctx context.Context, id string) (execution.LoopExecution, error) {
 	return readRecord(s, ctx, familyLoopExecution, id, execution.UnmarshalLoopExecution, func(v execution.LoopExecution) string { return v.LoopExecutionID })
+}
+func (s *Store) ListLoopExecutions(ctx context.Context) (out []execution.LoopExecution, err error) {
+	out = []execution.LoopExecution{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyLoopExecution, func(recordKey []byte, wire []byte) error {
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopExecution)
+			if keyErr != nil {
+				return keyErr
+			}
+			if len(parts) == 2 && parts[1] == "binding" {
+				return nil
+			}
+			if len(parts) != 1 {
+				return fleet.ErrCorrupt
+			}
+			value, decodeErr := execution.UnmarshalLoopExecution(wire)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			if parts[0] != value.LoopExecutionID {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, value)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].LoopExecutionID < out[j].LoopExecutionID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return
 }
 func (s *Store) GetClaim(ctx context.Context, id string) (queue.Claim, error) {
 	return readRecord(s, ctx, familyClaim, id, queue.UnmarshalClaim, func(v queue.Claim) string { return v.ClaimID })
@@ -552,4 +634,28 @@ func (s *Store) GetQueueProjection(ctx context.Context, id string) (out queue.Pr
 }
 func (s *Store) GetAttempt(ctx context.Context, id string) (execution.Attempt, error) {
 	return readRecord(s, ctx, familyAttempt, id, execution.UnmarshalAttempt, func(v execution.Attempt) string { return v.AttemptID })
+}
+func (s *Store) ListAttempts(ctx context.Context) (out []execution.Attempt, err error) {
+	out = []execution.Attempt{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyAttempt, func(recordKey []byte, wire []byte) error {
+			value, decodeErr := execution.UnmarshalAttempt(wire)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyAttempt)
+			if keyErr != nil || len(parts) != 1 || parts[0] != value.AttemptID {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, value)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].AttemptID < out[j].AttemptID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	return
 }
