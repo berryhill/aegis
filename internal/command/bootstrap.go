@@ -380,7 +380,8 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 			fmt.Fprintln(cmd.OutOrStdout(), "Download declined; no network mutation was requested.")
 			return false, readErr
 		}
-		if _, _, err = authenticatedService(cmd, build); err != nil {
+		service, subject, err = authenticatedService(cmd, build)
+		if err != nil {
 			return false, err
 		}
 		client, clientErr := managerdomain.NewOllamaClient(endpoint, service.Config.Manager.Inference.RequestTimeout)
@@ -444,7 +445,8 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 		fmt.Fprintln(cmd.OutOrStdout(), "Model binding declined; no configuration write was performed.")
 		return false, err
 	}
-	if _, _, err = authenticatedService(cmd, build); err != nil {
+	service, subject, err = authenticatedService(cmd, build)
+	if err != nil {
 		return false, err
 	}
 	if err = managerdomain.ApplyModelConfiguration(preview); err != nil {

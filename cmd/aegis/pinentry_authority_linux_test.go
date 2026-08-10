@@ -24,10 +24,11 @@ func TestAuthorityPinentryCreateAndNonTTYUnlockCLI(t *testing.T) {
 	canary := "generated-authority-canary-7f4e2d91"
 	buildTestBinary(t, binary)
 	buildFakePinentry(t, pinentry, countFile, canary)
+	runtimePath := buildFakeRuntimePrerequisites(t, root)
 	configPath := filepath.Join(root, "installation", "aegis.yaml")
 	statePath := filepath.Join(root, "installation", "state")
 
-	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry)
+	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, runtimePath)
 	defer master.Close()
 	defer slave.Close()
 	capture := readPTYUntil(t, master, nil, "Create this configuration? [Y/n]:", 5*time.Second)
@@ -86,7 +87,7 @@ func TestAuthorityNoEchoPTYFallbackCLI(t *testing.T) {
 	buildTestBinary(t, binary)
 	configPath := filepath.Join(root, "fallback", "aegis.yaml")
 	statePath := filepath.Join(root, "fallback", "state")
-	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, "")
+	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, "", "")
 	defer master.Close()
 	defer slave.Close()
 	capture := readPTYUntil(t, master, nil, "Create this configuration? [Y/n]:", 5*time.Second)
@@ -119,7 +120,7 @@ func TestAuthorityPinentryCancellationDoesNotMutateCLI(t *testing.T) {
 	buildCancelPinentry(t, pinentry)
 	configPath := filepath.Join(root, "cancelled", "aegis.yaml")
 	statePath := filepath.Join(root, "cancelled", "state")
-	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry)
+	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, "")
 	defer master.Close()
 	defer slave.Close()
 	capture := readPTYUntil(t, master, nil, "Create this configuration? [Y/n]:", 5*time.Second)
@@ -185,7 +186,25 @@ func main(){r:=bufio.NewReader(os.Stdin);fmt.Fprintln(os.Stdout,"OK fake");for{l
 	}
 }
 
-func startAuthorityPTY(t *testing.T, binary, configPath, statePath, pinentry string) (*exec.Cmd, *os.File, *os.File) {
+func buildFakeRuntimePrerequisites(t *testing.T, root string) string {
+	t.Helper()
+	bin := filepath.Join(root, "runtime-bin")
+	if err := os.MkdirAll(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := map[string]string{
+		"hermes": "#!/bin/sh\nprintf '%s\\n' 'Hermes Agent v0.18.2' 'Install directory: " + root + "'\n",
+		"ollama": "#!/bin/sh\nprintf '%s\\n' 'ollama version 0.32.0'\n",
+	}
+	for name, content := range fixtures {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(content), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return bin
+}
+
+func startAuthorityPTY(t *testing.T, binary, configPath, statePath, pinentry, runtimePath string) (*exec.Cmd, *os.File, *os.File) {
 	t.Helper()
 	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -215,6 +234,9 @@ func startAuthorityPTY(t *testing.T, binary, configPath, statePath, pinentry str
 		command.Env = []string{"HOME=" + home, "PATH=" + filepath.Join(filepath.Dir(configPath), "empty-path"), "TERM=xterm-256color", "E2E_PROVIDER_CANARY=must-not-reach-pinentry"}
 	} else {
 		command.Env = append(os.Environ(), "HOME="+home, "E2E_PROVIDER_CANARY=must-not-reach-pinentry")
+		if runtimePath != "" {
+			command.Env = append(command.Env, "PATH="+runtimePath)
+		}
 	}
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if err = command.Start(); err != nil {
