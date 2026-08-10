@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.2] - 2026-08-10
+
 ### Added
 
 - Added strict canonical queue retry, cancellation, dependency, and rebuildable projection records plus atomic Badger lifecycle transactions. Claims require available backoff, remaining attempt capacity, and exact succeeded dependencies; expired leases can be reclaimed into bounded retries and new numbered claims; queued or claimed work can be cancelled; completion requires the matching unexpired active claim. Every accepted claim, retry, cancellation, or terminal mutation updates canonical facts, active-claim binding, projection, and repository-authored audit together. Automated lifecycle scheduling, dirty-store recovery, and multi-node execution remain launch work.
