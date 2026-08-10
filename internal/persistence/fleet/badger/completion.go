@@ -52,6 +52,10 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 		if e != nil || storedClaim != completion.Claim {
 			return fleet.ErrConflict
 		}
+		projection, e := loadQueueProjection(txn, storedClaim.QueueItem.ID)
+		if e != nil || validateProjectionBasis(txn, projection) != nil || projection.State != queue.StateClaimed || projection.ActiveClaimID != storedClaim.ClaimID || !completion.Transition.OccurredAt.Before(storedClaim.ExpiresAt) {
+			return fleet.ErrConflict
+		}
 		attemptWire, e := get(txn, key(familyAttempt, completion.Disposition.AttemptID))
 		if e != nil {
 			return e
@@ -83,6 +87,14 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 		} else if completion.Artifact != nil || len(completion.Receipts) != 0 || len(completion.Disposition.ArtifactIDs) != 0 || len(completion.Disposition.ReceiptIDs) != 0 {
 			return fleet.ErrConflict
 		}
+		terminalProjection, e := queue.NewProjection(queue.Projection{QueueItemID: storedClaim.QueueItem.ID, State: completion.Transition.To, Attempts: projection.Attempts, AvailableAt: projection.AvailableAt, LastTransitionID: completion.Transition.TransitionID, UpdatedAt: completion.Transition.OccurredAt})
+		if e != nil {
+			return e
+		}
+		projectionWire, e := queue.MarshalProjection(terminalProjection)
+		if e != nil {
+			return e
+		}
 		if completion.Artifact != nil {
 			if e = create(txn, key(familyRuntimeArtifact, completion.Artifact.ID), artifactWire); e != nil {
 				return e
@@ -101,6 +113,12 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			if e = create(txn, entry.k, entry.v); e != nil {
 				return e
 			}
+		}
+		if e = txn.Delete(key(familyClaimByItem, storedClaim.QueueItem.ID)); e != nil {
+			return e
+		}
+		if e = txn.Set(key(familyQueueProjection, storedClaim.QueueItem.ID), projectionWire); e != nil {
+			return e
 		}
 		return appendAudit(txn, fact)
 	})

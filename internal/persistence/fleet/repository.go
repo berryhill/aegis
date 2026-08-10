@@ -49,6 +49,16 @@ type Completion struct {
 	Transition  queue.QueueTransition
 }
 
+type RetryMutation struct {
+	Retry      queue.Retry
+	Transition queue.QueueTransition
+}
+
+type CancellationMutation struct {
+	Cancellation queue.Cancellation
+	Transition   queue.QueueTransition
+}
+
 // Repository exposes create-only definition persistence. It deliberately has
 // no generic put, update, delete, latest-substitution, or engine transaction API.
 type Repository interface {
@@ -79,7 +89,10 @@ type Repository interface {
 	CreateLoopExecution(context.Context, execution.LoopExecution, AuditFact) (bool, error)
 	GetLoopExecution(context.Context, string) (execution.LoopExecution, error)
 	ClaimQueueItem(context.Context, queue.Claim, execution.Attempt, queue.QueueTransition, AuditFact) error
+	RetryQueueItem(context.Context, RetryMutation, AuditFact) error
+	CancelQueueItem(context.Context, CancellationMutation, AuditFact) error
 	GetClaim(context.Context, string) (queue.Claim, error)
+	GetQueueProjection(context.Context, string) (queue.Projection, error)
 	GetAttempt(context.Context, string) (execution.Attempt, error)
 	CompleteQueueItem(context.Context, Completion, AuditFact) error
 	GetRuntimeArtifact(context.Context, string) (evidence.RuntimeArtifact, error)

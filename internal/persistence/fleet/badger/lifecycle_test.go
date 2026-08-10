@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -302,6 +303,364 @@ func TestConcurrentInitialClaimsHaveExactlyOneWinner(t *testing.T) {
 	}
 }
 
+func TestClaimFailsClosedWhenDependencyIsMissing(t *testing.T) {
+	ctx := context.Background()
+	store, accepted := lifecycleFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion), "submit-key-missing-dependency")
+	defer store.Close()
+	accepted.QueueItem.Dependencies = []reference.DigestRef{lifecycleDigestRef("missing-dependency", "sha256:"+strings.Repeat("d", 64))}
+	item, err := queue.NewItem(accepted.QueueItem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted.QueueItem = item
+	run, err := execution.NewGraphRun(execution.GraphRun{GraphRunID: accepted.GraphRun.GraphRunID, QueueItem: lifecycleDigestRef(item.ItemID, item.Digest), Snapshot: accepted.GraphRun.Snapshot, Authority: accepted.GraphRun.Authority, CreatedAt: accepted.GraphRun.CreatedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted.GraphRun = run
+	if _, err = store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: "loop-execution-dependency", GraphRunID: accepted.GraphRun.GraphRunID, GraphNodeID: "echo", Loop: accepted.Snapshot.Loops[0], Participant: accepted.Snapshot.Participants[0], CreatedAt: accepted.Submission.SubmittedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil {
+		t.Fatal(err)
+	}
+	claim, attempt, transition := claimFixture(t, accepted, loopExecution, "claim-dependency", "attempt-dependency")
+	if err = store.ClaimQueueItem(ctx, claim, attempt, transition, audit("queue.claimed", claim.ClaimID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("claim with unresolved dependency did not fail closed: %v", err)
+	}
+	if _, err = store.GetClaim(ctx, claim.ClaimID); !errors.Is(err, fleet.ErrNotFound) {
+		t.Fatalf("denied dependency claim persisted claim: %v", err)
+	}
+	projection, err := store.GetQueueProjection(ctx, item.ItemID)
+	if err != nil || projection.State != queue.StateQueued || projection.Attempts != 0 {
+		t.Fatalf("denied dependency claim mutated projection: got=%+v err=%v", projection, err)
+	}
+}
+
+func TestClaimRejectsProjectionWithLoweredCanonicalAttemptCountAtomically(t *testing.T) {
+	ctx := context.Background()
+	store, accepted, loopExecution, projection := retriedQueueFixture(t, ctx, "lowered-attempts")
+	defer store.Close()
+
+	projection.Attempts--
+	tamperQueueProjection(t, store, projection)
+	claim, attempt, transition := nextClaimFixture(t, accepted, loopExecution, projection.AvailableAt, 1, "lowered-attempts")
+	assertClaimDeniedAtomically(t, ctx, store, claim, attempt, transition)
+}
+
+func TestClaimRejectsProjectionWithShortenedCanonicalRetryAvailabilityAtomically(t *testing.T) {
+	ctx := context.Background()
+	store, accepted, loopExecution, projection := retriedQueueFixture(t, ctx, "shortened-availability")
+	defer store.Close()
+
+	projection.AvailableAt = projection.AvailableAt.Add(-time.Second)
+	tamperQueueProjection(t, store, projection)
+	claim, attempt, transition := nextClaimFixture(t, accepted, loopExecution, projection.AvailableAt, 2, "shortened-availability")
+	assertClaimDeniedAtomically(t, ctx, store, claim, attempt, transition)
+}
+
+func TestClaimRejectsProjectedDependencySuccessWithoutCanonicalDispositionAtomically(t *testing.T) {
+	ctx := context.Background()
+	store, accepted := lifecycleFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion), "submit-key-false-dependency-success")
+	defer store.Close()
+
+	dependency, err := queue.NewItem(queue.Item{ItemID: "dependency-false-success", Submission: accepted.QueueItem.Submission, Snapshot: accepted.QueueItem.Snapshot, Authority: accepted.QueueItem.Authority, GraphRunID: "dependency-graph-run", MaxAttempts: 1, EnqueuedAt: accepted.QueueItem.EnqueuedAt, AvailableAt: accepted.QueueItem.AvailableAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted.QueueItem.Dependencies = []reference.DigestRef{lifecycleDigestRef(dependency.ItemID, dependency.Digest)}
+	accepted.QueueItem, err = queue.NewItem(accepted.QueueItem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted.GraphRun, err = execution.NewGraphRun(execution.GraphRun{GraphRunID: accepted.GraphRun.GraphRunID, QueueItem: lifecycleDigestRef(accepted.QueueItem.ItemID, accepted.QueueItem.Digest), Snapshot: accepted.GraphRun.Snapshot, Authority: accepted.GraphRun.Authority, CreatedAt: accepted.GraphRun.CreatedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	dependencyTransition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "dependency-projected-success", QueueItemID: dependency.ItemID, From: queue.StateClaimed, To: queue.StateSucceeded, ClaimID: "dependency-claim", Reason: "projected only", OccurredAt: accepted.Submission.SubmittedAt})
+	dependencyProjection, err := queue.NewProjection(queue.Projection{QueueItemID: dependency.ItemID, State: queue.StateSucceeded, Attempts: 1, AvailableAt: dependency.AvailableAt, LastTransitionID: dependencyTransition.TransitionID, UpdatedAt: dependencyTransition.OccurredAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dependencyWire, err := queue.MarshalItem(dependency)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transitionWire, err := queue.MarshalTransition(dependencyTransition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectionWire, err := queue.MarshalProjection(dependencyProjection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.update(ctx, func(txn *badgerdb.Txn) error {
+		for _, entry := range []struct{ k, v []byte }{
+			{key(familyQueueItem, dependency.ItemID), dependencyWire},
+			{key(familyQueueTransition, dependency.ItemID, dependencyTransition.TransitionID), transitionWire},
+			{key(familyQueueProjection, dependency.ItemID), projectionWire},
+		} {
+			if writeErr := create(txn, entry.k, entry.v); writeErr != nil {
+				return writeErr
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: "loop-execution-false-dependency", GraphRunID: accepted.GraphRun.GraphRunID, GraphNodeID: "echo", Loop: accepted.Snapshot.Loops[0], Participant: accepted.Snapshot.Participants[0], CreatedAt: accepted.Submission.SubmittedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil {
+		t.Fatal(err)
+	}
+	claim, attempt, transition := claimFixture(t, accepted, loopExecution, "claim-false-dependency", "attempt-false-dependency")
+	assertClaimDeniedAtomically(t, ctx, store, claim, attempt, transition)
+}
+
+func TestRetryReclaimAndCancellationAreAtomicDurableLifecycleFacts(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), schemaVersion)
+	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-retry-reclaim")
+	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil || initial.State != queue.StateQueued || initial.Attempts != 0 || initial.ActiveClaimID != "" {
+		t.Fatalf("initial projection: got=%+v err=%v", initial, err)
+	}
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: "loop-execution-retry", GraphRunID: accepted.GraphRun.GraphRunID, GraphNodeID: "echo", Loop: accepted.Snapshot.Loops[0], Participant: accepted.Snapshot.Participants[0], CreatedAt: accepted.Submission.SubmittedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil {
+		t.Fatal(err)
+	}
+	claim1, attempt1, claimed1 := claimFixture(t, accepted, loopExecution, "claim-retry-1", "attempt-retry-1")
+	if err = store.ClaimQueueItem(ctx, claim1, attempt1, claimed1, audit("queue.claimed", claim1.ClaimID)); err != nil {
+		t.Fatal(err)
+	}
+	claimedProjection, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil || claimedProjection.State != queue.StateClaimed || claimedProjection.Attempts != 1 || claimedProjection.ActiveClaimID != claim1.ClaimID {
+		t.Fatalf("claimed projection: got=%+v err=%v", claimedProjection, err)
+	}
+
+	tooEarly := mustQueueRetry(t, queue.Retry{RetryID: "retry-too-early", QueueItem: claim1.QueueItem, ClaimID: claim1.ClaimID, AttemptNumber: 1, AvailableAt: claim1.ExpiresAt.Add(time.Second), Reclaimed: true, Reason: "lease expired", OccurredAt: claim1.ExpiresAt.Add(-time.Nanosecond)})
+	tooEarlyTransition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-retry-too-early", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateQueued, ClaimID: claim1.ClaimID, Reason: tooEarly.Reason, OccurredAt: tooEarly.OccurredAt})
+	if err = store.RetryQueueItem(ctx, fleet.RetryMutation{Retry: tooEarly, Transition: tooEarlyTransition}, audit("queue.reclaimed", tooEarly.RetryID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("pre-expiry reclaim did not fail closed: %v", err)
+	}
+
+	retryAt := claim1.ExpiresAt
+	availableAt := retryAt.Add(time.Minute)
+	expiredOrdinaryRetry := mustQueueRetry(t, queue.Retry{RetryID: "retry-expired-without-reclaim", QueueItem: claim1.QueueItem, ClaimID: claim1.ClaimID, AttemptNumber: 1, AvailableAt: availableAt, Reclaimed: false, Reason: "ordinary retry after expiry", OccurredAt: retryAt})
+	expiredOrdinaryTransition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-expired-without-reclaim", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateQueued, ClaimID: claim1.ClaimID, Reason: expiredOrdinaryRetry.Reason, OccurredAt: retryAt})
+	if err = store.RetryQueueItem(ctx, fleet.RetryMutation{Retry: expiredOrdinaryRetry, Transition: expiredOrdinaryTransition}, audit("queue.retried", expiredOrdinaryRetry.RetryID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("expired lease retried without canonical reclaim: %v", err)
+	}
+	retry := mustQueueRetry(t, queue.Retry{RetryID: "retry-1", QueueItem: claim1.QueueItem, ClaimID: claim1.ClaimID, AttemptNumber: 1, AvailableAt: availableAt, Reclaimed: true, Reason: "lease expired", OccurredAt: retryAt})
+	retryTransition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-retry-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateQueued, ClaimID: claim1.ClaimID, Reason: retry.Reason, OccurredAt: retryAt})
+	if err = store.RetryQueueItem(ctx, fleet.RetryMutation{Retry: retry, Transition: retryTransition}, audit("queue.reclaimed", retry.RetryID)); err != nil {
+		t.Fatalf("reclaim expired lease: %v", err)
+	}
+	retriedProjection, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil || retriedProjection.State != queue.StateQueued || retriedProjection.Attempts != 1 || retriedProjection.ActiveClaimID != "" || !retriedProjection.AvailableAt.Equal(availableAt) {
+		t.Fatalf("retried projection: got=%+v err=%v", retriedProjection, err)
+	}
+
+	claim2 := mustQueueClaim(t, queue.Claim{ClaimID: "claim-retry-2", QueueItem: claim1.QueueItem, AttemptID: "attempt-retry-2", WorkerID: "worker-2", Authority: accepted.QueueItem.Authority, ClaimedAt: availableAt, ExpiresAt: availableAt.Add(time.Minute)})
+	attempt2, err := execution.NewAttempt(execution.Attempt{AttemptID: claim2.AttemptID, GraphRunID: accepted.GraphRun.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, QueueItem: claim2.QueueItem, ClaimID: claim2.ClaimID, AttemptNumber: 2, CreatedAt: claim2.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed2 := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-claimed-2", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateQueued, To: queue.StateClaimed, ClaimID: claim2.ClaimID, Reason: "worker lease acquired", OccurredAt: claim2.ClaimedAt})
+	claimBeforeBackoff := claim2
+	claimBeforeBackoff.ClaimID = "claim-before-backoff"
+	claimBeforeBackoff.AttemptID = "attempt-before-backoff"
+	claimBeforeBackoff.ClaimedAt = availableAt.Add(-time.Nanosecond)
+	claimBeforeBackoff.ExpiresAt = availableAt.Add(time.Minute)
+	claimBeforeBackoff = mustQueueClaim(t, claimBeforeBackoff)
+	attemptBeforeBackoff, err := execution.NewAttempt(execution.Attempt{AttemptID: claimBeforeBackoff.AttemptID, GraphRunID: accepted.GraphRun.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, QueueItem: claimBeforeBackoff.QueueItem, ClaimID: claimBeforeBackoff.ClaimID, AttemptNumber: 2, CreatedAt: claimBeforeBackoff.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transitionBeforeBackoff := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-before-backoff", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateQueued, To: queue.StateClaimed, ClaimID: claimBeforeBackoff.ClaimID, Reason: "too early", OccurredAt: claimBeforeBackoff.ClaimedAt})
+	if err = store.ClaimQueueItem(ctx, claimBeforeBackoff, attemptBeforeBackoff, transitionBeforeBackoff, audit("queue.claimed", claimBeforeBackoff.ClaimID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("claim before retry availability did not fail closed: %v", err)
+	}
+	if err = store.ClaimQueueItem(ctx, claim2, attempt2, claimed2, audit("queue.claimed", claim2.ClaimID)); err != nil {
+		t.Fatalf("second bounded attempt: %v", err)
+	}
+
+	cancelAt := claim2.ClaimedAt.Add(time.Second)
+	cancellation := mustQueueCancellation(t, queue.Cancellation{CancellationID: "cancel-1", QueueItem: claim2.QueueItem, ClaimID: claim2.ClaimID, Reason: "operator cancelled", OccurredAt: cancelAt})
+	cancelled := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-cancelled-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateCancelled, ClaimID: claim2.ClaimID, Reason: cancellation.Reason, OccurredAt: cancelAt})
+	if err = store.CancelQueueItem(ctx, fleet.CancellationMutation{Cancellation: cancellation, Transition: cancelled}, audit("queue.cancelled", cancellation.CancellationID)); err != nil {
+		t.Fatalf("cancel claimed item: %v", err)
+	}
+	if err = store.CancelQueueItem(ctx, fleet.CancellationMutation{Cancellation: cancellation, Transition: cancelled}, audit("queue.cancelled", cancellation.CancellationID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("repeat cancellation did not fail closed: %v", err)
+	}
+	cancelledProjection, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil || cancelledProjection.State != queue.StateCancelled || cancelledProjection.Attempts != 2 || cancelledProjection.ActiveClaimID != "" {
+		t.Fatalf("cancelled projection: got=%+v err=%v", cancelledProjection, err)
+	}
+
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	got, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil || got.Digest != cancelledProjection.Digest {
+		t.Fatalf("durable cancelled projection: got=%+v err=%v", got, err)
+	}
+	if err = store.view(ctx, func(txn *badgerdb.Txn) error {
+		for _, recordKey := range [][]byte{key(familyQueueRetry, retry.RetryID), key(familyQueueCancellation, cancellation.CancellationID)} {
+			if _, readErr := get(txn, recordKey); readErr != nil {
+				return readErr
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("durable lifecycle fact readback: %v", err)
+	}
+}
+
+func mustQueueRetry(t *testing.T, value queue.Retry) queue.Retry {
+	t.Helper()
+	got, err := queue.NewRetry(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func mustQueueCancellation(t *testing.T, value queue.Cancellation) queue.Cancellation {
+	t.Helper()
+	got, err := queue.NewCancellation(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func mustQueueClaim(t *testing.T, value queue.Claim) queue.Claim {
+	t.Helper()
+	got, err := queue.NewClaim(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func mustQueueTransition(t *testing.T, value queue.QueueTransition) queue.QueueTransition {
+	t.Helper()
+	got, err := queue.NewTransition(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func retriedQueueFixture(t *testing.T, ctx context.Context, suffix string) (*Store, fleet.AcceptedSubmission, execution.LoopExecution, queue.Projection) {
+	t.Helper()
+	store, accepted := lifecycleFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion), "submit-key-"+suffix)
+	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: "loop-execution-" + suffix, GraphRunID: accepted.GraphRun.GraphRunID, GraphNodeID: "echo", Loop: accepted.Snapshot.Loops[0], Participant: accepted.Snapshot.Participants[0], CreatedAt: accepted.Submission.SubmittedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil {
+		t.Fatal(err)
+	}
+	claim, attempt, claimed := claimFixture(t, accepted, loopExecution, "claim-first-"+suffix, "attempt-first-"+suffix)
+	if err = store.ClaimQueueItem(ctx, claim, attempt, claimed, audit("queue.claimed", claim.ClaimID)); err != nil {
+		t.Fatal(err)
+	}
+	retryAt := claim.ExpiresAt
+	retry := mustQueueRetry(t, queue.Retry{RetryID: "retry-" + suffix, QueueItem: claim.QueueItem, ClaimID: claim.ClaimID, AttemptNumber: 1, AvailableAt: retryAt.Add(time.Minute), Reclaimed: true, Reason: "lease expired", OccurredAt: retryAt})
+	retried := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-retry-" + suffix, QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateQueued, ClaimID: claim.ClaimID, Reason: retry.Reason, OccurredAt: retryAt})
+	if err = store.RetryQueueItem(ctx, fleet.RetryMutation{Retry: retry, Transition: retried}, audit("queue.reclaimed", retry.RetryID)); err != nil {
+		t.Fatal(err)
+	}
+	projection, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, accepted, loopExecution, projection
+}
+
+func tamperQueueProjection(t *testing.T, store *Store, projection queue.Projection) {
+	t.Helper()
+	projection, err := queue.NewProjection(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := queue.MarshalProjection(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.update(context.Background(), func(txn *badgerdb.Txn) error {
+		return txn.Set(key(familyQueueProjection, projection.QueueItemID), wire)
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func nextClaimFixture(t *testing.T, accepted fleet.AcceptedSubmission, loopExecution execution.LoopExecution, claimedAt time.Time, attemptNumber uint32, suffix string) (queue.Claim, execution.Attempt, queue.QueueTransition) {
+	t.Helper()
+	claim := mustQueueClaim(t, queue.Claim{ClaimID: "claim-next-" + suffix, QueueItem: lifecycleDigestRef(accepted.QueueItem.ItemID, accepted.QueueItem.Digest), AttemptID: "attempt-next-" + suffix, WorkerID: "worker-2", Authority: accepted.QueueItem.Authority, ClaimedAt: claimedAt, ExpiresAt: claimedAt.Add(time.Minute)})
+	attempt, err := execution.NewAttempt(execution.Attempt{AttemptID: claim.AttemptID, GraphRunID: accepted.GraphRun.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, QueueItem: claim.QueueItem, ClaimID: claim.ClaimID, AttemptNumber: attemptNumber, CreatedAt: claimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-next-" + suffix, QueueItemID: accepted.QueueItem.ItemID, From: queue.StateQueued, To: queue.StateClaimed, ClaimID: claim.ClaimID, Reason: "worker lease acquired", OccurredAt: claimedAt})
+	return claim, attempt, transition
+}
+
+func assertClaimDeniedAtomically(t *testing.T, ctx context.Context, store *Store, claim queue.Claim, attempt execution.Attempt, transition queue.QueueTransition) {
+	t.Helper()
+	eventsBefore, err := store.AuditEvents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectionBefore, err := store.GetQueueProjection(ctx, claim.QueueItem.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.ClaimQueueItem(ctx, claim, attempt, transition, audit("queue.claimed", claim.ClaimID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("divergent projection admitted claim: %v", err)
+	}
+	if _, err = store.GetClaim(ctx, claim.ClaimID); !errors.Is(err, fleet.ErrNotFound) {
+		t.Fatalf("denied claim persisted claim record: %v", err)
+	}
+	if _, err = store.GetAttempt(ctx, attempt.AttemptID); !errors.Is(err, fleet.ErrNotFound) {
+		t.Fatalf("denied claim persisted attempt record: %v", err)
+	}
+	projectionAfter, err := store.GetQueueProjection(ctx, claim.QueueItem.ID)
+	if err != nil || projectionAfter != projectionBefore {
+		t.Fatalf("denied claim mutated projection: before=%+v after=%+v err=%v", projectionBefore, projectionAfter, err)
+	}
+	eventsAfter, err := store.AuditEvents(ctx)
+	if err != nil || len(eventsAfter) != len(eventsBefore) {
+		t.Fatalf("denied claim changed audit chain: before=%d after=%d err=%v", len(eventsBefore), len(eventsAfter), err)
+	}
+}
+
 func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, fleet.Completion) {
 	t.Helper()
 	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-completion-boundary")
@@ -404,7 +763,7 @@ func assertAcceptedReadback(t *testing.T, store *Store, accepted fleet.AcceptedS
 	if got, err := store.GetSubmission(ctx, accepted.Submission.SubmissionID); err != nil || got != accepted.Submission {
 		t.Fatalf("submission readback: got=%+v err=%v", got, err)
 	}
-	if got, err := store.GetQueueItem(ctx, accepted.QueueItem.ItemID); err != nil || got != accepted.QueueItem {
+	if got, err := store.GetQueueItem(ctx, accepted.QueueItem.ItemID); err != nil || !reflect.DeepEqual(got, accepted.QueueItem) {
 		t.Fatalf("queue item readback: got=%+v err=%v", got, err)
 	}
 	if got, err := store.GetGraphRun(ctx, accepted.GraphRun.GraphRunID); err != nil || got != accepted.GraphRun {

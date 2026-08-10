@@ -44,12 +44,27 @@ func NewTransition(value QueueTransition) (QueueTransition, error) {
 	value.Digest = ""
 	return seal(value, validateTransition)
 }
+func NewRetry(value Retry) (Retry, error) {
+	value.SchemaVersion, value.Digest = RetrySchemaVersion, ""
+	return seal(value, validateRetry)
+}
+func NewCancellation(value Cancellation) (Cancellation, error) {
+	value.SchemaVersion, value.Digest = CancellationSchemaVersion, ""
+	return seal(value, validateCancellation)
+}
+func NewProjection(value Projection) (Projection, error) {
+	value.SchemaVersion, value.Digest = ProjectionSchemaVersion, ""
+	return seal(value, validateProjection)
+}
 
 func MarshalSubmission(v Submission) ([]byte, error)      { return marshal(v, validateSubmission) }
 func MarshalRejection(v Rejection) ([]byte, error)        { return marshal(v, validateRejection) }
 func MarshalItem(v Item) ([]byte, error)                  { return marshal(v, validateItem) }
 func MarshalClaim(v Claim) ([]byte, error)                { return marshal(v, validateClaim) }
 func MarshalTransition(v QueueTransition) ([]byte, error) { return marshal(v, validateTransition) }
+func MarshalRetry(v Retry) ([]byte, error)                { return marshal(v, validateRetry) }
+func MarshalCancellation(v Cancellation) ([]byte, error)  { return marshal(v, validateCancellation) }
+func MarshalProjection(v Projection) ([]byte, error)      { return marshal(v, validateProjection) }
 func UnmarshalSubmission(b []byte) (Submission, error) {
 	return decode[Submission](b, validateSubmission)
 }
@@ -58,6 +73,13 @@ func UnmarshalItem(b []byte) (Item, error)           { return decode[Item](b, va
 func UnmarshalClaim(b []byte) (Claim, error)         { return decode[Claim](b, validateClaim) }
 func UnmarshalTransition(b []byte) (QueueTransition, error) {
 	return decode[QueueTransition](b, validateTransition)
+}
+func UnmarshalRetry(b []byte) (Retry, error) { return decode[Retry](b, validateRetry) }
+func UnmarshalCancellation(b []byte) (Cancellation, error) {
+	return decode[Cancellation](b, validateCancellation)
+}
+func UnmarshalProjection(b []byte) (Projection, error) {
+	return decode[Projection](b, validateProjection)
 }
 
 func validateSubmission(v Submission) error {
@@ -73,8 +95,18 @@ func validateRejection(v Rejection) error {
 	return validateDigest(v, v.Digest)
 }
 func validateItem(v Item) error {
-	if v.SchemaVersion != ItemSchemaVersion || !validID(v.ItemID) || !validID(v.GraphRunID) || v.State != StateQueued || v.MaxAttempts == 0 || v.MaxAttempts > MaxAttempts || v.EnqueuedAt.IsZero() || v.AvailableAt.Before(v.EnqueuedAt) || v.Submission.Validate() != nil || v.Snapshot.Validate() != nil || v.Authority.Validate() != nil {
+	if v.SchemaVersion != ItemSchemaVersion || !validID(v.ItemID) || !validID(v.GraphRunID) || v.State != StateQueued || v.MaxAttempts == 0 || v.MaxAttempts > MaxAttempts || v.EnqueuedAt.IsZero() || v.AvailableAt.Before(v.EnqueuedAt) || len(v.Dependencies) > MaxDependencies || v.Submission.Validate() != nil || v.Snapshot.Validate() != nil || v.Authority.Validate() != nil {
 		return errors.New("invalid queue item")
+	}
+	seen := make(map[string]struct{}, len(v.Dependencies))
+	for _, dependency := range v.Dependencies {
+		if dependency.Validate() != nil || dependency.ID == v.ItemID {
+			return errors.New("invalid queue item dependency")
+		}
+		if _, exists := seen[dependency.ID]; exists {
+			return errors.New("duplicate queue item dependency")
+		}
+		seen[dependency.ID] = struct{}{}
 	}
 	return validateDigest(v, v.Digest)
 }
@@ -87,9 +119,31 @@ func validateClaim(v Claim) error {
 func validateTransition(v QueueTransition) error {
 	legal := (v.From == "" && v.To == StateQueued && v.ClaimID == "") ||
 		(v.From == StateQueued && v.To == StateClaimed && validID(v.ClaimID)) ||
+		(v.From == StateClaimed && v.To == StateQueued && validID(v.ClaimID)) ||
+		(v.From == StateQueued && v.To == StateCancelled && v.ClaimID == "") ||
 		(v.From == StateClaimed && terminalState(v.To) && validID(v.ClaimID))
 	if v.SchemaVersion != TransitionSchemaVersion || !validID(v.TransitionID) || !validID(v.QueueItemID) || !legal || !validReason(v.Reason) || v.OccurredAt.IsZero() {
 		return errors.New("invalid queue transition")
+	}
+	return validateDigest(v, v.Digest)
+}
+func validateRetry(v Retry) error {
+	if v.SchemaVersion != RetrySchemaVersion || !validID(v.RetryID) || v.QueueItem.Validate() != nil || !validID(v.ClaimID) || v.AttemptNumber == 0 || v.AttemptNumber > MaxAttempts || v.OccurredAt.IsZero() || v.AvailableAt.Before(v.OccurredAt) || !validReason(v.Reason) {
+		return errors.New("invalid queue retry")
+	}
+	return validateDigest(v, v.Digest)
+}
+func validateCancellation(v Cancellation) error {
+	if v.SchemaVersion != CancellationSchemaVersion || !validID(v.CancellationID) || v.QueueItem.Validate() != nil || (v.ClaimID != "" && !validID(v.ClaimID)) || !validReason(v.Reason) || v.OccurredAt.IsZero() {
+		return errors.New("invalid queue cancellation")
+	}
+	return validateDigest(v, v.Digest)
+}
+func validateProjection(v Projection) error {
+	activeOK := (v.State == StateClaimed && validID(v.ActiveClaimID)) || (v.State != StateClaimed && v.ActiveClaimID == "")
+	stateOK := v.State == StateQueued || v.State == StateClaimed || terminalState(v.State)
+	if v.SchemaVersion != ProjectionSchemaVersion || !validID(v.QueueItemID) || !validID(v.LastTransitionID) || !activeOK || !stateOK || v.Attempts > MaxAttempts || v.AvailableAt.IsZero() || v.UpdatedAt.IsZero() {
+		return errors.New("invalid queue projection")
 	}
 	return validateDigest(v, v.Digest)
 }

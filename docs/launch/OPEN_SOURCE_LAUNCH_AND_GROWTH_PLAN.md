@@ -83,7 +83,7 @@ The first release must not claim:
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
 - A complete or externally supported Agent Registry, Loop, Graph, or Execution Queue product surface or route. Internal domains, persistence, authenticated orchestration, and narrow deterministic execution exist, but all external fleet routes, console wiring, real Hermes worker execution, general lifecycle, and installed proof remain launch work.
-- Complete fleet-control lifecycle tooling. Qualified persistence, atomic submission/claim facts, and one narrow single-node no-key worker through evidence-gated terminal disposition exist, but migration/backup operations, lease expiry/recovery, reclaim/retries, cancellation, multi-node scheduling, real Hermes worker integration, public wiring, and installed proof remain unimplemented.
+- Complete fleet-control lifecycle tooling. Qualified persistence, atomic submission, dependency-gated attempt-bounded claims, expired-lease retry/reclaim, queued-or-claimed cancellation, validated queue projections, and one narrow single-node no-key worker through evidence-gated terminal disposition exist, but migration/backup operations, dirty-store recovery, automated lifecycle scheduling, multi-node scheduling, real Hermes worker integration, public wiring, and installed proof remain unimplemented.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
 ## Launch gates
