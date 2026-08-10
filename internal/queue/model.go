@@ -9,13 +9,17 @@ import (
 )
 
 const (
-	SubmissionSchemaVersion = "aegis.queue.submission.v1"
-	RejectionSchemaVersion  = "aegis.queue.rejection.v1"
-	ItemSchemaVersion       = "aegis.queue.item.v1"
-	ClaimSchemaVersion      = "aegis.queue.claim.v1"
-	TransitionSchemaVersion = "aegis.queue.transition.v1"
-	MaxReasonBytes          = 1024
-	MaxAttempts             = 100
+	SubmissionSchemaVersion   = "aegis.queue.submission.v1"
+	RejectionSchemaVersion    = "aegis.queue.rejection.v1"
+	ItemSchemaVersion         = "aegis.queue.item.v1"
+	ClaimSchemaVersion        = "aegis.queue.claim.v1"
+	TransitionSchemaVersion   = "aegis.queue.transition.v1"
+	RetrySchemaVersion        = "aegis.queue.retry.v1"
+	CancellationSchemaVersion = "aegis.queue.cancellation.v1"
+	ProjectionSchemaVersion   = "aegis.queue.projection.v1"
+	MaxReasonBytes            = 1024
+	MaxAttempts               = 100
+	MaxDependencies           = 100
 )
 
 type State string
@@ -59,17 +63,18 @@ type Rejection struct {
 
 // Item is the one durable queue entry created for an accepted submission.
 type Item struct {
-	SchemaVersion string              `json:"schema_version"`
-	ItemID        string              `json:"item_id"`
-	Submission    reference.DigestRef `json:"submission"`
-	Snapshot      reference.DigestRef `json:"snapshot"`
-	Authority     reference.DigestRef `json:"authority"`
-	GraphRunID    string              `json:"graph_run_id"`
-	State         State               `json:"state"`
-	MaxAttempts   uint32              `json:"max_attempts"`
-	EnqueuedAt    time.Time           `json:"enqueued_at"`
-	AvailableAt   time.Time           `json:"available_at"`
-	Digest        string              `json:"digest"`
+	SchemaVersion string                `json:"schema_version"`
+	ItemID        string                `json:"item_id"`
+	Submission    reference.DigestRef   `json:"submission"`
+	Snapshot      reference.DigestRef   `json:"snapshot"`
+	Authority     reference.DigestRef   `json:"authority"`
+	GraphRunID    string                `json:"graph_run_id"`
+	State         State                 `json:"state"`
+	MaxAttempts   uint32                `json:"max_attempts"`
+	EnqueuedAt    time.Time             `json:"enqueued_at"`
+	AvailableAt   time.Time             `json:"available_at"`
+	Dependencies  []reference.DigestRef `json:"dependencies,omitempty"`
+	Digest        string                `json:"digest"`
 }
 
 // Claim is an immutable bounded lease. Repository claim creation is the
@@ -98,4 +103,43 @@ type QueueTransition struct {
 	Reason        string    `json:"reason"`
 	OccurredAt    time.Time `json:"occurred_at"`
 	Digest        string    `json:"digest"`
+}
+
+// Retry is the canonical decision to make a claimed item available again.
+type Retry struct {
+	SchemaVersion string              `json:"schema_version"`
+	RetryID       string              `json:"retry_id"`
+	QueueItem     reference.DigestRef `json:"queue_item"`
+	ClaimID       string              `json:"claim_id"`
+	AttemptNumber uint32              `json:"attempt_number"`
+	AvailableAt   time.Time           `json:"available_at"`
+	Reclaimed     bool                `json:"reclaimed"`
+	Reason        string              `json:"reason"`
+	OccurredAt    time.Time           `json:"occurred_at"`
+	Digest        string              `json:"digest"`
+}
+
+// Cancellation is an immutable controller-admitted cancellation request.
+type Cancellation struct {
+	SchemaVersion  string              `json:"schema_version"`
+	CancellationID string              `json:"cancellation_id"`
+	QueueItem      reference.DigestRef `json:"queue_item"`
+	ClaimID        string              `json:"claim_id,omitempty"`
+	Reason         string              `json:"reason"`
+	OccurredAt     time.Time           `json:"occurred_at"`
+	Digest         string              `json:"digest"`
+}
+
+// Projection is rebuildable and cannot grant authority. Mutations always
+// re-check canonical records in the same transaction.
+type Projection struct {
+	SchemaVersion    string    `json:"schema_version"`
+	QueueItemID      string    `json:"queue_item_id"`
+	State            State     `json:"state"`
+	Attempts         uint32    `json:"attempts"`
+	ActiveClaimID    string    `json:"active_claim_id,omitempty"`
+	AvailableAt      time.Time `json:"available_at"`
+	LastTransitionID string    `json:"last_transition_id"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	Digest           string    `json:"digest"`
 }

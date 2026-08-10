@@ -43,6 +43,9 @@ const (
 	familyQueueTransition          = 0x54
 	familyClaim                    = 0x55
 	familyClaimByItem              = 0x56
+	familyQueueProjection          = 0x57
+	familyQueueRetry               = 0x58
+	familyQueueCancellation        = 0x59
 	familyGraphRun                 = 0x60
 	familyLoopExecution            = 0x61
 	familyAttempt                  = 0x62

@@ -62,6 +62,9 @@ func (repository *fleetServiceRepository) RejectSubmission(_ context.Context, va
 func (repository *fleetServiceRepository) GetQueueItem(context.Context, string) (queue.Item, error) {
 	return repository.accepted.QueueItem, nil
 }
+func (repository *fleetServiceRepository) GetQueueProjection(context.Context, string) (queue.Projection, error) {
+	return queue.Projection{State: queue.StateQueued, AvailableAt: repository.accepted.QueueItem.AvailableAt}, nil
+}
 func (repository *fleetServiceRepository) GetGraphRunSnapshot(context.Context, string) (graph.GraphRunSnapshot, error) {
 	return repository.accepted.Snapshot, nil
 }

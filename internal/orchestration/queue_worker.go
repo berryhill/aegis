@@ -116,6 +116,10 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil {
 		return WorkResult{}, err
 	}
+	projection, err := worker.repository.GetQueueProjection(ctx, item.ItemID)
+	if err != nil || projection.State != queue.StateQueued || projection.Attempts >= item.MaxAttempts || worker.now().Before(projection.AvailableAt) {
+		return WorkResult{}, fmt.Errorf("%w: queue item is not claimable", ErrWorkerDenied)
+	}
 	if item.Authority != request.Authority || request.WorkerID == "" || request.LeaseDuration <= 0 {
 		return WorkResult{}, fmt.Errorf("%w: exact queue and worker binding required", ErrWorkerDenied)
 	}
@@ -151,7 +155,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil {
 		return WorkResult{}, err
 	}
-	attempt, err := execution.NewAttempt(execution.Attempt{AttemptID: request.AttemptID, GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, QueueItem: claim.QueueItem, ClaimID: claim.ClaimID, AttemptNumber: 1, CreatedAt: now})
+	attempt, err := execution.NewAttempt(execution.Attempt{AttemptID: request.AttemptID, GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, QueueItem: claim.QueueItem, ClaimID: claim.ClaimID, AttemptNumber: projection.Attempts + 1, CreatedAt: now})
 	if err != nil {
 		return WorkResult{}, err
 	}
