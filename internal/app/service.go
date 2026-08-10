@@ -23,6 +23,8 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/credentials/broker"
+	"github.com/berryhill/aegis/internal/orchestration"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -48,6 +50,9 @@ type Service struct {
 	LookupEnv         func(string) (string, bool)
 
 	CredentialAuthority *credentials.Authority
+	FleetRepository     fleet.Repository
+	Fleet               *orchestration.FleetService
+	QueueWorker         *orchestration.QueueWorker
 	capMu               sync.RWMutex
 	capabilities        map[[32]byte]broker.Capability
 	brokerRequests      map[[32]byte]map[[32]byte]struct{}
@@ -74,6 +79,9 @@ func New(cfg config.Config, st *store.Store, authority core.AuthorityRepository,
 }
 
 func (s *Service) resolveProviderCredential(provider string, scopes []string) ([]hermes.Credential, error) {
+	if provider == "none" {
+		return nil, nil
+	}
 	reference := "provider:" + provider
 	if provider == "" || !contains(scopes, reference) {
 		return nil, fmt.Errorf("credential scope must include %q", reference)
@@ -1218,7 +1226,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		Authority: core.EffectiveAuthority{
 			StanzaID: m.StanzaID, Capabilities: append([]string(nil), m.Capabilities...),
 			Tools: append([]string(nil), m.Tools...), Memory: append([]string(nil), m.Scopes.Memory...),
-			Credentials: append([]string(nil), m.Scopes.Credentials...), Hermes: m.Hermes,
+			Credentials: append([]string{}, m.Scopes.Credentials...), Hermes: m.Hermes,
 		},
 		IssuedAt: issuedAt, ExpiresAt: m.ExpiresAt,
 	}

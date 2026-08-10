@@ -87,26 +87,26 @@ func NewQueueWorker(repository fleet.Repository, service *FleetService, blobs Bl
 }
 
 type WorkRequest struct {
-	Subject              core.Subject
-	Authority            reference.DigestRef
-	QueueItemID          string
-	WorkerID             string
-	LoopExecutionID      string
-	ClaimID              string
-	AttemptID            string
-	ClaimTransitionID    string
-	TerminalTransitionID string
-	DispositionID        string
-	ArtifactID           string
-	LeaseDuration        time.Duration
+	Subject              core.Subject        `json:"-"`
+	Authority            reference.DigestRef `json:"authority"`
+	QueueItemID          string              `json:"queue_item_id"`
+	WorkerID             string              `json:"worker_id"`
+	LoopExecutionID      string              `json:"loop_execution_id"`
+	ClaimID              string              `json:"claim_id"`
+	AttemptID            string              `json:"attempt_id"`
+	ClaimTransitionID    string              `json:"claim_transition_id"`
+	TerminalTransitionID string              `json:"terminal_transition_id"`
+	DispositionID        string              `json:"disposition_id"`
+	ArtifactID           string              `json:"artifact_id"`
+	LeaseDuration        time.Duration       `json:"lease_duration"`
 }
 
 type WorkResult struct {
-	Claim       queue.Claim
-	Attempt     execution.Attempt
-	Artifact    *evidence.RuntimeArtifact
-	Receipts    []evidence.VerificationReceipt
-	Disposition disposition.Record
+	Claim       queue.Claim                    `json:"claim"`
+	Attempt     execution.Attempt              `json:"attempt"`
+	Artifact    *evidence.RuntimeArtifact      `json:"artifact,omitempty"`
+	Receipts    []evidence.VerificationReceipt `json:"receipts"`
+	Disposition disposition.Record             `json:"disposition"`
 }
 
 // Process executes the narrow one-node MVI graph. Unsupported graph shapes

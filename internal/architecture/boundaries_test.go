@@ -36,7 +36,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
-	"internal/app":               {"internal/config", "internal/core", "internal/credentials", "internal/runtime", "internal/store"},
+	"internal/app":               {"internal/config", "internal/core", "internal/credentials", "internal/graph", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
 	"internal/console":           {"internal/core"},
 	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core"},
 }

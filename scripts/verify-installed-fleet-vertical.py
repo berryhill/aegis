@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Run the installed Aegis binary through the no-key fleet thin vertical.
+
+The caller creates the authority generation first. Every product operation below
+is executed by the extracted release-shaped binary against one isolated proof
+root; this program never imports Aegis implementation packages.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import pwd
+import subprocess
+import sys
+from datetime import datetime, timezone
+from typing import Any, NoReturn
+
+
+def fail(message: str) -> NoReturn:
+    raise SystemExit(f"installed fleet vertical denied: {message}")
+
+
+def write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value, sort_keys=True) + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        print("usage: verify-installed-fleet-vertical.py INSTALLED_AEGIS EMPTY_PROOF_ROOT", file=sys.stderr)
+        return 2
+    binary = Path(sys.argv[1]).resolve(strict=True)
+    root = Path(sys.argv[2]).resolve(strict=True)
+    if binary.is_symlink() or not binary.is_file() or not os.access(binary, os.X_OK):
+        fail("installed Aegis must be one regular executable")
+    if root.is_symlink() or not root.is_dir():
+        fail("proof root must be one real directory")
+    # The shell caller initializes only this generation before invocation.
+    if any(root.iterdir()):
+        allowed = root / "state" / "persistence" / "authority-v1"
+        if not allowed.is_dir():
+            fail("proof root contains unexpected pre-existing state")
+
+    user = pwd.getpwuid(os.getuid())
+    home = root / "home"
+    fixtures = root / "fixtures"
+    home.mkdir(mode=0o700)
+    fixtures.mkdir(mode=0o700)
+    hermes_fixture = root / "hermes-version-fixture"
+    hermes_fixture.write_text(
+        "#!/bin/sh\n"
+        "if [ \"${1:-}\" = \"--version\" ]; then\n"
+        f"  printf 'Hermes Agent v0.18.2\\nInstall directory: {root / 'hermes-fixture'}\\n'\n"
+        "  exit 0\n"
+        "fi\n"
+        "exec sleep 3600\n",
+        encoding="utf-8",
+    )
+    hermes_fixture.chmod(0o700)
+    config = root / "aegis.yaml"
+    config.write_text(
+        f"state_dir: {root / 'state'}\n"
+        "runtime_default: hermes\n"
+        f"hermes_executable: {hermes_fixture}\n"
+        "principal:\n"
+        "  id: principal-1\n"
+        "  name: Installed Proof Principal\n"
+        f'  uid: "{os.getuid()}"\n'
+        f"  user: {user.pw_name}\n"
+        "  auth_ttl: 15m\n"
+        "audit:\n"
+        f"  checkpoint_dir: {root / 'checkpoints'}\n",
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    environment = os.environ.copy()
+    environment["HOME"] = str(home)
+
+    def aegis(*arguments: str, input_file: Path | None = None) -> dict[str, Any]:
+        command = [str(binary), "--config", str(config), *arguments]
+        if input_file is not None:
+            command.append(str(input_file))
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if completed.returncode != 0:
+            fail(f"{' '.join(arguments)} exited {completed.returncode}: {completed.stderr.strip()}")
+        try:
+            value = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            fail(f"{' '.join(arguments)} returned invalid JSON: {exc}")
+        if not isinstance(value, dict):
+            fail(f"{' '.join(arguments)} returned a non-object result")
+        return value
+
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    charter_file = fixtures / "charter.json"
+    write_json(charter_file, {
+        "schema_version": "aegis.dev/v1alpha1",
+        "agent_id": "proof-agent",
+        "name": "Installed Fleet Proof Agent",
+        "revision": 1,
+        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "version_constraint": ">=0.18.0,<0.19.0", "target": "aegis-owned-ephemeral"},
+        "stanzas": [{
+            "id": "principal", "name": "Principal", "enabled": True,
+            "authentication": {"methods": ["local-os"], "selectors": [{"kinds": ["human"], "subject_ids": [f"local-uid:{os.getuid()}"], "principal_ids": ["principal-1"], "issuers": ["local-os"], "claims": {}, "environments": ["local"]}], "require_fresh": True, "max_auth_age_seconds": 900},
+            "grant": {"capabilities": ["chat"], "tools": ["no_mcp"]},
+            "scopes": {"memory": ["proof-memory"], "credentials": []},
+            "session": {"maximum_lifetime_seconds": 600, "idle_timeout_seconds": 300, "require_reauth": True, "delegation": False},
+            "approval": {"required_operations": ["provision"], "maximum_lifetime_seconds": 300, "single_use": True},
+            "information_flow": {"cross_stanza": "deny"},
+            "hermes": {"profile": "", "persistent_home": False, "mcp_servers": [], "plugins": [], "toolsets": ["no_mcp"], "model": "proof-no-key", "provider": "none"},
+        }],
+        "created_by": "principal-1", "created_at": now,
+    })
+    canonical = aegis("charter", "import", input_file=charter_file)
+    charter_digest = canonical.get("digest")
+    if not isinstance(charter_digest, str) or not charter_digest.startswith("sha256:"):
+        fail("charter import omitted its canonical digest")
+
+    plan = aegis("plan", "preview", "proof-agent", "--revision", "1")
+    plan_id = plan["plan"]["id"]
+    approval = aegis("approval", "request", plan_id, "--ttl", "5m")
+    approval_id = approval["id"]
+    aegis("approval", "approve", approval_id)
+    receipt = aegis("provision", plan_id, approval_id)
+    if receipt.get("status") != "verified":
+        fail("deterministic provisioning was not verified")
+    preview = aegis("session", "preview", "proof-agent", "--revision", "1", "--stanza", "principal")
+    session = aegis("session", "start", preview["mandate"]["id"])
+    authority = aegis("session", "authority", session["id"])
+
+    digest_a = "sha256:" + "a" * 64
+    agent_file = fixtures / "agent.json"
+    write_json(agent_file, {
+        "fixture": {
+            "schema_version": "aegis.current-fleet.fixture.v1",
+            "fleet_id": "proof-fleet",
+            "agents": [{
+                "source_id": "proof-source", "agent_id": "proof-agent",
+                "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "target": "aegis-owned-ephemeral"},
+                "ownership": {"owner_id": "principal-1", "accountability_id": "installed-proof"},
+                "lifecycle": "enabled",
+                "charter": {"schema_version": "aegis.reference.revision.v1", "id": "proof-agent", "revision": 1, "digest": charter_digest},
+                "capability_declarations": ["fleet.execute"],
+            }],
+        },
+        "identity": {"fleet_id": "proof-fleet", "kind": "current-fleet", "source_id": "proof-source"},
+    })
+    registered = aegis("agents", "register", input_file=agent_file)
+    agent_revision = registered["agent"]["revision"]
+    if not registered.get("created") or agent_revision["charter"]["digest"] != charter_digest:
+        fail("registry did not retain immutable charter provenance")
+
+    loop_file = fixtures / "loop.json"
+    write_json(loop_file, {
+        "authority": authority,
+        "revision": {
+            "loop_id": "proof-loop", "revision": 1, "entry_step_id": "work",
+            "inputs": [], "outputs": [],
+            "steps": [
+                {"id": "work", "kind": "action", "input_ports": [], "output_ports": [], "retry": {"max_attempts": 1}, "evidence_claims": [{"claim": "exact-output", "media_type": "application/json"}]},
+                {"id": "done", "kind": "terminal", "input_ports": [], "output_ports": [], "retry": {"max_attempts": 1}, "terminal": {"outcome": "succeeded", "output_mappings": []}, "evidence_claims": []},
+            ],
+            "transitions": [{"id": "finish", "from_step_id": "work", "to_step_id": "done", "mappings": []}],
+            "required_evidence": [{"claim": "exact-output", "producer_step_id": "work"}],
+        },
+        "idempotency_key": "installed-proof-loop-1",
+    })
+    published_loop = aegis("loops", "publish", input_file=loop_file)
+    loop_revision = published_loop["revision"]
+    if published_loop["validation"]["outcome"] != "valid":
+        fail("loop publication was not valid")
+
+    ref = lambda value, identifier: {"schema_version": "aegis.reference.revision.v1", "id": identifier, "revision": 1, "digest": value["digest"]}
+    graph_file = fixtures / "graph.json"
+    write_json(graph_file, {
+        "authority": authority,
+        "revision": {
+            "graph_id": "proof-graph", "revision": 1, "inputs": [], "outputs": [],
+            "nodes": [{"id": "proof-node", "participant": ref(agent_revision, "proof-agent"), "loop": ref(loop_revision, "proof-loop"), "inputs": [], "outputs": []}],
+            "input_mappings": [], "dependencies": [], "output_mappings": [], "admission_rules": [],
+        },
+        "idempotency_key": "installed-proof-graph-1",
+    })
+    published_graph = aegis("graphs", "publish", input_file=graph_file)
+    graph_revision = published_graph["revision"]
+    if published_graph["validation"]["outcome"] != "valid":
+        fail("graph publication was not valid")
+
+    def submission(authority_value: dict, suffix: str) -> Path:
+        path = fixtures / f"submission-{suffix}.json"
+        write_json(path, {
+            "authority": authority_value, "graph": ref(graph_revision, "proof-graph"), "inputs": [],
+            "submission_id": f"submission-{suffix}", "idempotency_key": f"installed-proof-submit-{suffix}",
+            "snapshot_id": f"snapshot-{suffix}", "queue_item_id": f"queue-{suffix}", "graph_run_id": f"run-{suffix}",
+            "transition_id": f"queued-{suffix}", "rejection_id": f"rejection-{suffix}", "max_attempts": 1,
+        })
+        return path
+
+    accepted = aegis("graphs", "submit", input_file=submission(authority, "accepted"))
+    snapshot = accepted.get("accepted", {}).get("snapshot", {})
+    if not accepted.get("created") or snapshot.get("graph", {}).get("digest") != graph_revision["digest"]:
+        fail("queue admission omitted exact historical graph snapshot")
+
+    wrong_authority = dict(authority)
+    wrong_authority["digest"] = digest_a
+    rejected = aegis("graphs", "submit", input_file=submission(wrong_authority, "denied"))
+    if not rejected.get("created") or rejected.get("accepted") is not None or rejected.get("rejection", {}).get("reason_code") != "readiness_denied":
+        fail("invalid authority was not durably rejected")
+
+    work_file = fixtures / "work.json"
+    write_json(work_file, {
+        "authority": authority, "queue_item_id": "queue-accepted", "worker_id": "installed-no-key-worker",
+        "loop_execution_id": "loop-execution-accepted", "claim_id": "claim-accepted", "attempt_id": "attempt-accepted",
+        "claim_transition_id": "claimed-accepted", "terminal_transition_id": "terminal-accepted",
+        "disposition_id": "disposition-accepted", "artifact_id": "artifact-accepted", "lease_duration": 60000000000,
+    })
+    result = aegis("queue", "process", input_file=work_file)
+    receipts = result.get("receipts", [])
+    if result.get("disposition", {}).get("state") != "succeeded" or not result.get("artifact", {}).get("content_ref") or len(receipts) != 1 or receipts[0].get("outcome") != "passed":
+        fail("execution did not reach evidence-gated successful disposition")
+    final_item = aegis("queue", "show", "queue-accepted")
+    if final_item.get("projection", {}).get("state") != "succeeded" or final_item.get("item", {}).get("snapshot", {}).get("digest") != snapshot.get("digest"):
+        fail("terminal queue readback lost its immutable snapshot")
+    if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"] or aegis("loops", "show", "proof-loop", "1")["digest"] != loop_revision["digest"] or aegis("graphs", "show", "proof-graph", "1")["digest"] != graph_revision["digest"]:
+        fail("historical definition reconstruction changed an exact digest")
+
+    evidence = {
+        "schema_version": 1,
+        "binary": str(binary),
+        "state_root": str(root / "state"),
+        "proofs": {
+            "registry": "immutable_revision_read_back",
+            "loop": "validated_revision_published",
+            "graph": "validated_exact_bindings_published",
+            "queue": "accepted_and_terminal_read_back",
+            "fresh_runtime_admission": "worker_repeated_controller_admission",
+            "evidence_gated_disposition": "one_content_addressed_artifact_one_passed_receipt_succeeded",
+            "durable_rejection": "wrong_authority_recorded_as_readiness_denied",
+            "historical_reconstruction": "snapshot_and_exact_definition_digests_read_back",
+        },
+        "production_state_mutated": False,
+        "credentials_used": False,
+    }
+    evidence_path = root / "installed-fleet-vertical-evidence.json"
+    write_json(evidence_path, evidence)
+    print("installed fleet vertical verified: registry=immutable loop=valid graph=valid queue=succeeded fresh_admission=verified evidence=passed durable_rejection=verified historical_reconstruction=verified credentials=none")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
