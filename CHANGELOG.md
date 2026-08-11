@@ -4,6 +4,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added explicit local control-plane ownership reconciliation: production onboarding can generate an owner-only token file and absolute Unix transport after exact principal/configuration approval, then preview and install one digest-bound `systemd --user` Aegis service after a separate approval. Added `aegis service preview|install|status|start|stop|restart|uninstall` and `aegis console` for a short-lived single-use browser bootstrap over authenticated Unix transport. The lifecycle refuses foreign units, never enables linger or installs a root service, and makes no same-account isolation claim.
+
+### Changed
+
+- Made an online daemon the sole cooperating-process owner of authoritative stores: `serve` acquires an owner-only singleton lock before Unix-socket mutation, concurrent startup denies, and store-backed CLI paths have no direct-store fallback while the socket is online. Launch examples and installed-console verification now use generated protected token-file custody rather than an inline reusable token and exercise singleton denial plus daemon-owned console onboarding.
+
 ## [0.2.3] - 2026-08-11
 
 ### Changed

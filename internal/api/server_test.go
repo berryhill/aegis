@@ -225,6 +225,72 @@ func TestBearerAloneCannotCreatePrincipalIdentity(t *testing.T) {
 	}
 }
 
+func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
+	svc := apiService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	before, err := os.Lstat(svc.Config.API.UnixSocket)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+
+	secondErr := Serve(context.Background(), svc)
+	if secondErr == nil || !strings.Contains(secondErr.Error(), "another Aegis control-plane daemon owns this transport") {
+		cancel()
+		t.Fatalf("concurrent serve error=%v", secondErr)
+	}
+	after, err := os.Lstat(svc.Config.API.UnixSocket)
+	if err != nil || !os.SameFile(before, after) {
+		cancel()
+		t.Fatalf("singleton denial mutated active socket: before=%v after=%v err=%v", before, after, err)
+	}
+	request, _ := http.NewRequest(http.MethodGet, "http://unix/livez", nil)
+	response, err := unixClient(svc.Config.API.UnixSocket).Do(request)
+	if err != nil || response.StatusCode != http.StatusOK {
+		cancel()
+		t.Fatalf("first daemon was disturbed: response=%v err=%v", response, err)
+	}
+	_ = response.Body.Close()
+	cancel()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBearerAloneCannotIssueConsoleBootstrapOverTCP(t *testing.T) {
+	svc := apiService(t)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.UnixSocket = ""
+	svc.Config.API.Listen = address
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	waitFor(t, "tcp", address)
+	request, _ := http.NewRequest(http.MethodPost, "http://"+address+"/v1/console/bootstrap", strings.NewReader("{}"))
+	request.Header.Set("Authorization", "Bearer transport-secret")
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("bearer-only TCP bootstrap status=%d, want 401", response.StatusCode)
+	}
+	_ = response.Body.Close()
+	cancel()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	svc := apiService(t)
 	configureAPIFleet(t, svc)

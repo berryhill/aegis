@@ -53,6 +53,15 @@ For an explicit example configuration, copy it, set restrictive permissions, rep
 ```sh
 cp examples/aegis.yaml .aegis.yaml
 chmod 600 .aegis.yaml
+transport_dir=$(pwd -P)/.aegis/transport
+install -d -m 700 "$transport_dir"
+python3 - "$transport_dir/api.token" <<'PY'
+import pathlib, secrets, sys
+path = pathlib.Path(sys.argv[1])
+path.write_text(secrets.token_hex(32) + "\n", encoding="ascii")
+path.chmod(0o600)
+PY
+# Also replace REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR in the copied configuration.
 ```
 
 An explicit valid configuration is not itself operational authority. If its configured state directory has no `persistence/authority-v1`, ordinary commands and every non-interactive entry point fail with `operational_authority_not_initialized` and exit 2 without creating state. Run `./aegis --config .aegis.yaml init` in a real terminal, review the freshly authenticated UID/username and exact authority path, and type `y` or `yes` at the default-deny reconciliation prompt. Only exact absence may create one secure empty generation. Existing markerless, dirty, corrupt, symlinked, wrong-owner, insecure, ambiguous, or populated legacy state is preserved and denied for operator repair; it is never replaced. Repeating initialization or running `agents list` after reconciliation preserves the selected generation identity.
@@ -64,7 +73,28 @@ The binding is mandatory. Precedence is:
 3. Explicit config file
 4. compiled defaults
 
-The API token is redacted by `aegis config`. It authenticates API transport; it does not replace local OS principal authentication for principal operations.
+`api.token_file` must name an absolute, current-owner, mode-`0600`, single-link regular file containing at least 256 bits of encoded transport material. Aegis reads it at startup and redacts the loaded token in `aegis config`; inline `api.token` remains supported for compatibility but must not be used for new service onboarding. The token authenticates API transport and never replaces local OS or Unix-peer principal authentication.
+
+## Authenticated user service and console
+
+On an initialized production installation, bare interactive `aegis` reconciles an absent transport only after showing the exact configuration digests, absolute generated token-file path, and Unix-socket path and requiring the literal `APPLY SERVE TRANSPORT`. It then previews one deterministic `systemd --user` unit and requires the separately exact `INSTALL AEGIS USER SERVICE` principal approval. Nothing enables linger, installs a root/system service, takes over a foreign unit, or creates a persistent Hermes gateway. The approved same-account service becomes the sole online owner of authoritative stores; while its socket exists, store-backed CLI commands fail with `control_plane_online` rather than falling back to direct store access.
+
+Use the explicit lifecycle commands when desired:
+
+```sh
+aegis service preview
+aegis service install
+aegis service status
+aegis service start
+aegis service stop
+aegis service restart
+aegis service uninstall
+aegis console
+```
+
+`preview` reports the exact unit path, executable/configuration paths, console origin, and SHA-256 unit digest without reusable bearer material. Install reauthenticates the configured UID/username, revalidates that plan, refuses any existing unit that is not a current-owner single-link regular file with exactly the expected bytes, writes only `aegis.service` in the invoking account's user-unit directory, and waits for authenticated Unix-socket readiness. Status reports `systemctl --user` activity and observed linger state; Aegis does not change linger and claims logout survival only when the host already reports it enabled. Start/stop/restart and uninstall require a terminal; uninstall disables and removes only the exact digest-bound Aegis-owned unit and preserves configuration, state, and external credentials.
+
+The daemon acquires an owner-only nonblocking singleton lock at `<unix_socket>.lock` before inspecting or removing a stale owned socket. A second daemon therefore denies before socket mutation. The service remains a same-UID boundary, not isolation from another process under that account, root, or the kernel, and the unit's `NoNewPrivileges=true` is not a sandbox. `aegis console` reads the protected token file locally, calls the daemon over the authenticated Unix socket, and returns a short-lived single-use browser bootstrap plus the configured origin. It is intentionally a bootstrap display command: enter the value at that origin promptly and do not retain it in URLs, shell history, recordings, or browser storage.
 
 ## End-to-end workflow
 

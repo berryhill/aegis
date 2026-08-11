@@ -47,6 +47,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
+	"userservice": {},
 }
 
 var externalDependencyOwners = map[string][]string{

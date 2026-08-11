@@ -2,12 +2,15 @@ package initialize
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/berryhill/aegis/internal/config"
@@ -27,6 +30,9 @@ type Plan struct {
 	Principal     config.Principal
 	Document      []byte
 	Partials      []string
+	TokenPath     string
+	UnixSocket    string
+	token         []byte
 }
 
 type OperationalAuthorityPlan struct {
@@ -76,12 +82,45 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	candidate.StateDir = statePath
 	candidate.Audit.CheckpointDir = filepath.Join(statePath, "audit-checkpoints")
 	candidate.Principal = principal
+	tokenPath := filepath.Join(statePath, "transport", "api.token")
+	unixSocket := filepath.Join(statePath, "transport", "aegis.sock")
+	token, err := existingOrRandomToken(tokenPath)
+	if err != nil {
+		return Plan{}, fmt.Errorf("prepare protected API transport: %w", err)
+	}
+	candidate.API.TokenFile = tokenPath
+	candidate.API.UnixSocket = unixSocket
 	if err = candidate.Validate(); err != nil {
 		return Plan{}, fmt.Errorf("generated configuration is invalid: %w", err)
 	}
-	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: %s\naudit:\n  checkpoint_dir: %s\n",
-		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), principal.AuthTTL, strconv.Quote(candidate.Audit.CheckpointDir)))
-	return Plan{ConfigPath: inspection.Path, StatePath: statePath, AuthorityPath: filepath.Join(statePath, "persistence", "authority-v1"), Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...)}, nil
+	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: %s\napi:\n  unix_socket: %s\n  token_file: %s\naudit:\n  checkpoint_dir: %s\n",
+		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), principal.AuthTTL, strconv.Quote(unixSocket), strconv.Quote(tokenPath), strconv.Quote(candidate.Audit.CheckpointDir)))
+	return Plan{ConfigPath: inspection.Path, StatePath: statePath, AuthorityPath: filepath.Join(statePath, "persistence", "authority-v1"), Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...), TokenPath: tokenPath, UnixSocket: unixSocket, token: token}, nil
+}
+
+func existingOrRandomToken(path string) ([]byte, error) {
+	info, err := os.Lstat(path)
+	if err == nil {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !ok || int(stat.Uid) != os.Geteuid() || stat.Nlink != 1 {
+			return nil, errors.New("existing transport token is unsafe or ambiguous")
+		}
+		value, readErr := os.ReadFile(path)
+		if readErr != nil || len(strings.TrimSpace(string(value))) < 64 {
+			return nil, errors.New("existing transport token is malformed")
+		}
+		return value, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	random := make([]byte, 32)
+	if _, err = rand.Read(random); err != nil {
+		return nil, err
+	}
+	encoded := make([]byte, hex.EncodedLen(len(random)))
+	hex.Encode(encoded, random)
+	return append(encoded, '\n'), nil
 }
 
 // PlanOperationalAuthority authenticates the configured host principal and
@@ -188,6 +227,9 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	if err = ensureAuthorityPersistence(ctx, plan.AuthorityPath); err != nil {
 		return fmt.Errorf("initialize authority persistence: %w", err)
 	}
+	if err = publishToken(plan.TokenPath, plan.token); err != nil {
+		return fmt.Errorf("publish protected API transport: %w", err)
+	}
 	if err = ctx.Err(); err != nil {
 		return err
 	}
@@ -246,6 +288,56 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 		return fmt.Errorf("verify initialized configuration: state %s", verified.State)
 	}
 	return nil
+}
+
+func publishToken(path string, value []byte) error {
+	if len(value) < 65 {
+		return errors.New("transport material is absent or too short")
+	}
+	if err := ensureSecureDirectory(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(path); err == nil {
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !ok || int(stat.Uid) != os.Geteuid() || stat.Nlink != 1 {
+			return errors.New("existing transport token is unsafe or ambiguous")
+		}
+		existing, readErr := os.ReadFile(path)
+		if readErr != nil || string(existing) != string(value) {
+			return errors.New("transport token changed after preview")
+		}
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".api.token.init-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err = temporary.Chmod(0600); err == nil {
+		_, err = temporary.Write(value)
+	}
+	if err == nil {
+		err = temporary.Sync()
+	}
+	if closeErr := temporary.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = os.Link(temporaryPath, path); err != nil {
+		return err
+	}
+	_ = os.Remove(temporaryPath)
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	err = directory.Sync()
+	return errors.Join(err, directory.Close())
 }
 
 // ensureAuthorityPersistence makes configuration publication resumable. The

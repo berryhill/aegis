@@ -11,8 +11,10 @@ api:
   listen: 127.0.0.1:8443
   # Kernel-authenticated local API transport. The authenticated console
   # bootstrap must be requested here; TCP bearer possession cannot grant principal authority.
-  unix_socket: ./.aegis/aegis.sock
-  token: CHANGE-ME-TO-A-LONG-RANDOM-SECRET
+  # Both paths must be absolute. Generate the owner-only token file locally;
+  # never put its reusable value in this configuration, argv, or source control.
+  unix_socket: REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR/aegis.sock
+  token_file: REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR/api.token
   # Optional TCP TLS identity; configure both files together. Not used for Unix sockets.
   tls_cert_file: ""
   tls_key_file: ""

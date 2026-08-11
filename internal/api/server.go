@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/berryhill/aegis/internal/app"
@@ -152,7 +153,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	}
 	e := echo.New()
 	var ready atomic.Bool
-	ready.Store(true)
 	preAuthLimit := newLimiter()
 	postAuthLimit := newLimiter()
 	e.HTTPErrorHandler = func(c *echo.Context, err error) {
@@ -1102,18 +1102,28 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return connectionContext
 	}
 	listeners := make([]net.Listener, 0, 2)
+	var singleton *os.File
 	closeListeners := func() {
 		for _, listener := range listeners {
 			_ = listener.Close()
 		}
 	}
 	if svc.Config.API.UnixSocket != "" {
-		if err := os.MkdirAll(filepath.Dir(svc.Config.API.UnixSocket), 0700); err != nil {
+		if err := ensureSocketDirectory(filepath.Dir(svc.Config.API.UnixSocket)); err != nil {
 			return err
 		}
+		singleton, err = acquireSingleton(svc.Config.API.UnixSocket + ".lock")
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_ = syscall.Flock(int(singleton.Fd()), syscall.LOCK_UN)
+			_ = singleton.Close()
+		}()
 		if info, err := os.Lstat(svc.Config.API.UnixSocket); err == nil {
-			if info.Mode()&os.ModeSocket == 0 {
-				return errors.New("api.unix_socket exists and is not a socket")
+			stat, owned := info.Sys().(*syscall.Stat_t)
+			if info.Mode()&os.ModeSocket == 0 || !owned || int(stat.Uid) != os.Geteuid() {
+				return errors.New("api.unix_socket exists and is not one current-owner socket")
 			}
 			if err = os.Remove(svc.Config.API.UnixSocket); err != nil {
 				return err
@@ -1147,6 +1157,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		tcpListener = tls.NewListener(tcpListener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
 	}
 	listeners = append(listeners, tcpListener)
+	ready.Store(true)
 	defer closeListeners()
 	supervisorCtx, stopSupervisor := context.WithCancel(ctx)
 	defer stopSupervisor()
@@ -1186,6 +1197,48 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		_ = srv.Close()
 		return err
 	}
+}
+
+func ensureSocketDirectory(path string) error {
+	if err := os.MkdirAll(path, 0700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !info.IsDir() || !ok || int(stat.Uid) != os.Geteuid() {
+		return errors.New("api.unix_socket directory must be current-owner directory")
+	}
+	if info.Mode().Perm()&0077 != 0 {
+		if err = os.Chmod(path, 0700); err != nil {
+			return errors.New("api.unix_socket directory could not be made owner-only")
+		}
+	}
+	return nil
+}
+
+func acquireSingleton(path string) (*os.File, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !ok || int(stat.Uid) != os.Geteuid() || stat.Nlink != 1 {
+		_ = file.Close()
+		return nil, errors.New("API singleton lock is unsafe or ambiguous")
+	}
+	if err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		_ = file.Close()
+		return nil, errors.New("another Aegis control-plane daemon owns this transport")
+	}
+	return file, nil
 }
 
 func optionalRevision(raw string) (uint64, error) {

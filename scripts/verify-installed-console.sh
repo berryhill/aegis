@@ -13,7 +13,7 @@ server_pid=
 socket=
 cleanup() {
   if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
-  if [ -n "$socket" ]; then rm -f "$socket"; fi
+  if [ -n "$socket" ]; then rm -f "$socket" "$socket.lock"; fi
   rm -rf "$workspace"
 }
 trap cleanup EXIT HUP INT TERM
@@ -32,7 +32,9 @@ python3 - "$workspace" "$port" "$uid" "$user" "$socket" <<'PY'
 import pathlib, secrets, sys
 root, port, uid, user, socket = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 token = secrets.token_urlsafe(48)
-(root / "token").write_text(token, encoding="utf-8")
+token_path = root / "transport" / "api.token"
+token_path.parent.mkdir(mode=0o700)
+token_path.write_text(token + "\n", encoding="utf-8")
 (root / "aegis.yaml").write_text(f'''state_dir: {root}/state
 runtime_default: hermes
 hermes_executable: {root}/hermes-fixture
@@ -45,7 +47,7 @@ principal:
 api:
   listen: 127.0.0.1:{port}
   unix_socket: {socket}
-  token: "{token}"
+  token_file: {token_path}
   read_timeout: 5s
   write_timeout: 5s
   shutdown_timeout: 2s
@@ -88,12 +90,13 @@ credentials:
   provider_auth: {{}}
 ''', encoding="utf-8")
 (root / "hermes-fixture").write_text("#!/bin/sh\nprintf 'Hermes Agent v0.18.2\\nInstall directory: /isolated/installed-console-proof\\n'\n", encoding="utf-8")
-(root / "curl.conf").write_text('header = "Authorization: Bearer ' + token + '"\n', encoding="utf-8")
-for name in ("token", "aegis.yaml", "hermes-fixture", "curl.conf"):
+for name in ("aegis.yaml", "hermes-fixture"):
     (root / name).chmod(0o700 if name == "hermes-fixture" else 0o600)
+token_path.chmod(0o600)
 PY
 mkdir -m 0700 "$workspace/state"
 go run "$repo/scripts/demo-authority-init" "$workspace/state/persistence/authority-v1" >/dev/null
+(cd "$repo" && go test ./internal/api -run '^TestServeSingletonDeniesBeforeActiveSocketMutation$' -count=1)
 HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" serve >"$workspace/server.log" 2>&1 &
 server_pid=$!
 
@@ -117,12 +120,14 @@ grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
 [ "$(wc -c <"$workspace/datastar.js")" -gt 1000 ]
 
-curl --fail --silent --show-error --unix-socket "$socket" --config "$workspace/curl.conf" -X POST -H 'Content-Type: application/json' --data '{}' http://localhost/v1/console/bootstrap -o "$workspace/bootstrap-response.json"
+HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/bootstrap-response.json"
 python3 - "$workspace" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 response = json.loads((root / "bootstrap-response.json").read_text())
-if set(response) != {"bootstrap", "expires"} or not response["bootstrap"]:
+if set(response) != {"bootstrap", "console_origin", "expires_at", "reusable_bearer_exposed", "single_use"}:
+    raise SystemExit("installed console command response shape is invalid")
+if not response["bootstrap"] or not response["single_use"] or response["reusable_bearer_exposed"]:
     raise SystemExit("installed console bootstrap response is invalid")
 (root / "exchange.json").write_text(json.dumps({"bootstrap": response["bootstrap"]}), encoding="utf-8")
 (root / "exchange.json").chmod(0o600)
@@ -139,4 +144,4 @@ grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
 grep -F 'authoritative collection is empty' "$workspace/authenticated.html" >/dev/null
 ! grep -F 'Authenticate this browser' "$workspace/authenticated.html" >/dev/null
 
-printf '%s\n' 'installed console verified: extracted_binary=true self_hosted_asset=true authenticated_surface=true archive_members=1'
+printf '%s\n' 'installed console verified: extracted_binary=true token_file_transport=true singleton_denial=true daemon_console=true self_hosted_asset=true authenticated_surface=true archive_members=1'

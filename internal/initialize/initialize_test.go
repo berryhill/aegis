@@ -147,6 +147,42 @@ func TestApplyPublishesSecureLayoutAndResumesEmptyAuthorityGeneration(t *testing
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("configuration mode=%#o", info.Mode().Perm())
 	}
+	tokenInfo, err := os.Stat(plan.TokenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := os.ReadFile(plan.TokenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokenInfo.Mode().Perm() != 0600 || len(strings.TrimSpace(string(token))) != 64 {
+		t.Fatalf("transport token mode=%#o encoded_bytes=%d", tokenInfo.Mode().Perm(), len(strings.TrimSpace(string(token))))
+	}
+	if strings.Contains(string(plan.Document), strings.TrimSpace(string(token))) {
+		t.Fatal("reusable transport token leaked into rendered initialization document")
+	}
+	loaded, err := config.Load(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.API.TokenFile != plan.TokenPath || loaded.API.UnixSocket != plan.UnixSocket || loaded.API.Token != strings.TrimSpace(string(token)) {
+		t.Fatalf("initialized transport did not load through protected custody: %#v", loaded.API)
+	}
+}
+
+func TestPlanRejectsUnsafeExistingTransportToken(t *testing.T) {
+	root := t.TempDir()
+	state := filepath.Join(root, "state")
+	tokenPath := filepath.Join(state, "transport", "api.token")
+	if err := os.MkdirAll(filepath.Dir(tokenPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tokenPath, []byte(strings.Repeat("a", 64)+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := testService(t).Plan(filepath.Join(root, "aegis.yaml"), state); err == nil || !strings.Contains(err.Error(), "unsafe or ambiguous") {
+		t.Fatalf("unsafe preexisting token accepted: %v", err)
+	}
 }
 
 func TestApplyRevalidatesIdentityImmediatelyBeforePublication(t *testing.T) {

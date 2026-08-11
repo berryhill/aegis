@@ -8,6 +8,10 @@ Stable release binaries use the literal production root `~/.argis`. Source-built
 ~/.argis/                                      0700
 ~/.argis/aegis.yaml                           0600
 ~/.argis/state/                               0700
+~/.argis/state/transport/                     0700
+~/.argis/state/transport/api.token            0600 generated reusable transport custody
+~/.argis/state/transport/aegis.sock           0600 while the daemon is online
+~/.argis/state/transport/aegis.sock.lock      0600 persistent cooperating-daemon lock inode
 ~/.argis/state/audit-checkpoints/
 ~/.argis/state/credentials/authority.db
 ~/.argis/state/credentials/authority.kek
@@ -33,6 +37,10 @@ Stable release binaries use the literal production root `~/.argis`. Source-built
 <repository>/.aegis/state/                    0700
 # same state children as production, but a distinct authority,
 # deployment identifier, audit chain, certification, and runtime
+
+~/.config/systemd/user/aegis.service          0600 only after explicit production approval
+# or $XDG_CONFIG_HOME/systemd/user/aegis.service when XDG_CONFIG_HOME is absolute;
+# the unit contains paths and a digest-bound serve command, never the token value
 ```
 
 Directories are created only when implemented behavior needs them. A clean first-run initialization creates the mode-`0700` state directory, then publishes and verifies the generation-managed Badger authority root at `state/persistence/authority-v1` before linking the configuration into place. If interruption occurs before that final link, the next initialization resumes only after opening the existing generation, proving it valid and empty, and closing it cleanly; invalid, unopenable, or populated state denies. Operator UID/username is revalidated immediately before the no-replace configuration link, and the containing directory is durably synced before success. The authority's `ACTIVE` marker selects one digest-bound generation; `DIRTY` replaces `CLEAN` while that generation is open, and a successful sync/close restores `CLEAN`. The no-follow mode-`0600` `MAINTENANCE` file provides a cooperative cross-process `flock`: open stores retain a shared lease for their lifetime, while initialization, export, import, activation, rollback, and garbage collection require the exclusive lease and respect context cancellation. Imported generations are first built under `staging`, then published inactive under `stores`; replaced active generations move to `retired`. Export destinations must be absolute, outside this live authority root, and are atomically created without replacement. Atomic configuration and manager-configuration files are created beside their destination. Disposable Hermes and managed Ollama homes are created below `state/runtime`. Store atomic files are created beside their state destination. Sensitive regular files are mode `0600`; Aegis-owned directories are mode `0700`.
@@ -46,6 +54,9 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 | `~/.argis/aegis.yaml` | canonical Aegis-owned local configuration |
 | `~/.argis/state` and implemented children above | canonical Aegis-owned local state |
 | `state/persistence/authority-v1` | generation-managed Badger session-authority persistence; separate from the bbolt credential authority |
+| `state/transport/api.token` | generated owner-only API transport material; configuration contains only this absolute path |
+| `state/transport/aegis.sock` and `.lock` | online daemon transport and persistent singleton-lock inode; the lock is acquired before any stale-socket mutation |
+| user `aegis.service` | exact byte/digest-bound same-account `systemd --user` supervision; explicit install/uninstall only, no root service or linger mutation |
 | `state/mandates`, `state/authority-contexts`, `state/authority-revocations` | legacy authority JSON collision surfaces; accepted for a clean install only when absent or recursively proven to contain only real operator-owned mode-`0700` directories |
 | `state/sessions` | bounded execution-session operational state; not canonical authority and not a legacy authority collision surface |
 | `<repository>/.aegis/aegis.yaml` and `<repository>/.aegis/state` | isolated, Git-ignored development configuration and state for source-built `dev` binaries residing in the verified worktree root |
