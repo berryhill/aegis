@@ -217,9 +217,11 @@ type Principal struct {
 	AuthTTL time.Duration `mapstructure:"auth_ttl" json:"auth_ttl"`
 }
 type API struct {
-	Listen          string        `mapstructure:"listen" json:"listen"`
-	UnixSocket      string        `mapstructure:"unix_socket" json:"unix_socket,omitempty"`
-	Token           string        `mapstructure:"token" json:"token"`
+	Listen          string `mapstructure:"listen" json:"listen"`
+	UnixSocket      string `mapstructure:"unix_socket" json:"unix_socket,omitempty"`
+	Token           string `mapstructure:"token" json:"token"`
+	TokenFile       string `mapstructure:"token_file" json:"token_file,omitempty"`
+	tokenFromFile   bool
 	TLSCertFile     string        `mapstructure:"tls_cert_file" json:"tls_cert_file,omitempty"`
 	TLSKeyFile      string        `mapstructure:"tls_key_file" json:"tls_key_file,omitempty"`
 	ReadTimeout     time.Duration `mapstructure:"read_timeout" json:"read_timeout"`
@@ -331,6 +333,12 @@ func (c Config) WithStateDir(state string) Config {
 	if c.Manager.Inference.Certification == filepath.Join(old, "manager", "certifications") {
 		c.Manager.Inference.Certification = filepath.Join(state, "manager", "certifications")
 	}
+	if c.API.TokenFile == filepath.Join(old, "transport", "api.token") {
+		c.API.TokenFile = filepath.Join(state, "transport", "api.token")
+	}
+	if c.API.UnixSocket == filepath.Join(old, "transport", "aegis.sock") {
+		c.API.UnixSocket = filepath.Join(state, "transport", "aegis.sock")
+	}
 	c.StateDir = state
 	return c
 }
@@ -354,6 +362,12 @@ func (c Config) Validate() error {
 	}
 	if c.API.Listen == "" || c.API.ReadTimeout <= 0 || c.API.WriteTimeout <= 0 || c.API.ShutdownTimeout <= 0 || c.API.MaxBodyBytes < 1024 {
 		es = append(es, errors.New("API limits and timeouts must be explicit and positive"))
+	}
+	if c.API.Token != "" && c.API.TokenFile != "" && !c.API.tokenFromFile {
+		es = append(es, errors.New("api.token and api.token_file are mutually exclusive"))
+	}
+	if c.API.TokenFile != "" && !filepath.IsAbs(c.API.TokenFile) {
+		es = append(es, errors.New("api.token_file must be an absolute path"))
 	}
 	if (c.API.TLSCertFile == "") != (c.API.TLSKeyFile == "") {
 		es = append(es, errors.New("api.tls_cert_file and api.tls_key_file must be configured together"))
@@ -502,7 +516,7 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 	v.SetDefault("manager", d.Manager)
 	v.SetEnvPrefix("AEGIS")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "api.console.origin", "api.console.session_ttl", "api.console.bootstrap_ttl", "api.console.max_page_size", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
+	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.token_file", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "api.console.origin", "api.console.session_ttl", "api.console.bootstrap_ttl", "api.console.max_page_size", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
 		_ = v.BindEnv(k)
 	}
 	if flags != nil {
@@ -526,6 +540,17 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 	if err := c.Validate(); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
+	if c.API.TokenFile != "" {
+		token, err := readProtectedToken(c.API.TokenFile)
+		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return Config{}, fmt.Errorf("invalid configuration: api.token_file: %w", err)
+			}
+		} else {
+			c.API.Token = token
+			c.API.tokenFromFile = true
+		}
+	}
 	return c, nil
 }
 
@@ -547,4 +572,24 @@ func Redacted(c Config) Config {
 		c.Credentials.Authority.KEKFile = "[REDACTED]"
 	}
 	return c
+}
+
+func readProtectedToken(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !filepath.IsAbs(path) || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || !ok || int(stat.Uid) != os.Geteuid() || stat.Nlink != 1 {
+		return "", errors.New("must be one owner-only, current-owner, non-linked regular file")
+	}
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(string(value))
+	if len(token) < 64 || strings.ContainsAny(token, " \t\r\n") {
+		return "", errors.New("must contain at least 256 bits of encoded transport material")
+	}
+	return token, nil
 }

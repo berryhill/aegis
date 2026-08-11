@@ -605,7 +605,7 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 			}
 		}
 		switch parts[0] {
-		case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints", "persistence":
+		case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints", "transport", "persistence":
 			if parts[0] == "persistence" {
 				return authorityPersistenceArtifact(parts, info)
 			}
@@ -644,6 +644,8 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 		return len(parts) == 3 && parts[1] == "certifications" && (strings.HasSuffix(parts[2], ".json") || strings.HasSuffix(parts[2], ".json.new"))
 	case "audit-checkpoints":
 		return len(parts) == 2 && (parts[1] == "signing-key" || strings.HasSuffix(parts[1], ".json") || strings.HasPrefix(parts[1], ".aegis-"))
+	case "transport":
+		return len(parts) == 2 && (parts[1] == "api.token" || parts[1] == "aegis.sock.lock")
 	default:
 		return false
 	}

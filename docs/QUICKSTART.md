@@ -50,7 +50,23 @@ cp examples/aegis.yaml .aegis.yaml
 chmod 600 .aegis.yaml
 uid=$(id -u)
 user=$(id -un)
-sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/; s/REPLACE_WITH_LOCAL_USERNAME/$user/" .aegis.yaml
+transport_dir=$(pwd -P)/.aegis/transport
+install -d -m 700 "$transport_dir"
+python3 - "$transport_dir/api.token" <<'PY'
+import pathlib, secrets, sys
+path = pathlib.Path(sys.argv[1])
+path.write_text(secrets.token_hex(32) + "\n", encoding="ascii")
+path.chmod(0o600)
+PY
+python3 - "$uid" "$user" "$transport_dir" <<'PY'
+import pathlib, sys
+path = pathlib.Path(".aegis.yaml")
+text = path.read_text()
+text = text.replace("REPLACE_WITH_LOCAL_UID", sys.argv[1])
+text = text.replace("REPLACE_WITH_LOCAL_USERNAME", sys.argv[2])
+text = text.replace("REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR", sys.argv[3])
+path.write_text(text)
+PY
 cp examples/office-charter.json .office-charter.json
 sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" .office-charter.json
 ```
@@ -67,11 +83,28 @@ The copied valid configuration does not initialize operational authority. In a r
 ./aegis --config .aegis.yaml config
 ```
 
-Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the API token is shown as `[REDACTED]`.
+Success means Hermes is named and versioned explicitly, charter validation returns a canonical digest, and the token loaded from the owner-only generated `api.token_file` is shown as `[REDACTED]`. The reusable value is not present in YAML.
 
-## Verify the console contract
+## Verify the console and daemon-ownership contract
 
-The example configuration serves the embedded shell at `http://127.0.0.1:8443/console` and restricts plaintext use to loopback. Start the foreground service with `./aegis --config .aegis.yaml serve`. Loading the shell alone does not authenticate the browser. An already authenticated principal must request `/v1/console/bootstrap` through the protected local API transport and enter that single-use value at the exact configured origin. Do not put the bootstrap or API bearer in a URL, command history, recording, or browser storage. The bootstrap expires after 30 seconds by default; the resulting volatile browser session expires after five minutes or when the source subject expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback.
+The example configuration serves the embedded shell at `http://127.0.0.1:8443/console` and restricts plaintext use to loopback. For this disposable checkout proof, start the foreground daemon with `./aegis --config .aegis.yaml serve`. The daemon takes `<unix_socket>.lock` before stale-socket inspection/removal; a concurrent second `serve` must fail with `another Aegis control-plane daemon owns this transport` and must not disturb the first socket. While the socket is online, store-backed CLI commands deny with `control_plane_online` instead of opening authoritative stores directly.
+
+Run `./aegis --config .aegis.yaml console` to obtain a short-lived single-use bootstrap through the generated token file and authenticated Unix transport. The command emits the configured origin, bootstrap, expiry, and explicit single-use/no-reusable-bearer fields; it does not launch a browser. Enter the bootstrap at the exact origin promptly. Loading the shell alone does not authenticate the browser. Do not put the bootstrap or reusable API bearer in a URL, command history, recording, or browser storage. The bootstrap expires after 30 seconds by default; the resulting volatile browser session expires after five minutes or when the source subject expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback.
+
+An installed production binary can instead use the explicitly approved user service. The commands are:
+
+```sh
+aegis service preview
+aegis service install
+aegis service status
+aegis service start
+aegis service stop
+aegis service restart
+aegis service uninstall
+aegis console
+```
+
+`service preview` is read-only and prints the exact unit path and digest. `install` requires a real terminal and the literal `INSTALL AEGIS USER SERVICE`; it refuses foreign or byte-drifted `aegis.service`, uses only `systemctl --user`, and waits for authenticated readiness. Start/stop/restart require a terminal. Uninstall separately confirms, disables, and removes only the exact Aegis-owned unit while preserving configuration/state/external credentials. Aegis never enables linger, installs a root service, or claims logout survival unless `service status` observes that the host already has linger enabled. This is a same-account supervision boundary, not protection from another same-UID process, root, or the kernel.
 
 The shell provides accessible live read-only surfaces for Agent Registry, Loops, Graphs, and Execution Queue. Typed Go view models are rendered through generated templ components; a pinned self-hosted Datastar client adds progressive enhancement without a CDN, Node runtime, inline executable content, or browser-side HTML construction. Each domain has loading, authoritative-empty, unavailable, and error states; selecting a record opens an inspector with exact revisions and digests. Loop and Graph records include their immutable validation facts, while Queue records include the item, current rebuildable projection, parent Graph run, child Loop executions, and attempts so execution causality remains reviewable. The shell obtains all four collections and per-domain readiness through the same authenticated application services used by the public CLI and protected `/v1` routes; an unavailable or corrupt collection is never presented as empty. Mutating registration, Loop/Graph publication, Graph submission, durable rejection, and explicit deterministic queue processing remain public CLI/API workflows rather than browser controls. The installed-MVI verifier exercises those CLI resources and the authenticated console from the extracted native archive. Durable retry/reclaim/cancellation primitives exist below this surface, but automated lifecycle scheduling, real Hermes worker execution, multi-node scheduling, and browser mutation workflows remain absent. Run `python3 scripts/verify-console-vendor.py`, `python3 scripts/console_security_test.py`, `go generate ./web/console`, and `git diff --exit-code -- web/console go.mod go.sum` for the source/supply-chain contract; network and denial behavior is covered by `go test ./internal/api ./internal/console -count=1`.
 

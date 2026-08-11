@@ -29,9 +29,18 @@ func TestExampleConfigurationRemainsLoadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	root := t.TempDir()
+	transport := filepath.Join(root, "transport")
+	if err = os.Mkdir(transport, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(transport, "api.token"), []byte(strings.Repeat("a", 64)+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	document := strings.ReplaceAll(string(example), "REPLACE_WITH_LOCAL_UID", "4242")
 	document = strings.ReplaceAll(document, "REPLACE_WITH_LOCAL_USERNAME", "operator")
-	path := filepath.Join(t.TempDir(), "aegis.yaml")
+	document = strings.ReplaceAll(document, "REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR", transport)
+	path := filepath.Join(root, "aegis.yaml")
 	if err = os.WriteFile(path, []byte(document), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +57,37 @@ func TestLoadRejectsUnknownField(t *testing.T) {
 	}
 	if _, err := Load(path, nil); err == nil {
 		t.Fatal("unknown field accepted")
+	}
+}
+
+func TestProtectedTransportTokenFailsClosed(t *testing.T) {
+	root := t.TempDir()
+	valid := filepath.Join(root, "valid.token")
+	if err := os.WriteFile(valid, []byte(strings.Repeat("a", 64)+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if token, err := readProtectedToken(valid); err != nil || token != strings.Repeat("a", 64) {
+		t.Fatalf("valid protected token rejected: bytes=%d err=%v", len(token), err)
+	}
+	tests := []struct {
+		name  string
+		build func(string) error
+	}{
+		{"short", func(path string) error { return os.WriteFile(path, []byte("short\n"), 0600) }},
+		{"insecure-mode", func(path string) error { return os.WriteFile(path, []byte(strings.Repeat("b", 64)+"\n"), 0644) }},
+		{"symlink", func(path string) error { return os.Symlink(valid, path) }},
+		{"hard-link", func(path string) error { return os.Link(valid, path) }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(root, test.name+".token")
+			if err := test.build(path); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := readProtectedToken(path); err == nil {
+				t.Fatal("unsafe transport token accepted")
+			}
+		})
 	}
 }
 

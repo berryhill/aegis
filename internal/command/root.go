@@ -31,6 +31,7 @@ import (
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 	selfupdate "github.com/berryhill/aegis/internal/update"
+	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +46,7 @@ type Dependencies struct {
 	Resetter        *resetdomain.Service
 	Migrator        *migration.Service
 	Passphrases     AuthorityPassphraseProvider
+	UserService     userservice.Runner
 	Profile         ExecutionProfile
 	DevelopmentRoot string
 }
@@ -110,6 +112,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	if deps.Migrator == nil {
 		deps.Migrator = migration.New()
+	}
+	if deps.UserService == nil {
+		deps.UserService = userservice.Systemctl{}
 	}
 	profileLayout, profileErr := resolveExecutionProfile(deps.Profile, deps.DevelopmentRoot)
 	o := &rootOptions{}
@@ -177,6 +182,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		if err = cfg.Validate(); err != nil {
 			return nil, usage(err)
+		}
+		if cfg.API.UnixSocket != "" && cmd.Name() != "serve" {
+			if _, socketErr := os.Lstat(cfg.API.UnixSocket); socketErr == nil {
+				return nil, errors.New("control_plane_online: authoritative state is daemon-owned; this command has no direct-store fallback")
+			} else if !errors.Is(socketErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("control_plane_unavailable: inspect protected Unix transport: %w", socketErr)
+			}
 		}
 		if openedService != nil && reflect.DeepEqual(openedConfig, cfg) {
 			return openedService, nil
@@ -256,7 +268,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		openedConfig = cfg
 		return service, nil
 	}
-	root.PersistentPostRunE = func(*cobra.Command, []string) error {
+	closeOpened := func() error {
 		var closeErr error
 		if openedFleet != nil {
 			closeErr = openedFleet.Close()
@@ -268,6 +280,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		openedService = nil
 		return closeErr
+	}
+	root.PersistentPostRunE = func(*cobra.Command, []string) error {
+		return closeOpened()
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
@@ -337,9 +352,42 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return err
 			}
 		}
+		if deps.Profile == ProductionProfile {
+			input := newTerminalInput(cmd.InOrStdin())
+			reconciled, err := reconcileServeTransport(cmd, o.configFile, input)
+			if err != nil || !reconciled {
+				return err
+			}
+			if err = closeOpened(); err != nil {
+				return err
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			plan, err := userservice.Preview(executable, o.configFile)
+			if err != nil {
+				return err
+			}
+			installed, err := userservice.Installed(plan)
+			if err != nil {
+				return err
+			}
+			if installed {
+				return consoleCmd(o).RunE(cmd, nil)
+			}
+			approved, err := approveServicePlan(cmd, plan, input)
+			if err != nil || !approved {
+				return err
+			}
+			if err = userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
+				return err
+			}
+			return output(cmd, map[string]any{"installed": true, "unit": userservice.UnitName, "unit_digest": plan.UnitDigest, "console_origin": plan.Origin, "next_command": "aegis console", "reusable_secret_exposed": false})
+		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {

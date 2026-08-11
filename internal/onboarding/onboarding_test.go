@@ -1,6 +1,7 @@
 package onboarding
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/user"
@@ -228,6 +229,89 @@ func TestSystemdAuthorityPrerequisiteResumesAfterExternalCredentialDelivery(t *t
 	}
 	if err = InitializeConfiguredSystemdAuthority(context.Background(), path); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("systemd authority was recreated: %v", err)
+	}
+}
+
+func TestServeTransportReconciliationIsSecretSafeAtomicAndDriftBound(t *testing.T) {
+	path := validPrincipalConfig(t)
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PreviewTransport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Confirmation != TransportConfirmation || plan.OriginalDigest == plan.ResultDigest {
+		t.Fatalf("transport preview was not exact: %+v", plan)
+	}
+	if bytes.Contains(original, plan.token) || strings.Contains(string(plan.document), strings.TrimSpace(string(plan.token))) {
+		t.Fatal("transport preview exposed reusable bearer material")
+	}
+	if err = os.WriteFile(path, append(original, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = ApplyTransport(context.Background(), plan); err == nil || !strings.Contains(err.Error(), "changed after") {
+		t.Fatalf("configuration drift was accepted: %v", err)
+	}
+	if _, statErr := os.Stat(plan.TokenPath); !os.IsNotExist(statErr) {
+		t.Fatalf("drift denial published token: %v", statErr)
+	}
+	if err = os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err = PreviewTransport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ApplyTransport(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.API.TokenFile != plan.TokenPath || loaded.API.UnixSocket != plan.UnixSocket || loaded.API.Token == "" {
+		t.Fatalf("reconciled transport is not serve-ready: %#v", loaded.API)
+	}
+	if _, err = PreviewTransport(path); err == nil || !strings.Contains(err.Error(), "already configured") {
+		t.Fatalf("configured transport could be rotated by onboarding: %v", err)
+	}
+}
+
+func TestServeTransportRejectsPartialAndAppearingTokenPaths(t *testing.T) {
+	path := validPrincipalConfig(t)
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partial := append(append([]byte(nil), original...), []byte("api:\n  unix_socket: /run/user/invalid/aegis.sock\n")...)
+	if err = os.WriteFile(path, partial, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = PreviewTransport(path); err == nil || !strings.Contains(err.Error(), "partial or ambiguous") {
+		t.Fatalf("partial transport accepted: %v", err)
+	}
+	if err = os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PreviewTransport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(plan.TokenPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker := []byte("operator-owned-existing-material")
+	if err = os.WriteFile(plan.TokenPath, marker, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = ApplyTransport(context.Background(), plan); err == nil || !strings.Contains(err.Error(), "appeared after preview") {
+		t.Fatalf("appearing token path accepted: %v", err)
+	}
+	got, readErr := os.ReadFile(plan.TokenPath)
+	if readErr != nil || !bytes.Equal(got, marker) {
+		t.Fatalf("denied reconciliation changed appearing token: %q %v", got, readErr)
 	}
 }
 

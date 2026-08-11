@@ -21,9 +21,23 @@ cp examples/office-charter.json "$work/office-charter.json"
 chmod 0600 "$work/aegis.yaml" "$work/office-charter.json"
 uid=$(id -u)
 user=$(id -un)
-sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" "$work/aegis.yaml" "$work/office-charter.json"
+transport=$work/.aegis/transport
+install -d -m 0700 "$transport"
+python3 - "$work/aegis.yaml" "$work/office-charter.json" "$uid" "$user" "$transport" <<'PY'
+import pathlib, secrets, sys
+configuration, charter = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+uid, user, transport = sys.argv[3:]
+for path in (configuration, charter):
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("REPLACE_WITH_LOCAL_UID", uid)
+    text = text.replace("REPLACE_WITH_LOCAL_USERNAME", user)
+    text = text.replace("REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR", transport)
+    path.write_text(text, encoding="utf-8")
+token = pathlib.Path(transport) / "api.token"
+token.write_text(secrets.token_hex(32) + "\n", encoding="ascii")
+token.chmod(0o600)
+PY
 cd "$work"
-mkdir -m 0700 "$work/.aegis"
 go run "$repo/scripts/demo-authority-init" "$work/.aegis/state/persistence/authority-v1"
 
 sanitize() {
