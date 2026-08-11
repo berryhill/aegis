@@ -194,11 +194,19 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			openedAuthority = nil
 		}
 		openedService = nil
+		authorityPath := filepath.Join(cfg.StateDir, "persistence", "authority-v1")
+		authorityInspection := authoritybadger.Inspect(cmd.Context(), authorityPath)
+		if authorityInspection.State == authoritybadger.StateAbsent {
+			return nil, usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal", reasonOperationalAuthorityNotInitialized))
+		}
+		if authorityInspection.State != authoritybadger.StateReady {
+			return nil, usage(fmt.Errorf("existing invalid operational authority at %s requires operator repair and will not be replaced: %w", authorityPath, authorityInspection.Err))
+		}
 		st, err := store.OpenWithCheckpoints(cfg.StateDir, cfg.Audit.CheckpointDir)
 		if err != nil {
 			return nil, err
 		}
-		authority, err := authoritybadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "authority-v1"))
+		authority, err := authoritybadger.Open(cmd.Context(), authorityPath)
 		if err != nil {
 			return nil, fmt.Errorf("open operational authority repository: %w", err)
 		}
@@ -288,6 +296,19 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			return runUpdate(cmd, deps.Updater, false)
 		}
 		if !deps.IsTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+			inspection := config.Inspect(o.configFile)
+			if inspection.State == config.StateValid {
+				authority := authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
+				if authority.State == authoritybadger.StateAbsent {
+					if err := output(cmd, map[string]any{"state": reasonOperationalAuthorityNotInitialized, "initialized": false, "ready": false, "reason": reasonOperationalAuthorityNotInitialized, "next_command": "aegis init", "exit_status": 2}); err != nil {
+						return err
+					}
+					return usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal; no mutations were performed", reasonOperationalAuthorityNotInitialized))
+				}
+				if authority.State == authoritybadger.StateInvalid {
+					return usage(fmt.Errorf("existing invalid operational authority requires operator repair and will not be replaced: %w", authority.Err))
+				}
+			}
 			snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
 			reason, next := snapshot.Reason, snapshot.NextCommand
 			if snapshot.State == "ready" {
@@ -302,7 +323,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS] execution profile: %s; root: %s\n", deps.Profile, profileLayout.Root)
 		}
 		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
-		if snapshot.State != "ready" {
+		needsBootstrap := snapshot.State != "ready"
+		if !needsBootstrap {
+			inspection := config.Inspect(o.configFile)
+			if inspection.State == config.StateValid {
+				authority := authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
+				needsBootstrap = authority.State != authoritybadger.StateReady
+			}
+		}
+		if needsBootstrap {
 			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
 			if err != nil || !launch {
 				return err
@@ -393,6 +422,8 @@ func updateCmd(updater UpdateService) *cobra.Command {
 }
 
 type usageError struct{ error }
+
+const reasonOperationalAuthorityNotInitialized = "operational_authority_not_initialized"
 
 func usage(e error) error { return usageError{e} }
 func ExitCode(err error) int {

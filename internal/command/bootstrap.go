@@ -60,6 +60,10 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 			return false, err
 		}
 	}
+	continued, err := reconcileOperationalAuthority(cmd, initializer, configPath, input)
+	if err != nil || !continued {
+		return false, err
+	}
 
 	for attempts := 0; attempts < 12; attempts++ {
 		snapshot := inspectOnboarding(cmd.Context(), configPath, logger, authorityPassphrase)

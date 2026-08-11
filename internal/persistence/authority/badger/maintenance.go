@@ -164,7 +164,7 @@ func inspectClosedGeneration(root string) (Generation, error) {
 
 func requireSecureDirectory(path string) error {
 	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 {
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
 		return fmt.Errorf("authority directory %s is unsafe", path)
 	}
 	return nil
