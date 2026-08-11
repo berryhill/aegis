@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/slash"
 	"github.com/berryhill/aegis/internal/tui"
 	"github.com/spf13/cobra"
@@ -32,9 +33,18 @@ func terminalPair(in io.Reader, out io.Writer) bool {
 func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
 	command := &cobra.Command{Use: "manager", Short: "Start the built-in local Aegis secrets manager", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+			if operationalAuthorityAbsent(cmd.Context(), options.configFile) {
+				return usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal; no mutations were performed", reasonOperationalAuthorityNotInitialized))
+			}
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": interactive manager mode requires stdin and stdout terminals"))
 		}
-		if config.Inspect(options.configFile).State != config.StateValid {
+		inspection := config.Inspect(options.configFile)
+		needsBootstrap := inspection.State != config.StateValid
+		if inspection.State == config.StateValid {
+			authority := authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
+			needsBootstrap = authority.State != authoritybadger.StateReady
+		}
+		if needsBootstrap {
 			launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
 			if err != nil || !launch {
 				return err
@@ -49,6 +59,9 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
 	return &cobra.Command{Use: "init", Short: "Inspect or resume deterministic manager initialization", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+			if operationalAuthorityAbsent(cmd.Context(), options.configFile) {
+				return usage(fmt.Errorf("%s: rerun 'aegis init' in an interactive terminal; no mutations were performed", reasonOperationalAuthorityNotInitialized))
+			}
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": initialization requires an interactive terminal"))
 		}
 		launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
@@ -61,6 +74,50 @@ func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initiali
 
 func runFirstInitialization(cmd *cobra.Command, initializer *initialize.Service, configPath, statePath string) (bool, error) {
 	return runFirstInitializationWithInput(cmd, initializer, configPath, statePath, newTerminalInput(cmd.InOrStdin()))
+}
+
+func operationalAuthorityAbsent(ctx context.Context, configPath string) bool {
+	inspection := config.Inspect(configPath)
+	if inspection.State != config.StateValid {
+		return false
+	}
+	return authoritybadger.Inspect(ctx, filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")).State == authoritybadger.StateAbsent
+}
+
+func reconcileOperationalAuthority(cmd *cobra.Command, initializer *initialize.Service, configPath string, input *terminalInput) (bool, error) {
+	inspection := config.Inspect(configPath)
+	if inspection.State != config.StateValid {
+		return true, nil
+	}
+	authorityPath := filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")
+	state := authoritybadger.Inspect(cmd.Context(), authorityPath)
+	switch state.State {
+	case authoritybadger.StateReady:
+		return true, nil
+	case authoritybadger.StateInvalid:
+		return false, usage(fmt.Errorf("existing invalid operational authority at %s will not be replaced: %w", authorityPath, state.Err))
+	}
+	plan, err := initializer.PlanOperationalAuthority(inspection.Path)
+	if err != nil {
+		return false, usage(err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "\nOperational authority compatibility reconciliation\nAuthenticated host principal: UID %s / user %s\nAuthority path: %s\nAction: create one secure empty authority generation; no existing state will be replaced.\n", plan.Principal.UID, plan.Principal.User, plan.AuthorityPath)
+	fmt.Fprint(cmd.OutOrStdout(), "Initialize this empty operational authority generation? [y/N]: ")
+	answer, eof, err := input.ReadLine(cmd.Context(), 16)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if eof || errors.Is(err, io.EOF) || (answer != "y" && answer != "yes") {
+		fmt.Fprintln(cmd.OutOrStdout(), "Operational authority reconciliation declined; no writes were performed.")
+		return false, nil
+	}
+	generation, err := initializer.ApplyOperationalAuthority(cmd.Context(), plan)
+	if err != nil {
+		return false, err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Operational authority initialized. Generation: %s\n", generation.GenerationID)
+	return true, nil
 }
 
 func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize.Service, configPath, statePath string, input *terminalInput) (bool, error) {

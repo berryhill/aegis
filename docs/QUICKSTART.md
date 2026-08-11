@@ -57,6 +57,8 @@ sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" 
 
 The copied files are local working files and should not be committed.
 
+The copied valid configuration does not initialize operational authority. In a real terminal, run `./aegis --config .aegis.yaml init`, verify the displayed authenticated UID/username and exact `state/persistence/authority-v1` path, and type `y` or `yes` at the default-deny compatibility-reconciliation prompt. This creates one secure empty generation only when that path is exactly absent. You may exit the later credential/model onboarding stages if this quickstart is exercising only credential-independent commands. Non-interactive `init`, bare startup, and ordinary commands instead return `operational_authority_not_initialized` with exit status 2 and perform no mutation. Existing invalid or populated state is preserved for operator repair and is never replaced.
+
 ## Verify the no-key path
 
 ```sh
@@ -93,7 +95,7 @@ printf 'not chat' | ./aegis --config .aegis.yaml
 # exits with manager_requires_tty and names deterministic subcommands
 ```
 
-Without configuration, the same non-TTY invocation instead emits structured `manager_not_initialized` output naming `aegis init` and exits 2 without prompting.
+Without configuration, the same non-TTY invocation emits structured `manager_not_initialized` output naming `aegis init` and exits 2 without prompting. With a valid configuration but no operational-authority generation, it instead emits `operational_authority_not_initialized`, names the same interactive next command, exits 2, and leaves the authority path absent.
 
 ## Reset and replay onboarding
 

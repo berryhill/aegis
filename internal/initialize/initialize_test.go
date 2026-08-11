@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/berryhill/aegis/internal/config"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 )
 
 func testService(t *testing.T) *Service {
@@ -193,5 +194,81 @@ func TestPlanRejectsAmbiguousHostIdentity(t *testing.T) {
 	}
 	if _, err := service.Plan(filepath.Join(t.TempDir(), "aegis.yaml"), ""); err == nil {
 		t.Fatal("ambiguous host identity was accepted")
+	}
+}
+
+func TestApplyOperationalAuthorityAcceptsOnlyVerifiedEmptyConcurrentInitialization(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "aegis.yaml")
+	service := testService(t)
+	initial, err := service.Plan(configPath, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(configPath, initial.Document, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.PlanOperationalAuthority(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	concurrent, err := authoritybadger.Initialize(context.Background(), plan.AuthorityPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.ApplyOperationalAuthority(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("verified empty concurrent initialization was not reconciled: %v", err)
+	}
+	if got.GenerationID != concurrent.GenerationID || got.Digest != concurrent.Digest {
+		t.Fatalf("concurrent generation identity changed: got=%+v want=%+v", got, concurrent)
+	}
+}
+
+func TestApplyOperationalAuthorityConcurrentConfirmedPlansConvergeOnOneGeneration(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "aegis.yaml")
+	service := testService(t)
+	initial, err := service.Plan(configPath, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(configPath, initial.Document, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 16
+	plans := make([]OperationalAuthorityPlan, workers)
+	for index := range plans {
+		plans[index], err = service.PlanOperationalAuthority(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := make(chan struct{})
+	results := make(chan authoritybadger.Generation, workers)
+	errors := make(chan error, workers)
+	for _, plan := range plans {
+		go func(plan OperationalAuthorityPlan) {
+			<-start
+			generation, applyErr := service.ApplyOperationalAuthority(context.Background(), plan)
+			results <- generation
+			errors <- applyErr
+		}(plan)
+	}
+	close(start)
+
+	var expected authoritybadger.Generation
+	for range workers {
+		generation := <-results
+		if applyErr := <-errors; applyErr != nil {
+			t.Fatalf("concurrent confirmed initialization failed: %v", applyErr)
+		}
+		if expected.GenerationID == "" {
+			expected = generation
+		}
+		if generation.GenerationID != expected.GenerationID || generation.Digest != expected.Digest {
+			t.Fatalf("concurrent plans diverged: got=%+v want=%+v", generation, expected)
+		}
 	}
 }
