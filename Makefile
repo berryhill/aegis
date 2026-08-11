@@ -5,16 +5,26 @@ SHELL := scripts/verify-shell.sh
 # load packages that require go 1.26 (this project).
 export GOTOOLCHAIN := go1.26.5
 
-VERSION ?= 0.2.1
+VERSION ?= 0.2.2
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
-.PHONY: verify authority-denial-matrix release-review release
+.PHONY: verify console-generate console-verify authority-denial-matrix release-review release
+
+console-generate:
+	go generate ./web/console
+
+console-verify:
+	python3 scripts/verify-console-vendor.py
+	python3 scripts/console_security_test.py
+	go generate ./web/console
+	git diff --exit-code -- web/console go.mod go.sum
 
 verify:
+	$(MAKE) console-verify
 	go mod tidy
 	git diff --exit-code -- go.mod go.sum
 	sh scripts/release_test.sh
-	test -z "$$(gofmt -l ./cmd ./internal)"
+	test -z "$$(gofmt -l ./cmd ./internal ./web)"
 	go build ./cmd/aegis
 	python3 -m unittest scripts/operator_acceptance_poc_test.py
 	python3 -m unittest scripts/verify_release_archive_test.py

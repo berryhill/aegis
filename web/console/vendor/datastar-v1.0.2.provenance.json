@@ -1,0 +1,7 @@
+{
+  "asset": "bundles/datastar.js",
+  "sha256": "2837d87acf6ee0ba8e4e63765926c25a98d63883b02f88be194a86b81d3fd24a",
+  "source": "https://github.com/starfederation/datastar/blob/v1.0.2/bundles/datastar.js",
+  "upstream_commit": "75bd6c6d345ef5e59a3164e6ffa273979b3e4e46",
+  "upstream_tag": "v1.0.2"
+}

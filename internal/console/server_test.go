@@ -27,16 +27,19 @@ func TestAuthenticatedSessionExchangeCSRFAndExpiry(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", strings.NewReader(`{"bootstrap":"`+bootstrap+`"}`))
 	request.Header.Set("Origin", "https://console.example.test")
 	recorder := httptest.NewRecorder()
-	session, csrf, err := manager.Exchange(request, bootstrap)
+	session, csrf, expires, err := manager.Exchange(request, bootstrap)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !expires.Equal(subject.ExpiresAt) {
+		t.Fatalf("session expiry=%s want subject cap=%s", expires, subject.ExpiresAt)
 	}
 	manager.SetCookie(recorder, session)
 	cookie := recorder.Result().Cookies()[0]
 	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/console" || cookie.Domain != "" {
 		t.Fatalf("unsafe cookie: %+v", cookie)
 	}
-	if _, _, err = manager.Exchange(request, bootstrap); err == nil {
+	if _, _, _, err = manager.Exchange(request, bootstrap); err == nil {
 		t.Fatal("bootstrap replay accepted")
 	}
 	authenticated := httptest.NewRequest(http.MethodGet, "https://console.example.test/console/api/state", nil)
@@ -93,17 +96,12 @@ func TestSecurityHeadersOriginAndPaginationBounds(t *testing.T) {
 	}
 }
 
-func TestShellHasAccessibleStatesAndNoInlineExecutableContent(t *testing.T) {
-	html := string(Shell())
-	for _, required := range []string{"<nav", "<main", "aria-live", "id=\"authentication-status\"", "data-state=\"loading\"", "data-state=\"empty\"", "data-state=\"unavailable\"", "data-state=\"error\"", "list-detail", "inspector"} {
-		if !strings.Contains(html, required) {
-			t.Fatalf("shell missing %q", required)
-		}
-	}
+func TestEmbeddedDatastarAndStylesAreSelfContained(t *testing.T) {
 	if !strings.Contains(string(Styles()), "prefers-reduced-motion") {
 		t.Fatal("shell styles do not respect reduced motion")
 	}
-	if strings.Contains(html, "<script>") || strings.Contains(html, "localStorage") || strings.Contains(html, "sessionStorage") || strings.Contains(html, "transport-secret") {
-		t.Fatal("shell contains inline executable or reusable browser storage material")
+	asset := string(Datastar())
+	if len(asset) < 1000 || strings.Contains(asset, "localStorage") || strings.Contains(asset, "sessionStorage") {
+		t.Fatal("embedded Datastar asset is absent or violates browser custody policy")
 	}
 }

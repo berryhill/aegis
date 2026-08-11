@@ -8,7 +8,7 @@ The implemented fleet-control MVI is Agent Registry → immutable Loop revision 
 
 Start with the [five-minute quickstart](docs/QUICKSTART.md) or executable [no-key demonstration](docs/DEMO_NO_KEY.md). Normative behavior is defined in the [Markdown specifications](specs/README.md). Security boundaries are detailed in the [security policy](SECURITY.md), [threat model](docs/THREAT_MODEL.md), and [architecture](docs/ARCHITECTURE.md). See [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), and the repository-local [early contributor backlog](docs/contributing/ISSUE_BACKLOG.md).
 
-The serving control plane includes an embedded accessible shell at `/console`. It is a narrow authenticated, read-only view of live Agent Registry, Loop, Graph, and Execution Queue state, not proof that the four fleet-control domains are complete. A browser cannot establish principal identity: an already authenticated principal must request a single-use bootstrap through the protected `/v1/console/bootstrap` API path, then exchange it from the configured exact console origin. The resulting in-memory cookie session is short-lived, bounded by the originating subject, `HttpOnly`, `SameSite=Strict`, and never persisted in browser storage; mutations additionally require exact-origin and CSRF checks. Plain HTTP is accepted only when both the origin and TCP listener are loopback. Configure TLS for every non-loopback deployment.
+The serving control plane includes an embedded accessible shell at `/console`. It is rendered from typed Go models with templ components and enhanced by a pinned, self-hosted Datastar client; it does not require Node, a CDN, or browser-side HTML construction. The shell is a narrow authenticated, read-only view of live Agent Registry, Loop, Graph, and Execution Queue state, not proof that the four fleet-control domains are complete. A browser cannot establish principal identity: an already authenticated principal must request a single-use bootstrap through the protected `/v1/console/bootstrap` API path, then exchange it from the configured exact console origin. The resulting in-memory cookie session is short-lived, bounded by the originating subject, `HttpOnly`, `SameSite=Strict`, and never persisted in browser storage; mutations additionally require exact-origin and CSRF checks. Plain HTTP is accepted only when both the origin and TCP listener are loopback. Configure TLS for every non-loopback deployment.
 
 ## Install and update
 
@@ -159,8 +159,12 @@ Audit records are cross-process locked, hash-linked, and checked against Ed25519
 ## Verification
 
 ```sh
-gofmt -w cmd internal
+gofmt -w cmd internal web
 go build ./cmd/aegis
+python3 scripts/verify-console-vendor.py
+python3 scripts/console_security_test.py
+go generate ./web/console
+git diff --exit-code -- web/console go.mod go.sum
 ./scripts/verify_installed_mvi_test.sh
 python3 -m unittest scripts/verify_installed_fleet_vertical_test.py
 ./scripts/verify_release_candidate_test.sh
