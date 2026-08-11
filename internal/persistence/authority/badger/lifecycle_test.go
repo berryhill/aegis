@@ -6,10 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	badgerdb "github.com/dgraph-io/badger/v4"
 )
 
 func authorityRoot(t *testing.T) string {
@@ -53,6 +55,130 @@ func TestGenerationInitializeOpenClose(t *testing.T) {
 		t.Fatalf("DIRTY remained: %v", err)
 	}
 	assertSecureGenerationModes(t, filepath.Join(root, "stores", generation.Directory))
+}
+
+func TestInspectDistinguishesExactAbsenceReadyAndExistingInvalidStateWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	root := authorityRoot(t)
+	absent := Inspect(ctx, root)
+	if absent.State != StateAbsent || absent.Err != nil {
+		t.Fatalf("absent inspection=%+v", absent)
+	}
+	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("absent inspection mutated root: %v", err)
+	}
+
+	if err := os.MkdirAll(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	invalid := Inspect(ctx, root)
+	if invalid.State != StateInvalid || invalid.Err == nil {
+		t.Fatalf("markerless inspection=%+v", invalid)
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("invalid inspection mutated root: entries=%v err=%v", entries, err)
+	}
+	if _, err = Initialize(ctx, root); err == nil {
+		t.Fatal("initialization replaced markerless existing state")
+	}
+	entries, err = os.ReadDir(root)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("denied initialization mutated markerless root: entries=%v err=%v", entries, err)
+	}
+
+	if err = os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	generation, err := Initialize(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := Inspect(ctx, root)
+	if ready.State != StateReady || ready.Err != nil || ready.Generation.GenerationID != generation.GenerationID {
+		t.Fatalf("ready inspection=%+v generation=%+v", ready, generation)
+	}
+	repeated := Inspect(ctx, root)
+	if repeated.State != StateReady || repeated.Generation.GenerationID != generation.GenerationID {
+		t.Fatalf("repeat inspection changed generation identity: %+v", repeated)
+	}
+}
+
+func TestInitializeEmptyRejectsAConcurrentPopulatedGeneration(t *testing.T) {
+	ctx := context.Background()
+	root := authorityRoot(t)
+	if _, err := Initialize(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := encodeKey(KeyMandate, []string{"populated"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.db.Update(func(txn *badgerdb.Txn) error {
+		return txn.Set(key, []byte("preserve"))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = InitializeEmpty(ctx, root); err == nil || !strings.Contains(err.Error(), "not an empty generation") {
+		t.Fatalf("populated concurrent generation accepted: %v", err)
+	}
+}
+
+func TestInspectAndInitializeDenyUnsafeExistingRootsWithoutReplacement(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		setup func(*testing.T, string)
+	}{
+		{name: "insecure", setup: func(t *testing.T, root string) {
+			if err := os.MkdirAll(root, 0755); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "populated legacy", setup: func(t *testing.T, root string) {
+			if err := os.MkdirAll(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "legacy.db"), []byte("preserve"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "symlink", setup: func(t *testing.T, root string) {
+			target := filepath.Join(filepath.Dir(root), "target")
+			if err := os.MkdirAll(target, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(root), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, root); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := authorityRoot(t)
+			test.setup(t, root)
+			before, _ := os.Lstat(root)
+			inspection := Inspect(context.Background(), root)
+			if inspection.State != StateInvalid || inspection.Err == nil {
+				t.Fatalf("inspection=%+v", inspection)
+			}
+			if _, err := Initialize(context.Background(), root); err == nil {
+				t.Fatal("unsafe existing root was replaced")
+			}
+			after, err := os.Lstat(root)
+			if err != nil || before.Mode() != after.Mode() {
+				t.Fatalf("denial changed root: before=%v after=%v err=%v", before.Mode(), after.Mode(), err)
+			}
+		})
+	}
 }
 
 func assertSecureGenerationModes(t *testing.T, root string) {

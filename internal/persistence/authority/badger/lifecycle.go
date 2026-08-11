@@ -13,9 +13,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
+	"time"
 
 	authoritypersistence "github.com/berryhill/aegis/internal/persistence/authority"
 	badgerdb "github.com/dgraph-io/badger/v4"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -40,6 +43,20 @@ type Generation struct {
 	Digest       string `json:"digest"`
 }
 
+type State string
+
+const (
+	StateAbsent  State = "absent"
+	StateReady   State = "ready"
+	StateInvalid State = "invalid"
+)
+
+type Inspection struct {
+	State      State      `json:"state"`
+	Generation Generation `json:"generation,omitempty"`
+	Err        error      `json:"-"`
+}
+
 type Store struct {
 	db         *badgerdb.DB
 	root       string
@@ -51,6 +68,17 @@ type Store struct {
 }
 
 func Initialize(ctx context.Context, root string) (Generation, error) {
+	return initialize(ctx, root, false)
+}
+
+// InitializeEmpty publishes a new generation after confirmed exact absence, or
+// returns the same generation when a concurrent initializer won and the closed
+// store still contains identity metadata only.
+func InitializeEmpty(ctx context.Context, root string) (Generation, error) {
+	return initialize(ctx, root, true)
+}
+
+func initialize(ctx context.Context, root string, acceptConcurrentEmpty bool) (Generation, error) {
 	if err := ctx.Err(); err != nil {
 		return Generation{}, err
 	}
@@ -62,10 +90,39 @@ func Initialize(ctx context.Context, root string) (Generation, error) {
 	if _, err = authoritypersistence.ClassifyLegacyAuthority(stateRoot); err != nil {
 		return Generation{}, err
 	}
-	for _, path := range []string{stateRoot, filepath.Dir(root), root} {
+	for _, path := range []string{stateRoot, filepath.Dir(root)} {
 		if err = secureMkdir(path); err != nil {
 			return Generation{}, err
 		}
+	}
+	initialization, err := acquireInitialization(ctx, filepath.Dir(root))
+	if err != nil {
+		return Generation{}, err
+	}
+	defer initialization.release()
+	if _, err = authoritypersistence.ClassifyLegacyAuthority(stateRoot); err != nil {
+		return Generation{}, err
+	}
+	if info, statErr := os.Lstat(root); statErr == nil {
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
+			return Generation{}, errors.New("existing authority persistence root is unsafe")
+		}
+		inspection := Inspect(ctx, root)
+		if inspection.State == StateReady {
+			if acceptConcurrentEmpty {
+				if err = verifyEmptyClosedGeneration(root, inspection.Generation); err != nil {
+					return Generation{}, err
+				}
+				return inspection.Generation, nil
+			}
+			return Generation{}, ErrAlreadyInitialized
+		}
+		return Generation{}, fmt.Errorf("existing authority persistence is invalid and will not be replaced: %w", inspection.Err)
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return Generation{}, fmt.Errorf("inspect authority persistence root: %w", statErr)
+	}
+	if err = secureMkdir(root); err != nil {
+		return Generation{}, err
 	}
 	lease, err := acquireMaintenance(ctx, root, true)
 	if err != nil {
@@ -157,6 +214,70 @@ func Initialize(ctx context.Context, root string) (Generation, error) {
 		return Generation{}, err
 	}
 	return generation, nil
+}
+
+func verifyEmptyClosedGeneration(root string, generation Generation) error {
+	db, err := badgerdb.Open(options(filepath.Join(root, "stores", generation.Directory)).WithReadOnly(true))
+	if err != nil {
+		return fmt.Errorf("verify concurrently initialized operational authority: %w", err)
+	}
+	defer db.Close()
+	records := 0
+	err = db.View(func(txn *badgerdb.Txn) error {
+		iterator := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+		defer iterator.Close()
+		for iterator.Rewind(); iterator.Valid(); iterator.Next() {
+			decoded, decodeErr := DecodeKey(iterator.Item().Key())
+			if decodeErr != nil {
+				return decodeErr
+			}
+			switch decoded.Family {
+			case KeyMetadataStoreID, KeyMetadataSchema, KeyMetadataCodec:
+				records++
+			default:
+				return errors.New("concurrently initialized operational authority is not an empty generation")
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if records != 3 {
+		return errors.New("concurrently initialized operational authority has incomplete identity metadata")
+	}
+	return nil
+}
+
+// Inspect classifies the operational authority without creating directories,
+// lifecycle markers, locks, or writable database handles.
+func Inspect(ctx context.Context, root string) Inspection {
+	if err := ctx.Err(); err != nil {
+		return Inspection{State: StateInvalid, Err: err}
+	}
+	clean, err := cleanRoot(root)
+	if err != nil {
+		return Inspection{State: StateInvalid, Err: err}
+	}
+	stateRoot := filepath.Dir(filepath.Dir(clean))
+	if _, err = authoritypersistence.ClassifyLegacyAuthority(stateRoot); err != nil {
+		return Inspection{State: StateInvalid, Err: err}
+	}
+	info, err := os.Lstat(clean)
+	if errors.Is(err, os.ErrNotExist) {
+		return Inspection{State: StateAbsent}
+	}
+	if err != nil {
+		return Inspection{State: StateInvalid, Err: err}
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
+		return Inspection{State: StateInvalid, Err: errors.New("operational authority root is unsafe")}
+	}
+	generation, err := inspectClosedGeneration(clean)
+	if err != nil {
+		return Inspection{State: StateInvalid, Err: err}
+	}
+	return Inspection{State: StateReady, Generation: generation}
 }
 
 func Open(ctx context.Context, root string) (*Store, error) {
@@ -262,14 +383,53 @@ func secureMkdir(path string) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		if err = os.Mkdir(path, 0700); err != nil {
-			return fmt.Errorf("create secure authority directory %s: %w", path, err)
+			if !errors.Is(err, os.ErrExist) {
+				return fmt.Errorf("create secure authority directory %s: %w", path, err)
+			}
+			info, err = os.Lstat(path)
+			if err != nil {
+				return fmt.Errorf("inspect concurrently created authority directory %s: %w", path, err)
+			}
+		} else {
+			return syncDirectory(filepath.Dir(path))
 		}
-		return syncDirectory(filepath.Dir(path))
 	}
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 {
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
 		return fmt.Errorf("authority directory %s is unsafe", path)
 	}
 	return nil
+}
+
+func acquireInitialization(ctx context.Context, persistenceRoot string) (*maintenanceLease, error) {
+	fd, err := unix.Open(persistenceRoot, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
+	if err != nil {
+		return nil, fmt.Errorf("open authority initialization coordinator: %w", err)
+	}
+	file := os.NewFile(uintptr(fd), persistenceRoot)
+	if file == nil {
+		_ = unix.Close(fd)
+		return nil, errors.New("open authority initialization coordinator: invalid file descriptor")
+	}
+	info, err := file.Stat()
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
+		_ = file.Close()
+		return nil, errors.New("authority initialization coordinator is unsafe")
+	}
+	for {
+		if err = unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err == nil {
+			return &maintenanceLease{file: file}, nil
+		}
+		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+			_ = file.Close()
+			return nil, fmt.Errorf("lock authority initialization coordinator: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			_ = file.Close()
+			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 // normalizeGenerationModes makes Badger's umask-dependent files deterministic.
@@ -326,7 +486,7 @@ func validateGeneration(g Generation) error {
 
 func verifyStoreIdentity(path string, generation Generation) error {
 	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 {
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
 		return fmt.Errorf("%w: selected store path is unsafe", ErrCorruptGeneration)
 	}
 	db, err := badgerdb.Open(options(path).WithReadOnly(true))
@@ -371,7 +531,7 @@ func readMarker(path string) (Generation, error) {
 	if err != nil {
 		return Generation{}, err
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Mode()&os.ModeSymlink != 0 {
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Mode()&os.ModeSymlink != 0 || !ownedByCurrentEUID(info) {
 		return Generation{}, ErrCorruptGeneration
 	}
 	file, err := os.Open(path)
@@ -392,6 +552,11 @@ func readMarker(path string) (Generation, error) {
 		return Generation{}, err
 	}
 	return generation, nil
+}
+
+func ownedByCurrentEUID(info os.FileInfo) bool {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && int(stat.Uid) == os.Geteuid()
 }
 
 func renameNoReplace(fromDir, from, toDir, to string) error {

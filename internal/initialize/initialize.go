@@ -29,6 +29,13 @@ type Plan struct {
 	Partials      []string
 }
 
+type OperationalAuthorityPlan struct {
+	ConfigPath    string
+	AuthorityPath string
+	Principal     config.Principal
+	Config        config.Config
+}
+
 type Service struct {
 	Current  func() (*user.User, error)
 	LookupID func(string) (*user.User, error)
@@ -75,6 +82,51 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: %s\naudit:\n  checkpoint_dir: %s\n",
 		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), principal.AuthTTL, strconv.Quote(candidate.Audit.CheckpointDir)))
 	return Plan{ConfigPath: inspection.Path, StatePath: statePath, AuthorityPath: filepath.Join(statePath, "persistence", "authority-v1"), Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...)}, nil
+}
+
+// PlanOperationalAuthority authenticates the configured host principal and
+// admits only exact absence of the compatibility generation.
+func (s *Service) PlanOperationalAuthority(configPath string) (OperationalAuthorityPlan, error) {
+	inspection := config.Inspect(configPath)
+	if inspection.State != config.StateValid {
+		return OperationalAuthorityPlan{}, inspection.Failure()
+	}
+	current, err := s.verifiedCurrent()
+	if err != nil {
+		return OperationalAuthorityPlan{}, err
+	}
+	if current.Uid != inspection.Config.Principal.UID || current.Username != inspection.Config.Principal.User {
+		return OperationalAuthorityPlan{}, errors.New("configured principal does not match freshly authenticated host identity")
+	}
+	authorityPath := filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")
+	state := authoritybadger.Inspect(context.Background(), authorityPath)
+	if state.State == authoritybadger.StateReady {
+		return OperationalAuthorityPlan{}, authoritybadger.ErrAlreadyInitialized
+	}
+	if state.State != authoritybadger.StateAbsent {
+		return OperationalAuthorityPlan{}, fmt.Errorf("existing invalid operational authority will not be replaced: %w", state.Err)
+	}
+	return OperationalAuthorityPlan{ConfigPath: inspection.Path, AuthorityPath: authorityPath, Principal: inspection.Config.Principal, Config: inspection.Config}, nil
+}
+
+// ApplyOperationalAuthority reauthenticates and revalidates exact absence
+// immediately before publishing one secure empty generation.
+func (s *Service) ApplyOperationalAuthority(ctx context.Context, plan OperationalAuthorityPlan) (authoritybadger.Generation, error) {
+	if err := ctx.Err(); err != nil {
+		return authoritybadger.Generation{}, err
+	}
+	current, err := s.verifiedCurrent()
+	if err != nil {
+		return authoritybadger.Generation{}, err
+	}
+	if current.Uid != plan.Principal.UID || current.Username != plan.Principal.User {
+		return authoritybadger.Generation{}, errors.New("authenticated host identity changed after operational authority preview")
+	}
+	inspection := config.Inspect(plan.ConfigPath)
+	if inspection.State != config.StateValid || inspection.Config.StateDir != plan.Config.StateDir || inspection.Config.Principal != plan.Principal {
+		return authoritybadger.Generation{}, errors.New("configuration changed after operational authority preview")
+	}
+	return authoritybadger.InitializeEmpty(ctx, plan.AuthorityPath)
 }
 
 func (s *Service) verifiedCurrent() (*user.User, error) {
