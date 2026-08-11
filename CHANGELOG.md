@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.3] - 2026-08-11
+
 ### Changed
 
 - Replaced the browser console's hand-authored HTML and JavaScript rendering path with typed Go view models and generated templ components, using a pinned self-hosted Datastar client for progressive enhancement. Added digest/provenance and static browser-security gates, generation/module-drift checks, focused typed rendering coverage, and an extracted-native-binary proof that verifies the embedded asset plus authenticated authoritative-empty fleet surface without a CDN, Node runtime, reusable bearer, or browser storage.
