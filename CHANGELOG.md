@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+
+- Replaced the browser console's hand-authored HTML and JavaScript rendering path with typed Go view models and generated templ components, using a pinned self-hosted Datastar client for progressive enhancement. Added digest/provenance and static browser-security gates, generation/module-drift checks, focused typed rendering coverage, and an extracted-native-binary proof that verifies the embedded asset plus authenticated authoritative-empty fleet surface without a CDN, Node runtime, reusable bearer, or browser storage.
+
 ### Fixed
 
 - Repaired valid-configuration startup when the generation-managed operational authority is exactly absent. Interactive bare startup and `aegis init` now freshly authenticate the configured host principal, show the exact one-generation compatibility action, and require explicit default-deny confirmation before creating one secure empty generation. Ordinary and non-interactive paths return `operational_authority_not_initialized` with exit status 2 and no mutation; invalid, unsafe, ambiguous, dirty, corrupt, markerless, wrong-owner, or populated legacy state is preserved and denied; concurrent confirmed reconciliation converges only on the same empty generation.

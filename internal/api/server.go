@@ -24,6 +24,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
+	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
 
@@ -242,11 +243,56 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), authenticated)
 		return consoleManager.ValidateOrigin(c.Request(), false)
 	}
+	loadConsole := func(c *echo.Context, subject core.Subject, domain consoleDomain) (consoleweb.PageModel, error) {
+		if err := svc.RequirePrincipal(subject); err != nil {
+			return consoleweb.PageModel{}, err
+		}
+		limit, err := consoleManager.Page(c.QueryParam("limit"))
+		if err != nil {
+			return consoleweb.PageModel{}, consoleError(err)
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return consoleweb.PageModel{Authenticated: true, Surface: consoleweb.SurfaceModel{Domain: string(domain), Title: "Fleet control", State: "unavailable", Status: "Fleet control unavailable. No collection was treated as empty."}}, nil
+		}
+		if len(surface.Agents) > limit {
+			surface.Agents = surface.Agents[:limit]
+		}
+		if len(surface.Loops) > limit {
+			surface.Loops = surface.Loops[:limit]
+		}
+		if len(surface.Graphs) > limit {
+			surface.Graphs = surface.Graphs[:limit]
+		}
+		if len(surface.Queue) > limit {
+			surface.Queue = surface.Queue[:limit]
+		}
+		model, err := consoleSurfaceModel(surface, domain)
+		if err != nil {
+			return consoleweb.PageModel{}, err
+		}
+		csrf, err := consoleManager.CSRF(c.Request())
+		if err != nil {
+			return consoleweb.PageModel{}, consoleError(err)
+		}
+		return consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: model}, nil
+	}
 	e.GET("/console", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
 		}
-		return c.Blob(http.StatusOK, "text/html; charset=utf-8", console.Shell())
+		model := consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
+		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
+			model, err = loadConsole(c, subject, consoleAgents)
+			if err != nil {
+				return err
+			}
+		}
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(model))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
 	})
 	e.GET("/console/assets/app.css", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
@@ -254,21 +300,19 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Blob(http.StatusOK, "text/css; charset=utf-8", console.Styles())
 	})
-	e.GET("/console/assets/app.js", func(c *echo.Context) error {
+	e.GET("/console/assets/datastar-v1.0.2.js", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
 		}
-		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.JavaScript())
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.Datastar())
 	})
 	e.POST("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
-		var input struct {
-			Bootstrap string `json:"bootstrap"`
-		}
+		var input consoleSignals
 		if err := decode(c, &input); err != nil {
 			return err
 		}
-		sessionValue, csrf, err := consoleManager.Exchange(c.Request(), input.Bootstrap)
+		sessionValue, csrf, expires, err := consoleManager.Exchange(c.Request(), input.Bootstrap)
 		if err != nil {
 			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "browser_session_exchange_denied"); auditErr != nil {
 				return auditErr
@@ -280,7 +324,62 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		consoleManager.SetCookie(c.Response(), sessionValue)
-		return c.JSON(http.StatusCreated, map[string]string{"csrf": csrf, "expires": svc.Now().Add(svc.Config.API.Console.SessionTTL).UTC().Format(time.RFC3339)})
+		if wantsDatastar(c.Request()) {
+			c.Request().AddCookie(&http.Cookie{Name: console.CookieName, Value: sessionValue})
+			subject, authErr := consoleManager.Authenticate(c.Request())
+			if authErr != nil {
+				return consoleError(authErr)
+			}
+			model, loadErr := loadConsole(c, subject, consoleAgents)
+			if loadErr != nil {
+				return loadErr
+			}
+			return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
+		}
+		return c.JSON(http.StatusCreated, map[string]string{"csrf": csrf, "expires": expires.UTC().Format(time.RFC3339)})
+	})
+	e.GET("/console/fragments/surface", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := validateConsoleSignals(c.Request()); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console signals")
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		domain, err := parseConsoleDomain(c.QueryParam("domain"))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console domain")
+		}
+		model, err := loadConsole(c, subject, domain)
+		if err != nil {
+			return err
+		}
+		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
+	})
+	e.GET("/console/fragments/inspect", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := validateConsoleSignals(c.Request()); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console signals")
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		domain, err := parseConsoleDomain(c.QueryParam("domain"))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console domain")
+		}
+		model, err := loadConsole(c, subject, domain)
+		if err != nil {
+			return err
+		}
+		if err = selectConsoleRecord(&model.Surface, c.QueryParam("record_key")); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+		}
+		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
 	e.GET("/console/api/state", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
@@ -320,6 +419,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	})
 	e.DELETE("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if wantsDatastar(c.Request()) {
+			if err := validateConsoleSignals(c.Request()); err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid console signals")
+			}
+		}
 		subject, err := consoleManager.AuthorizeMutation(c.Request())
 		if err != nil {
 			return consoleError(err)
@@ -332,6 +436,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		consoleManager.Revoke(c.Request())
 		consoleManager.ClearCookie(c.Response())
+		if wantsDatastar(c.Request()) {
+			return patchConsole(c.Response(), c.Request(), consoleweb.Document(consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}))
+		}
 		return c.NoContent(http.StatusNoContent)
 	})
 	protected := func(next echo.HandlerFunc) echo.HandlerFunc {

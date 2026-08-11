@@ -257,10 +257,31 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	shellBody, _ := io.ReadAll(shell.Body)
 	_ = shell.Body.Close()
-	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authenticated control plane") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
+	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authenticated control plane") || !strings.Contains(string(shellBody), "datastar-v1.0.2.js") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("unsafe console shell status=%d headers=%v", shell.StatusCode, shell.Header)
 	}
+	asset, err := client.Get("http://" + address + "/console/assets/datastar-v1.0.2.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetBody, _ := io.ReadAll(asset.Body)
+	_ = asset.Body.Close()
+	if asset.StatusCode != http.StatusOK || !strings.HasPrefix(asset.Header.Get("Content-Type"), "text/javascript") || len(assetBody) < 1000 {
+		t.Fatalf("self-hosted Datastar asset status=%d type=%q bytes=%d", asset.StatusCode, asset.Header.Get("Content-Type"), len(assetBody))
+	}
 	exchangeBody, _ := json.Marshal(map[string]string{"bootstrap": issued.Bootstrap})
+	forgedBody, _ := json.Marshal(map[string]string{"bootstrap": issued.Bootstrap, "authority": "forged-admin"})
+	forged, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", bytes.NewReader(forgedBody))
+	forged.Header.Set("Content-Type", "application/json")
+	forged.Header.Set("Origin", "http://"+address)
+	forgedResponse, err := client.Do(forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forgedResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf("forged authority field status=%d", forgedResponse.StatusCode)
+	}
+	_ = forgedResponse.Body.Close()
 	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", bytes.NewReader(exchangeBody))
 	exchange.Header.Set("Content-Type", "application/json")
 	exchange.Header.Set("Origin", "http://"+address)
@@ -269,13 +290,14 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	var established struct {
-		CSRF string `json:"csrf"`
+		CSRF    string `json:"csrf"`
+		Expires string `json:"expires"`
 	}
 	if err = json.NewDecoder(response.Body).Decode(&established); err != nil {
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusCreated || established.CSRF == "" || strings.Contains(string(shellBody), issued.Bootstrap) {
+	if response.StatusCode != http.StatusCreated || established.CSRF == "" || established.Expires == "" || strings.Contains(string(shellBody), issued.Bootstrap) {
 		t.Fatalf("session exchange status=%d csrf=%t", response.StatusCode, established.CSRF != "")
 	}
 	state, err := client.Get("http://" + address + "/console/api/state?limit=10")
@@ -302,6 +324,17 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 		}
 	}
 	_ = state.Body.Close()
+	fragment, _ := http.NewRequest(http.MethodGet, "http://"+address+"/console/fragments/surface?domain=graphs&limit=10", nil)
+	fragment.Header.Set("Accept", "text/event-stream")
+	fragmentResponse, err := client.Do(fragment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragmentBody, _ := io.ReadAll(fragmentResponse.Body)
+	_ = fragmentResponse.Body.Close()
+	if fragmentResponse.StatusCode != http.StatusOK || fragmentResponse.Header.Get("Content-Type") != "text/event-stream" || !bytes.Contains(fragmentBody, []byte("event: datastar-patch-elements")) || !bytes.Contains(fragmentBody, []byte("Graphs")) || !bytes.Contains(fragmentBody, []byte("authoritative collection is empty")) {
+		t.Fatalf("Datastar surface patch status=%d type=%q body=%s", fragmentResponse.StatusCode, fragmentResponse.Header.Get("Content-Type"), fragmentBody)
+	}
 	excess, _ := client.Get("http://" + address + "/console/api/state?limit=100000")
 	if excess.StatusCode != http.StatusBadRequest {
 		t.Fatalf("excessive page size status=%d", excess.StatusCode)
@@ -318,6 +351,17 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 		t.Fatalf("cross-origin logout status=%d", denied.StatusCode)
 	}
 	_ = denied.Body.Close()
+	logout.Header.Set("Origin", "http://"+address)
+	logout.Header.Set("Accept", "text/event-stream")
+	loggedOut, err := client.Do(logout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loggedOutBody, _ := io.ReadAll(loggedOut.Body)
+	_ = loggedOut.Body.Close()
+	if loggedOut.StatusCode != http.StatusOK || !bytes.Contains(loggedOutBody, []byte("Authenticate this browser")) {
+		t.Fatalf("Datastar logout patch status=%d body=%s", loggedOut.StatusCode, loggedOutBody)
+	}
 
 	cancel()
 	if err = <-done; err != nil {

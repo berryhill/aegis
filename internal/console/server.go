@@ -106,9 +106,9 @@ func (m *Manager) IssueBootstrap(subject core.Subject) (string, error) {
 	return value, nil
 }
 
-func (m *Manager) Exchange(request *http.Request, value string) (string, string, error) {
+func (m *Manager) Exchange(request *http.Request, value string) (string, string, time.Time, error) {
 	if err := m.ValidateOrigin(request, true); err != nil {
-		return "", "", err
+		return "", "", time.Time{}, err
 	}
 	now := m.now()
 	digest := sha256.Sum256([]byte(value))
@@ -118,22 +118,22 @@ func (m *Manager) Exchange(request *http.Request, value string) (string, string,
 	candidate, ok := m.bootstraps[digest]
 	delete(m.bootstraps, digest)
 	if !ok || value == "" || !now.Before(candidate.expires) || candidate.subject.PrincipalID == "" || !now.Before(candidate.subject.ExpiresAt) {
-		return "", "", ErrUnauthenticated
+		return "", "", time.Time{}, ErrUnauthenticated
 	}
 	sessionValue, sessionDigest, err := opaque()
 	if err != nil {
-		return "", "", fmt.Errorf("generate console session: %w", err)
+		return "", "", time.Time{}, fmt.Errorf("generate console session: %w", err)
 	}
 	csrf, _, err := opaque()
 	if err != nil {
-		return "", "", fmt.Errorf("generate CSRF value: %w", err)
+		return "", "", time.Time{}, fmt.Errorf("generate CSRF value: %w", err)
 	}
 	expires := now.Add(m.config.SessionTTL)
 	if candidate.subject.ExpiresAt.Before(expires) {
 		expires = candidate.subject.ExpiresAt
 	}
 	m.sessions[sessionDigest] = session{subject: candidate.subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires}
-	return sessionValue, csrf, nil
+	return sessionValue, csrf, expires, nil
 }
 
 func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {
@@ -279,6 +279,5 @@ func (m *Manager) prune(now time.Time) {
 	}
 }
 
-func Shell() []byte      { return append([]byte(nil), consoleweb.Index...) }
-func Styles() []byte     { return append([]byte(nil), consoleweb.CSS...) }
-func JavaScript() []byte { return append([]byte(nil), consoleweb.JavaScript...) }
+func Styles() []byte   { return append([]byte(nil), consoleweb.CSS...) }
+func Datastar() []byte { return append([]byte(nil), consoleweb.Datastar...) }

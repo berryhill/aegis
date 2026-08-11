@@ -2,11 +2,11 @@ package consoleweb
 
 import _ "embed"
 
-//go:embed index.html
-var Index []byte
-
 //go:embed app.css
 var CSS []byte
 
-//go:embed app.js
-var JavaScript []byte
+//go:embed vendor/datastar-v1.0.2.js
+var Datastar []byte
+
+//go:embed vendor/datastar-v1.0.2.LICENSE
+var DatastarLicense []byte

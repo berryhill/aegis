@@ -118,5 +118,6 @@ vertical=$proof/vertical
 mkdir -m 0700 "$vertical" "$vertical/state" "$vertical/state/persistence"
 go run ./scripts/demo-authority-init "$vertical/state/persistence/authority-v1"
 python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$install/aegis" "$proof/vertical"
+"$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"
 
-printf 'installed MVI verified: version=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition\n' "$version"
+printf 'installed MVI verified: version=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_templ_datastar\n' "$version"
