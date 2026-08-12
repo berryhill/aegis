@@ -25,10 +25,10 @@ func TestLiteralCanonicalLayoutAndXDGIndependence(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := map[string]string{
-		"root": filepath.Join(home, ".argis"), "config": filepath.Join(home, ".argis", "aegis.yaml"),
-		"state": filepath.Join(home, ".argis", "state"), "checkpoints": filepath.Join(home, ".argis", "state", "audit-checkpoints"), "authority": filepath.Join(home, ".argis", "state", "persistence", "authority-v1"),
-		"database": filepath.Join(home, ".argis", "state", "credentials", "authority.db"), "kek": filepath.Join(home, ".argis", "state", "credentials", "authority.kek"),
-		"certifications": filepath.Join(home, ".argis", "state", "manager", "certifications"), "models": filepath.Join(home, ".argis", "state", "manager", "ollama-models"), "runtime": filepath.Join(home, ".argis", "state", "runtime"),
+		"root": filepath.Join(home, ".aegis"), "config": filepath.Join(home, ".aegis", "aegis.yaml"),
+		"state": filepath.Join(home, ".aegis", "state"), "checkpoints": filepath.Join(home, ".aegis", "state", "audit-checkpoints"), "authority": filepath.Join(home, ".aegis", "state", "persistence", "authority-v1"),
+		"database": filepath.Join(home, ".aegis", "state", "credentials", "authority.db"), "kek": filepath.Join(home, ".aegis", "state", "credentials", "authority.kek"),
+		"certifications": filepath.Join(home, ".aegis", "state", "manager", "certifications"), "models": filepath.Join(home, ".aegis", "state", "manager", "ollama-models"), "runtime": filepath.Join(home, ".aegis", "state", "runtime"),
 	}
 	actual := map[string]string{"root": got.Root, "config": got.Config, "state": got.State, "checkpoints": got.AuditCheckpoints, "authority": got.AuthorityPersistence, "database": got.CredentialDatabase, "kek": got.HostKEK, "certifications": got.ManagerCertifications, "models": got.ManagedModels, "runtime": got.Runtime}
 	for name, want := range expected {
@@ -51,9 +51,9 @@ func TestForRootDerivesCompleteProfileSpecificOperationalLayout(t *testing.T) {
 		"manager certifications": filepath.Join(root, "state", "manager", "certifications"),
 		"managed models":         filepath.Join(root, "state", "manager", "ollama-models"),
 		"runtime":                filepath.Join(root, "state", "runtime"),
-		"legacy config":          filepath.Join(scope, ".config", "aegis", "aegis.yaml"),
-		"legacy state":           filepath.Join(scope, ".local", "state", "aegis"),
-		"legacy checkpoints":     filepath.Join(scope, ".local", "state", "aegis-checkpoints"),
+		"legacy config":          filepath.Join(scope, ".argis", "aegis.yaml"),
+		"legacy state":           filepath.Join(scope, ".argis", "state"),
+		"legacy checkpoints":     filepath.Join(scope, ".argis", "state", "audit-checkpoints"),
 	}
 	actual := map[string]string{
 		"home": got.Home, "root": got.Root, "config": got.Config, "state": got.State,
@@ -113,19 +113,19 @@ func TestUnsafeHomesAndCanonicalRootsFailClosed(t *testing.T) {
 			os.Mkdir(home, 0700)
 			target := filepath.Join(root, "target")
 			os.Mkdir(target, 0700)
-			os.Symlink(target, filepath.Join(home, ".argis"))
+			os.Symlink(target, filepath.Join(home, ".aegis"))
 			return home
 		}},
 		{"writable-root", func(t *testing.T, root string) string {
 			home := filepath.Join(root, "home")
 			os.Mkdir(home, 0700)
-			os.Mkdir(filepath.Join(home, ".argis"), 0770)
+			os.Mkdir(filepath.Join(home, ".aegis"), 0770)
 			return home
 		}},
 		{"non-directory-root", func(t *testing.T, root string) string {
 			home := filepath.Join(root, "home")
 			os.Mkdir(home, 0700)
-			os.WriteFile(filepath.Join(home, ".argis"), []byte("x"), 0600)
+			os.WriteFile(filepath.Join(home, ".aegis"), []byte("x"), 0600)
 			return home
 		}},
 	} {
@@ -178,6 +178,34 @@ func TestDiscoveryStatesAndEmptyRetainedLegacyRoots(t *testing.T) {
 	}
 	if d, _ := resolved.Discover(); d.Presence != Ambiguous {
 		t.Fatalf("ambiguous=%+v", d)
+	}
+}
+
+func TestFormerProductionRootIsLegacyAndCoexistenceIsAmbiguous(t *testing.T) {
+	resolver, _ := temporaryResolver(t)
+	resolved, err := resolver.Resolve()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(resolved.LegacyState, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(resolved.LegacyState, "audit.jsonl"), []byte("legacy"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	discovery, err := resolved.Discover()
+	if err != nil || discovery.Presence != Legacy || discovery.LegacyConfig != resolved.LegacyConfig {
+		t.Fatalf("former production discovery=%+v err=%v", discovery, err)
+	}
+	if err = os.MkdirAll(resolved.State, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(resolved.Config, []byte("canonical"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	discovery, err = resolved.Discover()
+	if err != nil || discovery.Presence != Ambiguous {
+		t.Fatalf("coexistence discovery=%+v err=%v", discovery, err)
 	}
 }
 

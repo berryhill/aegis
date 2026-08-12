@@ -222,7 +222,7 @@ func isolatedPaths(t *testing.T) (string, string) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state-home"))
-	return filepath.Join(home, ".argis", "aegis.yaml"), filepath.Join(root, "state")
+	return filepath.Join(home, ".aegis", "aegis.yaml"), filepath.Join(root, "state")
 }
 
 func TestBareRootNonTTYUninitializedReturnsStructuredAction(t *testing.T) {

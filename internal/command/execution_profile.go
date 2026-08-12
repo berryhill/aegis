@@ -183,9 +183,10 @@ func validateConfiguredPathsProfile(profile ExecutionProfile, paths map[string]s
 	if err != nil {
 		return err
 	}
+	formerProductionRoot := filepath.Join(production.Home, layout.FormerDirectory)
 	for name, path := range paths {
-		if path != "" && pathWithinRoot(path, production.Root) {
-			return fmt.Errorf("development executable refuses configured %s inside the production profile root: %q", name, path)
+		if path != "" && (pathWithinRoot(path, production.Root) || pathWithinRoot(path, formerProductionRoot)) {
+			return fmt.Errorf("development executable refuses configured %s inside a production profile root: %q", name, path)
 		}
 	}
 	return nil

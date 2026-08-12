@@ -108,6 +108,14 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 	inspection := config.Inspect(configuredPath)
 	legacy := configuredPath == "" && inspection.State == config.StateLegacy
 	if legacy {
+		discovery, discoveryErr := resolvedLayout.Discover()
+		if discoveryErr != nil || discovery.Presence != layout.Legacy {
+			if discoveryErr != nil {
+				return Plan{}, deny(discoveryErr)
+			}
+			return Plan{}, deny(fmt.Errorf("legacy reset requires one unambiguous legacy layout; discovered %s", discovery.Presence))
+		}
+		resolvedLayout = resolvedLayout.WithLegacy(discovery)
 		inspection = config.Inspect(resolvedLayout.LegacyConfig)
 	}
 	plan := Plan{

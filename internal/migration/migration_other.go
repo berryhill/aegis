@@ -8,7 +8,7 @@ import (
 	"os/user"
 )
 
-const Confirmation = "migrate aegis to ~/.argis"
+const Confirmation = "migrate aegis to ~/.aegis"
 
 type Artifact struct{ Source, Destination, Kind string }
 type Plan struct {

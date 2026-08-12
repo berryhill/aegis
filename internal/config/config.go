@@ -82,7 +82,7 @@ func Inspect(path string) Inspection {
 		case layout.Ambiguous:
 			return Inspection{Path: resolvedLayout.Config, State: StateAmbiguous, ReasonCode: "canonical_and_legacy_layout_ambiguous", Err: fmt.Errorf("canonical and legacy Aegis layouts both exist; inspect %s and %s, then run either 'aegis migrate-layout' after removing the empty canonical layout or 'aegis reset' for the intended installation", resolvedLayout.Root, resolvedLayout.LegacyConfig)}
 		case layout.Legacy:
-			return Inspection{Path: resolvedLayout.LegacyConfig, State: StateLegacy, ReasonCode: "legacy-layout-detected", Err: fmt.Errorf("recognized legacy Aegis layout exists; run 'aegis migrate-layout' in a terminal or 'aegis reset'")}
+			return Inspection{Path: discovery.LegacyConfig, State: StateLegacy, ReasonCode: "legacy-layout-detected", Err: fmt.Errorf("recognized legacy Aegis layout exists; run 'aegis migrate-layout' in a terminal or 'aegis reset'")}
 		}
 	}
 	resolved, err := ResolvePath(path)

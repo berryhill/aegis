@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Corrected the stable production root to `~/.aegis`. The former `~/.argis` root is now an explicit migration source only; fresh startup never initializes beside a meaningful former/XDG installation, canonical-plus-legacy or multiple-legacy layouts fail closed, and Linux migration/reset operate on the exact artifact-derived source.
+
 ## [0.2.4] - 2026-08-11
 
 ### Added
