@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,90 @@ import (
 	"testing"
 	"time"
 )
+
+func TestManagerResponseFormatUsesExactTypedProposalArguments(t *testing.T) {
+	encoded, err := json.Marshal(managerResponseFormat())
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, required := range []string{
+		`"const":"secret.propose_revoke"`,
+		`"required":["record_id","reason"]`,
+		`"additionalProperties":false`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("manager response format omits typed proposal constraint %s: %s", required, text)
+		}
+	}
+}
+
+func TestProxyStripsSemanticallyEmptyNoToolDecoration(t *testing.T) {
+	var upstreamBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"x","model":"exact:1","choices":[{"index":0,"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close(context.Background())
+	req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"tools":[],"tool_choice":"none"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("semantically empty no-tool request status=%d diagnostic=%s", response.StatusCode, proxy.LastSafeDiagnostic())
+	}
+	if strings.Contains(string(upstreamBody), `"tools"`) || strings.Contains(string(upstreamBody), `"tool_choice"`) {
+		t.Fatalf("no-tool decoration reached inference provider: %s", upstreamBody)
+	}
+}
+
+func TestProxyRejectsExecutableToolRequests(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proxy.Close(context.Background())
+	bodies := []string{
+		`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"status","parameters":{"type":"object"}}}]}`,
+		`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"tools":[],"tool_choice":"auto"}`,
+		`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"tools":[],"tool_choice":"required"}`,
+		`{"model":"exact:1","messages":[{"role":"user","content":"hello"}],"tools":[],"tool_choice":{"type":"function","function":{"name":"status"}}}`,
+	}
+	for _, body := range bodies {
+		req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
+		response, requestErr := http.DefaultClient.Do(req)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusForbidden {
+			t.Fatalf("executable tool request status=%d body=%s", response.StatusCode, body)
+		}
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("executable tool request reached provider %d times", upstreamCalls)
+	}
+}
 
 func testProcessAuthorizer(t *testing.T) *ProcessAuthorizer {
 	t.Helper()

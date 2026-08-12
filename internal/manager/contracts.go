@@ -17,7 +17,7 @@ const (
 	ResponseSchemaVersion = "aegis.manager.response.v1"
 	InstructionVersion    = "aegis.manager.instruction.v5"
 	PolicyVersion         = "aegis.manager.policy.v3"
-	ConformanceVersion    = "aegis.manager.conformance.v6"
+	ConformanceVersion    = "aegis.manager.conformance.v7"
 	LogicalAgentID        = "aegis"
 	SecurityContext       = "secrets-manager"
 )

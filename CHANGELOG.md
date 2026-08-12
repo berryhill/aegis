@@ -10,6 +10,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Repaired manager certification interoperability with supported Hermes tool-free requests and the strict manager response contract. The process-bound inference proxy now strips only the semantically empty `tools: []` plus `tool_choice: "none"` decoration before forwarding to Ollama, continues to reject every executable tool request, and supplies exact operation-specific proposal argument schemas. Certification also verifies the exact arguments of security-critical revocation proposals, and the conformance version invalidates older certifications.
 - Fixed bare production `aegis reset` so artifact-derived discovery selects the sole former or XDG legacy layout instead of incorrectly planning against the canonical default. Explicit configuration remains non-authoritative for reset, while canonical-plus-legacy and multiple-legacy ambiguity still fail closed.
 
 ## [0.2.5] - 2026-08-12
