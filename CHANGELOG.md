@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.4] - 2026-08-11
+
 ### Added
 
 - Added explicit local control-plane ownership reconciliation: production onboarding can generate an owner-only token file and absolute Unix transport after exact principal/configuration approval, then preview and install one digest-bound `systemd --user` Aegis service after a separate approval. Added `aegis service preview|install|status|start|stop|restart|uninstall` and `aegis console` for a short-lived single-use browser bootstrap over authenticated Unix transport. The lifecycle refuses foreign units, never enables linger or installs a root service, and makes no same-account isolation claim.
