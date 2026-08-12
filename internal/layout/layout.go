@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	CanonicalDirectory   = ".argis"
+	CanonicalDirectory   = ".aegis"
+	FormerDirectory      = ".argis"
 	DevelopmentDirectory = ".aegis"
 )
 
@@ -31,6 +32,9 @@ type Layout struct {
 	LegacyConfig          string
 	LegacyState           string
 	LegacyCheckpoints     string
+	XDGConfig             string
+	XDGState              string
+	XDGCheckpoints        string
 }
 
 type Presence string
@@ -46,6 +50,9 @@ type Discovery struct {
 	Presence           Presence
 	CanonicalArtifacts []string
 	LegacyArtifacts    []string
+	LegacyConfig       string
+	LegacyState        string
+	LegacyCheckpoints  string
 }
 
 type Resolver struct {
@@ -107,9 +114,12 @@ func ForRoot(scope, root string) Layout {
 		ManagerCertifications: filepath.Join(state, "manager", "certifications"),
 		ManagedModels:         filepath.Join(state, "manager", "ollama-models"),
 		Runtime:               filepath.Join(state, "runtime"),
-		LegacyConfig:          filepath.Join(scope, ".config", "aegis", "aegis.yaml"),
-		LegacyState:           filepath.Join(scope, ".local", "state", "aegis"),
-		LegacyCheckpoints:     filepath.Join(scope, ".local", "state", "aegis-checkpoints"),
+		LegacyConfig:          filepath.Join(scope, FormerDirectory, "aegis.yaml"),
+		LegacyState:           filepath.Join(scope, FormerDirectory, "state"),
+		LegacyCheckpoints:     filepath.Join(scope, FormerDirectory, "state", "audit-checkpoints"),
+		XDGConfig:             filepath.Join(scope, ".config", "aegis", "aegis.yaml"),
+		XDGState:              filepath.Join(scope, ".local", "state", "aegis"),
+		XDGCheckpoints:        filepath.Join(scope, ".local", "state", "aegis-checkpoints"),
 	}
 }
 
@@ -126,6 +136,18 @@ func (l Layout) ForState(state string) Layout {
 	return l
 }
 
+// WithLegacy selects the one artifact-derived legacy layout returned by Discover.
+// It does not grant migration or deletion authority; callers must still validate
+// the selected artifacts and authenticated principal before mutation.
+func (l Layout) WithLegacy(d Discovery) Layout {
+	if d.LegacyConfig != "" {
+		l.LegacyConfig = d.LegacyConfig
+		l.LegacyState = d.LegacyState
+		l.LegacyCheckpoints = d.LegacyCheckpoints
+	}
+	return l
+}
+
 func (l Layout) Discover() (Discovery, error) {
 	var d Discovery
 	if meaningful, artifacts, err := meaningfulCanonical(l); err != nil {
@@ -133,12 +155,27 @@ func (l Layout) Discover() (Discovery, error) {
 	} else if meaningful {
 		d.CanonicalArtifacts = artifacts
 	}
-	for _, path := range []string{l.LegacyConfig, l.LegacyState, l.LegacyCheckpoints} {
-		if exists, err := meaningfulLegacyArtifact(path); err != nil {
-			return d, err
-		} else if exists {
-			d.LegacyArtifacts = append(d.LegacyArtifacts, path)
+	legacyLayouts := [][3]string{
+		{l.LegacyConfig, l.LegacyState, l.LegacyCheckpoints},
+		{l.XDGConfig, l.XDGState, l.XDGCheckpoints},
+	}
+	for _, candidate := range legacyLayouts {
+		var artifacts []string
+		for _, path := range candidate {
+			if exists, err := meaningfulLegacyArtifact(path); err != nil {
+				return d, err
+			} else if exists {
+				artifacts = append(artifacts, path)
+			}
 		}
+		if len(artifacts) == 0 {
+			continue
+		}
+		if d.LegacyConfig != "" {
+			return d, errors.New("multiple legacy Aegis layouts exist; migration source is ambiguous")
+		}
+		d.LegacyConfig, d.LegacyState, d.LegacyCheckpoints = candidate[0], candidate[1], candidate[2]
+		d.LegacyArtifacts = append(d.LegacyArtifacts, artifacts...)
 	}
 	switch {
 	case len(d.CanonicalArtifacts) > 0 && len(d.LegacyArtifacts) > 0:

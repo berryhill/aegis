@@ -28,7 +28,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const Confirmation = "migrate aegis to ~/.argis"
+const Confirmation = "migrate aegis to ~/.aegis"
 
 type Identity struct {
 	Device, Inode uint64
@@ -94,6 +94,7 @@ func (s *Service) Plan(ctx context.Context) (Plan, error) {
 	if discovery.Presence != layout.Legacy {
 		return Plan{}, fmt.Errorf("migration requires legacy-only layout; discovered %s", discovery.Presence)
 	}
+	resolved = resolved.WithLegacy(discovery)
 	ci := config.Inspect(resolved.LegacyConfig)
 	if ci.State != config.StateValid || !ci.FilePresent {
 		return Plan{}, errors.New("legacy migration requires one secure valid legacy configuration")

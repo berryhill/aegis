@@ -88,16 +88,16 @@ func TestPlanAndApplyMigrateLegacyToLiteralArgis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.DestinationRoot != filepath.Join(f.home, ".argis") || plan.Confirmation != Confirmation {
+	if plan.DestinationRoot != filepath.Join(f.home, ".aegis") || plan.Confirmation != Confirmation {
 		t.Fatalf("plan=%+v", plan)
 	}
 	if err = f.service.Apply(context.Background(), plan); err != nil {
 		t.Fatal(err)
 	}
-	if inspection := config.Inspect(""); inspection.State != config.StateValid || inspection.Path != filepath.Join(f.home, ".argis", "aegis.yaml") {
+	if inspection := config.Inspect(""); inspection.State != config.StateValid || inspection.Path != filepath.Join(f.home, ".aegis", "aegis.yaml") {
 		t.Fatalf("inspection=%+v", inspection)
 	}
-	if _, err = os.Stat(filepath.Join(f.home, ".argis", "state", "plans", "one.json")); err != nil {
+	if _, err = os.Stat(filepath.Join(f.home, ".aegis", "state", "plans", "one.json")); err != nil {
 		t.Fatal(err)
 	}
 	if data, err := os.ReadFile(external); err != nil || string(data) != "preserve" {
@@ -123,7 +123,7 @@ func TestPlanRejectsUnknownSymlinkHardlinkAndCanonicalCollision(t *testing.T) {
 			case "hardlink":
 				os.Link(filepath.Join(f.state, "plans", "one.json"), filepath.Join(f.home, "other"))
 			case "canonical":
-				os.Mkdir(filepath.Join(f.home, ".argis"), 0700)
+				os.Mkdir(filepath.Join(f.home, ".aegis"), 0700)
 			}
 			if _, err := f.service.Plan(context.Background()); err == nil {
 				t.Fatal("unsafe migration accepted")
@@ -178,7 +178,7 @@ func TestCancellationAndDigestDriftDoNotMutateSource(t *testing.T) {
 	if err = f.service.Apply(context.Background(), plan); err == nil || !strings.Contains(err.Error(), "plan changed") {
 		t.Fatalf("drift error=%v", err)
 	}
-	if _, err = os.Stat(filepath.Join(f.home, ".argis")); !errors.Is(err, os.ErrNotExist) {
+	if _, err = os.Stat(filepath.Join(f.home, ".aegis")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("drift created canonical root: %v", err)
 	}
 }
@@ -230,12 +230,17 @@ func TestRewriteConfigChangesOnlyOwnedPathFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	discovery, err := resolved.Discover()
+	if err != nil || discovery.Presence != layout.Legacy {
+		t.Fatalf("legacy discovery=%+v err=%v", discovery, err)
+	}
+	resolved = resolved.WithLegacy(discovery)
 	rewritten, err := rewriteConfig(resolved)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(rewritten)
-	for _, expected := range []string{filepath.Join(f.home, ".argis", "state"), filepath.Join(f.home, ".argis", "state", "audit-checkpoints"), external, "token: \"" + f.state + "\""} {
+	for _, expected := range []string{filepath.Join(f.home, ".aegis", "state"), filepath.Join(f.home, ".aegis", "state", "audit-checkpoints"), external, "token: \"" + f.state + "\""} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("rewritten config missing preserved/rewritten value %q:\n%s", expected, text)
 		}
@@ -277,8 +282,8 @@ func TestMigrationPreservesCredentialAuthorityLinkageAndBytes(t *testing.T) {
 	if err = f.service.Apply(context.Background(), plan); err != nil {
 		t.Fatal(err)
 	}
-	destinationDatabase := filepath.Join(f.home, ".argis", "state", "credentials", "authority.db")
-	destinationKEK := filepath.Join(f.home, ".argis", "state", "credentials", "authority.kek")
+	destinationDatabase := filepath.Join(f.home, ".aegis", "state", "credentials", "authority.db")
+	destinationKEK := filepath.Join(f.home, ".aegis", "state", "credentials", "authority.kek")
 	gotDatabase, _ := os.ReadFile(destinationDatabase)
 	gotKEK, _ := os.ReadFile(destinationKEK)
 	if string(gotDatabase) != string(databaseBytes) || string(gotKEK) != string(kekBytes) {

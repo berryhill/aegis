@@ -13,7 +13,7 @@ import (
 func migrateLayoutCmd(service *migration.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile) *cobra.Command {
 	return &cobra.Command{
 		Use:   "migrate-layout",
-		Short: "Migrate an exact legacy local installation to ~/.argis",
+		Short: "Migrate an exact legacy local installation to ~/.aegis",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if profile == DevelopmentProfile {

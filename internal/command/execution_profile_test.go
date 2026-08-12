@@ -81,7 +81,10 @@ func TestDevelopmentProfileUsesRepositoryAndRejectsProductionPaths(t *testing.T)
 		t.Fatalf("production path accepted by development profile: %v", err)
 	}
 	if err := validateConfiguredPathsProfile(DevelopmentProfile, map[string]string{"state": filepath.Join(home, ".argis", "state")}); err == nil {
-		t.Fatal("production state accepted through development configuration")
+		t.Fatal("former production state accepted through development configuration")
+	}
+	if err := validateConfiguredPathsProfile(DevelopmentProfile, map[string]string{"state": filepath.Join(home, ".aegis", "state")}); err == nil {
+		t.Fatal("canonical production state accepted through development configuration")
 	}
 	if err := validateConfiguredPathsProfile(DevelopmentProfile, map[string]string{"state": filepath.Join(repository, ".aegis-fixture", "state")}); err != nil {
 		t.Fatalf("isolated repository fixture rejected: %v", err)
@@ -95,6 +98,46 @@ func TestDevelopmentProfileUsesRepositoryAndRejectsProductionPaths(t *testing.T)
 	}
 	if err := validateConfiguredPathsProfile(DevelopmentProfile, map[string]string{"credential database": alias}); err == nil {
 		t.Fatal("symlink alias to production state accepted")
+	}
+}
+
+func TestProductionProfileUsesCanonicalRootAndRefusesFormerRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	resolved, err := resolveExecutionProfile(ProductionProfile, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, ".aegis"); resolved.Root != want {
+		t.Fatalf("production root=%q want %q", resolved.Root, want)
+	}
+	formerRoot := filepath.Join(home, ".argis")
+	if err := os.Mkdir(formerRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(formerRoot, "aegis.yaml"), []byte("malformed: [\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	root := NewRoot(Dependencies{
+		In:         strings.NewReader(""),
+		Out:        &output,
+		Err:        io.Discard,
+		Version:    "0.1.27",
+		Profile:    ProductionProfile,
+		IsTerminal: func(io.Reader, io.Writer) bool { return true },
+	})
+	root.SetArgs(nil)
+	err = root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "migrate-layout") {
+		t.Fatalf("former production root did not require explicit migration: %v", err)
+	}
+	if got := output.String(); got != "" {
+		t.Fatalf("lifecycle denial emitted startup output before admission: %q", got)
+	}
+	if _, statErr := os.Lstat(filepath.Join(home, ".aegis")); !os.IsNotExist(statErr) {
+		t.Fatalf("denied startup initialized canonical root beside former root: %v", statErr)
 	}
 }
 

@@ -2,35 +2,35 @@
 
 ## Per-operator production and development defaults
 
-Stable release binaries use the literal production root `~/.argis`. Source-built binaries whose version is `dev` use `.aegis` in the Aegis repository root containing the executable. Aegis verifies the development executable directory using a real matching `go.mod`, a non-symlink `.git` worktree marker, and containment below the authenticated operator home; a copied development binary fails closed. A pre-rename `.aegis-dev` tree is detected and denied rather than silently merged, copied, or deleted. It resolves `~` for production to the authenticated effective operator's clean, absolute, owned home and never passes a tilde to filesystem APIs. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` do not alter either profile.
+Stable release binaries use the literal production root `~/.aegis`. Source-built binaries whose version is `dev` use `.aegis` in the Aegis repository root containing the executable. Aegis verifies the development executable directory using a real matching `go.mod`, a non-symlink `.git` worktree marker, and containment below the authenticated operator home; a copied development binary fails closed. The former production root `~/.argis`, prior XDG defaults, and a pre-rename repository `.aegis-dev` tree are legacy inputs and are never selected for ordinary initialization. It resolves `~` for production to the authenticated effective operator's clean, absolute, owned home and never passes a tilde to filesystem APIs. `XDG_CONFIG_HOME` and `XDG_STATE_HOME` do not alter either profile.
 
 ```text
-~/.argis/                                      0700
-~/.argis/aegis.yaml                           0600
-~/.argis/state/                               0700
-~/.argis/state/transport/                     0700
-~/.argis/state/transport/api.token            0600 generated reusable transport custody
-~/.argis/state/transport/aegis.sock           0600 while the daemon is online
-~/.argis/state/transport/aegis.sock.lock      0600 persistent cooperating-daemon lock inode
-~/.argis/state/audit-checkpoints/
-~/.argis/state/credentials/authority.db
-~/.argis/state/credentials/authority.kek
-~/.argis/state/manager/certifications/
-~/.argis/state/manager/ollama-models/
-~/.argis/state/runtime/
-~/.argis/state/charters/
-~/.argis/state/plans/
-~/.argis/state/approvals/
-~/.argis/state/persistence/authority-v1/        0700
-~/.argis/state/persistence/authority-v1/ACTIVE 0600
-~/.argis/state/persistence/authority-v1/CLEAN  0600 when closed
-~/.argis/state/persistence/authority-v1/DIRTY  0600 while open
-~/.argis/state/persistence/authority-v1/MAINTENANCE 0600 cooperative lifecycle lock
-~/.argis/state/persistence/authority-v1/stores/store-<generation>.badger/
-~/.argis/state/persistence/authority-v1/staging/
-~/.argis/state/persistence/authority-v1/retired/
-~/.argis/state/receipts/
-~/.argis/state/provisioned/
+~/.aegis/                                      0700
+~/.aegis/aegis.yaml                           0600
+~/.aegis/state/                               0700
+~/.aegis/state/transport/                     0700
+~/.aegis/state/transport/api.token            0600 generated reusable transport custody
+~/.aegis/state/transport/aegis.sock           0600 while the daemon is online
+~/.aegis/state/transport/aegis.sock.lock      0600 persistent cooperating-daemon lock inode
+~/.aegis/state/audit-checkpoints/
+~/.aegis/state/credentials/authority.db
+~/.aegis/state/credentials/authority.kek
+~/.aegis/state/manager/certifications/
+~/.aegis/state/manager/ollama-models/
+~/.aegis/state/runtime/
+~/.aegis/state/charters/
+~/.aegis/state/plans/
+~/.aegis/state/approvals/
+~/.aegis/state/persistence/authority-v1/        0700
+~/.aegis/state/persistence/authority-v1/ACTIVE 0600
+~/.aegis/state/persistence/authority-v1/CLEAN  0600 when closed
+~/.aegis/state/persistence/authority-v1/DIRTY  0600 while open
+~/.aegis/state/persistence/authority-v1/MAINTENANCE 0600 cooperative lifecycle lock
+~/.aegis/state/persistence/authority-v1/stores/store-<generation>.badger/
+~/.aegis/state/persistence/authority-v1/staging/
+~/.aegis/state/persistence/authority-v1/retired/
+~/.aegis/state/receipts/
+~/.aegis/state/provisioned/
 
 <repository>/.aegis/                           0700, Git-ignored
 <repository>/.aegis/aegis.yaml                0600
@@ -51,8 +51,9 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 
 | Path or source | Classification |
 |---|---|
-| `~/.argis/aegis.yaml` | canonical Aegis-owned local configuration |
-| `~/.argis/state` and implemented children above | canonical Aegis-owned local state |
+| `~/.aegis/aegis.yaml` | canonical Aegis-owned local configuration |
+| `~/.aegis/state` and implemented children above | canonical Aegis-owned local state |
+| `~/.argis/aegis.yaml`, `~/.argis/state` | former production layout; recognized only as an explicit migration/reset source |
 | `state/persistence/authority-v1` | generation-managed Badger session-authority persistence; separate from the bbolt credential authority |
 | `state/transport/api.token` | generated owner-only API transport material; configuration contains only this absolute path |
 | `state/transport/aegis.sock` and `.lock` | online daemon transport and persistent singleton-lock inode; the lock is acquired before any stale-socket mutation |
@@ -77,22 +78,23 @@ The typed resolver in `internal/layout` is the source for both profile roots and
 
 Before ordinary service construction, root dispatch classifies exactly one lifecycle path from the complete profile-owned layout: initialization, exact legacy migration, reset, repair denial, a utility command, or normal startup. For a release binary with no explicit `--config`, production discovery is artifact-derived and read-only. A development binary supplies its fixed development configuration path, never performs production/legacy discovery, and explicitly refuses `migrate-layout`:
 
-- no canonical installation or meaningful legacy artifacts: `uninitialized`, and bootstrap uses only `~/.argis`; an empty canonical root/state or a state tree containing only the deliberately preserved managed-model store is not an installation;
+- no canonical installation or meaningful former/XDG artifacts: `uninitialized`, and bootstrap uses only `~/.aegis`; an empty canonical root/state or a state tree containing only the deliberately preserved managed-model store is not an installation;
 - before configuration publication and again at apply time, initialization classifies all three legacy authority JSON surfaces together; populated, unreadable, symlinked, non-directory, wrong-owner, or wrong-mode paths deny rather than being merged into the Badger store;
 - canonical only: validate and use canonical state;
-- legacy only: `legacy-layout-detected`; do not initialize a second installation;
-- canonical plus legacy: fail closed as `canonical_and_legacy_layout_ambiguous`;
+- exactly one former/XDG source only: `legacy-layout-detected`; do not initialize a second installation;
+- canonical plus any former/XDG source: fail closed as `canonical_and_legacy_layout_ambiguous`;
+- multiple meaningful former/XDG sources: fail closed as ambiguous rather than selecting or unioning them;
 - empty retained legacy state/checkpoint children after a safe reset or migration do not count as installations;
 - explicit `--config`: inspect only that deployment and do not infer migration/deletion authority from local defaults;
 - environment values are configuration precedence, not deletion authority.
 
-`aegis migrate-layout` is Linux-only because automatic cleanup requires descriptor-anchored no-follow operations. It authenticates the OS principal, accepts only exact legacy state/checkpoint defaults and a secure valid config, rejects unknown/symlinked/hard-linked artifacts and destination collisions, prints a digest-bound source/destination inventory, requires a real terminal and exact `migrate aegis to ~/.argis`, copies through a mode-`0700` staging root, fsyncs and verifies the destination, proves any configured bbolt authority opens with the same deployment identity and custody, publishes without overwrite, and only then cleans sources. Copy is used on both same- and cross-filesystem source layouts. Only structured Aegis-owned path fields are rewritten. On unsupported platforms, missing systemd custody, or authority-linkage failure it fails before mutation.
+`aegis migrate-layout` is Linux-only because automatic cleanup requires descriptor-anchored no-follow operations. It authenticates the OS principal, accepts exactly one artifact-derived former `~/.argis` or XDG source with secure valid configuration/state/checkpoint defaults, rejects unknown/symlinked/hard-linked artifacts and destination collisions, prints a digest-bound source/destination inventory, requires a real terminal and exact `migrate aegis to ~/.aegis`, copies through a mode-`0700` staging root, fsyncs and verifies the destination, proves any configured bbolt authority opens with the same deployment identity and custody, publishes without overwrite, and only then cleans sources. Copy is used on both same- and cross-filesystem source layouts. Only structured Aegis-owned path fields are rewritten. On unsupported platforms, missing systemd custody, or authority-linkage failure it fails before mutation.
 
 Migration does not copy or render credential values. Credential database/KEK and certification bytes move with state and retain their exact cryptographic/model bindings; systemd credentials and external assets remain outside the plan. A staging collision or post-publication cleanup failure reports an exact path and leaves data for inspection rather than weakening validation.
 
 ## Reset authority
 
-Production reset authorizes only validated known artifacts below `~/.argis`; development reset authorizes only validated known artifacts below the exact verified `<repository>/.aegis`. Neither executable accepts an arbitrary explicit deployment as reset authority. The repository exception applies only to that ignored subtree; source files and every sibling repository path remain prohibited. Reset preserves the managed model store and all external dependencies and removes configuration last. If no preserved model data remains it also removes the empty canonical root; otherwise default discovery ignores the model-only retained tree so reset still returns `uninitialized`. Legacy reset accepts only exact recognized defaults. It does not require or perform `chmod` on external XDG parents. A mode-`0775` `~/.local/state` is traversal context, not an Aegis artifact or deletion root: every removal is opened relative to the validated Aegis child descriptor with no-follow and device/inode checks. Where deleting the child entry through that external parent is unsafe, reset truthfully retains the empty child. Empty retained roots are ignored by default discovery, so successful reset is `uninitialized`.
+Production reset authorizes only validated known artifacts below canonical `~/.aegis` or the one exactly discovered former/XDG source; development reset authorizes only validated known artifacts below the exact verified `<repository>/.aegis`. Neither executable accepts an arbitrary explicit deployment as reset authority. The repository exception applies only to that ignored subtree; source files and every sibling repository path remain prohibited. Reset preserves the managed model store and all external dependencies and removes configuration last. If no preserved model data remains it also removes the empty canonical root; otherwise default discovery ignores the model-only retained tree so reset still returns `uninitialized`. Legacy reset accepts only exact recognized defaults. It does not require or perform `chmod` on external XDG parents. A mode-`0775` `~/.local/state` is traversal context, not an Aegis artifact or deletion root: every removal is opened relative to the validated Aegis child descriptor with no-follow and device/inode checks. Where deleting the child entry through that external parent is unsafe, reset truthfully retains the empty child. Empty retained roots are ignored by default discovery, so successful reset is `uninitialized`.
 
 All reset paths retain bounded inventory, exact plan digest, real-TTY default-deny `[y/N]` confirmation, identity revalidation, unknown-artifact denial, hard-link/symlink denial, repository/root/home denial, and postcondition verification. Development reset intentionally skips authority-passphrase authentication. If a production reset would delete credential records or local encrypted KEK material, it authenticates the existing minimum-12-byte passphrase-file authority before confirmation and independently again after `yes`; missing, incorrect, malformed, or different custody denies before mutation. Pathname checks alone are not claimed as race safety.
 
