@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+
+- Made bare interactive `aegis` and explicit `aegis init` one lower-resistance guided journey: the bootstrap states its purpose and safe exit/resume contract, renders five artifact-derived stages with completed/current/remaining progress, suppresses repeated verified checks, and progressively discloses advanced credential custody behind the recommended passphrase-encrypted local default. Exact previews, confirmations, revalidation, and fail-closed repair behavior remain authoritative.
+
 ### Fixed
 
 - Fixed bare production `aegis reset` so artifact-derived discovery selects the sole former or XDG legacy layout instead of incorrectly planning against the canonical default. Explicit configuration remains non-authoritative for reset, while canonical-plus-legacy and multiple-legacy ambiguity still fail closed.

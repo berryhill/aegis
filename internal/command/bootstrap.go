@@ -52,9 +52,11 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 	var authorityPassphrase []byte
 	defer wipeSecret(authorityPassphrase)
 	fmt.Fprintln(cmd.OutOrStdout(), "AEGIS / bootstrap")
-	fmt.Fprintln(cmd.OutOrStdout(), "Deterministic local setup. The model does not choose or authorize any step.")
+	fmt.Fprintln(cmd.OutOrStdout(), "Set up one authenticated, exact-local Aegis manager. Aegis verifies each result before continuing; the model never chooses or authorizes a step.")
+	fmt.Fprintln(cmd.OutOrStdout(), "You can exit at any prompt and rerun 'aegis init'. Progress is derived from verified artifacts, so completed stages are not repeated.")
 	inspection := config.Inspect(configPath)
 	if inspection.State == config.StateAbsent || inspection.State == config.StatePartial {
+		renderOnboardingProgress(cmd, onboarding.Snapshot{State: onboarding.Uninitialized})
 		initialized, err := runFirstInitializationWithInput(cmd, initializer, configPath, statePath, input)
 		if err != nil || !initialized {
 			return false, err
@@ -70,7 +72,7 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 		if err := presentation.Emit(tui.Event{Kind: tui.BootstrapInspectionComplete, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("artifact-derived bootstrap state: %s (%s)", snapshot.State, snapshot.Reason)}); err != nil {
 			return false, err
 		}
-		renderBootstrapInspection(cmd, snapshot)
+		renderOnboardingProgress(cmd, snapshot)
 		switch snapshot.State {
 		case onboarding.Ready:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageComplete, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Message: "all manager prerequisites verified"})
@@ -113,18 +115,92 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 	return false, errors.New("bootstrap did not converge after bounded state transitions")
 }
 
-func renderBootstrapInspection(cmd *cobra.Command, snapshot onboarding.Snapshot) {
-	fmt.Fprintf(cmd.OutOrStdout(), "\nInstallation inspection\n  configuration  %s\n  state          %s\n  derived state  %s\n  reason         %s\n", snapshot.ConfigPath, valueOr(snapshot.StatePath, "not created"), snapshot.State, snapshot.Reason)
+var onboardingStages = []string{
+	"local identity and configuration",
+	"credential authority",
+	"Hermes and local Ollama runtime",
+	"exact model binding",
+	"end-to-end certification",
+}
+
+// renderOnboardingProgress shows only the current artifact-derived obligation.
+// Verified stages are summarized rather than replayed on every transition.
+func renderOnboardingProgress(cmd *cobra.Command, snapshot onboarding.Snapshot) {
+	completed := onboardingCompletedStages(snapshot)
+	if completed >= len(onboardingStages) {
+		fmt.Fprintf(cmd.OutOrStdout(), "\nSetup progress  %d/%d verified — complete\n", completed, len(onboardingStages))
+		return
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "\nSetup progress  %d/%d verified\n  now            %s\n", completed, len(onboardingStages), onboardingStages[completed])
+	if remaining := len(onboardingStages) - completed - 1; remaining > 0 {
+		fmt.Fprintf(cmd.OutOrStdout(), "  after this     %d stage(s) remain\n", remaining)
+	}
+	if snapshot.Reason != "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "  status         %s\n", snapshot.Reason)
+	}
 	for _, check := range snapshot.Checks {
-		fmt.Fprintf(cmd.OutOrStdout(), "  [%-15s] %s", check.Status, check.Name)
+		if check.Status == "verified" {
+			continue
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "  evidence       %s: %s", check.Name, check.Status)
 		if check.Reason != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), " (%s)", check.Reason)
 		}
 		fmt.Fprintln(cmd.OutOrStdout())
-		if check.Remedy != "" && check.Status != "verified" {
-			fmt.Fprintln(cmd.OutOrStdout(), "    next:", check.Remedy)
+		if check.Remedy != "" {
+			fmt.Fprintln(cmd.OutOrStdout(), "  next           "+check.Remedy)
+		}
+		break
+	}
+}
+
+func onboardingCompletedStages(snapshot onboarding.Snapshot) int {
+	switch snapshot.State {
+	case onboarding.PrincipalConfigured:
+		return 1
+	case onboarding.AuthorityConfigured:
+		return 2
+	case onboarding.RuntimeConfigured:
+		return 3
+	case onboarding.ModelPresent, onboarding.ModelCertified:
+		return 4
+	case onboarding.Ready:
+		return 5
+	case onboarding.RepairRequired:
+		return completedStagesFromChecks(snapshot.Checks)
+	default:
+		return 0
+	}
+}
+
+func completedStagesFromChecks(checks []onboarding.Check) int {
+	verified := make(map[string]bool, len(checks))
+	for _, check := range checks {
+		if check.Status == "verified" {
+			verified[check.Name] = true
 		}
 	}
+	completed := 0
+	if !verified["principal"] {
+		return completed
+	}
+	completed++
+	if !verified["credential-authority"] {
+		return completed
+	}
+	completed++
+	if !verified["Hermes Agent"] || !verified["Ollama"] {
+		return completed
+	}
+	completed++
+	if !verified["exact-model"] {
+		return completed
+	}
+	completed++
+	if verified["certification"] {
+		completed++
+	}
+	return completed
 }
 
 func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot, unlocked *[]byte) (bool, error) {
@@ -201,23 +277,39 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 		fmt.Fprintln(cmd.OutOrStdout(), "Systemd-custody authority initialized and verified.")
 		return true, nil
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "\nCredential authority custody")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [1] passphrase-encrypted local KEK (default; works in this terminal)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [2] systemd service credential (advanced; must already be delivered by a service unit)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [3] plaintext host file (development only; weaker)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [4] exit without mutation")
-	fmt.Fprint(cmd.OutOrStdout(), "Select [1]: ")
+	fmt.Fprintln(cmd.OutOrStdout(), "\nCredential authority")
+	fmt.Fprintln(cmd.OutOrStdout(), "Recommended: a passphrase-encrypted local key. It works in this terminal and the passphrase is never stored.")
+	fmt.Fprint(cmd.OutOrStdout(), "Use the recommended custody? [Y/n/advanced]: ")
 	answer, eof, err := readBootstrapLine(cmd, input, 32)
-	if err != nil || eof || answer == "4" || answer == "exit" {
+	if err != nil || eof || answer == "exit" {
+		return false, err
+	}
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if answer == "" || answer == "y" || answer == "yes" || answer == "1" || answer == "passphrase-file" {
+		return bootstrapPassphraseAuthority(cmd, build, snapshot, unlocked)
+	}
+	if answer == "n" || answer == "no" {
+		fmt.Fprintln(cmd.OutOrStdout(), "Custody setup declined; no mutation was performed. Rerun 'aegis init' to resume.")
+		return false, nil
+	}
+	if answer != "advanced" && answer != "a" {
+		fmt.Fprintln(cmd.OutOrStdout(), "No valid custody choice selected; no mutation was performed. Rerun 'aegis init' to resume.")
+		return false, nil
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), "\nAdvanced custody")
+	fmt.Fprintln(cmd.OutOrStdout(), "  [1] systemd service credential (must already be delivered by a service unit)")
+	fmt.Fprintln(cmd.OutOrStdout(), "  [2] plaintext host file (development only; weaker)")
+	fmt.Fprintln(cmd.OutOrStdout(), "  [3] exit without mutation")
+	fmt.Fprint(cmd.OutOrStdout(), "Select: ")
+	answer, eof, err = readBootstrapLine(cmd, input, 32)
+	if err != nil || eof || answer == "3" || answer == "exit" {
 		return false, err
 	}
 	custody := ""
 	switch answer {
-	case "", "1", "passphrase-file":
-		return bootstrapPassphraseAuthority(cmd, build, snapshot, unlocked)
-	case "2", "systemd":
+	case "1", "systemd":
 		custody = "systemd"
-	case "3", "host-file":
+	case "2", "host-file":
 		custody = "host-file"
 	default:
 		fmt.Fprintln(cmd.OutOrStdout(), "No valid custody choice selected; no mutation performed.")
@@ -548,11 +640,4 @@ func parseMenuIndex(value string, maximum int) int {
 		return -1
 	}
 	return index - 1
-}
-
-func valueOr(value string, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
 }
