@@ -287,7 +287,7 @@ func TestBareInteractiveFirstRunInitializesThenStartsManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, expected := range []string{"AEGIS / bootstrap", "Aegis first-run initialization", "Configuration path: " + configPath, "State path: " + statePath, "Exact configuration to write:", "Initialization completed atomically", "derived state  principal-configured", "Credential authority custody"} {
+	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "rerun 'aegis init'", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "Configuration path: " + configPath, "State path: " + statePath, "Exact configuration to write:", "Initialization completed atomically", "Setup progress  1/5 verified", "now            credential authority", "Recommended: a passphrase-encrypted local key"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("output missing %q: %s", expected, text)
 		}
