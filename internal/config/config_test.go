@@ -115,7 +115,7 @@ func TestLiteralArgisDefaultsIgnoreXDGScattering(t *testing.T) {
 		t.Fatal(err)
 	}
 	defaults := Defaults()
-	if path != filepath.Join(home, ".argis", "aegis.yaml") || defaults.StateDir != filepath.Join(home, ".argis", "state") || defaults.Audit.CheckpointDir != filepath.Join(home, ".argis", "state", "audit-checkpoints") || defaults.Principal.AuthTTL != 15*time.Minute || defaults.Manager.Hermes.TurnTimeout != 5*time.Minute || defaults.Manager.Inference.RequestTimeout != 5*time.Minute {
+	if path != filepath.Join(home, ".aegis", "aegis.yaml") || defaults.StateDir != filepath.Join(home, ".aegis", "state") || defaults.Audit.CheckpointDir != filepath.Join(home, ".aegis", "state", "audit-checkpoints") || defaults.Principal.AuthTTL != 15*time.Minute || defaults.Manager.Hermes.TurnTimeout != 5*time.Minute || defaults.Manager.Inference.RequestTimeout != 5*time.Minute {
 		t.Fatalf("scattered defaults: path=%q state=%q checkpoints=%q", path, defaults.StateDir, defaults.Audit.CheckpointDir)
 	}
 }
@@ -148,10 +148,10 @@ func TestDefaultInspectionDetectsLegacyAndCanonicalAmbiguity(t *testing.T) {
 	if got := Inspect(""); got.State != StateLegacy || got.ReasonCode != "legacy-layout-detected" {
 		t.Fatalf("legacy=%+v", got)
 	}
-	if err := os.Mkdir(filepath.Join(home, ".argis"), 0700); err != nil {
+	if err := os.Mkdir(filepath.Join(home, ".aegis"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".argis", "unknown"), []byte("x"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".aegis", "unknown"), []byte("x"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if got := Inspect(""); got.State != StateAmbiguous || got.ReasonCode != "canonical_and_legacy_layout_ambiguous" {

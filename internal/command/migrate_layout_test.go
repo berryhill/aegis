@@ -88,7 +88,7 @@ func TestMigrateLayoutCommandPTYConfirmationAndDecline(t *testing.T) {
 				if err != nil || !strings.Contains(output, `"state": "canonical"`) {
 					t.Fatalf("err=%v output=%s", err, output)
 				}
-				if _, statErr := os.Stat(filepath.Join(fixture.home, ".argis", "aegis.yaml")); statErr != nil {
+				if _, statErr := os.Stat(filepath.Join(fixture.home, ".aegis", "aegis.yaml")); statErr != nil {
 					t.Fatal(statErr)
 				}
 				return
@@ -102,7 +102,7 @@ func TestMigrateLayoutCommandPTYConfirmationAndDecline(t *testing.T) {
 			if _, statErr := os.Stat(fixture.config); statErr != nil {
 				t.Fatalf("source changed: %v", statErr)
 			}
-			if _, statErr := os.Lstat(filepath.Join(fixture.home, ".argis")); !errors.Is(statErr, os.ErrNotExist) {
+			if _, statErr := os.Lstat(filepath.Join(fixture.home, ".aegis")); !errors.Is(statErr, os.ErrNotExist) {
 				t.Fatalf("destination changed: %v", statErr)
 			}
 		})
@@ -130,7 +130,7 @@ func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
 	if err := bootstrapRoot.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	canonical := filepath.Join(fixture.home, ".argis", "aegis.yaml")
+	canonical := filepath.Join(fixture.home, ".aegis", "aegis.yaml")
 	if inspection := config.Inspect(""); inspection.State != config.StateValid || inspection.Path != canonical {
 		t.Fatalf("canonical bootstrap inspection=%+v output=%s", inspection, bootstrap.String())
 	}

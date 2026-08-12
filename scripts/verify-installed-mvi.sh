@@ -109,7 +109,7 @@ do
     exit 1
   }
 done
-[ ! -e "$home/.argis" ] || {
+[ ! -e "$home/.aegis" ] || {
   printf 'non-interactive installed first run mutated production state\n' >&2
   exit 1
 }
