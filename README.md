@@ -77,7 +77,7 @@ The binding is mandatory. Precedence is:
 
 ## Authenticated user service and console
 
-On an initialized production installation, bare interactive `aegis` reconciles an absent transport only after showing the exact configuration digests, absolute generated token-file path, and Unix-socket path and requiring the literal `APPLY SERVE TRANSPORT`. It then previews one deterministic `systemd --user` unit and requires the separately exact `INSTALL AEGIS USER SERVICE` principal approval. Nothing enables linger, installs a root/system service, takes over a foreign unit, or creates a persistent Hermes gateway. The approved same-account service becomes the sole online owner of authoritative stores; while its socket exists, store-backed CLI commands fail with `control_plane_online` rather than falling back to direct store access.
+On an initialized production installation, bare interactive `aegis` reconciles an absent transport only after showing the exact configuration digests, absolute generated token-file path, and Unix-socket path and receiving conventional `[Y/n]` confirmation. It then previews one deterministic `systemd --user` unit and requests a separate `[Y/n]` confirmation before installation and activation. Both prompts accept Enter, `y`, or `yes`; every other answer, EOF, cancellation, or input failure declines without mutation. Nothing enables linger, installs a root/system service, takes over a foreign unit, or creates a persistent Hermes gateway. The approved same-account service becomes the sole online owner of authoritative stores; while its socket exists, store-backed CLI commands fail with `control_plane_online` rather than falling back to direct store access.
 
 Use the explicit lifecycle commands when desired:
 

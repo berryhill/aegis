@@ -103,14 +103,11 @@ func reconcileServeTransport(cmd *cobra.Command, configPath string, input *termi
 	if err != nil {
 		return false, usage(err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "\nProtected control-plane transport reconciliation\nConfiguration: %s\nToken custody: %s (new owner-only file; value will not be displayed)\nUnix socket: %s\nOriginal digest: %s\nResult digest: %s\nType %q to apply: ", plan.ConfigPath, plan.TokenPath, plan.UnixSocket, plan.OriginalDigest, plan.ResultDigest, plan.Confirmation)
-	answer, _, err := input.ReadLine(cmd.Context(), 128)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, err
-	}
-	if strings.TrimSpace(answer) != plan.Confirmation {
+	fmt.Fprintf(cmd.OutOrStdout(), "\nProtected control-plane transport reconciliation\nConfiguration: %s\nToken custody: %s (new owner-only file; value will not be displayed)\nUnix socket: %s\nOriginal digest: %s\nResult digest: %s\nApply this transport reconciliation? [Y/n]: ", plan.ConfigPath, plan.TokenPath, plan.UnixSocket, plan.OriginalDigest, plan.ResultDigest)
+	approved, err := readDefaultYes(cmd, input)
+	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Serve transport reconciliation declined; no mutations were performed.")
-		return false, nil
+		return false, err
 	}
 	if err = onboarding.ApplyTransport(cmd.Context(), plan); err != nil {
 		return false, err
@@ -120,14 +117,11 @@ func reconcileServeTransport(cmd *cobra.Command, configPath string, input *termi
 }
 
 func approveServicePlan(cmd *cobra.Command, plan userservice.Plan, input *terminalInput) (bool, error) {
-	fmt.Fprintf(cmd.OutOrStdout(), "Aegis user-service installation preview\nPrincipal: %s\nUnit: %s\nDigest: %s\nExecutable: %s\nConfiguration: %s\nConsole: %s\nScope: systemctl --user; lingering will not be enabled.\nType %q to install and activate: ", plan.Principal, plan.UnitPath, plan.UnitDigest, plan.Executable, plan.ConfigPath, plan.Origin, plan.Confirmation)
-	answer, _, err := input.ReadLine(cmd.Context(), 128)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, err
-	}
-	if strings.TrimSpace(answer) != plan.Confirmation {
+	fmt.Fprintf(cmd.OutOrStdout(), "Aegis user-service installation preview\nPrincipal: %s\nUnit: %s\nDigest: %s\nExecutable: %s\nConfiguration: %s\nConsole: %s\nScope: systemctl --user; lingering will not be enabled.\nInstall and activate this user service? [Y/n]: ", plan.Principal, plan.UnitPath, plan.UnitDigest, plan.Executable, plan.ConfigPath, plan.Origin)
+	approved, err := readDefaultYes(cmd, input)
+	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "User service installation declined; no service state was changed.")
-		return false, nil
+		return false, err
 	}
 	return true, nil
 }
