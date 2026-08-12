@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.5] - 2026-08-12
+
 ### Changed
 
 - Replaced the production transport-reconciliation and user-service-installation copy/paste phrase gates with separate conventional `[Y/n]` confirmations after their complete previews. Enter, `y`, and `yes` confirm; all other input, EOF, cancellation, and input failure decline without mutation, while exact principal, configuration, plan, token-path, unit-byte, and digest revalidation remains authoritative.
