@@ -10,6 +10,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Made user-service activation audit-current, compensating, and diagnosable. Apply now revalidates the complete approved plan immediately before mutation, records pre-existing active/enabled state, executes explicit publication, daemon-reload, enable/start, and authenticated audit-current readiness phases, preserves pre-existing exact unit/service state during rollback, removes only newly introduced state, and reports phase, readiness, systemctl stderr, and joined rollback failures. Authenticated `/readyz` now observes transport identity and audit delivery without appending an authentication event that makes its own projection stale.
 - Corrected the stable production root to `~/.aegis`. The former `~/.argis` root is now an explicit migration source only; fresh startup never initializes beside a meaningful former/XDG installation, canonical-plus-legacy or multiple-legacy layouts fail closed, and Linux migration/reset operate on the exact artifact-derived source.
 
 ## [0.2.4] - 2026-08-11
