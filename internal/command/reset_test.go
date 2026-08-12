@@ -108,6 +108,59 @@ func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 	}
 }
 
+func TestProductionBareResetSelectsDiscoveredFormerLayout(t *testing.T) {
+	fixture := newResetCommandFixture(t, false)
+	t.Setenv("HOME", fixture.home)
+	fixture.config = filepath.Join(fixture.home, ".argis", "aegis.yaml")
+	fixture.state = filepath.Join(fixture.home, ".argis", "state")
+	if err := os.MkdirAll(filepath.Dir(fixture.config), 0700); err != nil {
+		t.Fatal(err)
+	}
+	current, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := fmt.Sprintf("state_dir: %q\nprincipal:\n  id: principal\n  name: Principal\n  uid: %q\n  user: %q\n  auth_ttl: 5m\naudit:\n  checkpoint_dir: %q\n", fixture.state, current.Uid, current.Username, filepath.Join(fixture.state, "audit-checkpoints"))
+	if err = os.WriteFile(fixture.config, []byte(document), 0600); err != nil {
+		t.Fatal(err)
+	}
+	legacyArtifact := filepath.Join(fixture.state, "plans", "legacy.json")
+	if err = os.MkdirAll(filepath.Dir(legacyArtifact), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(legacyArtifact, []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	root := NewRoot(Dependencies{
+		In:         strings.NewReader(resetdomain.Confirmation + "\n"),
+		Out:        &output,
+		Err:        io.Discard,
+		Version:    "0.1.27",
+		Profile:    ProductionProfile,
+		IsTerminal: func(io.Reader, io.Writer) bool { return true },
+		Resetter:   fixture.service,
+	})
+	root.SetArgs([]string{"reset"})
+	if err = root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	preview := output.String()
+	for _, expected := range []string{fixture.config, legacyArtifact, `"configuration_state": "valid"`, `"state": "uninitialized"`} {
+		if !strings.Contains(preview, expected) {
+			t.Fatalf("bare production reset preview missing %q:\n%s", expected, preview)
+		}
+	}
+	entries, err := os.ReadDir(fixture.state)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("retained former state directory not empty: entries=%v err=%v", entries, err)
+	}
+	if inspection := config.Inspect(""); inspection.State != config.StateAbsent {
+		t.Fatalf("default discovery after reset=%+v", inspection)
+	}
+}
+
 func TestResetCommandDeclineEOFNonTTYAndCancellationWriteNothing(t *testing.T) {
 	for _, test := range []struct {
 		name, input string

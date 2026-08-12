@@ -23,7 +23,15 @@ func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.
 		Short: "Return Aegis-owned local onboarding state to uninitialized",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			plan, err := service.Plan(cmd.Context(), options.configFile)
+			configuredPath := options.configFile
+			configFlag := cmd.Flags().Lookup("config")
+			if configFlag == nil {
+				configFlag = cmd.InheritedFlags().Lookup("config")
+			}
+			if profile == ProductionProfile && configFlag != nil && !configFlag.Changed {
+				configuredPath = ""
+			}
+			plan, err := service.Plan(cmd.Context(), configuredPath)
 			if err != nil {
 				return usage(err)
 			}

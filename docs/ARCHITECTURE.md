@@ -93,7 +93,7 @@ flowchart TB
   Init -->|revalidate host UID/user; atomic 0600 link + directory sync| Config[(Aegis configuration)]
   Layout[Production ~/.aegis and verified repository .aegis resolver] --> Config
   Layout --> State
-  Legacy[Read-only legacy discovery] -->|legacy-only + exact phrase| Migration[Verified copy migration]
+  Legacy[Read-only legacy discovery] -->|one artifact-derived legacy source + digest-bound confirmation| Migration[Verified copy migration]
   Migration --> Layout
   Terminal[Principal terminal] --> TUI[Aegis typed rich/plain terminal controller]
   TUI --> Manager[Built-in secrets-manager lifecycle]

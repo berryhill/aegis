@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Fixed bare production `aegis reset` so artifact-derived discovery selects the sole former or XDG legacy layout instead of incorrectly planning against the canonical default. Explicit configuration remains non-authoritative for reset, while canonical-plus-legacy and multiple-legacy ambiguity still fail closed.
+
 ## [0.2.5] - 2026-08-12
 
 ### Changed
