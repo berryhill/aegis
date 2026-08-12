@@ -159,8 +159,41 @@ func TestUnixPeerAuthenticationAndBearerSeparation(t *testing.T) {
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	client := unixClient(svc.Config.API.UnixSocket)
 
-	request, _ := http.NewRequest(http.MethodGet, "http://unix/v1/runtime", nil)
+	for name, authorization := range map[string]string{
+		"missing": "",
+		"wrong":   "Bearer wrong-transport-token",
+	} {
+		t.Run("readyz rejects "+name+" bearer", func(t *testing.T) {
+			request, _ := http.NewRequest(http.MethodGet, "http://unix/readyz", nil)
+			if authorization != "" {
+				request.Header.Set("Authorization", authorization)
+			}
+			response, err := client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("readyz %s bearer status = %d", name, response.StatusCode)
+			}
+		})
+	}
+	request, _ := http.NewRequest(http.MethodGet, "http://unix/readyz", nil)
+	request.Header.Set("Authorization", "Bearer transport-secret")
 	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("authenticated audit-current readyz status = %d", response.StatusCode)
+	}
+	_ = response.Body.Close()
+	if status := svc.AuditDeliveryReadiness(); !status.Current || status.Pending != 0 {
+		t.Fatalf("readiness probe made audit projection stale: %+v", status)
+	}
+
+	request, _ = http.NewRequest(http.MethodGet, "http://unix/v1/runtime", nil)
+	response, err = client.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +202,14 @@ func TestUnixPeerAuthenticationAndBearerSeparation(t *testing.T) {
 	}
 	_ = response.Body.Close()
 	telemetry.mu.Lock()
-	if len(telemetry.observations) == 0 || telemetry.observations[0].Route != "/v1/runtime" || telemetry.observations[0].Status != http.StatusUnauthorized {
+	var runtimeUnauthorized bool
+	for _, observation := range telemetry.observations {
+		if observation.Route == "/v1/runtime" && observation.Status == http.StatusUnauthorized {
+			runtimeUnauthorized = true
+			break
+		}
+	}
+	if !runtimeUnauthorized {
 		t.Fatalf("authentication middleware telemetry=%+v", telemetry.observations)
 	}
 	telemetry.mu.Unlock()

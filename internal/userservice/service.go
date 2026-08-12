@@ -7,8 +7,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -29,6 +31,22 @@ const (
 )
 
 var ErrForeignUnit = errors.New("existing user unit is not owned by this exact Aegis plan")
+
+// ActivationError identifies the failed phase and preserves rollback evidence.
+type ActivationError struct {
+	Phase       string
+	Err         error
+	RollbackErr error
+}
+
+func (e *ActivationError) Error() string {
+	if e.RollbackErr != nil {
+		return fmt.Sprintf("user service activation phase %q failed: %v; rollback failed: %v", e.Phase, e.Err, e.RollbackErr)
+	}
+	return fmt.Sprintf("user service activation phase %q failed: %v", e.Phase, e.Err)
+}
+
+func (e *ActivationError) Unwrap() []error { return []error{e.Err, e.RollbackErr} }
 
 type Plan struct {
 	UnitPath     string `json:"unit_path"`
@@ -72,7 +90,13 @@ func (s Systemctl) Output(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	command := exec.CommandContext(ctx, path, append([]string{"--user"}, args...)...)
 	command.Stdin = nil
-	return command.Output()
+	var output, diagnostic bytes.Buffer
+	command.Stdout = &output
+	command.Stderr = &diagnostic
+	if err := command.Run(); err != nil {
+		return nil, fmt.Errorf("systemctl --user %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(diagnostic.String()), err)
+	}
+	return output.Bytes(), nil
 }
 
 func Preview(executable, configPath string) (Plan, error) {
@@ -124,33 +148,46 @@ func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration)
 	if err != nil {
 		return err
 	}
-	if current.UnitDigest != plan.UnitDigest || current.UnitPath != plan.UnitPath || !bytes.Equal(current.unit, plan.unit) {
+	if !samePlan(current, plan) {
 		return errors.New("user service plan drifted after preview")
 	}
 	if err = inspectUnit(plan.UnitPath, plan.unit); err != nil {
 		return err
 	}
+	active, err := serviceState(ctx, runner, "ActiveState")
+	if err != nil {
+		return activationFailure("capture_state", err, nil)
+	}
+	enabled, err := serviceState(ctx, runner, "UnitFileState")
+	if err != nil {
+		return activationFailure("capture_state", err, nil)
+	}
 	if err = os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
-		return err
+		return activationFailure("publish", err, nil)
 	}
 	published, err := publishUnit(plan.UnitPath, plan.unit)
 	if err != nil {
-		return err
+		return activationFailure("publish", err, nil)
 	}
-	rollback := func() {
-		_ = runner.Run(context.Background(), "disable", "--now", UnitName)
-		if published {
-			_ = os.Remove(plan.UnitPath)
+	rollback := func() error {
+		var rollbackErrs []error
+		if !enabled {
+			rollbackErrs = appendError(rollbackErrs, runner.Run(context.Background(), "disable", UnitName))
 		}
-		_ = runner.Run(context.Background(), "daemon-reload")
+		if !active {
+			rollbackErrs = appendError(rollbackErrs, runner.Run(context.Background(), "stop", UnitName))
+		}
+		if published {
+			rollbackErrs = appendError(rollbackErrs, os.Remove(plan.UnitPath))
+		}
+		rollbackErrs = appendError(rollbackErrs, runner.Run(context.Background(), "daemon-reload"))
+		return errors.Join(rollbackErrs...)
 	}
 	if err = runner.Run(ctx, "daemon-reload"); err != nil {
-		rollback()
-		return err
+		return activationFailure("daemon_reload", err, rollback())
 	}
 	if err = runner.Run(ctx, "enable", "--now", UnitName); err != nil {
-		rollback()
-		return err
+		return activationFailure("enable_start", err, rollback())
 	}
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -159,14 +196,46 @@ func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration)
 	defer cancel()
 	cfg, err := config.Load(plan.ConfigPath, nil)
 	if err != nil {
-		rollback()
-		return err
+		return activationFailure("authenticated_readiness", err, rollback())
 	}
 	if err = waitReady(readyCtx, cfg); err != nil {
-		rollback()
-		return fmt.Errorf("user service failed authenticated readiness: %w", err)
+		return activationFailure("audit_current_readiness", err, rollback())
 	}
 	return nil
+}
+
+func samePlan(left, right Plan) bool {
+	return left.UnitPath == right.UnitPath && left.UnitDigest == right.UnitDigest &&
+		left.Executable == right.Executable && left.ConfigPath == right.ConfigPath &&
+		left.UnixSocket == right.UnixSocket && left.Origin == right.Origin &&
+		left.Principal == right.Principal && left.Confirmation == right.Confirmation &&
+		bytes.Equal(left.unit, right.unit)
+}
+
+func activationFailure(phase string, err, rollbackErr error) error {
+	return &ActivationError{Phase: phase, Err: err, RollbackErr: rollbackErr}
+}
+
+func appendError(errs []error, err error) []error {
+	if err != nil {
+		return append(errs, err)
+	}
+	return errs
+}
+
+func serviceState(ctx context.Context, runner Runner, property string) (bool, error) {
+	output, err := runner.Output(ctx, "show", UnitName, "--property", property, "--value")
+	if err != nil {
+		return false, err
+	}
+	switch strings.TrimSpace(string(output)) {
+	case "active", "enabled", "enabled-runtime", "linked", "linked-runtime":
+		return true, nil
+	case "", "inactive", "failed", "activating", "deactivating", "disabled", "static", "masked", "masked-runtime", "not-found":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected %s state %q", property, strings.TrimSpace(string(output)))
+	}
 }
 
 func Action(ctx context.Context, runner Runner, action string) error {
@@ -264,19 +333,38 @@ func waitReady(ctx context.Context, cfg config.Config) error {
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	var lastErr error
 	for {
 		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/readyz", nil)
 		request.Header.Set("Authorization", "Bearer "+cfg.API.Token)
 		response, err := client.Do(request)
 		if err == nil {
-			_ = response.Body.Close()
-			if response.StatusCode == http.StatusOK {
-				return nil
+			var body struct {
+				Status string `json:"status"`
+				Audit  struct {
+					Current    bool   `json:"current"`
+					Verifiable bool   `json:"verifiable"`
+					Reason     string `json:"reason"`
+				} `json:"audit"`
 			}
+			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body)
+			_ = response.Body.Close()
+			switch {
+			case decodeErr != nil:
+				lastErr = fmt.Errorf("readiness returned HTTP %d with invalid response: %w", response.StatusCode, decodeErr)
+			case response.StatusCode != http.StatusOK:
+				lastErr = fmt.Errorf("readiness returned HTTP %d: status=%q audit_current=%t audit_verifiable=%t reason=%q", response.StatusCode, body.Status, body.Audit.Current, body.Audit.Verifiable, body.Audit.Reason)
+			case body.Status == "ready" && body.Audit.Current && body.Audit.Verifiable:
+				return nil
+			default:
+				lastErr = fmt.Errorf("readiness not audit-current: status=%q reason=%q", body.Status, body.Audit.Reason)
+			}
+		} else {
+			lastErr = err
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return errors.Join(ctx.Err(), lastErr)
 		case <-ticker.C:
 		}
 	}

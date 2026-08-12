@@ -216,8 +216,51 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return next(c)
 		}
 	})
+	authenticateTransport := func(c *echo.Context) (uint32, error) {
+		h := c.Request().Header.Get("Authorization")
+		token, ok := strings.CutPrefix(h, "Bearer ")
+		if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(svc.Config.API.Token)) != 1 {
+			return 0, app.ErrUnauthenticated
+		}
+		uid, ok := c.Request().Context().Value(peerUIDKey{}).(uint32)
+		if !ok {
+			// Bearer authentication is transport-only. Kernel peer evidence is
+			// required before constructing an Aegis subject.
+			return 0, app.ErrUnauthenticated
+		}
+		return uid, nil
+	}
+	protected := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			uid, err := authenticateTransport(c)
+			if err != nil {
+				return err
+			}
+			subject, err := svc.AuthenticateUnixPeer(c.Request().Context(), uid)
+			if err != nil {
+				return err
+			}
+			if !postAuthLimit.allow(subject.ID) {
+				return echo.NewHTTPError(http.StatusTooManyRequests, "rate limit exceeded")
+			}
+			c.Set("subject", subject)
+			return next(c)
+		}
+	}
 	e.GET("/livez", func(c *echo.Context) error { return c.JSON(http.StatusOK, map[string]string{"status": "live"}) })
 	e.GET("/readyz", func(c *echo.Context) error {
+		uid, err := authenticateTransport(c)
+		if err != nil {
+			return err
+		}
+		// Readiness authentication is deliberately observational. Transport
+		// authentication above uses the bearer and kernel SO_PEERCRED directly;
+		// a normal protected-route authentication event would enqueue fresh audit
+		// work immediately before the audit-current check and stale its own result.
+		subjectID := "local-uid:" + strconv.FormatUint(uint64(uid), 10)
+		if !postAuthLimit.allow(subjectID) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, "rate limit exceeded")
+		}
 		if !ready.Load() {
 			return c.JSON(http.StatusServiceUnavailable, map[string]any{"status": "draining", "audit": core.AuditDeliveryStatus{State: "unverifiable", Reason: "service_draining", Verifiable: false}})
 		}
@@ -441,30 +484,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.NoContent(http.StatusNoContent)
 	})
-	protected := func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c *echo.Context) error {
-			h := c.Request().Header.Get("Authorization")
-			token, ok := strings.CutPrefix(h, "Bearer ")
-			if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(svc.Config.API.Token)) != 1 {
-				return app.ErrUnauthenticated
-			}
-			uid, ok := c.Request().Context().Value(peerUIDKey{}).(uint32)
-			if !ok {
-				// Bearer authentication is transport-only. Kernel peer evidence is
-				// required before constructing an Aegis subject.
-				return app.ErrUnauthenticated
-			}
-			subject, err := svc.AuthenticateUnixPeer(c.Request().Context(), uid)
-			if err != nil {
-				return err
-			}
-			if !postAuthLimit.allow(subject.ID) {
-				return echo.NewHTTPError(http.StatusTooManyRequests, "rate limit exceeded")
-			}
-			c.Set("subject", subject)
-			return next(c)
-		}
-	}
 	g := e.Group("/v1")
 	g.Use(protected)
 	g.POST("/console/bootstrap", func(c *echo.Context) error {
