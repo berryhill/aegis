@@ -327,7 +327,7 @@ func readAuthorityPassphrase(cmd *cobra.Command, confirm bool) ([]byte, error) {
 }
 
 func readDefaultYes(cmd *cobra.Command, input *terminalInput) (bool, error) {
-	answer, eof, err := readBootstrapLine(cmd, input, 16)
+	answer, eof, err := readBootstrapLine(cmd, input, 128)
 	if err != nil || eof {
 		return false, err
 	}

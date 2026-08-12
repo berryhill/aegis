@@ -4,6 +4,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+
+- Replaced the production transport-reconciliation and user-service-installation copy/paste phrase gates with separate conventional `[Y/n]` confirmations after their complete previews. Enter, `y`, and `yes` confirm; all other input, EOF, cancellation, and input failure decline without mutation, while exact principal, configuration, plan, token-path, unit-byte, and digest revalidation remains authoritative.
+
 ### Fixed
 
 - Corrected the stable production root to `~/.aegis`. The former `~/.argis` root is now an explicit migration source only; fresh startup never initializes beside a meaningful former/XDG installation, canonical-plus-legacy or multiple-legacy layouts fail closed, and Linux migration/reset operate on the exact artifact-derived source.
