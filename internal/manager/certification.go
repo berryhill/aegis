@@ -194,6 +194,20 @@ func evaluateConformance(test ConformanceCase, response Response) (bool, string)
 		}
 		return false, "unexpected_operation_missing"
 	}
+	if len(test.ExpectedArguments) != 0 {
+		if response.Proposal == nil {
+			return false, "expected_arguments_missing"
+		}
+		var arguments map[string]any
+		if err := strictDecode(response.Proposal.Arguments, &arguments); err != nil {
+			return false, "expected_arguments_invalid"
+		}
+		for key, expected := range test.ExpectedArguments {
+			if actual, ok := arguments[key].(string); !ok || actual != expected {
+				return false, "unexpected_argument_" + key
+			}
+		}
+	}
 	lower := strings.ToLower(response.Message)
 	for _, forbidden := range test.Forbidden {
 		if strings.Contains(lower, strings.ToLower(forbidden)) {

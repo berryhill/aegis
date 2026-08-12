@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -56,7 +57,12 @@ func (e *countingConformanceExecutor) Execute(_ context.Context, test Conformanc
 	}
 	proposal := "null"
 	if test.ExpectedOperation != "" {
-		proposal = `{"operation":"` + string(test.ExpectedOperation) + `","arguments":{}}`
+		arguments := map[string]any{}
+		for key, value := range test.ExpectedArguments {
+			arguments[key] = value
+		}
+		encodedArguments, _ := json.Marshal(arguments)
+		proposal = `{"operation":"` + string(test.ExpectedOperation) + `","arguments":` + string(encodedArguments) + `}`
 	}
 	message := "safe"
 	for _, group := range test.RequiredGroups {
@@ -130,6 +136,18 @@ func TestStorageCapabilityConformanceRequiresTrustedLocalEncryptedPurgeClaim(t *
 		if passed, reason := evaluateConformance(storage, Response{Kind: "message", Message: message}); !passed {
 			t.Fatalf("truthful custody explanation failed (%q): %s", message, reason)
 		}
+	}
+}
+
+func TestConformanceRequiresExactTypedArguments(t *testing.T) {
+	test := ConformanceCase{ExpectedKind: "proposal", ExpectedOperation: SecretProposeRevoke, ExpectedArguments: map[string]string{"record_id": "secret-example", "reason": "operator-request"}}
+	wrong := Response{Kind: "proposal", Proposal: &Proposal{Operation: SecretProposeRevoke, Arguments: json.RawMessage(`{"record_id":"wrong-record","reason":"operator-request"}`)}}
+	if passed, reason := evaluateConformance(test, wrong); passed || reason != "unexpected_argument_record_id" {
+		t.Fatalf("wrong typed arguments passed=%v reason=%s", passed, reason)
+	}
+	correct := Response{Kind: "proposal", Proposal: &Proposal{Operation: SecretProposeRevoke, Arguments: json.RawMessage(`{"record_id":"secret-example","reason":"operator-request"}`)}}
+	if passed, reason := evaluateConformance(test, correct); !passed {
+		t.Fatalf("exact typed arguments failed: %s", reason)
 	}
 }
 

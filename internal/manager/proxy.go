@@ -285,11 +285,16 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "request denied", http.StatusForbidden)
 		return
 	}
-	if len(envelope.Tools) != 0 || envelope.ToolChoice != nil {
+	if len(envelope.Tools) != 0 || !emptyToolChoice(envelope.ToolChoice) {
 		p.lastSafe.Store("request_tools_rejected")
 		http.Error(writer, "request denied", http.StatusForbidden)
 		return
 	}
+	// Hermes may decorate a tool-free chat request with tools:[] and
+	// tool_choice:"none". That pair grants no capability; remove it before
+	// forwarding while continuing to deny every executable tool declaration.
+	envelope.Tools = nil
+	envelope.ToolChoice = nil
 	if envelope.User != "" || envelope.ResponseFormat != nil || !validMessages(envelope.Messages) {
 		p.lastSafe.Store("request_messages_rejected")
 		http.Error(writer, "request denied", http.StatusForbidden)
@@ -394,6 +399,14 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 	_, _ = writer.Write(responseBody)
 }
 
+func emptyToolChoice(choice any) bool {
+	if choice == nil {
+		return true
+	}
+	value, ok := choice.(string)
+	return ok && value == "none"
+}
+
 func safeRequestDecodeDiagnostic(err error) string {
 	const prefix = "json: unknown field \""
 	text := err.Error()
@@ -493,15 +506,7 @@ func managerResponseFormat() any {
 			"strict": true,
 			"schema": map[string]any{"oneOf": []any{
 				branch("message", map[string]any{"type": "null"}),
-				branch("proposal", map[string]any{
-					"type":                 "object",
-					"additionalProperties": false,
-					"required":             []string{"operation", "arguments"},
-					"properties": map[string]any{
-						"operation": map[string]any{"type": "string", "enum": []string{string(StatusShow), string(AuditVerify), string(SessionExit), string(SecretList), string(AuditQuery), string(SecretSearch), string(SecretMetadata), string(SecretHistory), string(SecretProposeCreate), string(SecretProposeRevoke), string(SecretProposeRotate), string(SecretProposeBinding)}},
-						"arguments": map[string]any{"type": "object"},
-					},
-				}),
+				branch("proposal", map[string]any{"oneOf": managerProposalSchemas()}),
 			}},
 		},
 	}

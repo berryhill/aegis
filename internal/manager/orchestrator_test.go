@@ -372,7 +372,11 @@ func (conformingExecutor) Execute(_ context.Context, test ConformanceCase) ([]by
 	case SecretProposeRotate:
 		arguments = RotateArguments{RecordID: "secret-example"}
 	case SecretProposeRevoke:
-		arguments = RevokeArguments{RecordID: "secret-example", Version: 1, Reason: "operator-request"}
+		recordID := "secret-example"
+		if expected := test.ExpectedArguments["record_id"]; expected != "" {
+			recordID = expected
+		}
+		arguments = RevokeArguments{RecordID: recordID, Version: 1, Reason: "operator-request"}
 	case SecretSearch:
 		arguments = SearchArguments{Query: "github", PageArguments: PageArguments{Limit: 20}}
 	case SecretList:
