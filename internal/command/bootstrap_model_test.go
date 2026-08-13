@@ -8,6 +8,7 @@ import (
 
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/onboarding"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/spf13/cobra"
 )
 
@@ -32,6 +33,26 @@ func TestOnboardingProgressUsesArtifactDerivedStage(t *testing.T) {
 			renderOnboardingProgress(cmd, onboarding.Snapshot{State: test.state})
 			if !strings.Contains(output.String(), test.completed) || !strings.Contains(output.String(), test.current) {
 				t.Fatalf("progress for %s = %q", test.state, output.String())
+			}
+		})
+	}
+}
+
+func TestManagerBootstrapRequirementIncludesUnfinishedCertification(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		snapshot  onboarding.Snapshot
+		authority authoritybadger.State
+		want      bool
+	}{
+		{name: "model present but uncertified", snapshot: onboarding.Snapshot{State: onboarding.ModelPresent}, authority: authoritybadger.StateReady, want: true},
+		{name: "ready artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateReady, want: false},
+		{name: "legacy valid manager artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.PrincipalConfigured}, authority: authoritybadger.StateReady, want: false},
+		{name: "ready artifacts but authority unavailable", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateAbsent, want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := managerNeedsBootstrap(test.snapshot, test.authority); got != test.want {
+				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.want)
 			}
 		})
 	}

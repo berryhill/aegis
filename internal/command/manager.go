@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/onboarding"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/slash"
 	"github.com/berryhill/aegis/internal/tui"
@@ -39,12 +40,12 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": interactive manager mode requires stdin and stdout terminals"))
 		}
 		inspection := config.Inspect(options.configFile)
-		needsBootstrap := inspection.State != config.StateValid
+		snapshot := inspectOnboarding(cmd.Context(), options.configFile, logger)
+		authorityState := authoritybadger.StateAbsent
 		if inspection.State == config.StateValid {
-			authority := authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
-			needsBootstrap = authority.State != authoritybadger.StateReady
+			authorityState = authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")).State
 		}
-		if needsBootstrap {
+		if managerNeedsBootstrap(snapshot, authorityState) {
 			launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
 			if err != nil || !launch {
 				return err
@@ -54,6 +55,10 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 	}}
 	command.AddCommand(managerCertifyCmd(build), managerModelCmd(build, options))
 	return command
+}
+
+func managerNeedsBootstrap(snapshot onboarding.Snapshot, authorityState authoritybadger.State) bool {
+	return snapshot.State == onboarding.ModelPresent || authorityState != authoritybadger.StateReady
 }
 
 func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
