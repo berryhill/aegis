@@ -45,7 +45,8 @@ jobs:
         run: |
           set -eu
           version=${GITHUB_REF_NAME#v}
-          ./scripts/verify-installed-mvi.sh "$version" dist
+          revision=$(git rev-parse --verify HEAD^{commit})
+          ./scripts/verify-installed-mvi.sh "$version" dist "$revision"
       - name: Publish GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}

@@ -278,6 +278,25 @@ func TestVersionCommandMatchesVersionFlag(t *testing.T) {
 	}
 }
 
+func TestVersionProvenanceIsExactAndFailClosed(t *testing.T) {
+	isolatedPaths(t)
+	var out bytes.Buffer
+	root := NewRoot(Dependencies{In: strings.NewReader(""), Out: &out, Err: io.Discard, Version: "1.2.3", SourceRevision: "0123456789abcdef0123456789abcdef01234567", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
+	root.SetArgs([]string{"version", "--provenance"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, `"version": "1.2.3"`) || !strings.Contains(got, `"source_revision": "0123456789abcdef0123456789abcdef01234567"`) {
+		t.Fatalf("unexpected provenance: %s", got)
+	}
+
+	root = NewRoot(Dependencies{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard, Version: "1.2.3", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
+	root.SetArgs([]string{"version", "--provenance"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "binary has no embedded source revision") {
+		t.Fatalf("missing provenance error=%v", err)
+	}
+}
+
 func TestBareInteractiveFirstRunInitializesThenStartsManager(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
 	var out bytes.Buffer

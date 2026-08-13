@@ -87,7 +87,7 @@ git -C "$workspace/source" checkout --quiet --detach "$expected_revision"
 
 # Build the four archives exactly once from the detached exact revision. Every
 # later check uses the one extracted native candidate and retained evidence.
-"$workspace/source/scripts/verify-installed-mvi.sh" "$version" "$workspace/dist"
+"$workspace/source/scripts/verify-installed-mvi.sh" "$version" "$workspace/dist" "$expected_revision"
 
 native_os=$(go env GOOS)
 native_arch=$(go env GOARCH)
@@ -98,6 +98,8 @@ tar -xzf "$native_archive" -C "$workspace/candidate"
 candidate=$workspace/candidate/aegis
 [ -f "$candidate" ] && [ ! -L "$candidate" ] && [ -x "$candidate" ] || fail 'extracted candidate is not one regular executable'
 [ "$("$candidate" --version)" = "aegis version $version" ] || fail 'exact candidate version mismatch'
+candidate_provenance=$("$candidate" version --provenance)
+CANDIDATE_PROVENANCE=$candidate_provenance VERSION=$version REVISION=$expected_revision python3 -c 'import json,os,sys; value=json.loads(os.environ["CANDIDATE_PROVENANCE"]); sys.exit(0 if value == {"version":os.environ["VERSION"],"source_revision":os.environ["REVISION"]} else 1)' || fail 'exact candidate source provenance mismatch'
 
 candidate_sha=$(sha256sum "$candidate" | cut -d' ' -f1)
 hermes_sha=$(sha256sum "$hermes" | cut -d' ' -f1)

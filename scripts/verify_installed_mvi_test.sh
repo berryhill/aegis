@@ -32,6 +32,31 @@ expect_status_2 'version must be exact stable SemVer: 01.2.3' \
   "$repo/scripts/verify-installed-mvi.sh" 01.2.3 "$invalid_dist"
 [ ! -e "$invalid_dist" ] || fail_test 'leading-zero version created release output'
 
+# Source provenance is local, exact, and fail-closed before build/output mutation.
+expect_status_2 'expected revision is not one exact lowercase 40-hex value: not-a-revision' \
+  "$repo/scripts/verify-installed-mvi.sh" 1.2.3 "$invalid_dist" not-a-revision
+expect_status_2 'revision mismatch: expected 0000000000000000000000000000000000000000' \
+  "$repo/scripts/verify-installed-mvi.sh" 1.2.3 "$invalid_dist" 0000000000000000000000000000000000000000
+
+missing_vcs=$root/missing-vcs
+mkdir -p "$missing_vcs/scripts"
+cp "$repo/scripts/verify-installed-mvi.sh" "$missing_vcs/scripts/verify-installed-mvi.sh"
+expect_status_2 'Git worktree metadata is unavailable' \
+  env GIT_CEILING_DIRECTORIES="$root" "$missing_vcs/scripts/verify-installed-mvi.sh" 1.2.3 "$missing_vcs/dist"
+
+source_fixture=$root/source-fixture
+mkdir -p "$source_fixture/scripts"
+cp "$repo/scripts/verify-installed-mvi.sh" "$source_fixture/scripts/verify-installed-mvi.sh"
+printf 'fixture\n' >"$source_fixture/README.md"
+GIT_CONFIG_GLOBAL=/dev/null git -C "$source_fixture" init --quiet
+GIT_CONFIG_GLOBAL=/dev/null git -C "$source_fixture" -c user.name='Aegis Fixture' -c user.email='aegis@example.invalid' add .
+GIT_CONFIG_GLOBAL=/dev/null git -C "$source_fixture" -c user.name='Aegis Fixture' -c user.email='aegis@example.invalid' commit --quiet -m fixture
+printf '\n' >>"$source_fixture/README.md"
+fixture_revision=$(git -C "$source_fixture" rev-parse HEAD)
+expect_status_2 'tracked source worktree is dirty' \
+  "$source_fixture/scripts/verify-installed-mvi.sh" 1.2.3 "$source_fixture/dist" "$fixture_revision"
+[ -d "$source_fixture/dist" ] && [ -z "$(find "$source_fixture/dist" -mindepth 1 -maxdepth 1 -print -quit)" ] || fail_test 'dirty source populated release output'
+
 # Existing release output must be an empty real directory; never overwrite or follow a symlink.
 nonempty=$root/nonempty
 mkdir "$nonempty"
