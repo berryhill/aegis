@@ -4,6 +4,7 @@ set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=${1:-0.0.0}
 requested_dist=${2:-}
+expected_revision=${3:-}
 
 case "$version" in
   0.0.0) ;;
@@ -14,6 +15,20 @@ printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9]
   printf 'version must be exact stable SemVer: %s\n' "$version" >&2
   exit 2
 }
+
+deny_provenance() {
+  printf 'release source provenance denied: %s\n' "$*" >&2
+  exit 2
+}
+git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || deny_provenance 'Git worktree metadata is unavailable'
+actual_revision=$(git -C "$repo" rev-parse --verify HEAD^{commit} 2>/dev/null) || deny_provenance 'HEAD does not resolve to exactly one commit'
+printf '%s\n' "$actual_revision" | grep -Eq '^[0-9a-f]{40}$' || deny_provenance "resolved HEAD is not one exact lowercase 40-hex revision: $actual_revision"
+if [ -z "$expected_revision" ]; then
+  expected_revision=$actual_revision
+else
+  printf '%s\n' "$expected_revision" | grep -Eq '^[0-9a-f]{40}$' || deny_provenance "expected revision is not one exact lowercase 40-hex value: $expected_revision"
+fi
+[ "$actual_revision" = "$expected_revision" ] || deny_provenance "revision mismatch: expected $expected_revision actual $actual_revision"
 
 proof=$(mktemp -d "$repo/.aegis-installed-mvi-XXXXXXXX")
 cleanup() { rm -rf "$proof"; }
@@ -50,6 +65,8 @@ else
   mkdir "$dist"
 fi
 
+[ -z "$(git -C "$repo" status --porcelain=v1 --untracked-files=no)" ] || deny_provenance 'tracked source worktree is dirty'
+
 cd "$repo"
 for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   os=${target%/*}
@@ -58,8 +75,13 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   stage=$proof/$name
   mkdir "$stage"
   CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-    -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version" \
+    -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=$expected_revision" \
     -o "$stage/aegis" ./cmd/aegis
+  build_revision=$(go version -m "$stage/aegis" 2>/dev/null | sed -n 's/^[[:space:]]*build[[:space:]]*vcs.revision=//p')
+  [ -n "$build_revision" ] || deny_provenance "built $os/$arch binary omitted Go VCS revision metadata"
+  [ "$build_revision" = "$expected_revision" ] || deny_provenance "built $os/$arch binary revision mismatch: expected $expected_revision actual $build_revision"
+  build_modified=$(go version -m "$stage/aegis" 2>/dev/null | sed -n 's/^[[:space:]]*build[[:space:]]*vcs.modified=//p')
+  [ "$build_modified" = false ] || deny_provenance "built $os/$arch binary has missing or dirty VCS state: ${build_modified:-missing}"
   chmod 0755 "$stage/aegis"
   tar -C "$stage" -czf "$dist/$name.tar.gz" aegis
   python3 "$repo/scripts/verify-release-archive.py" "$dist/$name.tar.gz"
@@ -88,6 +110,8 @@ tar -xzf "$native_archive" -C "$install"
   printf 'installed binary did not report injected version %s\n' "$version" >&2
   exit 1
 }
+provenance=$($install/aegis version --provenance)
+PROVENANCE=$provenance VERSION=$version REVISION=$expected_revision python3 -c 'import json,os,sys; value=json.loads(os.environ["PROVENANCE"]); sys.exit(0 if value == {"version":os.environ["VERSION"],"source_revision":os.environ["REVISION"]} else 1)' || deny_provenance 'installed binary provenance does not exactly match release version and source revision'
 
 set +e
 printf 'non-interactive installed proof\n' | HOME=$home "$install/aegis" >"$proof/first-run.out" 2>&1
@@ -120,4 +144,4 @@ go run ./scripts/demo-authority-init "$vertical/state/persistence/authority-v1"
 python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$install/aegis" "$proof/vertical"
 "$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"
 
-printf 'installed MVI verified: version=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_templ_datastar\n' "$version"
+printf 'installed MVI verified: version=%s source_revision=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_templ_datastar\n' "$version" "$expected_revision"

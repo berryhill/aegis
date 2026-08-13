@@ -10,6 +10,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Made release construction and candidate verification fail closed on unavailable Git worktree metadata, malformed or mismatched expected revisions, tracked source changes, missing or dirty Go VCS build metadata, and candidate provenance mismatch. Release archives now embed the exact clean source commit, and `aegis version --provenance` exposes the version/revision pair for local installed-artifact verification.
 - Repaired manager certification interoperability with supported Hermes tool-free requests and the strict manager response contract. The process-bound inference proxy now strips only the semantically empty `tools: []` plus `tool_choice: "none"` decoration before forwarding to Ollama, continues to reject every executable tool request, and supplies exact operation-specific proposal argument schemas. Certification also verifies the exact arguments of security-critical revocation proposals, and the conformance version invalidates older certifications.
 - Fixed bare production `aegis reset` so artifact-derived discovery selects the sole former or XDG legacy layout instead of incorrectly planning against the canonical default. Explicit configuration remains non-authoritative for reset, while canonical-plus-legacy and multiple-legacy ambiguity still fail closed.
 

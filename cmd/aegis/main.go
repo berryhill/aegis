@@ -29,7 +29,7 @@ func run() int {
 	if profile == command.DevelopmentProfile {
 		effectiveVersion = "dev"
 	}
-	cmd := command.NewRoot(command.Dependencies{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Logger: log, Version: effectiveVersion, Profile: profile})
+	cmd := command.NewRoot(command.Dependencies{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Logger: log, Version: effectiveVersion, SourceRevision: buildinfo.SourceRevision, Profile: profile})
 	err := cmd.ExecuteContext(ctx)
 	if err != nil {
 		command.RenderError(os.Stderr, err)

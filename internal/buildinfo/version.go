@@ -12,6 +12,10 @@ import (
 // embedded build information.
 var Version string
 
+// SourceRevision is the exact lowercase Git commit injected into release
+// archives. Development and go-install builds intentionally leave it empty.
+var SourceRevision string
+
 func init() {
 	if Version != "" {
 		Version = Normalize(Version)

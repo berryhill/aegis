@@ -40,6 +40,7 @@ type Dependencies struct {
 	Out, Err        io.Writer
 	Logger          *slog.Logger
 	Version         string
+	SourceRevision  string
 	IsTerminal      func(io.Reader, io.Writer) bool
 	Updater         UpdateService
 	Initializer     *initialize.Service
@@ -387,7 +388,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmd(deps.Resetter, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {
@@ -435,16 +436,25 @@ func credentialBridgeCmd() *cobra.Command {
 	return command
 }
 
-func versionCmd(version string) *cobra.Command {
-	return &cobra.Command{
+func versionCmd(version, sourceRevision string) *cobra.Command {
+	var provenance bool
+	command := &cobra.Command{
 		Use:   "version",
 		Short: "Print the Aegis version",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if provenance {
+				if sourceRevision == "" {
+					return errors.New("source provenance unavailable: binary has no embedded source revision")
+				}
+				return output(cmd, map[string]any{"version": version, "source_revision": sourceRevision})
+			}
 			_, err := fmt.Fprintf(cmd.OutOrStdout(), "aegis version %s\n", version)
 			return err
 		},
 	}
+	command.Flags().BoolVar(&provenance, "provenance", false, "print embedded release source provenance as JSON")
+	return command
 }
 
 func runUpdate(cmd *cobra.Command, updater UpdateService, checkOnly bool) error {
