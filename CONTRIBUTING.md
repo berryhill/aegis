@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.26.5 or newer
+- Go 1.26.6 or newer
 - Hermes Agent `>=0.18.0,<0.19.0` for real adapter checks
 - Linux for Unix `SO_PEERCRED` API tests
 - `govulncheck` for vulnerability scanning

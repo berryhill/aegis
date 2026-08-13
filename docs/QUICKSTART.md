@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - Linux
-- Go 1.26.5+
+- Go 1.26.6+
 - Hermes Agent `>=0.18.0,<0.19.0` on `PATH`
 - A compatible `pinentry` in the operator's desktop session for protected authority prompts, or a real terminal for the no-echo fallback
 

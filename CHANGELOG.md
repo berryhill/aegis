@@ -15,6 +15,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Made bare interactive startup resume the guided journey at end-to-end certification when exact model binding is present but certification is unfinished, instead of entering the manager prematurely. Operational-authority absence still requires bootstrap, while ready and valid legacy manager installations retain their existing startup behavior.
 - Fixed bare production `aegis reset` so artifact-derived discovery selects the sole former or XDG legacy layout instead of incorrectly planning against the canonical default. Explicit configuration remains non-authoritative for reset, while canonical-plus-legacy and multiple-legacy ambiguity still fail closed.
 
+### Security
+
+- Raised the release and development toolchain floor to Go 1.26.6, which contains the standard-library fixes required by the repository vulnerability scan.
+
 ## [0.2.5] - 2026-08-12
 
 ### Changed
