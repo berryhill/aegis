@@ -38,7 +38,7 @@ func TestOnboardingProgressUsesArtifactDerivedStage(t *testing.T) {
 	}
 }
 
-func TestBareManagerLeavesUnfinishedCertificationToDegradedStartup(t *testing.T) {
+func TestBareStartupLeavesUnfinishedCertificationToDegradedManager(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		snapshot  onboarding.Snapshot
@@ -51,6 +51,9 @@ func TestBareManagerLeavesUnfinishedCertificationToDegradedStartup(t *testing.T)
 		{name: "ready artifacts but authority unavailable", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateAbsent, want: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			if got := bareRootNeedsBootstrap(test.snapshot, test.authority); got != test.want {
+				t.Fatalf("bareRootNeedsBootstrap()=%t want=%t", got, test.want)
+			}
 			if got := managerNeedsBootstrap(test.snapshot, test.authority); got != test.want {
 				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.want)
 			}
