@@ -139,6 +139,44 @@ func TestAssistantSnapshotsRenderIncrementallyAndProgressDoesNotSpam(t *testing.
 	}
 }
 
+func TestAssistantCompletionReconcilesMissingFinalSnapshot(t *testing.T) {
+	var output bytes.Buffer
+	controller := NewController(&output, Capabilities{Profile: PlainInteractive, Term: "dumb", Width: 40}, SecurityContext{})
+	preview := "This response starts in the streamed preview"
+	completed := preview + ", continues beyond the terminal width,\nand finishes on a second line with 世界."
+	if err := controller.Emit(Event{Kind: AssistantDelta, Origin: ModelUntrusted, Message: preview}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Emit(Event{Kind: AssistantCompleted, Origin: ModelUntrusted, Message: completed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Emit(Event{Kind: TurnCompleted, Origin: AegisAuthoritative, Message: "guarded turn complete"}); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	responseEnd := strings.Index(got, completed) + len(completed)
+	turnComplete := strings.Index(got, "guarded turn complete")
+	if responseEnd < len(completed) || turnComplete < responseEnd || strings.Count(got, "Hermes model / untrusted") != 1 {
+		t.Fatalf("completed response was not reconciled before authoritative completion: %q", got)
+	}
+}
+
+func TestAssistantCompletionRendersCanonicalResponseAfterDivergentPreview(t *testing.T) {
+	var output bytes.Buffer
+	controller := NewController(&output, Capabilities{Profile: PlainInteractive, Term: "dumb", Width: 40}, SecurityContext{})
+	if err := controller.Emit(Event{Kind: AssistantDelta, Origin: ModelUntrusted, Message: "preview text"}); err != nil {
+		t.Fatal(err)
+	}
+	completed := "validated complete response\nwith its final line"
+	if err := controller.Emit(Event{Kind: AssistantCompleted, Origin: ModelUntrusted, Message: completed}); err != nil {
+		t.Fatal(err)
+	}
+	got := output.String()
+	if !strings.Contains(got, "[origin: Hermes model / untrusted] "+completed+"\n") || strings.Count(got, "Hermes model / untrusted") != 2 {
+		t.Fatalf("canonical completed response absent after divergent preview: %q", got)
+	}
+}
+
 func TestAssistantSnapshotsSanitizeControlSequenceAcrossUpdates(t *testing.T) {
 	var output bytes.Buffer
 	controller := NewController(&output, Capabilities{Profile: PlainInteractive, Term: "dumb"}, SecurityContext{})

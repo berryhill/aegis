@@ -193,6 +193,18 @@ func (controller *Controller) renderEvent(event Event) error {
 		return err
 	}
 	if event.Kind == AssistantCompleted && controller.assistantActive {
+		// Streaming snapshots are previews. Reconcile them with the validated
+		// completed response so a missing or divergent final snapshot cannot
+		// leave the terminal transcript clipped or incomplete.
+		if strings.HasPrefix(message, controller.assistantRendered) {
+			if _, err := io.WriteString(controller.out, strings.TrimPrefix(message, controller.assistantRendered)); err != nil {
+				return err
+			}
+		} else {
+			if _, err := fmt.Fprintf(controller.out, "\n%s %s", label, message); err != nil {
+				return err
+			}
+		}
 		controller.assistantActive = false
 		controller.assistantRendered = ""
 		controller.plainProgress = false
