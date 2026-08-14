@@ -57,7 +57,14 @@ templ NavigationButton(domain string, label string, current bool) {
 templ Authentication(message string) {
 	<section id="authentication" aria-labelledby="authentication-title">
 		<h1 id="authentication-title">Authenticate this browser</h1>
-		<p>Obtain a single-use browser bootstrap from an already authenticated local Aegis client. It cannot create or change principal authority.</p>
+		<p>Browser input cannot establish or change principal authority. Authenticate from the Aegis host instead:</p>
+		<ol aria-label="Browser authentication steps">
+			<li>Open a terminal on the Aegis host and run <code>aegis console</code>.</li>
+			<li>Copy only the short-lived, single-use bootstrap printed by that command.</li>
+			<li>Paste it into the field below and submit promptly.</li>
+		</ol>
+		<p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p>
+		<p>If the service is stopped, run <code>aegis service start</code> and retry. If the bootstrap expires, run <code>aegis console</code> again. Never paste an API bearer or put either credential in a URL.</p>
 		<p id="authentication-status" role="status" aria-live="polite">
 			if message != "" {
 				{ message }
