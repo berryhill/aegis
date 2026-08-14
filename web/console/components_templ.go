@@ -274,7 +274,7 @@ func Authentication(message string) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section id=\"authentication\" aria-labelledby=\"authentication-title\"><h1 id=\"authentication-title\">Authenticate this browser</h1><p>Obtain a single-use browser bootstrap from an already authenticated local Aegis client. It cannot create or change principal authority.</p><p id=\"authentication-status\" role=\"status\" aria-live=\"polite\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<section id=\"authentication\" aria-labelledby=\"authentication-title\"><h1 id=\"authentication-title\">Authenticate this browser</h1><p>Browser input cannot establish or change principal authority. Authenticate from the Aegis host instead:</p><ol aria-label=\"Browser authentication steps\"><li>Open a terminal on the Aegis host and run <code>aegis console</code>.</li><li>Copy only the short-lived, single-use bootstrap printed by that command.</li><li>Paste it into the field below and submit promptly.</li></ol><p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p><p>If the service is stopped, run <code>aegis service start</code> and retry. If the bootstrap expires, run <code>aegis console</code> again. Never paste an API bearer or put either credential in a URL.</p><p id=\"authentication-status\" role=\"status\" aria-live=\"polite\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -282,7 +282,7 @@ func Authentication(message string) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(message)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 63, Col: 13}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 70, Col: 13}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -330,7 +330,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 83, Col: 41}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 90, Col: 41}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -343,7 +343,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var13 string
 		templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Status)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 84, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 91, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 		if templ_7745c5c3_Err != nil {
@@ -361,7 +361,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var14 string
 			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 86, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 93, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
 			if templ_7745c5c3_Err != nil {
@@ -374,7 +374,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(stateMessage(surface.State))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 86, Col: 89}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 93, Col: 89}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -397,7 +397,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 90, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 97, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -410,7 +410,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("@get('/console/fragments/inspect?domain=%s&record_key=%s')", surface.Domain, record.Key))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 90, Col: 178}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 97, Col: 178}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -488,7 +488,7 @@ func Inspector(record *RecordModel, open bool) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(record.Summary)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 103, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 110, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -501,7 +501,7 @@ func Inspector(record *RecordModel, open bool) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(record.JSON)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 104, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 111, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -548,7 +548,7 @@ func RecordLabel(label string) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 109, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 116, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {

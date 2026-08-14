@@ -37,6 +37,30 @@ func TestDocumentHasAccessibleServerRenderedStatesAndNoInlineScript(t *testing.T
 	}
 }
 
+func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
+	var output bytes.Buffer
+	if err := Authentication("").Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		"Open a terminal on the Aegis host",
+		"aegis console",
+		"Copy only the short-lived, single-use bootstrap",
+		"submit promptly",
+		"without launching a browser",
+		"bare production",
+		"aegis service start",
+		"If the bootstrap expires",
+		"Never paste an API bearer",
+		"credential in a URL",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("authentication guidance missing %q: %s", required, html)
+		}
+	}
+}
+
 func TestConsoleSourceForbidsUnsafeActiveContent(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
