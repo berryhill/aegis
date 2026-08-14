@@ -38,14 +38,14 @@ func TestOnboardingProgressUsesArtifactDerivedStage(t *testing.T) {
 	}
 }
 
-func TestManagerBootstrapRequirementIncludesUnfinishedCertification(t *testing.T) {
+func TestBareManagerLeavesUnfinishedCertificationToDegradedStartup(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		snapshot  onboarding.Snapshot
 		authority authoritybadger.State
 		want      bool
 	}{
-		{name: "model present but uncertified", snapshot: onboarding.Snapshot{State: onboarding.ModelPresent}, authority: authoritybadger.StateReady, want: true},
+		{name: "model present but uncertified", snapshot: onboarding.Snapshot{State: onboarding.ModelPresent}, authority: authoritybadger.StateReady, want: false},
 		{name: "ready artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateReady, want: false},
 		{name: "legacy valid manager artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.PrincipalConfigured}, authority: authoritybadger.StateReady, want: false},
 		{name: "ready artifacts but authority unavailable", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateAbsent, want: true},
@@ -55,6 +55,13 @@ func TestManagerBootstrapRequirementIncludesUnfinishedCertification(t *testing.T
 				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.want)
 			}
 		})
+	}
+}
+
+func TestDegradedUncertifiedManagerReportsExactRecertificationCommand(t *testing.T) {
+	readiness := managerReadiness{authority: "ready", model: "configured: qwen3.5:4b", artifact: "installed", certification: "absent, stale, or invalid"}
+	if got, want := readiness.nextStep("qwen3.5:4b"), "aegis manager certify qwen3.5-4b"; got != want {
+		t.Fatalf("nextStep()=%q want=%q", got, want)
 	}
 }
 
