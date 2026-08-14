@@ -69,7 +69,11 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 			if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 				return usage(errors.New("user service state changes require an interactive terminal"))
 			}
-			return userservice.Action(cmd.Context(), runner, action)
+			plan, err := preview()
+			if err != nil {
+				return err
+			}
+			return userservice.Action(cmd.Context(), runner, plan, action)
 		}})
 	}
 	command.AddCommand(&cobra.Command{Use: "uninstall", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
