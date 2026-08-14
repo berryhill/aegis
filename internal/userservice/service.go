@@ -30,7 +30,10 @@ const (
 	Confirmation = "INSTALL AEGIS USER SERVICE"
 )
 
-var ErrForeignUnit = errors.New("existing user unit is not owned by this exact Aegis plan")
+var (
+	ErrForeignUnit         = errors.New("existing user unit is not owned by this exact Aegis plan")
+	ErrServiceNotInstalled = errors.New("service_not_installed: Aegis user service is not installed; run `aegis service install`")
+)
 
 // ActivationError identifies the failed phase and preserves rollback evidence.
 type ActivationError struct {
@@ -238,16 +241,23 @@ func serviceState(ctx context.Context, runner Runner, property string) (bool, er
 	}
 }
 
-func Action(ctx context.Context, runner Runner, action string) error {
+func Action(ctx context.Context, runner Runner, plan Plan, action string) error {
 	if runner == nil {
 		return errors.New("user service manager is unavailable")
 	}
 	switch action {
 	case "start", "stop", "restart":
-		return runner.Run(ctx, action, UnitName)
 	default:
 		return errors.New("unsupported user service action")
 	}
+	installed, err := Installed(plan)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return ErrServiceNotInstalled
+	}
+	return runner.Run(ctx, action, UnitName)
 }
 
 func Status(ctx context.Context, runner Runner, plan Plan) (map[string]any, error) {

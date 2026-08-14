@@ -113,14 +113,48 @@ func TestPreviewIsDeterministicSecretFreeAndRejectsForeignUnit(t *testing.T) {
 	}
 }
 
+func TestActionRejectsMissingInstallationBeforeSystemctl(t *testing.T) {
+	plan := Plan{UnitPath: filepath.Join(t.TempDir(), UnitName), unit: []byte("expected")}
+	for _, action := range []string{"start", "stop", "restart"} {
+		t.Run(action, func(t *testing.T) {
+			runner := &recordingRunner{err: errors.New("raw unit-not-found error")}
+			err := Action(context.Background(), runner, plan, action)
+			if !errors.Is(err, ErrServiceNotInstalled) {
+				t.Fatalf("missing service did not return stable Aegis error: %v", err)
+			}
+			if got, want := err.Error(), "service_not_installed: Aegis user service is not installed; run `aegis service install`"; got != want {
+				t.Fatalf("missing service error = %q, want %q", got, want)
+			}
+			if len(runner.calls) != 0 {
+				t.Fatalf("systemctl invoked for missing service: %v", runner.calls)
+			}
+			if _, statErr := os.Lstat(plan.UnitPath); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("missing-service denial mutated unit path: %v", statErr)
+			}
+		})
+	}
+}
+
 func TestActionAllowsOnlyBoundedUserServiceLifecycle(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	executable, configPath := serviceFixture(t)
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
 	runner := &recordingRunner{}
 	for _, action := range []string{"start", "stop", "restart"} {
-		if err := Action(context.Background(), runner, action); err != nil {
+		if err := Action(context.Background(), runner, plan, action); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := Action(context.Background(), runner, "enable-linger"); err == nil {
+	if err := Action(context.Background(), runner, plan, "enable-linger"); err == nil {
 		t.Fatal("unsupported user-service authority was accepted")
 	}
 	if len(runner.calls) != 3 {
