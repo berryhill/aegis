@@ -32,7 +32,7 @@ const (
 
 var (
 	ErrForeignUnit         = errors.New("existing user unit is not owned by this exact Aegis plan")
-	ErrServiceNotInstalled = errors.New("service_not_installed: Aegis user service is not installed; run `aegis service install`")
+	ErrServiceNotInstalled = errors.New("gateway_not_installed: Aegis gateway is not installed; run `aegis gateway install`")
 )
 
 // ActivationError identifies the failed phase and preserves rollback evidence.

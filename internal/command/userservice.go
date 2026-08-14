@@ -20,7 +20,7 @@ import (
 )
 
 func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions) *cobra.Command {
-	command := &cobra.Command{Use: "service", Short: "Manage the authenticated Aegis user service", Args: cobra.NoArgs}
+	command := &cobra.Command{Use: "gateway", Aliases: []string{"service"}, Short: "Manage the authenticated Aegis gateway", Args: cobra.NoArgs}
 	preview := func() (userservice.Plan, error) {
 		executable, err := os.Executable()
 		if err != nil {
@@ -37,7 +37,7 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 	}})
 	command.AddCommand(&cobra.Command{Use: "install", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
-			return usage(errors.New("user service installation requires an interactive principal approval; no mutations were performed"))
+			return usage(errors.New("gateway installation requires an interactive principal approval; no mutations were performed"))
 		}
 		plan, err := preview()
 		if err != nil {
@@ -67,7 +67,7 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 		action := action
 		command.AddCommand(&cobra.Command{Use: action, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
-				return usage(errors.New("user service state changes require an interactive terminal"))
+				return usage(errors.New("gateway state changes require an interactive terminal"))
 			}
 			plan, err := preview()
 			if err != nil {
@@ -78,7 +78,7 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 	}
 	command.AddCommand(&cobra.Command{Use: "uninstall", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
-			return usage(errors.New("user service uninstall requires an interactive principal approval; no mutations were performed"))
+			return usage(errors.New("gateway uninstall requires an interactive principal approval; no mutations were performed"))
 		}
 		plan, err := preview()
 		if err != nil {
@@ -90,7 +90,7 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 			return err
 		}
 		if strings.ToLower(strings.TrimSpace(answer)) != "yes" && strings.ToLower(strings.TrimSpace(answer)) != "y" {
-			fmt.Fprintln(cmd.OutOrStdout(), "User service uninstall declined; no mutations were performed.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Gateway uninstall declined; no mutations were performed.")
 			return nil
 		}
 		return userservice.Uninstall(cmd.Context(), plan, runner)
@@ -121,10 +121,10 @@ func reconcileServeTransport(cmd *cobra.Command, configPath string, input *termi
 }
 
 func approveServicePlan(cmd *cobra.Command, plan userservice.Plan, input *terminalInput) (bool, error) {
-	fmt.Fprintf(cmd.OutOrStdout(), "Aegis user-service installation preview\nPrincipal: %s\nUnit: %s\nDigest: %s\nExecutable: %s\nConfiguration: %s\nConsole: %s\nScope: systemctl --user; lingering will not be enabled.\nInstall and activate this user service? [Y/n]: ", plan.Principal, plan.UnitPath, plan.UnitDigest, plan.Executable, plan.ConfigPath, plan.Origin)
+	fmt.Fprintf(cmd.OutOrStdout(), "Aegis gateway installation preview\nPrincipal: %s\nUnit: %s\nDigest: %s\nExecutable: %s\nConfiguration: %s\nConsole: %s\nScope: systemctl --user; lingering will not be enabled.\nInstall and activate this gateway? [Y/n]: ", plan.Principal, plan.UnitPath, plan.UnitDigest, plan.Executable, plan.ConfigPath, plan.Origin)
 	approved, err := readDefaultYes(cmd, input)
 	if err != nil || !approved {
-		fmt.Fprintln(cmd.OutOrStdout(), "User service installation declined; no service state was changed.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Gateway installation declined; no gateway state was changed.")
 		return false, err
 	}
 	return true, nil
