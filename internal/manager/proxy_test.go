@@ -31,6 +31,31 @@ func TestManagerResponseFormatUsesExactTypedProposalArguments(t *testing.T) {
 	}
 }
 
+func TestTrustedPlaintextCertificationFormatAllowsOnlyExactCreateProposal(t *testing.T) {
+	var test ConformanceCase
+	for _, candidate := range ConformanceCorpus() {
+		if candidate.ID == "trusted-plaintext-create" {
+			test = candidate
+			break
+		}
+	}
+	encoded, err := json.Marshal(ConformanceResponseFormat(test))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(encoded)
+	for _, required := range []string{`"const":"proposal"`, `"const":"secret.propose_create"`, `"required":["reference","kind","disclosure"]`} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("trusted create response format omits %s: %s", required, text)
+		}
+	}
+	for _, forbidden := range []string{`"const":"message"`, `"const":"secret.list"`, `"const":"secret.propose_revoke"`} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("trusted create response format includes forbidden branch %s: %s", forbidden, text)
+		}
+	}
+}
+
 func TestProxyStripsSemanticallyEmptyNoToolDecoration(t *testing.T) {
 	var upstreamBody []byte
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

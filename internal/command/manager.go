@@ -57,8 +57,12 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 	return command
 }
 
-func managerNeedsBootstrap(snapshot onboarding.Snapshot, authorityState authoritybadger.State) bool {
-	return snapshot.State == onboarding.ModelPresent || authorityState != authoritybadger.StateReady
+func managerNeedsBootstrap(_ onboarding.Snapshot, authorityState authoritybadger.State) bool {
+	// Bare manager startup must remain available after model certification is
+	// declined or fails. runManager performs the exact live readiness check and
+	// enters its authenticated, deterministic degraded shell when certification
+	// is absent or invalid. Explicit `aegis init` still resumes certification.
+	return authorityState != authoritybadger.StateReady
 }
 
 func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
@@ -220,7 +224,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		if auditErr := service.AuditManagerStartup(auditCtx, subject, "degraded", startupReason, map[string]string{"runtime": "hermes", "model": service.Config.Manager.Inference.Model, "mode": service.Config.Manager.Inference.Mode}); auditErr != nil {
 			return auditErr
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Conversational local inference unavailable. Reason: %s\nDeterministic local controls remain available; no cloud fallback or alternate model was attempted.\nNext: %s\n", startupReason, readiness.nextStep(service.Config.StateDir))
+		fmt.Fprintf(cmd.OutOrStdout(), "Conversational local inference unavailable. Reason: %s\nDeterministic local controls remain available; no cloud fallback or alternate model was attempted.\nNext: %s\n", startupReason, readiness.nextStep(service.Config.Manager.Inference.Model))
 		if strings.Contains(startupErr.Error(), "manager cleanup failed") {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Manager startup rollback was incomplete; review the authoritative audit and process state before retrying.")
 		}
@@ -439,7 +443,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			_ = presentation.Emit(tui.Event{Kind: tui.TurnCompleted, Origin: tui.AegisAuthoritative, Message: "guarded turn complete"})
 			continue
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "The local Aegis management model is unavailable (%s). No cloud fallback was attempted.\nUse /help or /status. Next: %s\n", startupReason, readiness.nextStep(service.Config.StateDir))
+		fmt.Fprintf(cmd.OutOrStdout(), "The local Aegis management model is unavailable (%s). No cloud fallback was attempted.\nUse /help or /status. Next: %s\n", startupReason, readiness.nextStep(service.Config.Manager.Inference.Model))
 	}
 	if endReason == "" {
 		endReason = managerdomain.EndRuntimeFailed
@@ -764,7 +768,7 @@ func (r *managerReadiness) applyStartupReason(reason string) {
 	}
 }
 
-func (r managerReadiness) nextStep(stateDir string) string {
+func (r managerReadiness) nextStep(configuredModel string) string {
 	if r.authority != "ready" {
 		return "follow docs/CREDENTIAL_AUTHORITY_SETUP.md, then run aegis secret initialize"
 	}
@@ -775,7 +779,7 @@ func (r managerReadiness) nextStep(stateDir string) string {
 		return "aegis manager model discover --endpoint http://127.0.0.1:11434 (discovery never downloads or copies a model)"
 	}
 	if strings.Contains(r.certification, "absent") || strings.Contains(r.certification, "invalid") {
-		return "aegis manager certify <candidate-id> after explicit model configuration; certifications remain below " + filepath.Join(stateDir, "manager", "certifications")
+		return "aegis manager certify " + candidateIDForModel(configuredModel)
 	}
 	return "review /status and retry in a clean manager session"
 }

@@ -32,6 +32,10 @@ type ProxyConfig struct {
 	RequireSystemInstruction bool
 	AllowPlaintextRequests   bool
 	Sensitive                *SensitiveTracker
+	// ResponseFormat optionally narrows the closed model response contract for
+	// a bounded caller such as one named certification case. Normal manager
+	// sessions leave this nil and receive the complete operation schema.
+	ResponseFormat func() any
 }
 
 // HermesCompatibilityAPIKey satisfies Hermes's provider parser. It is public,
@@ -337,6 +341,9 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 	zero := 0.0
 	envelope.Temperature = &zero
 	envelope.ResponseFormat = managerResponseFormat()
+	if p.config.ResponseFormat != nil {
+		envelope.ResponseFormat = p.config.ResponseFormat()
+	}
 	upstreamBody, err := json.Marshal(envelope)
 	if err != nil {
 		http.Error(writer, "request denied", http.StatusForbidden)
@@ -486,6 +493,25 @@ func hasManagerSystemInstruction(messages []openAIMessage) bool {
 }
 
 func managerResponseFormat() any {
+	return managerResponseFormatFor("", managerProposalSchemas())
+}
+
+// ConformanceResponseFormat narrows a named certification request to its exact
+// expected response kind and operation. Evaluation remains fail closed after
+// inference; this prevents an otherwise-allowed operation from being selected.
+func ConformanceResponseFormat(test ConformanceCase) any {
+	if test.ExpectedKind == "message" {
+		return managerResponseFormatFor("message", nil)
+	}
+	if test.ExpectedKind == "proposal" && test.ExpectedOperation != "" {
+		if schema := managerProposalSchemaFor(test.ExpectedOperation); schema != nil {
+			return managerResponseFormatFor("proposal", []any{schema})
+		}
+	}
+	return managerResponseFormat()
+}
+
+func managerResponseFormatFor(expectedKind string, proposalSchemas []any) any {
 	branch := func(kind string, proposalSchema any) map[string]any {
 		return map[string]any{
 			"type":                 "object",
@@ -499,34 +525,56 @@ func managerResponseFormat() any {
 			},
 		}
 	}
+	branches := []any{}
+	if expectedKind == "" || expectedKind == "message" {
+		branches = append(branches, branch("message", map[string]any{"type": "null"}))
+	}
+	if expectedKind == "" || expectedKind == "proposal" {
+		branches = append(branches, branch("proposal", map[string]any{"oneOf": proposalSchemas}))
+	}
 	return map[string]any{
 		"type": "json_schema",
 		"json_schema": map[string]any{
 			"name":   "aegis_manager_response",
 			"strict": true,
-			"schema": map[string]any{"oneOf": []any{
-				branch("message", map[string]any{"type": "null"}),
-				branch("proposal", map[string]any{"oneOf": managerProposalSchemas()}),
-			}},
+			"schema": map[string]any{"oneOf": branches},
 		},
 	}
 }
 
 func managerProposalSchemas() []any {
+	operations := []Operation{StatusShow, AuditVerify, SessionExit, SecretList, AuditQuery, SecretSearch, SecretMetadata, SecretHistory, SecretProposeCreate, SecretProposeRevoke, SecretProposeRotate, SecretProposeBinding}
+	result := make([]any, 0, len(operations))
+	for _, operation := range operations {
+		result = append(result, managerProposalSchemaFor(operation))
+	}
+	return result
+}
+
+func managerProposalSchemaFor(operation Operation) any {
 	stringProperty := func() any { return map[string]any{"type": "string", "maxLength": 256} }
 	integerProperty := func() any { return map[string]any{"type": "integer", "minimum": 1} }
 	stringArrayProperty := func() any { return map[string]any{"type": "array", "items": map[string]any{"type": "string"}} }
 	page := map[string]any{"limit": integerProperty(), "cursor": stringProperty()}
-	return []any{
-		managerProposalSchema(StatusShow, nil, nil), managerProposalSchema(AuditVerify, nil, nil), managerProposalSchema(SessionExit, nil, nil),
-		managerProposalSchema(SecretList, page, nil), managerProposalSchema(AuditQuery, page, nil),
-		managerProposalSchema(SecretSearch, map[string]any{"query": stringProperty(), "limit": integerProperty(), "cursor": stringProperty()}, []string{"query"}),
-		managerProposalSchema(SecretMetadata, map[string]any{"record_id": stringProperty()}, []string{"record_id"}),
-		managerProposalSchema(SecretHistory, map[string]any{"record_id": stringProperty()}, []string{"record_id"}),
-		managerProposalSchema(SecretProposeCreate, map[string]any{"reference": stringProperty(), "kind": stringProperty(), "disclosure": stringProperty(), "tags": stringArrayProperty(), "collection": stringProperty()}, []string{"reference", "kind", "disclosure"}),
-		managerProposalSchema(SecretProposeRevoke, map[string]any{"record_id": stringProperty(), "reason": stringProperty(), "version": integerProperty()}, []string{"record_id", "reason"}),
-		managerProposalSchema(SecretProposeRotate, map[string]any{"record_id": stringProperty()}, []string{"record_id"}),
-		managerProposalSchema(SecretProposeBinding, map[string]any{"agent_id": stringProperty(), "stanza_id": stringProperty(), "scope": stringProperty(), "record_id": stringProperty(), "version_policy": stringProperty(), "mode": stringProperty(), "destinations": stringArrayProperty(), "pinned_version": integerProperty()}, []string{"agent_id", "stanza_id", "scope", "record_id", "version_policy", "mode", "destinations"}),
+	switch operation {
+	case StatusShow, AuditVerify, SessionExit:
+		return managerProposalSchema(operation, nil, nil)
+	case SecretList, AuditQuery:
+		return managerProposalSchema(operation, page, nil)
+	case SecretSearch:
+		return managerProposalSchema(operation, map[string]any{"query": stringProperty(), "limit": integerProperty(), "cursor": stringProperty()}, []string{"query"})
+	case SecretMetadata, SecretHistory:
+		return managerProposalSchema(operation, map[string]any{"record_id": stringProperty()}, []string{"record_id"})
+	case SecretProposeCreate:
+		return managerProposalSchema(operation, map[string]any{"reference": stringProperty(), "kind": stringProperty(), "disclosure": stringProperty(), "tags": stringArrayProperty(), "collection": stringProperty()}, []string{"reference", "kind", "disclosure"})
+	case SecretProposeRevoke:
+		return managerProposalSchema(operation, map[string]any{"record_id": stringProperty(), "reason": stringProperty(), "version": integerProperty()}, []string{"record_id", "reason"})
+	case SecretProposeRotate:
+		return managerProposalSchema(operation, map[string]any{"record_id": stringProperty()}, []string{"record_id"})
+	case SecretProposeBinding:
+		return managerProposalSchema(operation, map[string]any{"agent_id": stringProperty(), "stanza_id": stringProperty(), "scope": stringProperty(), "record_id": stringProperty(), "version_policy": stringProperty(), "mode": stringProperty(), "destinations": stringArrayProperty(), "pinned_version": integerProperty()}, []string{"agent_id", "stanza_id", "scope", "record_id", "version_policy", "mode", "destinations"})
+	default:
+		return nil
 	}
 }
 
