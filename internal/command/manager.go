@@ -65,6 +65,14 @@ func managerNeedsBootstrap(_ onboarding.Snapshot, authorityState authoritybadger
 	return authorityState != authoritybadger.StateReady
 }
 
+func bareRootNeedsBootstrap(snapshot onboarding.Snapshot, authorityState authoritybadger.State) bool {
+	// Production bare startup must reconcile and activate the supervised control
+	// plane before optional manager certification. Keep its admission boundary
+	// identical to explicit manager startup: operational authority is required,
+	// while runManager owns degraded handling for absent or invalid certification.
+	return managerNeedsBootstrap(snapshot, authorityState)
+}
+
 func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
 	return &cobra.Command{Use: "init", Short: "Inspect or resume deterministic manager initialization", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {

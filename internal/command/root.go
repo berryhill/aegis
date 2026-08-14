@@ -343,15 +343,12 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS] execution profile: %s; root: %s\n", deps.Profile, profileLayout.Root)
 		}
 		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
-		needsBootstrap := snapshot.State != "ready"
-		if !needsBootstrap {
-			inspection := config.Inspect(o.configFile)
-			if inspection.State == config.StateValid {
-				authority := authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
-				needsBootstrap = authority.State != authoritybadger.StateReady
-			}
+		authorityState := authoritybadger.StateAbsent
+		inspection := config.Inspect(o.configFile)
+		if inspection.State == config.StateValid {
+			authorityState = authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")).State
 		}
-		if needsBootstrap {
+		if bareRootNeedsBootstrap(snapshot, authorityState) {
 			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
 			if err != nil || !launch {
 				return err
