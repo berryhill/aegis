@@ -183,6 +183,62 @@ func TestApplyActivatesInOrderAndRequiresAuditCurrentReadiness(t *testing.T) {
 	}
 }
 
+func TestEnsureReadyStartsExactInstalledServiceAndRequiresAuthenticatedReadiness(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+	if err := EnsureReady(context.Background(), plan, runner, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if want := [][]string{{"start", UnitName}}; !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("existing service start calls = %v, want %v", runner.calls, want)
+	}
+}
+
+func TestEnsureReadyDeniesMissingOrUnauditableService(t *testing.T) {
+	t.Run("missing exact unit", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+		executable, configPath := serviceFixture(t)
+		plan, err := Preview(executable, configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runner := &recordingRunner{}
+		if err = EnsureReady(context.Background(), plan, runner, time.Millisecond); !errors.Is(err, ErrServiceNotInstalled) {
+			t.Fatalf("missing exact service was not denied: %v", err)
+		}
+		if len(runner.calls) != 0 {
+			t.Fatalf("systemctl invoked before installation denial: %v", runner.calls)
+		}
+	})
+
+	t.Run("audit not current", func(t *testing.T) {
+		plan, stop := readyServicePlan(t, http.StatusServiceUnavailable, `{"status":"not_ready","audit":{"current":false,"verifiable":false,"reason":"checkpoint_stale"}}`)
+		defer stop()
+		if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+			t.Fatal(err)
+		}
+		runner := &recordingRunner{}
+		err := EnsureReady(context.Background(), plan, runner, 20*time.Millisecond)
+		var activationErr *ActivationError
+		if !errors.As(err, &activationErr) || activationErr.Phase != "audit_current_readiness" || !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("unauditable readiness did not fail closed with phase evidence: %v", err)
+		}
+		if want := [][]string{{"start", UnitName}}; !reflect.DeepEqual(runner.calls, want) {
+			t.Fatalf("unexpected readiness-denial calls = %v, want %v", runner.calls, want)
+		}
+	})
+}
+
 func TestApplyRejectsPlanDriftBeforeMutation(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 	executable, configPath := serviceFixture(t)

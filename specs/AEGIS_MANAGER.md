@@ -75,15 +75,16 @@ The bare command MUST behave as follows:
 
 | Invocation | TTY state | Required behavior |
 |---|---|---|
-| `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then start the built-in manager. |
+| development-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then start the built-in manager. |
+| production-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready, obtain a single-use console bootstrap, and open the configured browser console. |
 | `aegis` | stdin or stdout is not an interactive terminal | Fail with a stable usage error explaining that interactive manager mode requires a terminal and naming deterministic subcommands. It MUST NOT read arbitrary piped content as chat or secret intake. |
 | `aegis --help` | any | Render normal Cobra help; MUST NOT initialize or start a runtime. |
 | `aegis --version` or existing version command | any | Preserve existing version behavior. |
 | `aegis <existing-subcommand>` | any | Preserve existing command semantics. |
-| `aegis manager` | interactive terminal | Explicit synonym for bare interactive manager startup. |
+| `aegis manager` | interactive terminal | Explicit built-in manager startup. |
 | `aegis init` | interactive terminal | Run or resume deterministic initialization without automatically requiring a model conversation. |
 
-A no-argument root `RunE` MUST perform the TTY dispatch. It MUST NOT use package-level mutable Cobra commands or global Viper state.
+A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. Production browser launch MUST occur only after authenticated service readiness and protected bootstrap issuance, MUST pass the configured console URL as one direct process argument without shell interpretation, and MUST preserve a manual bootstrap handoff if the platform launcher fails. It MUST NOT use package-level mutable Cobra commands or global Viper state.
 
 ### 3.3 Non-interactive compatibility
 

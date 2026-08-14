@@ -207,6 +207,44 @@ func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration)
 	return nil
 }
 
+// EnsureReady starts an already-installed exact Aegis service and requires its
+// authenticated, audit-current readiness before returning.
+func EnsureReady(ctx context.Context, plan Plan, runner Runner, timeout time.Duration) error {
+	if runner == nil {
+		return errors.New("user service manager is unavailable")
+	}
+	current, err := Preview(plan.Executable, plan.ConfigPath)
+	if err != nil {
+		return err
+	}
+	if !samePlan(current, plan) {
+		return errors.New("user service plan drifted after preview")
+	}
+	installed, err := Installed(plan)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return ErrServiceNotInstalled
+	}
+	if err = runner.Run(ctx, "start", UnitName); err != nil {
+		return activationFailure("start", err, nil)
+	}
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	readyCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cfg, err := config.Load(plan.ConfigPath, nil)
+	if err != nil {
+		return activationFailure("authenticated_readiness", err, nil)
+	}
+	if err = waitReady(readyCtx, cfg); err != nil {
+		return activationFailure("audit_current_readiness", err, nil)
+	}
+	return nil
+}
+
 func samePlan(left, right Plan) bool {
 	return left.UnitPath == right.UnitPath && left.UnitDigest == right.UnitDigest &&
 		left.Executable == right.Executable && left.ConfigPath == right.ConfigPath &&
