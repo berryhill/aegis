@@ -203,7 +203,7 @@ Each manager session MUST use:
 - a fresh Hermes process;
 - a fresh disposable `HERMES_HOME` under the configured Aegis state root;
 - Hermes safe mode;
-- the narrowest supported toolset, initially `no_mcp`;
+- the narrowest supported empty TUI toolset, `context_engine` for Hermes 0.18.x (`no_mcp` is only an MCP-selection sentinel);
 - a minimal environment;
 - no ambient provider credentials;
 - no inherited profile, memory, project rules, plugins, MCP, or user skill state;

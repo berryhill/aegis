@@ -72,7 +72,7 @@ flowchart LR
   Gateway -. runtime/model events .-> TUI
   TUI --> Sanitizer[Contextual terminal sanitizer]
   Manager --> Guard[Deterministic ingress guard]
-  Guard --> Gateway[Structured Hermes gateway using no_mcp]
+  Guard --> Gateway[Structured Hermes gateway using empty context_engine toolset]
   Gateway -->|fixed non-secret parser compatibility| Proxy[Pidfd-custodied exact-process proxy]
   Proxy --> Ollama[Exact pinned loopback Ollama artifact]
 ```
