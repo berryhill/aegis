@@ -48,6 +48,7 @@ type Dependencies struct {
 	Migrator        *migration.Service
 	Passphrases     AuthorityPassphraseProvider
 	UserService     userservice.Runner
+	OpenBrowser     BrowserOpener
 	Profile         ExecutionProfile
 	DevelopmentRoot string
 }
@@ -116,6 +117,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	if deps.UserService == nil {
 		deps.UserService = userservice.Systemctl{}
+	}
+	if deps.OpenBrowser == nil {
+		deps.OpenBrowser = openBrowser
 	}
 	profileLayout, profileErr := resolveExecutionProfile(deps.Profile, deps.DevelopmentRoot)
 	o := &rootOptions{}
@@ -375,16 +379,19 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if installed {
-				return consoleCmd(o).RunE(cmd, nil)
+				if err = userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
+					return err
+				}
+			} else {
+				approved, approveErr := approveServicePlan(cmd, plan, input)
+				if approveErr != nil || !approved {
+					return approveErr
+				}
+				if err = userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
+					return err
+				}
 			}
-			approved, err := approveServicePlan(cmd, plan, input)
-			if err != nil || !approved {
-				return err
-			}
-			if err = userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
-				return err
-			}
-			return output(cmd, map[string]any{"installed": true, "unit": userservice.UnitName, "unit_digest": plan.UnitDigest, "console_origin": plan.Origin, "next_command": "aegis console", "reusable_secret_exposed": false})
+			return launchConsole(cmd, o, deps.OpenBrowser)
 		}
 		return runManager(cmd, build)
 	}

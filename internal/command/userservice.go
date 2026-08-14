@@ -132,35 +132,65 @@ func approveServicePlan(cmd *cobra.Command, plan userservice.Plan, input *termin
 
 func consoleCmd(options *rootOptions) *cobra.Command {
 	return &cobra.Command{Use: "console", Short: "Obtain a single-use authenticated console bootstrap", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := config.Load(options.configFile, nil)
+		result, err := obtainConsoleBootstrap(cmd.Context(), options.configFile)
 		if err != nil {
 			return err
 		}
-		if cfg.API.UnixSocket == "" || cfg.API.Token == "" {
-			return errors.New("control_plane_unavailable: protected Unix transport is not configured")
-		}
-		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", cfg.API.UnixSocket)
-		}}
-		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
-		request, _ := http.NewRequestWithContext(cmd.Context(), http.MethodPost, "http://unix/v1/console/bootstrap", bytes.NewReader([]byte("{}")))
-		request.Header.Set("Authorization", "Bearer "+cfg.API.Token)
-		request.Header.Set("Content-Type", "application/json")
-		response, err := client.Do(request)
-		if err != nil {
-			return fmt.Errorf("control_plane_unavailable: %w", err)
-		}
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusCreated {
-			return fmt.Errorf("console bootstrap denied by control plane: HTTP %d", response.StatusCode)
-		}
-		var result struct {
-			Bootstrap string `json:"bootstrap"`
-			ExpiresAt string `json:"expires_at"`
-		}
-		if err = json.NewDecoder(response.Body).Decode(&result); err != nil || result.Bootstrap == "" {
-			return errors.New("control plane returned an invalid console bootstrap")
-		}
-		return output(cmd, map[string]any{"console_origin": cfg.API.Console.Origin, "bootstrap": result.Bootstrap, "expires_at": result.ExpiresAt, "single_use": true, "reusable_bearer_exposed": false})
+		return output(cmd, result)
 	}}
+}
+
+func obtainConsoleBootstrap(ctx context.Context, configPath string) (map[string]any, error) {
+	cfg, err := config.Load(configPath, nil)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.API.UnixSocket == "" || cfg.API.Token == "" {
+		return nil, errors.New("control_plane_unavailable: protected Unix transport is not configured")
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", cfg.API.UnixSocket)
+	}}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/v1/console/bootstrap", bytes.NewReader([]byte("{}")))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+cfg.API.Token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("control_plane_unavailable: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("console bootstrap denied by control plane: HTTP %d", response.StatusCode)
+	}
+	var issued struct {
+		Bootstrap string `json:"bootstrap"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&issued); err != nil || issued.Bootstrap == "" {
+		return nil, errors.New("control plane returned an invalid console bootstrap")
+	}
+	return map[string]any{"console_origin": cfg.API.Console.Origin, "bootstrap": issued.Bootstrap, "expires_at": issued.ExpiresAt, "single_use": true, "reusable_bearer_exposed": false}, nil
+}
+
+func launchConsole(cmd *cobra.Command, options *rootOptions, opener BrowserOpener) error {
+	result, err := obtainConsoleBootstrap(cmd.Context(), options.configFile)
+	if err != nil {
+		return err
+	}
+	origin, _ := result["console_origin"].(string)
+	target := strings.TrimRight(origin, "/") + "/console"
+	if err = opener(cmd.Context(), target); err != nil {
+		result["browser_opened"] = false
+		result["manual_url"] = target
+		if outputErr := output(cmd, result); outputErr != nil {
+			return errors.Join(err, outputErr)
+		}
+		return fmt.Errorf("browser launch failed; open %s and enter the emitted single-use bootstrap manually: %w", target, err)
+	}
+	result["browser_opened"] = true
+	return output(cmd, result)
 }
