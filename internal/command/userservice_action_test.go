@@ -55,12 +55,37 @@ func TestServiceLifecycleCommandsReportMissingInstallationBeforeSystemctl(t *tes
 			cmd.SetArgs([]string{action})
 
 			err := cmd.Execute()
-			if got, want := err.Error(), "service_not_installed: Aegis user service is not installed; run `aegis service install`"; got != want {
+			if got, want := err.Error(), "gateway_not_installed: Aegis gateway is not installed; run `aegis gateway install`"; got != want {
 				t.Fatalf("error = %q, want %q", got, want)
 			}
 			if len(runner.calls) != 0 {
 				t.Fatalf("systemctl invoked for missing service: %v", runner.calls)
 			}
 		})
+	}
+}
+
+func TestGatewayIsCanonicalAndServiceIsOnlyItsCompatibilityAlias(t *testing.T) {
+	command := userServiceCmd(&denyingUserServiceRunner{}, func(io.Reader, io.Writer) bool { return true }, &rootOptions{})
+	if command.Name() != "gateway" {
+		t.Fatalf("canonical command = %q, want gateway", command.Name())
+	}
+	if len(command.Aliases) != 1 || command.Aliases[0] != "service" {
+		t.Fatalf("aliases = %v, want [service]", command.Aliases)
+	}
+}
+
+func TestBareRootRequiresGatewayForDevelopmentAndProductionProfiles(t *testing.T) {
+	for _, test := range []struct {
+		profile ExecutionProfile
+		want    bool
+	}{
+		{profile: DevelopmentProfile, want: true},
+		{profile: ProductionProfile, want: true},
+		{profile: "", want: false},
+	} {
+		if got := requiresGateway(test.profile); got != test.want {
+			t.Fatalf("requiresGateway(%q) = %v, want %v", test.profile, got, test.want)
+		}
 	}
 }

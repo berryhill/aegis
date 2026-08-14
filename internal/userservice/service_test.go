@@ -122,7 +122,7 @@ func TestActionRejectsMissingInstallationBeforeSystemctl(t *testing.T) {
 			if !errors.Is(err, ErrServiceNotInstalled) {
 				t.Fatalf("missing service did not return stable Aegis error: %v", err)
 			}
-			if got, want := err.Error(), "service_not_installed: Aegis user service is not installed; run `aegis service install`"; got != want {
+			if got, want := err.Error(), "gateway_not_installed: Aegis gateway is not installed; run `aegis gateway install`"; got != want {
 				t.Fatalf("missing service error = %q, want %q", got, want)
 			}
 			if len(runner.calls) != 0 {

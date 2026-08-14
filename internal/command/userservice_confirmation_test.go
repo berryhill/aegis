@@ -73,7 +73,7 @@ func TestApproveServicePlanUsesBoundedDefaultYesConfirmation(t *testing.T) {
 			if approved != test.approved || (err != nil) != test.wantErr {
 				t.Fatalf("approved=%v err=%v output=%q", approved, err, output.String())
 			}
-			for _, expected := range []string{plan.Principal, plan.UnitPath, plan.UnitDigest, plan.Executable, plan.ConfigPath, plan.Origin, "Install and activate this user service? [Y/n]:"} {
+			for _, expected := range []string{plan.Principal, plan.UnitPath, plan.UnitDigest, plan.Executable, plan.ConfigPath, plan.Origin, "Install and activate this gateway? [Y/n]:"} {
 				if !strings.Contains(output.String(), expected) {
 					t.Fatalf("preview omitted %q: %s", expected, output.String())
 				}
@@ -81,7 +81,7 @@ func TestApproveServicePlanUsesBoundedDefaultYesConfirmation(t *testing.T) {
 			if strings.Contains(output.String(), userservice.Confirmation) {
 				t.Fatalf("legacy phrase gate remains in preview: %s", output.String())
 			}
-			if !approved && !strings.Contains(output.String(), "declined; no service state was changed") {
+			if !approved && !strings.Contains(output.String(), "declined; no gateway state was changed") {
 				t.Fatalf("decline did not state the no-mutation result: %s", output.String())
 			}
 		})

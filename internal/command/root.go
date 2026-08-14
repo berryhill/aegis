@@ -354,7 +354,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return err
 			}
 		}
-		if deps.Profile == ProductionProfile {
+		if requiresGateway(deps.Profile) {
 			input := newTerminalInput(cmd.InOrStdin())
 			reconciled, err := reconcileServeTransport(cmd, o.configFile, input)
 			if err != nil || !reconciled {
@@ -417,6 +417,10 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	wrapAuthorityCleanup(root)
 	return root
+}
+
+func requiresGateway(profile ExecutionProfile) bool {
+	return profile == DevelopmentProfile || profile == ProductionProfile
 }
 
 func credentialBridgeCmd() *cobra.Command {
