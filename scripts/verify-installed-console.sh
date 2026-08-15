@@ -164,7 +164,7 @@ if not status.startswith(b"HTTP/1.1 201 "):
     raise SystemExit("installed console fixture registration failed")
 pathlib.Path(response_path).write_bytes(payload)
 PY
-grep -F 'Authenticate this browser' "$workspace/shell.html" >/dev/null
+grep -F 'Sign the Aegis principal into this browser' "$workspace/shell.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
 [ "$(wc -c <"$workspace/datastar.js")" -gt 1000 ]
@@ -191,7 +191,7 @@ PY
 curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console" -o "$workspace/authenticated.html"
 grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
 grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null
-! grep -F 'Authenticate this browser' "$workspace/authenticated.html" >/dev/null
+! grep -F 'Sign the Aegis principal into this browser' "$workspace/authenticated.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
 
 HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/browser-bootstrap-response.json"
