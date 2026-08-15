@@ -678,7 +678,7 @@ func authorityPersistenceArtifact(parts []string, info os.FileInfo) bool {
 	if parts[2] != "stores" && parts[2] != "staging" && parts[2] != "retired" {
 		return false
 	}
-	if !strings.HasPrefix(parts[3], "store-") || !strings.HasSuffix(parts[3], ".badger") || len(parts[3]) != len("store-")+32+len(".badger") {
+	if !badgerGenerationName(parts[3]) {
 		return false
 	}
 	if len(parts) == 4 {
@@ -688,7 +688,42 @@ func authorityPersistenceArtifact(parts []string, info os.FileInfo) bool {
 		return false
 	}
 	name := parts[4]
-	return name == "MANIFEST" || name == "KEYREGISTRY" || name == "LOCK" || name == "DISCARD" || strings.HasSuffix(name, ".sst") || strings.HasSuffix(name, ".vlog")
+	return name == "MANIFEST" || name == "KEYREGISTRY" || name == "LOCK" || name == "DISCARD" || numericBadgerArtifact(name)
+}
+
+func badgerGenerationName(name string) bool {
+	const prefix = "store-"
+	const suffix = ".badger"
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) || len(name) != len(prefix)+32+len(suffix) {
+		return false
+	}
+	for _, character := range name[len(prefix) : len(name)-len(suffix)] {
+		if character < '0' || character > '9' {
+			if character < 'a' || character > 'f' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func numericBadgerArtifact(name string) bool {
+	for _, suffix := range []string{".mem", ".sst", ".vlog"} {
+		if !strings.HasSuffix(name, suffix) {
+			continue
+		}
+		stem := strings.TrimSuffix(name, suffix)
+		if stem == "" {
+			return false
+		}
+		for _, character := range stem {
+			if character < '0' || character > '9' {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func runtimeName(name string) bool {
