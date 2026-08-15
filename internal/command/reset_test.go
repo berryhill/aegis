@@ -84,11 +84,14 @@ func executeReset(t *testing.T, fixture resetCommandFixture, input string, termi
 func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
 	memArtifact := filepath.Join(fixture.state, "persistence", "authority-v1", "stores", "store-0123456789abcdef0123456789abcdef.badger", "00001.mem")
-	if err := os.MkdirAll(filepath.Dir(memArtifact), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(memArtifact, []byte("badger value log metadata"), 0600); err != nil {
-		t.Fatal(err)
+	fleetArtifact := filepath.Join(fixture.state, "persistence", "fleet-v1", "store.badger", "00001.mem")
+	for _, artifact := range []string{memArtifact, fleetArtifact} {
+		if err := os.MkdirAll(filepath.Dir(artifact), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(artifact, []byte("badger value log metadata"), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	output, err := executeReset(t, fixture, "y\n", true, nil)
 	if err != nil {
@@ -99,6 +102,7 @@ func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 		`"resolved_config_path": "` + fixture.config + `"`,
 		`"path": "` + filepath.Join(fixture.state, "plans", "one.json") + `"`,
 		`"path": "` + memArtifact + `"`,
+		`"path": "` + fleetArtifact + `"`,
 		`"confirmation_required": "authority passphrase, then y/yes, then authority passphrase again"`,
 		`"gateway_action": "stop and purge exact Aegis-owned user gateway if installed"`,
 		"Apply this exact reset plan? [y/N]",
@@ -119,6 +123,9 @@ func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 	}
 	if _, err = os.Lstat(memArtifact); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Badger memory-table artifact remains after reset: %v", err)
+	}
+	if _, err = os.Lstat(fleetArtifact); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("fleet Badger memory-table artifact remains after reset: %v", err)
 	}
 }
 

@@ -615,7 +615,7 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 		switch parts[0] {
 		case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions", "charters", "provisioned", "runtime", "manager", "audit-checkpoints", "transport", "persistence":
 			if parts[0] == "persistence" {
-				return authorityPersistenceArtifact(parts, info)
+				return persistenceArtifact(parts, info)
 			}
 			if parts[0] == "runtime" && len(parts) >= 2 && !runtimeName(parts[1]) {
 				return false
@@ -641,7 +641,7 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 	case "plans", "approvals", "receipts", "mandates", "authority-contexts", "authority-revocations", "sessions":
 		return len(parts) == 2 && strings.HasSuffix(parts[1], ".json")
 	case "persistence":
-		return authorityPersistenceArtifact(parts, info)
+		return persistenceArtifact(parts, info)
 	case "charters":
 		return len(parts) == 3 && strings.HasSuffix(parts[2], ".json")
 	case "provisioned":
@@ -654,6 +654,20 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 		return len(parts) == 2 && (parts[1] == "signing-key" || strings.HasSuffix(parts[1], ".json") || strings.HasPrefix(parts[1], ".aegis-"))
 	case "transport":
 		return len(parts) == 2 && (parts[1] == "api.token" || parts[1] == "aegis.sock.lock")
+	default:
+		return false
+	}
+}
+
+func persistenceArtifact(parts []string, info os.FileInfo) bool {
+	if len(parts) == 1 {
+		return info.IsDir()
+	}
+	switch parts[1] {
+	case "authority-v1":
+		return authorityPersistenceArtifact(parts, info)
+	case "fleet-v1":
+		return fleetPersistenceArtifact(parts, info)
 	default:
 		return false
 	}
@@ -688,6 +702,24 @@ func authorityPersistenceArtifact(parts []string, info os.FileInfo) bool {
 		return false
 	}
 	name := parts[4]
+	return name == "MANIFEST" || name == "KEYREGISTRY" || name == "LOCK" || name == "DISCARD" || numericBadgerArtifact(name)
+}
+
+func fleetPersistenceArtifact(parts []string, info os.FileInfo) bool {
+	if len(parts) == 2 {
+		return info.IsDir()
+	}
+	if len(parts) == 3 {
+		if info.IsDir() {
+			return parts[2] == "store.badger"
+		}
+		return parts[2] == "WRITER.lock" || parts[2] == "CLEAN" || parts[2] == "DIRTY" ||
+			(strings.HasPrefix(parts[2], ".marker-") && len(parts[2]) > len(".marker-"))
+	}
+	if len(parts) != 4 || parts[2] != "store.badger" || info.IsDir() {
+		return false
+	}
+	name := parts[3]
 	return name == "MANIFEST" || name == "KEYREGISTRY" || name == "LOCK" || name == "DISCARD" || numericBadgerArtifact(name)
 }
 
