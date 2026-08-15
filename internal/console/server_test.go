@@ -76,7 +76,7 @@ func TestSecurityHeadersOriginAndPaginationBounds(t *testing.T) {
 		"Content-Security-Policy": "default-src 'none'",
 		"X-Content-Type-Options":  "nosniff",
 		"X-Frame-Options":         "DENY",
-		"Referrer-Policy":         "no-referrer",
+		"Referrer-Policy":         "strict-origin",
 		"Cache-Control":           "no-store",
 	} {
 		if !strings.Contains(recorder.Header().Get(key), want) {

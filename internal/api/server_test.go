@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -363,7 +364,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	shellBody, _ := io.ReadAll(shell.Body)
 	_ = shell.Body.Close()
-	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authenticated control plane") || !strings.Contains(string(shellBody), "datastar-v1.0.2.js") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
+	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authenticated control plane") || strings.Contains(string(shellBody), "<script") || strings.Contains(string(shellBody), "data-on:") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("unsafe console shell status=%d headers=%v", shell.StatusCode, shell.Header)
 	}
 	asset, err := client.Get("http://" + address + "/console/assets/datastar-v1.0.2.js")
@@ -467,6 +468,55 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	_ = loggedOut.Body.Close()
 	if loggedOut.StatusCode != http.StatusOK || !bytes.Contains(loggedOutBody, []byte("Authenticate this browser")) {
 		t.Fatalf("Datastar logout patch status=%d body=%s", loggedOut.StatusCode, loggedOutBody)
+	}
+
+	var nativeIssued struct {
+		Bootstrap string `json:"bootstrap"`
+	}
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &nativeIssued, http.StatusCreated)
+	nativeExchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(nativeIssued.Bootstrap)))
+	nativeExchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	nativeExchange.Header.Set("Origin", "http://"+address)
+	nativeAuthenticated, err := client.Do(nativeExchange)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeAuthenticatedBody, _ := io.ReadAll(nativeAuthenticated.Body)
+	_ = nativeAuthenticated.Body.Close()
+	if nativeAuthenticated.StatusCode != http.StatusOK || nativeAuthenticated.Request.URL.Path != "/console" || !bytes.Contains(nativeAuthenticatedBody, []byte("Agent Registry")) || bytes.Contains(nativeAuthenticatedBody, []byte("Authenticate this browser")) {
+		t.Fatalf("native bootstrap flow status=%d final=%s body=%s", nativeAuthenticated.StatusCode, nativeAuthenticated.Request.URL, nativeAuthenticatedBody)
+	}
+	nativeGraphs, err := client.Get("http://" + address + "/console?domain=graphs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeGraphsBody, _ := io.ReadAll(nativeGraphs.Body)
+	_ = nativeGraphs.Body.Close()
+	if nativeGraphs.StatusCode != http.StatusOK || !bytes.Contains(nativeGraphsBody, []byte("Graphs")) || !bytes.Contains(nativeGraphsBody, []byte("authoritative collection is empty")) {
+		t.Fatalf("native graph navigation status=%d body=%s", nativeGraphs.StatusCode, nativeGraphsBody)
+	}
+	nativeState, err := client.Get("http://" + address + "/console/api/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nativeSession struct {
+		CSRF string `json:"csrf"`
+	}
+	if err = json.NewDecoder(nativeState.Body).Decode(&nativeSession); err != nil {
+		t.Fatal(err)
+	}
+	_ = nativeState.Body.Close()
+	nativeLogout, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/logout", strings.NewReader("csrf="+url.QueryEscape(nativeSession.CSRF)))
+	nativeLogout.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	nativeLogout.Header.Set("Origin", "http://"+address)
+	nativeLoggedOut, err := client.Do(nativeLogout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeLoggedOutBody, _ := io.ReadAll(nativeLoggedOut.Body)
+	_ = nativeLoggedOut.Body.Close()
+	if nativeLoggedOut.StatusCode != http.StatusOK || nativeLoggedOut.Request.URL.Path != "/console" || !bytes.Contains(nativeLoggedOutBody, []byte("Authenticate this browser")) {
+		t.Fatalf("native logout status=%d final=%s body=%s", nativeLoggedOut.StatusCode, nativeLoggedOut.Request.URL, nativeLoggedOutBody)
 	}
 
 	cancel()

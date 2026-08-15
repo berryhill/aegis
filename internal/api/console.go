@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -77,6 +79,26 @@ func parseConsoleDomain(raw string) (consoleDomain, error) {
 
 func wantsDatastar(request *http.Request) bool {
 	return strings.Contains(request.Header.Get("Accept"), "text/event-stream")
+}
+
+func isConsoleForm(request *http.Request) bool {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	return err == nil && mediaType == "application/x-www-form-urlencoded"
+}
+
+func decodeConsoleForm(request *http.Request, field string) (string, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > 8192 {
+		return "", errors.New("invalid console form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 8193))
+	if err != nil || len(body) > 8192 {
+		return "", errors.New("invalid console form")
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil || len(values) != 1 || len(values[field]) != 1 {
+		return "", errors.New("invalid console form")
+	}
+	return values[field][0], nil
 }
 
 func renderConsole(ctx context.Context, component templ.Component) ([]byte, error) {

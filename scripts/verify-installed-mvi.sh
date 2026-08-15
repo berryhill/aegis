@@ -144,4 +144,4 @@ go run ./scripts/demo-authority-init "$vertical/state/persistence/authority-v1"
 python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$install/aegis" "$proof/vertical"
 "$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"
 
-printf 'installed MVI verified: version=%s source_revision=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_templ_datastar\n' "$version" "$expected_revision"
+printf 'installed MVI verified: version=%s source_revision=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_native_forms retained_asset_direct=true retained_asset_loaded=false real_chrome=true\n' "$version" "$expected_revision"

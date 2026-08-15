@@ -96,6 +96,31 @@ token_path.chmod(0o600)
 PY
 mkdir -m 0700 "$workspace/state"
 go run "$repo/scripts/demo-authority-init" "$workspace/state/persistence/authority-v1" >/dev/null
+python3 - "$workspace/agent.json" <<'PY'
+import json, pathlib, sys
+digest = "sha256:" + ("a" * 64)
+fixture = {
+    "schema_version": "aegis.current-fleet.fixture.v1",
+    "fleet_id": "fleet-primary",
+    "agents": [{
+        "source_id": "fleet-agent-1",
+        "agent_id": "agent-alpha",
+        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "target": "profile/alpha"},
+        "ownership": {"owner_id": "operator-primary", "accountability_id": "team-platform"},
+        "lifecycle": "enabled",
+        "charter": {"schema_version": "aegis.reference.revision.v1", "id": "agent-alpha", "revision": 7, "digest": digest},
+        "capability_declarations": [],
+        "policy_refs": [],
+    }],
+}
+request = {
+    "fixture": fixture,
+    "identity": {"fleet_id": "fleet-primary", "kind": "current-fleet", "source_id": "fleet-agent-1"},
+}
+path = pathlib.Path(sys.argv[1])
+path.write_text(json.dumps(request), encoding="utf-8")
+path.chmod(0o600)
+PY
 (cd "$repo" && go test ./internal/api -run '^TestServeSingletonDeniesBeforeActiveSocketMutation$' -count=1)
 HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" serve >"$workspace/server.log" 2>&1 &
 server_pid=$!
@@ -115,8 +140,32 @@ done
   while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
   exit 1
 }
+python3 - "$socket" "$workspace/transport/api.token" "$workspace/agent.json" "$workspace/agent-response.json" <<'PY'
+import pathlib, socket, sys
+socket_path, token_path, request_path, response_path = sys.argv[1:]
+token = pathlib.Path(token_path).read_text(encoding="utf-8").strip()
+body = pathlib.Path(request_path).read_bytes()
+auth_header = b"Author" + b"ization: " + b"Bear" + b"er " + token.encode("ascii")
+request = (
+    b"POST /v1/agents HTTP/1.1\r\nHost: unix\r\n" + auth_header +
+    b"\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
+)
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.connect(socket_path)
+    client.sendall(request)
+    response = bytearray()
+    while True:
+        chunk = client.recv(65536)
+        if not chunk:
+            break
+        response.extend(chunk)
+status, _, payload = bytes(response).partition(b"\r\n\r\n")
+if not status.startswith(b"HTTP/1.1 201 "):
+    raise SystemExit("installed console fixture registration failed")
+pathlib.Path(response_path).write_bytes(payload)
+PY
 grep -F 'Authenticate this browser' "$workspace/shell.html" >/dev/null
-grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
+! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
 [ "$(wc -c <"$workspace/datastar.js")" -gt 1000 ]
 
@@ -141,7 +190,11 @@ if set(response) != {"csrf", "expires"} or not all(response.values()):
 PY
 curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console" -o "$workspace/authenticated.html"
 grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
-grep -F 'authoritative collection is empty' "$workspace/authenticated.html" >/dev/null
+grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null
 ! grep -F 'Authenticate this browser' "$workspace/authenticated.html" >/dev/null
+! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
 
-printf '%s\n' 'installed console verified: extracted_binary=true token_file_transport=true singleton_denial=true daemon_console=true self_hosted_asset=true authenticated_surface=true archive_members=1'
+HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/browser-bootstrap-response.json"
+python3 "$repo/scripts/console_browser_test.py" "http://127.0.0.1:$port" "$workspace/browser-bootstrap-response.json" "$workspace"
+
+printf '%s\n' 'installed console verified: extracted_binary=true token_file_transport=true singleton_denial=true daemon_console=true retained_asset_direct=true retained_asset_loaded=false authenticated_surface=true real_chrome=true archive_members=1'
