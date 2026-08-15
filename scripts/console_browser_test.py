@@ -14,7 +14,15 @@ import struct
 import subprocess
 import sys
 import time
-from typing import Any
+from typing import Any, Protocol
+
+
+class ProcessState(Protocol):
+    def poll(self) -> int | None: ...
+
+
+CHROME_START_TIMEOUT = 15
+PAGE_TARGET_TIMEOUT = 8
 
 
 def require(condition: bool, message: str) -> None:
@@ -119,8 +127,9 @@ class DevTools:
         self.sock.close()
 
 
-def page_websocket(port: int, deadline: float) -> str:
+def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
     while time.monotonic() < deadline:
+        require(process.poll() is None, "Chrome exited before exposing a debuggable console page")
         try:
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
             connection.request("GET", "/json/list")
@@ -187,6 +196,8 @@ def main() -> int:
     require(isinstance(bootstrap, str) and bool(bootstrap), "browser proof received no bootstrap")
     chrome_home = workspace / "chrome"
     chrome_home.mkdir(mode=0o700)
+    chrome_stderr_path = workspace / "chrome.stderr"
+    chrome_stderr = chrome_stderr_path.open("w", encoding="utf-8")
     process = subprocess.Popen(
         [
             "/usr/bin/google-chrome",
@@ -201,19 +212,23 @@ def main() -> int:
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=chrome_stderr,
         text=True,
     )
     devtools: DevTools | None = None
     try:
         active_port = chrome_home / "DevToolsActivePort"
-        deadline = time.monotonic() + 8
-        while time.monotonic() < deadline and not active_port.exists():
+        startup_deadline = time.monotonic() + CHROME_START_TIMEOUT
+        while time.monotonic() < startup_deadline and not active_port.exists():
             require(process.poll() is None, "Chrome exited before DevTools readiness")
             time.sleep(0.05)
         require(active_port.exists(), "Chrome did not become ready")
+        require(process.poll() is None, "Chrome exited after DevTools readiness")
         port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
-        devtools = DevTools(page_websocket(port, deadline))
+        # DevToolsActivePort can appear before Chrome's first page target is
+        # queryable. This stage needs a fresh budget, not startup's remainder.
+        page_deadline = time.monotonic() + PAGE_TARGET_TIMEOUT
+        devtools = DevTools(page_websocket(port, page_deadline, process))
         for domain in ("Page", "Runtime", "Log", "Network", "Audits"):
             devtools.command(domain + ".enable")
 
@@ -291,8 +306,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=3)
-        if process.stderr is not None:
-            process.stderr.close()
+        chrome_stderr.close()
 
 
 if __name__ == "__main__":

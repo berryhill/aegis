@@ -195,6 +195,23 @@ grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
 
 HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/browser-bootstrap-response.json"
+if ! curl --fail --silent --show-error "http://127.0.0.1:$port/console" -o /dev/null; then
+  printf 'installed console server became unreachable before browser proof; server_alive=%s\n' "$(kill -0 "$server_pid" 2>/dev/null && printf true || printf false)" >&2
+  while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
+  exit 1
+fi
+set +e
 python3 "$repo/scripts/console_browser_test.py" "http://127.0.0.1:$port" "$workspace/browser-bootstrap-response.json" "$workspace"
+browser_status=$?
+set -e
+if [ "$browser_status" -ne 0 ]; then
+  printf 'installed browser proof failed; server_alive=%s browser_status=%s\n' "$(kill -0 "$server_pid" 2>/dev/null && printf true || printf false)" "$browser_status" >&2
+  while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
+  if [ -f "$workspace/chrome.stderr" ]; then
+    printf '%s\n' 'Chrome diagnostics:' >&2
+    while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/chrome.stderr"
+  fi
+  exit "$browser_status"
+fi
 
 printf '%s\n' 'installed console verified: extracted_binary=true token_file_transport=true singleton_denial=true daemon_console=true retained_asset_direct=true retained_asset_loaded=false authenticated_surface=true real_chrome=true archive_members=1'
