@@ -21,6 +21,7 @@ type recordingRunner struct {
 	runErrors   map[string]error
 	activeState string
 	unitState   string
+	loadState   string
 }
 
 func (r *recordingRunner) Run(_ context.Context, args ...string) error {
@@ -39,6 +40,8 @@ func (r *recordingRunner) Output(_ context.Context, args ...string) ([]byte, err
 			return []byte(defaultString(r.activeState, "inactive") + "\n"), nil
 		case "UnitFileState":
 			return []byte(defaultString(r.unitState, "disabled") + "\n"), nil
+		case "LoadState":
+			return []byte(defaultString(r.loadState, "not-found") + "\n"), nil
 		}
 	}
 	return nil, fmt.Errorf("unexpected output call: %v", args)
@@ -313,6 +316,78 @@ func TestApplyFailurePreservesPreExistingExactState(t *testing.T) {
 		if call[0] == "disable" || call[0] == "stop" {
 			t.Fatalf("rollback removed pre-existing service state: %v", runner.calls)
 		}
+	}
+}
+
+func TestPurgeForResetStopsAndRemovesExactInstalledGateway(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	executable, configPath := serviceFixture(t)
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+	purged, err := PurgeForReset(context.Background(), executable, configPath, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !purged {
+		t.Fatal("installed exact gateway was not reported as purged")
+	}
+	want := [][]string{{"disable", "--now", UnitName}, {"daemon-reload"}}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("gateway purge calls=%v want %v", runner.calls, want)
+	}
+	if _, err = os.Lstat(plan.UnitPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("gateway unit survived purge: %v", err)
+	}
+}
+
+func TestPurgeForResetRejectsAbsentUnitWithLoadedActiveGateway(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	executable, configPath := serviceFixture(t)
+	runner := &recordingRunner{loadState: "loaded", activeState: "active"}
+	purged, err := PurgeForReset(context.Background(), executable, configPath, runner)
+	if !errors.Is(err, ErrForeignUnit) {
+		t.Fatalf("absent unit with loaded active gateway error=%v", err)
+	}
+	if purged {
+		t.Fatal("unverified loaded gateway was reported as purged")
+	}
+	want := [][]string{
+		{"show", UnitName, "--property", "LoadState", "--value"},
+		{"show", UnitName, "--property", "ActiveState", "--value"},
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("absent active gateway calls=%v want read-only %v", runner.calls, want)
+	}
+}
+
+func TestPurgeForResetRejectsForeignGatewayWithoutStoppingIt(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	executable, configPath := serviceFixture(t)
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(plan.UnitPath, []byte("foreign"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+	if _, err = PurgeForReset(context.Background(), executable, configPath, runner); !errors.Is(err, ErrForeignUnit) {
+		t.Fatalf("foreign gateway purge error=%v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("foreign gateway triggered systemctl: %v", runner.calls)
 	}
 }
 

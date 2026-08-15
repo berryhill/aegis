@@ -1,23 +1,49 @@
 package command
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/berryhill/aegis/internal/config"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
+	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 )
 
 func resetCmd(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile) *cobra.Command {
-	return resetCmdWithAuthenticator(service, isTerminal, options, profile, authenticateResetAuthority)
+	return resetCmdWithRunner(service, userservice.Systemctl{}, isTerminal, options, profile)
 }
 
 type resetAuthenticator func(*cobra.Command, resetdomain.Plan) error
+type resetGatewayPurger func(context.Context, string) (bool, error)
+
+func resetCmdWithRunner(service *resetdomain.Service, runner userservice.Runner, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile) *cobra.Command {
+	purge := func(ctx context.Context, configPath string) (bool, error) {
+		executable, err := os.Executable()
+		if err != nil {
+			return false, err
+		}
+		return userservice.PurgeForReset(ctx, executable, configPath, runner)
+	}
+	return resetCmdWithHooks(service, isTerminal, options, profile, authenticateResetAuthority, purge)
+}
 
 func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile, authenticate resetAuthenticator) *cobra.Command {
+	purge := func(ctx context.Context, configPath string) (bool, error) {
+		executable, err := os.Executable()
+		if err != nil {
+			return false, err
+		}
+		return userservice.PurgeForReset(ctx, executable, configPath, userservice.Systemctl{})
+	}
+	return resetCmdWithHooks(service, isTerminal, options, profile, authenticate, purge)
+}
+
+func resetCmdWithHooks(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile, authenticate resetAuthenticator, purgeGateway resetGatewayPurger) *cobra.Command {
 	return &cobra.Command{
 		Use:   "reset",
 		Short: "Return Aegis-owned local onboarding state to uninitialized",
@@ -35,7 +61,7 @@ func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.
 			if err != nil {
 				return usage(err)
 			}
-			requiresAuthority := profile != DevelopmentProfile && (plan.CredentialRecords || plan.LocalKEK)
+			requiresAuthority := profile != DevelopmentProfile
 			confirmation := "y/yes"
 			authorityAuthentications := 0
 			if requiresAuthority {
@@ -59,7 +85,8 @@ func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.
 				AuthorityPassphrase  bool                   `json:"authority_passphrase_required"`
 				AuthorityPrompts     int                    `json:"authority_passphrase_authentications"`
 				ConfirmationRequired string                 `json:"confirmation_required"`
-			}{"reset", resetdomain.PlanDigest(plan), plan.Principal, plan.ConfigPath, string(plan.ConfigState), plan.Artifacts, plan.Preserved, plan.CredentialRecords, plan.LocalKEK, plan.Postcondition, plan.Warning, plan.LegacyRetained, profile, requiresAuthority, authorityAuthentications, confirmation}
+				GatewayAction        string                 `json:"gateway_action"`
+			}{"reset", resetdomain.PlanDigest(plan), plan.Principal, plan.ConfigPath, string(plan.ConfigState), plan.Artifacts, plan.Preserved, plan.CredentialRecords, plan.LocalKEK, plan.Postcondition, plan.Warning, plan.LegacyRetained, profile, requiresAuthority, authorityAuthentications, confirmation, "stop and purge exact Aegis-owned user gateway if installed"}
 			if err = output(cmd, preview); err != nil {
 				return err
 			}
@@ -85,21 +112,22 @@ func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.
 					return err
 				}
 			}
+			gatewayPurged, err := purgeGateway(cmd.Context(), plan.ConfigPath)
+			if err != nil {
+				return fmt.Errorf("gateway_stop_and_purge_failed: reset state was preserved: %w", err)
+			}
 			if err = service.Apply(cmd.Context(), plan); err != nil {
 				return err
 			}
-			return output(cmd, map[string]any{"state": "uninitialized", "reason": "reset_complete", "next_command": "aegis", "retained_empty_legacy_directories": plan.LegacyRetained})
+			return output(cmd, map[string]any{"state": "uninitialized", "reason": "reset_complete", "gateway_purged": gatewayPurged, "next_command": "aegis", "retained_empty_legacy_directories": plan.LegacyRetained})
 		},
 	}
 }
 
 func authenticateResetAuthority(cmd *cobra.Command, plan resetdomain.Plan) error {
-	if !plan.CredentialRecords && !plan.LocalKEK {
-		return nil
-	}
 	inspection := config.Inspect(plan.ConfigPath)
 	if inspection.State != config.StateValid || inspection.Config.Credentials.Authority.Custody != "passphrase-file" {
-		return usage(fmt.Errorf("%s: reset would destroy credential authority material but no verifiable passphrase-file authority is configured; no writes were performed", resetdomain.ReasonRequiresAuthority))
+		return usage(fmt.Errorf("%s: production reset requires a verifiable passphrase-file authority; no writes were performed", resetdomain.ReasonRequiresAuthority))
 	}
 	custodian, err := loadConfiguredCustodian(cmd, inspection.Config.Credentials.Authority)
 	if err != nil {

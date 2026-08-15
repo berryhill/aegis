@@ -115,8 +115,15 @@ func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	inspection := config.Inspect("")
+	if inspection.State != config.StateValid {
+		t.Fatalf("post-migration inspection=%+v", inspection)
+	}
+	resetFixture := resetCommandFixture{config: inspection.Path, state: inspection.Config.StateDir}
+	passphrase := addResetPassphraseAuthority(t, resetFixture)
+	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
 	var resetOutput bytes.Buffer
-	resetRoot := NewRoot(Dependencies{In: strings.NewReader(resetdomain.Confirmation + "\n"), Out: &resetOutput, Err: io.Discard, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	resetRoot := NewRoot(Dependencies{In: strings.NewReader(resetdomain.Confirmation + "\n"), Out: &resetOutput, Err: io.Discard, Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	resetRoot.SetArgs([]string{"reset"})
 	if err := resetRoot.Execute(); err != nil {
 		t.Fatal(err)
