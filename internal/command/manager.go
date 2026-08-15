@@ -21,6 +21,7 @@ import (
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/slash"
 	"github.com/berryhill/aegis/internal/tui"
+	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -31,7 +32,7 @@ func terminalPair(in io.Reader, out io.Writer) bool {
 	return inputOK && outputOK && term.IsTerminal(int(input.Fd())) && term.IsTerminal(int(output.Fd()))
 }
 
-func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
+func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger, runner userservice.Runner, profile ExecutionProfile) *cobra.Command {
 	command := &cobra.Command{Use: "manager", Short: "Start the built-in local Aegis secrets manager", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			if operationalAuthorityAbsent(cmd.Context(), options.configFile) {
@@ -40,6 +41,15 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": interactive manager mode requires stdin and stdout terminals"))
 		}
 		inspection := config.Inspect(options.configFile)
+		if requiresGateway(profile) && inspection.State == config.StateValid {
+			gateway := observeBareGateway(cmd.Context(), runner, options.configFile)
+			if gateway.State == userservice.GatewayHealthy {
+				return usage(errors.New("gateway_healthy: the exact authenticated gateway owns operational authority; the terminal gateway client is not available yet; use 'aegis console' or 'exit'; no authority persistence was opened"))
+			}
+			if gateway.State == userservice.GatewayMismatched || gateway.State == userservice.GatewayUnhealthy {
+				return usage(fmt.Errorf("%s: manager startup denied before authority inspection: %w", gateway.Reason, gateway.Err))
+			}
+		}
 		snapshot := inspectOnboarding(cmd.Context(), options.configFile, logger)
 		authorityState := authoritybadger.StateAbsent
 		if inspection.State == config.StateValid {
@@ -71,6 +81,47 @@ func bareRootNeedsBootstrap(snapshot onboarding.Snapshot, authorityState authori
 	// identical to explicit manager startup: operational authority is required,
 	// while runManager owns degraded handling for absent or invalid certification.
 	return managerNeedsBootstrap(snapshot, authorityState)
+}
+
+type bareStartupClass string
+
+const (
+	bareStartupUninitialized     bareStartupClass = "uninitialized"
+	bareStartupBootstrap         bareStartupClass = "bootstrap_resumable"
+	bareStartupReadyNoGateway    bareStartupClass = "ready_no_gateway"
+	bareStartupGatewayHealthy    bareStartupClass = "gateway_healthy"
+	bareStartupGatewayStopped    bareStartupClass = "gateway_stopped"
+	bareStartupGatewayUnhealthy  bareStartupClass = "gateway_unhealthy"
+	bareStartupGatewayMismatched bareStartupClass = "gateway_mismatched"
+	bareStartupAuthorityOrphaned bareStartupClass = "authority_orphaned_dirty"
+	bareStartupAuthorityCorrupt  bareStartupClass = "authority_corrupt_closed"
+)
+
+func classifyBareStartup(snapshot onboarding.Snapshot, authority authoritybadger.Inspection, gateway userservice.GatewayObservation) bareStartupClass {
+	switch gateway.State {
+	case userservice.GatewayHealthy:
+		return bareStartupGatewayHealthy
+	case userservice.GatewayMismatched:
+		return bareStartupGatewayMismatched
+	case userservice.GatewayUnhealthy:
+		return bareStartupGatewayUnhealthy
+	}
+	if authority.State == authoritybadger.StateInvalid {
+		if gateway.State == userservice.GatewayStopped && authority.Err != nil && strings.Contains(authority.Err.Error(), "DIRTY") {
+			return bareStartupAuthorityOrphaned
+		}
+		return bareStartupAuthorityCorrupt
+	}
+	if gateway.State == userservice.GatewayStopped {
+		return bareStartupGatewayStopped
+	}
+	if authority.State == authoritybadger.StateAbsent {
+		if snapshot.State == onboarding.Uninitialized {
+			return bareStartupUninitialized
+		}
+		return bareStartupBootstrap
+	}
+	return bareStartupReadyNoGateway
 }
 
 func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {

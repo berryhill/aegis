@@ -3,12 +3,14 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/onboarding"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 )
 
@@ -58,6 +60,74 @@ func TestBareStartupLeavesUnfinishedCertificationToDegradedManager(t *testing.T)
 				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.want)
 			}
 		})
+	}
+}
+
+func TestClassifyBareStartupCoversGatewayOwnershipAndOfflineAuthorityStates(t *testing.T) {
+	invalid := authoritybadger.Inspection{State: authoritybadger.StateInvalid, Err: errors.New("CLEAN does not authenticate ACTIVE: DIRTY is present")}
+	for _, test := range []struct {
+		name      string
+		snapshot  onboarding.Snapshot
+		authority authoritybadger.Inspection
+		gateway   userservice.GatewayObservation
+		want      bareStartupClass
+	}{
+		{name: "uninitialized", snapshot: onboarding.Snapshot{State: onboarding.Uninitialized}, authority: authoritybadger.Inspection{State: authoritybadger.StateAbsent}, want: bareStartupUninitialized},
+		{name: "resumable bootstrap", snapshot: onboarding.Snapshot{State: onboarding.PrincipalConfigured}, authority: authoritybadger.Inspection{State: authoritybadger.StateAbsent}, want: bareStartupBootstrap},
+		{name: "ready without gateway", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.Inspection{State: authoritybadger.StateReady}, gateway: userservice.GatewayObservation{State: userservice.GatewayNotInstalled}, want: bareStartupReadyNoGateway},
+		{name: "healthy exact gateway owns open authority", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: invalid, gateway: userservice.GatewayObservation{State: userservice.GatewayHealthy}, want: bareStartupGatewayHealthy},
+		{name: "installed stopped", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.Inspection{State: authoritybadger.StateReady}, gateway: userservice.GatewayObservation{State: userservice.GatewayStopped}, want: bareStartupGatewayStopped},
+		{name: "running unhealthy", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: invalid, gateway: userservice.GatewayObservation{State: userservice.GatewayUnhealthy}, want: bareStartupGatewayUnhealthy},
+		{name: "mismatched", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: invalid, gateway: userservice.GatewayObservation{State: userservice.GatewayMismatched}, want: bareStartupGatewayMismatched},
+		{name: "orphaned dirty", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: invalid, gateway: userservice.GatewayObservation{State: userservice.GatewayStopped}, want: bareStartupAuthorityOrphaned},
+		{name: "corrupt closed", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.Inspection{State: authoritybadger.StateInvalid, Err: errors.New("ACTIVE marker digest invalid")}, gateway: userservice.GatewayObservation{State: userservice.GatewayNotInstalled}, want: bareStartupAuthorityCorrupt},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := classifyBareStartup(test.snapshot, test.authority, test.gateway); got != test.want {
+				t.Fatalf("classifyBareStartup()=%q want=%q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestHealthyGatewayLauncherOffersStableActionsAndDefaultsToExit(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		want  healthyGatewayAction
+	}{
+		{name: "safe default", input: "\n", want: healthyGatewayExit},
+		{name: "console", input: "console\n", want: healthyGatewayConsole},
+		{name: "terminal", input: "terminal\n", want: healthyGatewayTerminal},
+		{name: "exit", input: "exit\n", want: healthyGatewayExit},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			cmd := &cobra.Command{}
+			cmd.SetContext(context.Background())
+			cmd.SetOut(&output)
+			action, err := chooseHealthyGatewayAction(cmd, newTerminalInput(strings.NewReader(test.input)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if action != test.want {
+				t.Fatalf("action=%q want=%q", action, test.want)
+			}
+			for _, expected := range []string{"gateway_healthy", "console  aegis console", "terminal aegis manager", "exit     exit", "default: exit"} {
+				if !strings.Contains(output.String(), expected) {
+					t.Fatalf("launcher output missing %q: %s", expected, output.String())
+				}
+			}
+		})
+	}
+}
+
+func TestHealthyGatewayLauncherRejectsUnknownActionWithoutMutation(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetOut(&bytes.Buffer{})
+	if _, err := chooseHealthyGatewayAction(cmd, newTerminalInput(strings.NewReader("bootstrap\n"))); err == nil || !strings.Contains(err.Error(), "console, terminal, or exit") {
+		t.Fatalf("unexpected launcher error: %v", err)
 	}
 }
 

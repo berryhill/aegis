@@ -317,6 +317,20 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		if !deps.IsTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			inspection := config.Inspect(o.configFile)
+			snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
+			gateway := userservice.GatewayObservation{}
+			if requiresGateway(deps.Profile) && inspection.State == config.StateValid {
+				gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
+				switch gateway.State {
+				case userservice.GatewayHealthy:
+					return output(cmd, map[string]any{"state": bareStartupGatewayHealthy, "initialized": true, "ready": true, "authority": "gateway_owned", "reason": gateway.Reason, "next_command": "aegis console", "actions": map[string]string{"console": "aegis console", "terminal": "aegis manager", "exit": "exit"}})
+				case userservice.GatewayMismatched, userservice.GatewayUnhealthy:
+					if err := output(cmd, map[string]any{"state": classifyBareStartup(snapshot, authoritybadger.Inspection{}, gateway), "initialized": true, "ready": false, "reason": gateway.Reason, "next_command": "aegis gateway status", "exit_status": 2}); err != nil {
+						return err
+					}
+					return usage(fmt.Errorf("%s: %w", gateway.Reason, gateway.Err))
+				}
+			}
 			if inspection.State == config.StateValid {
 				authority := authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
 				if authority.State == authoritybadger.StateAbsent {
@@ -326,10 +340,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 					return usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal; no mutations were performed", reasonOperationalAuthorityNotInitialized))
 				}
 				if authority.State == authoritybadger.StateInvalid {
+					class := classifyBareStartup(snapshot, authority, gateway)
+					if err := output(cmd, map[string]any{"state": class, "initialized": true, "ready": false, "reason": class, "next_command": "aegis gateway status", "exit_status": 2}); err != nil {
+						return err
+					}
 					return usage(fmt.Errorf("existing invalid operational authority requires operator repair and will not be replaced: %w", authority.Err))
 				}
 			}
-			snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
 			reason, next := snapshot.Reason, snapshot.NextCommand
 			if snapshot.State == "ready" {
 				reason, next = managerdomain.ReasonRequiresTTY, "aegis"
@@ -343,12 +360,37 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS] execution profile: %s; root: %s\n", deps.Profile, profileLayout.Root)
 		}
 		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
-		authorityState := authoritybadger.StateAbsent
+		authority := authoritybadger.Inspection{State: authoritybadger.StateAbsent}
+		gateway := userservice.GatewayObservation{}
 		inspection := config.Inspect(o.configFile)
-		if inspection.State == config.StateValid {
-			authorityState = authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")).State
+		if requiresGateway(deps.Profile) && inspection.State == config.StateValid {
+			gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
+			switch gateway.State {
+			case userservice.GatewayHealthy:
+				action, err := chooseHealthyGatewayAction(cmd, newTerminalInput(cmd.InOrStdin()))
+				if err != nil {
+					return usage(err)
+				}
+				switch action {
+				case healthyGatewayConsole:
+					return launchConsole(cmd, o, deps.OpenBrowser)
+				case healthyGatewayTerminal:
+					return usage(errors.New("gateway_healthy: the exact authenticated gateway owns operational authority; the terminal gateway client is not available yet; use 'aegis console' or 'exit'; no authority persistence was opened"))
+				default:
+					return nil
+				}
+			case userservice.GatewayMismatched, userservice.GatewayUnhealthy:
+				return usage(fmt.Errorf("%s: exact gateway startup admission denied: %w", gateway.Reason, gateway.Err))
+			}
 		}
-		if bareRootNeedsBootstrap(snapshot, authorityState) {
+		if inspection.State == config.StateValid {
+			authority = authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
+		}
+		class := classifyBareStartup(snapshot, authority, gateway)
+		if class == bareStartupAuthorityOrphaned || class == bareStartupAuthorityCorrupt {
+			return usage(fmt.Errorf("%s: existing operational authority requires operator repair and will not be replaced: %w", class, authority.Err))
+		}
+		if bareRootNeedsBootstrap(snapshot, authority.State) {
 			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
 			if err != nil || !launch {
 				return err
@@ -392,7 +434,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return runManager(cmd, build)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, deps.Profile), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {
@@ -421,6 +463,26 @@ func NewRoot(deps Dependencies) *cobra.Command {
 
 func requiresGateway(profile ExecutionProfile) bool {
 	return profile == DevelopmentProfile || profile == ProductionProfile
+}
+
+func observeBareGateway(ctx context.Context, runner userservice.Runner, configPath string) userservice.GatewayObservation {
+	executable, err := os.Executable()
+	if err != nil {
+		return userservice.GatewayObservation{State: userservice.GatewayUnhealthy, Reason: "gateway_executable_unavailable", Err: err}
+	}
+	plan, err := userservice.Preview(executable, configPath)
+	if err != nil {
+		inspection := config.Inspect(configPath)
+		if inspection.State == config.StateValid && (inspection.Config.API.Token == "" || inspection.Config.API.TokenFile == "" || inspection.Config.API.UnixSocket == "") {
+			// A not-yet-serve-ready configuration is a bootstrap input, not
+			// evidence of a live or installed gateway. Reconciliation owns it.
+			return userservice.GatewayObservation{}
+		}
+		return userservice.GatewayObservation{State: userservice.GatewayUnhealthy, Reason: "gateway_identity_unavailable", Err: err}
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return userservice.ObserveExactGateway(probeCtx, runner, plan)
 }
 
 func credentialBridgeCmd() *cobra.Command {

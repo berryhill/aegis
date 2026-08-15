@@ -75,6 +75,25 @@ type LifecycleResult struct {
 	AuditCurrent bool   `json:"audit_current"`
 }
 
+type GatewayState string
+
+const (
+	GatewayNotInstalled GatewayState = "not_installed"
+	GatewayStopped      GatewayState = "stopped"
+	GatewayHealthy      GatewayState = "healthy"
+	GatewayUnhealthy    GatewayState = "unhealthy"
+	GatewayMismatched   GatewayState = "mismatched"
+)
+
+// GatewayObservation is an observational startup admission result. Healthy is
+// returned only for the exact installed and loaded unit after authenticated,
+// audit-current readiness succeeds. Observation never starts or rewrites a unit.
+type GatewayObservation struct {
+	State  GatewayState `json:"state"`
+	Reason string       `json:"reason"`
+	Err    error        `json:"-"`
+}
+
 type Runner interface {
 	Run(context.Context, ...string) error
 	Output(context.Context, ...string) ([]byte, error)
@@ -153,6 +172,40 @@ func Installed(plan Plan) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func ObserveExactGateway(ctx context.Context, runner Runner, plan Plan) GatewayObservation {
+	installed, err := Installed(plan)
+	if err != nil {
+		return GatewayObservation{State: GatewayMismatched, Reason: "installed_gateway_mismatch", Err: err}
+	}
+	if !installed {
+		return GatewayObservation{State: GatewayNotInstalled, Reason: "gateway_not_installed"}
+	}
+	if runner == nil {
+		return GatewayObservation{State: GatewayUnhealthy, Reason: "gateway_service_manager_unavailable", Err: errors.New("user service manager is unavailable")}
+	}
+	if err = validateLoadedUnit(ctx, runner, plan); err != nil {
+		return GatewayObservation{State: GatewayMismatched, Reason: "loaded_gateway_mismatch", Err: err}
+	}
+	if err = validateLoadedExecStart(ctx, runner, plan); err != nil {
+		return GatewayObservation{State: GatewayMismatched, Reason: "loaded_gateway_mismatch", Err: err}
+	}
+	active, err := serviceState(ctx, runner, "ActiveState")
+	if err != nil {
+		return GatewayObservation{State: GatewayUnhealthy, Reason: "gateway_activity_unavailable", Err: err}
+	}
+	if !active {
+		return GatewayObservation{State: GatewayStopped, Reason: "exact_gateway_stopped"}
+	}
+	cfg, err := config.Load(plan.ConfigPath, nil)
+	if err != nil {
+		return GatewayObservation{State: GatewayUnhealthy, Reason: "gateway_configuration_unavailable", Err: err}
+	}
+	if err = probeReady(ctx, cfg); err != nil {
+		return GatewayObservation{State: GatewayUnhealthy, Reason: "authenticated_gateway_unhealthy", Err: err}
+	}
+	return GatewayObservation{State: GatewayHealthy, Reason: "authenticated_exact_gateway_ready"}
 }
 
 func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration) error {
@@ -356,6 +409,99 @@ func validateLoadedUnit(ctx context.Context, runner Runner, plan Plan) error {
 	return nil
 }
 
+func validateLoadedExecStart(ctx context.Context, runner Runner, plan Plan) error {
+	output, err := runner.Output(ctx, "show", UnitName, "--property", "ExecStart", "--value")
+	if err != nil {
+		return err
+	}
+	loaded := strings.TrimSpace(string(output))
+	pathStart := strings.Index(loaded, "path=")
+	argvStart := strings.Index(loaded, " ; argv[]=")
+	argvEnd := strings.Index(loaded, " ; ignore_errors=")
+	if pathStart < 0 || argvStart < 0 || argvEnd < 0 || pathStart+len("path=") >= argvStart || argvStart+len(" ; argv[]=") >= argvEnd {
+		return fmt.Errorf("%w: loaded ExecStart is missing exact path or argv identity", ErrForeignUnit)
+	}
+	paths, err := parseSystemdShowWords(strings.TrimSpace(loaded[pathStart+len("path=") : argvStart]))
+	if err != nil || len(paths) != 1 {
+		return fmt.Errorf("%w: loaded ExecStart path is malformed", ErrForeignUnit)
+	}
+	argv, err := parseSystemdShowWords(strings.TrimSpace(loaded[argvStart+len(" ; argv[]=") : argvEnd]))
+	if err != nil {
+		return fmt.Errorf("%w: loaded ExecStart argv is malformed", ErrForeignUnit)
+	}
+	want := []string{plan.Executable, "serve", "--config", plan.ConfigPath}
+	if paths[0] != plan.Executable || len(argv) != len(want) {
+		return fmt.Errorf("%w: loaded ExecStart does not match approved executable and config", ErrForeignUnit)
+	}
+	for index := range want {
+		if argv[index] != want[index] {
+			return fmt.Errorf("%w: loaded ExecStart does not match approved executable and config", ErrForeignUnit)
+		}
+	}
+	return nil
+}
+
+func parseSystemdShowWords(value string) ([]string, error) {
+	var words []string
+	var word strings.Builder
+	var quote byte
+	started := false
+	flush := func() {
+		if started {
+			words = append(words, word.String())
+			word.Reset()
+			started = false
+		}
+	}
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if quote == 0 && (character == ' ' || character == '\t' || character == '\n' || character == '\r') {
+			flush()
+			continue
+		}
+		if character == '\'' || character == '"' {
+			if quote == 0 {
+				quote = character
+				started = true
+				continue
+			}
+			if quote == character {
+				quote = 0
+				continue
+			}
+		}
+		if character == '\\' {
+			if index+1 >= len(value) {
+				return nil, errors.New("trailing escape")
+			}
+			if value[index+1] == 'x' {
+				if index+3 >= len(value) {
+					return nil, errors.New("short hexadecimal escape")
+				}
+				decoded, err := hex.DecodeString(value[index+2 : index+4])
+				if err != nil {
+					return nil, err
+				}
+				word.WriteByte(decoded[0])
+				index += 3
+				started = true
+				continue
+			}
+			index++
+			word.WriteByte(value[index])
+			started = true
+			continue
+		}
+		word.WriteByte(character)
+		started = true
+	}
+	if quote != 0 {
+		return nil, errors.New("unterminated quote")
+	}
+	flush()
+	return words, nil
+}
+
 func waitActiveState(ctx context.Context, runner Runner, wantActive bool) error {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -503,6 +649,43 @@ func publishUnit(path string, unit []byte) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+func probeReady(ctx context.Context, cfg config.Config) error {
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", cfg.API.UnixSocket)
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: time.Second}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/readyz", nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+cfg.API.Token)
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	var body struct {
+		Status string `json:"status"`
+		Audit  struct {
+			State      string `json:"state"`
+			Reason     string `json:"reason"`
+			Current    bool   `json:"current"`
+			Verifiable bool   `json:"verifiable"`
+		} `json:"audit"`
+	}
+	if err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body); err != nil {
+		return fmt.Errorf("readiness returned HTTP %d with invalid response: %w", response.StatusCode, err)
+	}
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("authenticated readiness denied: HTTP %d", response.StatusCode)
+	}
+	if response.StatusCode == http.StatusOK && body.Status == "ready" && body.Audit.Current && body.Audit.Verifiable {
+		return nil
+	}
+	return fmt.Errorf("readiness not audit-current: HTTP %d status=%q audit_state=%q reason=%q", response.StatusCode, body.Status, body.Audit.State, body.Audit.Reason)
 }
 
 func waitReady(ctx context.Context, cfg config.Config) error {

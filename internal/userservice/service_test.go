@@ -26,6 +26,7 @@ type recordingRunner struct {
 	unitState    string
 	loadState    string
 	fragmentPath string
+	execStart    string
 }
 
 func (r *recordingRunner) Run(_ context.Context, args ...string) error {
@@ -56,6 +57,8 @@ func (r *recordingRunner) Output(_ context.Context, args ...string) ([]byte, err
 			return []byte(defaultString(r.loadState, "not-found") + "\n"), nil
 		case "FragmentPath":
 			return []byte(r.fragmentPath + "\n"), nil
+		case "ExecStart":
+			return []byte(r.execStart + "\n"), nil
 		}
 	}
 	return nil, fmt.Errorf("unexpected output call: %v", args)
@@ -149,6 +152,89 @@ func TestActionRejectsMissingInstallationBeforeSystemctl(t *testing.T) {
 				t.Fatalf("missing-service denial mutated unit path: %v", statErr)
 			}
 		})
+	}
+}
+
+func TestObserveExactGatewayAdmitsOnlyActiveAuthenticatedExactUnitWithoutMutation(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{activeState: "active", fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
+
+	observation := ObserveExactGateway(context.Background(), runner, plan)
+	if observation.State != GatewayHealthy || observation.Reason != "authenticated_exact_gateway_ready" {
+		t.Fatalf("observation = %+v", observation)
+	}
+	for _, call := range runner.calls {
+		if len(call) > 0 && (call[0] == "start" || call[0] == "restart" || call[0] == "enable") {
+			t.Fatalf("observation mutated gateway lifecycle: %v", runner.calls)
+		}
+	}
+}
+
+func TestObserveExactGatewayDeniesStaleLoadedExecStartAtExpectedFragment(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name       string
+		executable string
+		configPath string
+	}{
+		{name: "stale executable", executable: filepath.Join(t.TempDir(), "stale-aegis"), configPath: plan.ConfigPath},
+		{name: "stale config", executable: plan.Executable, configPath: filepath.Join(t.TempDir(), "stale.yaml")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &recordingRunner{activeState: "active", fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(test.executable, test.configPath)}
+			observation := ObserveExactGateway(context.Background(), runner, plan)
+			if observation.State != GatewayMismatched || observation.Reason != "loaded_gateway_mismatch" || !errors.Is(observation.Err, ErrForeignUnit) {
+				t.Fatalf("stale loaded unit was admitted: %+v", observation)
+			}
+			for _, call := range runner.calls {
+				if len(call) >= 4 && call[3] == "ActiveState" {
+					t.Fatalf("activity was inspected after identity denial: %v", runner.calls)
+				}
+			}
+		})
+	}
+}
+
+func loadedExecStartFixture(executable, configPath string) string {
+	return fmt.Sprintf("{ path=%s ; argv[]=%s serve --config %s ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }", executable, executable, configPath)
+}
+
+func TestObserveExactGatewayKeepsStoppedUnhealthyAndMismatchedStatesDistinct(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusServiceUnavailable, `{"status":"not_ready","audit":{"current":false,"verifiable":true,"reason":"checkpoint_stale"}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	stopped := ObserveExactGateway(context.Background(), &recordingRunner{activeState: "inactive", fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}, plan)
+	if stopped.State != GatewayStopped {
+		t.Fatalf("stopped observation = %+v", stopped)
+	}
+	unhealthy := ObserveExactGateway(context.Background(), &recordingRunner{activeState: "active", fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}, plan)
+	if unhealthy.State != GatewayUnhealthy {
+		t.Fatalf("unhealthy observation = %+v", unhealthy)
+	}
+	mismatched := ObserveExactGateway(context.Background(), &recordingRunner{activeState: "active", fragmentPath: filepath.Join(t.TempDir(), UnitName), execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}, plan)
+	if mismatched.State != GatewayMismatched {
+		t.Fatalf("mismatched observation = %+v", mismatched)
 	}
 }
 
