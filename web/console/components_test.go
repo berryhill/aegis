@@ -76,9 +76,15 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 	}
 	html := output.String()
 	for _, required := range []string{
-		"Open a terminal on the Aegis host",
+		"Sign the Aegis principal into this browser",
+		"principal configured when Aegis was initialized",
+		"does not create or change the principal, tenant, or authority context",
+		"On the Aegis host, open a terminal as the initialized principal",
 		"aegis console",
-		"Copy only the short-lived, single-use bootstrap",
+		"authenticates the host user and creates a temporary, single-use browser handoff",
+		"browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority",
+		"only hands the existing authenticated principal into this browser",
+		"does not provision identity or grant authority",
 		"submit promptly",
 		"without launching a browser",
 		"bare production",
@@ -90,6 +96,14 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 		if !strings.Contains(html, required) {
 			t.Fatalf("authentication guidance missing %q: %s", required, html)
 		}
+	}
+	for _, forbidden := range []string{`name="principal"`, `name="actor"`, `name="tenant"`, `name="stanza"`, `name="mandate"`, `name="authority"`} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("browser authentication exposes authority-bearing input %q: %s", forbidden, html)
+		}
+	}
+	if strings.Count(html, `<input`) != 1 || !strings.Contains(html, `name="bootstrap"`) {
+		t.Fatalf("browser authentication must accept exactly one bootstrap input: %s", html)
 	}
 }
 
