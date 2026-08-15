@@ -69,8 +69,10 @@ func newResetCommandFixture(t *testing.T, initialized bool) resetCommandFixture 
 
 func executeReset(t *testing.T, fixture resetCommandFixture, input string, terminal bool, ctx context.Context) (string, error) {
 	t.Helper()
+	passphrase := addResetPassphraseAuthority(t, fixture)
+	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
 	var out bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader(input), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return terminal }, Resetter: fixture.service})
+	root := NewRoot(Dependencies{In: strings.NewReader(input), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return terminal }, Resetter: fixture.service})
 	root.SetArgs([]string{"--config", fixture.config, "reset"})
 	if ctx != nil {
 		root.SetContext(ctx)
@@ -97,10 +99,11 @@ func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 		`"resolved_config_path": "` + fixture.config + `"`,
 		`"path": "` + filepath.Join(fixture.state, "plans", "one.json") + `"`,
 		`"path": "` + memArtifact + `"`,
-		`"confirmation_required": "y/yes"`,
+		`"confirmation_required": "authority passphrase, then y/yes, then authority passphrase again"`,
+		`"gateway_action": "stop and purge exact Aegis-owned user gateway if installed"`,
 		"Apply this exact reset plan? [y/N]",
-		`"credential_records_destroyed": false`,
-		`"local_kek_destroyed": false`,
+		`"credential_records_destroyed": true`,
+		`"local_kek_destroyed": true`,
 		"encrypted credentials and audit history",
 		"Hermes installation and normal Hermes profiles",
 		"Ollama installation, operator-managed daemon, and downloaded model stores",
@@ -143,15 +146,18 @@ func TestProductionBareResetSelectsDiscoveredFormerLayout(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	passphrase := addResetPassphraseAuthority(t, fixture)
+	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
 	var output bytes.Buffer
 	root := NewRoot(Dependencies{
-		In:         strings.NewReader(resetdomain.Confirmation + "\n"),
-		Out:        &output,
-		Err:        io.Discard,
-		Version:    "0.1.27",
-		Profile:    ProductionProfile,
-		IsTerminal: func(io.Reader, io.Writer) bool { return true },
-		Resetter:   fixture.service,
+		In:          strings.NewReader(resetdomain.Confirmation + "\n"),
+		Out:         &output,
+		Err:         io.Discard,
+		Version:     "0.1.27",
+		Passphrases: provider,
+		Profile:     ProductionProfile,
+		IsTerminal:  func(io.Reader, io.Writer) bool { return true },
+		Resetter:    fixture.service,
 	})
 	root.SetArgs([]string{"reset"})
 	if err = root.Execute(); err != nil {
@@ -313,6 +319,51 @@ func TestResetAuthenticationPolicyDiffersByExecutionProfile(t *testing.T) {
 	}
 }
 
+func TestProductionResetRequiresAuthorityBeforeGatewayOrStateMutation(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	statePath := filepath.Join(fixture.state, "plans", "one.json")
+	beforeConfig, err := os.ReadFile(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeState, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	purges := 0
+	command := resetCmdWithHooks(
+		fixture.service,
+		func(io.Reader, io.Writer) bool { return true },
+		&rootOptions{configFile: fixture.config},
+		ProductionProfile,
+		authenticateResetAuthority,
+		func(context.Context, string) (bool, error) {
+			purges++
+			return true, nil
+		},
+	)
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err = command.Execute(); err == nil || !strings.Contains(err.Error(), resetdomain.ReasonRequiresAuthority) {
+		t.Fatalf("production reset without authority error=%v", err)
+	}
+	if purges != 0 {
+		t.Fatalf("unauthenticated production reset reached gateway purge %d time(s)", purges)
+	}
+	afterConfig, err := os.ReadFile(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterState, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(beforeConfig, afterConfig) || !bytes.Equal(beforeState, afterState) {
+		t.Fatal("unauthenticated production reset changed gateway or state inputs")
+	}
+}
+
 func TestProductionResetSecondAuthenticationFailureWritesNothing(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
 	_ = addResetPassphraseAuthority(t, fixture)
@@ -337,6 +388,70 @@ func TestProductionResetSecondAuthenticationFailureWritesNothing(t *testing.T) {
 	for _, path := range []string{fixture.config, filepath.Join(fixture.state, "credentials", "authority.db"), filepath.Join(fixture.state, "credentials", "authority.kek")} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("second authentication failure changed %s: %v", path, err)
+		}
+	}
+}
+
+func TestProductionResetPurgesGatewayBeforeDeletingState(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	_ = addResetPassphraseAuthority(t, fixture)
+	calls := 0
+	purges := 0
+	authenticate := func(*cobra.Command, resetdomain.Plan) error {
+		calls++
+		return nil
+	}
+	purge := func(ctx context.Context, configPath string) (bool, error) {
+		purges++
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		if configPath != fixture.config {
+			t.Fatalf("gateway purge config=%q want %q", configPath, fixture.config)
+		}
+		if _, err := os.Stat(fixture.config); err != nil {
+			t.Fatalf("gateway purge ran after configuration deletion: %v", err)
+		}
+		if err := os.Remove(filepath.Join(fixture.state, "plans", "one.json")); err != nil {
+			t.Fatalf("simulate gateway volatile-artifact cleanup: %v", err)
+		}
+		return true, nil
+	}
+	command := resetCmdWithHooks(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile, authenticate, purge)
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || purges != 1 {
+		t.Fatalf("authentications=%d purges=%d want 2,1", calls, purges)
+	}
+	if _, err := os.Stat(fixture.config); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("configuration survived reset: %v", err)
+	}
+}
+
+func TestProductionResetGatewayPurgeFailurePreservesState(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	purgeErr := errors.New("gateway stop failed")
+	command := resetCmdWithHooks(
+		fixture.service,
+		func(io.Reader, io.Writer) bool { return true },
+		&rootOptions{configFile: fixture.config},
+		ProductionProfile,
+		func(*cobra.Command, resetdomain.Plan) error { return nil },
+		func(context.Context, string) (bool, error) { return false, purgeErr },
+	)
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err := command.Execute(); !errors.Is(err, purgeErr) {
+		t.Fatalf("gateway purge failure=%v want %v", err, purgeErr)
+	}
+	for _, path := range []string{fixture.config, filepath.Join(fixture.state, "plans", "one.json")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("gateway purge failure changed %s: %v", path, err)
 		}
 	}
 }

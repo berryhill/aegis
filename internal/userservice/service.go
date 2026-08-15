@@ -399,6 +399,63 @@ func Uninstall(ctx context.Context, plan Plan, runner Runner) error {
 	return runner.Run(ctx, "daemon-reload")
 }
 
+// PurgeForReset stops and removes only the exact Aegis-owned gateway unit
+// derived from the still-present configuration. An absent unit file is a no-op
+// only when systemd authoritatively reports the exact unit not loaded and
+// inactive; an unverified or foreign unit fails closed before mutation.
+func PurgeForReset(ctx context.Context, executable, configPath string, runner Runner) (bool, error) {
+	if runner == nil {
+		return false, errors.New("user service manager is unavailable")
+	}
+	unitDir, err := userUnitDirectory()
+	if err != nil {
+		return false, err
+	}
+	unitPath := filepath.Join(unitDir, UnitName)
+	if _, err = os.Lstat(unitPath); errors.Is(err, os.ErrNotExist) {
+		if err = verifyAbsentUnitInactive(ctx, runner); err != nil {
+			return false, err
+		}
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		return false, err
+	}
+	if err = inspectUnit(plan.UnitPath, plan.unit); err != nil {
+		return false, err
+	}
+	if err = Uninstall(ctx, plan, runner); err != nil {
+		return false, err
+	}
+	if _, err = os.Lstat(plan.UnitPath); !errors.Is(err, os.ErrNotExist) {
+		if err == nil {
+			err = errors.New("gateway unit remains after reset purge")
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func verifyAbsentUnitInactive(ctx context.Context, runner Runner) error {
+	loadState, err := runner.Output(ctx, "show", UnitName, "--property", "LoadState", "--value")
+	if err != nil {
+		return fmt.Errorf("inspect absent gateway load state: %w", err)
+	}
+	activeState, err := runner.Output(ctx, "show", UnitName, "--property", "ActiveState", "--value")
+	if err != nil {
+		return fmt.Errorf("inspect absent gateway active state: %w", err)
+	}
+	load := strings.TrimSpace(string(loadState))
+	active := strings.TrimSpace(string(activeState))
+	if load == "not-found" && active == "inactive" {
+		return nil
+	}
+	return fmt.Errorf("%w: gateway unit file is absent but systemd reports load=%q active=%q", ErrForeignUnit, load, active)
+}
+
 func inspectUnit(path string, expected []byte) error {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
