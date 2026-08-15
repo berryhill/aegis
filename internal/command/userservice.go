@@ -50,7 +50,7 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 		if err = userservice.Apply(cmd.Context(), plan, runner, 20*time.Second); err != nil {
 			return err
 		}
-		return output(cmd, map[string]any{"installed": true, "unit": userservice.UnitName, "unit_digest": plan.UnitDigest, "console_origin": plan.Origin, "reusable_secret_exposed": false})
+		return output(cmd, userservice.LifecycleResult{Action: "install", Unit: userservice.UnitName, UnitPath: plan.UnitPath, UnitDigest: plan.UnitDigest, Active: true, Ready: true, AuditCurrent: true})
 	}})
 	command.AddCommand(&cobra.Command{Use: "status", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		plan, err := preview()
@@ -73,7 +73,11 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 			if err != nil {
 				return err
 			}
-			return userservice.Action(cmd.Context(), runner, plan, action)
+			result, err := userservice.Action(cmd.Context(), runner, plan, action, 20*time.Second)
+			if err != nil {
+				return err
+			}
+			return output(cmd, result)
 		}})
 	}
 	command.AddCommand(&cobra.Command{Use: "uninstall", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
@@ -93,7 +97,10 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 			fmt.Fprintln(cmd.OutOrStdout(), "Gateway uninstall declined; no mutations were performed.")
 			return nil
 		}
-		return userservice.Uninstall(cmd.Context(), plan, runner)
+		if err = userservice.Uninstall(cmd.Context(), plan, runner); err != nil {
+			return err
+		}
+		return output(cmd, userservice.LifecycleResult{Action: "uninstall", Unit: userservice.UnitName, UnitPath: plan.UnitPath, UnitDigest: plan.UnitDigest})
 	}})
 	return command
 }
