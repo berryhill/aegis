@@ -180,6 +180,56 @@ func TestResetRecognizesAuthorityMaintenanceCoordinatorOnlyByExactName(t *testin
 	}
 }
 
+func TestResetRecognizesOnlyExactBadgerGenerationArtifacts(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "artifact")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	fileInfo, err := os.Lstat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(root, "directory")
+	if err = os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	directoryInfo, err := os.Lstat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	generation := "store-0123456789abcdef0123456789abcdef.badger"
+	for _, lifecycle := range []string{"stores", "staging", "retired"} {
+		for _, name := range []string{"00001.mem", "00001.sst", "00001.vlog"} {
+			parts := []string{"persistence", "authority-v1", lifecycle, generation, name}
+			if !authorityPersistenceArtifact(parts, fileInfo) {
+				t.Errorf("exact Badger artifact %q in %q was not recognized", name, lifecycle)
+			}
+			if authorityPersistenceArtifact(parts, directoryInfo) {
+				t.Errorf("directory named like Badger artifact %q in %q was recognized", name, lifecycle)
+			}
+		}
+	}
+
+	for _, name := range []string{".mem", "one.mem", "00001.mem.bak", "00001.MEM", "00001sst", "00001.vlog.extra"} {
+		parts := []string{"persistence", "authority-v1", "stores", generation, name}
+		if authorityPersistenceArtifact(parts, fileInfo) {
+			t.Errorf("inexact Badger artifact %q was recognized", name)
+		}
+	}
+
+	for _, malformed := range []string{
+		"store-0123456789abcdef0123456789abcdeg.badger",
+		"store-0123456789ABCDEF0123456789ABCDEF.badger",
+	} {
+		parts := []string{"persistence", "authority-v1", "stores", malformed, "00001.mem"}
+		if authorityPersistenceArtifact(parts, fileInfo) {
+			t.Errorf("artifact in malformed generation %q was recognized", malformed)
+		}
+	}
+}
+
 func TestCompleteResetAndFirstRunReplay(t *testing.T) {
 	f := newFixture(t)
 	f.writeConfig(t, "")

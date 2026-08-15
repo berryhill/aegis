@@ -81,6 +81,13 @@ func executeReset(t *testing.T, fixture resetCommandFixture, input string, termi
 
 func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
+	memArtifact := filepath.Join(fixture.state, "persistence", "authority-v1", "stores", "store-0123456789abcdef0123456789abcdef.badger", "00001.mem")
+	if err := os.MkdirAll(filepath.Dir(memArtifact), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(memArtifact, []byte("badger value log metadata"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	output, err := executeReset(t, fixture, "y\n", true, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +96,7 @@ func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 		`"operation": "reset"`,
 		`"resolved_config_path": "` + fixture.config + `"`,
 		`"path": "` + filepath.Join(fixture.state, "plans", "one.json") + `"`,
+		`"path": "` + memArtifact + `"`,
 		`"confirmation_required": "y/yes"`,
 		"Apply this exact reset plan? [y/N]",
 		`"credential_records_destroyed": false`,
@@ -105,6 +113,9 @@ func TestResetCommandPreviewAndYesConfirmation(t *testing.T) {
 	}
 	if config.Inspect(fixture.config).State != config.StateAbsent {
 		t.Fatal("reset did not produce absent config")
+	}
+	if _, err = os.Lstat(memArtifact); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Badger memory-table artifact remains after reset: %v", err)
 	}
 }
 
