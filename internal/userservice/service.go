@@ -63,6 +63,18 @@ type Plan struct {
 	unit         []byte
 }
 
+// LifecycleResult is emitted only after the exact owned unit reaches its
+// observed terminal lifecycle state. Readiness fields are false for stop.
+type LifecycleResult struct {
+	Action       string `json:"action"`
+	Unit         string `json:"unit"`
+	UnitPath     string `json:"unit_path"`
+	UnitDigest   string `json:"unit_digest"`
+	Active       bool   `json:"active"`
+	Ready        bool   `json:"ready"`
+	AuditCurrent bool   `json:"audit_current"`
+}
+
 type Runner interface {
 	Run(context.Context, ...string) error
 	Output(context.Context, ...string) ([]byte, error)
@@ -192,6 +204,9 @@ func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration)
 	if err = runner.Run(ctx, "enable", "--now", UnitName); err != nil {
 		return activationFailure("enable_start", err, rollback())
 	}
+	if err = validateLoadedUnit(ctx, runner, plan); err != nil {
+		return activationFailure("exact_unit_validation", err, rollback())
+	}
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
@@ -229,6 +244,9 @@ func EnsureReady(ctx context.Context, plan Plan, runner Runner, timeout time.Dur
 	}
 	if err = runner.Run(ctx, "start", UnitName); err != nil {
 		return activationFailure("start", err, nil)
+	}
+	if err = validateLoadedUnit(ctx, runner, plan); err != nil {
+		return activationFailure("exact_unit_validation", err, nil)
 	}
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -279,23 +297,79 @@ func serviceState(ctx context.Context, runner Runner, property string) (bool, er
 	}
 }
 
-func Action(ctx context.Context, runner Runner, plan Plan, action string) error {
+func Action(ctx context.Context, runner Runner, plan Plan, action string, timeout time.Duration) (LifecycleResult, error) {
 	if runner == nil {
-		return errors.New("user service manager is unavailable")
+		return LifecycleResult{}, errors.New("user service manager is unavailable")
 	}
 	switch action {
 	case "start", "stop", "restart":
 	default:
-		return errors.New("unsupported user service action")
+		return LifecycleResult{}, errors.New("unsupported user service action")
 	}
 	installed, err := Installed(plan)
 	if err != nil {
-		return err
+		return LifecycleResult{}, err
 	}
 	if !installed {
-		return ErrServiceNotInstalled
+		return LifecycleResult{}, ErrServiceNotInstalled
 	}
-	return runner.Run(ctx, action, UnitName)
+	if err = runner.Run(ctx, action, UnitName); err != nil {
+		return LifecycleResult{}, activationFailure(action, err, nil)
+	}
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	observeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err = validateLoadedUnit(observeCtx, runner, plan); err != nil {
+		return LifecycleResult{}, activationFailure("exact_unit_validation", err, nil)
+	}
+	wantActive := action != "stop"
+	if err = waitActiveState(observeCtx, runner, wantActive); err != nil {
+		return LifecycleResult{}, activationFailure("observed_state", err, nil)
+	}
+	result := LifecycleResult{Action: action, Unit: UnitName, UnitPath: plan.UnitPath, UnitDigest: plan.UnitDigest, Active: wantActive}
+	if !wantActive {
+		return result, nil
+	}
+	cfg, err := config.Load(plan.ConfigPath, nil)
+	if err != nil {
+		return LifecycleResult{}, activationFailure("authenticated_readiness", err, nil)
+	}
+	if err = waitReady(observeCtx, cfg); err != nil {
+		return LifecycleResult{}, activationFailure("audit_current_readiness", err, nil)
+	}
+	result.Ready = true
+	result.AuditCurrent = true
+	return result, nil
+}
+
+func validateLoadedUnit(ctx context.Context, runner Runner, plan Plan) error {
+	output, err := runner.Output(ctx, "show", UnitName, "--property", "FragmentPath", "--value")
+	if err != nil {
+		return err
+	}
+	loaded := strings.TrimSpace(string(output))
+	if loaded == "" || filepath.Clean(loaded) != filepath.Clean(plan.UnitPath) {
+		return fmt.Errorf("%w: loaded fragment does not match approved unit path", ErrForeignUnit)
+	}
+	return nil
+}
+
+func waitActiveState(ctx context.Context, runner Runner, wantActive bool) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		active, err := serviceState(ctx, runner, "ActiveState")
+		if err == nil && active == wantActive {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return errors.Join(ctx.Err(), err)
+		case <-ticker.C:
+		}
+	}
 }
 
 func Status(ctx context.Context, runner Runner, plan Plan) (map[string]any, error) {
@@ -390,9 +464,11 @@ func waitReady(ctx context.Context, cfg config.Config) error {
 			var body struct {
 				Status string `json:"status"`
 				Audit  struct {
+					State      string `json:"state"`
+					Reason     string `json:"reason"`
+					Pending    int    `json:"pending"`
 					Current    bool   `json:"current"`
 					Verifiable bool   `json:"verifiable"`
-					Reason     string `json:"reason"`
 				} `json:"audit"`
 			}
 			decodeErr := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&body)
@@ -400,12 +476,20 @@ func waitReady(ctx context.Context, cfg config.Config) error {
 			switch {
 			case decodeErr != nil:
 				lastErr = fmt.Errorf("readiness returned HTTP %d with invalid response: %w", response.StatusCode, decodeErr)
-			case response.StatusCode != http.StatusOK:
-				lastErr = fmt.Errorf("readiness returned HTTP %d: status=%q audit_current=%t audit_verifiable=%t reason=%q", response.StatusCode, body.Status, body.Audit.Current, body.Audit.Verifiable, body.Audit.Reason)
-			case body.Status == "ready" && body.Audit.Current && body.Audit.Verifiable:
+			case response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden:
+				return fmt.Errorf("authenticated readiness denied: HTTP %d", response.StatusCode)
+			case response.StatusCode == http.StatusOK && body.Status == "ready" && body.Audit.Current && body.Audit.Verifiable:
 				return nil
+			case response.StatusCode == http.StatusServiceUnavailable && body.Audit.State == "pending" && body.Audit.Pending > 0 && body.Audit.Verifiable:
+				if deliveryErr := deliverPendingAudit(ctx, client, cfg.API.Token); deliveryErr != nil {
+					lastErr = deliveryErr
+				} else {
+					lastErr = fmt.Errorf("audit delivery progressed; awaiting audit-current readiness")
+				}
+			case response.StatusCode != http.StatusOK:
+				lastErr = fmt.Errorf("readiness returned HTTP %d: status=%q audit_state=%q audit_current=%t audit_verifiable=%t reason=%q", response.StatusCode, body.Status, body.Audit.State, body.Audit.Current, body.Audit.Verifiable, body.Audit.Reason)
 			default:
-				lastErr = fmt.Errorf("readiness not audit-current: status=%q reason=%q", body.Status, body.Audit.Reason)
+				lastErr = fmt.Errorf("readiness not audit-current: status=%q audit_state=%q reason=%q", body.Status, body.Audit.State, body.Audit.Reason)
 			}
 		} else {
 			lastErr = err
@@ -416,6 +500,25 @@ func waitReady(ctx context.Context, cfg config.Config) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func deliverPendingAudit(ctx context.Context, client *http.Client, token string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/v1/audit/delivery", strings.NewReader(`{"limit":100}`))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("audit delivery unavailable: %w", err)
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("audit delivery denied: HTTP %d", response.StatusCode)
+	}
+	return nil
 }
 
 func userUnitDirectory() (string, error) {
