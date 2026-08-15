@@ -466,7 +466,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	loggedOutBody, _ := io.ReadAll(loggedOut.Body)
 	_ = loggedOut.Body.Close()
-	if loggedOut.StatusCode != http.StatusOK || !bytes.Contains(loggedOutBody, []byte("Authenticate this browser")) {
+	if loggedOut.StatusCode != http.StatusOK || !bytes.Contains(loggedOutBody, []byte("Sign the Aegis principal into this browser")) {
 		t.Fatalf("Datastar logout patch status=%d body=%s", loggedOut.StatusCode, loggedOutBody)
 	}
 
@@ -483,7 +483,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	nativeAuthenticatedBody, _ := io.ReadAll(nativeAuthenticated.Body)
 	_ = nativeAuthenticated.Body.Close()
-	if nativeAuthenticated.StatusCode != http.StatusOK || nativeAuthenticated.Request.URL.Path != "/console" || !bytes.Contains(nativeAuthenticatedBody, []byte("Agent Registry")) || bytes.Contains(nativeAuthenticatedBody, []byte("Authenticate this browser")) {
+	if nativeAuthenticated.StatusCode != http.StatusOK || nativeAuthenticated.Request.URL.Path != "/console" || !bytes.Contains(nativeAuthenticatedBody, []byte("Agent Registry")) || bytes.Contains(nativeAuthenticatedBody, []byte("Sign the Aegis principal into this browser")) {
 		t.Fatalf("native bootstrap flow status=%d final=%s body=%s", nativeAuthenticated.StatusCode, nativeAuthenticated.Request.URL, nativeAuthenticatedBody)
 	}
 	nativeGraphs, err := client.Get("http://" + address + "/console?domain=graphs")
@@ -515,7 +515,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	nativeLoggedOutBody, _ := io.ReadAll(nativeLoggedOut.Body)
 	_ = nativeLoggedOut.Body.Close()
-	if nativeLoggedOut.StatusCode != http.StatusOK || nativeLoggedOut.Request.URL.Path != "/console" || !bytes.Contains(nativeLoggedOutBody, []byte("Authenticate this browser")) {
+	if nativeLoggedOut.StatusCode != http.StatusOK || nativeLoggedOut.Request.URL.Path != "/console" || !bytes.Contains(nativeLoggedOutBody, []byte("Sign the Aegis principal into this browser")) {
 		t.Fatalf("native logout status=%d final=%s body=%s", nativeLoggedOut.StatusCode, nativeLoggedOut.Request.URL, nativeLoggedOutBody)
 	}
 

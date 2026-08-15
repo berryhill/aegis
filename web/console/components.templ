@@ -58,26 +58,27 @@ templ NavigationButton(domain string, label string, current bool) {
 
 templ Authentication(message string) {
 	<section id="authentication" aria-labelledby="authentication-title">
-		<h1 id="authentication-title">Authenticate this browser</h1>
-		<p>Browser input cannot establish or change principal authority. Authenticate from the Aegis host instead:</p>
+		<h1 id="authentication-title">Sign the Aegis principal into this browser</h1>
+		<p>This signs the principal configured when Aegis was initialized into this browser. It does not create or change the principal, tenant, or authority context.</p>
 		<ol aria-label="Browser authentication steps">
-			<li>Open a terminal on the Aegis host and run <code>aegis console</code>.</li>
-			<li>Copy only the short-lived, single-use bootstrap printed by that command.</li>
-			<li>Paste it into the field below and submit promptly.</li>
+			<li>On the Aegis host, open a terminal as the initialized principal and run <code>aegis console</code>.</li>
+			<li>That command authenticates the host user and creates a temporary, single-use browser handoff.</li>
+			<li>Paste only that handoff into the field below and submit promptly.</li>
 		</ol>
+		<p>The browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority. <code>aegis console</code> only hands the existing authenticated principal into this browser; it does not provision identity or grant authority.</p>
 		<p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p>
 		<p>If the service is stopped, run <code>aegis service start</code> and retry. If the bootstrap expires, run <code>aegis console</code> again. Never paste an API bearer or put either credential in a URL.</p>
 		<p id="authentication-status" role="status" aria-live="polite">
 			if message != "" {
 				{ message }
 			} else {
-				A short-lived browser session is required.
+				A temporary handoff for the existing Aegis principal is required.
 			}
 		</p>
 		<form id="session-form" method="post" action="/console/session">
-			<label for="bootstrap">Single-use bootstrap</label>
+			<label for="bootstrap">Temporary principal handoff</label>
 			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required/>
-			<button type="submit">Start short-lived session</button>
+			<button type="submit">Sign in as the Aegis principal</button>
 		</form>
 		<div class="service-state" data-state="loading" hidden>Loading…</div>
 		<div class="service-state" data-state="empty" hidden>The authoritative collection is empty.</div>
