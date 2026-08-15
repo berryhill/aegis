@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -12,6 +14,31 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 )
+
+func TestConsoleFormDecoderAcceptsOneExactBoundedField(t *testing.T) {
+	valid := httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=single-use%2Btoken"))
+	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	value, err := decodeConsoleForm(valid, "bootstrap")
+	if err != nil || value != "single-use+token" {
+		t.Fatalf("valid native form value=%q err=%v", value, err)
+	}
+
+	for name, request := range map[string]*http.Request{
+		"wrong content type": httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=value")),
+		"unknown field":      httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=value&authority=admin")),
+		"duplicate field":    httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=one&bootstrap=two")),
+		"oversized":          httptest.NewRequest("POST", "/console/session", bytes.NewReader(bytes.Repeat([]byte("x"), 8193))),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if name != "wrong content type" {
+				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+			if _, err := decodeConsoleForm(request, "bootstrap"); err == nil {
+				t.Fatal("unsafe native form accepted")
+			}
+		})
+	}
+}
 
 func TestConsoleSignalsAreStrictAndPresentationOnly(t *testing.T) {
 	for name, raw := range map[string]string{

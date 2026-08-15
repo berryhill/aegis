@@ -11,7 +11,6 @@ templ Document(model PageModel) {
 			<meta name="color-scheme" content="dark light"/>
 			<title>Aegis Console</title>
 			<link rel="stylesheet" href="/console/assets/app.css"/>
-			<script type="module" src="/console/assets/datastar-v1.0.2.js"></script>
 		</head>
 		<body>
 			<a class="skip-link" href="#workspace">Skip to fleet workspace</a>
@@ -34,7 +33,10 @@ templ Header(authenticated bool, csrf string) {
 	<header id="console-header">
 		<strong>Aegis</strong><span>Authenticated control plane</span>
 		if authenticated {
-			<button id="logout" type="button" data-signals={ fmt.Sprintf(`{"csrf":%q}`, csrf) } data-on:click="@delete('/console/session', {headers: {'X-CSRF-Token': $csrf}})">Sign out</button>
+			<form method="post" action="/console/logout">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<button id="logout" type="submit">Sign out</button>
+			</form>
 		}
 	</header>
 }
@@ -51,7 +53,7 @@ templ Navigation(domain string, authenticated bool) {
 }
 
 templ NavigationButton(domain string, label string, current bool) {
-	<button type="button" data-on:click={ fmt.Sprintf("@get('/console/fragments/surface?domain=%s')", domain) } aria-current={ currentPage(current) }>{ label }</button>
+	<a href={ fmt.Sprintf("/console?domain=%s", domain) } aria-current={ currentPage(current) }>{ label }</a>
 }
 
 templ Authentication(message string) {
@@ -72,9 +74,9 @@ templ Authentication(message string) {
 				A short-lived browser session is required.
 			}
 		</p>
-		<form id="session-form" data-on:submit__prevent="@post('/console/session')">
+		<form id="session-form" method="post" action="/console/session">
 			<label for="bootstrap">Single-use bootstrap</label>
-			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required data-bind:bootstrap/>
+			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required/>
 			<button type="submit">Start short-lived session</button>
 		</form>
 		<div class="service-state" data-state="loading" hidden>Loading…</div>
@@ -94,17 +96,17 @@ templ Workspace(surface SurfaceModel) {
 			}
 			<ul id="surface-list" aria-label="Fleet control records">
 				for _, record := range surface.Records {
-					<li><button id={ "record-" + record.Key } type="button" data-on:click={ fmt.Sprintf("@get('/console/fragments/inspect?domain=%s&record_key=%s')", surface.Domain, record.Key) }>@RecordLabel(record.Label)</button></li>
+					<li><a id={ "record-" + record.Key } href={ fmt.Sprintf("/console?domain=%s&record_key=%s", surface.Domain, record.Key) }>@RecordLabel(record.Label)</a></li>
 				}
 			</ul>
 		</div>
-		@Inspector(surface.Inspector, surface.InspectorOpen)
+		@Inspector(surface.Domain, surface.Inspector, surface.InspectorOpen)
 	</section>
 }
 
-templ Inspector(record *RecordModel, open bool) {
+templ Inspector(domain string, record *RecordModel, open bool) {
 	<aside id="inspector" class="inspector" aria-labelledby="inspector-title" tabindex="-1" hidden?={ !open }>
-		<button id="close-inspector" type="button" aria-label="Close inspector" data-on:click="el.closest('aside').hidden = true">Close</button>
+		<a id="close-inspector" href={ fmt.Sprintf("/console?domain=%s", domain) } aria-label="Close inspector">Close</a>
 		<h2 id="inspector-title">Record inspector</h2>
 		if record != nil {
 			<p id="inspector-summary">{ record.Summary }</p>

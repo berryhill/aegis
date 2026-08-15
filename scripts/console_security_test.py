@@ -8,7 +8,7 @@ import pathlib
 import sys
 
 HARNESS_NAME = "aegis-console-security"
-HARNESS_VERSION = "2.0.0"
+HARNESS_VERSION = "2.1.0"
 MINIMUM_PYTHON = (3, 11)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -43,7 +43,13 @@ def main() -> int:
     ):
         require(forbidden not in first_party_active_source, f"unsafe active-content primitive present: {forbidden}")
     require("https://" not in component and "http://" not in component, "external URL present in console template")
-    require('type="module" src="/console/assets/datastar-v1.0.2.js"' in component, "pinned self-hosted Datastar module missing")
+    require("<script" not in component and "data-on:" not in component and "data-bind:" not in component, "console template still requires CSP-blocked script execution")
+    for native_control in (
+        'method="post" action="/console/session"',
+        'method="post" action="/console/logout"',
+        'href={ fmt.Sprintf("/console?domain=%s"',
+    ):
+        require(native_control in component, f"native console interaction missing: {native_control}")
     require("vendor/datastar-v1.0.2.js" in embed and "go:embed" in embed, "Datastar bundle is not embedded")
     require("go:generate go run github.com/a-h/templ/cmd/templ@v0.3.1020" in model, "templ generator is not exactly pinned")
 
@@ -68,7 +74,7 @@ def main() -> int:
         "checks": {
             "typed_templ_landmarks_and_states": "pass",
             "unsafe_active_content_denied": "pass",
-            "pinned_self_hosted_datastar": "pass",
+            "native_interactions_need_no_script_execution": "pass",
             "browser_storage_denied": "pass",
             "strict_bounded_signal_and_sse_contract": "pass",
             "security_header_and_cookie_source_contract": "pass",

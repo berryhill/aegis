@@ -324,11 +324,20 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
 		}
-		model := consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
+		domain, err := parseConsoleDomain(c.QueryParam("domain"))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid console domain")
+		}
+		model := consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(domain)}}
 		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
-			model, err = loadConsole(c, subject, consoleAgents)
+			model, err = loadConsole(c, subject, domain)
 			if err != nil {
 				return err
+			}
+			if recordKey := c.QueryParam("record_key"); recordKey != "" {
+				if err = selectConsoleRecord(&model.Surface, recordKey); err != nil {
+					return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+				}
 			}
 		}
 		content, err := renderConsole(c.Request().Context(), consoleweb.Document(model))
@@ -336,6 +345,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.GET("/favicon.ico", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.NoContent(http.StatusNoContent)
 	})
 	e.GET("/console/assets/app.css", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
@@ -352,7 +367,14 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	e.POST("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
 		var input consoleSignals
-		if err := decode(c, &input); err != nil {
+		nativeForm := isConsoleForm(c.Request())
+		if nativeForm {
+			bootstrap, err := decodeConsoleForm(c.Request(), "bootstrap")
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid console form")
+			}
+			input.Bootstrap = bootstrap
+		} else if err := decode(c, &input); err != nil {
 			return err
 		}
 		sessionValue, csrf, expires, err := consoleManager.Exchange(c.Request(), input.Bootstrap)
@@ -367,6 +389,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		consoleManager.SetCookie(c.Response(), sessionValue)
+		if nativeForm {
+			return c.Redirect(http.StatusSeeOther, "/console")
+		}
 		if wantsDatastar(c.Request()) {
 			c.Request().AddCookie(&http.Cookie{Name: console.CookieName, Value: sessionValue})
 			subject, authErr := consoleManager.Authenticate(c.Request())
@@ -460,8 +485,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, map[string]any{"state": "ready", "surface": surface, "csrf": csrf, "limit": limit})
 	})
-	e.DELETE("/console/session", func(c *echo.Context) error {
+	logout := func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		nativeForm := c.Request().Method == http.MethodPost
+		if nativeForm {
+			csrf, err := decodeConsoleForm(c.Request(), "csrf")
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid console form")
+			}
+			c.Request().Header.Set("X-CSRF-Token", csrf)
+		}
 		if wantsDatastar(c.Request()) {
 			if err := validateConsoleSignals(c.Request()); err != nil {
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid console signals")
@@ -479,11 +512,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		consoleManager.Revoke(c.Request())
 		consoleManager.ClearCookie(c.Response())
+		if nativeForm {
+			return c.Redirect(http.StatusSeeOther, "/console")
+		}
 		if wantsDatastar(c.Request()) {
 			return patchConsole(c.Response(), c.Request(), consoleweb.Document(consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}))
 		}
 		return c.NoContent(http.StatusNoContent)
-	})
+	}
+	e.DELETE("/console/session", logout)
+	e.POST("/console/logout", logout)
 	g := e.Group("/v1")
 	g.Use(protected)
 	g.POST("/console/bootstrap", func(c *echo.Context) error {
