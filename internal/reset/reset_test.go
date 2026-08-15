@@ -230,6 +230,72 @@ func TestResetRecognizesOnlyExactBadgerGenerationArtifacts(t *testing.T) {
 	}
 }
 
+func TestResetRecognizesFleetPersistenceArtifacts(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "artifact")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	fileInfo, err := os.Lstat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(root, "directory")
+	if err = os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	directoryInfo, err := os.Lstat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, parts := range [][]string{
+		{"persistence", "fleet-v1", "WRITER.lock"},
+		{"persistence", "fleet-v1", "CLEAN"},
+		{"persistence", "fleet-v1", "DIRTY"},
+		{"persistence", "fleet-v1", ".marker-123"},
+		{"persistence", "fleet-v1", "store.badger", "MANIFEST"},
+		{"persistence", "fleet-v1", "store.badger", "00001.mem"},
+	} {
+		if !fleetPersistenceArtifact(parts, fileInfo) {
+			t.Errorf("fleet artifact %q was not recognized", filepath.Join(parts...))
+		}
+	}
+	if !fleetPersistenceArtifact([]string{"persistence", "fleet-v1"}, directoryInfo) ||
+		!fleetPersistenceArtifact([]string{"persistence", "fleet-v1", "store.badger"}, directoryInfo) {
+		t.Fatal("fleet persistence directories were not recognized")
+	}
+	for _, parts := range [][]string{
+		{"persistence", "fleet-v2"},
+		{"persistence", "fleet-v1", "operator.txt"},
+		{"persistence", "fleet-v1", ".marker-"},
+		{"persistence", "fleet-v1", "store.badger", "operator.txt"},
+		{"persistence", "fleet-v1", "other.badger", "MANIFEST"},
+	} {
+		if persistenceArtifact(parts, fileInfo) {
+			t.Errorf("unknown persistence artifact %q was recognized", filepath.Join(parts...))
+		}
+	}
+}
+
+func TestResetRejectsUnknownFleetPersistenceArtifactWithoutDeletingIt(t *testing.T) {
+	f := newFixture(t)
+	f.writeConfig(t, "")
+	unknown := filepath.Join(f.state, "persistence", "fleet-v1", "store.badger", "operator.txt")
+	writeOwned(t, unknown, "operator data")
+
+	if _, err := f.service.Plan(context.Background(), f.config); err == nil || !strings.Contains(err.Error(), "unknown artifact") {
+		t.Fatalf("error=%v", err)
+	}
+	contents, err := os.ReadFile(unknown)
+	if err != nil {
+		t.Fatalf("unknown fleet artifact changed: %v", err)
+	}
+	if string(contents) != "operator data" {
+		t.Fatalf("unknown fleet artifact contents changed: %q", contents)
+	}
+}
+
 func TestCompleteResetAndFirstRunReplay(t *testing.T) {
 	f := newFixture(t)
 	f.writeConfig(t, "")
@@ -246,6 +312,10 @@ func TestCompleteResetAndFirstRunReplay(t *testing.T) {
 		filepath.Join(f.state, "provisioned", "agent", "1", "mapping.json"),
 		filepath.Join(f.state, "runtime", "manager-123", "session.json"),
 		filepath.Join(f.state, "manager", "certifications", "candidate.json"),
+		filepath.Join(f.state, "persistence", "fleet-v1", "CLEAN"),
+		filepath.Join(f.state, "persistence", "fleet-v1", "WRITER.lock"),
+		filepath.Join(f.state, "persistence", "fleet-v1", "store.badger", "MANIFEST"),
+		filepath.Join(f.state, "persistence", "fleet-v1", "store.badger", "00001.mem"),
 		filepath.Join(f.checkpoints, "signing-key"),
 		filepath.Join(f.checkpoints, "0001.json"),
 	}
