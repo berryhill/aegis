@@ -2,32 +2,44 @@ package userservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/user"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 type recordingRunner struct {
-	calls       [][]string
-	err         error
-	runErrors   map[string]error
-	activeState string
-	unitState   string
-	loadState   string
+	calls        [][]string
+	err          error
+	runErrors    map[string]error
+	activeState  string
+	unitState    string
+	loadState    string
+	fragmentPath string
 }
 
 func (r *recordingRunner) Run(_ context.Context, args ...string) error {
 	r.calls = append(r.calls, append([]string(nil), args...))
 	if err := r.runErrors[strings.Join(args, " ")]; err != nil {
 		return err
+	}
+	if len(args) > 0 {
+		switch args[0] {
+		case "start", "restart":
+			r.activeState = "active"
+		case "stop":
+			r.activeState = "inactive"
+		}
 	}
 	return r.err
 }
@@ -42,6 +54,8 @@ func (r *recordingRunner) Output(_ context.Context, args ...string) ([]byte, err
 			return []byte(defaultString(r.unitState, "disabled") + "\n"), nil
 		case "LoadState":
 			return []byte(defaultString(r.loadState, "not-found") + "\n"), nil
+		case "FragmentPath":
+			return []byte(r.fragmentPath + "\n"), nil
 		}
 	}
 	return nil, fmt.Errorf("unexpected output call: %v", args)
@@ -121,7 +135,7 @@ func TestActionRejectsMissingInstallationBeforeSystemctl(t *testing.T) {
 	for _, action := range []string{"start", "stop", "restart"} {
 		t.Run(action, func(t *testing.T) {
 			runner := &recordingRunner{err: errors.New("raw unit-not-found error")}
-			err := Action(context.Background(), runner, plan, action)
+			_, err := Action(context.Background(), runner, plan, action, time.Second)
 			if !errors.Is(err, ErrServiceNotInstalled) {
 				t.Fatalf("missing service did not return stable Aegis error: %v", err)
 			}
@@ -139,36 +153,88 @@ func TestActionRejectsMissingInstallationBeforeSystemctl(t *testing.T) {
 }
 
 func TestActionAllowsOnlyBoundedUserServiceLifecycle(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
-	executable, configPath := serviceFixture(t)
-	plan, err := Preview(executable, configPath)
-	if err != nil {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err = os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
-		t.Fatal(err)
-	}
-	runner := &recordingRunner{}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath}
 	for _, action := range []string{"start", "stop", "restart"} {
-		if err := Action(context.Background(), runner, plan, action); err != nil {
+		if _, err := Action(context.Background(), runner, plan, action, time.Second); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := Action(context.Background(), runner, plan, "enable-linger"); err == nil {
+	if _, err := Action(context.Background(), runner, plan, "enable-linger", time.Second); err == nil {
 		t.Fatal("unsupported user-service authority was accepted")
 	}
-	if len(runner.calls) != 3 {
-		t.Fatalf("unexpected lifecycle calls: %v", runner.calls)
+	if len(runner.calls) < 6 {
+		t.Fatalf("lifecycle did not verify exact unit and observed state: %v", runner.calls)
+	}
+}
+
+func TestActionStartProgressesOnlyPendingVerifiableAuditAndReturnsTypedResult(t *testing.T) {
+	plan, stop := progressingReadyServicePlan(t)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath}
+	result, err := Action(context.Background(), runner, plan, "start", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != "start" || result.Unit != UnitName || result.UnitDigest != plan.UnitDigest || !result.Active || !result.Ready || !result.AuditCurrent {
+		t.Fatalf("unexpected lifecycle result: %+v", result)
+	}
+}
+
+func TestProgressingReadyServicePlanValidatesAuditDeliveryRequest(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		body        string
+		contentType string
+		want        bool
+	}{
+		{name: "valid", body: `{"limit":100}`, contentType: "application/json", want: true},
+		{name: "malformed", body: `{\\"limit\\":100}`, contentType: "application/json", want: false},
+		{name: "wrong limit", body: `{"limit":99}`, contentType: "application/json", want: false},
+		{name: "wrong content type", body: `{"limit":100}`, contentType: "text/plain", want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/v1/audit/delivery", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", test.contentType)
+			if got := validAuditDeliveryRequest(request); got != test.want {
+				t.Fatalf("validAuditDeliveryRequest() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestActionRejectsLoadedForeignFragment(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{fragmentPath: filepath.Join(t.TempDir(), UnitName)}
+	if _, err := Action(context.Background(), runner, plan, "start", time.Second); !errors.Is(err, ErrForeignUnit) {
+		t.Fatalf("foreign loaded fragment was accepted: %v", err)
 	}
 }
 
 func TestApplyActivatesInOrderAndRequiresAuditCurrentReadiness(t *testing.T) {
 	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
 	defer stop()
-	runner := &recordingRunner{}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath}
 	if err := Apply(context.Background(), plan, runner, time.Second); err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +243,7 @@ func TestApplyActivatesInOrderAndRequiresAuditCurrentReadiness(t *testing.T) {
 		{"show", UnitName, "--property", "UnitFileState", "--value"},
 		{"daemon-reload"},
 		{"enable", "--now", UnitName},
+		{"show", UnitName, "--property", "FragmentPath", "--value"},
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("activation phases were not ordered deterministically:\n got: %v\nwant: %v", runner.calls, want)
@@ -195,11 +262,11 @@ func TestEnsureReadyStartsExactInstalledServiceAndRequiresAuthenticatedReadiness
 	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 		t.Fatal(err)
 	}
-	runner := &recordingRunner{}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath}
 	if err := EnsureReady(context.Background(), plan, runner, time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if want := [][]string{{"start", UnitName}}; !reflect.DeepEqual(runner.calls, want) {
+	if want := [][]string{{"start", UnitName}, {"show", UnitName, "--property", "FragmentPath", "--value"}}; !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("existing service start calls = %v, want %v", runner.calls, want)
 	}
 }
@@ -230,13 +297,13 @@ func TestEnsureReadyDeniesMissingOrUnauditableService(t *testing.T) {
 		if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 			t.Fatal(err)
 		}
-		runner := &recordingRunner{}
+		runner := &recordingRunner{fragmentPath: plan.UnitPath}
 		err := EnsureReady(context.Background(), plan, runner, 20*time.Millisecond)
 		var activationErr *ActivationError
 		if !errors.As(err, &activationErr) || activationErr.Phase != "audit_current_readiness" || !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("unauditable readiness did not fail closed with phase evidence: %v", err)
 		}
-		if want := [][]string{{"start", UnitName}}; !reflect.DeepEqual(runner.calls, want) {
+		if want := [][]string{{"start", UnitName}, {"show", UnitName, "--property", "FragmentPath", "--value"}}; !reflect.DeepEqual(runner.calls, want) {
 			t.Fatalf("unexpected readiness-denial calls = %v, want %v", runner.calls, want)
 		}
 	})
@@ -267,7 +334,7 @@ func TestApplyFailureRemovesNewPublicationAndReportsRollbackFailure(t *testing.T
 	plan, stop := readyServicePlan(t, http.StatusServiceUnavailable, `{"status":"not_ready","audit":{"current":false,"verifiable":false,"reason":"checkpoint_stale"}}`)
 	defer stop()
 	rollbackErr := errors.New("rollback disable denied")
-	runner := &recordingRunner{runErrors: map[string]error{"disable " + UnitName: rollbackErr}}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath, runErrors: map[string]error{"disable " + UnitName: rollbackErr}}
 	err := Apply(context.Background(), plan, runner, 20*time.Millisecond)
 	var activationErr *ActivationError
 	if !errors.As(err, &activationErr) || activationErr.Phase != "audit_current_readiness" {
@@ -299,9 +366,10 @@ func TestApplyFailurePreservesPreExistingExactState(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &recordingRunner{
-		activeState: "active",
-		unitState:   "enabled",
-		runErrors:   map[string]error{"enable --now " + UnitName: errors.New("restart failed")},
+		activeState:  "active",
+		unitState:    "enabled",
+		fragmentPath: plan.UnitPath,
+		runErrors:    map[string]error{"enable --now " + UnitName: errors.New("restart failed")},
 	}
 	err = Apply(context.Background(), plan, runner, time.Second)
 	var activationErr *ActivationError
@@ -429,6 +497,75 @@ func readyServicePlan(t *testing.T, status int, body string) (Plan, func()) {
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(status)
 		_, _ = writer.Write([]byte(body))
+	})}
+	go func() { _ = server.Serve(listener) }()
+	return plan, func() {
+		_ = server.Close()
+		_ = listener.Close()
+	}
+}
+
+func validAuditDeliveryRequest(request *http.Request) bool {
+	if request.Header.Get("Content-Type") != "application/json" {
+		return false
+	}
+	var input struct {
+		Limit int `json:"limit"`
+	}
+	return json.NewDecoder(request.Body).Decode(&input) == nil && input.Limit == 100
+}
+
+func progressingReadyServicePlan(t *testing.T) (Plan, func()) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	executable, configPath := serviceFixture(t)
+	initial, err := Preview(executable, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shortRoot, err := os.MkdirTemp("", "aegis-ready-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(shortRoot) })
+	shortSocket := filepath.Join(shortRoot, "a.sock")
+	document, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document = []byte(strings.Replace(string(document), initial.UnixSocket, shortSocket, 1))
+	if err = os.WriteFile(configPath, document, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", plan.UnixSocket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var delivered atomic.Bool
+	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Authorization") == "" {
+			writer.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/audit/delivery":
+			if !validAuditDeliveryRequest(request) {
+				writer.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			delivered.Store(true)
+			_, _ = writer.Write([]byte(`{"delivered":1,"status":{"state":"healthy","current":true,"verifiable":true}}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/readyz" && delivered.Load():
+			_, _ = writer.Write([]byte(`{"status":"ready","audit":{"state":"healthy","current":true,"verifiable":true}}`))
+		default:
+			writer.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = writer.Write([]byte(`{"status":"not_ready","audit":{"state":"pending","reason":"delivery_pending","pending":1,"current":false,"verifiable":true}}`))
+		}
 	})}
 	go func() { _ = server.Serve(listener) }()
 	return plan, func() {
