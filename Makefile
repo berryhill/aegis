@@ -26,6 +26,7 @@ verify:
 	sh scripts/release_test.sh
 	test -z "$$(gofmt -l ./cmd ./internal ./web)"
 	go build ./cmd/aegis
+	python3 -m unittest scripts/console_browser_test_test.py
 	python3 -m unittest scripts/operator_acceptance_poc_test.py
 	python3 -m unittest scripts/verify_release_archive_test.py
 	./scripts/verify_installed_mvi_test.sh
