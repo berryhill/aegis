@@ -127,7 +127,7 @@ flowchart TB
   Onboarding -->|version/tags only; no pull| Ollama
   Reset[Profile-bound deterministic reset] -->|dev: confirmation; production: passphrase twice + confirmation| UserUnit
   Reset -->|exact owned gateway stopped and purged before config-last deletion| Config
-  Reset -->|fresh inventory of recognized owned artifacts; bounded Badger churn only in previewed directories| State
+  Reset -->|fresh inventory; bounded Badger and lifecycle-marker churn only in previewed persistence directories| State
   Reset -. preserve .-> Hermes
   Reset -. preserve daemon and models .-> Ollama
 ```

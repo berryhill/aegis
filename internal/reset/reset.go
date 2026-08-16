@@ -1122,12 +1122,12 @@ func validateCurrentPlan(original, current Plan) error {
 	for _, artifact := range current.Artifacts {
 		previewed, ok := expected[artifact.Path]
 		if !ok {
-			if !previewedBadgerArtifact(artifact, expected) {
+			if !previewedPersistenceArtifact(artifact, expected) {
 				return fmt.Errorf("artifact changed or appeared after preview: %s", artifact.Path)
 			}
 			continue
 		}
-		if previewed.Kind != artifact.Kind || previewed.Status != artifact.Status || previewed.identity != artifact.identity && !previewedBadgerArtifact(artifact, expected) {
+		if previewed.Kind != artifact.Kind || previewed.Status != artifact.Status || previewed.identity != artifact.identity && !previewedPersistenceArtifact(artifact, expected) {
 			return fmt.Errorf("artifact changed or appeared after preview: %s", artifact.Path)
 		}
 	}
@@ -1137,12 +1137,21 @@ func validateCurrentPlan(original, current Plan) error {
 	return nil
 }
 
-func previewedBadgerArtifact(artifact Artifact, previewed map[string]Artifact) bool {
-	if artifact.Kind != "file" || artifact.Status != "delete" || !badgerDataDirectory(filepath.Dir(artifact.Path)) {
+func previewedPersistenceArtifact(artifact Artifact, previewed map[string]Artifact) bool {
+	if artifact.Kind != "file" || artifact.Status != "delete" {
 		return false
 	}
-	directory, ok := previewed[filepath.Dir(artifact.Path)]
+	parent := filepath.Dir(artifact.Path)
+	if !badgerDataDirectory(parent) && !persistenceLifecycleDirectory(parent) {
+		return false
+	}
+	directory, ok := previewed[parent]
 	return ok && directory.Kind == "directory" && directory.Status == "delete"
+}
+
+func persistenceLifecycleDirectory(path string) bool {
+	name := filepath.Base(path)
+	return (name == "authority-v1" || name == "fleet-v1") && filepath.Base(filepath.Dir(path)) == "persistence"
 }
 
 func badgerDataDirectory(path string) bool {
