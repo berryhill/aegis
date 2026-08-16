@@ -15,6 +15,31 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 )
 
+func TestBrowserHandoffConfirmationIsRestrictedToExactLoopbackCapability(t *testing.T) {
+	valid := "http://127.0.0.1:34803/confirmed/" + strings.Repeat("a", 43)
+	if got, err := validateBrowserHandoff(valid, "127.0.0.1"); err != nil || got != valid {
+		t.Fatalf("valid browser handoff=%q err=%v", got, err)
+	}
+	for name, raw := range map[string]string{
+		"empty":         "",
+		"remote":        "http://example.test:34803/confirmed/" + strings.Repeat("a", 43),
+		"host mismatch": "http://localhost:34803/confirmed/" + strings.Repeat("a", 43),
+		"wrong scheme":  "https://127.0.0.1:34803/confirmed/" + strings.Repeat("a", 43),
+		"missing port":  "http://127.0.0.1/confirmed/" + strings.Repeat("a", 43),
+		"wrong path":    "http://127.0.0.1:34803/handoff/" + strings.Repeat("a", 43),
+		"short token":   "http://127.0.0.1:34803/confirmed/short",
+		"query":         valid + "?authority=admin",
+		"fragment":      valid + "#authority",
+		"user info":     "http://operator@127.0.0.1:34803/confirmed/" + strings.Repeat("a", 43),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := validateBrowserHandoff(raw, "127.0.0.1"); err == nil {
+				t.Fatalf("unsafe browser handoff accepted: %q", raw)
+			}
+		})
+	}
+}
+
 func TestConsoleFormDecoderAcceptsOneExactBoundedField(t *testing.T) {
 	valid := httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=single-use%2Btoken"))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")

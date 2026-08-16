@@ -273,10 +273,15 @@ func launchBrowserSession(ctx context.Context, origin, bootstrap string, opener 
 	}
 	correlation := base64.RawURLEncoding.EncodeToString(correlationBytes)
 	handoffPath := "/handoff/" + correlation
+	confirmationPath := "/confirmed/" + correlation
+	consoleURL := strings.TrimRight(origin, "/") + "/console"
 
 	result := make(chan error, 1)
 	var once sync.Once
 	var claimed atomic.Bool
+	var exchanged atomic.Bool
+	var confirmed atomic.Bool
+	var confirmationURL string
 	complete := func(err error) { once.Do(func() { result <- err }) }
 	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -284,6 +289,18 @@ func launchBrowserSession(ctx context.Context, origin, bootstrap string, opener 
 		writer.Header().Set("Pragma", "no-cache")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
 		writer.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+		if request.Method == http.MethodGet && request.URL.Path == confirmationPath && request.URL.RawQuery == "" && exchanged.Load() && confirmed.CompareAndSwap(false, true) {
+			writer.Header().Set("Location", consoleURL)
+			writer.WriteHeader(http.StatusSeeOther)
+			flusher, ok := writer.(http.Flusher)
+			if !ok {
+				complete(&browserSessionError{err: errors.New("flush browser confirmation redirect"), bootstrapMayBeConsumed: true})
+				return
+			}
+			flusher.Flush()
+			complete(nil)
+			return
+		}
 		if request.Method != http.MethodGet || request.URL.Path != handoffPath || request.URL.RawQuery != "" || !claimed.CompareAndSwap(false, true) {
 			http.NotFound(writer, request)
 			return
@@ -315,10 +332,19 @@ func launchBrowserSession(ctx context.Context, origin, bootstrap string, opener 
 			complete(&browserSessionError{err: fmt.Errorf("console denied browser session exchange: HTTP %d", response.StatusCode), bootstrapMayBeConsumed: true})
 			return
 		}
+		exchanged.Store(true)
 		http.SetCookie(writer, cookies[0])
-		writer.Header().Set("Location", strings.TrimRight(origin, "/")+"/console")
+		target, targetErr := url.Parse(consoleURL)
+		if targetErr != nil {
+			writer.WriteHeader(http.StatusBadGateway)
+			complete(&browserSessionError{err: errors.New("construct browser confirmation target"), bootstrapMayBeConsumed: true})
+			return
+		}
+		query := target.Query()
+		query.Set("browser_handoff", confirmationURL)
+		target.RawQuery = query.Encode()
+		writer.Header().Set("Location", target.String())
 		writer.WriteHeader(http.StatusSeeOther)
-		complete(nil)
 	})
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	defer server.Close()
@@ -332,6 +358,7 @@ func launchBrowserSession(ctx context.Context, origin, bootstrap string, opener 
 		return fmt.Errorf("resolve browser handoff port: %w", err)
 	}
 	handoffURL := "http://" + net.JoinHostPort(parsed.Hostname(), handoffPort) + handoffPath
+	confirmationURL = "http://" + net.JoinHostPort(parsed.Hostname(), handoffPort) + confirmationPath
 	if err = opener(ctx, handoffURL); err != nil {
 		return err
 	}
