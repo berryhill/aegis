@@ -44,7 +44,7 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 		if requiresGateway(profile) && inspection.State == config.StateValid {
 			gateway := observeBareGateway(cmd.Context(), runner, options.configFile)
 			if gateway.State == userservice.GatewayHealthy {
-				return usage(errors.New("gateway_healthy: the exact authenticated gateway owns operational authority; the terminal gateway client is not available yet; use 'aegis console' or 'exit'; no authority persistence was opened"))
+				return runGatewayManager(cmd, options.configFile)
 			}
 			if gateway.State == userservice.GatewayMismatched || gateway.State == userservice.GatewayUnhealthy {
 				return usage(fmt.Errorf("%s: manager startup denied before authority inspection: %w", gateway.Reason, gateway.Err))
