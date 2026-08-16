@@ -156,6 +156,9 @@ func (controller *Controller) renderEvent(event Event) error {
 	} else {
 		label = "[" + label + "]"
 	}
+	if hierarchy := eventHierarchy(event.Kind); hierarchy != "" {
+		label = hierarchy + " / " + label
+	}
 	if event.Kind == TurnProgress {
 		if controller.assistantActive {
 			return nil

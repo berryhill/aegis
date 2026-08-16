@@ -461,7 +461,7 @@ Neither command may expose credential values, capabilities, or sensitive environ
 
 ### 12.1 Goal
 
-An authenticated operator MUST be able to progress from `manager_model_absent` to an exact configured and certified already-installed approved local model without manual YAML surgery.
+An authenticated operator MUST be able to progress from `manager_model_absent` to an exact configured and certified already-installed approved local model without manual YAML surgery. Interactive bootstrap MUST default to an identified concise `basic` presentation and expose exact authoritative evidence through `details`/`advanced` before presentation-owned approvals. Both depths MUST use the same artifact-derived progress, transition, authorization, and postcondition path; changing depth cannot grant authority or change progress.
 
 ### 12.2 Required command capabilities
 
