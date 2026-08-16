@@ -183,6 +183,35 @@ func obtainConsoleBootstrap(ctx context.Context, configPath string) (map[string]
 	return map[string]any{"console_origin": cfg.API.Console.Origin, "bootstrap": issued.Bootstrap, "expires_at": issued.ExpiresAt, "single_use": true, "reusable_bearer_exposed": false}, nil
 }
 
+type healthyGatewayAction string
+
+const (
+	healthyGatewayConsole  healthyGatewayAction = "console"
+	healthyGatewayTerminal healthyGatewayAction = "terminal"
+	healthyGatewayExit     healthyGatewayAction = "exit"
+)
+
+func chooseHealthyGatewayAction(cmd *cobra.Command, input *terminalInput) (healthyGatewayAction, error) {
+	fmt.Fprint(cmd.OutOrStdout(), "Aegis gateway_healthy; the exact authenticated gateway owns operational authority.\nActions:\n  console  aegis console\n  terminal aegis manager\n  exit     exit\nChoose an action [console/terminal/exit] (default: exit): ")
+	answer, eof, err := input.ReadLine(cmd.Context(), 32)
+	if err != nil {
+		return "", err
+	}
+	if eof || strings.TrimSpace(answer) == "" {
+		return healthyGatewayExit, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "console", "c":
+		return healthyGatewayConsole, nil
+	case "terminal", "t":
+		return healthyGatewayTerminal, nil
+	case "exit", "e":
+		return healthyGatewayExit, nil
+	default:
+		return "", errors.New("healthy gateway action must be console, terminal, or exit; no mutation was performed")
+	}
+}
+
 func launchConsole(cmd *cobra.Command, options *rootOptions, opener BrowserOpener) error {
 	result, err := obtainConsoleBootstrap(cmd.Context(), options.configFile)
 	if err != nil {
