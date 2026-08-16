@@ -80,6 +80,11 @@ func TestInteractiveBareStartupReconcilesMissingOperationalAuthority(t *testing.
 	if !strings.Contains(out.String(), "DECISION / Initialize empty operational authority generation") {
 		t.Fatalf("bare startup skipped compatibility reconciliation: %s", out.String())
 	}
+	for _, forbidden := range []string{"Choose credential authority custody", "Bind exact local model", "Run end-to-end certification"} {
+		if strings.Contains(out.String(), forbidden) {
+			t.Fatalf("bare startup entered separately authorized manager onboarding stage %q: %s", forbidden, out.String())
+		}
+	}
 	inspection := authoritybadger.Inspect(context.Background(), filepath.Join(statePath, "persistence", "authority-v1"))
 	if inspection.State != authoritybadger.StateReady {
 		t.Fatalf("inspection=%+v", inspection)

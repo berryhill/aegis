@@ -391,7 +391,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			return usage(fmt.Errorf("%s: existing operational authority requires operator repair and will not be replaced: %w", class, authority.Err))
 		}
 		if bareRootNeedsBootstrap(snapshot, authority.State) {
-			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
+			launch, err := runBareBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
 			if err != nil || !launch {
 				return err
 			}

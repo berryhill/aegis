@@ -37,10 +37,21 @@ func inspectOnboarding(ctx context.Context, configPath string, logger *slog.Logg
 	return inspector.Inspect(ctx, configPath)
 }
 
-// runBootstrap resumes at the first incomplete artifact-derived stage. Its
-// bool result means the operator selected immediate manager launch after a
-// freshly reverified ready state.
+// runBootstrap resumes the explicit manager onboarding flow at the first
+// incomplete artifact-derived stage. Its bool result means the operator
+// selected immediate manager launch after a freshly reverified ready state.
 func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
+	return runBootstrapWithScope(cmd, build, initializer, configPath, statePath, logger, true)
+}
+
+// runBareBootstrap establishes only the authority required by the bare-root
+// gateway and console path. Credential custody, model binding, and manager
+// certification remain separately authorized through explicit `aegis init`.
+func runBareBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
+	return runBootstrapWithScope(cmd, build, initializer, configPath, statePath, logger, false)
+}
+
+func runBootstrapWithScope(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger, continueManagerOnboarding bool) (bool, error) {
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
 	bootstrapView := newBootstrapPresentation(capabilities)
 	terminalOutput := tui.NewSynchronizedWriter(cmd.OutOrStdout())
@@ -67,6 +78,9 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 	continued, err := reconcileOperationalAuthority(cmd, initializer, configPath, input, bootstrapView)
 	if err != nil || !continued {
 		return false, err
+	}
+	if !continueManagerOnboarding {
+		return true, nil
 	}
 
 	for attempts := 0; attempts < 12; attempts++ {
