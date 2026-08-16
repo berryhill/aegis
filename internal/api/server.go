@@ -25,6 +25,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/managergateway"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -150,6 +151,10 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	}, svc.Now)
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
+	}
+	managerGateway, err := managergateway.New(svc)
+	if err != nil {
+		return fmt.Errorf("configure manager gateway: %w", err)
 	}
 	e := echo.New()
 	var ready atomic.Bool
@@ -524,6 +529,50 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	e.POST("/console/logout", logout)
 	g := e.Group("/v1")
 	g.Use(protected)
+	g.POST("/manager/sessions", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		if err = decode(c, &struct{}{}); err != nil {
+			return err
+		}
+		opened, err := managerGateway.Open(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, opened)
+	})
+	g.POST("/manager/sessions/:session/commands", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input struct {
+			Input string `json:"input"`
+		}
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		result, err := managerGateway.Execute(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
+		if err != nil {
+			if !errors.Is(err, app.ErrUnauthenticated) && !errors.Is(err, app.ErrDenied) && !errors.Is(err, app.ErrExpired) {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid manager command")
+			}
+			return err
+		}
+		return c.JSON(http.StatusOK, result)
+	})
+	g.DELETE("/manager/sessions/:session", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		if err = managerGateway.Close(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader)); err != nil {
+			return err
+		}
+		return c.NoContent(http.StatusNoContent)
+	})
 	g.POST("/console/bootstrap", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {

@@ -37,14 +37,15 @@ var allowedInternalImports = map[string][]string{
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
 	"internal/app":               {"internal/config", "internal/core", "internal/credentials", "internal/execution", "internal/graph", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
+	"internal/managergateway":    {"internal/app", "internal/core", "internal/manager", "internal/slash"},
 	"internal/console":           {"internal/core"},
-	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core"},
+	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway"},
 }
 
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
-	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "migration": {},
+	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 	"userservice": {},

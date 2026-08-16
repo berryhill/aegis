@@ -375,7 +375,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				case healthyGatewayConsole:
 					return launchConsole(cmd, o, deps.OpenBrowser)
 				case healthyGatewayTerminal:
-					return usage(errors.New("gateway_healthy: the exact authenticated gateway owns operational authority; the terminal gateway client is not available yet; use 'aegis console' or 'exit'; no authority persistence was opened"))
+					return runGatewayManager(cmd, o.configFile)
 				default:
 					return nil
 				}
