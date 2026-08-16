@@ -297,7 +297,7 @@ func TestVersionProvenanceIsExactAndFailClosed(t *testing.T) {
 	}
 }
 
-func TestBareInteractiveFirstRunInitializesThenStartsManager(t *testing.T) {
+func TestBareInteractiveFirstRunEstablishesAuthorityWithoutManagerOnboarding(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
 	var out bytes.Buffer
 	root := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
@@ -306,12 +306,27 @@ func TestBareInteractiveFirstRunInitializesThenStartsManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "rerun 'aegis init'", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "DECISION / Create first-run Aegis configuration", "RECOMMENDATION", "CONSEQUENCE", "Initialization completed atomically", "Setup progress  1/5 verified", "now            credential authority", "DECISION / Choose credential authority custody", "passphrase-encrypted local key"} {
+	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "rerun 'aegis init'", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "DECISION / Create first-run Aegis configuration", "RECOMMENDATION", "CONSEQUENCE", "Initialization completed atomically", "principal authenticated", "manager_model_absent"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("output missing %q: %s", expected, text)
 		}
 	}
+	for _, forbidden := range []string{"Setup progress  1/5 verified", "now            credential authority", "DECISION / Choose credential authority custody", "passphrase-encrypted local key", "Bind exact local model", "Run end-to-end certification"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("bare startup entered separately authorized manager onboarding stage %q: %s", forbidden, text)
+		}
+	}
 	assertSecureConfig(t, configPath)
+	for _, artifact := range []string{
+		filepath.Join(statePath, "credentials", "authority.db"),
+		filepath.Join(statePath, "credentials", "authority.kek"),
+		filepath.Join(statePath, "credentials", "authority.kek.enc"),
+		filepath.Join(statePath, "manager", "certifications"),
+	} {
+		if _, err := os.Lstat(artifact); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("bare startup created separately authorized manager artifact %s: %v", artifact, err)
+		}
+	}
 }
 
 func TestExplicitInitDeclineWritesNothing(t *testing.T) {
