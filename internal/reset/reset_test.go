@@ -418,6 +418,31 @@ func TestResetAcceptsBadgerMutationWithinPreviewedOwnedScope(t *testing.T) {
 	}
 }
 
+func TestResetAcceptsLifecycleMarkerReplacementWithinPreviewedOwnedScope(t *testing.T) {
+	f := newFixture(t)
+	f.writeConfig(t, "")
+	persistenceRoot := filepath.Join(f.state, "persistence", "authority-v1")
+	dirty := filepath.Join(persistenceRoot, "DIRTY")
+	clean := filepath.Join(persistenceRoot, "CLEAN")
+	writeOwned(t, dirty, "dirty")
+
+	plan, err := f.service.Plan(context.Background(), f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(dirty); err != nil {
+		t.Fatal(err)
+	}
+	writeOwned(t, clean, "clean")
+
+	if err = f.service.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("reset rejected an owned persistence lifecycle transition inside the previewed scope: %v", err)
+	}
+	if inspection := config.Inspect(f.config); inspection.State != config.StateAbsent {
+		t.Fatalf("post-reset inspection=%+v", inspection)
+	}
+}
+
 func TestPlanIsDeterministicAndExact(t *testing.T) {
 	f := newFixture(t)
 	f.writeConfig(t, "")
