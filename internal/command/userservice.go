@@ -3,14 +3,19 @@ package command
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
@@ -219,14 +224,140 @@ func launchConsole(cmd *cobra.Command, options *rootOptions, opener BrowserOpene
 	}
 	origin, _ := result["console_origin"].(string)
 	target := strings.TrimRight(origin, "/") + "/console"
-	if err = opener(cmd.Context(), target); err != nil {
+	bootstrap, _ := result["bootstrap"].(string)
+	if err = launchBrowserSession(cmd.Context(), origin, bootstrap, opener); err != nil {
 		result["browser_opened"] = false
+		var handoffErr *browserSessionError
+		if errors.As(err, &handoffErr) && handoffErr.bootstrapMayBeConsumed {
+			delete(result, "bootstrap")
+			result["manual_fallback_available"] = false
+			result["bootstrap_may_be_consumed"] = true
+			if outputErr := output(cmd, result); outputErr != nil {
+				return errors.Join(err, outputErr)
+			}
+			return fmt.Errorf("browser session exchange failed after the single-use bootstrap may have been consumed; request a fresh bootstrap before retrying: %w", err)
+		}
 		result["manual_url"] = target
 		if outputErr := output(cmd, result); outputErr != nil {
 			return errors.Join(err, outputErr)
 		}
 		return fmt.Errorf("browser launch failed; open %s and enter the emitted single-use bootstrap manually: %w", target, err)
 	}
+	delete(result, "bootstrap")
 	result["browser_opened"] = true
+	result["browser_session_established"] = true
 	return output(cmd, result)
+}
+
+type browserSessionError struct {
+	err                    error
+	bootstrapMayBeConsumed bool
+}
+
+func (e *browserSessionError) Error() string { return e.err.Error() }
+func (e *browserSessionError) Unwrap() error { return e.err }
+
+func launchBrowserSession(ctx context.Context, origin, bootstrap string, opener BrowserOpener) error {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname()) || bootstrap == "" {
+		return errors.New("automatic browser handoff requires a plaintext loopback console and a valid bootstrap")
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort(parsed.Hostname(), "0"))
+	if err != nil {
+		return fmt.Errorf("start browser handoff: %w", err)
+	}
+	defer listener.Close()
+	correlationBytes := make([]byte, 32)
+	if _, err = rand.Read(correlationBytes); err != nil {
+		return fmt.Errorf("generate browser handoff correlation: %w", err)
+	}
+	correlation := base64.RawURLEncoding.EncodeToString(correlationBytes)
+	handoffPath := "/handoff/" + correlation
+
+	result := make(chan error, 1)
+	var once sync.Once
+	var claimed atomic.Bool
+	complete := func(err error) { once.Do(func() { result <- err }) }
+	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Cache-Control", "no-store")
+		writer.Header().Set("Pragma", "no-cache")
+		writer.Header().Set("Referrer-Policy", "no-referrer")
+		writer.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+		if request.Method != http.MethodGet || request.URL.Path != handoffPath || request.URL.RawQuery != "" || !claimed.CompareAndSwap(false, true) {
+			http.NotFound(writer, request)
+			return
+		}
+		body, marshalErr := json.Marshal(map[string]string{"bootstrap": bootstrap})
+		if marshalErr != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+			complete(errors.New("encode browser session exchange"))
+			return
+		}
+		exchange, requestErr := http.NewRequestWithContext(request.Context(), http.MethodPost, strings.TrimRight(origin, "/")+"/console/session", bytes.NewReader(body))
+		if requestErr != nil {
+			writer.WriteHeader(http.StatusBadGateway)
+			complete(errors.New("construct browser session exchange"))
+			return
+		}
+		exchange.Header.Set("Content-Type", "application/json")
+		exchange.Header.Set("Origin", origin)
+		response, exchangeErr := client.Do(exchange)
+		if exchangeErr != nil {
+			writer.WriteHeader(http.StatusBadGateway)
+			complete(&browserSessionError{err: fmt.Errorf("exchange browser session: %w", exchangeErr), bootstrapMayBeConsumed: true})
+			return
+		}
+		defer response.Body.Close()
+		cookies := response.Cookies()
+		if response.StatusCode != http.StatusCreated || len(cookies) != 1 || cookies[0].Name != "aegis-console" || cookies[0].Value == "" || cookies[0].Path != "/console" || !cookies[0].HttpOnly || cookies[0].Domain != "" || cookies[0].SameSite != http.SameSiteStrictMode || cookies[0].Secure != (parsed.Scheme == "https") {
+			writer.WriteHeader(http.StatusBadGateway)
+			complete(&browserSessionError{err: fmt.Errorf("console denied browser session exchange: HTTP %d", response.StatusCode), bootstrapMayBeConsumed: true})
+			return
+		}
+		http.SetCookie(writer, cookies[0])
+		writer.Header().Set("Location", strings.TrimRight(origin, "/")+"/console")
+		writer.WriteHeader(http.StatusSeeOther)
+		complete(nil)
+	})
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	defer server.Close()
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			complete(fmt.Errorf("serve browser handoff: %w", serveErr))
+		}
+	}()
+	_, handoffPort, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		return fmt.Errorf("resolve browser handoff port: %w", err)
+	}
+	handoffURL := "http://" + net.JoinHostPort(parsed.Hostname(), handoffPort) + handoffPath
+	if err = opener(ctx, handoffURL); err != nil {
+		return err
+	}
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
+	select {
+	case err = <-result:
+		return err
+	case <-ctx.Done():
+		if claimed.Load() {
+			return &browserSessionError{err: ctx.Err(), bootstrapMayBeConsumed: true}
+		}
+		return ctx.Err()
+	case <-timer.C:
+		err = errors.New("browser did not complete the temporary handoff")
+		if claimed.Load() {
+			return &browserSessionError{err: err, bootstrapMayBeConsumed: true}
+		}
+		return err
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
