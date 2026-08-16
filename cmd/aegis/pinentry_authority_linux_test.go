@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,8 +14,88 @@ import (
 	"testing"
 	"time"
 
+	"github.com/berryhill/aegis/internal/onboarding"
 	"golang.org/x/sys/unix"
 )
+
+func TestBasicAndAdvancedBootstrapRoutesReachSameArtifactDerivedStateAndResume(t *testing.T) {
+	root := t.TempDir()
+	binary := filepath.Join(root, "aegis")
+	pinentry := filepath.Join(root, "fake-pinentry")
+	buildTestBinary(t, binary)
+	buildFakePinentry(t, pinentry, filepath.Join(root, "pinentry-count"), "presentation-parity-passphrase")
+	runtimePath := buildFakeRuntimePrerequisites(t, root)
+
+	states := make(map[string]onboarding.State)
+	for _, route := range []string{"basic", "advanced"} {
+		installation := filepath.Join(root, route)
+		configPath := filepath.Join(installation, "aegis.yaml")
+		statePath := filepath.Join(installation, "state")
+		process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, runtimePath)
+		capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+		if route == "advanced" {
+			_, _ = master.Write([]byte("advanced\r"))
+			// Match the stable hierarchy label rather than prose that may wrap at
+			// the detected PTY width (for example, "exact configuration:").
+			capture = readPTYUntil(t, master, capture, "DETAILS / authoritative Aegis evidence", 5*time.Second)
+		}
+		_, _ = master.Write([]byte("\r"))
+		capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
+		if route == "advanced" {
+			_, _ = master.Write([]byte("advanced\r"))
+			capture = readPTYUntil(t, master, capture, "Select exact custody [1/2/3/4]:", 5*time.Second)
+			_, _ = master.Write([]byte("1\r"))
+		} else {
+			_, _ = master.Write([]byte("\r"))
+		}
+		capture = readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+		if route == "advanced" {
+			_, _ = master.Write([]byte("advanced\r"))
+			capture = readPTYUntil(t, master, capture, "DETAILS / authoritative Aegis evidence", 5*time.Second)
+			_, _ = master.Write([]byte("basic\r"))
+			capture = readPTYUntil(t, master, capture, "PRESENTATION / basic; verified progress is unchanged", 5*time.Second)
+			_, _ = master.Write([]byte("advanced\r"))
+			capture = readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+		}
+		_, _ = master.Write([]byte("\r"))
+		capture = readPTYUntil(t, master, capture, "Passphrase-encrypted authority initialized, unlocked, and verified.", 15*time.Second)
+		_, _ = master.Write([]byte{4})
+		if err := process.Wait(); err != nil {
+			t.Fatalf("%s route exit=%v output=%q", route, err, capture)
+		}
+		_ = master.Close()
+		_ = slave.Close()
+
+		snapshot := onboarding.NewInspector(nil).Inspect(context.Background(), configPath)
+		states[route] = snapshot.State
+		if snapshot.State != onboarding.PrincipalConfigured || snapshot.Reason != "credential_authority_locked" {
+			t.Fatalf("%s route artifact state=%q reason=%q", route, snapshot.State, snapshot.Reason)
+		}
+	}
+	if states["basic"] != states["advanced"] {
+		t.Fatalf("presentation routes diverged: basic=%q advanced=%q", states["basic"], states["advanced"])
+	}
+
+	// A fresh process must derive completed stages from artifacts rather than a
+	// presentation-local cursor. Declining the next stage preserves canonical state.
+	configPath := filepath.Join(root, "advanced", "aegis.yaml")
+	statePath := filepath.Join(root, "advanced", "state")
+	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, runtimePath)
+	capture := readPTYUntil(t, master, nil, "Setup progress  3/5 verified", 10*time.Second)
+	if bytes.Contains(capture, []byte("Create encrypted credential authority")) {
+		t.Fatalf("resume replayed completed authority stage: %q", capture)
+	}
+	_, _ = master.Write([]byte{4})
+	if err := process.Wait(); err != nil {
+		t.Fatalf("resumed decline exit=%v output=%q", err, capture)
+	}
+	_ = master.Close()
+	_ = slave.Close()
+	after := onboarding.NewInspector(nil).Inspect(context.Background(), configPath)
+	if after.State != states["advanced"] {
+		t.Fatalf("decline/resume changed artifact state: before=%q after=%q", states["advanced"], after.State)
+	}
+}
 
 func TestAuthorityPinentryCreateAndNonTTYUnlockCLI(t *testing.T) {
 	root := t.TempDir()
@@ -31,11 +112,11 @@ func TestAuthorityPinentryCreateAndNonTTYUnlockCLI(t *testing.T) {
 	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, runtimePath)
 	defer master.Close()
 	defer slave.Close()
-	capture := readPTYUntil(t, master, nil, "Create this configuration? [Y/n]:", 5*time.Second)
+	capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
-	capture = readPTYUntil(t, master, capture, "Use the recommended custody? [Y/n/advanced]:", 5*time.Second)
+	capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
-	capture = readPTYUntil(t, master, capture, "Create and verify this encrypted authority? [Y/n]:", 5*time.Second)
+	capture = readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
 	capture = readPTYUntil(t, master, capture, "Passphrase-encrypted authority initialized, unlocked, and verified.", 15*time.Second)
 	// Stop at the next ordinary onboarding stage without selecting, downloading,
@@ -90,11 +171,11 @@ func TestAuthorityNoEchoPTYFallbackCLI(t *testing.T) {
 	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, "", "")
 	defer master.Close()
 	defer slave.Close()
-	capture := readPTYUntil(t, master, nil, "Create this configuration? [Y/n]:", 5*time.Second)
+	capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
-	capture = readPTYUntil(t, master, capture, "Use the recommended custody? [Y/n/advanced]:", 5*time.Second)
+	capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
-	capture = readPTYUntil(t, master, capture, "Create and verify this encrypted authority? [Y/n]:", 5*time.Second)
+	capture = readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
 	canary := "fallback-authority-canary-18d74c"
 	capture = readPTYUntil(t, master, capture, "New authority passphrase", 5*time.Second)
@@ -123,11 +204,11 @@ func TestAuthorityPinentryCancellationDoesNotMutateCLI(t *testing.T) {
 	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, "")
 	defer master.Close()
 	defer slave.Close()
-	capture := readPTYUntil(t, master, nil, "Create this configuration? [Y/n]:", 5*time.Second)
+	capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
-	capture = readPTYUntil(t, master, capture, "Use the recommended custody? [Y/n/advanced]:", 5*time.Second)
+	capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
-	capture = readPTYUntil(t, master, capture, "Create and verify this encrypted authority? [Y/n]:", 5*time.Second)
+	capture = readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
 	capture = readPTYUntil(t, master, capture, "authority passphrase entry cancelled", 5*time.Second)
 	if err := process.Wait(); err == nil {

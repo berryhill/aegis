@@ -77,7 +77,7 @@ func TestInteractiveBareStartupReconcilesMissingOperationalAuthority(t *testing.
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Initialize this empty operational authority generation? [y/N]") {
+	if !strings.Contains(out.String(), "DECISION / Initialize empty operational authority generation") {
 		t.Fatalf("bare startup skipped compatibility reconciliation: %s", out.String())
 	}
 	inspection := authoritybadger.Inspect(context.Background(), filepath.Join(statePath, "persistence", "authority-v1"))
@@ -95,7 +95,7 @@ func TestInteractiveInitReconcilesExactAbsenceOnceAndAgentsListReturnsJSON(t *te
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Initialize this empty operational authority generation? [y/N]") {
+	if !strings.Contains(out.String(), "DECISION / Initialize empty operational authority generation") {
 		t.Fatalf("missing explicit reconciliation confirmation: %s", out.String())
 	}
 	first := authoritybadger.Inspect(context.Background(), authorityPath)

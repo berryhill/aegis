@@ -393,6 +393,14 @@ The existing ability to accept bounded startup input/queue behavior MUST be pres
 
 Bootstrap previews, custody selection, passphrase intake, model route configuration, certification, and launch decisions remain deterministic Aegis operations. TUI forms MUST call the existing services and revalidation paths. They MUST NOT replace exact previews or authenticated confirmation with optimistic UI state.
 
+### 10.5 Basic and advanced presentation depth
+
+Interactive bootstrap MUST identify `basic` as the concise default presentation. Each presentation-owned consequential decision MUST show one recommendation, a plain-language consequence, a safe decline/exit, and a `details` or `advanced` route to the exact authoritative evidence before approval. Certification MUST disclose expected CPU/GPU/RAM/time impact and state that decline or interruption can resume from verified artifacts.
+
+`basic` and `advanced` MUST render and invoke one artifact-derived state machine, one transition implementation, and identical approval, revalidation, and postcondition rules. Presentation depth is process-local view state only. Changing it MUST NOT select authority, union permissions, approve, mutate, reset, skip, fabricate, or invalidate progress. Decline, invalid input, EOF, interruption, and limited terminal capability MUST remain non-authorizing and fail closed.
+
+Bootstrap and manager event output MUST preserve explicit origin and color-independent semantic roles for authoritative state, active work, queued/background activity, errors, and required actions. The roles MUST remain legible at supported 80, 100, and 120 column widths with and without color; styling cannot let model-originated text inherit an authoritative role.
+
 ## 11. Composer requirements
 
 ### 11.1 Input behavior
