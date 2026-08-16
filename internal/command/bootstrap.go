@@ -42,6 +42,7 @@ func inspectOnboarding(ctx context.Context, configPath string, logger *slog.Logg
 // freshly reverified ready state.
 func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
+	bootstrapView := newBootstrapPresentation(capabilities)
 	terminalOutput := tui.NewSynchronizedWriter(cmd.OutOrStdout())
 	cmd.SetOut(terminalOutput)
 	presentation := tui.NewController(terminalOutput, capabilities, tui.SecurityContext{Principal: "pending", Stanza: managerdomain.SecurityContext, MandateState: "bootstrap", Runtime: "Hermes Agent", RuntimeState: "preflight", Route: "local-only", NoFallback: true})
@@ -54,15 +55,16 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 	fmt.Fprintln(cmd.OutOrStdout(), "AEGIS / bootstrap")
 	fmt.Fprintln(cmd.OutOrStdout(), "Set up one authenticated, exact-local Aegis manager. Aegis verifies each result before continuing; the model never chooses or authorizes a step.")
 	fmt.Fprintln(cmd.OutOrStdout(), "You can exit at any prompt and rerun 'aegis init'. Progress is derived from verified artifacts, so completed stages are not repeated.")
+	bootstrapView.renderIntroduction(cmd)
 	inspection := config.Inspect(configPath)
 	if inspection.State == config.StateAbsent || inspection.State == config.StatePartial {
 		renderOnboardingProgress(cmd, onboarding.Snapshot{State: onboarding.Uninitialized})
-		initialized, err := runFirstInitializationWithInput(cmd, initializer, configPath, statePath, input)
+		initialized, err := runFirstInitializationWithInput(cmd, initializer, configPath, statePath, input, bootstrapView)
 		if err != nil || !initialized {
 			return false, err
 		}
 	}
-	continued, err := reconcileOperationalAuthority(cmd, initializer, configPath, input)
+	continued, err := reconcileOperationalAuthority(cmd, initializer, configPath, input, bootstrapView)
 	if err != nil || !continued {
 		return false, err
 	}
@@ -77,18 +79,23 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 		case onboarding.Ready:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageComplete, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Message: "all manager prerequisites verified"})
 			renderReadiness(cmd, snapshot)
-			fmt.Fprint(cmd.OutOrStdout(), "Start the Aegis manager TUI now? [1] start  [2] exit (safe default): ")
-			answer, eof, err := readBootstrapLine(cmd, input, 32)
+			approved, err := bootstrapView.approve(cmd, input, bootstrapDecision{
+				Title:          "Start authenticated manager gateway",
+				Recommendation: "Start only when interactive manager access is intended now; otherwise exit and resume later.",
+				Consequence:    "Starts the local authenticated manager surface. The safe default exits without activation.",
+				Details:        fmt.Sprintf("principal=%s; runtime=Hermes Agent %s; route=local-only; no fallback=true; exact model=%s @ %s", snapshot.Principal, snapshot.HermesVersion, snapshot.Model, snapshot.ModelDigest),
+				DefaultDecline: true,
+			})
 			if err != nil {
 				return false, err
 			}
-			return !eof && (answer == "1" || answer == "start"), nil
+			return approved, nil
 		case onboarding.RepairRequired:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageFailed, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Reason: snapshot.Reason})
 			return false, usage(fmt.Errorf("%s: %s; remediation: %s", snapshot.State, snapshot.Reason, snapshot.NextCommand))
 		case onboarding.PrincipalConfigured:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "credential authority", Message: "credential authority setup or unlock required"})
-			continued, err := bootstrapAuthority(cmd, build, input, snapshot, &authorityPassphrase)
+			continued, err := bootstrapAuthority(cmd, build, input, snapshot, &authorityPassphrase, bootstrapView)
 			if err != nil || !continued {
 				return false, err
 			}
@@ -98,13 +105,13 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 			return false, nil
 		case onboarding.RuntimeConfigured:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "exact local model", Message: "model route and exact artifact verification required"})
-			continued, err := bootstrapModel(cmd, build, input, snapshot)
+			continued, err := bootstrapModel(cmd, build, input, snapshot, bootstrapView)
 			if err != nil || !continued {
 				return false, err
 			}
 		case onboarding.ModelPresent:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageStarted, Origin: tui.AegisAuthoritative, Stage: "certification", Message: "exact Hermes to proxy to Ollama certification required"})
-			continued, err := bootstrapCertification(cmd, build, input, snapshot)
+			continued, err := bootstrapCertification(cmd, build, input, snapshot, bootstrapView)
 			if err != nil || !continued {
 				return false, err
 			}
@@ -203,7 +210,8 @@ func completedStagesFromChecks(checks []onboarding.Check) int {
 	return completed
 }
 
-func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot, unlocked *[]byte) (bool, error) {
+func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot, unlocked *[]byte, views ...*bootstrapPresentation) (bool, error) {
+	view := bootstrapView(views)
 	inspection := config.Inspect(snapshot.ConfigPath)
 	if inspection.State == config.StateValid && inspection.Config.Credentials.Authority.Custody == "passphrase-file" {
 		configured := inspection.Config.Credentials.Authority
@@ -241,21 +249,28 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 		directory := strings.TrimSpace(os.Getenv("CREDENTIALS_DIRECTORY"))
 		if directory == "" {
 			fmt.Fprintln(cmd.OutOrStdout(), "This foreground CLI was not launched with a systemd service credential, so that custody mode cannot complete here.")
-			fmt.Fprint(cmd.OutOrStdout(), "Create a passphrase-encrypted local authority and continue? [Y/n]: ")
-			approved, err := readDefaultYes(cmd, input)
+			approved, err := view.approve(cmd, input, bootstrapDecision{
+				Title:          "Replace unavailable systemd custody with encrypted local custody",
+				Recommendation: "Use passphrase-encrypted local custody when this foreground process has no delivered systemd credential.",
+				Consequence:    "Creates a new encrypted local authority only after a separate exact-plan approval. Declining preserves the existing systemd prerequisite.",
+				Details:        fmt.Sprintf("configured custody=systemd; deployment ID=%s; database=%s; delivered credential=absent", authority.DeploymentID, authority.Database),
+			})
 			if err != nil || !approved {
 				return false, err
 			}
-			return bootstrapPassphraseAuthority(cmd, build, snapshot, unlocked)
+			return bootstrapPassphraseAuthority(cmd, build, snapshot, unlocked, view)
 		}
 		credential := filepath.Join(directory, authority.KEKCredential)
 		if _, statErr := os.Lstat(credential); statErr != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "The delivered credential is not available at %s. Correct systemd credential delivery, then rerun aegis init. No database was created.\n", credential)
 			return false, nil
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "The externally delivered KEK is available. Aegis will create the deployment-bound mode-0600 authority database; it will not copy or modify the credential.")
-		fmt.Fprint(cmd.OutOrStdout(), "Initialize and verify the systemd-backed authority? [Y/n]: ")
-		approved, err := readDefaultYes(cmd, input)
+		approved, err := view.approve(cmd, input, bootstrapDecision{
+			Title:          "Initialize systemd-backed credential authority",
+			Recommendation: "Initialize only with the externally delivered credential already verified as available.",
+			Consequence:    "Creates the deployment-bound mode-0600 authority database; the delivered credential is neither copied nor modified.",
+			Details:        fmt.Sprintf("deployment ID=%s; database=%s; credential=%s from CREDENTIALS_DIRECTORY", authority.DeploymentID, authority.Database, authority.KEKCredential),
+		})
 		if err != nil || !approved {
 			fmt.Fprintln(cmd.OutOrStdout(), "Systemd authority initialization declined; no database was created.")
 			return false, err
@@ -277,60 +292,36 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 		fmt.Fprintln(cmd.OutOrStdout(), "Systemd-custody authority initialized and verified.")
 		return true, nil
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "\nCredential authority")
-	fmt.Fprintln(cmd.OutOrStdout(), "Recommended: a passphrase-encrypted local key. It works in this terminal and the passphrase is never stored.")
-	fmt.Fprint(cmd.OutOrStdout(), "Use the recommended custody? [Y/n/advanced]: ")
-	answer, eof, err := readBootstrapLine(cmd, input, 32)
-	if err != nil || eof || answer == "exit" {
+	custody, err := view.chooseCustody(cmd, input, bootstrapDecision{
+		Title:          "Choose credential authority custody",
+		Recommendation: "Use a passphrase-encrypted local key. It works in this terminal and the passphrase is never stored.",
+		Consequence:    "The recommended route creates owner-only encrypted authority artifacts after exact approval. Declining or exiting performs no mutation.",
+		Details:        "passphrase-file keeps the KEK encrypted at rest; systemd requires an externally delivered service credential; host-file is weaker development-only custody",
+	})
+	if err != nil {
 		return false, err
 	}
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	if answer == "" || answer == "y" || answer == "yes" || answer == "1" || answer == "passphrase-file" {
-		return bootstrapPassphraseAuthority(cmd, build, snapshot, unlocked)
+	if custody == "passphrase-file" {
+		return bootstrapPassphraseAuthority(cmd, build, snapshot, unlocked, view)
 	}
-	if answer == "n" || answer == "no" {
+	if custody == "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "Custody setup declined; no mutation was performed. Rerun 'aegis init' to resume.")
-		return false, nil
-	}
-	if answer != "advanced" && answer != "a" {
-		fmt.Fprintln(cmd.OutOrStdout(), "No valid custody choice selected; no mutation was performed. Rerun 'aegis init' to resume.")
-		return false, nil
-	}
-	fmt.Fprintln(cmd.OutOrStdout(), "\nAdvanced custody")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [1] systemd service credential (must already be delivered by a service unit)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [2] plaintext host file (development only; weaker)")
-	fmt.Fprintln(cmd.OutOrStdout(), "  [3] exit without mutation")
-	fmt.Fprint(cmd.OutOrStdout(), "Select: ")
-	answer, eof, err = readBootstrapLine(cmd, input, 32)
-	if err != nil || eof || answer == "3" || answer == "exit" {
-		return false, err
-	}
-	custody := ""
-	switch answer {
-	case "1", "systemd":
-		custody = "systemd"
-	case "2", "host-file":
-		custody = "host-file"
-	default:
-		fmt.Fprintln(cmd.OutOrStdout(), "No valid custody choice selected; no mutation performed.")
 		return false, nil
 	}
 	plan, err := onboarding.PreviewAuthority(snapshot.ConfigPath, custody)
 	if err != nil {
 		return false, err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "\nExact authority plan\n  deployment ID  %s\n  database       %s\n  custody        %s\n", plan.DeploymentID, plan.Database, plan.Custody)
-	if plan.KEKFile != "" {
-		fmt.Fprintf(cmd.OutOrStdout(), "  KEK file       %s\n", plan.KEKFile)
-	} else {
-		fmt.Fprintf(cmd.OutOrStdout(), "  credential     %s (from CREDENTIALS_DIRECTORY)\n", plan.KEKCredential)
+	keyReference := plan.KEKFile
+	if keyReference == "" {
+		keyReference = plan.KEKCredential + " from CREDENTIALS_DIRECTORY"
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "  ownership      authenticated OS principal; files 0600; directories 0700")
-	fmt.Fprintln(cmd.OutOrStdout(), "  backup warning never back up a host-file KEK with authority.db")
-	fmt.Fprintln(cmd.OutOrStdout(), "  limitation     local root or a compromised account can defeat this boundary")
-	fmt.Fprintln(cmd.OutOrStdout(), "  config digest  ", plan.OriginalDigest, "->", plan.ResultDigest)
-	fmt.Fprint(cmd.OutOrStdout(), "Apply this authority plan? [Y/n]: ")
-	approved, err := readDefaultYes(cmd, input)
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Apply exact advanced custody plan",
+		Recommendation: "Apply only the explicitly selected custody after reviewing its exact paths and digest transition.",
+		Consequence:    "Creates authority artifacts with the selected custody. Declining performs no writes; host-file custody is explicitly weaker.",
+		Details:        fmt.Sprintf("deployment ID=%s; database=%s; custody=%s; key reference=%s; ownership=authenticated OS principal; files=0600; directories=0700; config digest=%s -> %s; never back up a host-file KEK with authority.db; local root or a compromised account can defeat this boundary", plan.DeploymentID, plan.Database, plan.Custody, keyReference, plan.OriginalDigest, plan.ResultDigest),
+	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Authority configuration declined; no writes were performed.")
 		return false, err
@@ -366,15 +357,18 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 	return true, nil
 }
 
-func bootstrapPassphraseAuthority(cmd *cobra.Command, build builder, snapshot onboarding.Snapshot, unlocked *[]byte) (bool, error) {
+func bootstrapPassphraseAuthority(cmd *cobra.Command, build builder, snapshot onboarding.Snapshot, unlocked *[]byte, views ...*bootstrapPresentation) (bool, error) {
+	view := bootstrapView(views)
 	plan, err := onboarding.PreviewAuthority(snapshot.ConfigPath, "passphrase-file")
 	if err != nil {
 		return false, err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "\nEncrypted authority plan\n  deployment ID  %s\n  database       %s\n  encrypted KEK  %s\n  encryption     Argon2id + XChaCha20-Poly1305\n  files          0600\n  directories    0700\n  config digest  %s -> %s\n", plan.DeploymentID, plan.Database, plan.KEKFile, plan.OriginalDigest, plan.ResultDigest)
-	fmt.Fprintln(cmd.OutOrStdout(), "The passphrase is never written to disk. Losing it makes the encrypted authority unrecoverable without a separate recovery mechanism.")
-	fmt.Fprint(cmd.OutOrStdout(), "Create and verify this encrypted authority? [Y/n]: ")
-	approved, err := readDefaultYes(cmd, newTerminalInput(cmd.InOrStdin()))
+	approved, err := view.approve(cmd, newTerminalInput(cmd.InOrStdin()), bootstrapDecision{
+		Title:          "Create encrypted credential authority",
+		Recommendation: "Use the passphrase-encrypted local authority for this terminal-managed installation.",
+		Consequence:    "Creates owner-only authority artifacts. The passphrase is never stored; losing it makes the authority unrecoverable without a separate recovery mechanism.",
+		Details:        fmt.Sprintf("deployment ID=%s; database=%s; encrypted KEK=%s; encryption=Argon2id + XChaCha20-Poly1305; files=0600; directories=0700; config digest=%s -> %s", plan.DeploymentID, plan.Database, plan.KEKFile, plan.OriginalDigest, plan.ResultDigest),
+	})
 	if err != nil || !approved {
 		return false, err
 	}
@@ -434,7 +428,8 @@ func readDefaultYes(cmd *cobra.Command, input *terminalInput) (bool, error) {
 	}
 }
 
-func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {
+func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot, views ...*bootstrapPresentation) (bool, error) {
+	view := bootstrapView(views)
 	service, subject, err := authenticatedService(cmd, build)
 	if err != nil {
 		return false, err
@@ -470,8 +465,12 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 			return false, usage(errors.New("candidate selection is outside the closed registry"))
 		}
 		candidate := managerdomain.Candidates()[index]
-		fmt.Fprintf(cmd.OutOrStdout(), "Network action: POST %s/api/pull\nExpected artifact: %s\nStore/owner: operator-managed Ollama at %s\nPublisher/source: %s / %s\nLicense/terms: %s / %s\nSize: reported by Ollama during transfer\nDigest policy: rediscover and bind the exact resulting sha256 digest; the mutable name is never identity.\nDownload this model? [Y/n]: ", endpoint, candidate.OllamaName, endpoint, candidate.Publisher, candidate.Source, candidate.License, candidate.LicenseURL)
-		approved, readErr := readDefaultYes(cmd, input)
+		approved, readErr := view.approve(cmd, input, bootstrapDecision{
+			Title:          "Download exact registry model candidate",
+			Recommendation: "Download only the selected closed-registry candidate to the explicit operator-managed Ollama daemon.",
+			Consequence:    "Requests a network download into operator-managed Ollama. Declining requests no network mutation; success is rediscovered and bound by exact sha256 digest.",
+			Details:        fmt.Sprintf("action=POST %s/api/pull; artifact=%s; store owner=operator-managed Ollama at %s; publisher/source=%s / %s; license/terms=%s / %s; size=reported during transfer; mutable name is never identity", endpoint, candidate.OllamaName, endpoint, candidate.Publisher, candidate.Source, candidate.License, candidate.LicenseURL),
+		})
 		if readErr != nil || !approved {
 			fmt.Fprintln(cmd.OutOrStdout(), "Download declined; no network mutation was requested.")
 			return false, readErr
@@ -535,8 +534,12 @@ func bootstrapModel(cmd *cobra.Command, build builder, input *terminalInput, sna
 	if err != nil {
 		return false, err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Exact configuration: model=%s digest=%s endpoint=%s certification=%s\nNo cloud fallback. No model switching. No copy.\nApply this exact digest-bound model configuration? [Y/n]: ", preview.Model, preview.Digest, preview.Endpoint, preview.Certification)
-	approved, err := readDefaultYes(cmd, input)
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Bind exact local model",
+		Recommendation: "Bind the selected verified installed artifact to the explicit loopback route.",
+		Consequence:    "Writes the exact digest-bound model configuration. No cloud fallback, model switching, or artifact copy is enabled.",
+		Details:        fmt.Sprintf("model=%s; digest=%s; endpoint=%s; certification=%s", preview.Model, preview.Digest, preview.Endpoint, preview.Certification),
+	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Model binding declined; no configuration write was performed.")
 		return false, err
@@ -585,17 +588,20 @@ func renderInstalledCandidates(cmd *cobra.Command, installed []managerdomain.Ins
 	}
 }
 
-func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot) (bool, error) {
+func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalInput, snapshot onboarding.Snapshot, views ...*bootstrapPresentation) (bool, error) {
+	view := bootstrapView(views)
 	candidate := "CANDIDATE_ID"
 	for _, item := range managerdomain.Candidates() {
 		if item.OllamaName == snapshot.Model {
 			candidate = item.ID
 		}
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "\nCertification runs the complete Hermes Agent -> authenticated Aegis proxy -> Ollama conformance path.")
-	fmt.Fprintln(cmd.OutOrStdout(), "It loads the exact model, may use substantial CPU/GPU/RAM, runs every named corpus case, and unloads all runtime resources afterward.")
-	fmt.Fprint(cmd.OutOrStdout(), "Run certification now? [Y/n]: ")
-	approved, err := readDefaultYes(cmd, input)
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Run end-to-end certification",
+		Recommendation: "Run now only when this workstation can sustain the exact local model workload.",
+		Consequence:    "May use substantial CPU, GPU, RAM, and time. Declining saves no certification; rerunning 'aegis init' resumes from verified artifacts.",
+		Details:        fmt.Sprintf("candidate=%s; path=Hermes Agent -> authenticated Aegis proxy -> Ollama; every named corpus case must pass; all runtime resources unload afterward", candidate),
+	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Certification declined; readiness was not reported.")
 		return false, err

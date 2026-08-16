@@ -152,7 +152,8 @@ func operationalAuthorityAbsent(ctx context.Context, configPath string) bool {
 	return authoritybadger.Inspect(ctx, filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")).State == authoritybadger.StateAbsent
 }
 
-func reconcileOperationalAuthority(cmd *cobra.Command, initializer *initialize.Service, configPath string, input *terminalInput) (bool, error) {
+func reconcileOperationalAuthority(cmd *cobra.Command, initializer *initialize.Service, configPath string, input *terminalInput, views ...*bootstrapPresentation) (bool, error) {
+	view := bootstrapView(views)
 	inspection := config.Inspect(configPath)
 	if inspection.State != config.StateValid {
 		return true, nil
@@ -169,16 +170,16 @@ func reconcileOperationalAuthority(cmd *cobra.Command, initializer *initialize.S
 	if err != nil {
 		return false, usage(err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "\nOperational authority compatibility reconciliation\nAuthenticated host principal: UID %s / user %s\nAuthority path: %s\nAction: create one secure empty authority generation; no existing state will be replaced.\n", plan.Principal.UID, plan.Principal.User, plan.AuthorityPath)
-	fmt.Fprint(cmd.OutOrStdout(), "Initialize this empty operational authority generation? [y/N]: ")
-	answer, eof, err := input.ReadLine(cmd.Context(), 16)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, err
-	}
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	if eof || errors.Is(err, io.EOF) || (answer != "y" && answer != "yes") {
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Initialize empty operational authority generation",
+		Recommendation: "Initialize the missing compatibility authority only after authenticating the configured host principal.",
+		Consequence:    "Creates one secure empty authority generation; no existing state is replaced. The safe default declines without writes.",
+		Details:        fmt.Sprintf("principal UID=%s user=%s; authority path=%s; existing state=absent", plan.Principal.UID, plan.Principal.User, plan.AuthorityPath),
+		DefaultDecline: true,
+	})
+	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Operational authority reconciliation declined; no writes were performed.")
-		return false, nil
+		return false, err
 	}
 	generation, err := initializer.ApplyOperationalAuthority(cmd.Context(), plan)
 	if err != nil {
@@ -188,33 +189,25 @@ func reconcileOperationalAuthority(cmd *cobra.Command, initializer *initialize.S
 	return true, nil
 }
 
-func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize.Service, configPath, statePath string, input *terminalInput) (bool, error) {
+func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize.Service, configPath, statePath string, input *terminalInput, views ...*bootstrapPresentation) (bool, error) {
+	view := bootstrapView(views)
 	plan, err := initializer.Plan(configPath, statePath)
 	if err != nil {
 		return false, usage(err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Aegis first-run initialization\nAuthenticated local operator: UID %s / user %s\nConfiguration path: %s\nState path: %s\nConfiguration mode: 0600\nNew Aegis configuration directory mode: 0700 (an existing parent must not be writable by group or others)\n\nExact configuration to write:\n%s\n", plan.Principal.UID, plan.Principal.User, plan.ConfigPath, plan.StatePath, plan.Document)
+	fmt.Fprintln(cmd.OutOrStdout(), "Aegis first-run initialization")
 	if len(plan.Partials) != 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "Recovery: remove %d recognized secure interrupted initialization artifact(s) before the atomic write.\n", len(plan.Partials))
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "No Hermes profile, model, credential, agent, Ollama service, or external system will be created or modified.")
-	fmt.Fprint(cmd.OutOrStdout(), "Create this configuration? [Y/n]: ")
-	confirmation, eof, err := input.ReadLine(cmd.Context(), 16)
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			fmt.Fprintln(cmd.OutOrStdout(), "\nInitialization declined; no writes were performed.")
-			return false, nil
-		}
-		return false, err
-	}
-	if eof {
-		fmt.Fprintln(cmd.OutOrStdout(), "\nInitialization declined; no writes were performed.")
-		return false, nil
-	}
-	confirmation = strings.ToLower(strings.TrimSpace(confirmation))
-	if confirmation != "" && confirmation != "y" && confirmation != "yes" {
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Create first-run Aegis configuration",
+		Recommendation: "Create the deterministic owner-only configuration for the authenticated local operator.",
+		Consequence:    "Atomically writes only Aegis configuration and local state scaffolding. No Hermes profile, model, credential, agent, Ollama service, or external system is created or modified; declining writes nothing.",
+		Details:        fmt.Sprintf("principal UID=%s user=%s; configuration=%s mode=0600; state=%s; new directories=0700; interrupted partials=%d; exact configuration:\n%s", plan.Principal.UID, plan.Principal.User, plan.ConfigPath, plan.StatePath, len(plan.Partials), plan.Document),
+	})
+	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Initialization declined; no writes were performed.")
-		return false, nil
+		return false, err
 	}
 	if err = initializer.Apply(cmd.Context(), plan); err != nil {
 		return false, err

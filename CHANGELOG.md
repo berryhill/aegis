@@ -6,7 +6,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Changed
 
-- Made bare interactive `aegis` and explicit `aegis init` one lower-resistance guided journey: the bootstrap states its purpose and safe exit/resume contract, renders five artifact-derived stages with completed/current/remaining progress, suppresses repeated verified checks, and progressively discloses advanced credential custody behind the recommended passphrase-encrypted local default. Exact previews, confirmations, revalidation, and fail-closed repair behavior remain authoritative.
+- Made bare interactive `aegis` and explicit `aegis init` one lower-resistance guided journey: bootstrap now identifies a concise `basic` presentation as the default, shows one recommendation and consequence at a time, and accepts `details` or `advanced` before consequential approvals to reveal exact Aegis evidence. Operators can return to `basic` without changing progress. The same artifact-derived state machine, transitions, approvals, revalidation, and fail-closed decline/resume behavior serve both presentations. Five stages remain visibly completed/current/remaining, and terminal events now carry color-independent `STATE`, `ACTIVE`, `QUEUED`, `ERROR`, or `ACTION` roles without replacing explicit authoritative/runtime origins.
 
 ### Fixed
 

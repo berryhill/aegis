@@ -101,8 +101,10 @@ flowchart TB
   Layout --> State
   Legacy[Read-only legacy discovery] -->|one artifact-derived legacy source + digest-bound confirmation| Migration[Verified copy migration]
   Migration --> Layout
-  Terminal[Principal terminal] --> TUI[Aegis typed rich/plain terminal controller]
-  TUI --> Manager[Built-in secrets-manager lifecycle]
+  Terminal[Principal terminal] --> BootstrapPresentation[Basic default / advanced exact-detail presentation]
+  BootstrapPresentation -->|same artifact-derived state machine and approvals| Onboarding
+  Terminal --> TUI[Aegis typed rich/plain terminal controller]
+  TUI -->|text roles: state / active / queued / error / action| Manager[Built-in secrets-manager lifecycle]
   Manager --> Registry[Typed Core 15 registry and bounded parser]
   Registry --> ManagerCommands[Authenticated command service]
   ManagerCommands --> State

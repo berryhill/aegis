@@ -114,3 +114,23 @@ func authoritativeKind(kind EventKind) bool {
 	}
 	return false
 }
+
+// eventHierarchy supplies a color-independent terminal role. Origin remains a
+// separate label so untrusted content cannot visually inherit authoritative
+// state merely by using state-like words.
+func eventHierarchy(kind EventKind) string {
+	switch kind {
+	case ManagerReady, ManagerDegraded, BootstrapInspectionComplete, BootstrapStageComplete, PrincipalAuthenticated, TrustSelected, MandateIssued, MandateExpiring, MandateExpired, MandateRevoked, RuntimeDiscoveryComplete, ModelLoadComplete, ModelUnloadComplete, ProxyOpened, ProxyClosed, HermesStarted, HermesStopped, CleanupCompleted:
+		return "STATE"
+	case TurnQueued:
+		return "QUEUED"
+	case BootstrapInspectionStarted, BootstrapStageStarted, RuntimeDiscoveryStarted, ModelLoadStarted, ModelUnloadStarted, TurnStarted, TurnProgress, IntakeStarted, OperationStarted, CleanupRequested, CleanupStage:
+		return "ACTIVE"
+	case BootstrapStageFailed, PrincipalDenied, TrustDenied, RuntimeDiscoveryFailed, ModelLoadFailed, ModelUnloadFailed, ProxyDenied, HermesFailed, InputBlocked, InputDiscarded, TurnFailed, TurnInterrupted, AssistantRejected, ProposalDenied, IntakeFailed, OperationFailed, CommandUnavailable, CommandDenied, CleanupFailed, TerminalWarning:
+		return "ERROR"
+	case ProposalReceived, ProposalValidated, ApprovalRequested, IntakeRequested, CommandAccepted, CommandCancelled:
+		return "ACTION"
+	default:
+		return ""
+	}
+}
