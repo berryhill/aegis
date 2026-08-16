@@ -851,6 +851,11 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	if err = validateCurrentPlan(plan, revalidated); err != nil {
 		return changed(fmt.Errorf("%w; no deletion was attempted", err))
 	}
+	// Badger may replace or add its own recognized files while the reset
+	// confirmation is pending. Delete only the freshly revalidated inventory so
+	// every removal remains bound to the identity observed immediately before
+	// mutation.
+	plan.Artifacts = revalidated.Artifacts
 	for _, artifact := range plan.Artifacts {
 		if err = ctx.Err(); err != nil {
 			return err
@@ -1116,7 +1121,13 @@ func validateCurrentPlan(original, current Plan) error {
 	}
 	for _, artifact := range current.Artifacts {
 		previewed, ok := expected[artifact.Path]
-		if !ok || previewed.Kind != artifact.Kind || previewed.Status != artifact.Status || previewed.identity != artifact.identity {
+		if !ok {
+			if !previewedBadgerArtifact(artifact, expected) {
+				return fmt.Errorf("artifact changed or appeared after preview: %s", artifact.Path)
+			}
+			continue
+		}
+		if previewed.Kind != artifact.Kind || previewed.Status != artifact.Status || previewed.identity != artifact.identity && !previewedBadgerArtifact(artifact, expected) {
 			return fmt.Errorf("artifact changed or appeared after preview: %s", artifact.Path)
 		}
 	}
@@ -1124,6 +1135,29 @@ func validateCurrentPlan(original, current Plan) error {
 		return errors.New("configuration identity changed after preview")
 	}
 	return nil
+}
+
+func previewedBadgerArtifact(artifact Artifact, previewed map[string]Artifact) bool {
+	if artifact.Kind != "file" || artifact.Status != "delete" || !badgerDataDirectory(filepath.Dir(artifact.Path)) {
+		return false
+	}
+	directory, ok := previewed[filepath.Dir(artifact.Path)]
+	return ok && directory.Kind == "directory" && directory.Status == "delete"
+}
+
+func badgerDataDirectory(path string) bool {
+	name := filepath.Base(path)
+	parent := filepath.Dir(path)
+	if name == "store.badger" {
+		return filepath.Base(parent) == "fleet-v1" && filepath.Base(filepath.Dir(parent)) == "persistence"
+	}
+	if !badgerGenerationName(name) {
+		return false
+	}
+	lifecycle := filepath.Base(parent)
+	authority := filepath.Dir(parent)
+	return (lifecycle == "stores" || lifecycle == "staging" || lifecycle == "retired") &&
+		filepath.Base(authority) == "authority-v1" && filepath.Base(filepath.Dir(authority)) == "persistence"
 }
 
 func within(root, path string) bool {

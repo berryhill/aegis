@@ -15,6 +15,7 @@ import (
 	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/initialize"
 	"github.com/berryhill/aegis/internal/layout"
+	badger "github.com/dgraph-io/badger/v4"
 )
 
 type fixture struct {
@@ -366,6 +367,54 @@ func TestCompleteResetAndFirstRunReplay(t *testing.T) {
 	}
 	if inspection := config.Inspect(f.config); inspection.State != config.StateValid {
 		t.Fatalf("reinitialized inspection=%+v", inspection)
+	}
+}
+
+func TestResetAcceptsBadgerMutationWithinPreviewedOwnedScope(t *testing.T) {
+	f := newFixture(t)
+	f.writeConfig(t, "")
+	storePath := filepath.Join(f.state, "persistence", "fleet-v1", "store.badger")
+	writeBadgerValue := func(key, value string) {
+		t.Helper()
+		database, err := badger.Open(badger.DefaultOptions(storePath).WithLogger(nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = database.Update(func(transaction *badger.Txn) error {
+			return transaction.Set([]byte(key), []byte(value))
+		}); err != nil {
+			_ = database.Close()
+			t.Fatal(err)
+		}
+		if err = database.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err = filepath.Walk(storePath, func(path string, info os.FileInfo, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			mode := os.FileMode(0600)
+			if info.IsDir() {
+				mode = 0700
+			}
+			return os.Chmod(path, mode)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeBadgerValue("before", "preview")
+	plan, err := f.service.Plan(context.Background(), f.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBadgerValue("after", "confirmation")
+
+	if err = f.service.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("reset rejected an owned Badger mutation inside the previewed scope: %v", err)
+	}
+	if inspection := config.Inspect(f.config); inspection.State != config.StateAbsent {
+		t.Fatalf("post-reset inspection=%+v", inspection)
 	}
 }
 
