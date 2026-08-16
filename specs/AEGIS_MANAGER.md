@@ -84,7 +84,7 @@ The bare command MUST behave as follows:
 | `aegis manager` | interactive terminal | Explicit built-in manager startup. |
 | `aegis init` | interactive terminal | Run or resume deterministic initialization without automatically requiring a model conversation. |
 
-A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. Production browser launch MUST occur only after authenticated service readiness and protected bootstrap issuance, MUST pass the configured console URL as one direct process argument without shell interpretation, and MUST preserve a manual bootstrap handoff if the platform launcher fails. It MUST NOT use package-level mutable Cobra commands or global Viper state.
+A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. Production browser launch MUST occur only after authenticated service readiness and protected bootstrap issuance. Automatic exchange MUST be limited to a plaintext loopback console origin, MUST use a random correlation-bound temporary endpoint with a maximum 15-second lifetime and one atomic claimant, and MUST NOT include the bootstrap in the browser URL. The temporary endpoint MUST exchange the bootstrap server-side, forward only the validated `HttpOnly` console cookie for the configured host, and redirect to `/console`. The platform launcher MUST receive the correlation-only handoff URL as one direct process argument without shell interpretation. If automatic handoff cannot run or the platform launcher fails, Aegis MUST preserve the configured manual URL/bootstrap handoff. It MUST NOT use package-level mutable Cobra commands or global Viper state.
 
 ### 3.3 Non-interactive compatibility
 
