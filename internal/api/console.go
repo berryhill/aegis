@@ -3,11 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,6 +22,31 @@ import (
 )
 
 const maxConsolePatchBytes = 1 << 20
+
+func validateBrowserHandoff(raw, consoleHost string) (string, error) {
+	target, err := url.Parse(raw)
+	if err != nil || target.Scheme != "http" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || target.Port() == "" || !strings.EqualFold(target.Hostname(), consoleHost) {
+		return "", errors.New("invalid browser handoff confirmation")
+	}
+	port, err := strconv.Atoi(target.Port())
+	if err != nil || port < 1 || port > 65535 || !isLoopbackConsoleHost(target.Hostname()) {
+		return "", errors.New("invalid browser handoff confirmation")
+	}
+	token := strings.TrimPrefix(target.EscapedPath(), "/confirmed/")
+	decoded, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil || len(decoded) != 32 || target.EscapedPath() != "/confirmed/"+token {
+		return "", errors.New("invalid browser handoff confirmation")
+	}
+	return target.String(), nil
+}
+
+func isLoopbackConsoleHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 type consoleDomain string
 

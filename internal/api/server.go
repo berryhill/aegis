@@ -335,6 +335,17 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		model := consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(domain)}}
 		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
+			if raw := c.QueryParam("browser_handoff"); raw != "" {
+				consoleHost := c.Request().Host
+				if host, _, splitErr := net.SplitHostPort(consoleHost); splitErr == nil {
+					consoleHost = host
+				}
+				confirmation, confirmErr := validateBrowserHandoff(raw, consoleHost)
+				if confirmErr != nil {
+					return echo.NewHTTPError(http.StatusBadRequest, "invalid browser handoff confirmation")
+				}
+				return c.Redirect(http.StatusSeeOther, confirmation)
+			}
 			model, err = loadConsole(c, subject, domain)
 			if err != nil {
 				return err

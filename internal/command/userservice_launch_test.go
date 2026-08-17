@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -172,6 +173,77 @@ func TestLaunchConsoleDoesNotOpenBrowserWhenBootstrapIsDenied(t *testing.T) {
 	}
 }
 
+func TestLaunchBrowserSessionWaitsForAuthenticatedBrowserConfirmation(t *testing.T) {
+	consoleReached := make(chan struct{})
+	releaseConsole := make(chan struct{})
+	consoleServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/console/session":
+			http.SetCookie(writer, &http.Cookie{Name: "aegis-console", Value: "test-session", Path: "/console", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+			writer.WriteHeader(http.StatusCreated)
+		case request.Method == http.MethodGet && request.URL.Path == "/console":
+			cookie, err := request.Cookie("aegis-console")
+			if err != nil || cookie.Value != "test-session" {
+				http.Error(writer, "unauthenticated", http.StatusUnauthorized)
+				return
+			}
+			confirmation := request.URL.Query().Get("browser_handoff")
+			if confirmation == "" {
+				writer.WriteHeader(http.StatusOK)
+				return
+			}
+			close(consoleReached)
+			<-releaseConsole
+			writer.Header().Set("Location", confirmation)
+			writer.WriteHeader(http.StatusSeeOther)
+		default:
+			http.Error(writer, "not found", http.StatusNotFound)
+		}
+	}))
+	defer consoleServer.Close()
+
+	browserResult := make(chan error, 1)
+	launchResult := make(chan error, 1)
+	go func() {
+		launchResult <- launchBrowserSession(context.Background(), consoleServer.URL, "single-use-test-bootstrap", func(_ context.Context, target string) error {
+			go func() {
+				jar, err := cookiejar.New(nil)
+				if err != nil {
+					browserResult <- err
+					return
+				}
+				response, err := (&http.Client{Jar: jar}).Get(target) //nolint:gosec // target is the loopback-only handoff listener.
+				if err == nil {
+					defer response.Body.Close()
+					if response.StatusCode != http.StatusOK || response.Request.URL.String() != consoleServer.URL+"/console" {
+						err = fmt.Errorf("final browser response status=%d url=%s", response.StatusCode, response.Request.URL)
+					}
+				}
+				browserResult <- err
+			}()
+			return nil
+		})
+	}()
+
+	select {
+	case <-consoleReached:
+	case err := <-launchResult:
+		t.Fatalf("browser handoff reported success before authenticated console confirmation: %v", err)
+	}
+	select {
+	case err := <-launchResult:
+		t.Fatalf("browser handoff reported success before confirmation completed: %v", err)
+	default:
+	}
+	close(releaseConsole)
+	if err := <-launchResult; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-browserResult; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLaunchBrowserSessionAllowsOnlyOneCorrelatedRaceWinner(t *testing.T) {
 	var exchanges atomic.Int32
 	consoleServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -185,6 +257,7 @@ func TestLaunchBrowserSessionAllowsOnlyOneCorrelatedRaceWinner(t *testing.T) {
 		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 		start := make(chan struct{})
 		statuses := make(chan int, 2)
+		locations := make(chan string, 2)
 		var wait sync.WaitGroup
 		for range 2 {
 			wait.Add(1)
@@ -198,11 +271,13 @@ func TestLaunchBrowserSessionAllowsOnlyOneCorrelatedRaceWinner(t *testing.T) {
 				}
 				defer response.Body.Close()
 				statuses <- response.StatusCode
+				locations <- response.Header.Get("Location")
 			}()
 		}
 		close(start)
 		wait.Wait()
 		close(statuses)
+		close(locations)
 		counts := map[int]int{}
 		for status := range statuses {
 			counts[status]++
@@ -210,7 +285,22 @@ func TestLaunchBrowserSessionAllowsOnlyOneCorrelatedRaceWinner(t *testing.T) {
 		if counts[http.StatusSeeOther] != 1 || counts[http.StatusNotFound] != 1 {
 			t.Fatalf("correlated race statuses = %v", counts)
 		}
-		return nil
+		for location := range locations {
+			parsed, parseErr := url.Parse(location)
+			if parseErr != nil || parsed.Query().Get("browser_handoff") == "" {
+				continue
+			}
+			confirmation, requestErr := client.Get(parsed.Query().Get("browser_handoff")) //nolint:gosec // confirmation is the exact loopback capability emitted by the handoff listener.
+			if requestErr != nil {
+				return requestErr
+			}
+			_ = confirmation.Body.Close()
+			if confirmation.StatusCode != http.StatusSeeOther {
+				return fmt.Errorf("confirmation status=%d", confirmation.StatusCode)
+			}
+			return nil
+		}
+		return errors.New("winning handoff did not emit a browser confirmation capability")
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -372,6 +462,11 @@ func consoleBootstrapFixtureWithCookie(t *testing.T, status int, body string, se
 			cookie, err := request.Cookie("aegis-console")
 			if err != nil || cookie.Value != "test-session" {
 				writer.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			if confirmation := request.URL.Query().Get("browser_handoff"); confirmation != "" {
+				writer.Header().Set("Location", confirmation)
+				writer.WriteHeader(http.StatusSeeOther)
 				return
 			}
 			writer.WriteHeader(http.StatusOK)
