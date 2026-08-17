@@ -39,7 +39,11 @@ templ Header(authenticated bool, csrf string, title string) {
 		<span class="topbar-brand"><span class="brand-mark" aria-hidden="true"></span>Aegis</span>
 		<span class="topbar-sep" aria-hidden="true">/</span>
 		<span class="topbar-context">{ fallbackTitle(title) }</span>
-		<span class="topbar-status"><span class="status-dot" aria-hidden="true"></span><span class="ts-full">Authenticated control plane</span><span class="ts-short">Control plane</span></span>
+		if authenticated {
+			<span class="topbar-status"><span class="status-dot" aria-hidden="true"></span><span class="ts-full">Authenticated control plane</span><span class="ts-short">Control plane</span></span>
+		} else {
+			<span class="topbar-status"><span class="status-dot" aria-hidden="true"></span><span class="ts-full">Authentication required</span><span class="ts-short">Signed out</span></span>
+		}
 		if authenticated {
 			<form class="logout-form" method="post" action="/console/logout">
 				<input type="hidden" name="csrf" value={ csrf }/>
@@ -171,22 +175,22 @@ templ ActionReadiness(actions []ActionModel) {
 
 templ DomainCollection(surface SurfaceModel) {
 	if surface.Domain == DomainAgents {
-		<div class="list-bar"><span class="sr-only">Agents</span>@SearchBox("agent-search", "Search agents")<span class="count">{ recordCount(surface.Records, "agent") }</span></div>
+		<div class="list-bar"><span class="sr-only">Agents</span>@SearchBox("agent-search", "Search agents")@CollectionCount(surface, "agent")</div>
 		<div id="surface-list" class="card-grid" aria-label="Agents">
 			for _, record := range surface.Records {
 				@RecordCard(surface.Domain, record)
 			}
 		</div>
 	} else if surface.Domain == DomainGraphs || surface.Domain == DomainLoops {
-		<div class="toolbar"><div class="seg-group" role="group" aria-label={ "Filter " + surface.Title + " by lifecycle state" }><button class="seg active" type="button" disabled>All</button></div>@SearchBox(surface.Domain+"-search", "Search "+surface.Title)<span class="count">{ recordCount(surface.Records, collectionSingular(surface.Domain)) }</span></div>
+		<div class="toolbar"><div class="seg-group" role="group" aria-label={ "Filter " + surface.Title + " by lifecycle state" }><button class="seg active" type="button" disabled>All</button></div>@SearchBox(surface.Domain+"-search", "Search "+surface.Title)@CollectionCount(surface, collectionSingular(surface.Domain))</div>
 		@RecordPanel(surface)
 	} else if surface.Domain == DomainQueue {
 		<section class="ops-band" aria-labelledby="active-executions"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="active-executions">Active Executions</h2><p class="band-sub">Executions with an open runtime attempt are represented by their authoritative lifecycle records below.</p></div></div><div class="panel"><div class="state-block"><div><div class="title">No separate aggregate asserted</div><p class="desc">This bounded workspace does not infer active runtime state from collection counts.</p></div></div></div></section>
 		<section class="ops-band" aria-labelledby="failed-executions"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="failed-executions">Failed Executions</h2><p class="band-sub">Failed terminals remain distinct records in Queue &amp; Lifecycle and are never inferred from process exit.</p></div></div><div class="panel"><div class="state-block"><div><div class="title">No separate aggregate asserted</div><p class="desc">Inspect the authoritative lifecycle records below.</p></div></div></div></section>
-		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div><div class="toolbar"><div class="seg-group" role="group" aria-label="Filter by execution state"><button class="seg active" type="button" disabled>All</button></div>@SearchBox("queue-search", "Search executions")<span class="count">{ recordCount(surface.Records, "execution") }</span></div>@RecordPanel(surface)</section>
+		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div><div class="toolbar"><div class="seg-group" role="group" aria-label="Filter by execution state"><button class="seg active" type="button" disabled>All</button></div>@SearchBox("queue-search", "Search executions")@CollectionCount(surface, "execution")</div>@RecordPanel(surface)</section>
 	} else {
 		<div class="filter-row standalone" role="group" aria-label="Filter by credential status"><span class="filter-label">Status</span><button class="seg active" type="button" disabled>All</button></div>
-		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head"><span class="count">{ recordCount(surface.Records, "credential") }</span>@SearchBox("credential-search", "Search credentials")</div>@RecordPanel(surface)</div><aside class="detail credential-detail" aria-label="Selected credential"><strong>Select a credential</strong><p>Inspect metadata and its immutable binding reference. A stored value is never read, entered, or shown here.</p></aside></section>
+		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head">@CollectionCount(surface, "credential")@SearchBox("credential-search", "Search credentials")</div>@RecordPanel(surface)</div><aside class="detail credential-detail" aria-label="Selected credential"><strong>Select a credential</strong><p>Inspect configured provider-binding metadata. Secret values and environment mappings are never read or shown here.</p></aside></section>
 	}
 	if len(surface.Records) == 0 && surface.State == "empty" {
 		<div class="panel"><div class="empty-state"><strong>No records</strong><span>The authoritative collection read succeeded and returned zero records.</span></div></div>
@@ -195,6 +199,14 @@ templ DomainCollection(surface SurfaceModel) {
 
 templ SearchBox(id, placeholder string) {
 	<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><label class="sr-only" for={ id }>{ placeholder }</label><input id={ id } type="search" placeholder={ placeholder } autocomplete="off" disabled title="Filtering is delivered with the domain list contract"/></div>
+}
+
+templ CollectionCount(surface SurfaceModel, singular string) {
+	if surface.Authoritative {
+		<span class="count">{ countLabel(surface.TotalCount, singular) }</span>
+	} else {
+		<span class="count">Count unavailable</span>
+	}
 }
 
 templ RecordPanel(surface SurfaceModel) {
@@ -234,7 +246,7 @@ func actionTitle(action ActionModel) string { return action.State + ": " + actio
 func hasBlockedAction(actions []ActionModel) bool { for _, action := range actions { if action.State != "ready" { return true } }; return false }
 func actionTag(state string) string { if state == "denied" { return "tag-denied" }; if state == "degraded_repair_required" { return "tag-degraded" }; return "tag-locked" }
 func collectionSingular(domain string) string { if domain == DomainGraphs { return "graph" }; return "Loop" }
-func recordCount(records []RecordModel, singular string) string { suffix := "s"; if len(records) == 1 { suffix = "" }; return fmt.Sprintf("%d %s%s", len(records), singular, suffix) }
+func countLabel(count int, singular string) string { suffix := "s"; if count == 1 { suffix = "" }; return fmt.Sprintf("%d %s%s", count, singular, suffix) }
 func stateHeading(state string) string {
 	if state == "" { return "Unknown" }
 	if state == "degraded_repair_required" { return "Repair required" }

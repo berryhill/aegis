@@ -27,6 +27,9 @@ func TestDocumentUsesNativeInteractionsUnderStrictCSP(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := output.String()
+	if strings.Contains(html, "Authenticated control plane") || !strings.Contains(html, "Authentication required") {
+		t.Fatalf("signed-out header asserted authenticated state: %s", html)
+	}
 	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="denied"`, `data-state="unavailable"`, `data-state="degraded_repair_required"`, `data-state="error"`, `method="post"`, `action="/console/session"`} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("document missing %q", required)
@@ -102,6 +105,24 @@ func TestWorkspaceEscapesContextualReadinessAndDisablesDeniedActions(t *testing.
 	}
 	if !strings.Contains(html, `<button class="primary" type="button" disabled`) || !strings.Contains(html, `data-state="denied"`) {
 		t.Fatalf("denied action was not visibly fail-closed: %s", html)
+	}
+	if !strings.Contains(html, "Count unavailable") || strings.Contains(html, "0 agents") {
+		t.Fatalf("non-authoritative collection asserted a fabricated count: %s", html)
+	}
+}
+
+func TestAuthoritativeCollectionRendersAuthoritativeTotal(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{
+		Domain: DomainAgents, Title: "Agent Registry", State: "ready", Authoritative: true, TotalCount: 2,
+		Records: []RecordModel{{Key: "0", Label: "Agent one"}},
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	if !strings.Contains(html, "2 agents") {
+		t.Fatalf("workspace did not preserve the authoritative total: %s", html)
 	}
 }
 

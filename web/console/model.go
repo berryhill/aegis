@@ -25,6 +25,8 @@ type SurfaceModel struct {
 	Status        string
 	Source        string
 	ReasonCode    string
+	Authoritative bool
+	TotalCount    int
 	Actions       []ActionModel
 	Records       []RecordModel
 	Inspector     *RecordModel
