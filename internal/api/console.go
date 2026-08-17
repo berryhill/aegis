@@ -184,7 +184,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			values = append(values, value)
 		}
 	case consoleCredentials:
-		model.Title, model.Eyebrow, model.Description = "Credentials", "Operator vault", "The operator's own encrypted vault, presented as metadata only. A record is a reference, a kind, a status and an immutable version chain — a value is never read, entered or shown here."
+		model.Title, model.Eyebrow, model.Description = "Credentials", "Configured bindings", "Configured provider-auth bindings, presented as metadata only. Secret values and environment mappings are never read or shown here."
 		for _, value := range surface.Credentials {
 			values = append(values, value)
 		}
@@ -194,6 +194,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 	readiness, ok := surface.Readiness[readinessKey]
 	model.Actions = consoleActions(surface, domain)
 	if !ok || !readiness.Authoritative {
+		model.Authoritative = false
 		model.State = readiness.State
 		if model.State == "" {
 			model.State = "unavailable"
@@ -202,6 +203,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 		model.Status = fmt.Sprintf("%s · source %s · reason %s", model.Title, fallback(readiness.Source, "unknown"), fallback(readiness.ReasonCode, "readiness_missing"))
 		return model, nil
 	}
+	model.Authoritative, model.TotalCount = true, readiness.Count
 	model.State, model.ReasonCode, model.Source = readiness.State, readiness.ReasonCode, readiness.Source
 	shown := len(values)
 	count := strconv.Itoa(readiness.Count)

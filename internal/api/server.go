@@ -494,6 +494,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return c.JSON(http.StatusServiceUnavailable, map[string]any{"state": "unavailable", "readiness": map[string]any{"fleet": map[string]any{"state": "unavailable", "authoritative": false}}})
 		}
+		aggregateState, aggregateStatus := fleetSurfaceAggregateState(surface.Readiness)
 		if len(surface.Agents) > limit {
 			surface.Agents = surface.Agents[:limit]
 		}
@@ -513,7 +514,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		return c.JSON(http.StatusOK, map[string]any{"state": "ready", "surface": surface, "csrf": csrf, "limit": limit})
+		return c.JSON(aggregateStatus, map[string]any{"state": aggregateState, "surface": surface, "csrf": csrf, "limit": limit})
 	})
 	logout := func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
@@ -776,10 +777,8 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
-		if value.Readiness["registry"].ReasonCode == "fleet_service_unavailable" {
-			return c.JSON(http.StatusServiceUnavailable, value.Readiness)
-		}
-		return c.JSON(http.StatusOK, value.Readiness)
+		state, status := fleetSurfaceAggregateState(value.Readiness)
+		return c.JSON(status, map[string]any{"state": state, "collections": value.Readiness, "actions": value.Actions})
 	})
 	g.POST("/queue", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
@@ -1388,6 +1387,16 @@ func requiredRevision(raw string) (uint64, error) {
 		return 0, echo.NewHTTPError(http.StatusBadRequest, "revision must be a positive integer")
 	}
 	return revision, nil
+}
+
+func fleetSurfaceAggregateState(readiness map[string]app.SurfaceReadiness) (string, int) {
+	for _, key := range []string{"registry", "loops", "graphs", "queue", "credentials"} {
+		value, ok := readiness[key]
+		if !ok || !value.Authoritative || (value.State != "ready" && value.State != "empty") {
+			return "unavailable", http.StatusServiceUnavailable
+		}
+	}
+	return "ready", http.StatusOK
 }
 
 func requestSubject(c *echo.Context) (core.Subject, error) {

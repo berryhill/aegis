@@ -383,7 +383,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 		{"graphs", "Graphs", "Definitions", "/graphs", "Publish Graph revision", "graph_publish"},
 		{"loops", "Loops", "Definitions", "/loops", "Publish Loop revision", "loop_publish"},
 		{"queue", "Execution Queue", "Runtime", "/queue", "Prepare execution request", "submission"},
-		{"credentials", "Credentials", "Operator vault", "/credentials", "", ""},
+		{"credentials", "Credentials", "Configured bindings", "/credentials", "", ""},
 	}
 
 	for _, route := range routes {
@@ -431,7 +431,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				}
 			}
 			if route.domain == "credentials" {
-				if !bytes.Contains(body, []byte("value is never read, entered or shown here")) {
+				if !bytes.Contains(body, []byte("Secret values and environment mappings are never read or shown here")) {
 					t.Fatalf("credentials domain must explain metadata-only boundary: %s", body)
 				}
 				if bytes.Contains(body, []byte("source_env")) || bytes.Contains(body, []byte("target_env")) || bytes.Contains(body, []byte("AEGIS_API_TEST_KEY")) {
@@ -502,7 +502,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	shellBody, _ := io.ReadAll(shell.Body)
 	_ = shell.Body.Close()
-	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authenticated control plane") || strings.Contains(string(shellBody), "<script") || strings.Contains(string(shellBody), "data-on:") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
+	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authentication required") || strings.Contains(string(shellBody), "Authenticated control plane") || strings.Contains(string(shellBody), "<script") || strings.Contains(string(shellBody), "data-on:") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("unsafe console shell status=%d headers=%v", shell.StatusCode, shell.Header)
 	}
 	asset, err := client.Get("http://" + address + "/console/assets/datastar-v1.0.2.js")
@@ -828,9 +828,13 @@ func TestFleetAgentAPIUsesAuthenticatedSharedApplicationBoundary(t *testing.T) {
 	apiRequest(t, client, http.MethodGet, "/v1/graphs", nil, &graphs, http.StatusOK)
 	var queueItems []app.QueueExecutionView
 	apiRequest(t, client, http.MethodGet, "/v1/queue", nil, &queueItems, http.StatusOK)
-	var readiness map[string]app.SurfaceReadiness
+	var readiness struct {
+		State       string                             `json:"state"`
+		Collections map[string]app.SurfaceReadiness    `json:"collections"`
+		Actions     map[string]orchestration.Readiness `json:"actions"`
+	}
 	apiRequest(t, client, http.MethodGet, "/v1/fleet/readiness", nil, &readiness, http.StatusOK)
-	if len(loops) != 0 || len(graphs) != 0 || len(queueItems) != 0 || readiness["registry"].Count != 1 || readiness["registry"].State != "ready" {
+	if len(loops) != 0 || len(graphs) != 0 || len(queueItems) != 0 || readiness.State != "ready" || readiness.Collections["registry"].Count != 1 || readiness.Collections["registry"].State != "ready" || len(readiness.Actions) == 0 {
 		t.Fatalf("live fleet collection routes returned inconsistent state: loops=%d graphs=%d queue=%d readiness=%+v", len(loops), len(graphs), len(queueItems), readiness)
 	}
 
