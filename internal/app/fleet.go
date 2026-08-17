@@ -30,9 +30,14 @@ func IsFleetUnavailable(err error) bool {
 	return errors.Is(err, ErrFleetUnavailable) || errors.Is(err, fleet.ErrClosed)
 }
 
-func IsFleetConflict(err error) bool { return errors.Is(err, fleet.ErrConflict) }
-func IsFleetNotFound(err error) bool { return errors.Is(err, fleet.ErrNotFound) }
-func IsFleetCorrupt(err error) bool  { return errors.Is(err, fleet.ErrCorrupt) }
+func IsFleetConflict(err error) bool {
+	return errors.Is(err, fleet.ErrConflict) || errors.Is(err, registry.ErrConflict) || errors.Is(err, registry.ErrRetired)
+}
+func IsFleetNotFound(err error) bool {
+	return errors.Is(err, fleet.ErrNotFound) || errors.Is(err, registry.ErrNotFound)
+}
+func IsFleetCorrupt(err error) bool   { return errors.Is(err, fleet.ErrCorrupt) }
+func IsFleetAmbiguous(err error) bool { return errors.Is(err, registry.ErrAmbiguousSource) }
 
 // SubmitGraphInput and ProcessQueueItemInput are application-owned transport
 // contracts. Aliases preserve the canonical domain wire form without asking
@@ -59,6 +64,11 @@ type FleetAgent struct {
 type RegisterFleetAgentInput struct {
 	Fixture  json.RawMessage      `json:"fixture"`
 	Identity registry.FleetSource `json:"identity"`
+}
+
+type SetAgentLifecycleInput struct {
+	Expected  reference.RevisionRef `json:"expected"`
+	Lifecycle registry.Lifecycle    `json:"lifecycle"`
 }
 
 type PublishLoopInput struct {
@@ -255,6 +265,44 @@ func (s *Service) GetFleetAgent(ctx context.Context, id string, revision uint64)
 		return FleetAgent{}, err
 	}
 	return s.GetFleetAgentAs(ctx, subject, id, revision)
+}
+
+func (s *Service) ListFleetAgentRevisionsAs(ctx context.Context, subject core.Subject, id string) ([]registry.AgentRevision, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return nil, err
+	}
+	return s.FleetRepository.ListAgentRevisions(ctx, id)
+}
+
+func (s *Service) ListFleetAgentRevisions(ctx context.Context, id string) ([]registry.AgentRevision, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.ListFleetAgentRevisionsAs(ctx, subject, id)
+}
+
+func (s *Service) SetAgentLifecycleAs(ctx context.Context, subject core.Subject, id string, input SetAgentLifecycleInput) (FleetAgent, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return FleetAgent{}, err
+	}
+	if input.Expected.ID != id {
+		return FleetAgent{}, fleet.ErrConflict
+	}
+	revision, err := s.Fleet.SetAgentLifecycle(ctx, orchestration.SetAgentLifecycleRequest{Subject: subject, Agent: input.Expected, Lifecycle: input.Lifecycle})
+	if err != nil {
+		return FleetAgent{}, err
+	}
+	registration, err := s.FleetRepository.GetAgentRegistration(ctx, id)
+	return FleetAgent{Registration: registration, Revision: revision}, err
+}
+
+func (s *Service) SetAgentLifecycle(ctx context.Context, id string, input SetAgentLifecycleInput) (FleetAgent, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return FleetAgent{}, err
+	}
+	return s.SetAgentLifecycleAs(ctx, subject, id, input)
 }
 
 func (s *Service) PublishLoopAs(ctx context.Context, subject core.Subject, input PublishLoopInput) (PublishedLoop, error) {

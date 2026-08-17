@@ -70,6 +70,8 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusForbidden, "denied", "fleet authority denied"
 	case app.IsFleetUnavailable(err):
 		return http.StatusServiceUnavailable, "unavailable", "fleet control unavailable"
+	case app.IsFleetAmbiguous(err):
+		return http.StatusConflict, "ambiguous_source", "fleet source identity is ambiguous"
 	case app.IsFleetConflict(err):
 		return http.StatusConflict, "conflict", "immutable fleet record conflict"
 	case app.IsFleetNotFound(err):
@@ -321,6 +323,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		model, err := consoleSurfaceModel(surface, domain)
 		if err != nil {
 			return consoleweb.PageModel{}, err
+		}
+		if domain == consoleAgents {
+			if err = filterConsoleAgents(&model, c.QueryParam("q"), c.QueryParam("lifecycle")); err != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent Registry filter")
+			}
 		}
 		csrf, err := consoleManager.CSRF(c.Request())
 		if err != nil {
@@ -674,6 +681,32 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusOK, value)
+	})
+	g.GET("/agents/:agent/revisions", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		values, err := svc.ListFleetAgentRevisionsAs(c.Request().Context(), subject, c.Param("agent"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, values)
+	})
+	g.PUT("/agents/:agent/lifecycle", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.SetAgentLifecycleInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.SetAgentLifecycleAs(c.Request().Context(), subject, c.Param("agent"), input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
 	})
 	g.GET("/loops", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

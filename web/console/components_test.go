@@ -49,6 +49,8 @@ func TestAuthenticatedDocumentUsesNativeNavigationInspectionAndLogout(t *testing
 		CSRF:          "csrf-value",
 		Surface: SurfaceModel{
 			Domain:        DomainAgents,
+			Authoritative: true,
+			TotalCount:    1,
 			Records:       []RecordModel{{Key: "0", Label: "Agent one"}},
 			Inspector:     &RecordModel{Key: "0", Label: "Agent one"},
 			InspectorOpen: true,
@@ -123,6 +125,36 @@ func TestAuthoritativeCollectionRendersAuthoritativeTotal(t *testing.T) {
 	html := output.String()
 	if !strings.Contains(html, "2 agents") {
 		t.Fatalf("workspace did not preserve the authoritative total: %s", html)
+	}
+}
+
+func TestAgentRegistryRendersOperatorContractWithoutClaimingBrowserAuthority(t *testing.T) {
+	var output bytes.Buffer
+	record := RecordModel{
+		Key: "office", Label: "office", Revision: "r3", Runtime: "hermes-local", Lifecycle: "enabled",
+		Readiness: "Lifecycle eligible; fresh authority admission required", Source: "fleet-a / hermes-profile / office", Owner: "principal-1",
+		Authority: "2 capabilities · 1 policy declared", Provisioning: "Not asserted by Registry record",
+		Fields: []FieldModel{{Label: "Effective authority", Value: "Not evaluated by this Registry read"}},
+	}
+	model := PageModel{Authenticated: true, CSRF: "csrf", Surface: SurfaceModel{
+		Domain: DomainAgents, Title: "Agent Registry", Eyebrow: "Participants", Description: "Existing fleet agents backed by immutable revisions.",
+		State: "ready", Lifecycle: "enabled", Query: "office", Authoritative: true, TotalCount: 2, TotalRecords: 2,
+		Actions: []ActionModel{{Key: "register_fleet_agent", Label: "Prepare charter import", State: "denied", ReasonCode: "principal_not_authorized", Primary: true}},
+		Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true,
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		"Participants", "Prepare charter import", `disabled`, `name="q"`, `value="office"`, `name="lifecycle"`,
+		"All lifecycle states", "Execution readiness", "Authority", "Provisioning", "Back to Registry",
+		"Readiness is derived from the immutable lifecycle record", "browser view grants no runtime authority",
+		"Not evaluated by this Registry read", `record_key=office`, `@media(max-width:700px)`,
+	} {
+		if !strings.Contains(html+string(CSS), required) {
+			t.Fatalf("Agent Registry operator contract missing %q", required)
+		}
 	}
 }
 

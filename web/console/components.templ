@@ -2,6 +2,7 @@ package consoleweb
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -139,12 +140,15 @@ templ Workspace(surface SurfaceModel) {
 		<div id="service-status" class="collection-status" data-state={ surface.State } role="status" aria-live="polite">
 			<span class="signal" aria-hidden="true"></span><strong>{ surface.Status }</strong>
 		</div>
-		if surface.State != "ready" {
+		if surface.State != "ready" && surface.State != "filtered-empty" {
 			<div class="service-state" data-state={ surface.State }><strong>{ stateHeading(surface.State) }</strong><span>{ stateMessage(surface.State) }</span><code>{ surface.ReasonCode }</code></div>
+		}
+		if surface.State == "filtered-empty" {
+			<div class="panel state-block" data-state="empty"><strong>No matching agents</strong><p>Try another Agent ID, runtime target, owner, source, or lifecycle.</p></div>
 		}
 		@DomainCollection(surface)
 		<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
-		@Inspector(surface.Domain, surface.Inspector, surface.InspectorOpen)
+		@Inspector(surface, surface.Inspector, surface.InspectorOpen)
 	</section>
 }
 
@@ -175,12 +179,16 @@ templ ActionReadiness(actions []ActionModel) {
 
 templ DomainCollection(surface SurfaceModel) {
 	if surface.Domain == DomainAgents {
-		<div class="list-bar"><span class="sr-only">Agents</span>@SearchBox("agent-search", "Search agents")@CollectionCount(surface, "agent")</div>
-		<div id="surface-list" class="card-grid" aria-label="Agents">
-			for _, record := range surface.Records {
-				@RecordCard(surface.Domain, record)
-			}
-		</div>
+		if surface.Authoritative {
+			@AgentFilters(surface)
+			<div id="surface-list" class="card-grid" aria-label="Agents">
+				for _, record := range surface.Records {
+					@AgentCard(surface, record)
+				}
+			</div>
+		} else {
+			<div class="list-bar">@CollectionCount(surface, "agent")</div>
+		}
 	} else if surface.Domain == DomainGraphs || surface.Domain == DomainLoops {
 		<div class="toolbar"><div class="seg-group" role="group" aria-label={ "Filter " + surface.Title + " by lifecycle state" }><button class="seg active" type="button" disabled>All</button></div>@SearchBox(surface.Domain+"-search", "Search "+surface.Title)@CollectionCount(surface, collectionSingular(surface.Domain))</div>
 		@RecordPanel(surface)
@@ -195,6 +203,32 @@ templ DomainCollection(surface SurfaceModel) {
 	if len(surface.Records) == 0 && surface.State == "empty" {
 		<div class="panel"><div class="empty-state"><strong>No records</strong><span>The authoritative collection read succeeded and returned zero records.</span></div></div>
 	}
+}
+
+templ AgentFilters(surface SurfaceModel) {
+	<form class="list-bar" method="get" action="/console/agents" aria-label="Filter Agent Registry">
+		<label class="search"><span class="sr-only">Search agents</span><input name="q" type="search" value={ surface.Query } placeholder="Search agents" autocomplete="off" maxlength="128"/></label>
+		<label class="lifecycle-filter"><span class="sr-only">Lifecycle</span><select name="lifecycle">
+			<option value="all" selected?={ surface.Lifecycle == "all" }>All lifecycle states</option>
+			<option value="enabled" selected?={ surface.Lifecycle == "enabled" }>Enabled</option>
+			<option value="disabled" selected?={ surface.Lifecycle == "disabled" }>Disabled</option>
+			<option value="retired" selected?={ surface.Lifecycle == "retired" }>Retired</option>
+		</select></label>
+		<button class="secondary" type="submit">Apply</button>
+		<span class="count" aria-live="polite">{ fmt.Sprintf("%d of %d agents", len(surface.Records), surface.TotalCount) }</span>
+	</form>
+}
+
+templ AgentCard(surface SurfaceModel, record RecordModel) {
+	<a id={ "record-" + record.Key } class="registry-card" href={ recordURL(surface, record.Key) }>
+		<span class="rc-top"><span class="rc-mark" aria-hidden="true">{ agentMark(record.Label) }</span><span class="rc-name"><strong>{ record.Label }</strong><span>{ record.Revision } · { record.Runtime }</span></span>
+			if record.Lifecycle != "" {
+				<span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span>
+			}
+		</span>
+		<span class="rc-chain">{ record.Source } <span aria-hidden="true">→</span> { record.Owner }</span>
+		<dl class="rc-facts"><div><dt>Execution readiness</dt><dd>{ record.Readiness }</dd></div><div><dt>Authority</dt><dd>{ record.Authority }</dd></div><div><dt>Provisioning</dt><dd>{ record.Provisioning }</dd></div></dl>
+	</a>
 }
 
 templ SearchBox(id, placeholder string) {
@@ -221,13 +255,24 @@ templ RecordCard(domain string, record RecordModel) {
 	<a class="rec-card" id={ "record-" + record.Key } href={ consoleRoute(domain, record.Key) }><span class="rc-top"><span class="rc-mark" aria-hidden="true">AG</span><strong>{ record.Label }</strong></span><span class="rc-foot">Open exact registered record →</span></a>
 }
 
-templ Inspector(domain string, record *RecordModel, open bool) {
+templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 	<aside id="inspector" class="inspector" aria-labelledby="inspector-title" tabindex="-1" hidden?={ !open }>
-		<a id="close-inspector" class="back-crumb" href={ consoleRoute(domain, "") } aria-label="Close inspector">← Back to { domain }</a>
-		<h2 id="inspector-title">Record inspector</h2>
 		if record != nil {
-			<p id="inspector-summary">{ record.Summary }</p>
-			<pre id="inspector-record">{ record.JSON }</pre>
+			if len(record.Fields) > 0 {
+				<div class="detail-head"><div class="detail-title"><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ registryURL(surface) }>Back to Registry</a></div>
+				<div class="panel-body">
+					<div class="section-label">Readiness</div><div class="inline-notice">{ record.Readiness }. Readiness is derived from the immutable lifecycle record; this browser view grants no runtime authority.</div>
+					<div class="section-label">Provenance and authority</div>
+					<dl id="inspector-fields" class="spec">
+						for _, field := range record.Fields {
+							<dt>{ field.Label }</dt><dd>{ field.Value }</dd>
+						}
+					</dl>
+				</div>
+			} else {
+				<a id="close-inspector" class="back-crumb" href={ consoleRoute(surface.Domain, "") } aria-label="Close inspector">← Back to { surface.Domain }</a>
+				<h2 id="inspector-title">Record inspector</h2><p id="inspector-summary">{ record.Summary }</p><pre id="inspector-record">{ record.JSON }</pre>
+			}
 		}
 	</aside>
 }
@@ -238,6 +283,28 @@ func consoleRoute(domain, recordKey string) string {
 	path := fmt.Sprintf("/console/%s", domain)
 	if recordKey != "" { path += "?record_key=" + recordKey }
 	return path + "#/" + domain
+}
+
+func registryURL(surface SurfaceModel) string {
+	values := url.Values{}
+	if surface.Query != "" { values.Set("q", surface.Query) }
+	if surface.Lifecycle != "" && surface.Lifecycle != "all" { values.Set("lifecycle", surface.Lifecycle) }
+	path := "/console/agents"
+	if encoded := values.Encode(); encoded != "" { path += "?" + encoded }
+	return path + "#/agents"
+}
+
+func recordURL(surface SurfaceModel, key string) string {
+	values := url.Values{"record_key": []string{key}}
+	if surface.Query != "" { values.Set("q", surface.Query) }
+	if surface.Lifecycle != "" && surface.Lifecycle != "all" { values.Set("lifecycle", surface.Lifecycle) }
+	return "/console/agents?" + values.Encode() + "#/agents"
+}
+
+func agentMark(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" { return "?" }
+	return strings.ToUpper(string([]rune(label)[0]))
 }
 
 func fallbackTitle(title string) string { if title == "" { return "Fleet workspace" }; return title }

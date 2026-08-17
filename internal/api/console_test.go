@@ -14,6 +14,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/orchestration"
+	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
 func TestBrowserHandoffConfirmationIsRestrictedToExactLoopbackCapability(t *testing.T) {
@@ -101,6 +102,34 @@ func TestConsoleDomainAndRecordSelectorsFailClosed(t *testing.T) {
 	for _, raw := range []string{"", "-1", "0", "stanza-admin"} {
 		if err = selectConsoleRecord(&model, raw); err == nil {
 			t.Fatalf("forged record selector %q accepted", raw)
+		}
+	}
+}
+
+func TestAgentRegistryFiltersAreBoundedStableAndPresentationOnly(t *testing.T) {
+	model := consoleweb.SurfaceModel{
+		Domain: string(consoleAgents), State: "ready", TotalRecords: 3,
+		Records: []consoleweb.RecordModel{
+			{Key: "office", Label: "office", Runtime: "hermes-local", Source: "fleet-a / hermes-profile", Owner: "principal-1", Lifecycle: "enabled"},
+			{Key: "reviewer", Label: "reviewer", Runtime: "hermes-remote", Source: "fleet-a / fixture", Owner: "principal-2", Lifecycle: "disabled"},
+			{Key: "retired", Label: "retired", Runtime: "hermes-local", Source: "fleet-b / fixture", Owner: "principal-1", Lifecycle: "retired"},
+		},
+	}
+	if err := filterConsoleAgents(&model, "principal-1", "enabled"); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Records) != 1 || model.Records[0].Key != "office" || model.Query != "principal-1" || model.Lifecycle != "enabled" {
+		t.Fatalf("unexpected filtered Registry model: %+v", model)
+	}
+	if err := selectConsoleRecord(&model, "office"); err != nil || model.Inspector == nil || model.Inspector.Key != "office" {
+		t.Fatalf("stable Agent selector failed: inspector=%+v err=%v", model.Inspector, err)
+	}
+	for _, input := range []struct{ query, lifecycle string }{
+		{strings.Repeat("x", 129), "all"}, {"office\nadmin", "all"}, {"", "unknown"},
+	} {
+		candidate := consoleweb.SurfaceModel{Records: model.Records}
+		if err := filterConsoleAgents(&candidate, input.query, input.lifecycle); err == nil {
+			t.Fatalf("unsafe Registry filter accepted: %+v", input)
 		}
 	}
 }

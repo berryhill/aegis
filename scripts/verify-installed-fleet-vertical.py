@@ -78,7 +78,7 @@ def main() -> int:
     environment = os.environ.copy()
     environment["HOME"] = str(home)
 
-    def aegis(*arguments: str, input_file: Path | None = None) -> dict[str, Any]:
+    def aegis(*arguments: str, input_file: Path | None = None, expect_list: bool = False) -> Any:
         command = [str(binary), "--config", str(config), *arguments]
         if input_file is not None:
             command.append(str(input_file))
@@ -97,7 +97,10 @@ def main() -> int:
             value = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
             fail(f"{' '.join(arguments)} returned invalid JSON: {exc}")
-        if not isinstance(value, dict):
+        if expect_list:
+            if not isinstance(value, list):
+                fail(f"{' '.join(arguments)} returned a non-list result")
+        elif not isinstance(value, dict):
             fail(f"{' '.join(arguments)} returned a non-object result")
         return value
 
@@ -234,12 +237,25 @@ def main() -> int:
     if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"] or aegis("loops", "show", "proof-loop", "1")["digest"] != loop_revision["digest"] or aegis("graphs", "show", "proof-graph", "1")["digest"] != graph_revision["digest"]:
         fail("historical definition reconstruction changed an exact digest")
 
+    lifecycle_file = fixtures / "agent-lifecycle.json"
+    write_json(lifecycle_file, {"expected": ref(agent_revision, "proof-agent"), "lifecycle": "disabled"})
+    disabled = aegis("agents", "disable", "proof-agent", input_file=lifecycle_file)["revision"]
+    if disabled.get("revision") != 2 or disabled.get("lifecycle") != "disabled" or disabled.get("digest") == agent_revision["digest"]:
+        fail("Agent disable did not append one immutable lifecycle revision")
+    write_json(lifecycle_file, {"expected": {"schema_version": "aegis.reference.revision.v1", "id": "proof-agent", "revision": 2, "digest": disabled["digest"]}, "lifecycle": "enabled"})
+    enabled = aegis("agents", "enable", "proof-agent", input_file=lifecycle_file)["revision"]
+    history = aegis("agents", "history", "proof-agent", expect_list=True)
+    if enabled.get("revision") != 3 or enabled.get("lifecycle") != "enabled" or [value.get("revision") for value in history] != [1, 2, 3]:
+        fail("Agent history did not preserve ordered enabled/disabled lifecycle revisions")
+    if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"]:
+        fail("Agent lifecycle administration changed historical revision 1")
+
     evidence = {
         "schema_version": 1,
         "binary": str(binary),
         "state_root": str(root / "state"),
         "proofs": {
-            "registry": "immutable_revision_read_back",
+            "registry": "immutable_revision_history_and_enabled_disabled_lifecycle_read_back",
             "loop": "validated_revision_published",
             "graph": "validated_exact_bindings_published",
             "queue": "accepted_and_terminal_read_back",
@@ -253,7 +269,7 @@ def main() -> int:
     }
     evidence_path = root / "installed-fleet-vertical-evidence.json"
     write_json(evidence_path, evidence)
-    print("installed fleet vertical verified: registry=immutable loop=valid graph=valid queue=succeeded fresh_admission=verified evidence=passed durable_rejection=verified historical_reconstruction=verified credentials=none")
+    print("installed fleet vertical verified: registry=immutable_history_and_lifecycle loop=valid graph=valid queue=succeeded fresh_admission=verified evidence=passed durable_rejection=verified historical_reconstruction=verified credentials=none")
     return 0
 
 

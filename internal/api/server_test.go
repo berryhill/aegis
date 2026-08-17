@@ -822,6 +822,24 @@ func TestFleetAgentAPIUsesAuthenticatedSharedApplicationBoundary(t *testing.T) {
 	if shown.Revision.Digest != created.Agent.Revision.Digest {
 		t.Fatalf("exact revision readback mismatch: got=%q want=%q", shown.Revision.Digest, created.Agent.Revision.Digest)
 	}
+	lifecycleInput := app.SetAgentLifecycleInput{
+		Expected:  reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "agent-alpha", Revision: 1, Digest: created.Agent.Revision.Digest},
+		Lifecycle: registry.LifecycleDisabled,
+	}
+	var disabled app.FleetAgent
+	apiRequest(t, client, http.MethodPut, "/v1/agents/agent-alpha/lifecycle", lifecycleInput, &disabled, http.StatusCreated)
+	if disabled.Revision.Revision != 2 || disabled.Revision.Lifecycle != registry.LifecycleDisabled || disabled.Revision.Digest == created.Agent.Revision.Digest {
+		t.Fatalf("lifecycle route did not append an immutable revision: %+v", disabled)
+	}
+	var history []registry.AgentRevision
+	apiRequest(t, client, http.MethodGet, "/v1/agents/agent-alpha/revisions", nil, &history, http.StatusOK)
+	if len(history) != 2 || history[0].Digest != created.Agent.Revision.Digest || history[1].Digest != disabled.Revision.Digest {
+		t.Fatalf("revision history route lost ordered immutable provenance: %+v", history)
+	}
+	apiRequest(t, client, http.MethodPut, "/v1/agents/agent-alpha/lifecycle", lifecycleInput, nil, http.StatusConflict)
+	wrongAgent := lifecycleInput
+	wrongAgent.Expected.ID = "prompt-selected-agent"
+	apiRequest(t, client, http.MethodPut, "/v1/agents/agent-alpha/lifecycle", wrongAgent, nil, http.StatusConflict)
 	var loops []app.LoopView
 	apiRequest(t, client, http.MethodGet, "/v1/loops", nil, &loops, http.StatusOK)
 	var graphs []app.GraphView

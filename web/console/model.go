@@ -27,6 +27,9 @@ type SurfaceModel struct {
 	ReasonCode    string
 	Authoritative bool
 	TotalCount    int
+	Query         string
+	Lifecycle     string
+	TotalRecords  int
 	Actions       []ActionModel
 	Records       []RecordModel
 	Inspector     *RecordModel
@@ -43,8 +46,22 @@ type ActionModel struct {
 }
 
 type RecordModel struct {
-	Key     string
-	Label   string
-	Summary string
-	JSON    string
+	Key          string
+	Label        string
+	Summary      string
+	JSON         string
+	Lifecycle    string
+	Readiness    string
+	Revision     string
+	Runtime      string
+	Source       string
+	Owner        string
+	Authority    string
+	Provisioning string
+	Fields       []FieldModel
+}
+
+type FieldModel struct {
+	Label string
+	Value string
 }

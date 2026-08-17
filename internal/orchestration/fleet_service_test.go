@@ -28,6 +28,7 @@ type fleetServiceRepository struct {
 	accepted       *fleet.AcceptedSubmission
 	rejected       *queue.Rejection
 	registerFact   fleet.AuditFact
+	revisionFact   fleet.AuditFact
 	loopPublished  bool
 	graphPublished bool
 	loopExecution  execution.LoopExecution
@@ -83,6 +84,14 @@ func (repository *fleetServiceRepository) CompleteQueueItem(_ context.Context, c
 func (repository *fleetServiceRepository) RegisterAgent(_ context.Context, _ registry.AgentRegistration, _ registry.AgentRevision, fact fleet.AuditFact) (bool, error) {
 	repository.registerFact = fact
 	return true, nil
+}
+func (repository *fleetServiceRepository) LatestAgentRevision(context.Context, string) (registry.AgentRevision, error) {
+	return repository.agent, repository.loadErr
+}
+func (repository *fleetServiceRepository) PublishAgentRevision(_ context.Context, revision registry.AgentRevision, fact fleet.AuditFact) error {
+	repository.agent = revision
+	repository.revisionFact = fact
+	return nil
 }
 func (repository *fleetServiceRepository) PublishLoop(context.Context, loop.PublishRequest, fleet.AuditFact) (loop.PublicationDecision, error) {
 	repository.loopPublished = true
@@ -362,6 +371,61 @@ func TestRegisterFleetAgentUsesAuthenticatedBoundaryAndMetadataOnlyAudit(t *test
 	}
 	if repository.registerFact.Event.SubjectID != subject.ID || repository.registerFact.Event.PrincipalID != subject.PrincipalID || len(repository.registerFact.Event.Metadata) != 0 {
 		t.Fatalf("registration audit did not preserve authenticated metadata-only provenance: %+v", repository.registerFact)
+	}
+}
+
+func TestSetAgentLifecycleAppendsExactAuthorizedRevisionAndFailsClosed(t *testing.T) {
+	service, repository, _, subject, _, _ := fleetServiceFixture(t)
+	sealed, err := registry.SealRevision(registry.AgentRevision{
+		SchemaVersion: registry.AgentRevisionSchemaVersion,
+		AgentID:       "agent-1", Revision: 1,
+		Source:                 registry.FleetSource{Kind: registry.CurrentFleetSourceKind, FleetID: "fleet-1", SourceID: "profile-1"},
+		Runtime:                registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "local"},
+		Ownership:              registry.Ownership{OwnerID: "owner-1", AccountabilityID: "accountability-1"},
+		Lifecycle:              registry.LifecycleEnabled,
+		Charter:                revisionReference("agent-1", 1, "a"),
+		CapabilityDeclarations: []string{"fleet.execute"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.agent = sealed
+	expected := revisionRef(sealed.AgentID, sealed.Revision, sealed.Digest)
+
+	next, err := service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: subject, Agent: expected, Lifecycle: registry.LifecycleDisabled})
+	if err != nil || next.Revision != 2 || next.Lifecycle != registry.LifecycleDisabled || next.Digest == sealed.Digest {
+		t.Fatalf("lifecycle append: next=%+v err=%v", next, err)
+	}
+	if repository.revisionFact.Event.Type != "fleet.agent.lifecycle.changed" || repository.revisionFact.Event.SubjectID != subject.ID {
+		t.Fatalf("lifecycle audit was not authoritative and subject-bound: %+v", repository.revisionFact)
+	}
+
+	if _, err = service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: subject, Agent: expected, Lifecycle: registry.LifecycleEnabled}); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("stale expected revision was not denied: %v", err)
+	}
+	denied := subject
+	denied.PrincipalID = "prompt-selected"
+	current := revisionRef(next.AgentID, next.Revision, next.Digest)
+	if _, err = service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: denied, Agent: current, Lifecycle: registry.LifecycleEnabled}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("unauthorized lifecycle mutation was not denied: %v", err)
+	}
+	if repository.agent.Digest != next.Digest {
+		t.Fatalf("denied lifecycle request mutated current revision: %+v", repository.agent)
+	}
+	idempotent, err := service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: subject, Agent: current, Lifecycle: registry.LifecycleDisabled})
+	if err != nil || idempotent.Digest != next.Digest || repository.agent.Digest != next.Digest {
+		t.Fatalf("exact lifecycle replay was not idempotent: revision=%+v audit=%+v err=%v", idempotent, repository.revisionFact, err)
+	}
+	retired, err := service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: subject, Agent: current, Lifecycle: registry.LifecycleRetired})
+	if err != nil || retired.Revision != 3 || retired.Lifecycle != registry.LifecycleRetired {
+		t.Fatalf("retirement append: revision=%+v err=%v", retired, err)
+	}
+	retiredRef := revisionRef(retired.AgentID, retired.Revision, retired.Digest)
+	if _, err = service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: subject, Agent: retiredRef, Lifecycle: registry.LifecycleEnabled}); !errors.Is(err, registry.ErrRetired) {
+		t.Fatalf("retired Agent was reactivated: %v", err)
+	}
+	if repository.agent.Digest != retired.Digest {
+		t.Fatalf("failed reactivation mutated retired revision: %+v", repository.agent)
 	}
 }
 

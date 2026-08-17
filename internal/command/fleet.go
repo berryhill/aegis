@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -74,7 +75,39 @@ func fleetAgentsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(register, list, show)
+	history := &cobra.Command{Use: "history AGENT", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		values, err := service.ListFleetAgentRevisions(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		return output(cmd, values)
+	}}
+	lifecycleCommand := func(name string, state registry.Lifecycle) *cobra.Command {
+		return &cobra.Command{Use: name + " AGENT FILE", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+			var input app.SetAgentLifecycleInput
+			if err := decodeJSONFile(args[1], &input); err != nil {
+				return usage(err)
+			}
+			input.Lifecycle = state
+			service, err := build(cmd)
+			if err != nil {
+				return err
+			}
+			value, err := service.SetAgentLifecycle(cmd.Context(), args[0], input)
+			if err != nil {
+				return err
+			}
+			return output(cmd, value)
+		}}
+	}
+	enable := lifecycleCommand("enable", registry.LifecycleEnabled)
+	disable := lifecycleCommand("disable", registry.LifecycleDisabled)
+	retire := lifecycleCommand("retire", registry.LifecycleRetired)
+	command.AddCommand(register, list, show, history, enable, disable, retire)
 	return command
 }
 

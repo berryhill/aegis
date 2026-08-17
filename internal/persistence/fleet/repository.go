@@ -69,6 +69,7 @@ type Repository interface {
 	GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error)
 	LatestAgentRevision(context.Context, string) (registry.AgentRevision, error)
 	ListAgentRegistrations(context.Context) ([]registry.AgentRegistration, error)
+	ListAgentRevisions(context.Context, string) ([]registry.AgentRevision, error)
 
 	PublishLoop(context.Context, loop.PublishRequest, AuditFact) (loop.PublicationDecision, error)
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)

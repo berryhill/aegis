@@ -290,6 +290,37 @@ func (s *Store) ListAgentRegistrations(ctx context.Context) (out []registry.Agen
 	return
 }
 
+func (s *Store) ListAgentRevisions(ctx context.Context, id string) (out []registry.AgentRevision, err error) {
+	out = []registry.AgentRevision{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		if _, e := registration(txn, id); e != nil {
+			return e
+		}
+		return scan(txn, familyAgentRevision, func(recordKey []byte, value []byte) error {
+			parts, keyErr := decodeKeyParts(recordKey, familyAgentRevision)
+			if keyErr != nil || len(parts) != 2 {
+				return fleet.ErrCorrupt
+			}
+			if parts[0] != id {
+				return nil
+			}
+			item, decodeErr := registry.UnmarshalAgentRevision(value)
+			if decodeErr != nil || item.AgentID != id || parts[1] != revisionPart(item.Revision) {
+				return corrupt(decodeErr)
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Revision < out[j].Revision })
+	for index, revision := range out {
+		if revision.Revision != uint64(index+1) {
+			return nil, fleet.ErrCorrupt
+		}
+	}
+	return
+}
+
 func (s *Store) PublishLoop(ctx context.Context, request loop.PublishRequest, fact fleet.AuditFact) (decision loop.PublicationDecision, err error) {
 	revisionWire, e := loop.MarshalRevision(request.Revision)
 	if e != nil {
