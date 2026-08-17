@@ -275,8 +275,10 @@ func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration)
 	return nil
 }
 
-// EnsureReady starts an already-installed exact Aegis service and requires its
-// authenticated, audit-current readiness before returning.
+// EnsureReady restarts an already-installed exact Aegis service and requires its
+// authenticated, audit-current readiness before returning. Restart is required
+// because the active process may still hold a state root that was removed and
+// recreated during first-run recovery.
 func EnsureReady(ctx context.Context, plan Plan, runner Runner, timeout time.Duration) error {
 	if runner == nil {
 		return errors.New("user service manager is unavailable")
@@ -295,10 +297,18 @@ func EnsureReady(ctx context.Context, plan Plan, runner Runner, timeout time.Dur
 	if !installed {
 		return ErrServiceNotInstalled
 	}
-	if err = runner.Run(ctx, "start", UnitName); err != nil {
-		return activationFailure("start", err, nil)
+	// systemd may still have a stale or foreign unit definition loaded even
+	// when the approved unit bytes are present on disk. Establish the exact
+	// loaded fragment and ExecStart identity before any lifecycle mutation.
+	if err = validateLoadedIdentity(ctx, runner, plan); err != nil {
+		return activationFailure("exact_unit_validation", err, nil)
 	}
-	if err = validateLoadedUnit(ctx, runner, plan); err != nil {
+	if err = runner.Run(ctx, "restart", UnitName); err != nil {
+		return activationFailure("restart", err, nil)
+	}
+	// Revalidate after restart so readiness is bound to the exact unit that
+	// systemd actually activated, not only the preflight observation.
+	if err = validateLoadedIdentity(ctx, runner, plan); err != nil {
 		return activationFailure("exact_unit_validation", err, nil)
 	}
 	if timeout <= 0 {
@@ -407,6 +417,13 @@ func validateLoadedUnit(ctx context.Context, runner Runner, plan Plan) error {
 		return fmt.Errorf("%w: loaded fragment does not match approved unit path", ErrForeignUnit)
 	}
 	return nil
+}
+
+func validateLoadedIdentity(ctx context.Context, runner Runner, plan Plan) error {
+	if err := validateLoadedUnit(ctx, runner, plan); err != nil {
+		return err
+	}
+	return validateLoadedExecStart(ctx, runner, plan)
 }
 
 func validateLoadedExecStart(ctx context.Context, runner Runner, plan Plan) error {
