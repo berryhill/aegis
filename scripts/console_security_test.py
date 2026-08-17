@@ -34,7 +34,7 @@ def main() -> int:
         require(f'id="{identifier}"' in component, f"missing focus/status primitive: {identifier}")
     for state in ("loading", "empty", "unavailable", "error"):
         require(f'data-state="{state}"' in component or f'case "{state}"' in component, f"service state missing: {state}")
-    require("prefers-reduced-motion" in css and "@media(max-width:700px)" in css, "responsive/reduced-motion CSS missing")
+    require("prefers-reduced-motion" in css and "@media(max-width:768px)" in css, "responsive/reduced-motion CSS missing")
 
     first_party_active_source = "\n".join((component, model, handlers))
     for forbidden in (
@@ -47,7 +47,7 @@ def main() -> int:
     for native_control in (
         'method="post" action="/console/session"',
         'method="post" action="/console/logout"',
-        'href={ fmt.Sprintf("/console?domain=%s"',
+        'path := fmt.Sprintf("/console/%s", domain)',
     ):
         require(native_control in component, f"native console interaction missing: {native_control}")
     require("vendor/datastar-v1.0.2.js" in embed and "go:embed" in embed, "Datastar bundle is not embedded")

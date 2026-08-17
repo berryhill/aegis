@@ -1,6 +1,9 @@
 package consoleweb
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 templ Document(model PageModel) {
 	<!doctype html>
@@ -8,62 +11,87 @@ templ Document(model PageModel) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<meta name="color-scheme" content="dark light"/>
+			<meta name="color-scheme" content="dark"/>
 			<title>Aegis Console</title>
 			<link rel="stylesheet" href="/console/assets/app.css"/>
 		</head>
 		<body>
-			<a class="skip-link" href="#workspace">Skip to fleet workspace</a>
-			@Header(model.Authenticated, model.CSRF)
+			<a class="skip" href="#main">Skip to content</a>
+			@Header(model.Authenticated, model.CSRF, model.Surface.Title)
 			<div class="shell">
 				@Navigation(model.Surface.Domain, model.Authenticated)
-				<main id="workspace" tabindex="-1">
-					if model.Authenticated {
-						@Workspace(model.Surface)
-					} else {
-						@Authentication("")
-					}
+				<main class="content" id="main" tabindex="-1">
+					<div id="workspace">
+						if model.Authenticated {
+							@Workspace(model.Surface)
+						} else {
+							@Authentication("")
+						}
+					</div>
 				</main>
 			</div>
 		</body>
 	</html>
 }
 
-templ Header(authenticated bool, csrf string) {
-	<header id="console-header">
-		<strong>Aegis</strong><span>Authenticated control plane</span>
+templ Header(authenticated bool, csrf string, title string) {
+	<header class="topbar" id="console-header">
+		<span class="topbar-brand"><span class="brand-mark" aria-hidden="true"></span>Aegis</span>
+		<span class="topbar-sep" aria-hidden="true">/</span>
+		<span class="topbar-context">{ fallbackTitle(title) }</span>
+		<span class="topbar-status"><span class="status-dot" aria-hidden="true"></span><span class="ts-full">Authenticated control plane</span><span class="ts-short">Control plane</span></span>
 		if authenticated {
-			<form method="post" action="/console/logout">
+			<form class="logout-form" method="post" action="/console/logout">
 				<input type="hidden" name="csrf" value={ csrf }/>
-				<button id="logout" type="submit">Sign out</button>
+				<button id="logout" class="ghost btn-sm" type="submit">Sign out</button>
 			</form>
 		}
 	</header>
 }
 
 templ Navigation(domain string, authenticated bool) {
-	<nav id="domain-navigation" aria-label="Control-plane domains">
+	<nav class="nav-rail" id="domain-navigation" aria-label="Aegis navigation">
 		if authenticated {
-			@NavigationButton(DomainAgents, "Agent Registry", domain == DomainAgents)
-			@NavigationButton(DomainLoops, "Loops", domain == DomainLoops)
-			@NavigationButton(DomainGraphs, "Graphs", domain == DomainGraphs)
-			@NavigationButton(DomainQueue, "Execution Queue", domain == DomainQueue)
+			<div class="nav-group-label">Control plane</div>
+			@NavigationButton(DomainAgents, "Agent Registry", "Agents", domain == DomainAgents, "agent")
+			@NavigationButton(DomainGraphs, "Graphs", "Graphs", domain == DomainGraphs, "graph")
+			@NavigationButton(DomainLoops, "Loops", "Loops", domain == DomainLoops, "loop")
+			@NavigationButton(DomainQueue, "Execution Queue", "Queue", domain == DomainQueue, "queue")
+			@NavigationButton(DomainCredentials, "Credentials", "Credentials", domain == DomainCredentials, "credential")
+			<div class="rail-foot"><span class="avatar" aria-hidden="true">OP</span><span class="identity-copy"><strong>Operator context</strong><span>authenticated · local</span></span></div>
 		}
 	</nav>
 }
 
-templ NavigationButton(domain string, label string, current bool) {
-	<a href={ fmt.Sprintf("/console?domain=%s", domain) } aria-current={ currentPage(current) }>{ label }</a>
+templ NavigationButton(domain string, label string, short string, current bool, icon string) {
+	<a class="nav-item" href={ consoleRoute(domain, "") } data-route={ domain } aria-current={ currentPage(current) }>
+		@NavigationIcon(icon)<span class="nav-label">{ label }</span><span class="nav-short">{ short }</span>
+	</a>
+}
+
+templ NavigationIcon(icon string) {
+	if icon == "agent" {
+		<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="8" r="3.2"></circle><path d="M5 20a7 7 0 0 1 14 0"></path></svg>
+	} else if icon == "graph" {
+		<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="6" cy="6" r="2.4"></circle><circle cx="18" cy="9" r="2.4"></circle><circle cx="9" cy="18" r="2.4"></circle><path d="M8.1 7 16 8.5M7.3 8.1 8.4 15.7"></path></svg>
+	} else if icon == "loop" {
+		<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12a8 8 0 0 1 8-8 8 8 0 0 1 8 8 8 8 0 0 1-8 8"></path><path d="m12 20-3-3 3-3"></path></svg>
+	} else if icon == "queue" {
+		<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+	} else {
+		<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M8 9h8M8 13h8M8 17h5"></path></svg>
+	}
 }
 
 templ Authentication(message string) {
-	<section id="authentication" aria-labelledby="authentication-title">
+	<section id="authentication" class="auth-panel" aria-labelledby="authentication-title">
+		<span class="eyebrow">Principal authentication</span>
 		<h1 id="authentication-title">Sign the Aegis principal into this browser</h1>
 		<p>This signs the principal configured when Aegis was initialized into this browser. It does not create or change the principal, tenant, or authority context.</p>
 		<ol aria-label="Browser authentication steps">
 			<li>On the Aegis host, open a terminal as the initialized principal and run <code>aegis console</code>.</li>
 			<li>That command authenticates the host user and creates a temporary, single-use browser handoff.</li>
-			<li>Paste only that handoff into the field below and submit promptly.</li>
+			<li>Paste only that handoff below and submit promptly.</li>
 		</ol>
 		<p>The browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority. <code>aegis console</code> only hands the existing authenticated principal into this browser; it does not provision identity or grant authority.</p>
 		<p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p>
@@ -78,36 +106,112 @@ templ Authentication(message string) {
 		<form id="session-form" method="post" action="/console/session">
 			<label for="bootstrap">Temporary principal handoff</label>
 			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required/>
-			<button type="submit">Sign in as the Aegis principal</button>
+			<button class="primary" type="submit">Sign in as the Aegis principal</button>
 		</form>
-		<div class="service-state" data-state="loading" hidden>Loading…</div>
+		<div class="service-state" data-state="loading" hidden>Loading authoritative state…</div>
 		<div class="service-state" data-state="empty" hidden>The authoritative collection is empty.</div>
+		<div class="service-state" data-state="denied" hidden>This collection read was denied. No count is asserted.</div>
 		<div class="service-state" data-state="unavailable" hidden>Fleet control is unavailable. This is not an empty collection.</div>
+		<div class="service-state" data-state="degraded_repair_required" hidden>Fleet state is degraded and requires repair. No count is asserted.</div>
 		<div class="service-state" data-state="error" hidden>Fleet state could not be loaded or validated.</div>
 	</section>
 }
 
 templ Workspace(surface SurfaceModel) {
-	<section id="fleet" class="list-detail" aria-labelledby="surface-title">
-		<div>
-			<h1 id="surface-title">{ surface.Title }</h1>
-			<p id="service-status" role="status" aria-live="polite">{ surface.Status }</p>
-			if surface.State != "ready" {
-				<div class="service-state" data-state={ surface.State }>{ stateMessage(surface.State) }</div>
-			}
-			<ul id="surface-list" aria-label="Fleet control records">
-				for _, record := range surface.Records {
-					<li><a id={ "record-" + record.Key } href={ fmt.Sprintf("/console?domain=%s&record_key=%s", surface.Domain, record.Key) }>@RecordLabel(record.Label)</a></li>
+	<section class="surface active" id={ "surface-" + surface.Domain } aria-labelledby="surface-title">
+		<div class="page-head">
+			<div class="surface-header">
+				<span class="eyebrow">{ surface.Eyebrow }</span>
+				<h1 id="surface-title">{ surface.Title }</h1>
+				<p>{ surface.Description }</p>
+			</div>
+			for _, action := range surface.Actions {
+				if action.Primary {
+					<button class="primary" type="button" disabled?={ action.State != "ready" } title={ actionTitle(action) }>{ action.Label }</button>
 				}
-			</ul>
+			}
 		</div>
+		@ActionReadiness(surface.Actions)
+		<div id="service-status" class="collection-status" data-state={ surface.State } role="status" aria-live="polite">
+			<span class="signal" aria-hidden="true"></span><strong>{ surface.Status }</strong>
+		</div>
+		if surface.State != "ready" {
+			<div class="service-state" data-state={ surface.State }><strong>{ stateHeading(surface.State) }</strong><span>{ stateMessage(surface.State) }</span><code>{ surface.ReasonCode }</code></div>
+		}
+		@DomainCollection(surface)
+		<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
 		@Inspector(surface.Domain, surface.Inspector, surface.InspectorOpen)
 	</section>
 }
 
+templ ActionReadiness(actions []ActionModel) {
+	if hasBlockedAction(actions) {
+		<section class="onboard repair" aria-labelledby="onboard-heading">
+			<div class="onboard-head"><span class="signal" aria-hidden="true"></span><div><strong id="onboard-heading">Finish setup for this destination</strong> <span class="sub">Records stay inspectable while action prerequisites are outstanding.</span></div></div>
+			<ul class="onboard-steps">
+				for _, action := range actions {
+					if action.State != "ready" {
+						<li data-state={ action.State }>
+							<span class={ "tag " + actionTag(action.State) }><i></i>{ stateHeading(action.State) }</span>
+							<div class="ob-copy">
+								<strong>{ action.Label }</strong>
+								<p><code>{ action.ReasonCode }</code>
+									if len(action.RepairActions) > 0 {
+										<span> · Repair: { strings.Join(action.RepairActions, ", ") }</span>
+									}
+								</p>
+							</div>
+						</li>
+					}
+				}
+			</ul>
+		</section>
+	}
+}
+
+templ DomainCollection(surface SurfaceModel) {
+	if surface.Domain == DomainAgents {
+		<div class="list-bar"><span class="sr-only">Agents</span>@SearchBox("agent-search", "Search agents")<span class="count">{ recordCount(surface.Records, "agent") }</span></div>
+		<div id="surface-list" class="card-grid" aria-label="Agents">
+			for _, record := range surface.Records {
+				@RecordCard(surface.Domain, record)
+			}
+		</div>
+	} else if surface.Domain == DomainGraphs || surface.Domain == DomainLoops {
+		<div class="toolbar"><div class="seg-group" role="group" aria-label={ "Filter " + surface.Title + " by lifecycle state" }><button class="seg active" type="button" disabled>All</button></div>@SearchBox(surface.Domain+"-search", "Search "+surface.Title)<span class="count">{ recordCount(surface.Records, collectionSingular(surface.Domain)) }</span></div>
+		@RecordPanel(surface)
+	} else if surface.Domain == DomainQueue {
+		<section class="ops-band" aria-labelledby="active-executions"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="active-executions">Active Executions</h2><p class="band-sub">Executions with an open runtime attempt are represented by their authoritative lifecycle records below.</p></div></div><div class="panel"><div class="state-block"><div><div class="title">No separate aggregate asserted</div><p class="desc">This bounded workspace does not infer active runtime state from collection counts.</p></div></div></div></section>
+		<section class="ops-band" aria-labelledby="failed-executions"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="failed-executions">Failed Executions</h2><p class="band-sub">Failed terminals remain distinct records in Queue &amp; Lifecycle and are never inferred from process exit.</p></div></div><div class="panel"><div class="state-block"><div><div class="title">No separate aggregate asserted</div><p class="desc">Inspect the authoritative lifecycle records below.</p></div></div></div></section>
+		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div><div class="toolbar"><div class="seg-group" role="group" aria-label="Filter by execution state"><button class="seg active" type="button" disabled>All</button></div>@SearchBox("queue-search", "Search executions")<span class="count">{ recordCount(surface.Records, "execution") }</span></div>@RecordPanel(surface)</section>
+	} else {
+		<div class="filter-row standalone" role="group" aria-label="Filter by credential status"><span class="filter-label">Status</span><button class="seg active" type="button" disabled>All</button></div>
+		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head"><span class="count">{ recordCount(surface.Records, "credential") }</span>@SearchBox("credential-search", "Search credentials")</div>@RecordPanel(surface)</div><aside class="detail credential-detail" aria-label="Selected credential"><strong>Select a credential</strong><p>Inspect metadata and its immutable binding reference. A stored value is never read, entered, or shown here.</p></aside></section>
+	}
+	if len(surface.Records) == 0 && surface.State == "empty" {
+		<div class="panel"><div class="empty-state"><strong>No records</strong><span>The authoritative collection read succeeded and returned zero records.</span></div></div>
+	}
+}
+
+templ SearchBox(id, placeholder string) {
+	<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><label class="sr-only" for={ id }>{ placeholder }</label><input id={ id } type="search" placeholder={ placeholder } autocomplete="off" disabled title="Filtering is delivered with the domain list contract"/></div>
+}
+
+templ RecordPanel(surface SurfaceModel) {
+	<div class="panel"><div class="panel-body compact"><ul id="surface-list" class="record-list" aria-label={ surface.Title + " records" }>
+		for _, record := range surface.Records {
+			<li><a id={ "record-" + record.Key } href={ consoleRoute(surface.Domain, record.Key) }>@RecordLabel(record.Label)<span>Open exact record →</span></a></li>
+		}
+	</ul></div></div>
+}
+
+templ RecordCard(domain string, record RecordModel) {
+	<a class="rec-card" id={ "record-" + record.Key } href={ consoleRoute(domain, record.Key) }><span class="rc-top"><span class="rc-mark" aria-hidden="true">AG</span><strong>{ record.Label }</strong></span><span class="rc-foot">Open exact registered record →</span></a>
+}
+
 templ Inspector(domain string, record *RecordModel, open bool) {
 	<aside id="inspector" class="inspector" aria-labelledby="inspector-title" tabindex="-1" hidden?={ !open }>
-		<a id="close-inspector" href={ fmt.Sprintf("/console?domain=%s", domain) } aria-label="Close inspector">Close</a>
+		<a id="close-inspector" class="back-crumb" href={ consoleRoute(domain, "") } aria-label="Close inspector">← Back to { domain }</a>
 		<h2 id="inspector-title">Record inspector</h2>
 		if record != nil {
 			<p id="inspector-summary">{ record.Summary }</p>
@@ -118,15 +222,31 @@ templ Inspector(domain string, record *RecordModel, open bool) {
 
 templ RecordLabel(label string) { <span>{ label }</span> }
 
-func currentPage(current bool) string {
-	if current { return "page" }
-	return "false"
+func consoleRoute(domain, recordKey string) string {
+	path := fmt.Sprintf("/console/%s", domain)
+	if recordKey != "" { path += "?record_key=" + recordKey }
+	return path + "#/" + domain
 }
 
+func fallbackTitle(title string) string { if title == "" { return "Fleet workspace" }; return title }
+func currentPage(current bool) string { if current { return "page" }; return "false" }
+func actionTitle(action ActionModel) string { return action.State + ": " + action.ReasonCode }
+func hasBlockedAction(actions []ActionModel) bool { for _, action := range actions { if action.State != "ready" { return true } }; return false }
+func actionTag(state string) string { if state == "denied" { return "tag-denied" }; if state == "degraded_repair_required" { return "tag-degraded" }; return "tag-locked" }
+func collectionSingular(domain string) string { if domain == DomainGraphs { return "graph" }; return "Loop" }
+func recordCount(records []RecordModel, singular string) string { suffix := "s"; if len(records) == 1 { suffix = "" }; return fmt.Sprintf("%d %s%s", len(records), singular, suffix) }
+func stateHeading(state string) string {
+	if state == "" { return "Unknown" }
+	if state == "degraded_repair_required" { return "Repair required" }
+	return strings.ToUpper(state[:1]) + state[1:]
+}
 func stateMessage(state string) string {
 	switch state {
 	case "empty": return "The authoritative collection is empty."
+	case "denied": return "This collection read was denied. No count is asserted."
 	case "unavailable": return "Fleet control is unavailable. This is not an empty collection."
+	case "degraded_repair_required": return "Fleet state is degraded and requires repair. No count is asserted."
+	case "loading": return "Loading authoritative state…"
 	default: return "Fleet state could not be loaded or validated."
 	}
 }

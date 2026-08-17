@@ -6,6 +6,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Changed
 
+- Replaced the generic query-parameter console with the shared authenticated Aegis workspace shell and canonical Agent Registry, Graphs, Loops, Execution Queue, and metadata-only Credentials destinations. Typed application/API models now preserve source-qualified authoritative collection states and stable contextual action-readiness reason codes without letting browser state select identity, stanza, mandate, runtime authority, or success.
 - Made interactive onboarding a lower-resistance guided journey: bootstrap identifies a concise `basic` presentation as the default, shows one recommendation and consequence at a time, and accepts `details` or `advanced` before consequential approvals to reveal exact Aegis evidence. Operators can return to `basic` without changing progress. Bare `aegis` and explicit `aegis init` share deterministic initialization and operational-authority transitions; explicit initialization then continues the five-stage artifact-derived manager-onboarding journey. The same presentation modes, approvals, revalidation, and fail-closed decline/resume behavior apply within each authorized scope, and terminal events carry color-independent `STATE`, `ACTIVE`, `QUEUED`, `ERROR`, or `ACTION` roles without replacing explicit authoritative/runtime origins.
 
 ### Fixed

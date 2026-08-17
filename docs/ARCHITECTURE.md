@@ -16,7 +16,9 @@ flowchart TB
   Handoff -->|server-side bootstrap exchange; configured-host HttpOnly cookie| Console
   Console -->|authenticated exact-host validation of confirmation callback| Handoff
   Handoff -->|confirmed; clean /console redirect| Console
-  Console[Typed templ console + native forms and links] -->|HttpOnly short-lived cookie + exact origin + CSRF| API
+  Console[Typed templ workspace: Registry, Graphs, Loops, Queue, metadata-only Credentials] -->|HttpOnly short-lived cookie + exact origin + CSRF| API
+  Service -->|source-qualified collection state + stable reason codes| Console
+  Credentials -. binding metadata only; never resolved secret values .-> Console
   API -->|single-use bootstrap for existing principal only| Console
   OS[Local OS identity] --> Service
   Service --> Validator[Strict charter validation and canonical digest]

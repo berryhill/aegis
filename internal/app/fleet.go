@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -106,16 +107,26 @@ type QueueExecutionView struct {
 
 type SurfaceReadiness struct {
 	State         string `json:"state"`
+	ReasonCode    string `json:"reason_code"`
+	Source        string `json:"source"`
 	Count         int    `json:"count"`
 	Authoritative bool   `json:"authoritative"`
 }
 
+// CredentialView is metadata-only. Workspace reads never resolve secrets.
+type CredentialView struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
 type FleetSurface struct {
-	Agents    []FleetAgent                `json:"agents"`
-	Loops     []LoopView                  `json:"loops"`
-	Graphs    []GraphView                 `json:"graphs"`
-	Queue     []QueueExecutionView        `json:"queue"`
-	Readiness map[string]SurfaceReadiness `json:"readiness"`
+	Agents      []FleetAgent                       `json:"agents"`
+	Loops       []LoopView                         `json:"loops"`
+	Graphs      []GraphView                        `json:"graphs"`
+	Queue       []QueueExecutionView               `json:"queue"`
+	Credentials []CredentialView                   `json:"credentials"`
+	Readiness   map[string]SurfaceReadiness        `json:"readiness"`
+	Actions     map[string]orchestration.Readiness `json:"actions"`
 }
 
 // ConfigureFleet installs the single application boundary used by all fleet
@@ -510,32 +521,81 @@ func (s *Service) ListQueue(ctx context.Context) ([]QueueExecutionView, error) {
 }
 
 func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (FleetSurface, error) {
-	agents, err := s.ListFleetAgentsAs(ctx, subject)
-	if err != nil {
+	if err := s.requirePrincipal(subject); err != nil {
 		return FleetSurface{}, err
 	}
-	loops, err := s.ListLoopsAs(ctx, subject)
-	if err != nil {
-		return FleetSurface{}, err
+	surface := FleetSurface{
+		Agents: []FleetAgent{}, Loops: []LoopView{}, Graphs: []GraphView{}, Queue: []QueueExecutionView{}, Credentials: []CredentialView{},
+		Readiness: map[string]SurfaceReadiness{}, Actions: map[string]orchestration.Readiness{},
 	}
-	graphs, err := s.ListGraphsAs(ctx, subject)
-	if err != nil {
-		return FleetSurface{}, err
-	}
-	items, err := s.ListQueueAs(ctx, subject)
-	if err != nil {
-		return FleetSurface{}, err
-	}
-	state := func(count int) SurfaceReadiness {
-		value := "ready"
-		if count == 0 {
-			value = "empty"
+	if s.FleetRepository == nil || s.Fleet == nil || s.QueueWorker == nil {
+		for key, source := range map[string]string{"registry": "fleet.agent_registrations", "loops": "fleet.loop_revisions", "graphs": "fleet.graph_revisions", "queue": "fleet.queue_items"} {
+			surface.Readiness[key] = SurfaceReadiness{State: "unavailable", ReasonCode: "fleet_service_unavailable", Source: source}
 		}
-		return SurfaceReadiness{State: value, Count: count, Authoritative: true}
+	} else {
+		var err error
+		surface.Agents, err = s.ListFleetAgentsAs(ctx, subject)
+		if ctx.Err() != nil {
+			return FleetSurface{}, ctx.Err()
+		}
+		surface.Readiness["registry"] = collectionReadiness(len(surface.Agents), "fleet.agent_registrations", err)
+		surface.Loops, err = s.ListLoopsAs(ctx, subject)
+		if ctx.Err() != nil {
+			return FleetSurface{}, ctx.Err()
+		}
+		surface.Readiness["loops"] = collectionReadiness(len(surface.Loops), "fleet.loop_revisions", err)
+		surface.Graphs, err = s.ListGraphsAs(ctx, subject)
+		if ctx.Err() != nil {
+			return FleetSurface{}, ctx.Err()
+		}
+		surface.Readiness["graphs"] = collectionReadiness(len(surface.Graphs), "fleet.graph_revisions", err)
+		surface.Queue, err = s.ListQueueAs(ctx, subject)
+		if ctx.Err() != nil {
+			return FleetSurface{}, ctx.Err()
+		}
+		surface.Readiness["queue"] = collectionReadiness(len(surface.Queue), "fleet.queue_items", err)
+		for _, action := range []orchestration.FleetAction{
+			orchestration.FleetActionRegister, orchestration.FleetActionLoopPublish, orchestration.FleetActionGraphPublish,
+			orchestration.FleetActionSubmission, orchestration.FleetActionClaim, orchestration.FleetActionRuntimeEffect,
+			orchestration.FleetActionEvidenceVerify, orchestration.FleetActionDisposition,
+		} {
+			surface.Actions[string(action)] = s.Fleet.Readiness(ctx, orchestration.ReadinessRequest{Action: action, Subject: subject})
+		}
 	}
-	return FleetSurface{Agents: agents, Loops: loops, Graphs: graphs, Queue: items, Readiness: map[string]SurfaceReadiness{
-		"registry": state(len(agents)), "loops": state(len(loops)), "graphs": state(len(graphs)), "queue": state(len(items)),
-	}}, nil
+	credentialIDs := make([]string, 0, len(s.Config.Credentials.ProviderAuth))
+	for id := range s.Config.Credentials.ProviderAuth {
+		credentialIDs = append(credentialIDs, id)
+	}
+	sort.Strings(credentialIDs)
+	for _, id := range credentialIDs {
+		binding := s.Config.Credentials.ProviderAuth[id]
+		surface.Credentials = append(surface.Credentials, CredentialView{ID: id, Type: binding.Type})
+	}
+	surface.Readiness["credentials"] = collectionReadiness(len(surface.Credentials), "config.credentials.provider_auth", nil)
+	return surface, nil
+}
+
+func collectionReadiness(count int, source string, err error) SurfaceReadiness {
+	result := SurfaceReadiness{State: "ready", ReasonCode: "collection_read_succeeded", Source: source, Count: count, Authoritative: true}
+	if err == nil && count == 0 {
+		result.State, result.ReasonCode = "empty", "collection_read_succeeded_empty"
+		return result
+	}
+	if err == nil {
+		return result
+	}
+	result.Count, result.Authoritative = 0, false
+	switch {
+	case IsFleetDenied(err), errors.Is(err, ErrDenied), errors.Is(err, ErrUnauthenticated):
+		result.State, result.ReasonCode = "denied", "collection_read_denied"
+	case IsFleetCorrupt(err):
+		result.State, result.ReasonCode = "degraded_repair_required", "fleet_store_corrupt"
+	case IsFleetUnavailable(err):
+		result.State, result.ReasonCode = "unavailable", "collection_read_unavailable"
+	default:
+		result.State, result.ReasonCode = "error", "collection_read_failed"
+	}
+	return result
 }
 
 func (s *Service) ProcessQueueItemAs(ctx context.Context, subject core.Subject, request orchestration.WorkRequest) (orchestration.WorkResult, error) {

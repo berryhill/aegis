@@ -51,10 +51,11 @@ func isLoopbackConsoleHost(host string) bool {
 type consoleDomain string
 
 const (
-	consoleAgents consoleDomain = "agents"
-	consoleLoops  consoleDomain = "loops"
-	consoleGraphs consoleDomain = "graphs"
-	consoleQueue  consoleDomain = "queue"
+	consoleAgents      consoleDomain = "agents"
+	consoleLoops       consoleDomain = "loops"
+	consoleGraphs      consoleDomain = "graphs"
+	consoleQueue       consoleDomain = "queue"
+	consoleCredentials consoleDomain = "credentials"
 )
 
 type consoleSignals struct {
@@ -97,7 +98,7 @@ func parseConsoleDomain(raw string) (consoleDomain, error) {
 		return consoleAgents, nil
 	}
 	switch domain {
-	case consoleAgents, consoleLoops, consoleGraphs, consoleQueue:
+	case consoleAgents, consoleLoops, consoleGraphs, consoleQueue, consoleCredentials:
 		return domain, nil
 	default:
 		return "", errors.New("unknown console domain")
@@ -163,43 +164,51 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 	readinessKey := string(domain)
 	switch domain {
 	case consoleAgents:
-		model.Title, readinessKey = "Agent Registry", "registry"
+		model.Title, model.Eyebrow, model.Description, readinessKey = "Agent Registry", "Participants", "Agents derived from immutable charter revisions. Select one to inspect its effective authority, provisioning evidence and readiness.", "registry"
 		for _, value := range surface.Agents {
 			values = append(values, value)
 		}
 	case consoleLoops:
-		model.Title = "Loops"
+		model.Title, model.Eyebrow, model.Description = "Loops", "Definitions", "Versioned units of bounded agent work. A Loop declares its required inputs, internal control flow, and the evidence a completion must produce. Select one to inspect it and prepare an execution request."
 		for _, value := range surface.Loops {
 			values = append(values, value)
 		}
 	case consoleGraphs:
-		model.Title = "Graphs"
+		model.Title, model.Eyebrow, model.Description = "Graphs", "Definitions", "Versioned workflow definitions. A graph wires versioned Loops into a directed dependency structure. Select one to inspect it and prepare an execution request."
 		for _, value := range surface.Graphs {
 			values = append(values, value)
 		}
 	case consoleQueue:
-		model.Title = "Execution Queue"
+		model.Title, model.Eyebrow, model.Description = "Execution Queue", "Runtime", "Submissions judged at admission. An admitted submission becomes an execution against an exact pinned definition version; a refused one never does. Select a record to inspect it against the revision it pinned."
 		for _, value := range surface.Queue {
+			values = append(values, value)
+		}
+	case consoleCredentials:
+		model.Title, model.Eyebrow, model.Description = "Credentials", "Operator vault", "The operator's own encrypted vault, presented as metadata only. A record is a reference, a kind, a status and an immutable version chain — a value is never read, entered or shown here."
+		for _, value := range surface.Credentials {
 			values = append(values, value)
 		}
 	default:
 		return consoleweb.SurfaceModel{}, errors.New("unknown console domain")
 	}
 	readiness, ok := surface.Readiness[readinessKey]
+	model.Actions = consoleActions(surface, domain)
 	if !ok || !readiness.Authoritative {
-		model.State = "unavailable"
-		model.Status = model.Title + " state is unavailable."
+		model.State = readiness.State
+		if model.State == "" {
+			model.State = "unavailable"
+		}
+		model.ReasonCode, model.Source = readiness.ReasonCode, readiness.Source
+		model.Status = fmt.Sprintf("%s · source %s · reason %s", model.Title, fallback(readiness.Source, "unknown"), fallback(readiness.ReasonCode, "readiness_missing"))
 		return model, nil
 	}
-	if len(values) == 0 {
-		model.State = "empty"
-	}
+	model.State, model.ReasonCode, model.Source = readiness.State, readiness.ReasonCode, readiness.Source
 	shown := len(values)
 	count := strconv.Itoa(readiness.Count)
 	if shown != readiness.Count {
 		count = fmt.Sprintf("showing %d of %d", shown, readiness.Count)
 	}
-	model.Status = fmt.Sprintf("%s authoritative %s record%s. Exact revisions and digests shown.", count, strings.ToLower(model.Title), plural(readiness.Count))
+	model.Status = fmt.Sprintf("%s authoritative %s record%s · source %s · reason %s", count, strings.ToLower(model.Title), plural(readiness.Count), readiness.Source, readiness.ReasonCode)
 	for index, value := range values {
 		data, err := json.MarshalIndent(value, "", "  ")
 		if err != nil {
@@ -209,6 +218,38 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 		model.Records = append(model.Records, consoleweb.RecordModel{Key: strconv.Itoa(index), Label: label, Summary: label, JSON: string(data)})
 	}
 	return model, nil
+}
+
+func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb.ActionModel {
+	type actionSpec struct {
+		key, label string
+		primary    bool
+	}
+	var specs []actionSpec
+	switch domain {
+	case consoleAgents:
+		specs = []actionSpec{{"register_fleet_agent", "Prepare charter import", true}}
+	case consoleLoops:
+		specs = []actionSpec{{"loop_publish", "Publish Loop revision", true}}
+	case consoleGraphs:
+		specs = []actionSpec{{"graph_publish", "Publish Graph revision", true}, {"submission", "Prepare execution request", false}}
+	case consoleQueue:
+		specs = []actionSpec{{"submission", "Prepare execution request", true}, {"queue_claim", "Claim", false}, {"runtime_effect", "Runtime effect", false}, {"evidence_verify", "Verify evidence", false}, {"disposition", "Disposition", false}}
+	}
+	actions := make([]consoleweb.ActionModel, 0, len(specs))
+	for _, spec := range specs {
+		readiness, ok := surface.Actions[spec.key]
+		if !ok {
+			actions = append(actions, consoleweb.ActionModel{Key: spec.key, Label: spec.label, State: "unavailable", ReasonCode: "action_readiness_missing", Primary: spec.primary})
+			continue
+		}
+		repairs := make([]string, 0, len(readiness.RepairActions))
+		for _, repair := range readiness.RepairActions {
+			repairs = append(repairs, string(repair))
+		}
+		actions = append(actions, consoleweb.ActionModel{Key: spec.key, Label: spec.label, State: string(readiness.State), ReasonCode: readiness.ReasonCode, RepairActions: repairs, Primary: spec.primary})
+	}
+	return actions
 }
 
 func plural(count int) string {
@@ -236,8 +277,19 @@ func consoleRecordLabel(domain consoleDomain, value any) string {
 		if record, ok := value.(app.QueueExecutionView); ok {
 			return fmt.Sprintf("%s · %s", record.Item.ItemID, record.Projection.State)
 		}
+	case consoleCredentials:
+		if record, ok := value.(app.CredentialView); ok {
+			return fmt.Sprintf("%s · %s binding", record.ID, record.Type)
+		}
 	}
 	return "unknown record"
+}
+
+func fallback(value, replacement string) string {
+	if value == "" {
+		return replacement
+	}
+	return value
 }
 
 func selectConsoleRecord(model *consoleweb.SurfaceModel, raw string) error {

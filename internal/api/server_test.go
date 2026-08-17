@@ -332,6 +332,144 @@ func TestBearerAloneCannotIssueConsoleBootstrapOverTCP(t *testing.T) {
 	}
 }
 
+func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness(t *testing.T) {
+	svc := apiService(t)
+	configureAPIFleet(t, svc)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.Listen = address
+	svc.Config.API.Console.Origin = "http://" + address
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	waitFor(t, "tcp", address)
+
+	var issued struct {
+		Bootstrap string `json:"bootstrap"`
+	}
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
+	if issued.Bootstrap == "" {
+		t.Fatal("server issued empty browser bootstrap")
+	}
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(issued.Bootstrap)))
+	exchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	exchange.Header.Set("Origin", "http://"+address)
+	exchangeResponse, err := client.Do(exchange)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = exchangeResponse.Body.Close()
+	if exchangeResponse.StatusCode != http.StatusOK || exchangeResponse.Request.URL.Path != "/console/agents" {
+		t.Fatalf("native session exchange status=%d final=%s", exchangeResponse.StatusCode, exchangeResponse.Request.URL)
+	}
+
+	routes := []struct {
+		domain, title, eyebrow, hash, actionLabel, actionKey string
+	}{
+		{"agents", "Agent Registry", "Participants", "/agents", "Prepare charter import", "register_fleet_agent"},
+		{"graphs", "Graphs", "Definitions", "/graphs", "Publish Graph revision", "graph_publish"},
+		{"loops", "Loops", "Definitions", "/loops", "Publish Loop revision", "loop_publish"},
+		{"queue", "Execution Queue", "Runtime", "/queue", "Prepare execution request", "submission"},
+		{"credentials", "Credentials", "Operator vault", "/credentials", "", ""},
+	}
+
+	for _, route := range routes {
+		t.Run(route.domain, func(t *testing.T) {
+			response, err := client.Get("http://" + address + "/console/" + route.domain)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("route %s status=%d body=%s", route.domain, response.StatusCode, body)
+			}
+			if response.Header.Get("Cache-Control") != "no-store" {
+				t.Fatalf("route %s cache-control=%q", route.domain, response.Header.Get("Cache-Control"))
+			}
+			if !strings.Contains(response.Header.Get("Content-Security-Policy"), "default-src 'none'") {
+				t.Fatalf("route %s missing strict CSP: %q", route.domain, response.Header.Get("Content-Security-Policy"))
+			}
+			if route.title != "" && !bytes.Contains(body, []byte(route.title)) {
+				t.Fatalf("route %s missing title %s", route.domain, route.title)
+			}
+			if route.eyebrow != "" && !bytes.Contains(body, []byte(route.eyebrow)) {
+				t.Fatalf("route %s missing eyebrow %s", route.domain, route.eyebrow)
+			}
+			if !bytes.Contains(body, []byte(`href="/console/agents#/agents"`)) ||
+				!bytes.Contains(body, []byte(`href="/console/graphs#/graphs"`)) ||
+				!bytes.Contains(body, []byte(`href="/console/loops#/loops"`)) ||
+				!bytes.Contains(body, []byte(`href="/console/queue#/queue"`)) ||
+				!bytes.Contains(body, []byte(`href="/console/credentials#/credentials"`)) {
+				t.Fatalf("route %s missing one of the wired shared-shell routes: %s", route.domain, body)
+			}
+			if !bytes.Contains(body, []byte(`aria-current="page"`)) {
+				t.Fatalf("route %s missing current-page aria marker", route.domain)
+			}
+			if route.actionKey != "" {
+				if !bytes.Contains(body, []byte(route.actionLabel)) {
+					t.Fatalf("route %s missing action label %s", route.domain, route.actionLabel)
+				}
+				if !bytes.Contains(body, []byte(`data-state="ready"`)) && !bytes.Contains(body, []byte(`data-state="denied"`)) && !bytes.Contains(body, []byte(`title="ready: ready"`)) {
+					t.Fatalf("route %s missing wired contextual action state: %s", route.domain, body)
+				}
+				if !bytes.Contains(body, []byte("disabled")) && !bytes.Contains(body, []byte("data-state=\"ready\"")) {
+					t.Fatalf("route %s missing disabled primary action when readiness is not ready: %s", route.domain, body)
+				}
+			}
+			if route.domain == "credentials" {
+				if !bytes.Contains(body, []byte("value is never read, entered or shown here")) {
+					t.Fatalf("credentials domain must explain metadata-only boundary: %s", body)
+				}
+				if bytes.Contains(body, []byte("source_env")) || bytes.Contains(body, []byte("target_env")) || bytes.Contains(body, []byte("AEGIS_API_TEST_KEY")) {
+					t.Fatalf("credentials domain exposed secret values: %s", body)
+				}
+			}
+			if bytes.Contains(body, []byte("<script")) || bytes.Contains(body, []byte("data-on:")) {
+				t.Fatalf("route %s contained CSP-incompatible browser behavior: %s", route.domain, body)
+			}
+		})
+	}
+
+	credentialsResponse, err := client.Get("http://" + address + "/console/credentials")
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentialsBody, _ := io.ReadAll(credentialsResponse.Body)
+	_ = credentialsResponse.Body.Close()
+	if credentialsResponse.StatusCode != http.StatusOK || !bytes.Contains(credentialsBody, []byte("test")) || !bytes.Contains(credentialsBody, []byte("environment binding")) {
+		t.Fatalf("credentials route did not surface metadata-only binding: status=%d body=%s", credentialsResponse.StatusCode, credentialsBody)
+	}
+
+	hostile := &app.FleetAgent{}
+	hostile.Registration.AgentID = "</script><script>globalThis.pwned=1</script>"
+	hostileSurface, err := consoleSurfaceModel(app.FleetSurface{
+		Agents: []app.FleetAgent{*hostile},
+		Readiness: map[string]app.SurfaceReadiness{
+			"registry": {State: "ready", ReasonCode: "collection_read_succeeded", Source: "fleet.agent_registrations", Count: 1, Authoritative: true},
+		},
+	}, consoleAgents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hostileSurface.Records) != 1 || strings.Contains(hostileSurface.Records[0].JSON, "<script>") {
+		t.Fatalf("hostile record label was not escaped: %#v", hostileSurface.Records)
+	}
+}
+
 func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	svc := apiService(t)
 	configureAPIFleet(t, svc)
@@ -421,14 +559,18 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	if err = json.NewDecoder(state.Body).Decode(&consoleState); err != nil {
 		t.Fatal(err)
 	}
-	if consoleState.State != "ready" || len(consoleState.Surface.Readiness) != 4 {
+	if consoleState.State != "ready" || len(consoleState.Surface.Readiness) != 5 {
 		t.Fatalf("console did not return authoritative fleet readiness: %+v", consoleState)
 	}
 	for _, domain := range []string{"registry", "loops", "graphs", "queue"} {
 		readiness := consoleState.Surface.Readiness[domain]
-		if readiness.State != "empty" || !readiness.Authoritative || readiness.Count != 0 {
+		if readiness.State != "empty" || readiness.ReasonCode != "collection_read_succeeded_empty" || readiness.Source == "" || !readiness.Authoritative || readiness.Count != 0 {
 			t.Fatalf("empty %s readiness was not authoritative: %+v", domain, readiness)
 		}
+	}
+	credentials := consoleState.Surface.Readiness["credentials"]
+	if credentials.State != "ready" || credentials.ReasonCode != "collection_read_succeeded" || credentials.Count != 1 || !credentials.Authoritative || len(consoleState.Surface.Credentials) != 1 || consoleState.Surface.Credentials[0].ID != "test" {
+		t.Fatalf("credential metadata readiness was not authoritative and secret-safe: readiness=%+v credentials=%+v", credentials, consoleState.Surface.Credentials)
 	}
 	_ = state.Body.Close()
 	fragment, _ := http.NewRequest(http.MethodGet, "http://"+address+"/console/fragments/surface?domain=graphs&limit=10", nil)
@@ -483,7 +625,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	}
 	nativeAuthenticatedBody, _ := io.ReadAll(nativeAuthenticated.Body)
 	_ = nativeAuthenticated.Body.Close()
-	if nativeAuthenticated.StatusCode != http.StatusOK || nativeAuthenticated.Request.URL.Path != "/console" || !bytes.Contains(nativeAuthenticatedBody, []byte("Agent Registry")) || bytes.Contains(nativeAuthenticatedBody, []byte("Sign the Aegis principal into this browser")) {
+	if nativeAuthenticated.StatusCode != http.StatusOK || nativeAuthenticated.Request.URL.Path != "/console/agents" || nativeAuthenticated.Request.URL.Fragment != "/agents" || !bytes.Contains(nativeAuthenticatedBody, []byte("Agent Registry")) || bytes.Contains(nativeAuthenticatedBody, []byte("Sign the Aegis principal into this browser")) {
 		t.Fatalf("native bootstrap flow status=%d final=%s body=%s", nativeAuthenticated.StatusCode, nativeAuthenticated.Request.URL, nativeAuthenticatedBody)
 	}
 	nativeGraphs, err := client.Get("http://" + address + "/console?domain=graphs")

@@ -13,6 +13,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/orchestration"
 )
 
 func TestBrowserHandoffConfirmationIsRestrictedToExactLoopbackCapability(t *testing.T) {
@@ -101,6 +102,47 @@ func TestConsoleDomainAndRecordSelectorsFailClosed(t *testing.T) {
 		if err = selectConsoleRecord(&model, raw); err == nil {
 			t.Fatalf("forged record selector %q accepted", raw)
 		}
+	}
+}
+
+func TestConsoleSurfacePreservesContextualReadinessAndCredentialMetadata(t *testing.T) {
+	denied, err := consoleSurfaceModel(app.FleetSurface{
+		Readiness: map[string]app.SurfaceReadiness{
+			"registry": {State: "denied", ReasonCode: "collection_read_denied", Source: "fleet.agent_registrations"},
+		},
+		Actions: map[string]orchestration.Readiness{
+			"register_fleet_agent": {
+				Action:        orchestration.FleetActionRegister,
+				State:         orchestration.ReadinessDenied,
+				ReasonCode:    "principal_not_authorized",
+				RepairActions: []orchestration.RepairAction{orchestration.RepairAuthenticate},
+			},
+		},
+	}, consoleAgents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if denied.State != "denied" || denied.ReasonCode != "collection_read_denied" || denied.Source != "fleet.agent_registrations" || strings.Contains(denied.Status, "0 record") {
+		t.Fatalf("denied readiness was collapsed or asserted a count: %+v", denied)
+	}
+	if len(denied.Actions) != 1 || denied.Actions[0].Key != "register_fleet_agent" || denied.Actions[0].State != "denied" || denied.Actions[0].ReasonCode != "principal_not_authorized" || len(denied.Actions[0].RepairActions) != 1 || denied.Actions[0].RepairActions[0] != "authenticate_principal" || !denied.Actions[0].Primary {
+		t.Fatalf("contextual action readiness was not preserved: %+v", denied.Actions)
+	}
+
+	credentials, err := consoleSurfaceModel(app.FleetSurface{
+		Credentials: []app.CredentialView{{ID: "github", Type: "environment"}},
+		Readiness: map[string]app.SurfaceReadiness{
+			"credentials": {State: "ready", ReasonCode: "collection_read_succeeded", Source: "config.credentials.provider_auth", Count: 1, Authoritative: true},
+		},
+	}, consoleCredentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credentials.Title != "Credentials" || credentials.State != "ready" || len(credentials.Records) != 1 || credentials.Records[0].Label != "github · environment binding" {
+		t.Fatalf("credential surface=%+v", credentials)
+	}
+	if strings.Contains(credentials.Records[0].JSON, "source_env") || strings.Contains(credentials.Records[0].JSON, "target_env") {
+		t.Fatalf("credential surface exposed custody details: %s", credentials.Records[0].JSON)
 	}
 }
 
