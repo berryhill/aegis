@@ -19,14 +19,16 @@ import (
 )
 
 type recordingRunner struct {
-	calls        [][]string
-	err          error
-	runErrors    map[string]error
-	activeState  string
-	unitState    string
-	loadState    string
-	fragmentPath string
-	execStart    string
+	calls               [][]string
+	err                 error
+	runErrors           map[string]error
+	activeState         string
+	unitState           string
+	loadState           string
+	fragmentPath        string
+	execStart           string
+	restartFragmentPath string
+	restartExecStart    string
 }
 
 func (r *recordingRunner) Run(_ context.Context, args ...string) error {
@@ -38,6 +40,14 @@ func (r *recordingRunner) Run(_ context.Context, args ...string) error {
 		switch args[0] {
 		case "start", "restart":
 			r.activeState = "active"
+			if args[0] == "restart" {
+				if r.restartFragmentPath != "" {
+					r.fragmentPath = r.restartFragmentPath
+				}
+				if r.restartExecStart != "" {
+					r.execStart = r.restartExecStart
+				}
+			}
 		case "stop":
 			r.activeState = "inactive"
 		}
@@ -339,7 +349,7 @@ func TestApplyActivatesInOrderAndRequiresAuditCurrentReadiness(t *testing.T) {
 	}
 }
 
-func TestEnsureReadyStartsExactInstalledServiceAndRequiresAuthenticatedReadiness(t *testing.T) {
+func TestEnsureReadyRestartsExactInstalledServiceAndRequiresAuthenticatedReadiness(t *testing.T) {
 	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
 	defer stop()
 	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
@@ -348,12 +358,101 @@ func TestEnsureReadyStartsExactInstalledServiceAndRequiresAuthenticatedReadiness
 	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 		t.Fatal(err)
 	}
-	runner := &recordingRunner{fragmentPath: plan.UnitPath}
+	// Model an active process whose configured state root was removed and
+	// recreated. A start is a no-op for that stale process; a restart is required
+	// to bind the newly initialized transport and authority state.
+	runner := &recordingRunner{activeState: "active", fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
 	if err := EnsureReady(context.Background(), plan, runner, time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if want := [][]string{{"start", UnitName}, {"show", UnitName, "--property", "FragmentPath", "--value"}}; !reflect.DeepEqual(runner.calls, want) {
-		t.Fatalf("existing service start calls = %v, want %v", runner.calls, want)
+	if want := [][]string{
+		{"show", UnitName, "--property", "FragmentPath", "--value"},
+		{"show", UnitName, "--property", "ExecStart", "--value"},
+		{"restart", UnitName},
+		{"show", UnitName, "--property", "FragmentPath", "--value"},
+		{"show", UnitName, "--property", "ExecStart", "--value"},
+	}; !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("existing service reconciliation calls = %v, want %v", runner.calls, want)
+	}
+}
+
+func TestEnsureReadyDeniesMismatchedLoadedIdentityBeforeRestart(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name         string
+		fragmentPath string
+		executable   string
+		configPath   string
+	}{
+		{name: "foreign fragment", fragmentPath: filepath.Join(t.TempDir(), UnitName), executable: plan.Executable, configPath: plan.ConfigPath},
+		{name: "stale executable", fragmentPath: plan.UnitPath, executable: filepath.Join(t.TempDir(), "stale-aegis"), configPath: plan.ConfigPath},
+		{name: "stale config", fragmentPath: plan.UnitPath, executable: plan.Executable, configPath: filepath.Join(t.TempDir(), "stale.yaml")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &recordingRunner{
+				activeState:  "active",
+				fragmentPath: test.fragmentPath,
+				execStart:    loadedExecStartFixture(test.executable, test.configPath),
+			}
+			err := EnsureReady(context.Background(), plan, runner, time.Second)
+			var activationErr *ActivationError
+			if !errors.As(err, &activationErr) || activationErr.Phase != "exact_unit_validation" || !errors.Is(err, ErrForeignUnit) {
+				t.Fatalf("loaded-identity mismatch did not fail closed before restart: %v", err)
+			}
+			for _, call := range runner.calls {
+				if len(call) > 0 && (call[0] == "start" || call[0] == "restart") {
+					t.Fatalf("loaded-identity mismatch mutated service lifecycle: %v", runner.calls)
+				}
+			}
+		})
+	}
+}
+
+func TestEnsureReadyRevalidatesLoadedIdentityAfterRestart(t *testing.T) {
+	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
+	defer stop()
+	if err := os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		name                string
+		restartFragmentPath string
+		restartExecutable   string
+		restartConfigPath   string
+	}{
+		{name: "foreign fragment", restartFragmentPath: filepath.Join(t.TempDir(), UnitName), restartExecutable: plan.Executable, restartConfigPath: plan.ConfigPath},
+		{name: "stale executable", restartFragmentPath: plan.UnitPath, restartExecutable: filepath.Join(t.TempDir(), "stale-aegis"), restartConfigPath: plan.ConfigPath},
+		{name: "stale config", restartFragmentPath: plan.UnitPath, restartExecutable: plan.Executable, restartConfigPath: filepath.Join(t.TempDir(), "stale.yaml")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runner := &recordingRunner{
+				activeState:         "active",
+				fragmentPath:        plan.UnitPath,
+				execStart:           loadedExecStartFixture(plan.Executable, plan.ConfigPath),
+				restartFragmentPath: test.restartFragmentPath,
+				restartExecStart:    loadedExecStartFixture(test.restartExecutable, test.restartConfigPath),
+			}
+			err := EnsureReady(context.Background(), plan, runner, time.Second)
+			var activationErr *ActivationError
+			if !errors.As(err, &activationErr) || activationErr.Phase != "exact_unit_validation" || !errors.Is(err, ErrForeignUnit) {
+				t.Fatalf("post-restart loaded-identity mismatch was admitted: %v", err)
+			}
+			if got := runner.calls[2]; !reflect.DeepEqual(got, []string{"restart", UnitName}) {
+				t.Fatalf("identity changed outside expected restart boundary: %v", runner.calls)
+			}
+		})
 	}
 }
 
@@ -383,13 +482,19 @@ func TestEnsureReadyDeniesMissingOrUnauditableService(t *testing.T) {
 		if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 			t.Fatal(err)
 		}
-		runner := &recordingRunner{fragmentPath: plan.UnitPath}
+		runner := &recordingRunner{fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
 		err := EnsureReady(context.Background(), plan, runner, 20*time.Millisecond)
 		var activationErr *ActivationError
 		if !errors.As(err, &activationErr) || activationErr.Phase != "audit_current_readiness" || !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("unauditable readiness did not fail closed with phase evidence: %v", err)
 		}
-		if want := [][]string{{"start", UnitName}, {"show", UnitName, "--property", "FragmentPath", "--value"}}; !reflect.DeepEqual(runner.calls, want) {
+		if want := [][]string{
+			{"show", UnitName, "--property", "FragmentPath", "--value"},
+			{"show", UnitName, "--property", "ExecStart", "--value"},
+			{"restart", UnitName},
+			{"show", UnitName, "--property", "FragmentPath", "--value"},
+			{"show", UnitName, "--property", "ExecStart", "--value"},
+		}; !reflect.DeepEqual(runner.calls, want) {
 			t.Fatalf("unexpected readiness-denial calls = %v, want %v", runner.calls, want)
 		}
 	})
