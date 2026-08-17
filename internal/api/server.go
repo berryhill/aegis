@@ -315,6 +315,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if len(surface.Queue) > limit {
 			surface.Queue = surface.Queue[:limit]
 		}
+		if len(surface.Credentials) > limit {
+			surface.Credentials = surface.Credentials[:limit]
+		}
 		model, err := consoleSurfaceModel(surface, domain)
 		if err != nil {
 			return consoleweb.PageModel{}, err
@@ -325,11 +328,15 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: model}, nil
 	}
-	e.GET("/console", func(c *echo.Context) error {
+	consolePage := func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
 		}
-		domain, err := parseConsoleDomain(c.QueryParam("domain"))
+		rawDomain := c.QueryParam("domain")
+		if routeDomain := strings.TrimPrefix(c.Request().URL.Path, "/console/"); routeDomain != c.Request().URL.Path {
+			rawDomain = routeDomain
+		}
+		domain, err := parseConsoleDomain(rawDomain)
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console domain")
 		}
@@ -361,7 +368,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
-	})
+	}
+	e.GET("/console", consolePage)
+	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consoleCredentials} {
+		e.GET("/console/"+string(domain), consolePage)
+	}
 	e.GET("/favicon.ico", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
@@ -406,7 +417,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		consoleManager.SetCookie(c.Response(), sessionValue)
 		if nativeForm {
-			return c.Redirect(http.StatusSeeOther, "/console")
+			return c.Redirect(http.StatusSeeOther, "/console/agents#/agents")
 		}
 		if wantsDatastar(c.Request()) {
 			c.Request().AddCookie(&http.Cookie{Name: console.CookieName, Value: sessionValue})
@@ -494,6 +505,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		if len(surface.Queue) > limit {
 			surface.Queue = surface.Queue[:limit]
+		}
+		if len(surface.Credentials) > limit {
+			surface.Credentials = surface.Credentials[:limit]
 		}
 		csrf, err := consoleManager.CSRF(c.Request())
 		if err != nil {
@@ -761,6 +775,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		value, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
 		if err != nil {
 			return err
+		}
+		if value.Readiness["registry"].ReasonCode == "fleet_service_unavailable" {
+			return c.JSON(http.StatusServiceUnavailable, value.Readiness)
 		}
 		return c.JSON(http.StatusOK, value.Readiness)
 	})

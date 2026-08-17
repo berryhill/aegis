@@ -27,7 +27,7 @@ func TestDocumentUsesNativeInteractionsUnderStrictCSP(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="unavailable"`, `data-state="error"`, `method="post"`, `action="/console/session"`} {
+	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="denied"`, `data-state="unavailable"`, `data-state="degraded_repair_required"`, `data-state="error"`, `method="post"`, `action="/console/session"`} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("document missing %q", required)
 		}
@@ -57,8 +57,9 @@ func TestAuthenticatedDocumentUsesNativeNavigationInspectionAndLogout(t *testing
 	html := output.String()
 	for _, required := range []string{
 		`action="/console/logout"`, `name="csrf"`, `value="csrf-value"`,
-		`href="/console?domain=loops"`, `href="/console?domain=graphs"`,
-		`href="/console?domain=queue"`, `record_key=0`, `id="close-inspector"`,
+		`href="/console/agents#/agents"`, `href="/console/graphs#/graphs"`,
+		`href="/console/loops#/loops"`, `href="/console/queue#/queue"`,
+		`href="/console/credentials#/credentials"`, `record_key=0`, `id="close-inspector"`,
 	} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("native interaction missing %q: %s", required, html)
@@ -66,6 +67,41 @@ func TestAuthenticatedDocumentUsesNativeNavigationInspectionAndLogout(t *testing
 	}
 	if strings.Contains(html, "data-on:") || strings.Contains(html, "data-signals") {
 		t.Fatal("authenticated document still depends on runtime expression evaluation")
+	}
+}
+
+func TestWorkspaceEscapesContextualReadinessAndDisablesDeniedActions(t *testing.T) {
+	var output bytes.Buffer
+	hostile := `</span><script>globalThis.pwned=1</script>`
+	model := PageModel{
+		Authenticated: true,
+		Surface: SurfaceModel{
+			Domain:      DomainAgents,
+			Title:       hostile,
+			Eyebrow:     hostile,
+			Description: hostile,
+			State:       "denied",
+			Status:      hostile,
+			ReasonCode:  hostile,
+			Actions: []ActionModel{{
+				Key:           "register_fleet_agent",
+				Label:         hostile,
+				State:         "denied",
+				ReasonCode:    hostile,
+				RepairActions: []string{hostile},
+				Primary:       true,
+			}},
+		},
+	}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	if strings.Contains(html, "<script>") || strings.Count(html, "&lt;script") < 7 {
+		t.Fatalf("contextual workspace values were not escaped: %s", html)
+	}
+	if !strings.Contains(html, `<button class="primary" type="button" disabled`) || !strings.Contains(html, `data-state="denied"`) {
+		t.Fatalf("denied action was not visibly fail-closed: %s", html)
 	}
 }
 

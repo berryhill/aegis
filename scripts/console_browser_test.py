@@ -241,16 +241,17 @@ def main() -> int:
 
         expected = {
             "agents": "Agent Registry",
-            "loops": "Loops",
             "graphs": "Graphs",
+            "loops": "Loops",
             "queue": "Execution Queue",
+            "credentials": "Credentials",
         }
         for domain, title in expected.items():
-            click(devtools, f'a[href="/console?domain={domain}"]')
+            click(devtools, f'a[href="/console/{domain}#/{domain}"]')
             wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#surface-title')?.textContent.trim() === " + json.dumps(title), title)
             time.sleep(0.5)
 
-        click(devtools, 'a[href="/console?domain=agents"]')
+        click(devtools, 'a[href="/console/agents#/agents"]')
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-0')", "seeded Agent Registry record")
         click(devtools, "#record-0")
         wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-record').textContent.includes('agent-alpha')", "record inspector")
