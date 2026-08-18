@@ -28,6 +28,7 @@ const (
 	FleetActionAgentRevision  FleetAction = "agent_revision"
 	FleetActionLoopValidate   FleetAction = "loop_validate"
 	FleetActionLoopPublish    FleetAction = "loop_publish"
+	FleetActionLoopLifecycle  FleetAction = "loop_lifecycle"
 	FleetActionGraphValidate  FleetAction = "graph_validate"
 	FleetActionGraphPublish   FleetAction = "graph_publish"
 	FleetActionSubmission     FleetAction = "submission"
@@ -84,6 +85,7 @@ type FleetRepository interface {
 	RegisterAgent(context.Context, registry.AgentRegistration, registry.AgentRevision, fleet.AuditFact) (bool, error)
 	PublishAgentRevision(context.Context, registry.AgentRevision, fleet.AuditFact) error
 	PublishLoop(context.Context, loop.PublishRequest, fleet.AuditFact) (loop.PublicationDecision, error)
+	AppendLoopLifecycle(context.Context, loop.LifecycleRequest, fleet.AuditFact) (loop.LifecycleEvent, bool, error)
 	PublishGraph(context.Context, graph.PublishRequest, fleet.AuditFact) (graph.PublicationDecision, error)
 	GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error)
 	LatestAgentRevision(context.Context, string) (registry.AgentRevision, error)
@@ -176,7 +178,7 @@ func (service *FleetService) Readiness(ctx context.Context, request ReadinessReq
 
 func knownFleetAction(action FleetAction) bool {
 	switch action {
-	case FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish,
+	case FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle,
 		FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission,
 		FleetActionClaim, FleetActionReclaim, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition:
 		return true
@@ -319,20 +321,91 @@ func (service *FleetService) SetAgentLifecycle(ctx context.Context, request SetA
 }
 
 type PublishLoopRequest struct {
-	Subject     core.Subject        `json:"-"`
-	Authority   reference.DigestRef `json:"authority"`
-	Publication loop.PublishRequest `json:"publication"`
+	Subject     core.Subject          `json:"-"`
+	Authority   reference.DigestRef   `json:"authority"`
+	Publisher   reference.RevisionRef `json:"publisher"`
+	Publication loop.PublishRequest   `json:"publication"`
 }
 
 func (service *FleetService) PublishLoop(ctx context.Context, request PublishLoopRequest) (loop.PublicationDecision, error) {
 	if err := service.authorize(ctx, FleetActionLoopPublish, request.Subject); err != nil {
 		return loop.PublicationDecision{}, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
 	}
-	authority, _, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
+	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
 	if result.State != ReadinessReady {
 		return loop.PublicationDecision{}, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
 	}
+	if request.Publisher.Validate() != nil || request.Publisher.ID != authority.AgentID {
+		return loop.PublicationDecision{}, fmt.Errorf("%w: exact authority Agent revision required", ErrDenied)
+	}
+	publisher, err := service.repository.GetAgentRevision(ctx, request.Publisher.ID, request.Publisher.Revision)
+	if err != nil || publisher.Digest != request.Publisher.Digest || publisher.Lifecycle != registry.LifecycleEnabled {
+		return loop.PublicationDecision{}, fmt.Errorf("%w: exact enabled publisher Agent revision required", ErrDenied)
+	}
+	if !agentMatchesAuthority(publisher, authority, mandate) {
+		return loop.PublicationDecision{}, fmt.Errorf("%w: publisher Agent charter or runtime does not match authority", ErrDenied)
+	}
+	provenance, err := loop.NewPublicationProvenance(loop.PublicationProvenance{
+		Loop:           loop.NewProvenanceRevision(request.Publication.Revision.LoopID, request.Publication.Revision.Revision, request.Publication.Revision.Digest),
+		PublisherAgent: provenanceRevision(request.Publisher), Authority: provenanceDigest(request.Authority), MandateID: authority.MandateID,
+		StanzaID: authority.Authority.StanzaID, Runtime: provenanceRuntime(authority.Runtime), Charter: provenanceRevision(publisher.Charter),
+		ValidationDigest: request.Publication.Validation.Digest,
+	})
+	if err != nil {
+		return loop.PublicationDecision{}, fmt.Errorf("build Loop publication provenance: %w", err)
+	}
+	request.Publication.Provenance = provenance
 	return service.repository.PublishLoop(ctx, request.Publication, service.auditFact("fleet.loop.published", request.Subject, "published exact validated Loop revision", authority.AgentID, authority.Authority.StanzaID, authority.MandateID))
+}
+
+type SetLoopLifecycleRequest struct {
+	Subject                core.Subject
+	Authority              reference.DigestRef
+	Publisher              reference.RevisionRef
+	Loop                   reference.RevisionRef
+	State                  loop.LifecycleState
+	EventID                string
+	ExpectedPreviousDigest string
+}
+
+func (service *FleetService) SetLoopLifecycle(ctx context.Context, request SetLoopLifecycleRequest) (loop.LifecycleEvent, bool, error) {
+	if err := service.authorize(ctx, FleetActionLoopLifecycle, request.Subject); err != nil {
+		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
+	}
+	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
+	if result.State != ReadinessReady {
+		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
+	}
+	if request.Publisher.Validate() != nil || request.Publisher.ID != authority.AgentID {
+		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact authority Agent revision required", ErrDenied)
+	}
+	publisher, err := service.repository.GetAgentRevision(ctx, request.Publisher.ID, request.Publisher.Revision)
+	if err != nil || publisher.Digest != request.Publisher.Digest || publisher.Lifecycle != registry.LifecycleEnabled || !agentMatchesAuthority(publisher, authority, mandate) {
+		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact enabled publisher Agent revision required", ErrDenied)
+	}
+	if request.Loop.Validate() != nil {
+		return loop.LifecycleEvent{}, false, errors.New("exact Loop revision is required")
+	}
+	revision, err := service.repository.GetLoopRevision(ctx, request.Loop.ID, request.Loop.Revision)
+	if err != nil || revision.Digest != request.Loop.Digest {
+		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact Loop revision required", ErrDenied)
+	}
+	eventRevision := loop.ProvenanceRevision{}
+	if request.State == loop.LifecycleActive {
+		eventRevision = provenanceRevision(request.Loop)
+	} else if request.State != loop.LifecycleRetired {
+		return loop.LifecycleEvent{}, false, errors.New("Loop lifecycle must be active or retired")
+	}
+	event, err := loop.NewLifecycleEvent(loop.LifecycleEvent{
+		EventID: request.EventID, LoopID: request.Loop.ID, State: request.State, Revision: eventRevision,
+		PreviousDigest: request.ExpectedPreviousDigest, PublisherAgent: provenanceRevision(request.Publisher), Authority: provenanceDigest(request.Authority),
+		MandateID: authority.MandateID, StanzaID: authority.Authority.StanzaID, OccurredAt: service.now(),
+	})
+	if err != nil {
+		return loop.LifecycleEvent{}, false, err
+	}
+	resultEvent, idempotent, err := service.repository.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: event, ExpectedPreviousDigest: request.ExpectedPreviousDigest}, service.auditFact("fleet.loop.lifecycle.changed", request.Subject, "appended Loop lifecycle event", authority.AgentID, authority.Authority.StanzaID, authority.MandateID))
+	return resultEvent, idempotent, err
 }
 
 type PublishGraphRequest struct {
@@ -345,7 +418,7 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 	if err := service.authorize(ctx, FleetActionGraphPublish, request.Subject); err != nil {
 		return graph.PublicationDecision{}, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
 	}
-	authority, _, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
+	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
 	if result.State != ReadinessReady {
 		return graph.PublicationDecision{}, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
 	}
@@ -360,7 +433,7 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 			return graph.PublicationDecision{}, fmt.Errorf("%w: exact Loop revision required", ErrDenied)
 		}
 		if node.Participant.ID == authority.AgentID {
-			if !agentMatchesAuthority(participant, authority) {
+			if !agentMatchesAuthority(participant, authority, mandate) {
 				return graph.PublicationDecision{}, fmt.Errorf("%w: participant charter or runtime does not match authority", ErrDenied)
 			}
 			ownsNode = true
@@ -429,7 +502,7 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 		if loadErr != nil || value.Digest != participant.Digest || value.Lifecycle != registry.LifecycleEnabled {
 			return deny("participant_unavailable", "exact enabled participant is unavailable")
 		}
-		if participant.ID == authority.AgentID && !agentMatchesAuthority(value, authority) {
+		if participant.ID == authority.AgentID && !agentMatchesAuthority(value, authority, mandate) {
 			return deny("authority_participant_mismatch", "authority charter or runtime does not match the exact participant")
 		}
 	}
@@ -488,9 +561,17 @@ func (service *FleetService) auditFact(eventType string, subject core.Subject, r
 	return fleet.AuditFact{Event: core.AuditEvent{Type: eventType, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, AgentID: agentID, StanzaID: stanzaID, MandateID: mandateID, Outcome: outcome, Reason: reason}}
 }
 
-func agentMatchesAuthority(agent registry.AgentRevision, authority core.AuthorityContext) bool {
+func agentMatchesAuthority(agent registry.AgentRevision, authority core.AuthorityContext, mandate core.Mandate) bool {
 	return agent.AgentID == authority.AgentID && agent.Charter.Revision == authority.CharterRevision &&
-		agent.Charter.Digest == authority.CharterDigest && agent.Runtime.Runtime == runtimeID(authority.Runtime)
+		agent.Charter.Digest == authority.CharterDigest && agent.Runtime.Runtime == runtimeID(authority.Runtime) &&
+		agent.Runtime.Adapter == runtimeAdapter(authority.Runtime) && agent.Runtime.Target == mandate.Target
+}
+
+func runtimeAdapter(value core.RuntimeDescriptor) string {
+	if runtimeID(value) == "hermes-agent" {
+		return "hermes"
+	}
+	return ""
 }
 
 func policiesDeclaredByParticipants(revision graph.GraphRevision, repository FleetRepository, ctx context.Context) bool {
@@ -530,6 +611,22 @@ func runtimeID(value core.RuntimeDescriptor) string {
 
 func revisionRef(id string, revision uint64, digest string) reference.RevisionRef {
 	return reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: id, Revision: revision, Digest: digest}
+}
+
+func provenanceRevision(value reference.RevisionRef) loop.ProvenanceRevision {
+	return loop.NewProvenanceRevision(value.ID, value.Revision, value.Digest)
+}
+
+func provenanceDigest(value reference.DigestRef) loop.ProvenanceDigest {
+	return loop.NewProvenanceDigest(value.ID, value.Digest)
+}
+
+func provenanceRuntime(value core.RuntimeDescriptor) loop.ProvenanceRuntime {
+	return loop.ProvenanceRuntime{
+		Name: value.Name, Runtime: value.Runtime, Version: value.Version, Executable: value.Executable,
+		Installation: value.Installation, AdapterVersion: value.AdapterVersion,
+		Capabilities: append([]string(nil), value.Capabilities...),
+	}
 }
 
 func digestRef(id, digest string) reference.DigestRef {

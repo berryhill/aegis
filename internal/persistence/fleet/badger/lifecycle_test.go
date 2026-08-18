@@ -711,7 +711,7 @@ func lifecycleFixture(t *testing.T, ctx context.Context, root, idempotencyKey st
 		t.Fatal(err)
 	}
 	loopRevision, loopValidation := loopFixture(t)
-	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, IdempotencyKey: "loop-lifecycle"}, audit("loop.published", loopRevision.LoopID)); err != nil {
+	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, Provenance: loopPublicationProvenance(t, loopRevision, loopValidation), IdempotencyKey: "loop-lifecycle"}, audit("loop.published", loopRevision.LoopID)); err != nil {
 		t.Fatal(err)
 	}
 	graphRevision, graphValidation := graphFixture(t, agent, loopRevision)

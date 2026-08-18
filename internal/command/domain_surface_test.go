@@ -21,7 +21,7 @@ func TestRootExposesFleetProductResources(t *testing.T) {
 	for _, path := range [][]string{
 		{"agents", "register"}, {"agents", "list"}, {"agents", "show"}, {"agents", "history"},
 		{"agents", "enable"}, {"agents", "disable"}, {"agents", "retire"},
-		{"loops", "list"}, {"loops", "publish"}, {"loops", "show"},
+		{"loops", "list"}, {"loops", "publish"}, {"loops", "show"}, {"loops", "activate"}, {"loops", "retire"},
 		{"graphs", "list"}, {"graphs", "publish"}, {"graphs", "show"}, {"graphs", "submit"},
 		{"queue", "list"}, {"queue", "show"}, {"queue", "process"},
 	} {

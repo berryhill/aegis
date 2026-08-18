@@ -163,9 +163,11 @@ def main() -> int:
     if not registered.get("created") or agent_revision["charter"]["digest"] != charter_digest:
         fail("registry did not retain immutable charter provenance")
 
+    ref = lambda value, identifier: {"schema_version": "aegis.reference.revision.v1", "id": identifier, "revision": 1, "digest": value["digest"]}
     loop_file = fixtures / "loop.json"
     write_json(loop_file, {
         "authority": authority,
+        "publisher": ref(agent_revision, "proof-agent"),
         "revision": {
             "loop_id": "proof-loop", "revision": 1, "entry_step_id": "work",
             "inputs": [], "outputs": [],
@@ -182,8 +184,29 @@ def main() -> int:
     loop_revision = published_loop["revision"]
     if published_loop["validation"]["outcome"] != "valid":
         fail("loop publication was not valid")
+    loop_views = aegis("loops", "list", expect_list=True)
+    loop_view = next((value for value in loop_views if value.get("revision", {}).get("loop_id") == "proof-loop" and value.get("revision", {}).get("revision") == 1), None)
+    if loop_view is None:
+        fail("published Loop view was not reconstructed")
+    provenance = loop_view["provenance"]
+    if provenance.get("loop", {}).get("digest") != loop_revision["digest"] or provenance.get("publisher_agent", {}).get("digest") != agent_revision["digest"] or provenance.get("authority", {}).get("digest") != authority["digest"] or provenance.get("charter", {}).get("digest") != charter_digest or provenance.get("validation_digest") != published_loop["validation"]["digest"] or not provenance.get("mandate_id") or not provenance.get("stanza_id") or not provenance.get("digest"):
+        fail("Loop publication omitted exact immutable authority and publisher provenance")
 
-    ref = lambda value, identifier: {"schema_version": "aegis.reference.revision.v1", "id": identifier, "revision": 1, "digest": value["digest"]}
+    loop_lifecycle_file = fixtures / "loop-lifecycle.json"
+    write_json(loop_lifecycle_file, {
+        "authority": authority,
+        "publisher": ref(agent_revision, "proof-agent"),
+        "loop": ref(loop_revision, "proof-loop"),
+        "event_id": "activate-proof-loop-1",
+    })
+    activated = aegis("loops", "activate", "proof-loop", input_file=loop_lifecycle_file)
+    activation = activated["event"]
+    if activated.get("idempotent") or activation.get("state") != "active" or activation.get("revision", {}).get("digest") != loop_revision["digest"] or activation.get("publisher_agent", {}).get("digest") != agent_revision["digest"] or activation.get("authority", {}).get("digest") != authority["digest"] or not activation.get("digest"):
+        fail("Loop activation omitted exact immutable authority, publisher, or revision provenance")
+    replayed_activation = aegis("loops", "activate", "proof-loop", input_file=loop_lifecycle_file)
+    if not replayed_activation.get("idempotent") or replayed_activation.get("event", {}).get("digest") != activation["digest"]:
+        fail("exact Loop activation replay was not idempotent")
+
     graph_file = fixtures / "graph.json"
     write_json(graph_file, {
         "authority": authority,
@@ -234,8 +257,24 @@ def main() -> int:
     final_item = aegis("queue", "show", "queue-accepted")
     if final_item.get("projection", {}).get("state") != "succeeded" or final_item.get("item", {}).get("snapshot", {}).get("digest") != snapshot.get("digest"):
         fail("terminal queue readback lost its immutable snapshot")
-    if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"] or aegis("loops", "show", "proof-loop", "1")["digest"] != loop_revision["digest"] or aegis("graphs", "show", "proof-graph", "1")["digest"] != graph_revision["digest"]:
+    if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"] or aegis("loops", "show", "proof-loop", "1")["revision"]["digest"] != loop_revision["digest"] or aegis("graphs", "show", "proof-graph", "1")["digest"] != graph_revision["digest"]:
         fail("historical definition reconstruction changed an exact digest")
+
+    write_json(loop_lifecycle_file, {
+        "authority": authority,
+        "publisher": ref(agent_revision, "proof-agent"),
+        "loop": ref(loop_revision, "proof-loop"),
+        "event_id": "retire-proof-loop-1",
+        "expected_previous_digest": activation["digest"],
+    })
+    retired = aegis("loops", "retire", "proof-loop", input_file=loop_lifecycle_file)
+    retirement = retired["event"]
+    if retired.get("idempotent") or retirement.get("state") != "retired" or retirement.get("previous_digest") != activation["digest"] or retirement.get("publisher_agent", {}).get("digest") != agent_revision["digest"] or retirement.get("authority", {}).get("digest") != authority["digest"] or not retirement.get("digest"):
+        fail("Loop retirement omitted append-only authority and publisher provenance")
+    loop_views = aegis("loops", "list", expect_list=True)
+    loop_view = next((value for value in loop_views if value.get("revision", {}).get("loop_id") == "proof-loop" and value.get("revision", {}).get("revision") == 1), None)
+    if loop_view is None or loop_view.get("lifecycle", {}).get("state") != "retired" or [event.get("state") for event in loop_view["lifecycle_history"]] != ["active", "retired"] or loop_view["lifecycle_history"][0].get("digest") != activation["digest"] or loop_view["lifecycle_history"][1].get("digest") != retirement["digest"]:
+        fail("Loop lifecycle projection did not preserve ordered append-only history")
 
     lifecycle_file = fixtures / "agent-lifecycle.json"
     write_json(lifecycle_file, {"expected": ref(agent_revision, "proof-agent"), "lifecycle": "disabled"})
@@ -256,7 +295,7 @@ def main() -> int:
         "state_root": str(root / "state"),
         "proofs": {
             "registry": "immutable_revision_history_and_enabled_disabled_lifecycle_read_back",
-            "loop": "validated_revision_published",
+            "loop": "authority_bound_publication_and_append_only_lifecycle",
             "graph": "validated_exact_bindings_published",
             "queue": "accepted_and_terminal_read_back",
             "fresh_runtime_admission": "worker_repeated_controller_admission",
@@ -269,7 +308,7 @@ def main() -> int:
     }
     evidence_path = root / "installed-fleet-vertical-evidence.json"
     write_json(evidence_path, evidence)
-    print("installed fleet vertical verified: registry=immutable_history_and_lifecycle loop=valid graph=valid queue=succeeded fresh_admission=verified evidence=passed durable_rejection=verified historical_reconstruction=verified credentials=none")
+    print("installed fleet vertical verified: registry=immutable_history_and_lifecycle loop=authority_bound_lifecycle_verified graph=valid queue=succeeded fresh_admission=verified evidence=passed durable_rejection=verified historical_reconstruction=verified credentials=none")
     return 0
 
 

@@ -10,9 +10,11 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
@@ -172,6 +174,77 @@ func TestConsoleSurfacePreservesContextualReadinessAndCredentialMetadata(t *test
 	}
 	if strings.Contains(credentials.Records[0].JSON, "source_env") || strings.Contains(credentials.Records[0].JSON, "target_env") {
 		t.Fatalf("credential surface exposed custody details: %s", credentials.Records[0].JSON)
+	}
+}
+
+func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	revision, validation, err := loop.NewRevision(loop.LoopRevision{
+		LoopID: "loop.review", Revision: 3, PreviousDigest: digest, EntryStepID: "review",
+		Steps: []loop.Step{
+			{ID: "review", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "review-receipt", MediaType: "application/json"}}},
+			{ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}},
+		},
+		Transitions:      []loop.Transition{{ID: "complete", FromStepID: "review", ToStepID: "done"}},
+		RequiredEvidence: []loop.EvidenceRequirement{{Claim: "review-receipt", ProducerStepID: "review"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loopRef := loop.NewProvenanceRevision(revision.LoopID, revision.Revision, revision.Digest)
+	publisher := loop.NewProvenanceRevision("agent-reviewer", 7, digest)
+	authority := loop.NewProvenanceDigest("authority-review", digest)
+	provenance, err := loop.NewPublicationProvenance(loop.PublicationProvenance{
+		Loop: loopRef, PublisherAgent: publisher, Authority: authority, MandateID: "mandate-review", StanzaID: "operator",
+		Runtime: loop.ProvenanceRuntime{Runtime: "hermes-agent"}, Charter: publisher, ValidationDigest: validation.Digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := loop.NewLifecycleEvent(loop.LifecycleEvent{
+		EventID: "activate-review", LoopID: revision.LoopID, State: loop.LifecycleActive, Revision: loopRef,
+		PublisherAgent: publisher, Authority: authority, MandateID: "mandate-review", StanzaID: "operator", OccurredAt: time.Unix(1, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := consoleSurfaceModel(app.FleetSurface{
+		Loops:     []app.LoopView{{Revision: revision, Validations: []loop.LoopValidationResult{validation}, Provenance: provenance, Lifecycle: loop.Lifecycle{LoopID: revision.LoopID, State: loop.LifecycleActive, ActiveRevision: revision.Revision, ActiveDigest: revision.Digest}, History: []loop.LifecycleEvent{event}}},
+		Readiness: map[string]app.SurfaceReadiness{"loops": {State: "ready", Authoritative: true, Count: 1}},
+	}, consoleLoops)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Records) != 1 {
+		t.Fatalf("Loop records=%d", len(model.Records))
+	}
+	record := model.Records[0]
+	if record.Key != "loop.review:3" || record.Lifecycle != "active" || record.Runtime != "hermes-agent" || record.Source != "agent-reviewer" || record.Authority != "authority-review" {
+		t.Fatalf("Loop summary lost exact bindings: %+v", record)
+	}
+	values := make(map[string]string, len(record.Fields))
+	for _, field := range record.Fields {
+		values[field.Label] = field.Value
+	}
+	for label, fragment := range map[string]string{
+		"Executable steps": "review · action · max 2 attempt(s)", "Transitions": "review → done",
+		"Evidence contract": "review-receipt", "Validation": string(loop.ValidationValid),
+		"Lifecycle history": "1 immutable event(s)", "Publisher Agent": "agent-reviewer revision 7",
+		"Authority provenance": "mandate mandate-review · stanza operator", "Immutable revision": revision.Digest,
+	} {
+		if !strings.Contains(values[label], fragment) {
+			t.Fatalf("Loop field %q=%q, want fragment %q", label, values[label], fragment)
+		}
+	}
+
+	historicalView := model.Records[0]
+	historicalView = consoleLoopRecord(app.LoopView{
+		Revision: revision, Validations: []loop.LoopValidationResult{validation}, Provenance: provenance,
+		Lifecycle: loop.Lifecycle{LoopID: revision.LoopID, State: loop.LifecycleActive, ActiveRevision: revision.Revision - 1, ActiveDigest: digest},
+		History:   []loop.LifecycleEvent{event},
+	})
+	if historicalView.Lifecycle == "active" || strings.Contains(historicalView.Readiness, "Active exact revision") {
+		t.Fatalf("historical Loop revision was mislabeled active: %+v", historicalView)
 	}
 }
 

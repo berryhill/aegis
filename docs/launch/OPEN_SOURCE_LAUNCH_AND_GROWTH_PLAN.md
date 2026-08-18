@@ -70,9 +70,9 @@ The first release may claim that Aegis provides:
 - Session inspection, revocation, and process termination.
 - Local tamper-evident audit verification under the documented checkpoint assumptions.
 - An administrative encrypted credential authority that backs one typed local GitHub broker action but is not a generic runtime secret source.
-- Internal immutable Agent Registry, Loop, Graph, Queue, Execution, Evidence, and Disposition domain slices with qualified durable fleet persistence for definitions, accepted-or-rejected submission, dependency-gated attempt-bounded claims, expired-lease retry/reclaim, queued-or-claimed cancellation, validated rebuildable projections, and atomic terminal evidence/disposition records.
-- Shared principal-authenticated application services with public `agents`, `loops`, `graphs`, and `queue` CLI resources plus protected `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue` routes for registration, immutable publication, submission, durable rejection, exact reads, and one single-node no-key worker through terminal disposition.
-- A repository-owned release-shaped installed proof that verifies four archives and checksums, fail-closed first run, and the native Registry/Loop/Graph/Queue/evidence/disposition vertical without credentials or production-state mutation.
+- Internal immutable Agent Registry, Loop, Graph, Queue, Execution, Evidence, and Disposition domain slices with qualified durable fleet persistence for definitions, authority-bound Loop publication, append-only Loop activation/retirement, accepted-or-rejected submission, dependency-gated attempt-bounded claims, expired-lease retry/reclaim, queued-or-claimed cancellation, validated rebuildable projections, and atomic terminal evidence/disposition records.
+- Shared principal-authenticated application services with public `agents`, `loops`, `graphs`, and `queue` CLI resources plus protected `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue` routes for registration, immutable publication, authority-bound Loop activation/retirement, submission, durable rejection, exact reads, and one single-node no-key worker through terminal disposition.
+- A repository-owned release-shaped installed proof that verifies four archives and checksums, fail-closed first run, exact Loop publisher/authority provenance and lifecycle history, and the native Registry/Loop/Graph/Queue/evidence/disposition vertical without credentials or production-state mutation.
 
 The first release must not claim:
 
@@ -83,7 +83,7 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
-- A complete or externally supported general Agent Registry, Loop, Graph, or Execution Queue product. The narrow public CLI/API vertical and live read-only console inspection exist, but browser mutation controls, real Hermes worker execution, lifecycle activation, and general scheduling remain launch work.
+- A complete or externally supported general Agent Registry, Loop, Graph, or Execution Queue product. The narrow public CLI/API vertical, authority-bound Loop activation/retirement, and live read-only console inspection exist, but browser mutation controls, Graph lifecycle application, real Hermes worker execution, and general scheduling remain launch work.
 - Complete fleet-control lifecycle tooling. Qualified persistence, atomic submission/claim/retry/cancellation facts, public thin-vertical wiring, one single-node no-key worker, and installed proof exist, but migration/backup operations, dirty-store recovery, automated lifecycle scheduling, multi-node scheduling, and real Hermes worker integration remain unimplemented.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
@@ -127,7 +127,7 @@ A public release is a no-go until every required gate is either verified or expl
 - [ ] Release builds succeed for every declared operating-system and architecture pair.
 - [ ] Generated checksums verify against all release artifacts.
 - [ ] The terminal recording is replayed and checked for secrets and personal paths.
-- [x] One installed fixture proves Registry → Loop → Graph → Queue → fresh runtime admission → evidence-gated disposition, including durable denial and historical-digest reconstruction.
+- [x] One installed fixture proves Registry → authority-bound Loop publication and append-only activation/retirement → Graph → Queue → fresh runtime admission → evidence-gated disposition, including exact publisher/authority provenance, idempotent lifecycle replay, durable denial, and historical-digest reconstruction.
 - [ ] The exact fleet-control definition and queue persistence adapters are qualified for immutable publication, atomic single-winner claim/lease, crash recovery, retry, cancellation, and projection replay.
 
 ### Release operations

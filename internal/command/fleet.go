@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/spf13/cobra"
 )
@@ -148,13 +149,33 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		value, err := service.GetLoop(cmd.Context(), args[0], revision)
+		value, err := service.GetLoopView(cmd.Context(), args[0], revision)
 		if err != nil {
 			return err
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(list, publish, show)
+	lifecycleCommand := func(name string, state loop.LifecycleState) *cobra.Command {
+		return &cobra.Command{Use: name + " LOOP FILE", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+			var input app.SetLoopLifecycleInput
+			if err := decodeJSONFile(args[1], &input); err != nil {
+				return usage(err)
+			}
+			input.State = state
+			service, err := build(cmd)
+			if err != nil {
+				return err
+			}
+			value, err := service.SetLoopLifecycle(cmd.Context(), args[0], input)
+			if err != nil {
+				return err
+			}
+			return output(cmd, value)
+		}}
+	}
+	activate := lifecycleCommand("activate", loop.LifecycleActive)
+	retire := lifecycleCommand("retire", loop.LifecycleRetired)
+	command.AddCommand(list, publish, show, activate, retire)
 	return command
 }
 

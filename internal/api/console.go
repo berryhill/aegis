@@ -17,6 +17,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/starfederation/datastar-go/datastar"
 )
@@ -224,6 +225,12 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Agent Registry record")
 			}
 			record = consoleAgentRecord(agent)
+		} else if domain == consoleLoops {
+			loopView, ok := value.(app.LoopView)
+			if !ok {
+				return consoleweb.SurfaceModel{}, errors.New("invalid Loop record")
+			}
+			record = consoleLoopRecord(loopView)
 		}
 		model.Records = append(model.Records, record)
 	}
@@ -269,6 +276,71 @@ func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
 			{Label: "Declared policies", Value: strings.Join(policies, "\n")},
 			{Label: "Effective authority", Value: "Not evaluated by this Registry read; execution requires fresh stanza and mandate admission"},
 			{Label: "Provisioning evidence", Value: "Not present on the Agent Registry revision"},
+		},
+	}
+}
+
+func consoleLoopRecord(view app.LoopView) consoleweb.RecordModel {
+	revision := view.Revision
+	steps := make([]string, 0, len(revision.Steps))
+	maxAttempts := uint16(0)
+	claimCount := 0
+	for _, step := range revision.Steps {
+		steps = append(steps, fmt.Sprintf("%s · %s · max %d attempt(s)", step.ID, step.Kind, step.Retry.MaxAttempts))
+		if step.Retry.MaxAttempts > maxAttempts {
+			maxAttempts = step.Retry.MaxAttempts
+		}
+		claimCount += len(step.EvidenceClaims)
+	}
+	transitions := make([]string, 0, len(revision.Transitions))
+	for _, transition := range revision.Transitions {
+		transitions = append(transitions, fmt.Sprintf("%s: %s → %s", transition.ID, transition.FromStepID, transition.ToStepID))
+	}
+	inputs := make([]string, 0, len(revision.Inputs))
+	for _, input := range revision.Inputs {
+		inputs = append(inputs, fmt.Sprintf("%s · %s · required=%t", input.ID, input.Type, input.Required))
+	}
+	outputs := make([]string, 0, len(revision.Outputs))
+	for _, output := range revision.Outputs {
+		outputs = append(outputs, fmt.Sprintf("%s · %s · required=%t", output.ID, output.Type, output.Required))
+	}
+	requirements := make([]string, 0, len(revision.RequiredEvidence))
+	for _, requirement := range revision.RequiredEvidence {
+		requirements = append(requirements, fmt.Sprintf("%s · producer %s", requirement.Claim, requirement.ProducerStepID))
+	}
+	validation := "missing"
+	if len(view.Validations) > 0 {
+		validation = fmt.Sprintf("%s · %s %s", view.Validations[0].Outcome, view.Validations[0].Validator.ID, view.Validations[0].Validator.Version)
+	}
+	lifecycle := string(view.Lifecycle.State)
+	readiness := "Draft; activation requires authenticated lifecycle admission"
+	if view.Lifecycle.State == "active" {
+		if view.Lifecycle.ActiveRevision == revision.Revision && view.Lifecycle.ActiveDigest == revision.Digest {
+			readiness = "Active exact revision; fresh authority admission still required at execution"
+		} else {
+			lifecycle = "inactive"
+			readiness = fmt.Sprintf("Published immutable revision; Loop revision %d is active", view.Lifecycle.ActiveRevision)
+		}
+	} else if view.Lifecycle.State == "retired" {
+		readiness = "Retired; terminal lifecycle"
+	}
+	return consoleweb.RecordModel{
+		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.LoopID,
+		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
+		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
+		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID,
+		Fields: []consoleweb.FieldModel{
+			{Label: "Executable steps", Value: strings.Join(steps, "\n")},
+			{Label: "Transitions", Value: strings.Join(transitions, "\n")},
+			{Label: "Inputs", Value: fallback(strings.Join(inputs, "\n"), "None")},
+			{Label: "Outputs", Value: fallback(strings.Join(outputs, "\n"), "None")},
+			{Label: "Retry bound", Value: fmt.Sprintf("maximum %d attempts on any step", maxAttempts)},
+			{Label: "Evidence contract", Value: fmt.Sprintf("%d step claims\n%s", claimCount, fallback(strings.Join(requirements, "\n"), "No Loop-level requirements"))},
+			{Label: "Validation", Value: validation},
+			{Label: "Lifecycle history", Value: fmt.Sprintf("%d immutable event(s)", len(view.History))},
+			{Label: "Publisher Agent", Value: fmt.Sprintf("%s revision %d @ %s", view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest)},
+			{Label: "Authority provenance", Value: fmt.Sprintf("%s · mandate %s · stanza %s", view.Provenance.Authority.ID, view.Provenance.MandateID, view.Provenance.StanzaID)},
+			{Label: "Immutable revision", Value: fmt.Sprintf("%s revision %d @ %s", revision.LoopID, revision.Revision, revision.Digest)},
 		},
 	}
 }

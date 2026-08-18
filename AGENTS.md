@@ -163,9 +163,9 @@ When behavior, command syntax, configuration, architecture, trust boundaries, de
 
 ## Current implemented substrate command surface
 
-The working Go implementation is under `cmd/aegis` and `internal/`. Build with `go build -o aegis ./cmd/aegis`. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, and `serve`. See `README.md` and `examples/` for the executable workflow.
+The working Go implementation is under `cmd/aegis` and `internal/`. Build with `go build -o aegis ./cmd/aegis`. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, `agents`, `loops`, `graphs`, `queue`, and `serve`. See `README.md` and `examples/` for the executable workflow.
 
-This command surface is not proof of the fleet-control MVI. Internal Agent Registry, Loop, Graph, Queue, Execution, persistence, and narrow authenticated orchestration services exist, but their public routes, actual claim/runtime lifecycle wiring, and exact installed end-to-end acceptance proof remain required launch work.
+The public CLI/API now proves one bounded, credential-independent fleet-control vertical: immutable Agent registration, authority-bound Loop publication and append-only activation/retirement, immutable Graph publication, durable admission or rejection, one single-node no-key Queue worker, evidence-gated disposition, and exact historical readback. This is not proof of general fleet orchestration. Graph lifecycle application, browser mutation controls, multi-node/general scheduling, dirty-store recovery, and real Hermes worker execution remain launch work.
 
 The Hermes adapter supports `>=0.18.0,<0.19.0`, uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.
 
