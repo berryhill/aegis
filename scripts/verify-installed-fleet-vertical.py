@@ -64,9 +64,9 @@ def main() -> int:
         "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":\"create\",\"result\":{\"session_id\":\"installed-hermes-session\"}}'\n"
         "read prompt\n"
         "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":\"prompt\",\"result\":{\"accepted\":true}}'\n"
-        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.start\",\"payload\":{}}}'\n"
-        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.delta\",\"payload\":{\"delta\":\"installed Hermes queue output\"}}}'\n"
-        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete\",\"payload\":{}}}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.start\",\"session_id\":\"installed-hermes-session\",\"payload\":{}}}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.delta\",\"session_id\":\"installed-hermes-session\",\"payload\":{\"delta\":\"installed Hermes queue output\"}}}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete\",\"session_id\":\"installed-hermes-session\",\"payload\":{}}}'\n"
         "while read rest; do :; done\n",
         encoding="utf-8",
     )

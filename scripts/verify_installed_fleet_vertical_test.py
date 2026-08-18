@@ -42,6 +42,7 @@ class InstalledFleetVerticalContract(unittest.TestCase):
         self.assertIn('"credentials": []', proof)
         self.assertIn("gateway.ready", proof)
         self.assertIn("message.complete", proof)
+        self.assertIn('\\"session_id\\":\\"installed-hermes-session\\"', proof)
         self.assertIn("bounded Hermes queue path retained a disposable runtime home", proof)
         self.assertIn('"schema_version": "aegis.current-fleet.fixture.v1"', proof)
         self.assertIn('final_item.get("projection", {}).get("state")', proof)
