@@ -790,6 +790,28 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, value)
 	})
+	g.GET("/graphs/:graph/lifecycle", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.GetGraphLifecycleAs(c.Request().Context(), subject, c.Param("graph"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.GET("/submissions", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.ListSubmissionHistoryAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
 	g.GET("/queue", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {

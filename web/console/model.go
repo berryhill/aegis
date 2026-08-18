@@ -59,6 +59,46 @@ type RecordModel struct {
 	Authority    string
 	Provisioning string
 	Fields       []FieldModel
+	Graph        *GraphDetailModel
+}
+
+type GraphDetailModel struct {
+	Digest              string
+	PreviousDigest      string
+	Validation          string
+	InputSchema         []FieldModel
+	OutputSchema        []FieldModel
+	Nodes               []GraphNodeModel
+	Edges               []GraphEdgeModel
+	Policies            []FieldModel
+	AcceptedRuns        []GraphRunModel
+	RejectedSubmissions []FieldModel
+}
+
+type GraphNodeModel struct {
+	ID          string
+	Participant string
+	Loop        string
+	Inputs      string
+	Outputs     string
+}
+
+type GraphEdgeModel struct {
+	ID       string
+	From     string
+	To       string
+	Mappings string
+}
+
+type GraphRunModel struct {
+	Submission string
+	Snapshot   string
+	QueueItem  string
+	GraphRun   string
+	Authority  string
+	Mandate    string
+	Runtime    string
+	Inputs     string
 }
 
 type FieldModel struct {

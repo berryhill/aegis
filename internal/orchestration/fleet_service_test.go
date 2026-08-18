@@ -272,6 +272,42 @@ func TestFleetSubmissionBindsExactAuthorityAndHistoricalDefinitions(t *testing.T
 	}
 }
 
+func TestGraphCompositionRequiresExactPinnedLoopInterface(t *testing.T) {
+	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+
+	mismatched := repository.graph
+	mismatched.Nodes = append([]graph.Node(nil), mismatched.Nodes...)
+	mismatched.Nodes[0].Inputs = []graph.Port{{ID: "prompt", Type: graph.TypeString, Required: true}}
+	if _, err := service.PublishGraph(context.Background(), PublishGraphRequest{
+		Subject: subject, Authority: authorityRef, Publication: graph.PublishRequest{Revision: mismatched},
+	}); !errors.Is(err, ErrDenied) || !strings.Contains(err.Error(), "node_loop_interface_mismatch") {
+		t.Fatalf("Graph publication did not deny an interface assertion absent from the exact Loop: %v", err)
+	}
+	if repository.graphPublished {
+		t.Fatal("interface-mismatched Graph reached the persistence boundary")
+	}
+
+	// Simulate corruption or substitution behind the repository boundary: the
+	// exact digest reference still resolves, but the returned Loop interface no
+	// longer matches the immutable Graph node. Submission must become a durable
+	// rejection rather than a queue item.
+	repository.loop.Inputs = []loop.Port{{ID: "prompt", Type: loop.TypeString, Required: true}}
+	request := SubmitGraphRequest{
+		Subject: subject, Authority: authorityRef, Graph: graphRef,
+		SubmissionID: "submission-interface-mismatch", IdempotencyKey: "submit-interface-mismatch",
+		SnapshotID: "snapshot-interface-mismatch", QueueItemID: "queue-interface-mismatch",
+		GraphRunID: "run-interface-mismatch", TransitionID: "transition-interface-mismatch",
+		RejectionID: "rejection-interface-mismatch", MaxAttempts: 1,
+	}
+	decision, err := service.PrepareGraphRun(context.Background(), request)
+	if err != nil || decision.Accepted != nil || decision.Rejection == nil || decision.Rejection.ReasonCode != "loop_interface_mismatch" {
+		t.Fatalf("submission interface mismatch was not durably rejected: decision=%+v err=%v", decision, err)
+	}
+	if repository.accepted != nil || repository.rejected == nil || repository.rejected.RejectionID != request.RejectionID {
+		t.Fatalf("submission mismatch crossed acceptance boundary: accepted=%+v rejected=%+v", repository.accepted, repository.rejected)
+	}
+}
+
 func TestQueueWorkerRunsNoKeyAdapterToDurableEvidenceDisposition(t *testing.T) {
 	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
 	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-worker", IdempotencyKey: "submit-worker", SnapshotID: "snapshot-worker", QueueItemID: "queue-worker", GraphRunID: "run-worker", TransitionID: "queued-worker", RejectionID: "rejected-worker", MaxAttempts: 1})
