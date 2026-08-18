@@ -224,6 +224,12 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Agent Registry record")
 			}
 			record = consoleAgentRecord(agent)
+		} else if domain == consoleGraphs {
+			graphView, ok := value.(app.GraphView)
+			if !ok {
+				return consoleweb.SurfaceModel{}, errors.New("invalid Graph record")
+			}
+			record = consoleGraphRecord(graphView, surface.Submissions, string(data))
 		}
 		model.Records = append(model.Records, record)
 	}
@@ -271,6 +277,80 @@ func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
 			{Label: "Provisioning evidence", Value: "Not present on the Agent Registry revision"},
 		},
 	}
+}
+
+func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw string) consoleweb.RecordModel {
+	revision := view.Revision
+	detail := &consoleweb.GraphDetailModel{
+		Digest: revision.Digest, PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"),
+		Validation: "unavailable", InputSchema: []consoleweb.FieldModel{}, OutputSchema: []consoleweb.FieldModel{},
+		Nodes: []consoleweb.GraphNodeModel{}, Edges: []consoleweb.GraphEdgeModel{}, Policies: []consoleweb.FieldModel{},
+		AcceptedRuns: []consoleweb.GraphRunModel{}, RejectedSubmissions: []consoleweb.FieldModel{},
+	}
+	if len(view.Validations) > 0 {
+		detail.Validation = string(view.Validations[0].Outcome) + " · " + view.Validations[0].Digest
+	}
+	for _, port := range revision.Inputs {
+		detail.InputSchema = append(detail.InputSchema, consoleweb.FieldModel{Label: port.ID, Value: fmt.Sprintf("%s · required %t", port.Type, port.Required)})
+	}
+	for _, port := range revision.Outputs {
+		detail.OutputSchema = append(detail.OutputSchema, consoleweb.FieldModel{Label: port.ID, Value: fmt.Sprintf("%s · required %t", port.Type, port.Required)})
+	}
+	for _, node := range revision.Nodes {
+		inputs := make([]string, 0, len(node.Inputs))
+		for _, port := range node.Inputs {
+			inputs = append(inputs, fmt.Sprintf("%s:%s required=%t", port.ID, port.Type, port.Required))
+		}
+		if len(inputs) == 0 {
+			inputs = append(inputs, "No ports")
+		}
+		outputs := make([]string, 0, len(node.Outputs))
+		for _, port := range node.Outputs {
+			outputs = append(outputs, fmt.Sprintf("%s:%s required=%t", port.ID, port.Type, port.Required))
+		}
+		if len(outputs) == 0 {
+			outputs = append(outputs, "No ports")
+		}
+		detail.Nodes = append(detail.Nodes, consoleweb.GraphNodeModel{
+			ID: node.ID, Participant: exactRevisionLabel(node.Participant.ID, node.Participant.Revision, node.Participant.Digest),
+			Loop: exactRevisionLabel(node.Loop.ID, node.Loop.Revision, node.Loop.Digest), Inputs: strings.Join(inputs, ", "), Outputs: strings.Join(outputs, ", "),
+		})
+	}
+	for _, dependency := range revision.Dependencies {
+		mappings := make([]string, 0, len(dependency.Mappings))
+		for _, mapping := range dependency.Mappings {
+			mappings = append(mappings, mapping.FromPort+" → "+mapping.ToPort)
+		}
+		detail.Edges = append(detail.Edges, consoleweb.GraphEdgeModel{ID: dependency.ID, From: dependency.FromNodeID, To: dependency.ToNodeID, Mappings: strings.Join(mappings, ", ")})
+	}
+	for _, rule := range revision.AdmissionRules {
+		detail.Policies = append(detail.Policies, consoleweb.FieldModel{Label: rule.ID, Value: rule.PolicyRef.ID + " @ " + rule.PolicyRef.Digest})
+	}
+	for _, accepted := range view.Runs {
+		inputs := make([]string, 0, len(accepted.Snapshot.Inputs))
+		for _, input := range accepted.Snapshot.Inputs {
+			inputs = append(inputs, input.PortID+" ("+string(input.Type)+") = "+string(input.Value))
+		}
+		detail.AcceptedRuns = append(detail.AcceptedRuns, consoleweb.GraphRunModel{
+			Submission: accepted.Submission.SubmissionID + " @ " + accepted.Submission.Digest,
+			Snapshot:   accepted.Snapshot.SnapshotID + " @ " + accepted.Snapshot.Digest,
+			QueueItem:  accepted.QueueItem.ItemID + " @ " + accepted.QueueItem.Digest,
+			GraphRun:   accepted.GraphRun.GraphRunID, Authority: accepted.Submission.Authority.ID + " @ " + accepted.Submission.Authority.Digest,
+			Mandate: accepted.Submission.MandateID, Runtime: accepted.Submission.Runtime, Inputs: strings.Join(inputs, "\n"),
+		})
+	}
+	for _, rejection := range history.Rejected {
+		detail.RejectedSubmissions = append(detail.RejectedSubmissions, consoleweb.FieldModel{Label: rejection.SubmissionID, Value: rejection.ReasonCode + " · " + rejection.Reason})
+	}
+	return consoleweb.RecordModel{
+		Key: revision.GraphID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.GraphID,
+		Summary: fmt.Sprintf("revision %d · %d nodes · %d dependencies", revision.Revision, len(revision.Nodes), len(revision.Dependencies)),
+		JSON:    raw, Lifecycle: string(view.Lifecycle.State), Revision: fmt.Sprintf("r%d", revision.Revision), Graph: detail,
+	}
+}
+
+func exactRevisionLabel(id string, revision uint64, digest string) string {
+	return fmt.Sprintf("%s r%d @ %s", id, revision, digest)
 }
 
 func filterConsoleAgents(model *consoleweb.SurfaceModel, query, lifecycle string) error {
@@ -379,21 +459,21 @@ func fallback(value, replacement string) string {
 }
 
 func selectConsoleRecord(model *consoleweb.SurfaceModel, raw string) error {
-	if model.Domain == string(consoleAgents) {
-		for index := range model.Records {
-			if model.Records[index].Key == raw {
-				model.Inspector = &model.Records[index]
-				model.InspectorOpen = true
-				return nil
-			}
+	for index := range model.Records {
+		if model.Records[index].Key == raw {
+			model.Inspector = &model.Records[index]
+			model.InspectorOpen = true
+			return nil
 		}
-		return errors.New("unknown console record")
 	}
-	index, err := strconv.Atoi(raw)
-	if err != nil || index < 0 || index >= len(model.Records) {
-		return errors.New("unknown console record")
+	// Preserve bounded numeric selectors for existing non-typed collection URLs.
+	if model.Domain != string(consoleAgents) && model.Domain != string(consoleGraphs) {
+		index, err := strconv.Atoi(raw)
+		if err == nil && index >= 0 && index < len(model.Records) {
+			model.Inspector = &model.Records[index]
+			model.InspectorOpen = true
+			return nil
+		}
 	}
-	model.Inspector = &model.Records[index]
-	model.InspectorOpen = true
-	return nil
+	return errors.New("unknown console record")
 }

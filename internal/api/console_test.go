@@ -13,7 +13,11 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/execution"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/orchestration"
+	queue "github.com/berryhill/aegis/internal/queue"
+	"github.com/berryhill/aegis/internal/reference"
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
@@ -172,6 +176,37 @@ func TestConsoleSurfacePreservesContextualReadinessAndCredentialMetadata(t *test
 	}
 	if strings.Contains(credentials.Records[0].JSON, "source_env") || strings.Contains(credentials.Records[0].JSON, "target_env") {
 		t.Fatalf("credential surface exposed custody details: %s", credentials.Records[0].JSON)
+	}
+}
+
+func TestConsoleGraphRecordPreservesExactTopologyLifecycleAndSubmissionTruth(t *testing.T) {
+	digest := func(marker string) string { return "sha256:" + strings.Repeat(marker, 64) }
+	revision := graph.GraphRevision{
+		GraphID: "graph-review", Revision: 4, Digest: digest("a"), PreviousDigest: digest("b"),
+		Inputs: []graph.Port{{ID: "brief", Type: graph.TypeString, Required: true}}, Outputs: []graph.Port{{ID: "artifact", Type: graph.TypeArtifact, Required: true}},
+		Nodes:          []graph.Node{{ID: "review", Participant: reference.RevisionRef{ID: "agent-reviewer", Revision: 2, Digest: digest("c")}, Loop: reference.RevisionRef{ID: "loop-review", Revision: 7, Digest: digest("d")}, Inputs: []graph.Port{{ID: "brief", Type: graph.TypeString, Required: true}}, Outputs: []graph.Port{{ID: "draft", Type: graph.TypeString, Required: true}}}, {ID: "publish", Participant: reference.RevisionRef{ID: "agent-publisher", Revision: 3, Digest: digest("e")}, Loop: reference.RevisionRef{ID: "loop-publish", Revision: 8, Digest: digest("f")}, Inputs: []graph.Port{{ID: "draft", Type: graph.TypeString, Required: true}}, Outputs: []graph.Port{{ID: "artifact", Type: graph.TypeArtifact, Required: true}}}},
+		Dependencies:   []graph.Dependency{{ID: "review-before-publish", FromNodeID: "review", ToNodeID: "publish", Mappings: []graph.PortMapping{{FromPort: "draft", ToPort: "draft"}}}},
+		AdmissionRules: []graph.AdmissionRule{{ID: "operator", PolicyRef: reference.DigestRef{ID: "policy-operator", Digest: digest("1")}}},
+	}
+	snapshot := graph.GraphRunSnapshot{SnapshotID: "snapshot-1", Digest: digest("2"), Graph: reference.RevisionRef{ID: revision.GraphID, Revision: revision.Revision, Digest: revision.Digest}, Inputs: []graph.NormalizedInput{{PortID: "brief", Type: graph.TypeString, Value: []byte(`"inspect"`)}}}
+	submission := queue.Submission{SubmissionID: "submission-1", Digest: digest("3"), Authority: reference.DigestRef{ID: "authority-1", Digest: digest("4")}, MandateID: "mandate-1", Runtime: "hermes-agent"}
+	item := queue.Item{ItemID: "item-1", Digest: digest("5")}
+	run := execution.GraphRun{GraphRunID: "run-1"}
+	view := app.GraphView{Revision: revision, Validations: []graph.GraphValidationResult{{Outcome: graph.ValidationValid, Digest: digest("6")}}, Lifecycle: graph.Lifecycle{GraphID: revision.GraphID, State: graph.LifecycleActive, ActiveRevision: revision.Revision, ActiveDigest: revision.Digest}, Runs: []app.AcceptedGraphRunView{{Snapshot: snapshot, Submission: submission, QueueItem: item, GraphRun: run}}}
+	history := app.SubmissionHistory{Rejected: []queue.Rejection{{SubmissionID: "submission-rejected", ReasonCode: "invalid_input", Reason: "brief is required"}}}
+
+	record := consoleGraphRecord(view, history, `{"graph_id":"graph-review"}`)
+	if record.Key != "graph-review:4" || record.Lifecycle != string(graph.LifecycleActive) || record.Graph == nil || len(record.Graph.Nodes) != 2 || len(record.Graph.Edges) != 1 {
+		t.Fatalf("Graph topology or lifecycle lost: %+v", record)
+	}
+	if record.Graph.Nodes[0].Loop != exactRevisionLabel("loop-review", 7, digest("d")) || record.Graph.Nodes[0].Inputs != "brief:string required=true" || record.Graph.Edges[0].Mappings != "draft → draft" {
+		t.Fatalf("exact Loop binding or interface lost: %+v", record.Graph)
+	}
+	if len(record.Graph.AcceptedRuns) != 1 || record.Graph.AcceptedRuns[0].Snapshot != "snapshot-1 @ "+digest("2") || record.Graph.AcceptedRuns[0].Authority != "authority-1 @ "+digest("4") || !strings.Contains(record.Graph.AcceptedRuns[0].Inputs, `brief (string) = "inspect"`) {
+		t.Fatalf("immutable accepted snapshot lost: %+v", record.Graph.AcceptedRuns)
+	}
+	if len(record.Graph.RejectedSubmissions) != 1 || record.Graph.RejectedSubmissions[0].Label != "submission-rejected" || !strings.Contains(record.Graph.RejectedSubmissions[0].Value, "invalid_input") {
+		t.Fatalf("fleet-wide rejected history lost: %+v", record.Graph.RejectedSubmissions)
 	}
 }
 

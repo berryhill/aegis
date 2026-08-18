@@ -105,6 +105,22 @@ type LoopView struct {
 type GraphView struct {
 	Revision    graph.GraphRevision           `json:"revision"`
 	Validations []graph.GraphValidationResult `json:"validations"`
+	Lifecycle   graph.Lifecycle               `json:"lifecycle"`
+	Runs        []AcceptedGraphRunView        `json:"accepted_runs"`
+}
+
+// AcceptedGraphRunView is the immutable accepted-submission read contract. It
+// cannot authorize work; runtime effects still require fresh admission.
+type AcceptedGraphRunView struct {
+	Snapshot   graph.GraphRunSnapshot `json:"snapshot"`
+	Submission queue.Submission       `json:"submission"`
+	QueueItem  queue.Item             `json:"queue_item"`
+	GraphRun   execution.GraphRun     `json:"graph_run"`
+}
+
+type SubmissionHistory struct {
+	Accepted []AcceptedGraphRunView `json:"accepted"`
+	Rejected []queue.Rejection      `json:"rejected"`
 }
 
 type QueueExecutionView struct {
@@ -133,6 +149,7 @@ type FleetSurface struct {
 	Agents      []FleetAgent                       `json:"agents"`
 	Loops       []LoopView                         `json:"loops"`
 	Graphs      []GraphView                        `json:"graphs"`
+	Submissions SubmissionHistory                  `json:"submissions"`
 	Queue       []QueueExecutionView               `json:"queue"`
 	Credentials []CredentialView                   `json:"credentials"`
 	Readiness   map[string]SurfaceReadiness        `json:"readiness"`
@@ -434,9 +451,17 @@ func (s *Service) ListGraphsAs(ctx context.Context, subject core.Subject) ([]Gra
 	if err != nil {
 		return nil, err
 	}
+	lifecycles, err := s.FleetRepository.ListGraphLifecycles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	history, err := s.ListSubmissionHistoryAs(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]GraphView, 0, len(revisions))
 	for _, revision := range revisions {
-		view := GraphView{Revision: revision, Validations: []graph.GraphValidationResult{}}
+		view := GraphView{Revision: revision, Validations: []graph.GraphValidationResult{}, Runs: []AcceptedGraphRunView{}}
 		for _, validation := range validations {
 			if validation.GraphID == revision.GraphID && validation.Revision == revision.Revision {
 				if validation.RevisionDigest != revision.Digest {
@@ -447,6 +472,19 @@ func (s *Service) ListGraphsAs(ctx context.Context, subject core.Subject) ([]Gra
 		}
 		if len(view.Validations) == 0 {
 			return nil, fleet.ErrCorrupt
+		}
+		for _, lifecycle := range lifecycles {
+			if lifecycle.GraphID == revision.GraphID {
+				view.Lifecycle = lifecycle
+			}
+		}
+		if view.Lifecycle.GraphID == "" {
+			return nil, fleet.ErrCorrupt
+		}
+		for _, accepted := range history.Accepted {
+			if accepted.Snapshot.Graph.ID == revision.GraphID && accepted.Snapshot.Graph.Revision == revision.Revision && accepted.Snapshot.Graph.Digest == revision.Digest {
+				view.Runs = append(view.Runs, accepted)
+			}
 		}
 		result = append(result, view)
 	}
@@ -459,6 +497,56 @@ func (s *Service) ListGraphs(ctx context.Context) ([]GraphView, error) {
 		return nil, err
 	}
 	return s.ListGraphsAs(ctx, subject)
+}
+
+func (s *Service) GetGraphLifecycleAs(ctx context.Context, subject core.Subject, id string) (graph.Lifecycle, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return graph.Lifecycle{}, err
+	}
+	return s.FleetRepository.GetGraphLifecycle(ctx, id)
+}
+
+func (s *Service) ListSubmissionHistoryAs(ctx context.Context, subject core.Subject) (SubmissionHistory, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return SubmissionHistory{}, err
+	}
+	submissions, err := s.FleetRepository.ListSubmissions(ctx)
+	if err != nil {
+		return SubmissionHistory{}, err
+	}
+	items, err := s.FleetRepository.ListQueueItems(ctx)
+	if err != nil {
+		return SubmissionHistory{}, err
+	}
+	runs, err := s.FleetRepository.ListGraphRuns(ctx)
+	if err != nil {
+		return SubmissionHistory{}, err
+	}
+	result := SubmissionHistory{Accepted: []AcceptedGraphRunView{}, Rejected: []queue.Rejection{}}
+	for _, submission := range submissions {
+		snapshot, loadErr := s.FleetRepository.GetGraphRunSnapshot(ctx, submission.Snapshot.ID)
+		if loadErr != nil || snapshot.Digest != submission.Snapshot.Digest {
+			return SubmissionHistory{}, fleet.ErrCorrupt
+		}
+		view := AcceptedGraphRunView{Snapshot: snapshot, Submission: submission}
+		foundItem, foundRun := false, false
+		for _, item := range items {
+			if item.Submission.ID == submission.SubmissionID && item.Submission.Digest == submission.Digest {
+				view.QueueItem, foundItem = item, true
+				for _, run := range runs {
+					if run.GraphRunID == item.GraphRunID && run.QueueItem.ID == item.ItemID && run.QueueItem.Digest == item.Digest {
+						view.GraphRun, foundRun = run, true
+					}
+				}
+			}
+		}
+		if !foundItem || !foundRun {
+			return SubmissionHistory{}, fleet.ErrCorrupt
+		}
+		result.Accepted = append(result.Accepted, view)
+	}
+	result.Rejected, err = s.FleetRepository.ListRejections(ctx)
+	return result, err
 }
 
 func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
@@ -574,7 +662,8 @@ func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (Fle
 	}
 	surface := FleetSurface{
 		Agents: []FleetAgent{}, Loops: []LoopView{}, Graphs: []GraphView{}, Queue: []QueueExecutionView{}, Credentials: []CredentialView{},
-		Readiness: map[string]SurfaceReadiness{}, Actions: map[string]orchestration.Readiness{},
+		Submissions: SubmissionHistory{Accepted: []AcceptedGraphRunView{}, Rejected: []queue.Rejection{}},
+		Readiness:   map[string]SurfaceReadiness{}, Actions: map[string]orchestration.Readiness{},
 	}
 	if s.FleetRepository == nil || s.Fleet == nil || s.QueueWorker == nil {
 		for key, source := range map[string]string{"registry": "fleet.agent_registrations", "loops": "fleet.loop_revisions", "graphs": "fleet.graph_revisions", "queue": "fleet.queue_items"} {
@@ -597,6 +686,12 @@ func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (Fle
 			return FleetSurface{}, ctx.Err()
 		}
 		surface.Readiness["graphs"] = collectionReadiness(len(surface.Graphs), "fleet.graph_revisions", err)
+		if err == nil {
+			surface.Submissions, err = s.ListSubmissionHistoryAs(ctx, subject)
+			if ctx.Err() != nil {
+				return FleetSurface{}, ctx.Err()
+			}
+		}
 		surface.Queue, err = s.ListQueueAs(ctx, subject)
 		if ctx.Err() != nil {
 			return FleetSurface{}, ctx.Err()
