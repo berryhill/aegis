@@ -23,8 +23,10 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/evidence"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/orchestration"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
@@ -101,7 +103,7 @@ func apiService(t *testing.T) *app.Service {
 	return svc
 }
 
-func configureAPIFleet(t *testing.T, svc *app.Service) {
+func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 	t.Helper()
 	fleetStore, err := fleetbadger.Open(context.Background(), filepath.Join(svc.Config.StateDir, "persistence", "fleet-v1"))
 	if err != nil {
@@ -129,6 +131,7 @@ func configureAPIFleet(t *testing.T, svc *app.Service) {
 	if err = svc.ConfigureFleet(fleetStore, fleetService, worker); err != nil {
 		t.Fatal(err)
 	}
+	return fleetStore
 }
 
 func waitFor(t *testing.T, network, address string) {
@@ -860,6 +863,62 @@ func TestFleetAgentAPIUsesAuthenticatedSharedApplicationBoundary(t *testing.T) {
 	apiRequest(t, client, http.MethodPost, "/v1/agents", map[string]any{"fixture": json.RawMessage(fixture), "identity": input.Identity, "subject": "model-selected"}, nil, http.StatusBadRequest)
 }
 
+func TestGraphLifecycleAndSubmissionHistoryRoutesAreAuthenticatedExactReads(t *testing.T) {
+	svc := apiService(t)
+	store := configureAPIFleet(t, svc)
+	value := graph.Port{ID: "value", Type: graph.TypeString, Required: true}
+	revision, validation, err := graph.NewRevision(graph.GraphRevision{
+		GraphID: "graph-route", Revision: 1, Inputs: []graph.Port{value}, Outputs: []graph.Port{{ID: "result", Type: graph.TypeString, Required: true}},
+		Nodes:         []graph.Node{{ID: "work", Participant: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "agent-route", Revision: 1, Digest: "sha256:" + strings.Repeat("a", 64)}, Loop: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "loop-route", Revision: 1, Digest: "sha256:" + strings.Repeat("b", 64)}, Inputs: []graph.Port{value}, Outputs: []graph.Port{{ID: "result", Type: graph.TypeString, Required: true}}}},
+		InputMappings: []graph.InputMapping{{GraphInput: "value", ToNodeID: "work", ToPort: "value"}}, OutputMappings: []graph.OutputMapping{{FromNodeID: "work", FromPort: "result", GraphOutput: "result"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.PublishGraph(context.Background(), graph.PublishRequest{Revision: revision, Validation: validation, IdempotencyKey: "publish-route"}, fleet.AuditFact{Event: core.AuditEvent{Type: "graph.published", SubjectID: revision.GraphID, PrincipalID: "principal-1", Outcome: "succeeded", Reason: "authorized test mutation"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	client := unixClient(svc.Config.API.UnixSocket)
+
+	var lifecycle graph.Lifecycle
+	apiRequest(t, client, http.MethodGet, "/v1/graphs/graph-route/lifecycle", nil, &lifecycle, http.StatusOK)
+	if lifecycle.GraphID != revision.GraphID || lifecycle.State != graph.LifecycleActive || lifecycle.ActiveRevision != revision.Revision || lifecycle.ActiveDigest != revision.Digest {
+		t.Fatalf("lifecycle=%+v", lifecycle)
+	}
+	var history app.SubmissionHistory
+	apiRequest(t, client, http.MethodGet, "/v1/submissions", nil, &history, http.StatusOK)
+	if history.Accepted == nil || history.Rejected == nil || len(history.Accepted) != 0 || len(history.Rejected) != 0 {
+		t.Fatalf("empty authoritative history=%+v", history)
+	}
+	apiRequest(t, client, http.MethodGet, "/v1/graphs/unknown/lifecycle", nil, nil, http.StatusNotFound)
+
+	for _, path := range []string{"/v1/graphs/graph-route/lifecycle", "/v1/submissions"} {
+		request, requestErr := http.NewRequest(http.MethodGet, "http://unix"+path, nil)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		response, requestErr := client.Do(request)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("unauthenticated %s status=%d", path, response.StatusCode)
+		}
+	}
+}
+
 func TestFleetAPIUnavailableFailsClosed(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -873,7 +932,7 @@ func TestFleetAPIUnavailableFailsClosed(t *testing.T) {
 	}()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	client := unixClient(svc.Config.API.UnixSocket)
-	for _, path := range []string{"/v1/agents", "/v1/loops", "/v1/graphs", "/v1/queue", "/v1/fleet/readiness"} {
+	for _, path := range []string{"/v1/agents", "/v1/loops", "/v1/graphs", "/v1/graphs/graph-1/lifecycle", "/v1/submissions", "/v1/queue", "/v1/fleet/readiness"} {
 		apiRequest(t, client, http.MethodGet, path, nil, nil, http.StatusServiceUnavailable)
 	}
 }

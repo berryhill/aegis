@@ -432,6 +432,9 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 		if err != nil || loopRevision.Digest != node.Loop.Digest {
 			return graph.PublicationDecision{}, fmt.Errorf("%w: exact Loop revision required", ErrDenied)
 		}
+		if !nodeMatchesLoopInterface(node, loopRevision) {
+			return graph.PublicationDecision{}, fmt.Errorf("%w: node_loop_interface_mismatch", ErrDenied)
+		}
 		if node.Participant.ID == authority.AgentID {
 			if !agentMatchesAuthority(participant, authority, mandate) {
 				return graph.PublicationDecision{}, fmt.Errorf("%w: participant charter or runtime does not match authority", ErrDenied)
@@ -496,6 +499,12 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 	snapshot, err := graph.NewRunSnapshot(request.SnapshotID, revision, request.Inputs)
 	if err != nil {
 		return deny("invalid_inputs", "typed Graph inputs are invalid")
+	}
+	for _, node := range revision.Nodes {
+		loopRevision, loadErr := service.repository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision)
+		if loadErr != nil || loopRevision.Digest != node.Loop.Digest || !nodeMatchesLoopInterface(node, loopRevision) {
+			return deny("loop_interface_mismatch", "exact Loop interface is unavailable or incompatible")
+		}
 	}
 	for _, participant := range snapshot.Participants {
 		value, loadErr := service.repository.GetAgentRevision(ctx, participant.ID, participant.Revision)
@@ -587,6 +596,33 @@ func policiesDeclaredByParticipants(revision graph.GraphRevision, repository Fle
 	}
 	for _, rule := range revision.AdmissionRules {
 		if _, ok := declared[rule.PolicyRef]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func nodeMatchesLoopInterface(node graph.Node, revision loop.LoopRevision) bool {
+	if len(node.Inputs) != len(revision.Inputs) || len(node.Outputs) != len(revision.Outputs) {
+		return false
+	}
+	inputs := make(map[string]graph.Port, len(node.Inputs))
+	outputs := make(map[string]graph.Port, len(node.Outputs))
+	for _, port := range node.Inputs {
+		inputs[port.ID] = port
+	}
+	for _, port := range node.Outputs {
+		outputs[port.ID] = port
+	}
+	for _, port := range revision.Inputs {
+		candidate, ok := inputs[port.ID]
+		if !ok || string(candidate.Type) != string(port.Type) || candidate.Required != port.Required {
+			return false
+		}
+	}
+	for _, port := range revision.Outputs {
+		candidate, ok := outputs[port.ID]
+		if !ok || string(candidate.Type) != string(port.Type) || candidate.Required != port.Required {
 			return false
 		}
 	}

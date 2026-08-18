@@ -118,6 +118,36 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 	}
 }
 
+func TestSubmissionOutcomeCollectionsReturnExactDurableFacts(t *testing.T) {
+	ctx := context.Background()
+	store, accepted := lifecycleFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion), "submit-key-history")
+	defer store.Close()
+	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	rejection, err := queue.NewRejection(queue.Rejection{
+		RejectionID: "rejection-history", SubmissionID: "submission-rejected-history",
+		IdempotencyKey: "submit-key-rejected-history", ReasonCode: "loop_interface_mismatch",
+		Reason:     "exact Loop interface is unavailable or incompatible",
+		RejectedAt: accepted.Submission.SubmittedAt.Add(time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.RejectSubmission(ctx, rejection, audit("submission.rejected", rejection.RejectionID)); err != nil {
+		t.Fatal(err)
+	}
+
+	submissions, err := store.ListSubmissions(ctx)
+	if err != nil || len(submissions) != 1 || submissions[0] != accepted.Submission {
+		t.Fatalf("accepted submission history lost exact durable fact: got=%+v err=%v", submissions, err)
+	}
+	rejections, err := store.ListRejections(ctx)
+	if err != nil || len(rejections) != 1 || rejections[0] != rejection {
+		t.Fatalf("rejected submission history lost exact durable fact: got=%+v err=%v", rejections, err)
+	}
+}
+
 func TestCompletionRejectsArtifactCausalitySubstitutionAtomically(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {

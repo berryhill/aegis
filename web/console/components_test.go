@@ -158,6 +158,29 @@ func TestAgentRegistryRendersOperatorContractWithoutClaimingBrowserAuthority(t *
 	}
 }
 
+func TestGraphInspectorRendersTopologyExactBindingsAndFleetWideSubmissionTruth(t *testing.T) {
+	var output bytes.Buffer
+	record := RecordModel{Key: "graph-review:4", Label: "graph-review", Revision: "r4", Lifecycle: "active", Graph: &GraphDetailModel{
+		Digest: "sha256:graph", PreviousDigest: "sha256:previous", Validation: "valid · sha256:validation",
+		InputSchema: []FieldModel{{Label: "brief", Value: "string · required true"}}, OutputSchema: []FieldModel{{Label: "artifact", Value: "artifact · required true"}},
+		Nodes:               []GraphNodeModel{{ID: "review", Participant: "agent-reviewer r2 @ sha256:agent", Loop: "loop-review r7 @ sha256:loop", Inputs: "brief:string required=true", Outputs: "draft:string required=true"}},
+		Edges:               []GraphEdgeModel{{ID: "review-before-publish", From: "review", To: "publish", Mappings: "draft → draft"}},
+		Policies:            []FieldModel{{Label: "operator", Value: "policy-operator @ sha256:policy"}},
+		AcceptedRuns:        []GraphRunModel{{Submission: "submission-1 @ sha256:submission", Snapshot: "snapshot-1 @ sha256:snapshot", QueueItem: "item-1 @ sha256:item", GraphRun: "run-1", Authority: "authority-1 @ sha256:authority", Mandate: "mandate-1", Runtime: "hermes-agent", Inputs: `brief (string) = "inspect"`}},
+		RejectedSubmissions: []FieldModel{{Label: "submission-rejected", Value: "invalid_input · brief is required"}},
+	}}
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{Domain: DomainGraphs, Title: "Graphs", State: "ready", Authoritative: true, TotalCount: 1, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{"Exact Graph revision", "active", "Topology", "review-before-publish", "review → publish", "draft → draft", "loop-review r7 @ sha256:loop", "brief:string required=true", "Accepted submission snapshots", "snapshot-1 @ sha256:snapshot", "authority-1 @ sha256:authority", "mandate-1", "hermes-agent", `brief (string) = &#34;inspect&#34;`, "Durable rejected submissions", "submission-rejected", "fleet-wide submission truth", "never attributed to this Graph"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Graph inspector missing %q: %s", required, html)
+		}
+	}
+}
+
 func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 	var output bytes.Buffer
 	if err := Authentication("").Render(context.Background(), &output); err != nil {

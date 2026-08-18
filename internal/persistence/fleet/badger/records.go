@@ -39,6 +39,7 @@ const (
 	familyGraphRequest              = 0x33
 	familySnapshot                  = 0x34
 	familySnapshotRequest           = 0x35
+	familyGraphLifecycle            = 0x36
 	familySubmission                = 0x50
 	familySubmissionRequest         = 0x51
 	familyRejection                 = 0x52
@@ -835,6 +836,13 @@ func (s *Store) PublishGraph(ctx context.Context, request graph.PublishRequest, 
 				return x
 			}
 		}
+		lifecycleWire, x := json.Marshal(graph.Lifecycle{GraphID: request.Revision.GraphID, State: graph.LifecycleActive, ActiveRevision: request.Revision.Revision, ActiveDigest: request.Revision.Digest})
+		if x != nil {
+			return x
+		}
+		if x = txn.Set(key(familyGraphLifecycle, request.Revision.GraphID), lifecycleWire); x != nil {
+			return x
+		}
 		if e = txn.Set(key(familyGraphLatest, request.Revision.GraphID), []byte(revisionPart(request.Revision.Revision))); e != nil {
 			return e
 		}
@@ -921,6 +929,48 @@ func (s *Store) ListGraphValidations(ctx context.Context) (out []graph.GraphVali
 		}
 		return out[i].GraphID < out[j].GraphID
 	})
+	return
+}
+
+func (s *Store) GetGraphLifecycle(ctx context.Context, id string) (out graph.Lifecycle, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		value, loadErr := get(txn, key(familyGraphLifecycle, id))
+		if loadErr != nil {
+			return loadErr
+		}
+		if decodeErr := json.Unmarshal(value, &out); decodeErr != nil || out.GraphID != id || out.State != graph.LifecycleActive || out.ActiveRevision == 0 || out.ActiveDigest == "" {
+			return corrupt(decodeErr)
+		}
+		revision, loadErr := graphRevision(txn, id, out.ActiveRevision)
+		if loadErr != nil || revision.Digest != out.ActiveDigest {
+			return corrupt(loadErr)
+		}
+		return nil
+	})
+	return
+}
+
+func (s *Store) ListGraphLifecycles(ctx context.Context) (out []graph.Lifecycle, err error) {
+	out = []graph.Lifecycle{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyGraphLifecycle, func(recordKey, value []byte) error {
+			var item graph.Lifecycle
+			if decodeErr := json.Unmarshal(value, &item); decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyGraphLifecycle)
+			if keyErr != nil || len(parts) != 1 || parts[0] != item.GraphID || item.State != graph.LifecycleActive || item.ActiveRevision == 0 || item.ActiveDigest == "" {
+				return fleet.ErrCorrupt
+			}
+			revision, loadErr := graphRevision(txn, item.GraphID, item.ActiveRevision)
+			if loadErr != nil || revision.Digest != item.ActiveDigest {
+				return corrupt(loadErr)
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].GraphID < out[j].GraphID })
 	return
 }
 

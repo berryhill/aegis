@@ -86,6 +86,8 @@ type Repository interface {
 	GetGraphValidation(context.Context, string, uint64, string) (graph.GraphValidationResult, error)
 	ListGraphRevisions(context.Context) ([]graph.GraphRevision, error)
 	ListGraphValidations(context.Context) ([]graph.GraphValidationResult, error)
+	GetGraphLifecycle(context.Context, string) (graph.Lifecycle, error)
+	ListGraphLifecycles(context.Context) ([]graph.Lifecycle, error)
 	CreateGraphRunSnapshot(context.Context, graph.GraphRunSnapshot, AuditFact) (bool, error)
 	GetGraphRunSnapshot(context.Context, string) (graph.GraphRunSnapshot, error)
 
@@ -93,6 +95,8 @@ type Repository interface {
 	RejectSubmission(context.Context, queue.Rejection, AuditFact) (bool, error)
 	GetSubmission(context.Context, string) (queue.Submission, error)
 	GetRejection(context.Context, string) (queue.Rejection, error)
+	ListSubmissions(context.Context) ([]queue.Submission, error)
+	ListRejections(context.Context) ([]queue.Rejection, error)
 	GetQueueItem(context.Context, string) (queue.Item, error)
 	ListQueueItems(context.Context) ([]queue.Item, error)
 	GetGraphRun(context.Context, string) (execution.GraphRun, error)

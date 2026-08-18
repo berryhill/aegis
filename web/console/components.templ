@@ -258,7 +258,9 @@ templ RecordCard(domain string, record RecordModel) {
 templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 	<aside id="inspector" class="inspector" aria-labelledby="inspector-title" tabindex="-1" hidden?={ !open }>
 		if record != nil {
-			if len(record.Fields) > 0 {
+			if record.Graph != nil {
+				@GraphInspector(surface, record)
+			} else if len(record.Fields) > 0 {
 				<div class="detail-head"><div class="detail-title"><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ registryURL(surface) }>Back to Registry</a></div>
 				<div class="panel-body">
 					<div class="section-label">Readiness</div><div class="inline-notice">{ record.Readiness }. Readiness is derived from the immutable lifecycle record; this browser view grants no runtime authority.</div>
@@ -275,6 +277,43 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 			}
 		}
 	</aside>
+}
+
+templ GraphInspector(surface SurfaceModel, record *RecordModel) {
+	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ consoleRoute(surface.Domain, "") }>Back to Graphs</a></div>
+	<div class="graph-detail">
+		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Validation</dt><dd>{ record.Graph.Validation }</dd></dl></section>
+		<section aria-labelledby="graph-topology"><h3 id="graph-topology">Topology</h3><div class="topology-canvas">
+			for _, node := range record.Graph.Nodes {
+				<article class="topology-node"><strong>{ node.ID }</strong><span>Agent · { node.Participant }</span><span>Loop · { node.Loop }</span><small>Inputs · { node.Inputs }</small><small>Outputs · { node.Outputs }</small></article>
+			}
+			for _, edge := range record.Graph.Edges {
+				<div class="topology-edge"><strong>{ edge.ID }</strong><span>{ edge.From } → { edge.To }</span><small>{ edge.Mappings }</small></div>
+			}
+		</div></section>
+		<section class="graph-grid" aria-label="Graph contracts"><div><h3>Input schema</h3>@FieldList(record.Graph.InputSchema, "No Graph inputs")</div><div><h3>Output schema</h3>@FieldList(record.Graph.OutputSchema, "No Graph outputs")</div><div><h3>Admission policies</h3>@FieldList(record.Graph.Policies, "No admission policies")</div></section>
+		<section aria-labelledby="accepted-submissions"><h3 id="accepted-submissions">Accepted submission snapshots</h3>
+			if len(record.Graph.AcceptedRuns) == 0 {
+				<p class="empty-note">No accepted run snapshots bind this exact revision.</p>
+			}
+			for _, run := range record.Graph.AcceptedRuns {
+				<article class="snapshot-card"><dl class="spec"><dt>Submission</dt><dd>{ run.Submission }</dd><dt>Snapshot</dt><dd>{ run.Snapshot }</dd><dt>Queue item</dt><dd>{ run.QueueItem }</dd><dt>Graph run</dt><dd>{ run.GraphRun }</dd><dt>Authority context</dt><dd>{ run.Authority }</dd><dt>Mandate</dt><dd>{ run.Mandate }</dd><dt>Runtime</dt><dd>{ run.Runtime }</dd><dt>Normalized inputs</dt><dd>{ run.Inputs }</dd></dl></article>
+			}
+		</section>
+		<section aria-labelledby="rejected-submissions"><h3 id="rejected-submissions">Durable rejected submissions</h3><p class="inline-notice">Rejections do not carry a Graph reference and are therefore shown as fleet-wide submission truth, never attributed to this Graph.</p>@FieldList(record.Graph.RejectedSubmissions, "No durable rejections")</section>
+	</div>
+}
+
+templ FieldList(fields []FieldModel, empty string) {
+	if len(fields) == 0 {
+		<p class="empty-note">{ empty }</p>
+	} else {
+		<dl class="spec">
+			for _, field := range fields {
+				<dt>{ field.Label }</dt><dd>{ field.Value }</dd>
+			}
+		</dl>
+	}
 }
 
 templ RecordLabel(label string) { <span>{ label }</span> }

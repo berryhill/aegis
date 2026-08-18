@@ -3,6 +3,7 @@ package badger
 import (
 	"bytes"
 	"context"
+	"errors"
 	"sort"
 
 	"github.com/berryhill/aegis/internal/disposition"
@@ -534,6 +535,40 @@ func (s *Store) GetSubmission(ctx context.Context, id string) (queue.Submission,
 }
 func (s *Store) GetRejection(ctx context.Context, id string) (queue.Rejection, error) {
 	return readRecord(s, ctx, familyRejection, id, queue.UnmarshalRejection, func(v queue.Rejection) string { return v.RejectionID })
+}
+
+func (s *Store) ListSubmissions(ctx context.Context) (out []queue.Submission, err error) {
+	out = []queue.Submission{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familySubmission, func(recordKey, wire []byte) error {
+			item, decodeErr := queue.UnmarshalSubmission(wire)
+			parts, keyErr := decodeKeyParts(recordKey, familySubmission)
+			if decodeErr != nil || keyErr != nil || len(parts) != 1 || parts[0] != item.SubmissionID {
+				return corrupt(errors.Join(decodeErr, keyErr))
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].SubmittedAt.Before(out[j].SubmittedAt) })
+	return
+}
+
+func (s *Store) ListRejections(ctx context.Context) (out []queue.Rejection, err error) {
+	out = []queue.Rejection{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyRejection, func(recordKey, wire []byte) error {
+			item, decodeErr := queue.UnmarshalRejection(wire)
+			parts, keyErr := decodeKeyParts(recordKey, familyRejection)
+			if decodeErr != nil || keyErr != nil || len(parts) != 1 || parts[0] != item.RejectionID {
+				return corrupt(errors.Join(decodeErr, keyErr))
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].RejectedAt.Before(out[j].RejectedAt) })
+	return
 }
 func (s *Store) GetQueueItem(ctx context.Context, id string) (queue.Item, error) {
 	return readRecord(s, ctx, familyQueueItem, id, queue.UnmarshalItem, func(v queue.Item) string { return v.ItemID })
