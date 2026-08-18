@@ -203,7 +203,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 		model.Status = fmt.Sprintf("%s · source %s · reason %s", model.Title, fallback(readiness.Source, "unknown"), fallback(readiness.ReasonCode, "readiness_missing"))
 		return model, nil
 	}
-	model.Authoritative, model.TotalCount = true, readiness.Count
+	model.Authoritative, model.TotalCount, model.TotalRecords = true, readiness.Count, readiness.Count
 	model.State, model.ReasonCode, model.Source = readiness.State, readiness.ReasonCode, readiness.Source
 	shown := len(values)
 	count := strconv.Itoa(readiness.Count)
@@ -217,9 +217,93 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			return consoleweb.SurfaceModel{}, err
 		}
 		label := consoleRecordLabel(domain, value)
-		model.Records = append(model.Records, consoleweb.RecordModel{Key: strconv.Itoa(index), Label: label, Summary: label, JSON: string(data)})
+		record := consoleweb.RecordModel{Key: strconv.Itoa(index), Label: label, Summary: label, JSON: string(data)}
+		if domain == consoleAgents {
+			agent, ok := value.(app.FleetAgent)
+			if !ok {
+				return consoleweb.SurfaceModel{}, errors.New("invalid Agent Registry record")
+			}
+			record = consoleAgentRecord(agent)
+		}
+		model.Records = append(model.Records, record)
 	}
 	return model, nil
+}
+
+func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
+	revision := agent.Revision
+	readiness := "Lifecycle eligible; fresh authority admission required"
+	if revision.Lifecycle == "disabled" {
+		readiness = "Execution denied until a new enabled revision"
+	} else if revision.Lifecycle == "retired" {
+		readiness = "Terminal; no later revisions permitted"
+	}
+	capabilities := strings.Join(revision.CapabilityDeclarations, ", ")
+	if capabilities == "" {
+		capabilities = "None declared"
+	}
+	policies := make([]string, 0, len(revision.PolicyRefs))
+	for _, policy := range revision.PolicyRefs {
+		policies = append(policies, policy.ID+" @ "+policy.Digest)
+	}
+	if len(policies) == 0 {
+		policies = append(policies, "None declared")
+	}
+	return consoleweb.RecordModel{
+		Key: revision.AgentID, Label: revision.AgentID, Summary: revision.AgentID + " · " + string(revision.Lifecycle),
+		Lifecycle: string(revision.Lifecycle), Readiness: readiness,
+		Revision: fmt.Sprintf("r%d", revision.Revision), Runtime: revision.Runtime.Target,
+		Source: revision.Source.FleetID + " / " + revision.Source.Kind + " / " + revision.Source.SourceID, Owner: revision.Ownership.OwnerID,
+		Authority:    fmt.Sprintf("%d capabilities · %d policies declared", len(revision.CapabilityDeclarations), len(revision.PolicyRefs)),
+		Provisioning: "Not asserted by Registry record",
+		Fields: []consoleweb.FieldModel{
+			{Label: "Stable Agent ID", Value: revision.AgentID},
+			{Label: "Fleet provenance", Value: revision.Source.FleetID + " / " + revision.Source.Kind + " / " + revision.Source.SourceID},
+			{Label: "Owner", Value: revision.Ownership.OwnerID},
+			{Label: "Accountability", Value: revision.Ownership.AccountabilityID},
+			{Label: "Runtime binding", Value: revision.Runtime.Adapter + " / " + revision.Runtime.Runtime + " / " + revision.Runtime.Target},
+			{Label: "Charter binding", Value: fmt.Sprintf("%s revision %d @ %s", revision.Charter.ID, revision.Charter.Revision, revision.Charter.Digest)},
+			{Label: "Current revision", Value: fmt.Sprintf("%d @ %s", revision.Revision, revision.Digest)},
+			{Label: "Revision history", Value: fmt.Sprintf("%d immutable revision%s", revision.Revision, plural(int(revision.Revision)))},
+			{Label: "Declared capabilities", Value: capabilities},
+			{Label: "Declared policies", Value: strings.Join(policies, "\n")},
+			{Label: "Effective authority", Value: "Not evaluated by this Registry read; execution requires fresh stanza and mandate admission"},
+			{Label: "Provisioning evidence", Value: "Not present on the Agent Registry revision"},
+		},
+	}
+}
+
+func filterConsoleAgents(model *consoleweb.SurfaceModel, query, lifecycle string) error {
+	query = strings.TrimSpace(query)
+	if len(query) > 128 || strings.ContainsAny(query, "\r\n\x00") {
+		return errors.New("invalid Agent Registry search")
+	}
+	if lifecycle == "" {
+		lifecycle = "all"
+	}
+	switch lifecycle {
+	case "all", "enabled", "disabled", "retired":
+	default:
+		return errors.New("invalid Agent Registry lifecycle filter")
+	}
+	model.Query, model.Lifecycle = query, lifecycle
+	filtered := make([]consoleweb.RecordModel, 0, len(model.Records))
+	needle := strings.ToLower(query)
+	for _, record := range model.Records {
+		if lifecycle != "all" && record.Lifecycle != lifecycle {
+			continue
+		}
+		haystack := strings.ToLower(strings.Join([]string{record.Label, record.Runtime, record.Source, record.Owner}, " "))
+		if needle != "" && !strings.Contains(haystack, needle) {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	model.Records = filtered
+	if model.State == "ready" && len(filtered) == 0 {
+		model.State = "filtered-empty"
+	}
+	return nil
 }
 
 func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb.ActionModel {
@@ -295,6 +379,16 @@ func fallback(value, replacement string) string {
 }
 
 func selectConsoleRecord(model *consoleweb.SurfaceModel, raw string) error {
+	if model.Domain == string(consoleAgents) {
+		for index := range model.Records {
+			if model.Records[index].Key == raw {
+				model.Inspector = &model.Records[index]
+				model.InspectorOpen = true
+				return nil
+			}
+		}
+		return errors.New("unknown console record")
+	}
 	index, err := strconv.Atoi(raw)
 	if err != nil || index < 0 || index >= len(model.Records) {
 		return errors.New("unknown console record")

@@ -252,11 +252,11 @@ def main() -> int:
             time.sleep(0.5)
 
         click(devtools, 'a[href="/console/agents#/agents"]')
-        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-0')", "seeded Agent Registry record")
-        click(devtools, "#record-0")
-        wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-record').textContent.includes('agent-alpha')", "record inspector")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "seeded Agent Registry record")
+        click(devtools, "#record-agent-alpha")
+        wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('agent-alpha')", "Agent Registry detail")
         click(devtools, "#close-inspector")
-        wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed record inspector")
+        wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed Agent Registry detail")
         click(devtools, "#logout")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "logged-out console")
 

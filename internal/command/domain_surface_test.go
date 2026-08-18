@@ -19,7 +19,8 @@ func TestRootDoesNotExposeLegacyPlumbingCommand(t *testing.T) {
 func TestRootExposesFleetProductResources(t *testing.T) {
 	root := NewRoot(Dependencies{In: nil, Out: io.Discard, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
 	for _, path := range [][]string{
-		{"agents", "register"}, {"agents", "list"}, {"agents", "show"},
+		{"agents", "register"}, {"agents", "list"}, {"agents", "show"}, {"agents", "history"},
+		{"agents", "enable"}, {"agents", "disable"}, {"agents", "retire"},
 		{"loops", "list"}, {"loops", "publish"}, {"loops", "show"},
 		{"graphs", "list"}, {"graphs", "publish"}, {"graphs", "show"}, {"graphs", "submit"},
 		{"queue", "list"}, {"queue", "show"}, {"queue", "process"},

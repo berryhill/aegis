@@ -53,6 +53,13 @@ func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	if err != nil || latest.Digest != second.Digest {
 		t.Fatalf("latest revision: got=%+v err=%v", latest, err)
 	}
+	history, err := store.ListAgentRevisions(ctx, initial.AgentID)
+	if err != nil || len(history) != 2 || history[0].Digest != initial.Digest || history[1].Digest != second.Digest {
+		t.Fatalf("ordered immutable Agent history: got=%+v err=%v", history, err)
+	}
+	if _, err = store.ListAgentRevisions(ctx, "missing-agent"); !errors.Is(err, fleet.ErrNotFound) {
+		t.Fatalf("missing Agent history did not fail closed: %v", err)
+	}
 
 	loopRevision, loopValidation := loopFixture(t)
 	loopRequest := loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, IdempotencyKey: "loop-publish-1"}

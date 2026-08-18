@@ -82,9 +82,11 @@ type ReadinessRequest struct {
 // orchestration service. Its records remain owned by their domain packages.
 type FleetRepository interface {
 	RegisterAgent(context.Context, registry.AgentRegistration, registry.AgentRevision, fleet.AuditFact) (bool, error)
+	PublishAgentRevision(context.Context, registry.AgentRevision, fleet.AuditFact) error
 	PublishLoop(context.Context, loop.PublishRequest, fleet.AuditFact) (loop.PublicationDecision, error)
 	PublishGraph(context.Context, graph.PublishRequest, fleet.AuditFact) (graph.PublicationDecision, error)
 	GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error)
+	LatestAgentRevision(context.Context, string) (registry.AgentRevision, error)
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)
 	GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error)
 	AcceptSubmission(context.Context, fleet.AcceptedSubmission, fleet.AuditFact) (bool, error)
@@ -270,6 +272,50 @@ func (service *FleetService) RegisterFleetAgent(ctx context.Context, request Reg
 	registration := registry.AgentRegistration{SchemaVersion: registry.AgentRegistrationSchemaVersion, AgentID: revision.AgentID, Source: revision.Source, InitialRevision: revisionRef(revision.AgentID, revision.Revision, revision.Digest)}
 	created, err := service.repository.RegisterAgent(ctx, registration, revision, service.auditFact("fleet.agent.registered", request.Subject, "registered exact fleet source", revision.AgentID, "", ""))
 	return registration, revision, created, err
+}
+
+type SetAgentLifecycleRequest struct {
+	Subject   core.Subject
+	Agent     reference.RevisionRef
+	Lifecycle registry.Lifecycle
+}
+
+// SetAgentLifecycle appends a revision after authorizing the authenticated
+// principal and matching the exact current revision. It never rewrites history.
+func (service *FleetService) SetAgentLifecycle(ctx context.Context, request SetAgentLifecycleRequest) (registry.AgentRevision, error) {
+	if err := service.authorize(ctx, FleetActionAgentRevision, request.Subject); err != nil {
+		return registry.AgentRevision{}, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
+	}
+	if err := request.Agent.Validate(); err != nil {
+		return registry.AgentRevision{}, errors.New("valid exact agent revision is required")
+	}
+	current, err := service.repository.LatestAgentRevision(ctx, request.Agent.ID)
+	if err != nil {
+		return registry.AgentRevision{}, err
+	}
+	if current.Revision != request.Agent.Revision || current.Digest != request.Agent.Digest {
+		return registry.AgentRevision{}, fleet.ErrConflict
+	}
+	switch request.Lifecycle {
+	case registry.LifecycleEnabled, registry.LifecycleDisabled, registry.LifecycleRetired:
+	default:
+		return registry.AgentRevision{}, errors.New("lifecycle must be enabled, disabled, or retired")
+	}
+	if current.Lifecycle == request.Lifecycle {
+		return current, nil
+	}
+	if current.Lifecycle == registry.LifecycleRetired {
+		return registry.AgentRevision{}, registry.ErrRetired
+	}
+	next := current
+	next.Revision++
+	next.Lifecycle = request.Lifecycle
+	next, err = registry.SealRevision(next)
+	if err != nil {
+		return registry.AgentRevision{}, err
+	}
+	err = service.repository.PublishAgentRevision(ctx, next, service.auditFact("fleet.agent.lifecycle.changed", request.Subject, "appended Agent lifecycle revision", next.AgentID, "", ""))
+	return next, err
 }
 
 type PublishLoopRequest struct {
