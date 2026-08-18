@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func publicationProvenance(t *testing.T, revision LoopRevision, validation LoopValidationResult) PublicationProvenance {
+	t.Helper()
+	digest := "sha256:" + strings.Repeat("c", 64)
+	value, err := NewPublicationProvenance(PublicationProvenance{
+		Loop:           NewProvenanceRevision(revision.LoopID, revision.Revision, revision.Digest),
+		PublisherAgent: NewProvenanceRevision("agent-test", 1, digest),
+		Authority:      NewProvenanceDigest("authority-test", digest),
+		MandateID:      "mandate-test", StanzaID: "stanza-test", Runtime: ProvenanceRuntime{Runtime: "hermes-agent"},
+		Charter: NewProvenanceRevision("charter-test", 1, digest), ValidationDigest: validation.Digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
 func branchJoinCandidate() LoopRevision {
 	value := Port{ID: "value", Type: TypeString, Required: true}
 	return LoopRevision{
@@ -148,17 +164,17 @@ func TestLoopDecoderRejectsAmbiguousMalformedAndSubstitutedValues(t *testing.T) 
 	}
 }
 
-func TestPublishIsCreateOnlyExactAndIdempotent(t *testing.T) {
+func TestPublishIsCreateOnlyAndIdempotencyRequiresStoredRequestBinding(t *testing.T) {
 	first, validation, err := NewRevision(branchJoinCandidate())
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := PublishRequest{Revision: first, Validation: validation, IdempotencyKey: "publish-1"}
+	request := PublishRequest{Revision: first, Validation: validation, Provenance: publicationProvenance(t, first, validation), IdempotencyKey: "publish-1"}
 	if decision, err := ValidatePublication(request, nil, nil); err != nil || decision.Idempotent {
 		t.Fatalf("initial publication: %+v %v", decision, err)
 	}
-	if decision, err := ValidatePublication(request, nil, &first); err != nil || !decision.Idempotent {
-		t.Fatalf("idempotent publication: %+v %v", decision, err)
+	if _, err := ValidatePublication(request, nil, &first); err == nil {
+		t.Fatal("existing Loop revision bypassed stored request-key idempotency")
 	}
 	conflict := first
 	conflict.Digest = "sha256:" + strings.Repeat("a", 64)
@@ -173,7 +189,7 @@ func TestPublishIsCreateOnlyExactAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondRequest := PublishRequest{Revision: second, Validation: secondValidation, ExpectedPreviousDigest: first.Digest, IdempotencyKey: "publish-2"}
+	secondRequest := PublishRequest{Revision: second, Validation: secondValidation, Provenance: publicationProvenance(t, second, secondValidation), ExpectedPreviousDigest: first.Digest, IdempotencyKey: "publish-2"}
 	if _, err := ValidatePublication(secondRequest, &first, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +215,9 @@ func TestLifecycleCannotReactivateRetiredLoop(t *testing.T) {
 	}
 	if _, err := Activate(state, revision); err == nil {
 		t.Fatal("retired Loop was reactivated")
+	}
+	if _, err := Retire(state); err == nil {
+		t.Fatal("retired Loop accepted a second retirement intent")
 	}
 }
 

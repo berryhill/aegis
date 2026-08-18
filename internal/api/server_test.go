@@ -937,6 +937,15 @@ func TestFleetAPIUnavailableFailsClosed(t *testing.T) {
 	}
 }
 
+func TestIdempotentWriteStatus(t *testing.T) {
+	if got := createdOrOK(false); got != http.StatusCreated {
+		t.Fatalf("new write status=%d", got)
+	}
+	if got := createdOrOK(true); got != http.StatusOK {
+		t.Fatalf("idempotent write status=%d", got)
+	}
+}
+
 func TestUnixAPICompleteOperationalWorkflow(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())

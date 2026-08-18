@@ -72,16 +72,31 @@ type SetAgentLifecycleInput struct {
 }
 
 type PublishLoopInput struct {
-	Authority              reference.DigestRef `json:"authority"`
-	Revision               loop.LoopRevision   `json:"revision"`
-	ExpectedPreviousDigest string              `json:"expected_previous_digest,omitempty"`
-	IdempotencyKey         string              `json:"idempotency_key"`
+	Authority              reference.DigestRef   `json:"authority"`
+	Publisher              reference.RevisionRef `json:"publisher"`
+	Revision               loop.LoopRevision     `json:"revision"`
+	ExpectedPreviousDigest string                `json:"expected_previous_digest,omitempty"`
+	IdempotencyKey         string                `json:"idempotency_key"`
 }
 
 type PublishedLoop struct {
 	Revision   loop.LoopRevision         `json:"revision"`
 	Validation loop.LoopValidationResult `json:"validation"`
 	Decision   loop.PublicationDecision  `json:"decision"`
+}
+
+type SetLoopLifecycleInput struct {
+	Authority              reference.DigestRef   `json:"authority"`
+	Publisher              reference.RevisionRef `json:"publisher"`
+	Loop                   reference.RevisionRef `json:"loop"`
+	State                  loop.LifecycleState   `json:"state"`
+	EventID                string                `json:"event_id"`
+	ExpectedPreviousDigest string                `json:"expected_previous_digest,omitempty"`
+}
+
+type LoopLifecycleResult struct {
+	Event      loop.LifecycleEvent `json:"event"`
+	Idempotent bool                `json:"idempotent"`
 }
 
 type PublishGraphInput struct {
@@ -100,6 +115,9 @@ type PublishedGraph struct {
 type LoopView struct {
 	Revision    loop.LoopRevision           `json:"revision"`
 	Validations []loop.LoopValidationResult `json:"validations"`
+	Provenance  loop.PublicationProvenance  `json:"provenance"`
+	Lifecycle   loop.Lifecycle              `json:"lifecycle"`
+	History     []loop.LifecycleEvent       `json:"lifecycle_history"`
 }
 
 type GraphView struct {
@@ -331,7 +349,7 @@ func (s *Service) PublishLoopAs(ctx context.Context, subject core.Subject, input
 		return PublishedLoop{Revision: revision, Validation: validation}, err
 	}
 	request := loop.PublishRequest{Revision: revision, Validation: validation, ExpectedPreviousDigest: input.ExpectedPreviousDigest, IdempotencyKey: input.IdempotencyKey}
-	decision, err := s.Fleet.PublishLoop(ctx, orchestration.PublishLoopRequest{Subject: subject, Authority: input.Authority, Publication: request})
+	decision, err := s.Fleet.PublishLoop(ctx, orchestration.PublishLoopRequest{Subject: subject, Authority: input.Authority, Publisher: input.Publisher, Publication: request})
 	return PublishedLoop{Revision: revision, Validation: validation, Decision: decision}, err
 }
 
@@ -341,6 +359,28 @@ func (s *Service) PublishLoop(ctx context.Context, input PublishLoopInput) (Publ
 		return PublishedLoop{}, err
 	}
 	return s.PublishLoopAs(ctx, subject, input)
+}
+
+func (s *Service) SetLoopLifecycleAs(ctx context.Context, subject core.Subject, id string, input SetLoopLifecycleInput) (LoopLifecycleResult, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return LoopLifecycleResult{}, err
+	}
+	if input.Loop.ID != id {
+		return LoopLifecycleResult{}, fleet.ErrConflict
+	}
+	event, idempotent, err := s.Fleet.SetLoopLifecycle(ctx, orchestration.SetLoopLifecycleRequest{
+		Subject: subject, Authority: input.Authority, Publisher: input.Publisher, Loop: input.Loop,
+		State: input.State, EventID: input.EventID, ExpectedPreviousDigest: input.ExpectedPreviousDigest,
+	})
+	return LoopLifecycleResult{Event: event, Idempotent: idempotent}, err
+}
+
+func (s *Service) SetLoopLifecycle(ctx context.Context, id string, input SetLoopLifecycleInput) (LoopLifecycleResult, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return LoopLifecycleResult{}, err
+	}
+	return s.SetLoopLifecycleAs(ctx, subject, id, input)
 }
 
 func (s *Service) GetLoopAs(ctx context.Context, subject core.Subject, id string, revision uint64) (loop.LoopRevision, error) {
@@ -373,9 +413,44 @@ func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]Loop
 	if err != nil {
 		return nil, err
 	}
+	provenance, err := s.FleetRepository.ListLoopPublicationProvenance(ctx)
+	if err != nil {
+		return nil, err
+	}
+	history, err := s.FleetRepository.ListLoopLifecycleEvents(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]LoopView, 0, len(revisions))
 	for _, revision := range revisions {
-		view := LoopView{Revision: revision, Validations: []loop.LoopValidationResult{}}
+		view := LoopView{Revision: revision, Validations: []loop.LoopValidationResult{}, History: []loop.LifecycleEvent{}, Lifecycle: loop.Lifecycle{LoopID: revision.LoopID, State: loop.LifecycleDraft}}
+		for _, record := range provenance {
+			if record.Loop.ID == revision.LoopID && record.Loop.Revision == revision.Revision {
+				if record.Loop.Digest != revision.Digest {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Provenance = record
+			}
+		}
+		if view.Provenance.Digest == "" {
+			return nil, fleet.ErrCorrupt
+		}
+		previous := ""
+		for _, event := range history {
+			if event.LoopID != revision.LoopID {
+				continue
+			}
+			if event.PreviousDigest != previous {
+				return nil, fleet.ErrCorrupt
+			}
+			view.History = append(view.History, event)
+			previous = event.Digest
+			if event.State == loop.LifecycleActive {
+				view.Lifecycle = loop.Lifecycle{LoopID: revision.LoopID, State: loop.LifecycleActive, ActiveRevision: event.Revision.Revision, ActiveDigest: event.Revision.Digest}
+			} else {
+				view.Lifecycle = loop.Lifecycle{LoopID: revision.LoopID, State: loop.LifecycleRetired}
+			}
+		}
 		for _, validation := range validations {
 			if validation.LoopID == revision.LoopID && validation.Revision == revision.Revision {
 				if validation.RevisionDigest != revision.Digest {
@@ -398,6 +473,30 @@ func (s *Service) ListLoops(ctx context.Context) ([]LoopView, error) {
 		return nil, err
 	}
 	return s.ListLoopsAs(ctx, subject)
+}
+
+func (s *Service) GetLoopViewAs(ctx context.Context, subject core.Subject, id string, revision uint64) (LoopView, error) {
+	if revision == 0 {
+		return LoopView{}, errors.New("exact Loop revision is required")
+	}
+	values, err := s.ListLoopsAs(ctx, subject)
+	if err != nil {
+		return LoopView{}, err
+	}
+	for _, value := range values {
+		if value.Revision.LoopID == id && value.Revision.Revision == revision {
+			return value, nil
+		}
+	}
+	return LoopView{}, fleet.ErrNotFound
+}
+
+func (s *Service) GetLoopView(ctx context.Context, id string, revision uint64) (LoopView, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return LoopView{}, err
+	}
+	return s.GetLoopViewAs(ctx, subject, id, revision)
 }
 
 func (s *Service) PublishGraphAs(ctx context.Context, subject core.Subject, input PublishGraphInput) (PublishedGraph, error) {

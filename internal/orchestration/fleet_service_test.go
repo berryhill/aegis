@@ -21,20 +21,23 @@ import (
 
 type fleetServiceRepository struct {
 	fleet.Repository
-	agent          registry.AgentRevision
-	loop           loop.LoopRevision
-	graph          graph.GraphRevision
-	loadErr        error
-	accepted       *fleet.AcceptedSubmission
-	rejected       *queue.Rejection
-	registerFact   fleet.AuditFact
-	revisionFact   fleet.AuditFact
-	loopPublished  bool
-	graphPublished bool
-	loopExecution  execution.LoopExecution
-	claim          queue.Claim
-	attempt        execution.Attempt
-	completion     fleet.Completion
+	agent           registry.AgentRevision
+	loop            loop.LoopRevision
+	graph           graph.GraphRevision
+	loadErr         error
+	accepted        *fleet.AcceptedSubmission
+	rejected        *queue.Rejection
+	registerFact    fleet.AuditFact
+	revisionFact    fleet.AuditFact
+	loopPublished   bool
+	loopPublication loop.PublishRequest
+	lifecycleEvent  loop.LifecycleEvent
+	lifecycleCalls  int
+	graphPublished  bool
+	loopExecution   execution.LoopExecution
+	claim           queue.Claim
+	attempt         execution.Attempt
+	completion      fleet.Completion
 }
 
 type staticFleetSource []registry.Candidate
@@ -93,9 +96,15 @@ func (repository *fleetServiceRepository) PublishAgentRevision(_ context.Context
 	repository.revisionFact = fact
 	return nil
 }
-func (repository *fleetServiceRepository) PublishLoop(context.Context, loop.PublishRequest, fleet.AuditFact) (loop.PublicationDecision, error) {
+func (repository *fleetServiceRepository) PublishLoop(_ context.Context, request loop.PublishRequest, _ fleet.AuditFact) (loop.PublicationDecision, error) {
 	repository.loopPublished = true
+	repository.loopPublication = request
 	return loop.PublicationDecision{}, nil
+}
+func (repository *fleetServiceRepository) AppendLoopLifecycle(_ context.Context, request loop.LifecycleRequest, _ fleet.AuditFact) (loop.LifecycleEvent, bool, error) {
+	repository.lifecycleEvent = request.Event
+	repository.lifecycleCalls++
+	return request.Event, false, nil
 }
 func (repository *fleetServiceRepository) PublishGraph(context.Context, graph.PublishRequest, fleet.AuditFact) (graph.PublicationDecision, error) {
 	repository.graphPublished = true
@@ -149,7 +158,7 @@ func (commands *sequencedAuthorityCommands) AuthorityAdmission(_ context.Context
 
 func TestFleetReadinessCoversEveryConsequentialAction(t *testing.T) {
 	service, _, _, subject, authorityRef, _ := fleetServiceFixture(t)
-	actions := []FleetAction{FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission, FleetActionClaim, FleetActionReclaim, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition}
+	actions := []FleetAction{FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle, FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission, FleetActionClaim, FleetActionReclaim, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition}
 	for _, action := range actions {
 		request := ReadinessRequest{Action: action, Subject: subject, Authority: authorityRef}
 		if action == FleetActionRegister {
@@ -195,6 +204,63 @@ func TestFleetReadinessSeparatesEmptyUnavailableAndRepairRequired(t *testing.T) 
 	}
 }
 
+func TestPublishLoopBindsExactEnabledPublisherAndImmutableProvenance(t *testing.T) {
+	service, repository, _, subject, authorityRef, _ := fleetServiceFixture(t)
+	validation := loop.ValidateRevision(repository.loop)
+	publication := loop.PublishRequest{Revision: repository.loop, Validation: validation}
+	publisher := revisionRef(repository.agent.AgentID, repository.agent.Revision, repository.agent.Digest)
+
+	wrong := publisher
+	wrong.ID = "prompt-selected-agent"
+	if _, err := service.PublishLoop(context.Background(), PublishLoopRequest{Subject: subject, Authority: authorityRef, Publisher: wrong, Publication: publication}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("wrong publisher err=%v", err)
+	}
+	wrongTarget := publisher
+	repository.agent.Runtime.Target = "substituted-target"
+	if _, err := service.PublishLoop(context.Background(), PublishLoopRequest{Subject: subject, Authority: authorityRef, Publisher: wrongTarget, Publication: publication}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("wrong publisher runtime target err=%v", err)
+	}
+	repository.agent.Runtime.Target = "local"
+	repository.agent.Lifecycle = registry.LifecycleDisabled
+	if _, err := service.PublishLoop(context.Background(), PublishLoopRequest{Subject: subject, Authority: authorityRef, Publisher: publisher, Publication: publication}); !errors.Is(err, ErrDenied) {
+		t.Fatalf("disabled publisher err=%v", err)
+	}
+	repository.agent.Lifecycle = registry.LifecycleEnabled
+	if _, err := service.PublishLoop(context.Background(), PublishLoopRequest{Subject: subject, Authority: authorityRef, Publisher: publisher, Publication: publication}); err != nil {
+		t.Fatalf("publish Loop: %v", err)
+	}
+	provenance := repository.loopPublication.Provenance
+	if provenance.PublisherAgent != provenanceRevision(publisher) || provenance.Authority != provenanceDigest(authorityRef) || provenance.Loop.Digest != repository.loop.Digest || provenance.ValidationDigest != validation.Digest || provenance.MandateID != "mandate-1" || provenance.Digest == "" {
+		t.Fatalf("publication provenance=%+v", provenance)
+	}
+}
+
+func TestSetLoopLifecycleRequiresExactEnabledPublisherAndRecordsAuthority(t *testing.T) {
+	service, repository, _, subject, authorityRef, _ := fleetServiceFixture(t)
+	publisher := revisionRef(repository.agent.AgentID, repository.agent.Revision, repository.agent.Digest)
+	loopRef := revisionRef(repository.loop.LoopID, repository.loop.Revision, repository.loop.Digest)
+	request := SetLoopLifecycleRequest{
+		Subject: subject, Authority: authorityRef, Publisher: publisher, Loop: loopRef,
+		State: loop.LifecycleActive, EventID: "activate-loop-1",
+	}
+
+	wrong := request
+	wrong.Publisher.Digest = "sha256:" + strings.Repeat("f", 64)
+	if _, _, err := service.SetLoopLifecycle(context.Background(), wrong); !errors.Is(err, ErrDenied) {
+		t.Fatalf("substituted publisher err=%v", err)
+	}
+	if repository.lifecycleCalls != 0 {
+		t.Fatal("denied lifecycle request reached persistence")
+	}
+	event, _, err := service.SetLoopLifecycle(context.Background(), request)
+	if err != nil {
+		t.Fatalf("activate Loop: %v", err)
+	}
+	if event.Revision != provenanceRevision(loopRef) || event.PublisherAgent != provenanceRevision(publisher) || event.Authority != provenanceDigest(authorityRef) || event.MandateID != "mandate-1" || event.StanzaID == "" || event.Digest == "" {
+		t.Fatalf("lifecycle event=%+v", event)
+	}
+}
+
 func TestPublishLoopRequiresFreshAuthorityAdmissionAtPublicationBoundary(t *testing.T) {
 	service, repository, authority, subject, authorityRef, _ := fleetServiceFixture(t)
 	if got := service.Readiness(context.Background(), ReadinessRequest{Action: FleetActionLoopPublish, Subject: subject, Authority: authorityRef}); got.State != ReadinessReady {
@@ -216,7 +282,10 @@ func TestPublicationResolvesAuthorityExactlyOnceAtEachBoundary(t *testing.T) {
 	admissions := 0
 	service.authorityCommands = fleetAuthorityCommands{authority: authority, admitted: true, admissions: &admissions}
 
-	if _, err := service.PublishLoop(context.Background(), PublishLoopRequest{Subject: subject, Authority: authorityRef}); err != nil {
+	publisher := revisionRef(repository.agent.AgentID, repository.agent.Revision, repository.agent.Digest)
+	validation := loop.ValidateRevision(repository.loop)
+	publication := loop.PublishRequest{Revision: repository.loop, Validation: validation}
+	if _, err := service.PublishLoop(context.Background(), PublishLoopRequest{Subject: subject, Authority: authorityRef, Publisher: publisher, Publication: publication}); err != nil {
 		t.Fatalf("publish Loop: %v", err)
 	}
 	if admissions != 1 || !repository.loopPublished {
@@ -470,7 +539,7 @@ func fleetServiceFixture(t *testing.T) (*FleetService, *fleetServiceRepository, 
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
 	subject := core.Subject{ID: "subject-1", Kind: "human", PrincipalID: "principal-1", Issuer: "local-os", Method: "local-os", AuthenticatedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}
 	runtime := core.RuntimeDescriptor{Name: "hermes", Runtime: "hermes-agent", Version: "0.18.2", Executable: "/usr/bin/hermes", Installation: "system", AdapterVersion: "1"}
-	mandate := core.Mandate{ID: "mandate-1", Subject: subject, AgentID: "agent-1", StanzaID: "operator", CharterRevision: 1, CharterDigest: "sha256:" + strings.Repeat("a", 64), Runtime: runtime, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}
+	mandate := core.Mandate{ID: "mandate-1", Subject: subject, AgentID: "agent-1", StanzaID: "operator", CharterRevision: 1, CharterDigest: "sha256:" + strings.Repeat("a", 64), Runtime: runtime, Target: "local", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}
 	authority := core.AuthorityContext{ID: "authority-1", MandateID: mandate.ID, SessionID: "session-1", SubjectID: subject.ID, AgentID: mandate.AgentID, CharterRevision: mandate.CharterRevision, CharterDigest: mandate.CharterDigest, Runtime: runtime, Authority: core.EffectiveAuthority{StanzaID: mandate.StanzaID}, IssuedAt: mandate.IssuedAt, ExpiresAt: mandate.ExpiresAt}
 	authority.Digest = core.AuthorityContextDigest(authority)
 

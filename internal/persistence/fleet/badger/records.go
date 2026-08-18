@@ -22,39 +22,42 @@ import (
 )
 
 const (
-	familyRegistration        byte = 0x10
-	familySource                   = 0x11
-	familyAgentRevision            = 0x12
-	familyAgentLatest              = 0x13
-	familyLoopRevision             = 0x20
-	familyLoopValidation           = 0x21
-	familyLoopLatest               = 0x22
-	familyLoopRequest              = 0x23
-	familyGraphRevision            = 0x30
-	familyGraphValidation          = 0x31
-	familyGraphLatest              = 0x32
-	familyGraphRequest             = 0x33
-	familySnapshot                 = 0x34
-	familySnapshotRequest          = 0x35
-	familyGraphLifecycle           = 0x36
-	familySubmission               = 0x50
-	familySubmissionRequest        = 0x51
-	familyRejection                = 0x52
-	familyQueueItem                = 0x53
-	familyQueueTransition          = 0x54
-	familyClaim                    = 0x55
-	familyClaimByItem              = 0x56
-	familyQueueProjection          = 0x57
-	familyQueueRetry               = 0x58
-	familyQueueCancellation        = 0x59
-	familyGraphRun                 = 0x60
-	familyLoopExecution            = 0x61
-	familyAttempt                  = 0x62
-	familyRuntimeArtifact          = 0x63
-	familyVerificationReceipt      = 0x64
-	familyDisposition              = 0x65
-	familyDispositionByRun         = 0x66
-	familyAudit                    = 0x40
+	familyRegistration         byte = 0x10
+	familySource                    = 0x11
+	familyAgentRevision             = 0x12
+	familyAgentLatest               = 0x13
+	familyLoopRevision              = 0x20
+	familyLoopValidation            = 0x21
+	familyLoopLatest                = 0x22
+	familyLoopRequest               = 0x23
+	familyLoopProvenance            = 0x24
+	familyLoopLifecycleEvent        = 0x25
+	familyLoopLifecycleCurrent      = 0x26
+	familyGraphRevision             = 0x30
+	familyGraphValidation           = 0x31
+	familyGraphLatest               = 0x32
+	familyGraphRequest              = 0x33
+	familySnapshot                  = 0x34
+	familySnapshotRequest           = 0x35
+	familyGraphLifecycle            = 0x36
+	familySubmission                = 0x50
+	familySubmissionRequest         = 0x51
+	familyRejection                 = 0x52
+	familyQueueItem                 = 0x53
+	familyQueueTransition           = 0x54
+	familyClaim                     = 0x55
+	familyClaimByItem               = 0x56
+	familyQueueProjection           = 0x57
+	familyQueueRetry                = 0x58
+	familyQueueCancellation         = 0x59
+	familyGraphRun                  = 0x60
+	familyLoopExecution             = 0x61
+	familyAttempt                   = 0x62
+	familyRuntimeArtifact           = 0x63
+	familyVerificationReceipt       = 0x64
+	familyDisposition               = 0x65
+	familyDispositionByRun          = 0x66
+	familyAudit                     = 0x40
 )
 
 func key(family byte, parts ...string) []byte {
@@ -331,7 +334,11 @@ func (s *Store) PublishLoop(ctx context.Context, request loop.PublishRequest, fa
 	if e != nil {
 		return decision, e
 	}
-	binding, e := requestBinding(revisionWire, validationWire, request.ExpectedPreviousDigest, request.IdempotencyKey, fact.Event)
+	provenanceWire, e := loop.MarshalPublicationProvenance(request.Provenance)
+	if e != nil {
+		return decision, e
+	}
+	binding, e := requestBinding(revisionWire, validationWire, provenanceWire, request.ExpectedPreviousDigest, request.IdempotencyKey, fact.Event)
 	if e != nil {
 		return decision, e
 	}
@@ -341,6 +348,9 @@ func (s *Store) PublishLoop(ctx context.Context, request loop.PublishRequest, fa
 			return x
 		} else if found {
 			if bytes.Equal(bound, binding) {
+				if verifyErr := verifyLoopPublicationBundle(txn, request, revisionWire, validationWire, provenanceWire); verifyErr != nil {
+					return verifyErr
+				}
 				decision.Idempotent = true
 				return nil
 			}
@@ -360,6 +370,9 @@ func (s *Store) PublishLoop(ctx context.Context, request loop.PublishRequest, fa
 		} else if !errors.Is(x, fleet.ErrNotFound) {
 			return x
 		}
+		if existing != nil {
+			return fleet.ErrConflict
+		}
 		decision, e = loop.ValidatePublication(request, previous, existing)
 		if e != nil {
 			return e
@@ -367,7 +380,12 @@ func (s *Store) PublishLoop(ctx context.Context, request loop.PublishRequest, fa
 		if decision.Idempotent {
 			return nil
 		}
-		for _, entry := range []struct{ k, v []byte }{{key(familyLoopRevision, request.Revision.LoopID, revisionPart(request.Revision.Revision)), revisionWire}, {key(familyLoopValidation, request.Revision.LoopID, revisionPart(request.Revision.Revision), request.Validation.Digest), validationWire}, {requestKey, binding}} {
+		for _, entry := range []struct{ k, v []byte }{
+			{key(familyLoopRevision, request.Revision.LoopID, revisionPart(request.Revision.Revision)), revisionWire},
+			{key(familyLoopValidation, request.Revision.LoopID, revisionPart(request.Revision.Revision), request.Validation.Digest), validationWire},
+			{key(familyLoopProvenance, request.Revision.LoopID, revisionPart(request.Revision.Revision)), provenanceWire},
+			{requestKey, binding},
+		} {
 			if x := create(txn, entry.k, entry.v); x != nil {
 				return x
 			}
@@ -390,6 +408,32 @@ func loopRevision(txn *badgerdb.Txn, id string, revision uint64) (loop.LoopRevis
 	}
 	return decoded, nil
 }
+
+func verifyLoopPublicationBundle(txn *badgerdb.Txn, request loop.PublishRequest, revisionWire, validationWire, provenanceWire []byte) error {
+	checks := []struct {
+		key  []byte
+		want []byte
+	}{
+		{key(familyLoopRevision, request.Revision.LoopID, revisionPart(request.Revision.Revision)), revisionWire},
+		{key(familyLoopValidation, request.Revision.LoopID, revisionPart(request.Revision.Revision), request.Validation.Digest), validationWire},
+		{key(familyLoopProvenance, request.Revision.LoopID, revisionPart(request.Revision.Revision)), provenanceWire},
+	}
+	for _, check := range checks {
+		stored, err := get(txn, check.key)
+		if err != nil || !bytes.Equal(stored, check.want) {
+			return fleet.ErrCorrupt
+		}
+	}
+	latest, err := get(txn, key(familyLoopLatest, request.Revision.LoopID))
+	if err != nil || len(latest) != 8 || binary.BigEndian.Uint64(latest) < request.Revision.Revision {
+		return fleet.ErrCorrupt
+	}
+	if _, err = loopRevision(txn, request.Revision.LoopID, binary.BigEndian.Uint64(latest)); err != nil {
+		return fleet.ErrCorrupt
+	}
+	return nil
+}
+
 func (s *Store) GetLoopRevision(ctx context.Context, id string, revision uint64) (out loop.LoopRevision, err error) {
 	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = loopRevision(txn, id, revision); return err })
 	return
@@ -402,6 +446,21 @@ func (s *Store) GetLoopValidation(ctx context.Context, id string, revision uint6
 		}
 		out, e = loop.UnmarshalLoopValidationResult(value)
 		if e != nil || out.LoopID != id || out.Revision != revision || out.Digest != digest {
+			return corrupt(e)
+		}
+		return nil
+	})
+	return
+}
+
+func (s *Store) GetLoopPublicationProvenance(ctx context.Context, id string, revision uint64) (out loop.PublicationProvenance, err error) {
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		value, e := get(txn, key(familyLoopProvenance, id, revisionPart(revision)))
+		if e != nil {
+			return e
+		}
+		out, e = loop.UnmarshalPublicationProvenance(value)
+		if e != nil || out.Loop.ID != id || out.Loop.Revision != revision {
 			return corrupt(e)
 		}
 		return nil
@@ -458,6 +517,271 @@ func (s *Store) ListLoopValidations(ctx context.Context) (out []loop.LoopValidat
 			return out[i].Revision < out[j].Revision
 		}
 		return out[i].LoopID < out[j].LoopID
+	})
+	return
+}
+
+func (s *Store) ListLoopPublicationProvenance(ctx context.Context) (out []loop.PublicationProvenance, err error) {
+	out = []loop.PublicationProvenance{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyLoopProvenance, func(recordKey, value []byte) error {
+			item, decodeErr := loop.UnmarshalPublicationProvenance(value)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopProvenance)
+			if keyErr != nil || len(parts) != 2 || parts[0] != item.Loop.ID || parts[1] != revisionPart(item.Loop.Revision) {
+				return fleet.ErrCorrupt
+			}
+			out = append(out, item)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Loop.ID == out[j].Loop.ID {
+			return out[i].Loop.Revision < out[j].Loop.Revision
+		}
+		return out[i].Loop.ID < out[j].Loop.ID
+	})
+	return
+}
+
+func (s *Store) AppendLoopLifecycle(ctx context.Context, request loop.LifecycleRequest, fact fleet.AuditFact) (event loop.LifecycleEvent, idempotent bool, err error) {
+	event = request.Event
+	wire, err := loop.MarshalLifecycleEvent(event)
+	if err != nil {
+		return loop.LifecycleEvent{}, false, err
+	}
+	err = s.update(ctx, func(txn *badgerdb.Txn) error {
+		events, loadErr := loopLifecycleEvents(txn, event.LoopID)
+		if loadErr != nil {
+			return loadErr
+		}
+		currentID, hasCurrent, loadErr := optional(txn, key(familyLoopLifecycleCurrent, event.LoopID))
+		if loadErr != nil {
+			return loadErr
+		}
+		chain, loadErr := orderLoopLifecycle(events, string(currentID), hasCurrent)
+		if loadErr != nil {
+			return loadErr
+		}
+		if loadErr = validateLoopLifecycleChain(txn, chain); loadErr != nil {
+			return loadErr
+		}
+
+		eventKey := key(familyLoopLifecycleEvent, event.LoopID, event.EventID)
+		if existing, found, loadErr := optional(txn, eventKey); loadErr != nil {
+			return loadErr
+		} else if found {
+			stored, decodeErr := loop.UnmarshalLifecycleEvent(existing)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			// OccurredAt and Digest are assigned at the authenticated
+			// application boundary. A retry of the same lifecycle intent may
+			// therefore carry a later timestamp while still being the same
+			// idempotent request. Return the original immutable event.
+			if !sameLifecycleIntent(stored, event) {
+				return fleet.ErrConflict
+			}
+			event = stored
+			idempotent = true
+			return nil
+		}
+
+		current := loop.Lifecycle{LoopID: event.LoopID, State: loop.LifecycleDraft}
+		previousDigest := ""
+		if len(chain) > 0 {
+			previous := chain[len(chain)-1]
+			previousDigest = previous.Digest
+			if previous.State == loop.LifecycleActive {
+				current = loop.Lifecycle{LoopID: event.LoopID, State: loop.LifecycleActive, ActiveRevision: previous.Revision.Revision, ActiveDigest: previous.Revision.Digest}
+			} else {
+				current = loop.Lifecycle{LoopID: event.LoopID, State: loop.LifecycleRetired}
+			}
+		}
+		if event.PreviousDigest != previousDigest || request.ExpectedPreviousDigest != previousDigest {
+			return fleet.ErrConflict
+		}
+		if event.State == loop.LifecycleActive {
+			revision, loadErr := loopRevision(txn, event.LoopID, event.Revision.Revision)
+			if loadErr != nil || revision.Digest != event.Revision.Digest {
+				return fleet.ErrConflict
+			}
+			if _, transitionErr := loop.Activate(current, revision); transitionErr != nil {
+				return transitionErr
+			}
+		} else if _, transitionErr := loop.Retire(current); transitionErr != nil {
+			return transitionErr
+		}
+		if createErr := create(txn, eventKey, wire); createErr != nil {
+			return createErr
+		}
+		if setErr := txn.Set(key(familyLoopLifecycleCurrent, event.LoopID), []byte(event.EventID)); setErr != nil {
+			return setErr
+		}
+		return appendAudit(txn, fact)
+	})
+	return
+}
+
+func sameLifecycleIntent(left, right loop.LifecycleEvent) bool {
+	left.OccurredAt, right.OccurredAt = time.Time{}, time.Time{}
+	left.Digest, right.Digest = "", ""
+	return left == right
+}
+
+func loopLifecycleEvents(txn *badgerdb.Txn, loopID string) ([]loop.LifecycleEvent, error) {
+	events := []loop.LifecycleEvent{}
+	err := scan(txn, familyLoopLifecycleEvent, func(recordKey, value []byte) error {
+		item, decodeErr := loop.UnmarshalLifecycleEvent(value)
+		if decodeErr != nil {
+			return corrupt(decodeErr)
+		}
+		parts, keyErr := decodeKeyParts(recordKey, familyLoopLifecycleEvent)
+		if keyErr != nil || len(parts) != 2 || parts[0] != item.LoopID || parts[1] != item.EventID {
+			return fleet.ErrCorrupt
+		}
+		if item.LoopID == loopID {
+			events = append(events, item)
+		}
+		return nil
+	})
+	return events, err
+}
+
+func orderLoopLifecycle(events []loop.LifecycleEvent, currentID string, hasCurrent bool) ([]loop.LifecycleEvent, error) {
+	if len(events) == 0 {
+		if hasCurrent {
+			return nil, fleet.ErrCorrupt
+		}
+		return []loop.LifecycleEvent{}, nil
+	}
+	if !hasCurrent {
+		return nil, fleet.ErrCorrupt
+	}
+	byDigest := make(map[string]loop.LifecycleEvent, len(events))
+	children := make(map[string]loop.LifecycleEvent, len(events)-1)
+	var genesis loop.LifecycleEvent
+	genesisCount := 0
+	for _, event := range events {
+		if _, exists := byDigest[event.Digest]; exists {
+			return nil, fleet.ErrCorrupt
+		}
+		byDigest[event.Digest] = event
+		if event.PreviousDigest == "" {
+			genesis = event
+			genesisCount++
+			continue
+		}
+		if _, exists := children[event.PreviousDigest]; exists {
+			return nil, fleet.ErrCorrupt
+		}
+		children[event.PreviousDigest] = event
+	}
+	if genesisCount != 1 {
+		return nil, fleet.ErrCorrupt
+	}
+	ordered := make([]loop.LifecycleEvent, 0, len(events))
+	visited := make(map[string]struct{}, len(events))
+	current := genesis
+	for {
+		if _, exists := visited[current.Digest]; exists {
+			return nil, fleet.ErrCorrupt
+		}
+		visited[current.Digest] = struct{}{}
+		ordered = append(ordered, current)
+		next, exists := children[current.Digest]
+		if !exists {
+			break
+		}
+		current = next
+	}
+	if len(ordered) != len(events) || ordered[len(ordered)-1].EventID != currentID {
+		return nil, fleet.ErrCorrupt
+	}
+	return ordered, nil
+}
+
+func validateLoopLifecycleChain(txn *badgerdb.Txn, chain []loop.LifecycleEvent) error {
+	if len(chain) == 0 {
+		return nil
+	}
+	current := loop.Lifecycle{LoopID: chain[0].LoopID, State: loop.LifecycleDraft}
+	for _, event := range chain {
+		if event.LoopID != current.LoopID {
+			return fleet.ErrCorrupt
+		}
+		if event.State == loop.LifecycleActive {
+			revision, err := loopRevision(txn, event.LoopID, event.Revision.Revision)
+			if err != nil || revision.Digest != event.Revision.Digest {
+				return fleet.ErrCorrupt
+			}
+			current, err = loop.Activate(current, revision)
+			if err != nil {
+				return fleet.ErrCorrupt
+			}
+			continue
+		}
+		var err error
+		current, err = loop.Retire(current)
+		if err != nil {
+			return fleet.ErrCorrupt
+		}
+	}
+	return nil
+}
+
+func (s *Store) ListLoopLifecycleEvents(ctx context.Context) (out []loop.LifecycleEvent, err error) {
+	out = []loop.LifecycleEvent{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		byLoop := map[string][]loop.LifecycleEvent{}
+		if scanErr := scan(txn, familyLoopLifecycleEvent, func(recordKey, value []byte) error {
+			item, decodeErr := loop.UnmarshalLifecycleEvent(value)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopLifecycleEvent)
+			if keyErr != nil || len(parts) != 2 || parts[0] != item.LoopID || parts[1] != item.EventID {
+				return fleet.ErrCorrupt
+			}
+			byLoop[item.LoopID] = append(byLoop[item.LoopID], item)
+			return nil
+		}); scanErr != nil {
+			return scanErr
+		}
+		current := map[string]string{}
+		if scanErr := scan(txn, familyLoopLifecycleCurrent, func(recordKey, value []byte) error {
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopLifecycleCurrent)
+			if keyErr != nil || len(parts) != 1 || len(value) == 0 {
+				return fleet.ErrCorrupt
+			}
+			current[parts[0]] = string(value)
+			return nil
+		}); scanErr != nil {
+			return scanErr
+		}
+		ids := make([]string, 0, len(byLoop))
+		for id := range byLoop {
+			ids = append(ids, id)
+		}
+		for id := range current {
+			if _, exists := byLoop[id]; !exists {
+				return fleet.ErrCorrupt
+			}
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			ordered, orderErr := orderLoopLifecycle(byLoop[id], current[id], current[id] != "")
+			if orderErr != nil {
+				return orderErr
+			}
+			if orderErr = validateLoopLifecycleChain(txn, ordered); orderErr != nil {
+				return orderErr
+			}
+			out = append(out, ordered...)
+		}
+		return nil
 	})
 	return
 }

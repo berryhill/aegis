@@ -37,6 +37,16 @@ class InstalledFleetVerticalContract(unittest.TestCase):
         self.assertIn('"schema_version": "aegis.current-fleet.fixture.v1"', proof)
         self.assertIn('final_item.get("projection", {}).get("state")', proof)
 
+    def test_loop_fixture_proves_publisher_provenance_and_lifecycle(self) -> None:
+        proof = (REPO / "scripts" / "verify-installed-fleet-vertical.py").read_text(encoding="utf-8")
+        self.assertIn('"publisher": ref(agent_revision, "proof-agent")', proof)
+        self.assertIn('loop_view["provenance"]', proof)
+        self.assertIn('aegis("loops", "activate", "proof-loop"', proof)
+        self.assertIn('aegis("loops", "retire", "proof-loop"', proof)
+        self.assertIn('loop_view["lifecycle_history"]', proof)
+        self.assertIn('authority_bound_publication_and_append_only_lifecycle', proof)
+        self.assertIn('aegis("loops", "show", "proof-loop", "1")["revision"]["digest"]', proof)
+
 
 if __name__ == "__main__":
     unittest.main()

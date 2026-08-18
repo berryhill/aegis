@@ -74,8 +74,12 @@ type Repository interface {
 	PublishLoop(context.Context, loop.PublishRequest, AuditFact) (loop.PublicationDecision, error)
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)
 	GetLoopValidation(context.Context, string, uint64, string) (loop.LoopValidationResult, error)
+	GetLoopPublicationProvenance(context.Context, string, uint64) (loop.PublicationProvenance, error)
 	ListLoopRevisions(context.Context) ([]loop.LoopRevision, error)
 	ListLoopValidations(context.Context) ([]loop.LoopValidationResult, error)
+	ListLoopPublicationProvenance(context.Context) ([]loop.PublicationProvenance, error)
+	AppendLoopLifecycle(context.Context, loop.LifecycleRequest, AuditFact) (loop.LifecycleEvent, bool, error)
+	ListLoopLifecycleEvents(context.Context) ([]loop.LifecycleEvent, error)
 
 	PublishGraph(context.Context, graph.PublishRequest, AuditFact) (graph.PublicationDecision, error)
 	GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error)

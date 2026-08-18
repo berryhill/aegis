@@ -732,7 +732,22 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
-		return c.JSON(http.StatusCreated, value)
+		return c.JSON(createdOrOK(value.Decision.Idempotent), value)
+	})
+	g.PUT("/loops/:loop/lifecycle", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.SetLoopLifecycleInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.SetLoopLifecycleAs(c.Request().Context(), subject, c.Param("loop"), input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(createdOrOK(value.Idempotent), value)
 	})
 	g.GET("/loops/:loop/:revision", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
@@ -743,7 +758,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
-		value, err := svc.GetLoopAs(c.Request().Context(), subject, c.Param("loop"), revision)
+		value, err := svc.GetLoopViewAs(c.Request().Context(), subject, c.Param("loop"), revision)
 		if err != nil {
 			return err
 		}
@@ -1434,6 +1449,13 @@ func optionalRevision(raw string) (uint64, error) {
 		return 0, nil
 	}
 	return requiredRevision(raw)
+}
+
+func createdOrOK(idempotent bool) int {
+	if idempotent {
+		return http.StatusOK
+	}
+	return http.StatusCreated
 }
 
 func requiredRevision(raw string) (uint64, error) {

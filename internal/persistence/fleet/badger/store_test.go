@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/graph"
@@ -62,7 +63,7 @@ func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	}
 
 	loopRevision, loopValidation := loopFixture(t)
-	loopRequest := loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, IdempotencyKey: "loop-publish-1"}
+	loopRequest := loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, Provenance: loopPublicationProvenance(t, loopRevision, loopValidation), IdempotencyKey: "loop-publish-1"}
 	loopAudit := audit("loop.published", loopRevision.LoopID)
 	decision, err := store.PublishLoop(ctx, loopRequest, loopAudit)
 	if err != nil || decision.Idempotent {
@@ -162,6 +163,122 @@ func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	}
 }
 
+func TestLoopLifecycleIsAppendOnlyAndIntentIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), schemaVersion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	revision, validation := loopFixture(t)
+	publication := loop.PublishRequest{
+		Revision: revision, Validation: validation,
+		Provenance: loopPublicationProvenance(t, revision, validation), IdempotencyKey: "loop-lifecycle-publication",
+	}
+	if _, err = store.PublishLoop(ctx, publication, audit("loop.published", revision.LoopID)); err != nil {
+		t.Fatal(err)
+	}
+	loopRef := loop.NewProvenanceRevision(revision.LoopID, revision.Revision, revision.Digest)
+	activation, err := loop.NewLifecycleEvent(loop.LifecycleEvent{
+		EventID: "activate-loop-1", LoopID: revision.LoopID, State: loop.LifecycleActive, Revision: loopRef,
+		PublisherAgent: publication.Provenance.PublisherAgent, Authority: publication.Provenance.Authority,
+		MandateID: publication.Provenance.MandateID, StanzaID: publication.Provenance.StanzaID, OccurredAt: time.Unix(100, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, idempotent, err := store.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: activation}, audit("loop.activated", revision.LoopID))
+	if err != nil || idempotent || stored != activation {
+		t.Fatalf("activate Loop: event=%+v idempotent=%t err=%v", stored, idempotent, err)
+	}
+
+	// A transport retry reconstructs the same authenticated intent at a later
+	// time. It must return the original immutable event rather than conflict or
+	// append a second history entry.
+	retry := activation
+	retry.OccurredAt = time.Unix(200, 0)
+	retry, err = loop.NewLifecycleEvent(retry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, idempotent, err = store.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: retry}, audit("loop.activated", revision.LoopID))
+	if err != nil || !idempotent || stored != activation {
+		t.Fatalf("retry activation: event=%+v idempotent=%t err=%v", stored, idempotent, err)
+	}
+	history, err := store.ListLoopLifecycleEvents(ctx)
+	if err != nil || len(history) != 1 || history[0] != activation {
+		t.Fatalf("immutable lifecycle history=%+v err=%v", history, err)
+	}
+	retirement, err := loop.NewLifecycleEvent(loop.LifecycleEvent{
+		EventID: "retire-loop-1", LoopID: revision.LoopID, State: loop.LifecycleRetired,
+		PreviousDigest: activation.Digest, PublisherAgent: publication.Provenance.PublisherAgent,
+		Authority: publication.Provenance.Authority, MandateID: publication.Provenance.MandateID,
+		StanzaID: publication.Provenance.StanzaID, OccurredAt: time.Unix(50, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, idempotent, err = store.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: retirement, ExpectedPreviousDigest: activation.Digest}, audit("loop.retired", revision.LoopID)); err != nil || idempotent {
+		t.Fatalf("retire Loop: idempotent=%t err=%v", idempotent, err)
+	}
+	history, err = store.ListLoopLifecycleEvents(ctx)
+	if err != nil || len(history) != 2 || history[0] != activation || history[1] != retirement {
+		t.Fatalf("lifecycle chain order=%+v err=%v", history, err)
+	}
+	freshRetirement := retirement
+	freshRetirement.EventID = "retire-loop-2"
+	freshRetirement.PreviousDigest = retirement.Digest
+	freshRetirement, err = loop.NewLifecycleEvent(freshRetirement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = store.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: freshRetirement, ExpectedPreviousDigest: retirement.Digest}, audit("loop.retired", revision.LoopID)); err == nil {
+		t.Fatal("retired Loop accepted a fresh retirement event")
+	}
+
+	setRawRecord(t, store, key(familyLoopLifecycleCurrent, revision.LoopID), []byte(activation.EventID))
+	staleBranch := retirement
+	staleBranch.EventID = "retire-loop-stale-head"
+	staleBranch, err = loop.NewLifecycleEvent(staleBranch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = store.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: staleBranch, ExpectedPreviousDigest: activation.Digest}, audit("loop.retired", revision.LoopID)); !errors.Is(err, fleet.ErrCorrupt) {
+		t.Fatalf("stale lifecycle head did not fail closed: %v", err)
+	}
+	setRawRecord(t, store, key(familyLoopLifecycleCurrent, revision.LoopID), []byte(retirement.EventID))
+
+	conflict := retry
+	conflict.State = loop.LifecycleRetired
+	conflict.Revision = loop.ProvenanceRevision{}
+	conflict, err = loop.NewLifecycleEvent(conflict)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = store.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: conflict}, audit("loop.retired", revision.LoopID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("reused lifecycle event ID err=%v", err)
+	}
+	postRetirementActivation, err := loop.NewLifecycleEvent(loop.LifecycleEvent{
+		EventID: "activate-after-retirement", LoopID: revision.LoopID, State: loop.LifecycleActive,
+		Revision: publication.Provenance.Loop, PreviousDigest: retirement.Digest,
+		PublisherAgent: publication.Provenance.PublisherAgent, Authority: publication.Provenance.Authority,
+		MandateID: publication.Provenance.MandateID, StanzaID: publication.Provenance.StanzaID, OccurredAt: time.Unix(300, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	postRetirementWire, err := loop.MarshalLifecycleEvent(postRetirementActivation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setRawRecord(t, store, key(familyLoopLifecycleEvent, revision.LoopID, postRetirementActivation.EventID), postRetirementWire)
+	setRawRecord(t, store, key(familyLoopLifecycleCurrent, revision.LoopID), []byte(postRetirementActivation.EventID))
+	if _, err = store.ListLoopLifecycleEvents(ctx); !errors.Is(err, fleet.ErrCorrupt) {
+		t.Fatalf("semantically invalid lifecycle chain did not fail closed: %v", err)
+	}
+}
+
 func TestStoreDeniesConflictsAndRollsBackMutationWithoutAuthoritativeAudit(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), schemaVersion))
@@ -232,10 +349,25 @@ func TestStoreBindsExactReplayRequestAndAuditSemantics(t *testing.T) {
 	defer store.Close()
 
 	loopRevision, loopValidation := loopFixture(t)
-	loopRequest := loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, IdempotencyKey: "loop-binding"}
+	loopRequest := loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, Provenance: loopPublicationProvenance(t, loopRevision, loopValidation), IdempotencyKey: "loop-binding"}
 	loopAudit := audit("loop.published", loopRevision.LoopID)
 	if _, err = store.PublishLoop(ctx, loopRequest, loopAudit); err != nil {
 		t.Fatal(err)
+	}
+	newKey := loopRequest
+	newKey.IdempotencyKey = "loop-binding-other-key"
+	if _, err = store.PublishLoop(ctx, newKey, loopAudit); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("new key replay of an existing Loop revision did not conflict: %v", err)
+	}
+	changedProvenance := loopRequest
+	changedProvenance.IdempotencyKey = "loop-binding-other-provenance"
+	changedProvenance.Provenance.Authority = loop.NewProvenanceDigest("authority-other", loopRequest.Provenance.Authority.Digest)
+	changedProvenance.Provenance, err = loop.NewPublicationProvenance(changedProvenance.Provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.PublishLoop(ctx, changedProvenance, loopAudit); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("substituted Loop provenance did not conflict: %v", err)
 	}
 	changedValidation := loopRequest
 	changedValidation.Validation.Digest = "sha256:" + strings.Repeat("b", 64)
@@ -267,6 +399,11 @@ func TestStoreBindsExactReplayRequestAndAuditSemantics(t *testing.T) {
 	changedGraphAudit.Event.Metadata = map[string]string{"authority_context": "different"}
 	if _, err = store.PublishGraph(ctx, graphRequest, changedGraphAudit); !errors.Is(err, fleet.ErrConflict) {
 		t.Fatalf("same-key changed Graph audit semantics did not conflict: %v", err)
+	}
+
+	deleteRawRecord(t, store, key(familyLoopProvenance, loopRevision.LoopID, revisionPart(loopRevision.Revision)))
+	if _, err = store.PublishLoop(ctx, loopRequest, loopAudit); !errors.Is(err, fleet.ErrCorrupt) {
+		t.Fatalf("idempotent replay did not verify durable Loop publication bundle: %v", err)
 	}
 
 	events, err := store.AuditEvents(ctx)
@@ -537,7 +674,7 @@ func persistedSnapshotFixture(t *testing.T, ctx context.Context, lifecycle regis
 		t.Fatal(err)
 	}
 	loopRevision, loopValidation := loopFixture(t)
-	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, IdempotencyKey: "loop-snapshot"}, audit("loop.published", loopRevision.LoopID)); err != nil {
+	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, Provenance: loopPublicationProvenance(t, loopRevision, loopValidation), IdempotencyKey: "loop-snapshot"}, audit("loop.published", loopRevision.LoopID)); err != nil {
 		t.Fatal(err)
 	}
 	graphRevision, graphValidation := graphFixture(t, agent, loopRevision)
@@ -588,6 +725,23 @@ func agentFixture(t *testing.T) (registry.AgentRegistration, registry.AgentRevis
 		InitialRevision: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.AgentID, Revision: 1, Digest: revision.Digest},
 	}
 	return registration, revision
+}
+
+func loopPublicationProvenance(t *testing.T, revision loop.LoopRevision, validation loop.LoopValidationResult) loop.PublicationProvenance {
+	t.Helper()
+	_, agent := agentFixture(t)
+	digest := "sha256:" + strings.Repeat("b", 64)
+	value, err := loop.NewPublicationProvenance(loop.PublicationProvenance{
+		Loop:           loop.NewProvenanceRevision(revision.LoopID, revision.Revision, revision.Digest),
+		PublisherAgent: loop.NewProvenanceRevision(agent.AgentID, agent.Revision, agent.Digest),
+		Authority:      loop.NewProvenanceDigest("authority-test", digest),
+		MandateID:      "mandate-test", StanzaID: "stanza-test",
+		Runtime: loop.ProvenanceRuntime{Runtime: agent.Runtime.Runtime}, Charter: loop.NewProvenanceRevision(agent.Charter.ID, agent.Charter.Revision, agent.Charter.Digest), ValidationDigest: validation.Digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 func loopFixture(t *testing.T) (loop.LoopRevision, loop.LoopValidationResult) {
