@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/execution"
 )
 
@@ -207,7 +208,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	messageStarted := false
 	for {
 		message, waitErr := waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
-			return (message.Method == "event" && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
+			return (message.Method == "event" && message.Params.SessionID == sessionID && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
 		})
 		if waitErr != nil {
 			return finishContextError(attempt, authority.ExpiresAt, turnContext, waitErr)
@@ -255,6 +256,16 @@ func validateAttemptRequest(request AttemptTurnRequest) error {
 	}
 	if request.Launch.OwnerID == "" || request.Launch.AuthorityContext.Runtime.Runtime != "hermes-agent" {
 		return fmt.Errorf("%w: immutable owner and Hermes authority are required", ErrAttemptDenied)
+	}
+	if err := core.ValidateAuthorityContext(request.Launch.AuthorityContext, request.Launch.Mandate); err != nil {
+		return fmt.Errorf("%w: authority binding is invalid: %v", ErrAttemptDenied, err)
+	}
+	hermesBinding := request.Launch.AuthorityContext.Authority.Hermes
+	if strings.TrimSpace(hermesBinding.Model) == "" || strings.TrimSpace(hermesBinding.Provider) == "" {
+		return fmt.Errorf("%w: authority-selected Hermes provider and model are required", ErrAttemptDenied)
+	}
+	if request.Model != hermesBinding.Model || request.Provider != hermesBinding.Provider {
+		return fmt.Errorf("%w: Hermes provider or model does not match immutable authority", ErrAttemptDenied)
 	}
 	if err := execution.ValidateDispatch(request.Launch.ParentDispatch, request.Launch.AuthorityContext); err != nil {
 		return fmt.Errorf("%w: %v", ErrAttemptDenied, err)

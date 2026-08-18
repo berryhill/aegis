@@ -54,7 +54,7 @@ Thirty-second explanation:
 
 ## Defensible current substrate claim
 
-The fleet-control MVI is Agent Registry → immutable Loop revision → immutable Graph revision → authority-bound Execution Queue → evidence-gated disposition. The current implemented substrate exposes that narrow no-key vertical through shared principal-authenticated CLI/API services, and `scripts/verify-installed-mvi.sh` drives the extracted native release-shaped binary through accepted execution, durable rejection, fresh admission, evidence-gated disposition, and historical readback. Release material must still label this as a bounded alpha vertical rather than claim general fleet orchestration, release publication, or unrestricted production readiness.
+The fleet-control MVI is Agent Registry → immutable Loop revision → immutable Graph revision → authority-bound Execution Queue → evidence-gated disposition. The current implemented substrate exposes that narrow credential-independent vertical through shared principal-authenticated CLI/API services, and `scripts/verify-installed-mvi.sh` drives the extracted native release-shaped binary through accepted execution, durable rejection, fresh admission, one bounded registered Hermes fake-gateway turn, evidence-gated disposition, disposable-home cleanup, and historical readback. Release material must still label this as a bounded alpha vertical rather than claim general fleet orchestration, release publication, or unrestricted production readiness.
 
 The first release may claim that Aegis provides:
 
@@ -71,8 +71,8 @@ The first release may claim that Aegis provides:
 - Local tamper-evident audit verification under the documented checkpoint assumptions.
 - An administrative encrypted credential authority that backs one typed local GitHub broker action but is not a generic runtime secret source.
 - Internal immutable Agent Registry, Loop, Graph, Queue, Execution, Evidence, and Disposition domain slices with qualified durable fleet persistence for definitions, authority-bound Loop publication, append-only Loop activation/retirement, accepted-or-rejected submission, dependency-gated attempt-bounded claims, expired-lease retry/reclaim, queued-or-claimed cancellation, validated rebuildable projections, and atomic terminal evidence/disposition records.
-- Shared principal-authenticated application services with public `agents`, `loops`, `graphs`, and `queue` CLI resources plus protected `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue` routes for registration, immutable publication, authority-bound Loop activation/retirement, submission, durable rejection, exact reads, and one single-node no-key worker through terminal disposition.
-- A repository-owned release-shaped installed proof that verifies four archives and checksums, fail-closed first run, exact Loop publisher/authority provenance and lifecycle history, and the native Registry/Loop/Graph/Queue/evidence/disposition vertical without credentials or production-state mutation.
+- Shared principal-authenticated application services with public `agents`, `loops`, `graphs`, and `queue` CLI resources plus protected `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue` routes for registration, immutable publication, authority-bound Loop activation/retirement, submission, durable rejection, exact reads, and one runtime-routed single-node worker through terminal disposition, including bounded Hermes gateway execution.
+- A repository-owned release-shaped installed proof that verifies four archives and checksums, fail-closed first run, exact Loop publisher/authority provenance and lifecycle history, and the native Registry/Loop/Graph/Queue/Hermes/evidence/disposition vertical through a bounded fake gateway without credentials or production-state mutation.
 
 The first release must not claim:
 
@@ -83,8 +83,8 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
-- A complete or externally supported general Agent Registry, Loop, Graph, or Execution Queue product. The narrow public CLI/API vertical, authority-bound Loop activation/retirement, and live read-only console inspection exist, but browser mutation controls, Graph lifecycle application, real Hermes worker execution, and general scheduling remain launch work.
-- Complete fleet-control lifecycle tooling. Qualified persistence, atomic submission/claim/retry/cancellation facts, public thin-vertical wiring, one single-node no-key worker, and installed proof exist, but migration/backup operations, dirty-store recovery, automated lifecycle scheduling, multi-node scheduling, and real Hermes worker integration remain unimplemented.
+- A complete or externally supported general Agent Registry, Loop, Graph, or Execution Queue product. The narrow public CLI/API vertical, authority-bound Loop activation/retirement, bounded Hermes gateway execution, and live read-only console inspection exist, but browser mutation controls, Graph lifecycle application, live-provider acceptance, and general scheduling remain launch work.
+- Complete fleet-control lifecycle tooling. Qualified persistence, atomic submission/claim/retry/cancellation facts, public thin-vertical wiring, one runtime-routed single-node worker with bounded Hermes execution, and installed fake-gateway proof exist, but migration/backup operations, dirty-store recovery, automated lifecycle scheduling, multi-node scheduling, and live-provider acceptance remain unimplemented.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 
 ## Launch gates

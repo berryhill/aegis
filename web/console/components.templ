@@ -193,9 +193,20 @@ templ DomainCollection(surface SurfaceModel) {
 		<div class="toolbar"><div class="seg-group" role="group" aria-label={ "Filter " + surface.Title + " by lifecycle state" }><button class="seg active" type="button" disabled>All</button></div>@SearchBox(surface.Domain+"-search", "Search "+surface.Title)@CollectionCount(surface, collectionSingular(surface.Domain))</div>
 		@RecordPanel(surface)
 	} else if surface.Domain == DomainQueue {
-		<section class="ops-band" aria-labelledby="active-executions"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="active-executions">Active Executions</h2><p class="band-sub">Executions with an open runtime attempt are represented by their authoritative lifecycle records below.</p></div></div><div class="panel"><div class="state-block"><div><div class="title">No separate aggregate asserted</div><p class="desc">This bounded workspace does not infer active runtime state from collection counts.</p></div></div></div></section>
-		<section class="ops-band" aria-labelledby="failed-executions"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="failed-executions">Failed Executions</h2><p class="band-sub">Failed terminals remain distinct records in Queue &amp; Lifecycle and are never inferred from process exit.</p></div></div><div class="panel"><div class="state-block"><div><div class="title">No separate aggregate asserted</div><p class="desc">Inspect the authoritative lifecycle records below.</p></div></div></div></section>
-		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div><div class="toolbar"><div class="seg-group" role="group" aria-label="Filter by execution state"><button class="seg active" type="button" disabled>All</button></div>@SearchBox("queue-search", "Search executions")@CollectionCount(surface, "execution")</div>@RecordPanel(surface)</section>
+		if surface.Authoritative {
+			@QueueBand(surface, "active-executions", "Active Executions", "Executions holding an authoritative claimed lifecycle state. Queued records are not promoted into this band.", surface.ActiveRecords, "No claimed executions")
+			@QueueBand(surface, "failed-executions", "Failed Executions", "Executions whose authoritative queue projection is failed. Runtime output alone never places a record here.", surface.FailedRecords, "No failed executions")
+		}
+		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div>
+			if surface.Authoritative {
+				<div class="toolbar"><div class="seg-group" role="group" aria-label="Authoritative execution states"><span class="filter-label">Recorded states</span><span class="seg active">All</span>
+					for _, state := range surface.QueueStates {
+						<span class="seg">{ state }</span>
+					}
+				</div>@CollectionCount(surface, "execution")</div>
+			}
+			@QueueRecordPanel(surface, surface.Records)
+		</section>
 	} else {
 		<div class="filter-row standalone" role="group" aria-label="Filter by credential status"><span class="filter-label">Status</span><button class="seg active" type="button" disabled>All</button></div>
 		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head">@CollectionCount(surface, "credential")@SearchBox("credential-search", "Search credentials")</div>@RecordPanel(surface)</div><aside class="detail credential-detail" aria-label="Selected credential"><strong>Select a credential</strong><p>Inspect configured provider-binding metadata. Secret values and environment mappings are never read or shown here.</p></aside></section>
@@ -203,6 +214,24 @@ templ DomainCollection(surface SurfaceModel) {
 	if len(surface.Records) == 0 && surface.State == "empty" {
 		<div class="panel"><div class="empty-state"><strong>No records</strong><span>The authoritative collection read succeeded and returned zero records.</span></div></div>
 	}
+}
+
+templ QueueBand(surface SurfaceModel, id, title, description string, records []RecordModel, empty string) {
+	<section class="ops-band" aria-labelledby={ id }><div class="band-head"><div class="band-intro"><h2 class="band-title" id={ id }>{ title }</h2><p class="band-sub">{ description }</p></div><span class="count">{ countLabel(len(records), "execution") }</span></div>
+		if len(records) == 0 {
+			<div class="panel"><p class="empty-note queue-empty">{ empty }</p></div>
+		} else {
+			@QueueRecordPanel(surface, records)
+		}
+	</section>
+}
+
+templ QueueRecordPanel(surface SurfaceModel, records []RecordModel) {
+	<div class="panel"><div class="panel-body compact"><ul class="queue-records" aria-label="Execution records">
+		for _, record := range records {
+			<li><a id={ "record-" + record.Key } class="op-row" data-state={ record.Lifecycle } href={ consoleRoute(surface.Domain, record.Key) }><span><strong>{ record.Label }</strong><small>{ record.Summary }</small></span><span>{ record.Revision }</span><span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span><span>{ record.Runtime }</span></a></li>
+		}
+	</ul></div></div>
 }
 
 templ AgentFilters(surface SurfaceModel) {
@@ -258,7 +287,9 @@ templ RecordCard(domain string, record RecordModel) {
 templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 	<aside id="inspector" class="inspector" aria-labelledby="inspector-title" tabindex="-1" hidden?={ !open }>
 		if record != nil {
-			if record.Graph != nil {
+			if record.Queue != nil {
+				@QueueInspector(surface, record)
+			} else if record.Graph != nil {
 				@GraphInspector(surface, record)
 			} else if len(record.Fields) > 0 {
 				<div class="detail-head"><div class="detail-title"><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ registryURL(surface) }>Back to Registry</a></div>
@@ -277,6 +308,52 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 			}
 		}
 	</aside>
+}
+
+templ QueueInspector(surface SurfaceModel, record *RecordModel) {
+	<nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ consoleRoute(surface.Domain, "") }>← Back to Execution Queue</a></nav>
+	<div class="record-head"><div><span class="eyebrow">Authoritative execution record</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Queue.GraphRun.ID } · snapshot { record.Revision }</p></div><span class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span></div>
+	if record.Lifecycle == "failed" || record.Lifecycle == "denied" || record.Lifecycle == "expired" || record.Lifecycle == "cancelled" {
+		<div class={ "execution-alert " + record.Lifecycle }><strong>{ stateHeading(record.Lifecycle) } execution</strong><span>This state is shown from the authoritative queue projection. It has not been upgraded from artifact, receipt, or process output.</span></div>
+	}
+	<div class="detail-split execution-workspace">
+		<section class="gw-pane gw-canvas" aria-labelledby="execution-canvas"><div class="canvas-bar"><h3 class="canvas-title" id="execution-canvas">Execution canvas</h3></div><div class="execution-canvas">
+			@ExecutionNode(record.Queue.GraphRun)
+			for _, node := range record.Queue.Loops {
+				<span class="canvas-arrow" aria-hidden="true">↓</span>@ExecutionNode(node)
+			}
+			for _, attempt := range record.Queue.Attempts {
+				<span class="canvas-arrow" aria-hidden="true">↓</span><article class={ "execution-node " + attempt.State }><span class="node-kind">Attempt { fmt.Sprintf("%d", attempt.Number) }</span><strong>{ attempt.ID }</strong><span>{ attempt.State } · { attempt.LoopID }</span><small>claim { attempt.ClaimID }</small></article>
+			}
+		</div></section>
+		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")</div></aside>
+	</div>
+	<div class="execution-support">
+		<section class="support-panel" aria-labelledby="execution-timeline"><h3 id="execution-timeline">Execution timeline</h3><ol class="timeline">
+			for _, event := range record.Queue.Timeline {
+				<li data-state={ event.State }><strong>{ event.Title } · { event.State }</strong><time>{ event.At }</time><span>{ event.Detail }</span></li>
+			}
+		</ol></section>
+		<section class="support-panel" aria-labelledby="attempt-provenance"><h3 id="attempt-provenance">Attempt provenance</h3>
+			if len(record.Queue.Attempts) == 0 {
+				<p class="empty-note">Unavailable — no authoritative attempt is recorded.</p>
+			}
+			for _, attempt := range record.Queue.Attempts {
+				<article class="receipt-card"><strong>{ attempt.ID } · attempt { fmt.Sprintf("%d", attempt.Number) }</strong><dl class="spec"><dt>State</dt><dd>{ attempt.State }</dd><dt>Loop execution</dt><dd>{ attempt.LoopID }</dd><dt>Claim</dt><dd>{ attempt.ClaimID }</dd><dt>Created</dt><dd>{ attempt.Created }</dd><dt>Digest</dt><dd>{ attempt.Digest }</dd></dl></article>
+			}
+		</section>
+		<section class="support-panel" aria-labelledby="runtime-artifact"><h3 id="runtime-artifact">Runtime artifact</h3><p class="truth-label">{ record.Queue.ArtifactState }</p>@FieldList(record.Queue.Artifact, "No artifact record")</section>
+		<section class="support-panel" aria-labelledby="verifier-receipts"><h3 id="verifier-receipts">Verifier receipts</h3><p class="truth-label">{ record.Queue.ReceiptState }</p>
+			for _, receipt := range record.Queue.Receipts {
+				<article class={ "receipt-card " + receipt.Outcome }><strong>{ receipt.ID } · { receipt.Outcome }</strong><dl class="spec"><dt>Claim</dt><dd>{ receipt.Claim }</dd><dt>Verifier / policy</dt><dd>{ receipt.Verifier }</dd><dt>Expected digest</dt><dd>{ receipt.ExpectedDigest }</dd><dt>Observed digest</dt><dd>{ receipt.ObservedDigest }</dd><dt>Failure category</dt><dd>{ receipt.FailureCategory }</dd><dt>Observed</dt><dd>{ receipt.ObservedAt }</dd></dl></article>
+			}
+		</section>
+		<section class="support-panel disposition-panel" aria-labelledby="terminal-disposition"><h3 id="terminal-disposition">Terminal disposition</h3><p class="truth-label">{ record.Queue.DispositionState }</p>@FieldList(record.Queue.Disposition, "No terminal disposition record")<p class="inline-notice">Only this authoritative disposition can support terminal success. Artifacts and passing verifier receipts do not upgrade execution state.</p></section>
+	</div>
+}
+
+templ ExecutionNode(node QueueExecutionNodeModel) {
+	<article class={ "execution-node " + node.State }><span class="node-kind">{ node.Kind }</span><strong>{ node.ID }</strong><span>{ node.State }</span><small>{ node.Binding }</small><small>{ node.Digest }</small></article>
 }
 
 templ GraphInspector(surface SurfaceModel, record *RecordModel) {
@@ -320,7 +397,10 @@ templ RecordLabel(label string) { <span>{ label }</span> }
 
 func consoleRoute(domain, recordKey string) string {
 	path := fmt.Sprintf("/console/%s", domain)
-	if recordKey != "" { path += "?record_key=" + recordKey }
+	if recordKey != "" {
+		path += "?record_key=" + recordKey
+		if domain == DomainQueue { return path + "#/queue/" + recordKey }
+	}
 	return path + "#/" + domain
 }
 

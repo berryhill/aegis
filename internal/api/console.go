@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
@@ -236,8 +237,25 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Graph record")
 			}
 			record = consoleGraphRecord(graphView, surface.Submissions, string(data))
+		} else if domain == consoleQueue {
+			queueView, ok := value.(app.QueueExecutionView)
+			if !ok {
+				return consoleweb.SurfaceModel{}, errors.New("invalid Execution Queue record")
+			}
+			record = consoleQueueRecord(queueView)
 		}
 		model.Records = append(model.Records, record)
+		if domain == consoleQueue {
+			if !containsString(model.QueueStates, record.Lifecycle) {
+				model.QueueStates = append(model.QueueStates, record.Lifecycle)
+			}
+			if record.Lifecycle == "claimed" {
+				model.ActiveRecords = append(model.ActiveRecords, record)
+			}
+			if record.Lifecycle == "failed" {
+				model.FailedRecords = append(model.FailedRecords, record)
+			}
+		}
 	}
 	return model, nil
 }
@@ -430,6 +448,72 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 		Summary: fmt.Sprintf("revision %d · %d nodes · %d dependencies", revision.Revision, len(revision.Nodes), len(revision.Dependencies)),
 		JSON:    raw, Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision), Graph: detail,
 	}
+}
+
+func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
+	state := string(view.Projection.State)
+	detail := &consoleweb.QueueDetailModel{
+		QueueItem: []consoleweb.FieldModel{
+			{Label: "Queue item", Value: view.Item.ItemID + " @ " + view.Item.Digest},
+			{Label: "Submission", Value: view.Item.Submission.ID + " @ " + view.Item.Submission.Digest},
+			{Label: "Snapshot", Value: view.Item.Snapshot.ID + " @ " + view.Item.Snapshot.Digest},
+			{Label: "Authority", Value: view.Item.Authority.ID + " @ " + view.Item.Authority.Digest},
+			{Label: "Enqueued", Value: consoleTime(view.Item.EnqueuedAt)},
+			{Label: "Available", Value: consoleTime(view.Projection.AvailableAt)},
+			{Label: "Attempt bound", Value: fmt.Sprintf("%d maximum · %d recorded by projection", view.Item.MaxAttempts, view.Projection.Attempts)},
+		},
+		Runtime: []consoleweb.FieldModel{
+			{Label: "Adapter", Value: fallback(view.Runtime.Adapter, "Unavailable")},
+			{Label: "Runtime", Value: fallback(view.Runtime.Runtime, "Unavailable")},
+			{Label: "Target", Value: fallback(view.Runtime.Target, "Unavailable")},
+		},
+		GraphRun: consoleweb.QueueExecutionNodeModel{ID: view.GraphRun.GraphRunID, Kind: "Graph run", State: string(view.GraphRun.State), Binding: view.GraphRun.Snapshot.ID + " @ " + view.GraphRun.Snapshot.Digest, Digest: view.GraphRun.Digest},
+		Loops:    []consoleweb.QueueExecutionNodeModel{}, Attempts: []consoleweb.QueueAttemptModel{}, Timeline: []consoleweb.QueueTimelineModel{}, Receipts: []consoleweb.QueueReceiptModel{},
+		ArtifactState:    "Unavailable — no authoritative runtime artifact is attached.",
+		ReceiptState:     "Unavailable — no authoritative verifier receipt is attached.",
+		DispositionState: "Pending — no authoritative terminal disposition is attached.",
+	}
+	detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queued", State: string(view.Item.State), At: consoleTime(view.Item.EnqueuedAt), Detail: view.Item.ItemID})
+	for _, child := range view.LoopExecutions {
+		detail.Loops = append(detail.Loops, consoleweb.QueueExecutionNodeModel{ID: child.LoopExecutionID, Kind: "Loop execution · " + child.GraphNodeID, State: string(child.State), Binding: exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · participant " + exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest), Digest: child.Digest})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Loop execution", State: string(child.State), At: consoleTime(child.CreatedAt), Detail: child.LoopExecutionID + " · node " + child.GraphNodeID})
+	}
+	for _, attempt := range view.Attempts {
+		detail.Attempts = append(detail.Attempts, consoleweb.QueueAttemptModel{ID: attempt.AttemptID, Number: attempt.AttemptNumber, State: string(attempt.State), LoopID: attempt.LoopExecutionID, ClaimID: attempt.ClaimID, Created: consoleTime(attempt.CreatedAt), Digest: attempt.Digest})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: fmt.Sprintf("Attempt %d", attempt.AttemptNumber), State: string(attempt.State), At: consoleTime(attempt.CreatedAt), Detail: attempt.AttemptID + " · claim " + fallback(attempt.ClaimID, "unavailable")})
+	}
+	if view.Artifact != nil {
+		detail.ArtifactState = "Authoritative runtime artifact"
+		detail.Artifact = []consoleweb.FieldModel{{Label: "Artifact", Value: view.Artifact.ID}, {Label: "Attempt", Value: view.Artifact.AttemptID}, {Label: "Action / run", Value: view.Artifact.ActionID + " / " + view.Artifact.RunID}, {Label: "Digest / content reference", Value: view.Artifact.Digest + " / " + view.Artifact.ContentRef}, {Label: "Media type", Value: view.Artifact.MediaType}, {Label: "Created", Value: consoleTime(view.Artifact.CreatedAt)}}
+	}
+	for _, receipt := range view.Receipts {
+		detail.Receipts = append(detail.Receipts, consoleweb.QueueReceiptModel{ID: receipt.ID, Outcome: string(receipt.Outcome), Claim: receipt.Claim, Verifier: receipt.VerifierID + " / " + receipt.PolicyVersion, ExpectedDigest: receipt.ExpectedDigest, ObservedDigest: fallback(receipt.ObservedDigest, "Unavailable"), FailureCategory: fallback(receipt.FailureCategory, "None recorded"), ObservedAt: consoleTime(receipt.ObservedAt)})
+	}
+	if len(detail.Receipts) > 0 {
+		detail.ReceiptState = "Authoritative verifier receipts"
+	}
+	if view.Disposition != nil {
+		detail.DispositionState = "Authoritative terminal disposition"
+		detail.Disposition = []consoleweb.FieldModel{{Label: "Disposition", Value: view.Disposition.DispositionID + " @ " + view.Disposition.Digest}, {Label: "State", Value: string(view.Disposition.State)}, {Label: "Reason code", Value: view.Disposition.ReasonCode}, {Label: "Attempt", Value: view.Disposition.AttemptID}, {Label: "Occurred", Value: consoleTime(view.Disposition.OccurredAt)}}
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Disposition", State: string(view.Disposition.State), At: consoleTime(view.Disposition.OccurredAt), Detail: view.Disposition.ReasonCode})
+	}
+	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, Queue: detail}
+}
+
+func consoleTime(value time.Time) string {
+	if value.IsZero() {
+		return "Unavailable"
+	}
+	return value.UTC().Format(time.RFC3339)
+}
+
+func containsString(values []string, value string) bool {
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 func exactRevisionLabel(id string, revision uint64, digest string) string {

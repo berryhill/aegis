@@ -14,12 +14,15 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
+	"github.com/berryhill/aegis/internal/registry"
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
@@ -186,7 +189,7 @@ func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *test
 	revision, validation, err := loop.NewRevision(loop.LoopRevision{
 		LoopID: "loop.review", Revision: 3, PreviousDigest: digest, EntryStepID: "review",
 		Steps: []loop.Step{
-			{ID: "review", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "review-receipt", MediaType: "application/json"}}},
+			{ID: "review", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "review-receipt", MediaType: "application/json", ExpectedDigest: digest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1}}},
 			{ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}},
 		},
 		Transitions:      []loop.Transition{{ID: "complete", FromStepID: "review", ToStepID: "done"}},
@@ -275,6 +278,38 @@ func TestConsoleGraphRecordPreservesExactTopologyLifecycleAndSubmissionTruth(t *
 	activeLabel := exactRevisionLabel(revision.GraphID, revision.Revision-1, digest("9"))
 	if historical.Lifecycle != "inactive" || strings.Contains(historical.Readiness, "Active exact revision") || !strings.Contains(historical.Readiness, activeLabel) {
 		t.Fatalf("historical Graph revision was mislabeled: %+v", historical)
+	}
+}
+
+func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *testing.T) {
+	digest := func(marker string) string { return "sha256:" + strings.Repeat(marker, 64) }
+	at := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	view := app.QueueExecutionView{
+		Item: queue.Item{ItemID: "queue-130", Digest: digest("1"), State: queue.StateQueued, MaxAttempts: 3, EnqueuedAt: at,
+			Submission: reference.DigestRef{ID: "submission-130", Digest: digest("2")}, Snapshot: reference.DigestRef{ID: "snapshot-130", Digest: digest("3")}, Authority: reference.DigestRef{ID: "authority-130", Digest: digest("4")}},
+		Projection: queue.Projection{QueueItemID: "queue-130", State: queue.StateFailed, Attempts: 1, AvailableAt: at},
+		GraphRun:   execution.GraphRun{GraphRunID: "graph-run-130", State: execution.StateSucceeded, Snapshot: reference.DigestRef{ID: "snapshot-130", Digest: digest("3")}, Digest: digest("5")},
+		LoopExecutions: []execution.LoopExecution{{LoopExecutionID: "loop-exec-130", GraphNodeID: "review", State: execution.StateFailed, CreatedAt: at,
+			Loop: reference.RevisionRef{ID: "loop-review", Revision: 7, Digest: digest("6")}, Participant: reference.RevisionRef{ID: "agent-reviewer", Revision: 2, Digest: digest("7")}, Digest: digest("8")}},
+		Attempts:    []execution.Attempt{{AttemptID: "attempt-130", LoopExecutionID: "loop-exec-130", ClaimID: "claim-130", AttemptNumber: 1, State: execution.StateFailed, CreatedAt: at, Digest: digest("9")}},
+		Runtime:     registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"},
+		Artifact:    &evidence.RuntimeArtifact{ID: "artifact-130", AttemptID: "attempt-130", ActionID: "review", RunID: "graph-run-130", Digest: digest("a"), ContentRef: digest("a"), MediaType: "application/json", CreatedAt: at},
+		Receipts:    []evidence.VerificationReceipt{{ID: "receipt-130", Outcome: evidence.Passed, Claim: "review-receipt", VerifierID: "artifact-verifier", PolicyVersion: "v1", ExpectedDigest: digest("a"), ObservedDigest: digest("a"), ObservedAt: at}},
+		Disposition: &disposition.Record{DispositionID: "disposition-130", Digest: digest("b"), State: execution.StateFailed, ReasonCode: "runtime_exit_nonzero", AttemptID: "attempt-130", OccurredAt: at},
+	}
+	record := consoleQueueRecord(view)
+	if record.Key != "queue-130" || record.Lifecycle != "failed" || record.Queue == nil || record.Queue.GraphRun.State != "succeeded" {
+		t.Fatalf("queue truth was collapsed or upgraded: %+v", record)
+	}
+	wantBinding := exactRevisionLabel("loop-review", 7, digest("6")) + " · participant " + exactRevisionLabel("agent-reviewer", 2, digest("7"))
+	if len(record.Queue.Loops) != 1 || record.Queue.Loops[0].Binding != wantBinding {
+		t.Fatalf("exact Loop/participant provenance lost: %+v", record.Queue.Loops)
+	}
+	if len(record.Queue.Attempts) != 1 || record.Queue.Attempts[0].ClaimID != "claim-130" || len(record.Queue.Receipts) != 1 || record.Queue.Receipts[0].Outcome != "passed" {
+		t.Fatalf("attempt or receipt provenance lost: %+v", record.Queue)
+	}
+	if record.Queue.Disposition[1].Value != "failed" || record.Queue.Disposition[2].Value != "runtime_exit_nonzero" {
+		t.Fatalf("authoritative disposition lost: %+v", record.Queue.Disposition)
 	}
 }
 

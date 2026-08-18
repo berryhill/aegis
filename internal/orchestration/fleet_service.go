@@ -208,6 +208,21 @@ func definitionReadiness(action FleetAction, err error, repair RepairAction) Rea
 	}
 }
 
+func (service *FleetService) authorityIdentity(ctx context.Context, ref reference.DigestRef) (core.AuthorityContext, core.Mandate, bool) {
+	if ref.Validate() != nil {
+		return core.AuthorityContext{}, core.Mandate{}, false
+	}
+	authority, err := service.authority.GetAuthorityContext(ctx, ref.ID)
+	if err != nil || authority.Digest != ref.Digest {
+		return core.AuthorityContext{}, core.Mandate{}, false
+	}
+	mandate, err := service.authority.GetMandate(ctx, authority.MandateID)
+	if err != nil || core.ValidateAuthorityContext(authority, mandate) != nil {
+		return core.AuthorityContext{}, core.Mandate{}, false
+	}
+	return authority, mandate, true
+}
+
 func (service *FleetService) resolveAuthority(ctx context.Context, subject core.Subject, ref reference.DigestRef) (core.AuthorityContext, core.Mandate, Readiness) {
 	if err := ref.Validate(); err != nil {
 		return core.AuthorityContext{}, core.Mandate{}, readiness(FleetActionSubmission, ReadinessDenied, "authority_reference_invalid")

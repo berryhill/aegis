@@ -23,17 +23,27 @@ class InstalledFleetVerticalContract(unittest.TestCase):
             "graph",
             "queue",
             "fresh_runtime_admission",
+            "hermes_queue_execution",
             "evidence_gated_disposition",
             "durable_rejection",
             "historical_reconstruction",
         ):
             self.assertIn(marker, proof)
 
-    def test_no_key_fixture_declares_no_credential_scope(self) -> None:
+    def test_vertical_runs_from_a_real_repository_child_of_its_isolated_home(self) -> None:
+        proof = (REPO / "scripts" / "verify-installed-fleet-vertical.py").read_text(encoding="utf-8")
+        self.assertIn('repository = home / "repository"', proof)
+        self.assertIn("repository.mkdir(mode=0o700)", proof)
+        self.assertIn("cwd=repository", proof)
+
+    def test_hermes_fixture_declares_no_credential_scope_and_real_gateway_protocol(self) -> None:
         proof = (REPO / "scripts" / "verify-installed-fleet-vertical.py").read_text(encoding="utf-8")
         self.assertNotIn('"credentials": ["provider:none"]', proof)
         self.assertIn('"credentials": []', proof)
-        self.assertIn("exec sleep 3600", proof)
+        self.assertIn("gateway.ready", proof)
+        self.assertIn("message.complete", proof)
+        self.assertIn('\\"session_id\\":\\"installed-hermes-session\\"', proof)
+        self.assertIn("bounded Hermes queue path retained a disposable runtime home", proof)
         self.assertIn('"schema_version": "aegis.current-fleet.fixture.v1"', proof)
         self.assertIn('final_item.get("projection", {}).get("state")', proof)
 

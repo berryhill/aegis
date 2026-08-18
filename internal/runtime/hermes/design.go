@@ -26,8 +26,9 @@ type gatewayMessage struct {
 	ID      any    `json:"id,omitempty"`
 	Method  string `json:"method,omitempty"`
 	Params  struct {
-		Type    string         `json:"type"`
-		Payload map[string]any `json:"payload"`
+		Type      string         `json:"type"`
+		SessionID string         `json:"session_id"`
+		Payload   map[string]any `json:"payload"`
 	} `json:"params,omitempty"`
 	Result map[string]any `json:"result,omitempty"`
 	Error  *struct {
