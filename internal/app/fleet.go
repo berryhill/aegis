@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
@@ -142,11 +144,15 @@ type SubmissionHistory struct {
 }
 
 type QueueExecutionView struct {
-	Item           queue.Item                `json:"item"`
-	Projection     queue.Projection          `json:"projection"`
-	GraphRun       execution.GraphRun        `json:"graph_run"`
-	LoopExecutions []execution.LoopExecution `json:"loop_executions"`
-	Attempts       []execution.Attempt       `json:"attempts"`
+	Item           queue.Item                     `json:"item"`
+	Projection     queue.Projection               `json:"projection"`
+	GraphRun       execution.GraphRun             `json:"graph_run"`
+	LoopExecutions []execution.LoopExecution      `json:"loop_executions"`
+	Attempts       []execution.Attempt            `json:"attempts"`
+	Runtime        registry.RuntimeBinding        `json:"runtime"`
+	Artifact       *evidence.RuntimeArtifact      `json:"artifact,omitempty"`
+	Receipts       []evidence.VerificationReceipt `json:"receipts"`
+	Disposition    *disposition.Record            `json:"disposition,omitempty"`
 }
 
 type SurfaceReadiness struct {
@@ -664,25 +670,23 @@ func (s *Service) SubmitGraph(ctx context.Context, request orchestration.SubmitG
 	return s.SubmitGraphAs(ctx, subject, request)
 }
 
-func (s *Service) GetQueueItemAs(ctx context.Context, subject core.Subject, id string) (QueueItemView, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
-		return QueueItemView{}, err
-	}
-	item, err := s.FleetRepository.GetQueueItem(ctx, id)
+func (s *Service) GetQueueItemAs(ctx context.Context, subject core.Subject, id string) (QueueExecutionView, error) {
+	views, err := s.ListQueueAs(ctx, subject)
 	if err != nil {
-		return QueueItemView{}, err
+		return QueueExecutionView{}, err
 	}
-	projection, err := s.FleetRepository.GetQueueProjection(ctx, id)
-	if err != nil {
-		return QueueItemView{}, err
+	for _, view := range views {
+		if view.Item.ItemID == id {
+			return view, nil
+		}
 	}
-	return QueueItemView{Item: item, Projection: projection}, nil
+	return QueueExecutionView{}, fleet.ErrNotFound
 }
 
-func (s *Service) GetQueueItem(ctx context.Context, id string) (QueueItemView, error) {
+func (s *Service) GetQueueItem(ctx context.Context, id string) (QueueExecutionView, error) {
 	subject, err := s.Authenticate(ctx)
 	if err != nil {
-		return QueueItemView{}, err
+		return QueueExecutionView{}, err
 	}
 	return s.GetQueueItemAs(ctx, subject, id)
 }
@@ -716,7 +720,21 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		if projection.QueueItemID != item.ItemID {
 			return nil, fleet.ErrCorrupt
 		}
-		view := QueueExecutionView{Item: item, Projection: projection, LoopExecutions: []execution.LoopExecution{}, Attempts: []execution.Attempt{}}
+		view := QueueExecutionView{Item: item, Projection: projection, LoopExecutions: []execution.LoopExecution{}, Attempts: []execution.Attempt{}, Receipts: []evidence.VerificationReceipt{}}
+		snapshot, loadErr := s.FleetRepository.GetGraphRunSnapshot(ctx, item.Snapshot.ID)
+		if loadErr != nil || snapshot.Digest != item.Snapshot.Digest {
+			return nil, fleet.ErrCorrupt
+		}
+		graphRevision, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
+		if loadErr != nil || graphRevision.Digest != snapshot.Graph.Digest || len(graphRevision.Nodes) != 1 {
+			return nil, fleet.ErrCorrupt
+		}
+		participantRef := graphRevision.Nodes[0].Participant
+		participant, loadErr := s.FleetRepository.GetAgentRevision(ctx, participantRef.ID, participantRef.Revision)
+		if loadErr != nil || participant.Digest != participantRef.Digest {
+			return nil, fleet.ErrCorrupt
+		}
+		view.Runtime = participant.Runtime
 		foundRun := false
 		for _, run := range runs {
 			if run.GraphRunID == item.GraphRunID {
@@ -740,6 +758,29 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 					return nil, fleet.ErrCorrupt
 				}
 				view.Attempts = append(view.Attempts, attempt)
+			}
+		}
+		if projection.State != queue.StateQueued && projection.State != queue.StateClaimed {
+			dispositionRecord, loadErr := s.FleetRepository.GetDispositionByGraphRun(ctx, item.GraphRunID)
+			if loadErr != nil || dispositionRecord.QueueItem.ID != item.ItemID || dispositionRecord.QueueItem.Digest != item.Digest {
+				return nil, fleet.ErrCorrupt
+			}
+			view.Disposition = &dispositionRecord
+			if len(dispositionRecord.ArtifactIDs) == 1 {
+				artifact, artifactErr := s.FleetRepository.GetRuntimeArtifact(ctx, dispositionRecord.ArtifactIDs[0])
+				if artifactErr != nil {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Artifact = &artifact
+			} else if len(dispositionRecord.ArtifactIDs) != 0 {
+				return nil, fleet.ErrCorrupt
+			}
+			for _, receiptID := range dispositionRecord.ReceiptIDs {
+				receipt, receiptErr := s.FleetRepository.GetVerificationReceipt(ctx, receiptID)
+				if receiptErr != nil || view.Artifact == nil || receipt.ArtifactID != view.Artifact.ID {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Receipts = append(view.Receipts, receipt)
 			}
 		}
 		result = append(result, view)

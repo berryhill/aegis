@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Run the installed Aegis binary through the no-key fleet thin vertical.
+"""Run the installed Aegis binary through the bounded Hermes fleet vertical.
 
 The caller creates the authority generation first. Every product operation below
 is executed by the extracted release-shaped binary against one isolated proof
-root; this program never imports Aegis implementation packages.
+root. A bounded fake Hermes gateway exercises the production Hermes queue path;
+this program never imports Aegis implementation packages.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -45,14 +47,35 @@ def main() -> int:
 
     user = pwd.getpwuid(os.getuid())
     home = root / "home"
+    repository = home / "repository"
     fixtures = root / "fixtures"
     home.mkdir(mode=0o700)
+    repository.mkdir(mode=0o700)
     fixtures.mkdir(mode=0o700)
+    hermes_install = root / "hermes-fixture"
+    gateway = hermes_install / "venv" / "bin" / "python"
+    gateway.parent.mkdir(parents=True, mode=0o700)
+    gateway_log = fixtures / "hermes-gateway-invoked"
+    gateway.write_text(
+        "#!/bin/sh\n"
+        f"printf 'invoked\\n' > '{gateway_log}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"gateway.ready\",\"payload\":{}}}'\n"
+        "read create\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":\"create\",\"result\":{\"session_id\":\"installed-hermes-session\"}}'\n"
+        "read prompt\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":\"prompt\",\"result\":{\"accepted\":true}}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.start\",\"payload\":{}}}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.delta\",\"payload\":{\"delta\":\"installed Hermes queue output\"}}}'\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete\",\"payload\":{}}}'\n"
+        "while read rest; do :; done\n",
+        encoding="utf-8",
+    )
+    gateway.chmod(0o700)
     hermes_fixture = root / "hermes-version-fixture"
     hermes_fixture.write_text(
         "#!/bin/sh\n"
         "if [ \"${1:-}\" = \"--version\" ]; then\n"
-        f"  printf 'Hermes Agent v0.18.2\\nInstall directory: {root / 'hermes-fixture'}\\n'\n"
+        f"  printf 'Hermes Agent v0.18.2\\nInstall directory: {hermes_install}\\n'\n"
         "  exit 0\n"
         "fi\n"
         "exec sleep 3600\n",
@@ -84,7 +107,7 @@ def main() -> int:
             command.append(str(input_file))
         completed = subprocess.run(
             command,
-            cwd=root,
+            cwd=repository,
             env=environment,
             text=True,
             capture_output=True,
@@ -120,7 +143,7 @@ def main() -> int:
             "session": {"maximum_lifetime_seconds": 600, "idle_timeout_seconds": 300, "require_reauth": True, "delegation": False},
             "approval": {"required_operations": ["provision"], "maximum_lifetime_seconds": 300, "single_use": True},
             "information_flow": {"cross_stanza": "deny"},
-            "hermes": {"profile": "", "persistent_home": False, "mcp_servers": [], "plugins": [], "toolsets": ["no_mcp"], "model": "proof-no-key", "provider": "none"},
+            "hermes": {"profile": "", "persistent_home": False, "mcp_servers": [], "plugins": [], "toolsets": ["no_mcp"], "model": "proof-hermes", "provider": "none"},
         }],
         "created_by": "principal-1", "created_at": now,
     })
@@ -164,6 +187,7 @@ def main() -> int:
         fail("registry did not retain immutable charter provenance")
 
     ref = lambda value, identifier: {"schema_version": "aegis.reference.revision.v1", "id": identifier, "revision": 1, "digest": value["digest"]}
+    expected_output_digest = "sha256:" + hashlib.sha256(b"installed Hermes queue output").hexdigest()
     loop_file = fixtures / "loop.json"
     write_json(loop_file, {
         "authority": authority,
@@ -172,7 +196,7 @@ def main() -> int:
             "loop_id": "proof-loop", "revision": 1, "entry_step_id": "work",
             "inputs": [], "outputs": [],
             "steps": [
-                {"id": "work", "kind": "action", "input_ports": [], "output_ports": [], "retry": {"max_attempts": 1}, "evidence_claims": [{"claim": "exact-output", "media_type": "application/json"}]},
+                {"id": "work", "kind": "action", "input_ports": [], "output_ports": [], "retry": {"max_attempts": 1}, "evidence_claims": [{"claim": "exact-output", "media_type": "text/plain", "expected_digest": expected_output_digest, "verifier_id": "aegis-artifact-verifier", "policy_version": "aegis.dev/artifact-verification/v1"}]},
                 {"id": "done", "kind": "terminal", "input_ports": [], "output_ports": [], "retry": {"max_attempts": 1}, "terminal": {"outcome": "succeeded", "output_mappings": []}, "evidence_claims": []},
             ],
             "transitions": [{"id": "finish", "from_step_id": "work", "to_step_id": "done", "mappings": []}],
@@ -245,18 +269,50 @@ def main() -> int:
 
     work_file = fixtures / "work.json"
     write_json(work_file, {
-        "authority": authority, "queue_item_id": "queue-accepted", "worker_id": "installed-no-key-worker",
+        "authority": authority, "queue_item_id": "queue-accepted", "worker_id": "installed-hermes-worker",
         "loop_execution_id": "loop-execution-accepted", "claim_id": "claim-accepted", "attempt_id": "attempt-accepted",
         "claim_transition_id": "claimed-accepted", "terminal_transition_id": "terminal-accepted",
         "disposition_id": "disposition-accepted", "artifact_id": "artifact-accepted", "lease_duration": 60000000000,
     })
     result = aegis("queue", "process", input_file=work_file)
     receipts = result.get("receipts", [])
-    if result.get("disposition", {}).get("state") != "succeeded" or not result.get("artifact", {}).get("content_ref") or len(receipts) != 1 or receipts[0].get("outcome") != "passed":
-        fail("execution did not reach evidence-gated successful disposition")
+    artifact = result.get("artifact", {})
+    receipt = receipts[0] if len(receipts) == 1 else {}
+    if (
+        result.get("disposition", {}).get("state") != "succeeded"
+        or artifact.get("digest") != expected_output_digest
+        or artifact.get("content_ref") != expected_output_digest
+        or artifact.get("attempt_id") != "attempt-accepted"
+        or receipt.get("outcome") != "passed"
+        or receipt.get("attempt_id") != "attempt-accepted"
+        or receipt.get("observed_digest") != expected_output_digest
+        or not receipt.get("evidence_ref")
+    ):
+        fail("Hermes execution did not reach exact evidence-gated successful disposition")
+    runtime_homes = root / "state" / "runtime" / "fleet" / "runtime"
+    if not gateway_log.is_file():
+        fail("registered Hermes queue path did not invoke the gateway")
+    if not runtime_homes.is_dir() or any(runtime_homes.iterdir()):
+        fail("bounded Hermes queue path retained a disposable runtime home")
     final_item = aegis("queue", "show", "queue-accepted")
-    if final_item.get("projection", {}).get("state") != "succeeded" or final_item.get("item", {}).get("snapshot", {}).get("digest") != snapshot.get("digest"):
-        fail("terminal queue readback lost its immutable snapshot")
+    durable_artifact = final_item.get("artifact", {})
+    durable_receipts = final_item.get("receipts", [])
+    durable_receipt = durable_receipts[0] if len(durable_receipts) == 1 else {}
+    durable_disposition = final_item.get("disposition", {})
+    if (
+        final_item.get("projection", {}).get("state") != "succeeded"
+        or final_item.get("item", {}).get("snapshot", {}).get("digest") != snapshot.get("digest")
+        or durable_artifact.get("id") != artifact.get("id")
+        or durable_artifact.get("digest") != expected_output_digest
+        or durable_artifact.get("attempt_id") != "attempt-accepted"
+        or durable_receipt.get("id") != receipt.get("id")
+        or durable_receipt.get("evidence_ref") != receipt.get("evidence_ref")
+        or durable_receipt.get("observed_digest") != expected_output_digest
+        or durable_receipt.get("attempt_id") != "attempt-accepted"
+        or durable_disposition.get("attempt_id") != "attempt-accepted"
+        or durable_disposition.get("authority", {}).get("digest") != authority.get("digest")
+    ):
+        fail("terminal queue readback lost its immutable snapshot, evidence, attempt, or authority binding")
     if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"] or aegis("loops", "show", "proof-loop", "1")["revision"]["digest"] != loop_revision["digest"] or aegis("graphs", "show", "proof-graph", "1")["digest"] != graph_revision["digest"]:
         fail("historical definition reconstruction changed an exact digest")
 
@@ -299,7 +355,8 @@ def main() -> int:
             "graph": "validated_exact_bindings_published",
             "queue": "accepted_and_terminal_read_back",
             "fresh_runtime_admission": "worker_repeated_controller_admission",
-            "evidence_gated_disposition": "one_content_addressed_artifact_one_passed_receipt_succeeded",
+            "hermes_queue_execution": "registered_bounded_gateway_turn_invoked_and_disposable_home_removed",
+            "evidence_gated_disposition": "content_addressed_artifact_and_independently_reloadable_attempt_bound_receipt_succeeded",
             "durable_rejection": "wrong_authority_recorded_as_readiness_denied",
             "historical_reconstruction": "snapshot_and_exact_definition_digests_read_back",
         },
@@ -308,7 +365,7 @@ def main() -> int:
     }
     evidence_path = root / "installed-fleet-vertical-evidence.json"
     write_json(evidence_path, evidence)
-    print("installed fleet vertical verified: registry=immutable_history_and_lifecycle loop=authority_bound_lifecycle_verified graph=valid queue=succeeded fresh_admission=verified evidence=passed durable_rejection=verified historical_reconstruction=verified credentials=none")
+    print("installed fleet vertical verified: registry=immutable_history_and_lifecycle loop=authority_bound_lifecycle_verified graph=valid queue=succeeded hermes_gateway=bounded disposable_home=removed fresh_admission=verified evidence=attempt_bound durable_rejection=verified historical_reconstruction=verified credentials=none")
     return 0
 
 

@@ -47,6 +47,13 @@ type Completion struct {
 	Receipts    []evidence.VerificationReceipt `json:"receipts"`
 	Disposition disposition.Record             `json:"disposition"`
 	Transition  queue.QueueTransition          `json:"transition"`
+	Provenance  evidence.CompletionProvenance  `json:"-"`
+}
+
+// EvidenceReader exposes exact immutable blob bytes to the authoritative
+// completion boundary. Completion never trusts caller-supplied receipt fields.
+type EvidenceReader interface {
+	GetBlob(string) ([]byte, error)
 }
 
 type RetryMutation struct {
@@ -111,10 +118,11 @@ type Repository interface {
 	GetQueueProjection(context.Context, string) (queue.Projection, error)
 	GetAttempt(context.Context, string) (execution.Attempt, error)
 	ListAttempts(context.Context) ([]execution.Attempt, error)
-	CompleteQueueItem(context.Context, Completion, AuditFact) error
+	CompleteQueueItem(context.Context, Completion, AuditFact, EvidenceReader) error
 	GetRuntimeArtifact(context.Context, string) (evidence.RuntimeArtifact, error)
 	GetVerificationReceipt(context.Context, string) (evidence.VerificationReceipt, error)
 	GetDisposition(context.Context, string) (disposition.Record, error)
+	GetDispositionByGraphRun(context.Context, string) (disposition.Record, error)
 
 	AuditEvents(context.Context) ([]core.AuditEvent, error)
 	Close() error

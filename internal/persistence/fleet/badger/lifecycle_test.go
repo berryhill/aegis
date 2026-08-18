@@ -2,6 +2,7 @@ package badger
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/disposition"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
@@ -18,6 +20,7 @@ import (
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
+	recordstore "github.com/berryhill/aegis/internal/store"
 	badgerdb "github.com/dgraph-io/badger/v4"
 )
 
@@ -74,9 +77,17 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 		t.Fatalf("attempt collection readback: got=%+v err=%v", attempts, err)
 	}
 
-	artifactDigest := "sha256:" + strings.Repeat("a", 64)
-	artifact := evidence.RuntimeArtifact{ID: "artifact-1", OwnerID: "agent-1", ActionID: "work", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
-	receipt := evidence.VerificationReceipt{ID: "receipt-1", ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, EvidenceRef: "sha256:" + strings.Repeat("b", 64), ObservedAt: claim.ClaimedAt}
+	evidenceStore, err := recordstore.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDigest, err := evidenceStore.PutBlob([]byte("artifact output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := evidence.RuntimeArtifact{ID: "artifact-1", AttemptID: attempt.AttemptID, OwnerID: loopExecution.Participant.ID, ActionID: "echo", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
+	receipt := evidence.VerificationReceipt{ID: "receipt-1", AttemptID: attempt.AttemptID, ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", MediaType: artifact.MediaType, ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, ObservedAt: claim.ClaimedAt}
+	persistReceiptInto(t, evidenceStore, &receipt)
 	dispositionRecord, err := disposition.New(disposition.Record{DispositionID: "disposition-1", GraphRunID: attempt.GraphRunID, LoopExecutionID: attempt.LoopExecutionID, AttemptID: attempt.AttemptID, QueueItem: attempt.QueueItem, Authority: claim.Authority, State: execution.StateSucceeded, ReasonCode: "evidence_satisfied", ArtifactIDs: []string{artifact.ID}, ReceiptIDs: []string{receipt.ID}, OccurredAt: claim.ClaimedAt})
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +96,9 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = store.CompleteQueueItem(ctx, fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}, audit("queue.completed", dispositionRecord.DispositionID)); err != nil {
+	completion := fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}
+	sealCompletion(t, &completion, evidenceStore)
+	if err = store.CompleteQueueItem(ctx, completion, completionAudit(completion), evidenceStore); err != nil {
 		t.Fatalf("complete queue item: %v", err)
 	}
 	if got, err := store.GetDisposition(ctx, dispositionRecord.DispositionID); err != nil || got.Digest != dispositionRecord.Digest {
@@ -175,18 +188,26 @@ func TestCompletionRejectsArtifactCausalitySubstitutionAtomically(t *testing.T) 
 				completion.Receipts[0].RunID = completion.Artifact.RunID
 			},
 		},
+		{
+			name: "attempt ID replay",
+			mutate: func(completion *fleet.Completion) {
+				completion.Artifact.AttemptID = "attempt-from-another-claim"
+				completion.Receipts[0].AttemptID = completion.Artifact.AttemptID
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			store, completion := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
+			store, completion, evidenceStore := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
 			defer store.Close()
 			test.mutate(&completion)
+			evidenceStore = persistReceiptEvidence(t, &completion.Receipts[0])
 
 			eventsBefore, err := store.AuditEvents(ctx)
 			if err != nil {
 				t.Fatal(err)
 			}
-			err = store.CompleteQueueItem(ctx, completion, audit("queue.completed", completion.Disposition.DispositionID))
+			err = store.CompleteQueueItem(ctx, completion, audit("queue.completed", completion.Disposition.DispositionID), evidenceStore)
 			if !errors.Is(err, fleet.ErrConflict) {
 				t.Fatalf("substituted %s did not fail closed: %v", test.name, err)
 			}
@@ -214,6 +235,103 @@ func TestCompletionRejectsArtifactCausalitySubstitutionAtomically(t *testing.T) 
 			eventsAfter, err := store.AuditEvents(ctx)
 			if err != nil || len(eventsAfter) != len(eventsBefore) {
 				t.Fatalf("rejected completion changed audit chain: before=%d after=%d err=%v", len(eventsBefore), len(eventsAfter), err)
+			}
+		})
+	}
+}
+
+func TestCompletionRejectsUnsatisfiedOrSubstitutedEvidencePolicy(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name              string
+		repersistEvidence bool
+		mutate            func(*fleet.Completion)
+	}{
+		{"failed receipt", true, func(completion *fleet.Completion) {
+			completion.Receipts[0].Outcome = evidence.Failed
+			completion.Receipts[0].FailureCategory = "expected_output_mismatch"
+			completion.Receipts[0].ObservedDigest = "sha256:" + strings.Repeat("c", 64)
+		}},
+		{"wrong claim", true, func(completion *fleet.Completion) { completion.Receipts[0].Claim = "other-claim" }},
+		{"wrong verifier", true, func(completion *fleet.Completion) { completion.Receipts[0].VerifierID = "other-verifier" }},
+		{"wrong policy version", true, func(completion *fleet.Completion) { completion.Receipts[0].PolicyVersion = "other-policy" }},
+		{"wrong media type", true, func(completion *fleet.Completion) { completion.Receipts[0].MediaType = "application/octet-stream" }},
+		{"wrong expected digest", true, func(completion *fleet.Completion) {
+			completion.Receipts[0].ExpectedDigest = "sha256:" + strings.Repeat("c", 64)
+			completion.Receipts[0].ObservedDigest = completion.Receipts[0].ExpectedDigest
+		}},
+		{"missing evidence blob", false, func(completion *fleet.Completion) {
+			completion.Receipts[0].EvidenceRef = "sha256:" + strings.Repeat("c", 64)
+		}},
+		{"artifact digest mismatch", false, func(completion *fleet.Completion) {
+			completion.Artifact.Digest = "sha256:" + strings.Repeat("c", 64)
+			completion.Artifact.ContentRef = completion.Artifact.Digest
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store, completion, evidenceStore := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
+			defer store.Close()
+			test.mutate(&completion)
+			if test.repersistEvidence {
+				evidenceStore = persistReceiptEvidence(t, &completion.Receipts[0])
+			}
+			if err := store.CompleteQueueItem(ctx, completion, audit("queue.completed", completion.Disposition.DispositionID), evidenceStore); err == nil {
+				t.Fatal("untrustworthy evidence admitted success")
+			}
+			if _, err := store.GetDisposition(ctx, completion.Disposition.DispositionID); !errors.Is(err, fleet.ErrNotFound) {
+				t.Fatalf("rejected evidence persisted success disposition: %v", err)
+			}
+		})
+	}
+	t.Run("substituted evidence reference", func(t *testing.T) {
+		store, completion, _ := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
+		defer store.Close()
+		substitute := completion.Receipts[0]
+		substitute.ID = "receipt-from-another-completion"
+		evidenceStore := persistReceiptEvidence(t, &substitute)
+		completion.Receipts[0].EvidenceRef = substitute.EvidenceRef
+		if err := store.CompleteQueueItem(ctx, completion, audit("queue.completed", completion.Disposition.DispositionID), evidenceStore); !errors.Is(err, fleet.ErrConflict) {
+			t.Fatalf("substituted evidence reference did not fail closed: %v", err)
+		}
+	})
+	t.Run("content address mismatch", func(t *testing.T) {
+		store, completion, _ := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
+		defer store.Close()
+		if err := store.CompleteQueueItem(ctx, completion, audit("queue.completed", completion.Disposition.DispositionID), substitutedEvidenceReader{}); !errors.Is(err, fleet.ErrConflict) {
+			t.Fatalf("substituted evidence bytes did not fail closed: %v", err)
+		}
+	})
+}
+
+func TestCompletionRejectsTerminalAuditSubstitutionAtomically(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name   string
+		mutate func(*fleet.AuditFact)
+	}{
+		{"outcome", func(f *fleet.AuditFact) { f.Event.Outcome = "succeeded" + "-substituted" }},
+		{"reason", func(f *fleet.AuditFact) { f.Event.Reason = "substituted" }},
+		{"time", func(f *fleet.AuditFact) {
+			f.Event.Metadata["terminal_at"] = time.Unix(1, 0).UTC().Format(time.RFC3339Nano)
+		}},
+		{"agent", func(f *fleet.AuditFact) { f.Event.AgentID = "other-agent" }},
+		{"stanza", func(f *fleet.AuditFact) { f.Event.StanzaID = "" }},
+		{"mandate", func(f *fleet.AuditFact) { f.Event.MandateID = "other-mandate" }},
+		{"disposition", func(f *fleet.AuditFact) { f.Event.Metadata["disposition_id"] = "other-disposition" }},
+		{"transition", func(f *fleet.AuditFact) { f.Event.Metadata["transition_id"] = "other-transition" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store, completion, evidenceStore := completionFixture(t, ctx, filepath.Join(t.TempDir(), schemaVersion))
+			defer store.Close()
+			fact := completionAudit(completion)
+			test.mutate(&fact)
+			if err := store.CompleteQueueItem(ctx, completion, fact, evidenceStore); !errors.Is(err, fleet.ErrConflict) {
+				t.Fatalf("substituted terminal audit was accepted: %v", err)
+			}
+			if _, err := store.GetDisposition(ctx, completion.Disposition.DispositionID); !errors.Is(err, fleet.ErrNotFound) {
+				t.Fatalf("rejected audit partially committed: %v", err)
 			}
 		})
 	}
@@ -699,7 +817,7 @@ func assertClaimDeniedAtomically(t *testing.T, ctx context.Context, store *Store
 	}
 }
 
-func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, fleet.Completion) {
+func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, fleet.Completion, *recordstore.Store) {
 	t.Helper()
 	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-completion-boundary")
 	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
@@ -716,9 +834,16 @@ func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, 
 	if err = store.ClaimQueueItem(ctx, claim, attempt, claimed, audit("queue.claimed", claim.ClaimID)); err != nil {
 		t.Fatal(err)
 	}
-	artifactDigest := "sha256:" + strings.Repeat("a", 64)
-	artifact := evidence.RuntimeArtifact{ID: "artifact-completion-boundary", OwnerID: "agent-1", ActionID: "work", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
-	receipt := evidence.VerificationReceipt{ID: "receipt-completion-boundary", ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, EvidenceRef: "sha256:" + strings.Repeat("b", 64), ObservedAt: claim.ClaimedAt}
+	evidenceStore, err := recordstore.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDigest, err := evidenceStore.PutBlob([]byte("artifact output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := evidence.RuntimeArtifact{ID: "artifact-completion-boundary", AttemptID: attempt.AttemptID, OwnerID: loopExecution.Participant.ID, ActionID: "echo", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
+	receipt := evidence.VerificationReceipt{ID: "receipt-completion-boundary", AttemptID: attempt.AttemptID, ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", MediaType: artifact.MediaType, ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, ObservedAt: claim.ClaimedAt}
 	dispositionRecord, err := disposition.New(disposition.Record{DispositionID: "disposition-completion-boundary", GraphRunID: attempt.GraphRunID, LoopExecutionID: attempt.LoopExecutionID, AttemptID: attempt.AttemptID, QueueItem: attempt.QueueItem, Authority: claim.Authority, State: execution.StateSucceeded, ReasonCode: "evidence_satisfied", ArtifactIDs: []string{artifact.ID}, ReceiptIDs: []string{receipt.ID}, OccurredAt: claim.ClaimedAt})
 	if err != nil {
 		t.Fatal(err)
@@ -727,7 +852,64 @@ func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return store, fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}
+	persistReceiptInto(t, evidenceStore, &receipt)
+	completion := fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}
+	sealCompletion(t, &completion, evidenceStore)
+	return store, completion, evidenceStore
+}
+
+type substitutedEvidenceReader struct{}
+
+func (substitutedEvidenceReader) GetBlob(string) ([]byte, error) {
+	return []byte("substituted receipt bytes"), nil
+}
+
+func persistReceiptEvidence(t *testing.T, receipt *evidence.VerificationReceipt) *recordstore.Store {
+	t.Helper()
+	records, err := recordstore.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = records.PutBlob([]byte("artifact output"))
+	persistReceiptInto(t, records, receipt)
+	return records
+}
+
+func persistReceiptInto(t *testing.T, records *recordstore.Store, receipt *evidence.VerificationReceipt) {
+	t.Helper()
+	canonical := *receipt
+	canonical.EvidenceRef = ""
+	wire, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt.EvidenceRef, err = records.PutBlob(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func sealCompletion(t *testing.T, completion *fleet.Completion, records *recordstore.Store) {
+	t.Helper()
+	verifier, err := evidence.NewBlobVerifier(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion.Provenance, err = verifier.AuthorizeCompletion(context.Background(), *completion.Artifact, completion.Receipts)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func completionAudit(completion fleet.Completion) fleet.AuditFact {
+	return fleet.AuditFact{Event: core.AuditEvent{
+		Type: "fleet.disposition.recorded", AgentID: completion.Artifact.OwnerID, StanzaID: "stanza-test", MandateID: "mandate-1", Outcome: string(completion.Disposition.State), Reason: completion.Disposition.ReasonCode,
+		Metadata: map[string]string{
+			"disposition_id": completion.Disposition.DispositionID,
+			"transition_id":  completion.Transition.TransitionID,
+			"terminal_at":    completion.Disposition.OccurredAt.UTC().Format(time.RFC3339Nano),
+		},
+	}}
 }
 
 func lifecycleFixture(t *testing.T, ctx context.Context, root, idempotencyKey string) (*Store, fleet.AcceptedSubmission) {

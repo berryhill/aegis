@@ -322,7 +322,13 @@ func validateEvidence(revision LoopRevision, steps map[string]Step, add func(str
 		}
 		produced := false
 		for _, claim := range producer.EvidenceClaims {
-			produced = produced || claim.Claim == requirement.Claim
+			if claim.Claim != requirement.Claim {
+				continue
+			}
+			produced = true
+			if claim.MediaType == "" || !validDigest(claim.ExpectedDigest) || !validID(claim.VerifierID) || claim.PolicyVersion == "" || strings.TrimSpace(claim.PolicyVersion) != claim.PolicyVersion || len(claim.PolicyVersion) > 255 {
+				add("evidence.policy_invalid", path, "required evidence must pin media type, expected digest, verifier, and policy version")
+			}
 		}
 		if !produced {
 			add("evidence.unsatisfied", path, "required evidence claim is not declared by its producer")

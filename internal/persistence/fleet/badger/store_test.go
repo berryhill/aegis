@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
@@ -750,10 +751,11 @@ func loopFixture(t *testing.T) (loop.LoopRevision, loop.LoopValidationResult) {
 	revision, validation, err := loop.NewRevision(loop.LoopRevision{
 		LoopID: "loop.echo", Revision: 1, Inputs: []loop.Port{value}, Outputs: []loop.Port{{ID: "result", Type: loop.TypeString, Required: true}}, EntryStepID: "echo",
 		Steps: []loop.Step{
-			{ID: "echo", Kind: loop.StepAction, InputPorts: []loop.Port{value}, OutputPorts: []loop.Port{value}, Retry: loop.RetryPolicy{MaxAttempts: 1}},
+			{ID: "echo", Kind: loop.StepAction, InputPorts: []loop.Port{value}, OutputPorts: []loop.Port{value}, Retry: loop.RetryPolicy{MaxAttempts: 1}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "exact-output", MediaType: "application/json", ExpectedDigest: "sha256:950f1a2bc98dbf4f5faafa2e82eacf2c90a2d0fd7d00539f0f6b91210ee029f6", VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1}}},
 			{ID: "done", Kind: loop.StepTerminal, InputPorts: []loop.Port{value}, OutputPorts: []loop.Port{{ID: "final", Type: loop.TypeString, Required: true}}, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded, OutputMappings: []loop.PortMapping{{SourcePort: "final", TargetPort: "result"}}}},
 		},
-		Transitions: []loop.Transition{{ID: "echo-done", FromStepID: "echo", ToStepID: "done", Mappings: []loop.PortMapping{{SourcePort: "value", TargetPort: "value"}}}},
+		Transitions:      []loop.Transition{{ID: "echo-done", FromStepID: "echo", ToStepID: "done", Mappings: []loop.PortMapping{{SourcePort: "value", TargetPort: "value"}}}},
+		RequiredEvidence: []loop.EvidenceRequirement{{Claim: "exact-output", ProducerStepID: "echo"}},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
+	"github.com/berryhill/aegis/internal/registry"
 )
 
 var ErrWorkerDenied = errors.New("queue worker denied")
@@ -33,6 +34,9 @@ type RuntimeRequest struct {
 	GraphNodeID     string
 	Authority       reference.DigestRef
 	Inputs          []graph.NormalizedInput
+	Participant     registry.AgentRevision
+	Launch          execution.LaunchContract
+	Admission       execution.AdmissionChecker
 }
 
 type RuntimeResult struct {
@@ -42,10 +46,12 @@ type RuntimeResult struct {
 
 type BlobStore interface {
 	PutBlob([]byte) (string, error)
+	GetBlob(string) ([]byte, error)
 }
 
 type EvidenceVerifier interface {
-	Verify(context.Context, evidence.RuntimeArtifact, string, string) (evidence.VerificationReceipt, error)
+	Verify(context.Context, evidence.RuntimeArtifact, evidence.VerificationPolicy) (evidence.VerificationReceipt, error)
+	AuthorizeCompletion(context.Context, evidence.RuntimeArtifact, []evidence.VerificationReceipt) (evidence.CompletionProvenance, error)
 }
 
 // NoKeyAdapter is the credential-independent deterministic MVI adapter. It
@@ -57,7 +63,7 @@ func (NoKeyAdapter) Execute(ctx context.Context, request RuntimeRequest) (Runtim
 	if err := ctx.Err(); err != nil {
 		return RuntimeResult{}, err
 	}
-	if request.GraphRunID == "" || request.LoopExecutionID == "" || request.GraphNodeID == "" || request.Authority.Validate() != nil {
+	if request.GraphRunID == "" || request.LoopExecutionID == "" || request.GraphNodeID == "" || request.Authority.Validate() != nil || request.Participant.Runtime.Adapter != "no-key" {
 		return RuntimeResult{}, errors.New("exact no-key runtime binding is required")
 	}
 	wire, err := json.Marshal(request.Inputs)
@@ -132,6 +138,10 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		return WorkResult{}, fmt.Errorf("%w: exact single-node graph required", ErrWorkerDenied)
 	}
 	node := graphRevision.Nodes[0]
+	participant, err := worker.repository.GetAgentRevision(ctx, node.Participant.ID, node.Participant.Revision)
+	if err != nil || participant.Digest != node.Participant.Digest || participant.Lifecycle != registry.LifecycleEnabled {
+		return WorkResult{}, fmt.Errorf("%w: exact enabled participant unavailable", ErrWorkerDenied)
+	}
 	loopRevision, err := worker.repository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision)
 	if err != nil || loopRevision.Digest != node.Loop.Digest {
 		return WorkResult{}, fmt.Errorf("%w: exact Loop revision unavailable", ErrWorkerDenied)
@@ -171,9 +181,29 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionRuntimeEffect, Subject: request.Subject, Authority: request.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph}); readiness.State != ReadinessReady {
 		return worker.terminal(ctx, request, base, execution.StateDenied, "runtime_admission_denied", nil, nil)
 	}
-	runtimeResult, runtimeErr := worker.adapter.Execute(ctx, RuntimeRequest{GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID, Authority: request.Authority, Inputs: snapshot.Inputs})
+	authority, mandate, runtimeReadiness := worker.service.resolveAuthority(ctx, request.Subject, request.Authority)
+	if runtimeReadiness.State != ReadinessReady || !agentMatchesAuthority(participant, authority, mandate) {
+		return worker.terminal(ctx, request, base, execution.StateDenied, "runtime_binding_denied", nil, nil)
+	}
+	finished := now
+	launch := execution.LaunchContract{
+		OwnerID:          participant.Ownership.OwnerID,
+		Mandate:          mandate,
+		AuthorityContext: authority,
+		ParentDispatch:   execution.Dispatch{ID: request.AttemptID, AuthorityContextID: authority.ID, State: execution.StateSucceeded, RequestedAt: now, StartedAt: &now, FinishedAt: &finished},
+	}
+	runtimeResult, runtimeErr := worker.adapter.Execute(ctx, RuntimeRequest{
+		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
+		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch,
+		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority},
+	})
 	if runtimeErr != nil {
-		return worker.terminal(ctx, request, base, execution.StateFailed, "runtime_effect_failed", nil, nil)
+		state, reason := execution.StateFailed, "runtime_effect_failed"
+		var failure *RuntimeFailure
+		if errors.As(runtimeErr, &failure) && executionQueueState(failure.State) != "" && failure.Reason != "" {
+			state, reason = failure.State, failure.Reason
+		}
+		return worker.terminal(ctx, request, base, state, reason, nil, nil)
 	}
 	if len(runtimeResult.Output) == 0 || runtimeResult.MediaType == "" {
 		return worker.terminal(ctx, request, base, execution.StateFailed, "runtime_output_invalid", nil, nil)
@@ -182,20 +212,29 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil {
 		return worker.terminal(ctx, request, base, execution.StateFailed, "artifact_persistence_failed", nil, nil)
 	}
-	artifact := evidence.RuntimeArtifact{ID: request.ArtifactID, OwnerID: node.Participant.ID, ActionID: actionID, RunID: loopExecution.LoopExecutionID, AuthorityContextID: request.Authority.ID, AuthorityContextDigest: request.Authority.Digest, Digest: contentRef, ContentRef: contentRef, MediaType: runtimeResult.MediaType, CreatedAt: worker.now()}
+	artifact := evidence.RuntimeArtifact{ID: request.ArtifactID, AttemptID: attempt.AttemptID, OwnerID: node.Participant.ID, ActionID: actionID, RunID: loopExecution.LoopExecutionID, AuthorityContextID: request.Authority.ID, AuthorityContextDigest: request.Authority.Digest, Digest: contentRef, ContentRef: contentRef, MediaType: runtimeResult.MediaType, CreatedAt: worker.now()}
 	if err = artifact.Validate(); err != nil {
 		return WorkResult{}, err
 	}
 	receipts := make([]evidence.VerificationReceipt, 0, len(loopRevision.RequiredEvidence))
+	claims := evidenceClaims(loopRevision, actionID)
 	for _, requirement := range loopRevision.RequiredEvidence {
 		if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionEvidenceVerify, Subject: request.Subject, Authority: request.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph}); readiness.State != ReadinessReady {
 			return worker.terminal(ctx, request, base, execution.StateDenied, "evidence_admission_denied", nil, nil)
 		}
-		receipt, verifyErr := worker.verifier.Verify(ctx, artifact, requirement.Claim, artifact.Digest)
-		if verifyErr != nil || receipt.Validate() != nil || receipt.Outcome != evidence.Passed || receipt.ArtifactID != artifact.ID || receipt.ActionID != artifact.ActionID || receipt.RunID != artifact.RunID || receipt.AuthorityContextID != artifact.AuthorityContextID || receipt.AuthorityContextDigest != artifact.AuthorityContextDigest {
-			return worker.terminal(ctx, request, base, execution.StateFailed, "evidence_verification_failed", nil, nil)
+		claim, found := claims[requirement.Claim]
+		if !found {
+			return worker.terminal(ctx, request, base, execution.StateFailed, "evidence_policy_missing", nil, nil)
 		}
-		receipts = append(receipts, receipt)
+		policy := evidence.VerificationPolicy{VerifierID: claim.VerifierID, PolicyVersion: claim.PolicyVersion, Claim: claim.Claim, MediaType: claim.MediaType, ExpectedDigest: claim.ExpectedDigest}
+		receipt, verifyErr := worker.verifier.Verify(ctx, artifact, policy)
+		validReceipt := receipt.Validate() == nil && receipt.AttemptID == artifact.AttemptID && receipt.ArtifactID == artifact.ID && receipt.ActionID == artifact.ActionID && receipt.RunID == artifact.RunID && receipt.OwnerID == artifact.OwnerID && receipt.AuthorityContextID == artifact.AuthorityContextID && receipt.AuthorityContextDigest == artifact.AuthorityContextDigest && receipt.VerifierID == policy.VerifierID && receipt.PolicyVersion == policy.PolicyVersion && receipt.Claim == policy.Claim && receipt.MediaType == policy.MediaType && receipt.ExpectedDigest == policy.ExpectedDigest && receipt.ObservedDigest == artifact.Digest
+		if validReceipt {
+			receipts = append(receipts, receipt)
+		}
+		if verifyErr != nil || !validReceipt || receipt.Outcome != evidence.Passed {
+			return worker.terminal(ctx, request, base, execution.StateFailed, "evidence_verification_failed", &artifact, receipts)
+		}
 	}
 	base.Artifact = &artifact
 	base.Receipts = receipts
@@ -203,8 +242,15 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 }
 
 func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, result WorkResult, state execution.State, reason string, artifact *evidence.RuntimeArtifact, receipts []evidence.VerificationReceipt) (WorkResult, error) {
+	// Runtime cancellation must stop the runtime, not erase its durable terminal
+	// fact. Completion uses a cancellation-detached context and still repeats
+	// controller-side authority admission below.
+	finalizeCtx := ctx
+	if ctx.Err() != nil {
+		finalizeCtx = context.WithoutCancel(ctx)
+	}
 	if state == execution.StateSucceeded {
-		if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionDisposition, Subject: request.Subject, Authority: request.Authority}); readiness.State != ReadinessReady {
+		if readiness := worker.service.Readiness(finalizeCtx, ReadinessRequest{Action: FleetActionDisposition, Subject: request.Subject, Authority: request.Authority}); readiness.State != ReadinessReady {
 			state, reason, artifact, receipts = execution.StateDenied, "disposition_admission_denied", nil, nil
 		}
 	}
@@ -225,7 +271,24 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 		return result, err
 	}
 	completion := fleet.Completion{Claim: result.Claim, Artifact: artifact, Receipts: receipts, Disposition: dispositionRecord, Transition: transition}
-	if err = worker.repository.CompleteQueueItem(ctx, completion, worker.service.auditFact("fleet.disposition.recorded", request.Subject, reason, "", "", "")); err != nil {
+	if artifact != nil {
+		completion.Provenance, err = worker.verifier.AuthorizeCompletion(finalizeCtx, *artifact, receipts)
+		if err != nil {
+			return result, err
+		}
+	}
+	authority, mandate, identityOK := worker.service.authorityIdentity(finalizeCtx, request.Authority)
+	if !identityOK {
+		return result, fmt.Errorf("%w: terminal authority identity unavailable", ErrWorkerDenied)
+	}
+	fact := worker.service.auditFact("fleet.disposition.recorded", request.Subject, reason, authority.AgentID, authority.Authority.StanzaID, mandate.ID)
+	fact.Event.Outcome = string(state)
+	fact.Event.Metadata = map[string]string{
+		"disposition_id": dispositionRecord.DispositionID,
+		"transition_id":  transition.TransitionID,
+		"terminal_at":    dispositionRecord.OccurredAt.UTC().Format(time.RFC3339Nano),
+	}
+	if err = worker.repository.CompleteQueueItem(finalizeCtx, completion, fact, worker.blobs); err != nil {
 		return result, err
 	}
 	result.Artifact, result.Receipts, result.Disposition = artifact, receipts, dispositionRecord
@@ -235,7 +298,35 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 	return result, nil
 }
 
+type fleetRuntimeAdmission struct {
+	service   *FleetService
+	subject   core.Subject
+	authority reference.DigestRef
+}
+
+func (check fleetRuntimeAdmission) CheckRuntimeAdmission(ctx context.Context, contract execution.LaunchContract, at time.Time) (execution.AdmissionDecision, error) {
+	authority, mandate, result := check.service.resolveAuthority(ctx, check.subject, check.authority)
+	allowed := result.State == ReadinessReady && authority.ID == contract.AuthorityContext.ID && authority.Digest == contract.AuthorityContext.Digest && mandate.ID == contract.Mandate.ID && at.Before(authority.ExpiresAt)
+	return execution.AdmissionDecision{Allowed: allowed, AuthorityContextID: authority.ID, AuthorityContextDigest: authority.Digest, CheckedAt: at, Reason: result.ReasonCode}, nil
+}
+
+func evidenceClaims(revision loop.LoopRevision, actionID string) map[string]loop.EvidenceClaim {
+	result := map[string]loop.EvidenceClaim{}
+	for _, step := range revision.Steps {
+		if step.ID != actionID {
+			continue
+		}
+		for _, claim := range step.EvidenceClaims {
+			result[claim.Claim] = claim
+		}
+	}
+	return result
+}
+
 func executableAction(revision loop.LoopRevision) (string, error) {
+	if len(revision.RequiredEvidence) == 0 {
+		return "", errors.New("executable Loop requires at least one precommitted evidence policy")
+	}
 	actions := make(map[string]loop.Step)
 	for _, step := range revision.Steps {
 		if step.Kind == loop.StepAction {

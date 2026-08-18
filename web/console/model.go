@@ -32,6 +32,9 @@ type SurfaceModel struct {
 	TotalRecords  int
 	Actions       []ActionModel
 	Records       []RecordModel
+	ActiveRecords []RecordModel
+	FailedRecords []RecordModel
+	QueueStates   []string
 	Inspector     *RecordModel
 	InspectorOpen bool
 }
@@ -60,6 +63,38 @@ type RecordModel struct {
 	Provisioning string
 	Fields       []FieldModel
 	Graph        *GraphDetailModel
+	Queue        *QueueDetailModel
+}
+
+// QueueDetailModel is a presentation-only projection of authoritative queue
+// records. States remain attached to their source record; the UI never derives
+// success from the presence of runtime output.
+type QueueDetailModel struct {
+	QueueItem        []FieldModel
+	Runtime          []FieldModel
+	GraphRun         QueueExecutionNodeModel
+	Loops            []QueueExecutionNodeModel
+	Attempts         []QueueAttemptModel
+	Timeline         []QueueTimelineModel
+	Artifact         []FieldModel
+	Receipts         []QueueReceiptModel
+	Disposition      []FieldModel
+	ArtifactState    string
+	ReceiptState     string
+	DispositionState string
+}
+
+type QueueExecutionNodeModel struct{ ID, Kind, State, Binding, Digest string }
+
+type QueueAttemptModel struct {
+	ID, State, LoopID, ClaimID, Created, Digest string
+	Number                                      uint32
+}
+
+type QueueTimelineModel struct{ Title, State, At, Detail string }
+
+type QueueReceiptModel struct {
+	ID, Outcome, Claim, Verifier, ExpectedDigest, ObservedDigest, FailureCategory, ObservedAt string
 }
 
 type GraphDetailModel struct {

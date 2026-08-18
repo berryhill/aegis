@@ -19,6 +19,7 @@ const (
 // provisioning artifact type.
 type RuntimeArtifact struct {
 	ID                     string    `json:"id"`
+	AttemptID              string    `json:"attempt_id"`
 	OwnerID                string    `json:"owner_id"`
 	ActionID               string    `json:"action_id"`
 	RunID                  string    `json:"run_id"`
@@ -34,6 +35,7 @@ type RuntimeArtifact struct {
 // authority context so evidence cannot be replayed across runs.
 type VerificationReceipt struct {
 	ID                     string    `json:"id"`
+	AttemptID              string    `json:"attempt_id"`
 	ArtifactID             string    `json:"artifact_id"`
 	ActionID               string    `json:"action_id"`
 	RunID                  string    `json:"run_id"`
@@ -43,6 +45,7 @@ type VerificationReceipt struct {
 	VerifierID             string    `json:"verifier_id"`
 	PolicyVersion          string    `json:"policy_version"`
 	Claim                  string    `json:"claim"`
+	MediaType              string    `json:"media_type"`
 	ExpectedDigest         string    `json:"expected_digest"`
 	ObservedDigest         string    `json:"observed_digest,omitempty"`
 	Outcome                Outcome   `json:"outcome"`
@@ -51,18 +54,47 @@ type VerificationReceipt struct {
 	ObservedAt             time.Time `json:"observed_at"`
 }
 
+// VerificationPolicy is immutable expected state selected before runtime
+// output exists. A verifier must not derive any field from observed bytes.
+type VerificationPolicy struct {
+	VerifierID     string `json:"verifier_id"`
+	PolicyVersion  string `json:"policy_version"`
+	Claim          string `json:"claim"`
+	MediaType      string `json:"media_type"`
+	ExpectedDigest string `json:"expected_digest"`
+}
+
+func (value VerificationPolicy) Validate() error {
+	if value.VerifierID == "" || value.PolicyVersion == "" || value.Claim == "" || value.MediaType == "" || !validDigest(value.ExpectedDigest) {
+		return errors.New("invalid verification policy")
+	}
+	return nil
+}
+
+func validDigest(value string) bool {
+	if len(value) != len("sha256:")+64 || !strings.HasPrefix(value, "sha256:") {
+		return false
+	}
+	for _, char := range value[len("sha256:"):] {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (value RuntimeArtifact) Validate() error {
-	if value.ID == "" || value.OwnerID == "" || value.ActionID == "" || value.RunID == "" || value.AuthorityContextID == "" || value.AuthorityContextDigest == "" || !strings.HasPrefix(value.Digest, "sha256:") || value.ContentRef != value.Digest || value.MediaType == "" || value.CreatedAt.IsZero() {
+	if value.ID == "" || value.AttemptID == "" || value.OwnerID == "" || value.ActionID == "" || value.RunID == "" || value.AuthorityContextID == "" || value.AuthorityContextDigest == "" || !validDigest(value.Digest) || value.ContentRef != value.Digest || value.MediaType == "" || value.CreatedAt.IsZero() {
 		return errors.New("invalid runtime artifact")
 	}
 	return nil
 }
 
 func (value VerificationReceipt) Validate() error {
-	if value.ID == "" || value.ArtifactID == "" || value.ActionID == "" || value.RunID == "" || value.OwnerID == "" || value.AuthorityContextID == "" || value.AuthorityContextDigest == "" || value.VerifierID == "" || value.PolicyVersion == "" || value.Claim == "" || value.ExpectedDigest == "" || value.EvidenceRef == "" || value.ObservedAt.IsZero() || (value.Outcome != Passed && value.Outcome != Failed) {
+	if value.ID == "" || value.AttemptID == "" || value.ArtifactID == "" || value.ActionID == "" || value.RunID == "" || value.OwnerID == "" || value.AuthorityContextID == "" || value.AuthorityContextDigest == "" || value.VerifierID == "" || value.PolicyVersion == "" || value.Claim == "" || value.MediaType == "" || !validDigest(value.ExpectedDigest) || !validDigest(value.EvidenceRef) || value.ObservedAt.IsZero() || (value.Outcome != Passed && value.Outcome != Failed) {
 		return errors.New("invalid verification receipt")
 	}
-	if value.Outcome == Passed && (value.FailureCategory != "" || value.ObservedDigest != value.ExpectedDigest) {
+	if value.Outcome == Passed && (value.FailureCategory != "" || value.ObservedDigest != value.ExpectedDigest || !validDigest(value.ObservedDigest)) {
 		return errors.New("invalid passing verification receipt")
 	}
 	if value.Outcome == Failed && value.FailureCategory == "" {

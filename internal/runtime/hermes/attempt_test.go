@@ -42,10 +42,10 @@ read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-1"}}'
 read prompt
 printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","payload":{}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","payload":{"delta":"bounded "}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","payload":{"delta":"answer"}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"runtime-session-1","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-1","payload":{"delta":"bounded "}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-1","payload":{"delta":"answer"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"runtime-session-1","payload":{}}}'
 while read rest; do :; done
 `)
 	request := validAttemptTurnRequest(root)
@@ -74,6 +74,33 @@ while read rest; do :; done
 	}
 }
 
+func TestAttemptTurnIgnoresEventsFromUnrelatedGatewaySession(t *testing.T) {
+	adapter, root := attemptTestAdapter(t, `#!/bin/sh
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read create
+printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"selected-session"}}'
+read prompt
+printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"status":"streaming"}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"unrelated-session","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"unrelated-session","payload":{"text":"hostile output"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"unrelated-session","payload":{"text":"hostile output"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","payload":{"text":"uncorrelated output"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","payload":{"text":"uncorrelated output"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"selected-session","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"selected-session","payload":{"text":"selected output"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"selected-session","payload":{}}}'
+while read rest; do :; done
+`)
+	result, err := adapter.AttemptTurn(context.Background(), validAttemptTurnRequest(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Output != "selected output" || result.Attempt.RuntimeSessionID != "selected-session" {
+		t.Fatalf("uncorrelated gateway output was accepted: %#v", result)
+	}
+}
+
 func TestAttemptTurnFailsClosedBeforeRuntimeExecution(t *testing.T) {
 	tests := []struct {
 		name string
@@ -85,6 +112,20 @@ func TestAttemptTurnFailsClosedBeforeRuntimeExecution(t *testing.T) {
 		{"stale projected admission digest", func(r *AttemptTurnRequest) { r.Admission = attemptAdmission{allowed: true, digest: "sha256:stale"} }},
 		{"mismatched parent dispatch", func(r *AttemptTurnRequest) { r.ParentAttemptID = "unknown-dispatch" }},
 		{"wrong authority parent", func(r *AttemptTurnRequest) { r.Launch.ParentDispatch.AuthorityContextID = "other-authority" }},
+		{"missing authority model", func(r *AttemptTurnRequest) {
+			r.Launch.Mandate.Hermes.Model = ""
+			r.Launch.AuthorityContext.Authority.Hermes.Model = ""
+			r.Launch.AuthorityContext.Digest = core.AuthorityContextDigest(r.Launch.AuthorityContext)
+			r.Model = ""
+		}},
+		{"missing authority provider", func(r *AttemptTurnRequest) {
+			r.Launch.Mandate.Hermes.Provider = ""
+			r.Launch.AuthorityContext.Authority.Hermes.Provider = ""
+			r.Launch.AuthorityContext.Digest = core.AuthorityContextDigest(r.Launch.AuthorityContext)
+			r.Provider = ""
+		}},
+		{"mismatched selected model", func(r *AttemptTurnRequest) { r.Model = "other-model" }},
+		{"mismatched selected provider", func(r *AttemptTurnRequest) { r.Provider = "other-provider" }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -123,8 +164,8 @@ read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-2"}}'
 read prompt
 printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","payload":{}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","payload":{"delta":"too long"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"runtime-session-2","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-2","payload":{"delta":"too long"}}}'
 while read rest; do :; done
 `)
 		request := validAttemptTurnRequest(root)
@@ -197,7 +238,7 @@ func validAttemptTurnRequest(root string) AttemptTurnRequest {
 		ID: "mandate-1", Subject: core.Subject{ID: "subject-1", Kind: "human", PrincipalID: "principal-1", Issuer: "local-os", Method: "local-os", AuthenticatedAt: issuedAt, ExpiresAt: expiresAt},
 		AgentID: "agent-1", StanzaID: "principal", CharterRevision: 1, CharterDigest: "sha256:charter",
 		Runtime: runtime, Capabilities: []string{"chat"}, Tools: []string{"no_mcp"},
-		Scopes: core.Scopes{}, Hermes: core.HermesConfig{Toolsets: []string{"no_mcp"}}, IssuedAt: issuedAt, ExpiresAt: expiresAt,
+		Scopes: core.Scopes{}, Hermes: core.HermesConfig{Toolsets: []string{"no_mcp"}, Model: "proof-no-key", Provider: "none"}, IssuedAt: issuedAt, ExpiresAt: expiresAt,
 	}
 	authority := core.AuthorityContext{
 		ID: "authority-1", MandateID: mandate.ID, SessionID: "session-1", SubjectID: mandate.Subject.ID,
@@ -215,7 +256,7 @@ func validAttemptTurnRequest(root string) AttemptTurnRequest {
 	return AttemptTurnRequest{
 		Launch:    execution.LaunchContract{OwnerID: "owner-1", Mandate: mandate, AuthorityContext: authority, ParentDispatch: dispatch},
 		Admission: attemptAdmission{allowed: true}, AttemptID: "turn-1", ParentAttemptID: dispatch.ID,
-		StateRoot: filepath.Join(root, "state"), Input: "hello",
+		StateRoot: filepath.Join(root, "state"), Input: "hello", Model: mandate.Hermes.Model, Provider: mandate.Hermes.Provider,
 		Bounds: AttemptBounds{InputBytes: 1024, OutputBytes: 1024, Duration: time.Second},
 	}
 }

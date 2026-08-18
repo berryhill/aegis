@@ -4,8 +4,8 @@
 package loop
 
 const (
-	RevisionSchemaVersion   = "aegis.loop.revision.v1"
-	ValidationSchemaVersion = "aegis.loop.validation.v1"
+	RevisionSchemaVersion   = "aegis.loop.revision.v2"
+	ValidationSchemaVersion = "aegis.loop.validation.v2"
 	ValidatorID             = "aegis.loop.validator"
 	ValidatorVersion        = "1"
 
@@ -90,8 +90,11 @@ type TerminalDefinition struct {
 }
 
 type EvidenceClaim struct {
-	Claim     string `json:"claim"`
-	MediaType string `json:"media_type"`
+	Claim          string `json:"claim"`
+	MediaType      string `json:"media_type"`
+	ExpectedDigest string `json:"expected_digest"`
+	VerifierID     string `json:"verifier_id"`
+	PolicyVersion  string `json:"policy_version"`
 }
 
 type EvidenceRequirement struct {

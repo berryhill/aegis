@@ -80,7 +80,7 @@ func (repository *fleetServiceRepository) ClaimQueueItem(_ context.Context, clai
 	repository.claim, repository.attempt = claim, attempt
 	return nil
 }
-func (repository *fleetServiceRepository) CompleteQueueItem(_ context.Context, completion fleet.Completion, _ fleet.AuditFact) error {
+func (repository *fleetServiceRepository) CompleteQueueItem(_ context.Context, completion fleet.Completion, _ fleet.AuditFact, _ fleet.EvidenceReader) error {
 	repository.completion = completion
 	return nil
 }
@@ -377,7 +377,7 @@ func TestGraphCompositionRequiresExactPinnedLoopInterface(t *testing.T) {
 	}
 }
 
-func TestQueueWorkerRunsNoKeyAdapterToDurableEvidenceDisposition(t *testing.T) {
+func TestQueueWorkerRunsInjectedAdapterToDurableEvidenceDisposition(t *testing.T) {
 	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
 	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-worker", IdempotencyKey: "submit-worker", SnapshotID: "snapshot-worker", QueueItemID: "queue-worker", GraphRunID: "run-worker", TransitionID: "queued-worker", RejectionID: "rejected-worker", MaxAttempts: 1})
 	if err != nil || decision.Accepted == nil {
@@ -391,7 +391,7 @@ func TestQueueWorkerRunsNoKeyAdapterToDurableEvidenceDisposition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker, err := NewQueueWorker(repository, service, blobs, verifier, NoKeyAdapter{}, service.now)
+	worker, err := NewQueueWorker(repository, service, blobs, verifier, fixedRuntimeAdapter{}, service.now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestQueueWorkerRunsNoKeyAdapterToDurableEvidenceDisposition(t *testing.T) {
 		t.Fatal(err)
 	}
 	if result.Disposition.State != execution.StateSucceeded || result.Artifact == nil || result.Artifact.ContentRef == "" || len(result.Receipts) != 1 || result.Receipts[0].Outcome != evidence.Passed || repository.completion.Disposition.Digest != result.Disposition.Digest {
-		t.Fatalf("no-key execution did not reach evidence disposition: %+v completion=%+v", result, repository.completion)
+		t.Fatalf("injected runtime execution did not reach evidence disposition: %+v completion=%+v", result, repository.completion)
 	}
 	if repository.claim.Authority != authorityRef || repository.attempt.LoopExecutionID != repository.loopExecution.LoopExecutionID {
 		t.Fatalf("claim causality or authority was lost: claim=%+v attempt=%+v loop=%+v", repository.claim, repository.attempt, repository.loopExecution)
@@ -543,11 +543,11 @@ func fleetServiceFixture(t *testing.T) (*FleetService, *fleetServiceRepository, 
 	authority := core.AuthorityContext{ID: "authority-1", MandateID: mandate.ID, SessionID: "session-1", SubjectID: subject.ID, AgentID: mandate.AgentID, CharterRevision: mandate.CharterRevision, CharterDigest: mandate.CharterDigest, Runtime: runtime, Authority: core.EffectiveAuthority{StanzaID: mandate.StanzaID}, IssuedAt: mandate.IssuedAt, ExpiresAt: mandate.ExpiresAt}
 	authority.Digest = core.AuthorityContextDigest(authority)
 
-	loopRevision, loopValidation, err := loop.NewRevision(loop.LoopRevision{LoopID: "loop-1", Revision: 1, EntryStepID: "work", Steps: []loop.Step{{ID: "work", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 1}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "exact-output", MediaType: "application/json"}}}, {ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}}}, Transitions: []loop.Transition{{ID: "finish", FromStepID: "work", ToStepID: "done"}}, RequiredEvidence: []loop.EvidenceRequirement{{Claim: "exact-output", ProducerStepID: "work"}}})
+	loopRevision, loopValidation, err := loop.NewRevision(loop.LoopRevision{LoopID: "loop-1", Revision: 1, EntryStepID: "work", Steps: []loop.Step{{ID: "work", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 1}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "exact-output", MediaType: "application/json", ExpectedDigest: "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945", VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1}}}, {ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}}}, Transitions: []loop.Transition{{ID: "finish", FromStepID: "work", ToStepID: "done"}}, RequiredEvidence: []loop.EvidenceRequirement{{Claim: "exact-output", ProducerStepID: "work"}}})
 	if err != nil {
 		t.Fatalf("%v: %+v", err, loopValidation.Issues)
 	}
-	agent := registry.AgentRevision{AgentID: "agent-1", Revision: 1, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "local"}, Lifecycle: registry.LifecycleEnabled, Charter: revisionRef("agent-1", mandate.CharterRevision, mandate.CharterDigest), Digest: "sha256:" + strings.Repeat("b", 64)}
+	agent := registry.AgentRevision{AgentID: "agent-1", Revision: 1, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "local"}, Ownership: registry.Ownership{OwnerID: "owner-1", AccountabilityID: "accountability-1"}, Lifecycle: registry.LifecycleEnabled, Charter: revisionRef("agent-1", mandate.CharterRevision, mandate.CharterDigest), Digest: "sha256:" + strings.Repeat("b", 64)}
 	agentRef := revisionRef(agent.AgentID, agent.Revision, agent.Digest)
 	loopRef := revisionRef(loopRevision.LoopID, loopRevision.Revision, loopRevision.Digest)
 	graphRevision, _, err := graph.NewRevision(graph.GraphRevision{GraphID: "graph-1", Revision: 1, Nodes: []graph.Node{{ID: "node-1", Participant: agentRef, Loop: loopRef}}})
@@ -571,6 +571,12 @@ func fleetServiceFixture(t *testing.T) (*FleetService, *fleetServiceRepository, 
 
 func revisionReference(id string, revision uint64, digestChar string) reference.RevisionRef {
 	return reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: id, Revision: revision, Digest: "sha256:" + strings.Repeat(digestChar, 64)}
+}
+
+type fixedRuntimeAdapter struct{}
+
+func (fixedRuntimeAdapter) Execute(context.Context, RuntimeRequest) (RuntimeResult, error) {
+	return RuntimeResult{Output: []byte("[]"), MediaType: "application/json"}, nil
 }
 
 func repairStrings(values []RepairAction) []string {

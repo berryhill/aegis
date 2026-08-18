@@ -245,10 +245,14 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				var verifier *evidence.BlobVerifier
 				verifier, fleetErr = evidence.NewBlobVerifier(st)
 				if fleetErr == nil {
-					var worker *orchestration.QueueWorker
-					worker, fleetErr = orchestration.NewQueueWorker(fleetStore, fleetService, st, verifier, orchestration.NoKeyAdapter{}, service.Now)
+					var runtimeAdapter *orchestration.RoutedRuntimeAdapter
+					runtimeAdapter, fleetErr = orchestration.NewRoutedRuntimeAdapter(h, filepath.Join(cfg.StateDir, "runtime", "fleet"))
 					if fleetErr == nil {
-						fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
+						var worker *orchestration.QueueWorker
+						worker, fleetErr = orchestration.NewQueueWorker(fleetStore, fleetService, st, verifier, runtimeAdapter, service.Now)
+						if fleetErr == nil {
+							fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
+						}
 					}
 				}
 			}

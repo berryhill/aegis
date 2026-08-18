@@ -181,6 +181,43 @@ func TestGraphInspectorRendersTopologyExactBindingsAndFleetWideSubmissionTruth(t
 	}
 }
 
+func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t *testing.T) {
+	var output bytes.Buffer
+	record := RecordModel{Key: "queue-130", Label: "queue-130", Summary: "graph-run-130 · failed", Lifecycle: "failed", Revision: "snapshot-130", Runtime: "hermes-agent", Queue: &QueueDetailModel{
+		QueueItem: []FieldModel{{Label: "Queue item", Value: "queue-130 @ sha256:item"}, {Label: "Authority", Value: "authority-130 @ sha256:authority"}},
+		Runtime:   []FieldModel{{Label: "Adapter", Value: "hermes"}, {Label: "Target", Value: "aegis-owned-ephemeral"}},
+		GraphRun:  QueueExecutionNodeModel{ID: "graph-run-130", Kind: "Graph run", State: "succeeded", Binding: "snapshot-130 @ sha256:snapshot"},
+		Loops:     []QueueExecutionNodeModel{{ID: "loop-exec-130", Kind: "Loop execution · review", State: "failed", Binding: "loop-review r7 @ sha256:loop"}},
+		Attempts:  []QueueAttemptModel{{ID: "attempt-130", Number: 1, State: "failed", LoopID: "loop-exec-130", ClaimID: "claim-130", Created: "2026-08-18T12:00:00Z", Digest: "sha256:attempt"}},
+		Timeline:  []QueueTimelineModel{{Title: "Queued", State: "queued", At: "2026-08-18T11:59:00Z", Detail: "queue-130"}, {Title: "Attempt 1", State: "failed", At: "2026-08-18T12:00:00Z", Detail: "attempt-130"}, {Title: "Disposition", State: "failed", At: "2026-08-18T12:01:00Z", Detail: "runtime_exit_nonzero"}},
+		Artifact:  []FieldModel{{Label: "Artifact", Value: "artifact-130"}}, ArtifactState: "Authoritative runtime artifact",
+		Receipts: []QueueReceiptModel{{ID: "receipt-130", Outcome: "passed", Claim: "review-receipt", Verifier: "artifact-verifier / v1"}}, ReceiptState: "Authoritative verifier receipts",
+		Disposition: []FieldModel{{Label: "State", Value: "failed"}, {Label: "Reason code", Value: "runtime_exit_nonzero"}}, DispositionState: "Authoritative terminal disposition",
+	}}
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true, TotalCount: 1, QueueStates: []string{"failed"}, FailedRecords: []RecordModel{record}, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	ordered := []string{"Authoritative execution record", "Execution canvas", "Inspector", "Execution timeline", "Attempt provenance", "Runtime artifact", "Verifier receipts", "Terminal disposition"}
+	position := -1
+	for _, text := range ordered {
+		next := strings.Index(html, text)
+		if next <= position {
+			t.Fatalf("execution detail order lost at %q", text)
+		}
+		position = next
+	}
+	for _, required := range []string{"queue-130", "#/queue/queue-130", "graph-run-130", "loop-exec-130", "attempt-130", "claim-130", "artifact-130", "receipt-130", "runtime_exit_nonzero", "Only this authoritative disposition can support terminal success", "has not been upgraded"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("execution detail missing %q", required)
+		}
+	}
+	if strings.Contains(html, "Succeeded execution") || strings.Contains(html, "execution succeeded") {
+		t.Fatalf("passing receipt or Graph run upgraded failed queue truth: %s", html)
+	}
+}
+
 func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 	var output bytes.Buffer
 	if err := Authentication("").Render(context.Background(), &output); err != nil {

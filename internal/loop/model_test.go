@@ -29,7 +29,7 @@ func branchJoinCandidate() LoopRevision {
 		Inputs: []Port{value}, Outputs: []Port{{ID: "result", Type: TypeString, Required: true}},
 		EntryStepID: "prepare",
 		Steps: []Step{
-			{ID: "prepare", Kind: StepAction, InputPorts: []Port{value}, OutputPorts: []Port{value}, Retry: RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []EvidenceClaim{{Claim: "prepared", MediaType: "application/json"}}},
+			{ID: "prepare", Kind: StepAction, InputPorts: []Port{value}, OutputPorts: []Port{value}, Retry: RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []EvidenceClaim{{Claim: "prepared", MediaType: "application/json", ExpectedDigest: "sha256:" + strings.Repeat("a", 64), VerifierID: "aegis-artifact-verifier", PolicyVersion: "aegis.dev/artifact-verification/v1"}}},
 			{ID: "route", Kind: StepGate, InputPorts: []Port{value}, OutputPorts: []Port{value}, Retry: RetryPolicy{MaxAttempts: 1}, Gate: &GateDefinition{Mode: "exclusive"}},
 			{ID: "left", Kind: StepAction, InputPorts: []Port{value}, OutputPorts: []Port{value}, Retry: RetryPolicy{MaxAttempts: 2}},
 			{ID: "right", Kind: StepAction, InputPorts: []Port{value}, OutputPorts: []Port{value}, Retry: RetryPolicy{MaxAttempts: 2}},
@@ -56,8 +56,8 @@ func TestBranchJoinRevisionValidatesAndDigestsDeterministically(t *testing.T) {
 	if validation.Outcome != ValidationValid || validation.RevisionDigest != first.Digest || !validDigest(validation.Digest) {
 		t.Fatalf("unexpected validation result: %+v", validation)
 	}
-	const wantRevisionDigest = "sha256:5fe67abc18a6461b1d18627d8ee465c010577d36b1509bdc485f93262cedb1c6"
-	const wantValidationDigest = "sha256:a187322386e86483a647bc3e1a2557cd1de4ddc3c03684d9662eeb60b7c939a0"
+	const wantRevisionDigest = "sha256:733add5db863b04179dfe61546c057f71837d317b45e461c5b4f8a57fc8cd0e4"
+	const wantValidationDigest = "sha256:9556c49ddb99149a76548ddc1884fe2d7ed37f759d54919fa0b15051ffed4e81"
 	if first.Digest != wantRevisionDigest || validation.Digest != wantValidationDigest {
 		t.Fatalf("canonical digest vector changed: revision=%s validation=%s", first.Digest, validation.Digest)
 	}
@@ -151,7 +151,7 @@ func TestLoopDecoderRejectsAmbiguousMalformedAndSubstitutedValues(t *testing.T) 
 		"unknown field":       []byte(strings.Replace(string(encoded), `"loop_id":`, `"unknown":true,"loop_id":`, 1)),
 		"duplicate key":       []byte(strings.Replace(string(encoded), `"loop_id":"loop.branch-join"`, `"loop_id":"loop.branch-join","loop_id":"other"`, 1)),
 		"trailing":            append(append([]byte{}, encoded...), []byte(` {}`)...),
-		"unsupported version": []byte(strings.Replace(string(encoded), RevisionSchemaVersion, "aegis.loop.revision.v2", 1)),
+		"unsupported version": []byte(strings.Replace(string(encoded), RevisionSchemaVersion, "aegis.loop.revision.v999", 1)),
 		"digest substitution": []byte(strings.Replace(string(encoded), revision.Digest, "sha256:"+strings.Repeat("a", 64), 1)),
 		"incomplete":          []byte(strings.Replace(string(encoded), `"entry_step_id":"prepare",`, "", 1)),
 	}
