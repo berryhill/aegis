@@ -121,6 +121,9 @@ func validateTransition(v QueueTransition) error {
 		(v.From == StateQueued && v.To == StateClaimed && validID(v.ClaimID)) ||
 		(v.From == StateClaimed && v.To == StateQueued && validID(v.ClaimID)) ||
 		(v.From == StateQueued && v.To == StateCancelled && v.ClaimID == "") ||
+		(v.From == StateQueued && v.To == StateExpired && v.ClaimID == "") ||
+		(v.From == StateQueued && v.To == StateFailed && v.ClaimID == "") ||
+		(v.From == StateQueued && v.To == StateRevoked && v.ClaimID == "") ||
 		(v.From == StateClaimed && terminalState(v.To) && validID(v.ClaimID))
 	if v.SchemaVersion != TransitionSchemaVersion || !validID(v.TransitionID) || !validID(v.QueueItemID) || !legal || !validReason(v.Reason) || v.OccurredAt.IsZero() {
 		return errors.New("invalid queue transition")
@@ -149,7 +152,7 @@ func validateProjection(v Projection) error {
 }
 func terminalState(state State) bool {
 	switch state {
-	case StateSucceeded, StateFailed, StateDenied, StateCancelled, StateExpired:
+	case StateSucceeded, StateFailed, StateDenied, StateCancelled, StateExpired, StateRevoked:
 		return true
 	default:
 		return false

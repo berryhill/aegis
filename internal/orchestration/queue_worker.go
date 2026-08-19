@@ -21,6 +21,11 @@ import (
 
 var ErrWorkerDenied = errors.New("queue worker denied")
 
+const (
+	MinLeaseDuration = time.Second
+	MaxLeaseDuration = time.Hour
+)
+
 // RuntimeAdapter is deliberately narrower than the Hermes adapter. It receives
 // only immutable execution input after controller-side admission and returns
 // untrusted bytes. It cannot select identity, authority, credentials, or stanza.
@@ -126,7 +131,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil || projection.State != queue.StateQueued || projection.Attempts >= item.MaxAttempts || worker.now().Before(projection.AvailableAt) {
 		return WorkResult{}, fmt.Errorf("%w: queue item is not claimable", ErrWorkerDenied)
 	}
-	if item.Authority != request.Authority || request.WorkerID == "" || request.LeaseDuration <= 0 {
+	if item.Authority != request.Authority || request.WorkerID == "" || request.LeaseDuration < MinLeaseDuration || request.LeaseDuration > MaxLeaseDuration {
 		return WorkResult{}, fmt.Errorf("%w: exact queue and worker binding required", ErrWorkerDenied)
 	}
 	snapshot, err := worker.repository.GetGraphRunSnapshot(ctx, item.Snapshot.ID)
@@ -154,12 +159,29 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		return WorkResult{}, fmt.Errorf("%w: claim %s", ErrWorkerDenied, readiness.ReasonCode)
 	}
 	now := worker.now()
-	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: request.LoopExecutionID, GraphRunID: item.GraphRunID, GraphNodeID: node.ID, Loop: node.Loop, Participant: node.Participant, CreatedAt: now})
+	// One LoopExecution identifies this immutable Graph node across all bounded
+	// attempts. A retry may add an Attempt, but cannot substitute a child identity.
+	var loopExecution execution.LoopExecution
+	loopExecutions, err := worker.repository.ListLoopExecutions(ctx)
 	if err != nil {
 		return WorkResult{}, err
 	}
-	if _, err = worker.repository.CreateLoopExecution(ctx, loopExecution, worker.service.auditFact("fleet.loop-execution.created", request.Subject, "created exact Loop execution", node.Participant.ID, "", "")); err != nil {
-		return WorkResult{}, err
+	for _, candidate := range loopExecutions {
+		if candidate.GraphRunID == item.GraphRunID && candidate.GraphNodeID == node.ID {
+			if loopExecution.LoopExecutionID != "" || candidate.Loop != node.Loop || candidate.Participant != node.Participant || candidate.LoopExecutionID != request.LoopExecutionID {
+				return WorkResult{}, fmt.Errorf("%w: exact Loop execution binding required", ErrWorkerDenied)
+			}
+			loopExecution = candidate
+		}
+	}
+	if loopExecution.LoopExecutionID == "" {
+		loopExecution, err = execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: request.LoopExecutionID, GraphRunID: item.GraphRunID, GraphNodeID: node.ID, Loop: node.Loop, Participant: node.Participant, CreatedAt: now})
+		if err != nil {
+			return WorkResult{}, err
+		}
+		if _, err = worker.repository.CreateLoopExecution(ctx, loopExecution, worker.service.auditFact("fleet.loop-execution.created", request.Subject, "created exact Loop execution", node.Participant.ID, "", "")); err != nil {
+			return WorkResult{}, err
+		}
 	}
 	claim, err := queue.NewClaim(queue.Claim{ClaimID: request.ClaimID, QueueItem: digestRef(item.ItemID, item.Digest), AttemptID: request.AttemptID, WorkerID: request.WorkerID, Authority: request.Authority, ClaimedAt: now, ExpiresAt: now.Add(request.LeaseDuration)})
 	if err != nil {
@@ -192,7 +214,11 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		AuthorityContext: authority,
 		ParentDispatch:   execution.Dispatch{ID: request.AttemptID, AuthorityContextID: authority.ID, State: execution.StateSucceeded, RequestedAt: now, StartedAt: &now, FinishedAt: &finished},
 	}
-	runtimeResult, runtimeErr := worker.adapter.Execute(ctx, RuntimeRequest{
+	// Runtime custody is bounded by the immutable claim lease. WithDeadline also
+	// preserves an earlier caller deadline, so neither bound can be extended.
+	runtimeCtx, cancelRuntime := context.WithDeadline(ctx, claim.ExpiresAt)
+	defer cancelRuntime()
+	runtimeResult, runtimeErr := worker.adapter.Execute(runtimeCtx, RuntimeRequest{
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
 		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority},
@@ -242,17 +268,13 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 }
 
 func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, result WorkResult, state execution.State, reason string, artifact *evidence.RuntimeArtifact, receipts []evidence.VerificationReceipt) (WorkResult, error) {
-	// Runtime cancellation must stop the runtime, not erase its durable terminal
-	// fact. Completion uses a cancellation-detached context and still repeats
-	// controller-side authority admission below.
-	finalizeCtx := ctx
-	if ctx.Err() != nil {
-		finalizeCtx = context.WithoutCancel(ctx)
+	// A request cancelled before disposition admission cannot gain authority.
+	// Detachment is reserved for the bounded repository commit below.
+	if err := ctx.Err(); err != nil {
+		return result, err
 	}
-	if state == execution.StateSucceeded {
-		if readiness := worker.service.Readiness(finalizeCtx, ReadinessRequest{Action: FleetActionDisposition, Subject: request.Subject, Authority: request.Authority}); readiness.State != ReadinessReady {
-			state, reason, artifact, receipts = execution.StateDenied, "disposition_admission_denied", nil, nil
-		}
+	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionDisposition, Subject: request.Subject, Authority: request.Authority}); readiness.State != ReadinessReady {
+		state, reason, artifact, receipts = execution.StateDenied, "disposition_admission_denied", nil, nil
 	}
 	artifactIDs := []string{}
 	if artifact != nil {
@@ -272,12 +294,12 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 	}
 	completion := fleet.Completion{Claim: result.Claim, Artifact: artifact, Receipts: receipts, Disposition: dispositionRecord, Transition: transition}
 	if artifact != nil {
-		completion.Provenance, err = worker.verifier.AuthorizeCompletion(finalizeCtx, *artifact, receipts)
+		completion.Provenance, err = worker.verifier.AuthorizeCompletion(ctx, *artifact, receipts)
 		if err != nil {
 			return result, err
 		}
 	}
-	authority, mandate, identityOK := worker.service.authorityIdentity(finalizeCtx, request.Authority)
+	authority, mandate, identityOK := worker.service.authorityIdentity(ctx, request.Authority)
 	if !identityOK {
 		return result, fmt.Errorf("%w: terminal authority identity unavailable", ErrWorkerDenied)
 	}
@@ -288,7 +310,8 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 		"transition_id":  transition.TransitionID,
 		"terminal_at":    dispositionRecord.OccurredAt.UTC().Format(time.RFC3339Nano),
 	}
-	if err = worker.repository.CompleteQueueItem(finalizeCtx, completion, fact, worker.blobs); err != nil {
+	commitCtx := context.WithoutCancel(ctx)
+	if err = worker.repository.CompleteQueueItem(commitCtx, completion, fact, worker.blobs); err != nil {
 		return result, err
 	}
 	result.Artifact, result.Receipts, result.Disposition = artifact, receipts, dispositionRecord
@@ -370,6 +393,8 @@ func executionQueueState(state execution.State) queue.State {
 		return queue.StateCancelled
 	case execution.StateExpired:
 		return queue.StateExpired
+	case execution.StateRevoked:
+		return queue.StateRevoked
 	default:
 		return ""
 	}

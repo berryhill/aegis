@@ -35,6 +35,7 @@ const (
 	FleetActionQueueAdmission FleetAction = "queue_admission"
 	FleetActionClaim          FleetAction = "queue_claim"
 	FleetActionReclaim        FleetAction = "queue_reclaim"
+	FleetActionQueueLifecycle FleetAction = "queue_lifecycle"
 	FleetActionRuntimeEffect  FleetAction = "runtime_effect"
 	FleetActionEvidenceVerify FleetAction = "evidence_verify"
 	FleetActionDisposition    FleetAction = "disposition"
@@ -180,7 +181,7 @@ func knownFleetAction(action FleetAction) bool {
 	switch action {
 	case FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle,
 		FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission,
-		FleetActionClaim, FleetActionReclaim, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition:
+		FleetActionClaim, FleetActionReclaim, FleetActionQueueLifecycle, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition:
 		return true
 	default:
 		return false
@@ -571,7 +572,7 @@ func (service *FleetService) RecordDisposition(ctx context.Context, request Disp
 			return fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
 		}
 	}
-	if request.State != execution.StateSucceeded && request.State != execution.StateFailed && request.State != execution.StateDenied && request.State != execution.StateCancelled && request.State != execution.StateExpired {
+	if request.State != execution.StateSucceeded && request.State != execution.StateFailed && request.State != execution.StateDenied && request.State != execution.StateCancelled && request.State != execution.StateExpired && request.State != execution.StateRevoked {
 		return errors.New("terminal disposition state is required")
 	}
 	return service.dispositions.RecordDisposition(ctx, request, service.auditFact("fleet.disposition.recorded", request.Subject, request.ReasonCode, "", "", ""))

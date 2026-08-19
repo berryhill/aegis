@@ -28,6 +28,7 @@ const (
 	StateDenied    State = "denied"
 	StateCancelled State = "cancelled"
 	StateExpired   State = "expired"
+	StateRevoked   State = "revoked"
 )
 
 // GraphRun is the stable parent execution identity for one accepted queue item.
@@ -72,9 +73,9 @@ type Attempt struct {
 func CanTransition(from, to State) bool {
 	switch from {
 	case StateRequested:
-		return to == StateStarted || to == StateDenied || to == StateCancelled || to == StateExpired
+		return to == StateStarted || to == StateDenied || to == StateCancelled || to == StateExpired || to == StateRevoked
 	case StateStarted:
-		return to == StateSucceeded || to == StateFailed || to == StateDenied || to == StateCancelled || to == StateExpired
+		return to == StateSucceeded || to == StateFailed || to == StateDenied || to == StateCancelled || to == StateExpired || to == StateRevoked
 	default:
 		return false
 	}

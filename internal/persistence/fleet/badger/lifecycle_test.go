@@ -582,6 +582,49 @@ func TestClaimRejectsProjectedDependencySuccessWithoutCanonicalDispositionAtomic
 	assertClaimDeniedAtomically(t, ctx, store, claim, attempt, transition)
 }
 
+func TestQueuedRevocationIsDistinctAndDurable(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), schemaVersion)
+	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-revoked")
+	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	at := accepted.Submission.SubmittedAt.Add(time.Second)
+	cancellation := mustQueueCancellation(t, queue.Cancellation{CancellationID: "revoke-1", QueueItem: lifecycleDigestRef(accepted.QueueItem.ItemID, accepted.QueueItem.Digest), Reason: "authority_revoked", OccurredAt: at})
+	transition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-revoked-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateQueued, To: queue.StateRevoked, Reason: cancellation.Reason, OccurredAt: at})
+	record, err := disposition.New(disposition.Record{DispositionID: "revoke-1/disposition", GraphRunID: accepted.GraphRun.GraphRunID, QueueItem: cancellation.QueueItem, Authority: accepted.QueueItem.Authority, State: execution.StateRevoked, ReasonCode: "authority_revoked", OccurredAt: at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation := fleet.CancellationMutation{Cancellation: cancellation, Transition: transition, Disposition: record}
+	if err = store.CancelQueueItem(ctx, mutation, audit("queue.revoked", cancellation.CancellationID)); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CancelQueueItem(ctx, mutation, audit("queue.revoked", cancellation.CancellationID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("duplicate revocation was not denied: %v", err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	projection, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)
+	if err != nil || projection.State != queue.StateRevoked {
+		t.Fatalf("durable revoked projection: got=%+v err=%v", projection, err)
+	}
+	got, err := store.GetDisposition(ctx, record.DispositionID)
+	if err != nil || got.State != execution.StateRevoked || got.ReasonCode != "authority_revoked" || got.Digest != record.Digest {
+		t.Fatalf("durable revocation disposition: got=%+v err=%v", got, err)
+	}
+	cancellations, err := store.ListQueueCancellations(ctx, accepted.QueueItem.ItemID)
+	if err != nil || len(cancellations) != 1 || cancellations[0].CancellationID != cancellation.CancellationID {
+		t.Fatalf("durable revocation lifecycle fact: got=%+v err=%v", cancellations, err)
+	}
+}
+
 func TestRetryReclaimAndCancellationAreAtomicDurableLifecycleFacts(t *testing.T) {
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), schemaVersion)
@@ -600,6 +643,16 @@ func TestRetryReclaimAndCancellationAreAtomicDurableLifecycleFacts(t *testing.T)
 	if _, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil {
 		t.Fatal(err)
 	}
+	substitutedLoopExecution := loopExecution
+	substitutedLoopExecution.LoopExecutionID = "loop-execution-substituted-on-retry"
+	substitutedLoopExecution.Digest = ""
+	substitutedLoopExecution, err = execution.NewLoopExecution(substitutedLoopExecution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.CreateLoopExecution(ctx, substitutedLoopExecution, audit("loop-execution.created", substitutedLoopExecution.LoopExecutionID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("retry substituted the pinned GraphRun/node LoopExecution identity: %v", err)
+	}
 	claim1, attempt1, claimed1 := claimFixture(t, accepted, loopExecution, "claim-retry-1", "attempt-retry-1")
 	if err = store.ClaimQueueItem(ctx, claim1, attempt1, claimed1, audit("queue.claimed", claim1.ClaimID)); err != nil {
 		t.Fatal(err)
@@ -613,6 +666,11 @@ func TestRetryReclaimAndCancellationAreAtomicDurableLifecycleFacts(t *testing.T)
 	tooEarlyTransition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-retry-too-early", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateQueued, ClaimID: claim1.ClaimID, Reason: tooEarly.Reason, OccurredAt: tooEarly.OccurredAt})
 	if err = store.RetryQueueItem(ctx, fleet.RetryMutation{Retry: tooEarly, Transition: tooEarlyTransition}, audit("queue.reclaimed", tooEarly.RetryID)); !errors.Is(err, fleet.ErrConflict) {
 		t.Fatalf("pre-expiry reclaim did not fail closed: %v", err)
+	}
+	liveManual := mustQueueRetry(t, queue.Retry{RetryID: "retry-live-manual", QueueItem: claim1.QueueItem, ClaimID: claim1.ClaimID, AttemptNumber: 1, AvailableAt: claim1.ExpiresAt, Reason: "caller asserted runtime stopped", OccurredAt: claim1.ExpiresAt.Add(-time.Nanosecond)})
+	liveManualTransition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-retry-live-manual", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateQueued, ClaimID: claim1.ClaimID, Reason: liveManual.Reason, OccurredAt: liveManual.OccurredAt})
+	if err = store.RetryQueueItem(ctx, fleet.RetryMutation{Retry: liveManual, Transition: liveManualTransition}, audit("queue.retried", liveManual.RetryID)); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("caller-controlled live retry preempted active work: %v", err)
 	}
 
 	retryAt := claim1.ExpiresAt
@@ -659,10 +717,15 @@ func TestRetryReclaimAndCancellationAreAtomicDurableLifecycleFacts(t *testing.T)
 	cancelAt := claim2.ClaimedAt.Add(time.Second)
 	cancellation := mustQueueCancellation(t, queue.Cancellation{CancellationID: "cancel-1", QueueItem: claim2.QueueItem, ClaimID: claim2.ClaimID, Reason: "operator cancelled", OccurredAt: cancelAt})
 	cancelled := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-cancelled-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateCancelled, ClaimID: claim2.ClaimID, Reason: cancellation.Reason, OccurredAt: cancelAt})
-	if err = store.CancelQueueItem(ctx, fleet.CancellationMutation{Cancellation: cancellation, Transition: cancelled}, audit("queue.cancelled", cancellation.CancellationID)); err != nil {
+	cancelDisposition, err := disposition.New(disposition.Record{DispositionID: "cancel-1/disposition", GraphRunID: accepted.GraphRun.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, AttemptID: attempt2.AttemptID, QueueItem: claim2.QueueItem, Authority: claim2.Authority, State: execution.StateCancelled, ReasonCode: cancellation.Reason, OccurredAt: cancelAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelMutation := fleet.CancellationMutation{Cancellation: cancellation, Transition: cancelled, Disposition: cancelDisposition}
+	if err = store.CancelQueueItem(ctx, cancelMutation, audit("queue.cancelled", cancellation.CancellationID)); err != nil {
 		t.Fatalf("cancel claimed item: %v", err)
 	}
-	if err = store.CancelQueueItem(ctx, fleet.CancellationMutation{Cancellation: cancellation, Transition: cancelled}, audit("queue.cancelled", cancellation.CancellationID)); !errors.Is(err, fleet.ErrConflict) {
+	if err = store.CancelQueueItem(ctx, cancelMutation, audit("queue.cancelled", cancellation.CancellationID)); !errors.Is(err, fleet.ErrConflict) {
 		t.Fatalf("repeat cancellation did not fail closed: %v", err)
 	}
 	cancelledProjection, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID)

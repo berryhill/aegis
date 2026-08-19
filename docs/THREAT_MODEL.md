@@ -162,3 +162,13 @@ The MVP does not provide host sandboxing, network confinement, multi-tenant isol
 ## Deployment requirements
 
 Protect production `~/.aegis` and repository-local `.aegis` roots and their state with mode 0700, never copy authority material between profiles, keep API tokens/TLS keys outside source control, use Unix sockets for principal operations, and configure an exact HTTPS console origin plus TLS for any non-loopback browser deployment. Place the audit-authority interface behind a separately supervised process/account, retain audit checkpoints on a separately protected boundary, supervise Aegis externally, and review any stanza granting `terminal` or `file` as broad host-facing authority. Use only an explicitly qualified storage combination; the current post-Track-A envelope is Linux/amd64/ext4 with the exact versions and settings in `specs/STORAGE.md`, not every platform with a release archive. Keep the authority database on a local filesystem, keep KEK/recovery material out of its backup set, use only a trusted pinentry executable/session for foreground passphrase custody, prefer encrypted systemd credential custody for headless services, disable core dumps as an operator/OS control (Aegis does not enforce this), and encrypt ciphertext backups to offline recovery recipients before they leave the host.
+## Execution Queue lifecycle threats
+
+| Threat | Control | Residual limit |
+|---|---|---|
+| Prompt, browser, or caller reason selects authority | Reload the immutable queue item and repeat fresh exact-context admission; typed lifecycle reasons; no grant union | Console eligibility is informational only |
+| Live retry creates concurrent runtime effects | Live preemption is denied; reclaim requires an expired bounded lease | No distributed lease coordinator |
+| Retry substitutes GraphRun or LoopExecution | Preserve the immutable GraphRun and one LoopExecution; create only a new bounded claim/attempt | Single-node worker only |
+| Cancellation or expiry disappears with caller cancellation | Authenticate and admit first, then detach only the bounded atomic terminal commit | Host/process loss still relies on qualified store durability |
+| Revocation, exhaustion, denial, failure, or success collapse together | Persist distinct terminal state/reason, transition, audit, and disposition facts | No automated lifecycle scheduler |
+| Historical facts become future authority | Read models and browser timelines are projections only; every new effect repeats admission | Audit is not externally anchored |

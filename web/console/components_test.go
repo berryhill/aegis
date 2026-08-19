@@ -194,7 +194,7 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 		Receipts: []QueueReceiptModel{{ID: "receipt-130", Outcome: "passed", Claim: "review-receipt", Verifier: "artifact-verifier / v1"}}, ReceiptState: "Authoritative verifier receipts",
 		Disposition: []FieldModel{{Label: "State", Value: "failed"}, {Label: "Reason code", Value: "runtime_exit_nonzero"}}, DispositionState: "Authoritative terminal disposition",
 	}}
-	model := PageModel{Authenticated: true, Surface: SurfaceModel{Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true, TotalCount: 1, QueueStates: []string{"failed"}, FailedRecords: []RecordModel{record}, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true}}
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true, TotalCount: 1, QueueState: "failed", QueueStates: []string{"failed"}, FailedRecords: []RecordModel{record}, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true}}
 	if err := Document(model).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,7 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 		}
 		position = next
 	}
-	for _, required := range []string{"queue-130", "#/queue/queue-130", "graph-run-130", "loop-exec-130", "attempt-130", "claim-130", "artifact-130", "receipt-130", "runtime_exit_nonzero", "Only this authoritative disposition can support terminal success", "has not been upgraded"} {
+	for _, required := range []string{"queue-130", "#/queue/queue-130", "/console/queue?state=failed#/queue", "/console/queue?state=claimable#/queue", "graph-run-130", "loop-exec-130", "attempt-130", "claim-130", "artifact-130", "receipt-130", "runtime_exit_nonzero", "Only this authoritative disposition can support terminal success", "has not been upgraded"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("execution detail missing %q", required)
 		}

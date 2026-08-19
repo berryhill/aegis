@@ -919,6 +919,30 @@ func TestGraphLifecycleAndSubmissionHistoryRoutesAreAuthenticatedExactReads(t *t
 	}
 }
 
+func TestQueueLifecycleMutationRoutesRejectPathBodySubstitution(t *testing.T) {
+	svc := apiService(t)
+	configureAPIFleet(t, svc)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	client := unixClient(svc.Config.API.UnixSocket)
+
+	for _, action := range []string{"retry", "cancel", "expire", "exhaust", "revoke"} {
+		t.Run(action, func(t *testing.T) {
+			apiRequest(t, client, http.MethodPost, "/v1/queue/path-item/"+action, map[string]any{
+				"queue_item_id": "body-item",
+			}, nil, http.StatusBadRequest)
+		})
+	}
+}
+
 func TestFleetAPIUnavailableFailsClosed(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
