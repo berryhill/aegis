@@ -14,6 +14,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/disposition"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
@@ -168,19 +169,26 @@ func TestConsoleSurfacePreservesContextualReadinessAndCredentialMetadata(t *test
 	}
 
 	credentials, err := consoleSurfaceModel(app.FleetSurface{
-		Credentials: []app.CredentialView{{ID: "github", Type: "environment"}},
+		Credentials: []app.CredentialView{{ID: "secret-1", Reference: "github", Kind: "environment", Status: "active", CurrentVersion: 2}},
 		Readiness: map[string]app.SurfaceReadiness{
-			"credentials": {State: "ready", ReasonCode: "collection_read_succeeded", Source: "config.credentials.provider_auth", Count: 1, Authoritative: true},
+			"credentials": {State: "ready", ReasonCode: "credentials_authority_read_succeeded", Source: "credentials.authority.bbolt", Count: 1, Authoritative: true},
 		},
 	}, consoleCredentials)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if credentials.Title != "Credentials" || credentials.State != "ready" || len(credentials.Records) != 1 || credentials.Records[0].Label != "github · environment binding" {
+	if credentials.Title != "Credentials" || credentials.State != "ready" || len(credentials.Records) != 1 {
 		t.Fatalf("credential surface=%+v", credentials)
+	}
+	label := credentials.Records[0].Label
+	if label != "github · active · v2" {
+		t.Fatalf("credential record label=%q", label)
 	}
 	if strings.Contains(credentials.Records[0].JSON, "source_env") || strings.Contains(credentials.Records[0].JSON, "target_env") {
 		t.Fatalf("credential surface exposed custody details: %s", credentials.Records[0].JSON)
+	}
+	if strings.Contains(credentials.Records[0].JSON, "Ciphertext") || strings.Contains(credentials.Records[0].JSON, "WrappedDEK") || strings.Contains(credentials.Records[0].JSON, "RecordNonce") {
+		t.Fatalf("credential surface exposed encrypted payload: %s", credentials.Records[0].JSON)
 	}
 }
 
@@ -445,5 +453,114 @@ func TestConsolePatchUsesOneRequestScopedDatastarEvent(t *testing.T) {
 	body := recorder.Body.String()
 	if strings.Count(body, "event: datastar-patch-elements") != 1 || !strings.Contains(body, "data: elements <main id=\"workspace\">escaped</main>") {
 		t.Fatalf("unexpected bounded SSE framing: %q", body)
+	}
+}
+
+func TestConsoleCredentialRecordPreservesActiveRevokedAndVaultMetadata(t *testing.T) {
+	at := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	active := app.CredentialView{
+		ID: "secret-active", Reference: "github/api", Kind: "api-token", Status: "active",
+		CurrentVersion: 2, CreatedAt: at.Format(time.RFC3339), CreatedBy: "principal-1",
+		BindingCount: 3,
+		VersionHistory: []app.CredentialVersionView{
+			{Version: 1, FormatVersion: 1, Algorithm: "xchacha20-poly1305", KEKVersion: 1, CreatedAt: at, CiphertextHash: "sha256:" + strings.Repeat("a", 64)},
+			{Version: 2, FormatVersion: 1, Algorithm: "xchacha20-poly1305", KEKVersion: 1, CreatedAt: at.Add(time.Hour), CiphertextHash: "sha256:" + strings.Repeat("b", 64)},
+		},
+	}
+	revoked := app.CredentialView{
+		ID: "secret-revoked", Reference: "github/legacy", Kind: "api-token", Status: "revoked",
+		CurrentVersion: 1, CreatedAt: at.Format(time.RFC3339), CreatedBy: "principal-1",
+		RevokedAt: at.Add(2 * time.Hour).Format(time.RFC3339), Revocation: "rotation",
+		BindingCount: 0,
+	}
+	vault := app.VaultStatusView{State: "initialized", ReasonCode: "credentials_vault_ready"}
+	vault.VaultStatus = credentialsVaultForTest()
+	activeRecord := consoleCredentialRecord(active, vault)
+	if activeRecord.Lifecycle != "active" || activeRecord.Credential == nil || activeRecord.Credential.Reference != "github/api" {
+		t.Fatalf("active credential record lost: %+v", activeRecord)
+	}
+	if len(activeRecord.Credential.Versions) != 2 {
+		t.Fatalf("encrypted version history was not projected: %+v", activeRecord.Credential.Versions)
+	}
+	if activeRecord.Credential.Vault.KEKID == "" || activeRecord.Credential.Vault.KEKVersion == 0 {
+		t.Fatalf("KEK metadata missing: %+v", activeRecord.Credential.Vault)
+	}
+	for _, label := range []string{"Stable record ID", "Bindings", "Version history"} {
+		found := false
+		for _, f := range activeRecord.Fields {
+			if f.Label == label {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("active credential missing field %q: %+v", label, activeRecord.Fields)
+		}
+	}
+	revokedRecord := consoleCredentialRecord(revoked, vault)
+	if revokedRecord.Lifecycle != "revoked" || revokedRecord.Credential == nil {
+		t.Fatalf("revoked credential record lost: %+v", revokedRecord)
+	}
+	if revokedRecord.Credential.Revocation != "rotation" {
+		t.Fatalf("revocation reason lost: %+v", revokedRecord.Credential)
+	}
+	hasRevokedAt := false
+	for _, f := range revokedRecord.Fields {
+		if f.Label == "Revoked at" {
+			hasRevokedAt = true
+		}
+	}
+	if !hasRevokedAt {
+		t.Fatalf("revoked credential missing revoked-at field: %+v", revokedRecord.Fields)
+	}
+	for _, json := range []string{activeRecord.JSON, revokedRecord.JSON} {
+		for _, forbidden := range []string{"source_env", "target_env", "AEGIS_API_TEST_KEY", `Ciphertext":`, `WrappedDEK":`, `RecordNonce":`, `WrapNonce":`, `KEKID":`, `ciphertext":`, `wrapped_dek":`, `record_nonce":`, `wrap_nonce":`} {
+			if strings.Contains(json, forbidden) {
+				t.Fatalf("credential JSON exposed %s: %s", forbidden, json)
+			}
+		}
+	}
+	if !strings.Contains(activeRecord.JSON, "\"status\": \"active\"") || !strings.Contains(revokedRecord.JSON, "\"status\": \"revoked\"") {
+		t.Fatalf("active/revoked status was not projected into JSON: active=%s revoked=%s", activeRecord.JSON, revokedRecord.JSON)
+	}
+}
+
+func TestConsoleCredentialFilterSeparatesLifecycleAndSearches(t *testing.T) {
+	model := consoleweb.SurfaceModel{
+		Domain: string(consoleCredentials), State: "ready", Authoritative: true, TotalCount: 3,
+		Records: []consoleweb.RecordModel{
+			{Key: "secret-1", Label: "github/api", Lifecycle: "active"},
+			{Key: "secret-2", Label: "github/legacy", Lifecycle: "revoked"},
+			{Key: "secret-3", Label: "openai/api", Lifecycle: "active"},
+		},
+	}
+	if err := filterConsoleCredentials(&model, "github", "all"); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Records) != 2 {
+		t.Fatalf("expected 2 github records, got %d", len(model.Records))
+	}
+	if err := filterConsoleCredentials(&model, "", "revoked"); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Records) != 1 || model.Records[0].Label != "github/legacy" {
+		t.Fatalf("revoked filter did not isolate: %+v", model.Records)
+	}
+	if model.Lifecycle != "revoked" || model.Query != "" {
+		t.Fatalf("filter state not echoed: %+v", model)
+	}
+	for _, input := range []struct{ query, status string }{
+		{strings.Repeat("x", 129), "all"}, {"x\ny", "all"}, {"", "expired"},
+	} {
+		if err := filterConsoleCredentials(&model, input.query, input.status); err == nil {
+			t.Fatalf("unsafe credential filter accepted: %+v", input)
+		}
+	}
+}
+
+func credentialsVaultForTest() credentials.VaultStatus {
+	return credentials.VaultStatus{
+		Database: "/state/credentials/authority.db", DeploymentID: "deployment-test", StoreID: "store-test",
+		KEKID: "kek-1", KEKVersion: 1, SchemaVersion: "1", Custody: "host-file", LastCleanShutdown: true,
 	}
 }

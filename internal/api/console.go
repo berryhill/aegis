@@ -186,7 +186,10 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			values = append(values, value)
 		}
 	case consoleCredentials:
-		model.Title, model.Eyebrow, model.Description = "Credentials", "Configured bindings", "Configured provider-auth bindings, presented as metadata only. Secret values and environment mappings are never read or shown here."
+		model.Title, model.Eyebrow, model.Description = "Credentials", "Encrypted credential authority", "Authoritative encrypted credential records, lifecycle history, and vault metadata. Secret values, ciphertext, and key material are never read or shown here."
+		if surface.VaultStatus.State != "" {
+			model.Source = surface.VaultStatus.Source()
+		}
 		for _, value := range surface.Credentials {
 			values = append(values, value)
 		}
@@ -244,6 +247,12 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Execution Queue record")
 			}
 			record = consoleQueueRecord(queueView)
+		} else if domain == consoleCredentials {
+			cred, ok := value.(app.CredentialView)
+			if !ok {
+				return consoleweb.SurfaceModel{}, errors.New("invalid Credentials record")
+			}
+			record = consoleCredentialRecord(cred, surface.VaultStatus)
 		}
 		model.Records = append(model.Records, record)
 		if domain == consoleQueue {
@@ -531,6 +540,179 @@ func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
 	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, Queue: detail}
 }
 
+// consoleCredentialRecord builds the metadata-only surface model for a single
+// authoritative encrypted credential record. It must never include plaintext
+// values, ciphertext, wrapped DEKs, nonces, or KEK bytes. The only KEK field
+// it surfaces is the immutable version (for ops history).
+func consoleCredentialRecord(cred app.CredentialView, vault app.VaultStatusView) consoleweb.RecordModel {
+	lifecycle := "active"
+	readiness := "Active exact revision; secret value resolvable only via authenticated API/CLI authority admission"
+	if cred.Status == "revoked" {
+		lifecycle = "revoked"
+		readiness = "Revoked; secret value reads are denied"
+	}
+	versions := make([]consoleweb.FieldModel, 0, len(cred.VersionHistory))
+	versionDetails := make([]consoleweb.CredentialVersionDetail, 0, len(cred.VersionHistory))
+	for _, version := range cred.VersionHistory {
+		digest := version.CiphertextHash
+		if digest == "" {
+			digest = "Unavailable"
+		}
+		versions = append(versions, consoleweb.FieldModel{
+			Label: fmt.Sprintf("v%d", version.Version),
+			Value: fmt.Sprintf("algorithm %s · KEK v%d · digest %s · created %s", version.Algorithm, version.KEKVersion, digest, consoleTime(version.CreatedAt)),
+		})
+		versionDetails = append(versionDetails, consoleweb.CredentialVersionDetail{
+			Version:        version.Version,
+			Algorithm:      version.Algorithm,
+			KEKVersion:     version.KEKVersion,
+			CiphertextHash: version.CiphertextHash,
+			CreatedAt:      consoleTime(version.CreatedAt),
+		})
+	}
+	fields := []consoleweb.FieldModel{
+		{Label: "Stable record ID", Value: fallback(cred.ID, "Unavailable")},
+		{Label: "Reference", Value: fallback(cred.Reference, "Unavailable")},
+		{Label: "Kind", Value: fallback(cred.Kind, "Unavailable")},
+		{Label: "Status", Value: fallback(cred.Status, "Unavailable")},
+		{Label: "Current version", Value: fmt.Sprintf("v%d", cred.CurrentVersion)},
+		{Label: "Created", Value: fallback(cred.CreatedAt, "Unavailable")},
+		{Label: "Created by", Value: fallback(cred.CreatedBy, "Unavailable")},
+		{Label: "Bindings", Value: fmt.Sprintf("%d credential binding(s)", cred.BindingCount)},
+	}
+	if cred.Status == "revoked" {
+		fields = append(fields, consoleweb.FieldModel{Label: "Revoked at", Value: fallback(cred.RevokedAt, "Unavailable")})
+		fields = append(fields, consoleweb.FieldModel{Label: "Revocation reason", Value: fallback(cred.Revocation, "Unavailable")})
+	}
+	joined := make([]string, 0, len(versions))
+	for _, v := range versions {
+		joined = append(joined, v.Label+": "+v.Value)
+	}
+	fields = append(fields, consoleweb.FieldModel{Label: "Version history", Value: fallback(strings.Join(joined, "\n"), "No encrypted versions")})
+	summary := cred.Reference
+	if summary == "" {
+		summary = cred.ID
+	}
+	if cred.Kind != "" {
+		summary = summary + " · " + cred.Kind
+	}
+	recordLabel := fallback(cred.Reference, cred.ID)
+	if cred.Status != "" {
+		recordLabel = fmt.Sprintf("%s · %s · v%d", recordLabel, cred.Status, cred.CurrentVersion)
+	}
+	detail := &consoleweb.CredentialDetailModel{
+		Reference:      fallback(cred.Reference, ""),
+		Kind:           fallback(cred.Kind, ""),
+		Status:         fallback(cred.Status, ""),
+		CurrentVersion: cred.CurrentVersion,
+		CreatedAt:      fallback(cred.CreatedAt, ""),
+		CreatedBy:      fallback(cred.CreatedBy, ""),
+		RevokedAt:      cred.RevokedAt,
+		Revocation:     cred.Revocation,
+		BindingCount:   cred.BindingCount,
+		Versions:       versionDetails,
+		Vault: consoleweb.CredentialVaultDetail{
+			DeploymentID:      vault.DeploymentID,
+			StoreID:           vault.StoreID,
+			KEKID:             vault.KEKID,
+			KEKVersion:        vault.KEKVersion,
+			SchemaVersion:     vault.SchemaVersion,
+			Custody:           vault.Custody,
+			LastCleanShutdown: vault.LastCleanShutdown,
+			InitializedAt:     consoleTime(vault.InitializedAt),
+			State:             vault.State,
+			ReasonCode:        vault.ReasonCode,
+		},
+		Backup: consoleweb.CredentialBackupDetail{
+			Available:  cred.Backup.Available,
+			TargetPath: cred.Backup.TargetPath,
+			Note:       "Backups are ciphertext-only snapshots; the same KEK is required to reopen.",
+		},
+		Proposal: credentialProposal(cred, vault),
+	}
+	return consoleweb.RecordModel{
+		Key:        cred.ID,
+		Label:      recordLabel,
+		Summary:    summary,
+		JSON:       credentialJSON(cred, vault),
+		Lifecycle:  lifecycle,
+		Readiness:  readiness,
+		Revision:   fmt.Sprintf("v%d", cred.CurrentVersion),
+		Source:     vaultSourceLabel(vault),
+		Owner:      "operator",
+		Fields:     fields,
+		Credential: detail,
+	}
+}
+
+// credentialProposal builds the review-only CLI previews rendered in the
+// inspector. The strings are documentation; the browser never POSTs them.
+func credentialProposal(cred app.CredentialView, vault app.VaultStatusView) consoleweb.CredentialProposalDetail {
+	reference := cred.Reference
+	if reference == "" {
+		reference = "provider:NAME"
+	}
+	put := fmt.Sprintf("aegis secret put %s --kind %s --created-by \"$OPERATOR\"", reference, fallback(cred.Kind, "opaque"))
+	backup := "aegis secret backup <path-to-backup.db>"
+	return consoleweb.CredentialProposalDetail{
+		PutCommand:    put,
+		BackupCommand: backup,
+		Notice:        "Browser state cannot authorize credential mutation. The previews are copy-paste review; running them requires an authenticated operator session and the configured KEK.",
+	}
+}
+
+// credentialJSON serializes the authoritative credential view for the
+// inspector JSON tab. It deliberately omits every secret-bearing field
+// (RecordNonce, Ciphertext, WrappedDEK, KEK bytes) and is asserted by the
+// templ source test.
+func credentialJSON(cred app.CredentialView, vault app.VaultStatusView) string {
+	versions := make([]map[string]any, 0, len(cred.VersionHistory))
+	for _, v := range cred.VersionHistory {
+		versions = append(versions, map[string]any{
+			"version":         v.Version,
+			"format_version":  v.FormatVersion,
+			"algorithm":       v.Algorithm,
+			"kek_version":     v.KEKVersion,
+			"created_at":      consoleTime(v.CreatedAt),
+			"ciphertext_hash": v.CiphertextHash,
+		})
+	}
+	envelope := map[string]any{
+		"id":                cred.ID,
+		"reference":         cred.Reference,
+		"kind":              cred.Kind,
+		"status":            cred.Status,
+		"current_version":   cred.CurrentVersion,
+		"created_at":        cred.CreatedAt,
+		"created_by":        cred.CreatedBy,
+		"revoked_at":        cred.RevokedAt,
+		"revocation_reason": cred.Revocation,
+		"binding_count":     cred.BindingCount,
+		"version_history":   versions,
+		"vault": map[string]any{
+			"deployment_id":       vault.DeploymentID,
+			"store_id":            vault.StoreID,
+			"kek_id":              vault.KEKID,
+			"kek_version":         vault.KEKVersion,
+			"schema_version":      vault.SchemaVersion,
+			"custody":             vault.Custody,
+			"last_clean_shutdown": vault.LastCleanShutdown,
+		},
+	}
+	data, err := json.MarshalIndent(envelope, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("credential view: %s", cred.ID)
+	}
+	return string(data)
+}
+
+func vaultSourceLabel(vault app.VaultStatusView) string {
+	if vault.DeploymentID == "" {
+		return "credentials.authority.unconfigured"
+	}
+	return "credentials.authority.bbolt · " + vault.DeploymentID
+}
+
 func queuePhase(view app.QueueExecutionView) string {
 	state := string(view.Projection.State)
 	if view.Disposition != nil && view.Disposition.ReasonCode == "retry_exhausted" {
@@ -635,6 +817,9 @@ func exactRevisionLabel(id string, revision uint64, digest string) string {
 	return fmt.Sprintf("%s r%d @ %s", id, revision, digest)
 }
 
+// filterConsoleAgents filters the Agent Registry surface by stable ID substring
+// and exact lifecycle. Lifecycle is one of "all", "enabled", "disabled",
+// "retired". The reference search is exact-after-prefix and bounded.
 func filterConsoleAgents(model *consoleweb.SurfaceModel, query, lifecycle string) error {
 	query = strings.TrimSpace(query)
 	if len(query) > 128 || strings.ContainsAny(query, "\r\n\x00") {
@@ -656,6 +841,42 @@ func filterConsoleAgents(model *consoleweb.SurfaceModel, query, lifecycle string
 			continue
 		}
 		haystack := strings.ToLower(strings.Join([]string{record.Label, record.Runtime, record.Source, record.Owner}, " "))
+		if needle != "" && !strings.Contains(haystack, needle) {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	model.Records = filtered
+	if model.State == "ready" && len(filtered) == 0 {
+		model.State = "filtered-empty"
+	}
+	return nil
+}
+
+// filterConsoleCredentials filters the credentials surface by status and an
+// exact reference substring. Status is one of "all", "active", "revoked".
+// Reference search is exact-after-prefix and bounded.
+func filterConsoleCredentials(model *consoleweb.SurfaceModel, query, status string) error {
+	query = strings.TrimSpace(query)
+	if len(query) > 128 || strings.ContainsAny(query, "\r\n\x00") {
+		return errors.New("invalid Credentials search")
+	}
+	if status == "" {
+		status = "all"
+	}
+	switch status {
+	case "all", "active", "revoked":
+	default:
+		return errors.New("invalid Credentials status filter")
+	}
+	model.Query, model.Lifecycle = query, status
+	filtered := make([]consoleweb.RecordModel, 0, len(model.Records))
+	needle := strings.ToLower(query)
+	for _, record := range model.Records {
+		if status != "all" && record.Lifecycle != status {
+			continue
+		}
+		haystack := strings.ToLower(strings.Join([]string{record.Label, record.Summary, record.Owner}, " "))
 		if needle != "" && !strings.Contains(haystack, needle) {
 			continue
 		}
@@ -709,6 +930,8 @@ func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb
 		specs = []actionSpec{{"graph_publish", "Publish Graph revision", true}, {"submission", "Prepare execution request", false}}
 	case consoleQueue:
 		specs = []actionSpec{{"submission", "Prepare execution request", true}, {"queue_claim", "Claim", false}, {"runtime_effect", "Runtime effect", false}, {"evidence_verify", "Verify evidence", false}, {"disposition", "Disposition", false}}
+	case consoleCredentials:
+		specs = []actionSpec{{"prepare_credential", "Prepare credential", true}, {"prepare_vault_backup", "Prepare vault backup", false}}
 	}
 	actions := make([]consoleweb.ActionModel, 0, len(specs))
 	for _, spec := range specs {
@@ -753,7 +976,11 @@ func consoleRecordLabel(domain consoleDomain, value any) string {
 		}
 	case consoleCredentials:
 		if record, ok := value.(app.CredentialView); ok {
-			return fmt.Sprintf("%s · %s binding", record.ID, record.Type)
+			label := record.Reference
+			if label == "" {
+				label = record.ID
+			}
+			return fmt.Sprintf("%s · %s · v%d", label, record.Status, record.CurrentVersion)
 		}
 	}
 	return "unknown record"

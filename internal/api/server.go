@@ -1562,11 +1562,17 @@ func requiredRevision(raw string) (uint64, error) {
 }
 
 func fleetSurfaceAggregateState(readiness map[string]app.SurfaceReadiness) (string, int) {
-	for _, key := range []string{"registry", "loops", "graphs", "queue", "credentials"} {
+	for _, key := range []string{"registry", "loops", "graphs", "queue"} {
 		value, ok := readiness[key]
 		if !ok || !value.Authoritative || (value.State != "ready" && value.State != "empty") {
 			return "unavailable", http.StatusServiceUnavailable
 		}
+	}
+	// Credentials are intentionally non-gating for the credential-independent
+	// MVI vertical. An unconfigured, locked, corrupt, or unavailable authority
+	// must not fail fleet-level state aggregation.
+	if cred, ok := readiness["credentials"]; ok && !cred.Authoritative && cred.State == "error" {
+		return "unavailable", http.StatusServiceUnavailable
 	}
 	return "ready", http.StatusOK
 }

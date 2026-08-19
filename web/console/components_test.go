@@ -256,6 +256,89 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 	}
 }
 
+func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T) {
+	var output bytes.Buffer
+	active := RecordModel{
+		Key: "secret-1", Label: "github/api", Revision: "v2", Lifecycle: "active", Summary: "github/api · api-token",
+		Source: "credentials.authority.bbolt", Owner: "operator",
+		Fields: []FieldModel{{Label: "Stable record ID", Value: "github/api"}, {Label: "Reference", Value: "github/api"}, {Label: "Status", Value: "active"}, {Label: "Current version", Value: "v2"}, {Label: "Bindings", Value: "2 credential binding(s)"}, {Label: "Version history", Value: "v1: algorithm xchacha20-poly1305 · KEK v1 · digest sha256:aaa · created 2026-08-18T12:00:00Z\nv2: algorithm xchacha20-poly1305 · KEK v1 · digest sha256:bbb · created 2026-08-18T13:00:00Z"}},
+		Credential: &CredentialDetailModel{
+			Reference: "github/api", Kind: "api-token", Status: "active", CurrentVersion: 2,
+			CreatedAt: "2026-08-18T12:00:00Z", CreatedBy: "principal-1", BindingCount: 2,
+			Versions: []CredentialVersionDetail{
+				{Version: 1, Algorithm: "xchacha20-poly1305", KEKVersion: 1, CiphertextHash: "sha256:aaa", CreatedAt: "2026-08-18T12:00:00Z"},
+				{Version: 2, Algorithm: "xchacha20-poly1305", KEKVersion: 1, CiphertextHash: "sha256:bbb", CreatedAt: "2026-08-18T13:00:00Z"},
+			},
+			Vault:    CredentialVaultDetail{DeploymentID: "deployment-test", StoreID: "store-1", KEKID: "kek-1", KEKVersion: 1, SchemaVersion: "1", Custody: "host-file", LastCleanShutdown: true, State: "initialized", ReasonCode: "credentials_vault_ready"},
+			Backup:   CredentialBackupDetail{Available: false, Note: "Backups are ciphertext-only snapshots; the same KEK is required to reopen."},
+			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/api --kind api-token --created-by \"$OPERATOR\"", BackupCommand: "aegis secret backup <path-to-backup.db>", Notice: "Browser state cannot authorize credential mutation."},
+		},
+	}
+	revoked := RecordModel{
+		Key: "secret-2", Label: "github/legacy", Revision: "v1", Lifecycle: "revoked", Summary: "github/legacy · api-token",
+		Source: "credentials.authority.bbolt", Owner: "operator",
+		Fields: []FieldModel{{Label: "Stable record ID", Value: "github/legacy"}, {Label: "Status", Value: "revoked"}, {Label: "Revoked at", Value: "2026-08-18T14:00:00Z"}, {Label: "Revocation reason", Value: "rotation"}},
+		Credential: &CredentialDetailModel{
+			Reference: "github/legacy", Status: "revoked", CurrentVersion: 1, RevokedAt: "2026-08-18T14:00:00Z", Revocation: "rotation",
+			Vault:    CredentialVaultDetail{State: "initialized", ReasonCode: "credentials_vault_ready"},
+			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/legacy --kind api-token", BackupCommand: "aegis secret backup <path>", Notice: "Browser state cannot authorize credential mutation."},
+		},
+	}
+	active.JSON = `{"id":"secret-1","status":"active","version_history":[],"vault":{"kek_id":"kek-1","kek_version":1}}`
+	revoked.JSON = `{"id":"secret-2","status":"revoked","version_history":[],"vault":{"kek_id":"kek-1","kek_version":1}}`
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{
+		Domain: DomainCredentials, Title: "Credentials", Eyebrow: "Encrypted credential authority",
+		Description: "Authoritative encrypted credential records.",
+		State:       "ready", Authoritative: true, TotalCount: 2, Lifecycle: "all", Query: "",
+		Records: []RecordModel{active, revoked}, Inspector: &revoked, InspectorOpen: true,
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		"Encrypted credential authority", "Authoritative encrypted credential", "github/api", "github/legacy",
+		"active", "revoked", "v2", "v1", "Revoked at", "Revocation reason", "rotation",
+		"Vault summary", "Version history (encrypted, metadata-only)", "Prepare credential (review only)",
+		"Prepare vault backup (review only)", "aegis secret put github/legacy", "aegis secret backup",
+		"Browser state cannot authorize credential mutation",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("credential surface missing %q: %s", required, html)
+		}
+	}
+	for _, forbidden := range []string{
+		"<script", "data-on:", "data-bind:", "localStorage", "sessionStorage",
+		`name="principal"`, `name="stanza"`, `name="mandate"`, `name="authority"`,
+		"Ciphertext\":", "WrappedDEK\":", "RecordNonce\":", "WrapNonce\":",
+		"source_env", "target_env",
+	} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("credential surface exposed %q: %s", forbidden, html)
+		}
+	}
+}
+
+func TestCredentialsWorkspaceReportsUnconfiguredAuthorityWithoutAssertingCount(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{
+		Domain: DomainCredentials, Title: "Credentials", Eyebrow: "Encrypted credential authority",
+		Description: "Authoritative encrypted credential records.",
+		State:       "unconfigured", Authoritative: false, TotalCount: 0, ReasonCode: "credentials_authority_not_configured", Source: "credentials.authority.unconfigured",
+		Records: []RecordModel{},
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	if !strings.Contains(html, "credentials_authority_not_configured") {
+		t.Fatalf("unconfigured credentials surface must report reason: %s", html)
+	}
+	if strings.Contains(html, "0 credentials") {
+		t.Fatalf("unconfigured surface should not assert a count: %s", html)
+	}
+}
+
 func TestConsoleSourceForbidsUnsafeActiveContent(t *testing.T) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

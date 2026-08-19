@@ -18,6 +18,8 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
+	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	credentialbridge "github.com/berryhill/aegis/internal/credentials/bridge"
 	credentialbroker "github.com/berryhill/aegis/internal/credentials/broker"
 	"github.com/berryhill/aegis/internal/evidence"
@@ -162,6 +164,8 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	var openedFleet *fleetbadger.Store
 	var openedService *app.Service
 	var openedConfig config.Config
+	var openedCredentialRepo *credentialbolt.Store
+	var openedCredentialCustodian *credentials.FileCustodian
 	build := func(cmd *cobra.Command) (*app.Service, error) {
 		cfg, err := config.Load(o.configFile, nil)
 		if err != nil {
@@ -230,6 +234,24 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		openedAuthority = authority
 		h := hermes.New(cfg.HermesExecutable, deps.Logger)
 		service := app.New(cfg, st, authority, authority, h, deps.Logger)
+		// Wire the credential authority only for commands that read it. The open
+		// is best-effort: a missing, locked, or otherwise unavailable authority
+		// stays unconfigured and the rest of the fleet vertical continues to
+		// operate. This must not prompt during bootstrap or other non-credential
+		// commands.
+		if commandNeedsCredentials(cmd) && cfg.Credentials.Authority.Custody != "" && cfg.Credentials.Authority.Database != "" && cfg.Credentials.Authority.DeploymentID != "" {
+			custodian, custodianErr := loadConfiguredCustodian(cmd, cfg.Credentials.Authority)
+			if custodianErr == nil {
+				repo, repoErr := credentialbolt.Open(cmd.Context(), cfg.Credentials.Authority.Database, cfg.Credentials.Authority.DeploymentID, custodian)
+				if repoErr == nil {
+					service.ConfigureCredentials(repo, custodian)
+					openedCredentialRepo = repo
+					openedCredentialCustodian = custodian
+				} else {
+					custodian.Close()
+				}
+			}
+		}
 		if commandNeedsFleet(cmd) {
 			fleetStore, fleetErr := fleetbadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "fleet-v1"))
 			if fleetErr != nil {
@@ -282,6 +304,14 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if openedFleet != nil {
 			closeErr = openedFleet.Close()
 			openedFleet = nil
+		}
+		if openedCredentialRepo != nil {
+			closeErr = errors.Join(closeErr, openedCredentialRepo.Close())
+			openedCredentialRepo = nil
+		}
+		if openedCredentialCustodian != nil {
+			openedCredentialCustodian.Close()
+			openedCredentialCustodian = nil
 		}
 		if openedAuthority != nil {
 			closeErr = errors.Join(closeErr, openedAuthority.Close())
@@ -598,6 +628,15 @@ func commandNeedsFleet(command *cobra.Command) bool {
 			return true
 		case "authority":
 			return current.Parent() != nil && current.Parent().Name() == "session"
+		}
+	}
+	return false
+}
+
+func commandNeedsCredentials(command *cobra.Command) bool {
+	for current := command; current != nil; current = current.Parent() {
+		if current.Name() == "serve" {
+			return true
 		}
 	}
 	return false
@@ -1062,12 +1101,16 @@ func serveCmd(build builder) *cobra.Command {
 		if brokerConfig.Socket == "" {
 			return api.Serve(cmd.Context(), s)
 		}
-		authority, closeAuthority, e := openAuthorityForService(cmd, s)
-		if e != nil {
-			return e
+		// Avoid double-opening the authority when serve already triggered the
+		// build-time credential wiring.
+		if s.CredentialAuthority == nil {
+			authority, closeAuthority, e := openAuthorityForService(cmd, s)
+			if e != nil {
+				return e
+			}
+			defer func() { _ = closeAuthority() }()
+			s.CredentialAuthority = authority
 		}
-		defer func() { _ = closeAuthority() }()
-		s.CredentialAuthority = authority
 		destinations := make(map[string]string, len(brokerConfig.Destinations))
 		var repositories []string
 		for id, destination := range brokerConfig.Destinations {

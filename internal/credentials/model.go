@@ -96,6 +96,7 @@ type SecretCounts struct {
 type Repository interface {
 	StoreID() string
 	DeploymentID() string
+	Status(context.Context) (VaultStatus, error)
 	Create(context.Context, SecretRecord, EncryptedSecretVersion) error
 	AddVersion(context.Context, EncryptedSecretVersion) error
 	Metadata(context.Context, string) (SecretRecord, error)
@@ -106,6 +107,7 @@ type Repository interface {
 	History(context.Context, string, int) ([]SecretVersionMetadata, error)
 	Bind(context.Context, CredentialBinding) error
 	Resolve(context.Context, CredentialBindingKey) (ResolvedSecret, error)
+	BindingCount(context.Context, string) (int, error)
 	Revoke(context.Context, string, uint64, string, time.Time) error
 	Backup(context.Context, string) error
 	Close() error

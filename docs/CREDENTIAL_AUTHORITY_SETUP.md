@@ -59,3 +59,43 @@ aegis --config /ABSOLUTE/PATH/aegis.yaml secret list
 Production should use `custody: systemd`, a basename-only `kek_credential`, and an encrypted systemd service credential delivered through `CREDENTIALS_DIRECTORY`. The bootstrap records the exact deployment/database/credential names only after its digest-bound confirmation, then remains at a resumable incomplete prerequisite; absence of externally delivered material is not corruption and is not reported as a systemd authority selection when custody is empty. The interactive `secret initialize` command deliberately does not create systemd credentials. The deployment administrator must create and provision that encrypted credential and service unit outside Aegis, then rerun `aegis init` with the configured credential available. Aegis displays the exact database effect and requires `initialize systemd authority DEPLOYMENT_ID` before creating and validating the deployment-bound database. It never copies or modifies the delivered KEK and does not report manager credential administration as ready unless the database and credential both pass authority startup validation.
 
 Keep KEK/recovery material separate from database backups. Disable core dumps and use distinct production service/runtime identities where required by the threat model. See `research/2026-07-17-embedded-bbolt-credential-authority.md` for the normative production custody and recovery design.
+
+## Browser credentials surface
+
+The authenticated Aegis console renders a dedicated `#/credentials` workspace
+that surfaces the encrypted authority as authoritative metadata only. The
+shell, the navigation rail, and the page header all remain native same-origin
+HTML; no browser JavaScript, no inline executable content, and no Datastar
+expression evaluation. The workspace shows one card per credential with the
+record reference, kind, current version, status chip, last update, and binding
+count. Status filter (`all` / `active` / `revoked`) and exact-reference search
+are submitted through native same-origin forms; no browser state ever
+authorizes a credential mutation.
+
+Selecting a record opens a read-only inspector that includes:
+
+- **Provenance** — stable record ID, reference, kind, status, current version,
+  created-by, created-at, binding count, revoked-at and revocation reason when
+  applicable.
+- **Vault summary** — deployment ID, store ID, custody mode, schema version,
+  KEK ID and KEK version (the only KEK fields rendered; no KEK bytes, no
+  wrapped DEKs, no record nonces, no ciphertext), last clean shutdown, and
+  initialized-at.
+- **Version history** — every encrypted version with algorithm, KEK version,
+  creation time, and verification digest (`sha256:...`). The encrypted bytes
+  themselves are never projected.
+- **Backup status** — whether a ciphertext-only backup is on disk and its
+  absolute path; backups require the same KEK to reopen.
+- **Prepare credential / prepare vault backup** — review-only CLI previews of
+  the exact `aegis secret put REFERENCE --kind KIND --created-by "$OPERATOR"`
+  and `aegis secret backup <PATH>` commands. The browser never POSTs them;
+  running them requires an authenticated operator session and the configured
+  KEK.
+
+The credential surface is intentionally non-gating for the rest of the
+fleet-control vertical: a missing, locked (`ErrPassphraseAuthentication`),
+corrupt, or unavailable authority surfaces an `unconfigured` / `locked` /
+`degraded_repair_required` / `unavailable` readiness state for credentials
+without changing registry, loops, graphs, or queue readiness. The
+`/v1/fleet/readiness` aggregate returns `ready` for non-credential failures
+only.
