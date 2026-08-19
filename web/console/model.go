@@ -65,6 +65,7 @@ type RecordModel struct {
 	Fields       []FieldModel
 	Graph        *GraphDetailModel
 	Queue        *QueueDetailModel
+	Credential   *CredentialDetailModel
 }
 
 // QueueDetailModel is a presentation-only projection of authoritative queue
@@ -151,4 +152,66 @@ type GraphRunModel struct {
 type FieldModel struct {
 	Label string
 	Value string
+}
+
+// CredentialDetailModel is the metadata-only inspector projection of an
+// authoritative encrypted credential record. It deliberately omits secret
+// values, ciphertext, wrapped DEKs, nonces, and KEK bytes. The only KEK field
+// exposed is the immutable version.
+type CredentialDetailModel struct {
+	Reference      string
+	Kind           string
+	Status         string
+	CurrentVersion uint64
+	CreatedAt      string
+	CreatedBy      string
+	RevokedAt      string
+	Revocation     string
+	BindingCount   int
+	Versions       []CredentialVersionDetail
+	Vault          CredentialVaultDetail
+	Backup         CredentialBackupDetail
+	Proposal       CredentialProposalDetail
+}
+
+// CredentialVersionDetail is one immutable encrypted version entry. It is
+// metadata-only; ciphertext, wrapped DEK, and record nonce are never rendered.
+type CredentialVersionDetail struct {
+	Version        uint64
+	Algorithm      string
+	KEKVersion     uint64
+	CiphertextHash string
+	CreatedAt      string
+}
+
+// CredentialVaultDetail summarises the encrypted authority vault that owns
+// the record. Database path and KEK bytes are never included.
+type CredentialVaultDetail struct {
+	DeploymentID      string
+	StoreID           string
+	KEKID             string
+	KEKVersion        uint64
+	SchemaVersion     string
+	Custody           string
+	LastCleanShutdown bool
+	InitializedAt     string
+	State             string
+	ReasonCode        string
+}
+
+// CredentialBackupDetail records the last successful ciphertext-only backup.
+// Backups require the same KEK to reopen; bytes are never included.
+type CredentialBackupDetail struct {
+	Available  bool
+	TargetPath string
+	Note       string
+}
+
+// CredentialProposalDetail carries the review-only CLI previews the operator
+// can copy. They never POST; browser state cannot authorize credential
+// mutation.
+type CredentialProposalDetail struct {
+	PutCommand    string
+	BackupCommand string
+	Notice        string
 }

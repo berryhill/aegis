@@ -386,7 +386,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 		{"graphs", "Graphs", "Definitions", "/graphs", "Publish Graph revision", "graph_publish"},
 		{"loops", "Loops", "Definitions", "/loops", "Publish Loop revision", "loop_publish"},
 		{"queue", "Execution Queue", "Runtime", "/queue", "Prepare execution request", "submission"},
-		{"credentials", "Credentials", "Configured bindings", "/credentials", "", ""},
+		{"credentials", "Credentials", "Encrypted credential authority", "/credentials", "", ""},
 	}
 
 	for _, route := range routes {
@@ -434,11 +434,14 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				}
 			}
 			if route.domain == "credentials" {
-				if !bytes.Contains(body, []byte("Secret values and environment mappings are never read or shown here")) {
+				if !bytes.Contains(body, []byte("Secret values, ciphertext, and key material are never read or shown here")) {
 					t.Fatalf("credentials domain must explain metadata-only boundary: %s", body)
 				}
 				if bytes.Contains(body, []byte("source_env")) || bytes.Contains(body, []byte("target_env")) || bytes.Contains(body, []byte("AEGIS_API_TEST_KEY")) {
 					t.Fatalf("credentials domain exposed secret values: %s", body)
+				}
+				if !bytes.Contains(body, []byte("credentials_authority_not_configured")) {
+					t.Fatalf("credentials domain must report unconfigured authority when no bbolt is wired: %s", body)
 				}
 			}
 			if bytes.Contains(body, []byte("<script")) || bytes.Contains(body, []byte("data-on:")) {
@@ -453,8 +456,8 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 	}
 	credentialsBody, _ := io.ReadAll(credentialsResponse.Body)
 	_ = credentialsResponse.Body.Close()
-	if credentialsResponse.StatusCode != http.StatusOK || !bytes.Contains(credentialsBody, []byte("test")) || !bytes.Contains(credentialsBody, []byte("environment binding")) {
-		t.Fatalf("credentials route did not surface metadata-only binding: status=%d body=%s", credentialsResponse.StatusCode, credentialsBody)
+	if credentialsResponse.StatusCode != http.StatusOK || !bytes.Contains(credentialsBody, []byte("credentials_authority_not_configured")) {
+		t.Fatalf("credentials route did not surface unconfigured authority: status=%d body=%s", credentialsResponse.StatusCode, credentialsBody)
 	}
 
 	hostile := &app.FleetAgent{}
@@ -572,8 +575,11 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 		}
 	}
 	credentials := consoleState.Surface.Readiness["credentials"]
-	if credentials.State != "ready" || credentials.ReasonCode != "collection_read_succeeded" || credentials.Count != 1 || !credentials.Authoritative || len(consoleState.Surface.Credentials) != 1 || consoleState.Surface.Credentials[0].ID != "test" {
-		t.Fatalf("credential metadata readiness was not authoritative and secret-safe: readiness=%+v credentials=%+v", credentials, consoleState.Surface.Credentials)
+	if credentials.State != "unconfigured" || credentials.ReasonCode != "credentials_authority_not_configured" || credentials.Count != 0 || credentials.Authoritative {
+		t.Fatalf("credential readiness must report unconfigured when no bbolt authority is wired: readiness=%+v", credentials)
+	}
+	if len(consoleState.Surface.Credentials) != 0 {
+		t.Fatalf("credential surface should be empty when authority is unconfigured: %+v", consoleState.Surface.Credentials)
 	}
 	_ = state.Body.Close()
 	fragment, _ := http.NewRequest(http.MethodGet, "http://"+address+"/console/fragments/surface?domain=graphs&limit=10", nil)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sort"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -173,21 +172,41 @@ type SurfaceReadiness struct {
 	Authoritative bool   `json:"authoritative"`
 }
 
-// CredentialView is metadata-only. Workspace reads never resolve secrets.
+// CredentialView is the metadata-only surface projection of an authoritative
+// encrypted credential record. It is safe to render into the browser; secret
+// values, ciphertext, wrapped DEKs, and KEK bytes are never included.
+//
+// When the service is built without a bbolt authority, ListCredentialsAs
+// returns views with ID = "provider:<name>" and Type set so existing config-only
+// consumers keep working. The provider-auth binding fields are redacted in
+// that mode (no source_env, no target_env).
 type CredentialView struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
+	ID             string                  `json:"id"`
+	Type           string                  `json:"type"`
+	Reference      string                  `json:"reference,omitempty"`
+	Kind           string                  `json:"kind,omitempty"`
+	Status         string                  `json:"status,omitempty"`
+	CurrentVersion uint64                  `json:"current_version,omitempty"`
+	CreatedAt      string                  `json:"created_at,omitempty"`
+	CreatedBy      string                  `json:"created_by,omitempty"`
+	RevokedAt      string                  `json:"revoked_at,omitempty"`
+	Revocation     string                  `json:"revocation_reason,omitempty"`
+	BindingCount   int                     `json:"binding_count,omitempty"`
+	VersionHistory []CredentialVersionView `json:"version_history,omitempty"`
+	Backup         CredentialBackupView    `json:"backup"`
 }
 
 type FleetSurface struct {
-	Agents      []FleetAgent                       `json:"agents"`
-	Loops       []LoopView                         `json:"loops"`
-	Graphs      []GraphView                        `json:"graphs"`
-	Submissions SubmissionHistory                  `json:"submissions"`
-	Queue       []QueueExecutionView               `json:"queue"`
-	Credentials []CredentialView                   `json:"credentials"`
-	Readiness   map[string]SurfaceReadiness        `json:"readiness"`
-	Actions     map[string]orchestration.Readiness `json:"actions"`
+	Agents            []FleetAgent                       `json:"agents"`
+	Loops             []LoopView                         `json:"loops"`
+	Graphs            []GraphView                        `json:"graphs"`
+	Submissions       SubmissionHistory                  `json:"submissions"`
+	Queue             []QueueExecutionView               `json:"queue"`
+	Credentials       []CredentialView                   `json:"credentials"`
+	CredentialRecords []CredentialView                   `json:"credential_records"`
+	VaultStatus       VaultStatusView                    `json:"vault_status"`
+	Readiness         map[string]SurfaceReadiness        `json:"readiness"`
+	Actions           map[string]orchestration.Readiness `json:"actions"`
 }
 
 // ConfigureFleet installs the single application boundary used by all fleet
@@ -963,17 +982,56 @@ func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (Fle
 			surface.Actions[string(action)] = s.Fleet.Readiness(ctx, orchestration.ReadinessRequest{Action: action, Subject: subject})
 		}
 	}
-	credentialIDs := make([]string, 0, len(s.Config.Credentials.ProviderAuth))
-	for id := range s.Config.Credentials.ProviderAuth {
-		credentialIDs = append(credentialIDs, id)
+	credentialViews, credentialErr := s.ListCredentialsAs(ctx, subject)
+	if ctx.Err() != nil {
+		return FleetSurface{}, ctx.Err()
 	}
-	sort.Strings(credentialIDs)
-	for _, id := range credentialIDs {
-		binding := s.Config.Credentials.ProviderAuth[id]
-		surface.Credentials = append(surface.Credentials, CredentialView{ID: id, Type: binding.Type})
+	surface.Credentials = credentialViews
+	surface.CredentialRecords = credentialViews
+	vault, vaultErr := s.VaultStatusAs(ctx)
+	if vaultErr == nil {
+		surface.VaultStatus = vault
+	} else {
+		surface.VaultStatus = VaultStatusView{State: "error", ReasonCode: "credentials_vault_read_failed"}
 	}
-	surface.Readiness["credentials"] = collectionReadiness(len(surface.Credentials), "config.credentials.provider_auth", nil)
+	surface.Readiness["credentials"] = credentialReadiness(surface.Credentials, credentialErr, vault, s.hasCredentials())
 	return surface, nil
+}
+
+// credentialReadiness classifies the credentials surface state. It deliberately
+// keeps the read state independent of registry/loops/graphs/queue readiness so
+// a missing or locked authority does not flip the rest of the fleet degraded.
+func credentialReadiness(views []CredentialView, readErr error, vault VaultStatusView, configured bool) SurfaceReadiness {
+	source := "credentials.authority.bbolt"
+	if !configured {
+		source = "credentials.authority.unconfigured"
+		return SurfaceReadiness{State: "unconfigured", ReasonCode: "credentials_authority_not_configured", Source: source, Count: 0, Authoritative: false}
+	}
+	if readErr != nil {
+		return SurfaceReadiness{State: "error", ReasonCode: "credentials_authority_read_failed", Source: source, Count: 0, Authoritative: false}
+	}
+	switch vault.State {
+	case "locked":
+		return SurfaceReadiness{State: "locked", ReasonCode: "credentials_authority_locked", Source: source, Count: 0, Authoritative: false}
+	case "corrupt":
+		return SurfaceReadiness{State: "degraded_repair_required", ReasonCode: "credentials_authority_corrupt", Source: source, Count: 0, Authoritative: false}
+	case "unavailable":
+		return SurfaceReadiness{State: "unavailable", ReasonCode: "credentials_authority_unavailable", Source: source, Count: 0, Authoritative: false}
+	}
+	if len(views) == 0 {
+		return SurfaceReadiness{State: "empty", ReasonCode: "credentials_authority_empty", Source: source, Count: 0, Authoritative: true}
+	}
+	active := 0
+	revoked := 0
+	for _, view := range views {
+		switch view.Status {
+		case "active":
+			active++
+		case "revoked":
+			revoked++
+		}
+	}
+	return SurfaceReadiness{State: "ready", ReasonCode: "credentials_authority_read_succeeded", Source: source, Count: len(views), Authoritative: true}
 }
 
 func collectionReadiness(count int, source string, err error) SurfaceReadiness {

@@ -301,6 +301,43 @@ func (s *Store) validate(ctx context.Context, deploymentID string, custodian cre
 func (s *Store) StoreID() string      { return s.storeID }
 func (s *Store) DeploymentID() string { return s.deploymentID }
 
+// Status reports the read-only state of the authority for the dashboard. It
+// never includes key material, ciphertext, wrapped DEKs, or KEK bytes.
+func (s *Store) Status(ctx context.Context) (credentials.VaultStatus, error) {
+	if err := ctx.Err(); err != nil {
+		return credentials.VaultStatus{}, err
+	}
+	status := credentials.VaultStatus{
+		Database:          s.path,
+		DeploymentID:      s.deploymentID,
+		StoreID:           s.storeID,
+		LastCleanShutdown: true,
+	}
+	err := s.db.View(func(tx *bolt.Tx) error {
+		meta := tx.Bucket(metaBucket)
+		if meta == nil {
+			return errors.New("credential authority meta bucket is missing")
+		}
+		status.SchemaVersion = string(append([]byte(nil), meta.Get([]byte("schema_version"))...))
+		clean := string(meta.Get([]byte("last_clean_shutdown")))
+		if clean == "false" {
+			status.LastCleanShutdown = false
+		}
+		created, err := time.Parse(time.RFC3339Nano, string(meta.Get([]byte("created_at"))))
+		if err == nil {
+			status.InitializedAt = created
+		}
+		var check keyCheck
+		if err := decode(meta.Get([]byte("key_check")), &check); err != nil {
+			return err
+		}
+		status.KEKID = check.Encrypted.KEKID
+		status.KEKVersion = check.Encrypted.KEKVersion
+		return nil
+	})
+	return status, err
+}
+
 func (s *Store) Create(ctx context.Context, record credentials.SecretRecord, version credentials.EncryptedSecretVersion) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -561,6 +598,33 @@ func (s *Store) Bind(ctx context.Context, binding credentials.CredentialBinding)
 		}
 		return bindings.Put(key, encoded)
 	})
+}
+
+func (s *Store) BindingCount(ctx context.Context, recordID string) (int, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	if !credentials.ValidateIdentifier(recordID) {
+		return 0, errors.New("credential binding count requires a valid record identifier")
+	}
+	count := 0
+	err := s.db.View(func(tx *bolt.Tx) error {
+		cursor := tx.Bucket(bindingBucket).Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var binding credentials.CredentialBinding
+			if err := decode(value, &binding); err != nil {
+				return err
+			}
+			if binding.SecretRecord == recordID {
+				count++
+			}
+		}
+		return nil
+	})
+	return count, err
 }
 
 func (s *Store) Resolve(ctx context.Context, key credentials.CredentialBindingKey) (credentials.ResolvedSecret, error) {

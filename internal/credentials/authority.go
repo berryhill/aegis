@@ -18,6 +18,12 @@ func NewAuthority(repository Repository, custodian KeyCustodian) *Authority {
 	return &Authority{repository: repository, custodian: custodian, now: func() time.Time { return time.Now().UTC() }}
 }
 
+// Status returns the read-only authoritative state of the underlying
+// repository. It never exposes key material, ciphertext, or wrapped DEKs.
+func (a *Authority) Status(ctx context.Context) (VaultStatus, error) {
+	return a.repository.Status(ctx)
+}
+
 func (a *Authority) Create(ctx context.Context, reference, kind, createdBy string, plaintext []byte) (SecretRecord, error) {
 	var record SecretRecord
 	if !ValidateIdentifier(reference) || !ValidateIdentifier(kind) || !ValidateIdentifier(createdBy) {
@@ -88,6 +94,14 @@ func (a *Authority) List(ctx context.Context, query string, limit int) ([]Secret
 
 func (a *Authority) Counts(ctx context.Context) (SecretCounts, error) {
 	return a.repository.Counts(ctx)
+}
+
+// BindingCount returns the number of bindings attached to a credential record.
+func (a *Authority) BindingCount(ctx context.Context, recordID string) (int, error) {
+	if !ValidateIdentifier(recordID) {
+		return 0, errors.New("credential binding count requires a valid record identifier")
+	}
+	return a.repository.BindingCount(ctx, recordID)
 }
 
 func (a *Authority) History(ctx context.Context, recordID string, limit int) ([]SecretVersionMetadata, error) {

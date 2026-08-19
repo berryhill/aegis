@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -185,6 +186,119 @@ func TestAuthorityRejectsWrongKeyDeploymentModeAndSecondWriter(t *testing.T) {
 	}
 	if _, err := Open(context.Background(), path, "deployment-test", wrong); err == nil {
 		t.Fatal("unsafe authority mode was accepted")
+	}
+}
+
+// TestStoreRoundTripPreservesAllMetadataFields pins the view-model read
+// contract: every persisted metadata field on a SecretRecord and every
+// persisted ciphertext-hash metadata field on a SecretVersionMetadata must
+// surface through the Status / Metadata / History read paths without
+// dropping or substituting values. This is the round-trip companion to the
+// "no plaintext persistence" test and protects the dashboard's
+// metadata-only projection.
+func TestStoreRoundTripPreservesAllMetadataFields(t *testing.T) {
+	store, authority, _, _ := openAuthority(t)
+	ctx := context.Background()
+	record, err := authority.Create(ctx, "roundtrip/reference", "opaque", "principal-1", []byte("roundtrip-secret-never-persist-plaintext"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Capture the metadata so the comparison is exact, not pattern-based.
+	// The authority stamps CreatedAt with its own clock; we only assert
+	// it is non-zero and the rest of the fields round-trip verbatim.
+	metadata, err := authority.Metadata(ctx, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Reference != "roundtrip/reference" || metadata.Kind != "opaque" || metadata.CurrentVersion != 1 || metadata.CreatedBy != "principal-1" || metadata.Status != credentials.StatusActive || metadata.CreatedAt.IsZero() {
+		t.Fatalf("metadata round-trip mismatch: %+v", metadata)
+	}
+	// Rotate to assert History surfaces every persisted version with the
+	// immutable ciphertext hash populated.
+	second := []byte("roundtrip-rotated-never-persist-plaintext")
+	if _, err = authority.Rotate(ctx, record.ID, second); err != nil {
+		t.Fatal(err)
+	}
+	history, err := authority.History(ctx, record.ID, 10)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("history round-trip mismatch: %+v err=%v", history, err)
+	}
+	for index, version := range history {
+		if version.RecordID != record.ID || version.Version != uint64(index+1) || version.FormatVersion == 0 || version.Algorithm == "" || version.KEKVersion == 0 || version.CiphertextHash == "" || version.CreatedAt.IsZero() {
+			t.Fatalf("version metadata lost a field on v%d: %+v", version.Version, version)
+		}
+	}
+	// Status must surface deployment_id, store_id, kek id, kek version,
+	// schema version, and the initialized_at timestamp without leaking any
+	// ciphertext-bearing field. Forbidden terms match the dashboard scan.
+	status, err := store.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.DeploymentID != "deployment-test" || status.StoreID == "" || status.KEKID == "" || status.KEKVersion == 0 || status.SchemaVersion != "1" || status.InitializedAt.IsZero() {
+		t.Fatalf("vault status lost a metadata field: %+v", status)
+	}
+	// After open(), the authority records last_clean_shutdown=false (the
+	// shutdown marker is only written on Close()). The dashboard must
+	// surface that flag as a degraded signal but never as missing
+	// metadata.
+	if status.LastCleanShutdown {
+		t.Fatalf("freshly-opened authority must report last_clean_shutdown=false until Close(): %+v", status)
+	}
+	for _, forbidden := range []string{"never-persist-plaintext", "wrapped_dek", "record_nonce", "wrap_nonce", "ciphertext"} {
+		if strings.Contains(strings.ToLower(status.Database), forbidden) {
+			t.Fatalf("vault status leaked forbidden term %q: %s", forbidden, status.Database)
+		}
+	}
+	// BindingCount must return zero for a record that has no bindings and
+	// must not silently fall back to the global bucket cursor. This is
+	// the only assertion that requires the store to still be open.
+	if count, err := store.BindingCount(ctx, record.ID); err != nil || count != 0 {
+		t.Fatalf("binding count mismatch for unbound record: count=%d err=%v", count, err)
+	}
+	if count, err := store.BindingCount(ctx, "secret-not-found"); err != nil || count != 0 {
+		t.Fatalf("binding count for missing record must be zero: count=%d err=%v", count, err)
+	}
+	// Closing flips the last_clean_shutdown marker; this is the lifecycle
+	// signal the dashboard must surface after a clean exit.
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStoreStatusAndBindingCountExposeMetadataAndHideCiphertext(t *testing.T) {
+	store, authority, _, _ := openAuthority(t)
+	ctx := context.Background()
+	record, err := authority.Create(ctx, "metadata-check", "opaque", "principal-1", []byte("metadata-check-canary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := credentials.CredentialBinding{Key: credentials.CredentialBindingKey{AgentID: "agent-meta", StanzaID: "operator", DeploymentID: "deployment-test", Scope: "metadata:test"}, SecretRecord: record.ID, VersionPolicy: credentials.VersionCurrent, Mode: "brokered", Destinations: []string{"api.meta.test"}, Enabled: true}
+	if err = authority.Bind(ctx, binding); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = authority.Rotate(ctx, record.ID, []byte("second-canary")); err != nil {
+		t.Fatal(err)
+	}
+	status, err := store.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.DeploymentID != "deployment-test" || status.KEKID == "" || status.KEKVersion == 0 || status.SchemaVersion != "1" || status.InitializedAt.IsZero() {
+		t.Fatalf("vault status did not surface metadata: %+v", status)
+	}
+	for _, forbidden := range []string{"metadata-check", "canary", "wrapped_dek", "record_nonce", "wrap_nonce"} {
+		if strings.Contains(strings.ToLower(status.Database), forbidden) {
+			t.Fatalf("vault status exposed forbidden term %q: %s", forbidden, status.Database)
+		}
+	}
+	count, err := store.BindingCount(ctx, record.ID)
+	if err != nil || count != 1 {
+		t.Fatalf("binding count mismatch: count=%d err=%v", count, err)
+	}
+	other, err := store.BindingCount(ctx, "secret-not-found")
+	if err != nil || other != 0 {
+		t.Fatalf("missing record count mismatch: count=%d err=%v", other, err)
 	}
 }
 
