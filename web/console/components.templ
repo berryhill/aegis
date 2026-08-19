@@ -144,7 +144,11 @@ templ Workspace(surface SurfaceModel) {
 			<div class="service-state" data-state={ surface.State }><strong>{ stateHeading(surface.State) }</strong><span>{ stateMessage(surface.State) }</span><code>{ surface.ReasonCode }</code></div>
 		}
 		if surface.State == "filtered-empty" {
-			<div class="panel state-block" data-state="empty"><strong>No matching agents</strong><p>Try another Agent ID, runtime target, owner, source, or lifecycle.</p></div>
+			if surface.Domain == DomainQueue {
+				<div class="panel state-block" data-state="empty"><strong>No executions in this lifecycle view</strong><p>Choose another authoritative Execution Queue state.</p></div>
+			} else {
+				<div class="panel state-block" data-state="empty"><strong>No matching agents</strong><p>Try another Agent ID, runtime target, owner, source, or lifecycle.</p></div>
+			}
 		}
 		@DomainCollection(surface)
 		<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
@@ -199,11 +203,11 @@ templ DomainCollection(surface SurfaceModel) {
 		}
 		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div>
 			if surface.Authoritative {
-				<div class="toolbar"><div class="seg-group" role="group" aria-label="Authoritative execution states"><span class="filter-label">Recorded states</span><span class="seg active">All</span>
-					for _, state := range surface.QueueStates {
-						<span class="seg">{ state }</span>
+				<div class="toolbar"><nav class="seg-group" aria-label="Authoritative execution states"><span class="filter-label">Lifecycle views</span><a class={ templ.KV("seg", true), templ.KV("active", surface.QueueState == "all") } href={ queueURL("all") }>All</a>
+					for _, state := range []string{"Queued", "Claimable", "Active", "Retrying", "Cancelled", "Expired", "Denied", "Failed", "Exhausted", "Succeeded"} {
+						<a class={ templ.KV("seg", true), templ.KV("active", surface.QueueState == strings.ToLower(state)) } href={ queueURL(strings.ToLower(state)) }>{ state }</a>
 					}
-				</div>@CollectionCount(surface, "execution")</div>
+				</nav>@CollectionCount(surface, "execution")</div>
 			}
 			@QueueRecordPanel(surface, surface.Records)
 		</section>
@@ -326,15 +330,19 @@ templ QueueInspector(surface SurfaceModel, record *RecordModel) {
 				<span class="canvas-arrow" aria-hidden="true">↓</span><article class={ "execution-node " + attempt.State }><span class="node-kind">Attempt { fmt.Sprintf("%d", attempt.Number) }</span><strong>{ attempt.ID }</strong><span>{ attempt.State } · { attempt.LoopID }</span><small>claim { attempt.ClaimID }</small></article>
 			}
 		</div></section>
-		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")</div></aside>
+		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Pinned queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")<h4>Dependencies</h4>@FieldList(record.Queue.Dependencies, "No dependency records")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")<h4>Lifecycle controls</h4><p class="inline-notice">Eligibility is authoritative readback. Browser mutation is disabled; authenticated API/CLI authority admission is required.</p>
+			for _, control := range record.Queue.Controls {
+				<button type="button" class="secondary" disabled data-eligible={ fmt.Sprintf("%t", control.Enabled) } title={ control.Reason }>{ control.Label }</button>
+			}
+		</div></aside>
 	</div>
 	<div class="execution-support">
-		<section class="support-panel" aria-labelledby="execution-timeline"><h3 id="execution-timeline">Execution timeline</h3><ol class="timeline">
+		<section class="support-panel" aria-labelledby="execution-timeline"><h3 id="execution-timeline">Execution timeline · immutable lifecycle</h3><ol class="timeline">
 			for _, event := range record.Queue.Timeline {
 				<li data-state={ event.State }><strong>{ event.Title } · { event.State }</strong><time>{ event.At }</time><span>{ event.Detail }</span></li>
 			}
 		</ol></section>
-		<section class="support-panel" aria-labelledby="attempt-provenance"><h3 id="attempt-provenance">Attempt provenance</h3>
+		<section class="support-panel" aria-labelledby="attempt-provenance"><h3 id="attempt-provenance">Attempt provenance · claims, retries, and Loop causality</h3>@FieldList(record.Queue.Claims, "No claim history")@FieldList(record.Queue.Retries, "No retry history")@FieldList(record.Queue.Cancellations, "No cancellation or expiry history")
 			if len(record.Queue.Attempts) == 0 {
 				<p class="empty-note">Unavailable — no authoritative attempt is recorded.</p>
 			}
@@ -402,6 +410,14 @@ func consoleRoute(domain, recordKey string) string {
 		if domain == DomainQueue { return path + "#/queue/" + recordKey }
 	}
 	return path + "#/" + domain
+}
+
+func queueURL(state string) string {
+	values := url.Values{}
+	if state != "" && state != "all" { values.Set("state", state) }
+	path := "/console/queue"
+	if encoded := values.Encode(); encoded != "" { path += "?" + encoded }
+	return path + "#/queue"
 }
 
 func registryURL(surface SurfaceModel) string {

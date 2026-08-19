@@ -232,6 +232,8 @@ func queueState(state execution.State) queue.State {
 		return queue.StateCancelled
 	case execution.StateExpired:
 		return queue.StateExpired
+	case execution.StateRevoked:
+		return queue.StateRevoked
 	default:
 		return ""
 	}

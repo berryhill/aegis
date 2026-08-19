@@ -32,6 +32,7 @@ const (
 	StateDenied    State = "denied"
 	StateCancelled State = "cancelled"
 	StateExpired   State = "expired"
+	StateRevoked   State = "revoked"
 )
 
 // Submission is the immutable admitted request. Authority is an exact context

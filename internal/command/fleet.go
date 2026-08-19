@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/loop"
+	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/spf13/cobra"
 )
@@ -280,7 +282,51 @@ func fleetQueueCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(list, show, process)
+	retry := &cobra.Command{Use: "retry FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		var input app.RetryQueueItemInput
+		if err := decodeJSONFile(args[0], &input); err != nil {
+			return usage(err)
+		}
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		value, err := service.RetryQueueItem(cmd.Context(), input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	terminalCommand := func(name string, operation func(*app.Service, context.Context, app.TerminalQueueItemInput) (queue.Cancellation, error)) *cobra.Command {
+		return &cobra.Command{Use: name + " FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+			var input app.TerminalQueueItemInput
+			if err := decodeJSONFile(args[0], &input); err != nil {
+				return usage(err)
+			}
+			service, err := build(cmd)
+			if err != nil {
+				return err
+			}
+			value, err := operation(service, cmd.Context(), input)
+			if err != nil {
+				return err
+			}
+			return output(cmd, value)
+		}}
+	}
+	cancel := terminalCommand("cancel", func(service *app.Service, ctx context.Context, input app.TerminalQueueItemInput) (queue.Cancellation, error) {
+		return service.CancelQueueItem(ctx, input)
+	})
+	expire := terminalCommand("expire", func(service *app.Service, ctx context.Context, input app.TerminalQueueItemInput) (queue.Cancellation, error) {
+		return service.ExpireQueueItem(ctx, input)
+	})
+	exhaust := terminalCommand("exhaust", func(service *app.Service, ctx context.Context, input app.TerminalQueueItemInput) (queue.Cancellation, error) {
+		return service.ExhaustQueueItem(ctx, input)
+	})
+	revoke := terminalCommand("revoke", func(service *app.Service, ctx context.Context, input app.TerminalQueueItemInput) (queue.Cancellation, error) {
+		return service.RevokeQueueItem(ctx, input)
+	})
+	command.AddCommand(list, show, process, retry, cancel, expire, exhaust, revoke)
 	return command
 }
 

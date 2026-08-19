@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -249,7 +250,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			if !containsString(model.QueueStates, record.Lifecycle) {
 				model.QueueStates = append(model.QueueStates, record.Lifecycle)
 			}
-			if record.Lifecycle == "claimed" {
+			if record.Lifecycle == "active" {
 				model.ActiveRecords = append(model.ActiveRecords, record)
 			}
 			if record.Lifecycle == "failed" {
@@ -451,11 +452,12 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 }
 
 func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
-	state := string(view.Projection.State)
+	state := queuePhase(view)
 	detail := &consoleweb.QueueDetailModel{
 		QueueItem: []consoleweb.FieldModel{
 			{Label: "Queue item", Value: view.Item.ItemID + " @ " + view.Item.Digest},
 			{Label: "Submission", Value: view.Item.Submission.ID + " @ " + view.Item.Submission.Digest},
+			{Label: "Mandate", Value: queueMandateLabel(view)},
 			{Label: "Snapshot", Value: view.Item.Snapshot.ID + " @ " + view.Item.Snapshot.Digest},
 			{Label: "Authority", Value: view.Item.Authority.ID + " @ " + view.Item.Authority.Digest},
 			{Label: "Enqueued", Value: consoleTime(view.Item.EnqueuedAt)},
@@ -473,6 +475,9 @@ func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
 		ReceiptState:     "Unavailable — no authoritative verifier receipt is attached.",
 		DispositionState: "Pending — no authoritative terminal disposition is attached.",
 	}
+	for _, dependency := range view.Item.Dependencies {
+		detail.Dependencies = append(detail.Dependencies, consoleweb.FieldModel{Label: dependency.ID, Value: queueDependencyValue(view, dependency.ID)})
+	}
 	detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queued", State: string(view.Item.State), At: consoleTime(view.Item.EnqueuedAt), Detail: view.Item.ItemID})
 	for _, child := range view.LoopExecutions {
 		detail.Loops = append(detail.Loops, consoleweb.QueueExecutionNodeModel{ID: child.LoopExecutionID, Kind: "Loop execution · " + child.GraphNodeID, State: string(child.State), Binding: exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · participant " + exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest), Digest: child.Digest})
@@ -482,6 +487,26 @@ func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
 		detail.Attempts = append(detail.Attempts, consoleweb.QueueAttemptModel{ID: attempt.AttemptID, Number: attempt.AttemptNumber, State: string(attempt.State), LoopID: attempt.LoopExecutionID, ClaimID: attempt.ClaimID, Created: consoleTime(attempt.CreatedAt), Digest: attempt.Digest})
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: fmt.Sprintf("Attempt %d", attempt.AttemptNumber), State: string(attempt.State), At: consoleTime(attempt.CreatedAt), Detail: attempt.AttemptID + " · claim " + fallback(attempt.ClaimID, "unavailable")})
 	}
+	for _, claim := range view.Claims {
+		detail.Claims = append(detail.Claims, consoleweb.FieldModel{Label: claim.ClaimID, Value: claim.WorkerID + " · " + consoleTime(claim.ClaimedAt) + " through " + consoleTime(claim.ExpiresAt)})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Claimed by " + claim.WorkerID, State: "claimed", At: consoleTime(claim.ClaimedAt), Detail: claim.ClaimID})
+	}
+	for _, transition := range view.Transitions {
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queue transition", State: string(transition.To), At: consoleTime(transition.OccurredAt), Detail: string(transition.From) + " → " + string(transition.To) + " · " + transition.Reason})
+	}
+	for _, retry := range view.Retries {
+		label := "Retry"
+		if retry.Reclaimed {
+			label = "Expired lease reclaimed"
+		}
+		detail.Retries = append(detail.Retries, consoleweb.FieldModel{Label: retry.RetryID, Value: fmt.Sprintf("attempt %d · available %s · %s", retry.AttemptNumber, consoleTime(retry.AvailableAt), retry.Reason)})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: label, State: "retrying", At: consoleTime(retry.OccurredAt), Detail: retry.RetryID + " · " + retry.Reason})
+	}
+	for _, cancellation := range view.Cancellations {
+		detail.Cancellations = append(detail.Cancellations, consoleweb.FieldModel{Label: cancellation.CancellationID, Value: cancellation.Reason})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Lifecycle terminalized", State: state, At: consoleTime(cancellation.OccurredAt), Detail: cancellation.CancellationID + " · " + cancellation.Reason})
+	}
+	detail.Controls = queueControls(view, state)
 	if view.Artifact != nil {
 		detail.ArtifactState = "Authoritative runtime artifact"
 		detail.Artifact = []consoleweb.FieldModel{{Label: "Artifact", Value: view.Artifact.ID}, {Label: "Attempt", Value: view.Artifact.AttemptID}, {Label: "Action / run", Value: view.Artifact.ActionID + " / " + view.Artifact.RunID}, {Label: "Digest / content reference", Value: view.Artifact.Digest + " / " + view.Artifact.ContentRef}, {Label: "Media type", Value: view.Artifact.MediaType}, {Label: "Created", Value: consoleTime(view.Artifact.CreatedAt)}}
@@ -497,7 +522,97 @@ func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
 		detail.Disposition = []consoleweb.FieldModel{{Label: "Disposition", Value: view.Disposition.DispositionID + " @ " + view.Disposition.Digest}, {Label: "State", Value: string(view.Disposition.State)}, {Label: "Reason code", Value: view.Disposition.ReasonCode}, {Label: "Attempt", Value: view.Disposition.AttemptID}, {Label: "Occurred", Value: consoleTime(view.Disposition.OccurredAt)}}
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Disposition", State: string(view.Disposition.State), At: consoleTime(view.Disposition.OccurredAt), Detail: view.Disposition.ReasonCode})
 	}
+	sort.SliceStable(detail.Timeline, func(i, j int) bool {
+		if detail.Timeline[i].At == detail.Timeline[j].At {
+			return detail.Timeline[i].Title < detail.Timeline[j].Title
+		}
+		return detail.Timeline[i].At < detail.Timeline[j].At
+	})
 	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, Queue: detail}
+}
+
+func queuePhase(view app.QueueExecutionView) string {
+	state := string(view.Projection.State)
+	if view.Disposition != nil && view.Disposition.ReasonCode == "retry_exhausted" {
+		return "exhausted"
+	}
+	if state == "claimed" {
+		return "active"
+	}
+	if state == "queued" && len(view.Retries) > 0 {
+		if !view.Projection.AvailableAt.After(time.Now().UTC()) {
+			return "claimable"
+		}
+		return "retrying"
+	}
+	if state == "queued" && !view.Projection.AvailableAt.After(time.Now().UTC()) {
+		return "claimable"
+	}
+	return state
+}
+
+// queueMandateLabel renders the resolved mandate binding for the queued item.
+// Empty submission or missing authority fall back to "Unavailable" rather than
+// fabricating a mandate identifier.
+func queueMandateLabel(view app.QueueExecutionView) string {
+	if view.Submission.SubmissionID == "" {
+		return "Unavailable"
+	}
+	if view.Submission.MandateID == "" {
+		return "Unavailable — mandate not admitted with submission"
+	}
+	return view.Submission.MandateID
+}
+
+// queueDependencyValue resolves an exact authoritative dependency outcome.
+// The dependency carries only an immutable DigestRef; the resolved outcome
+// comes from the LoopExecution's authoritative state or, when terminalized,
+// from the terminal disposition.
+func queueDependencyValue(view app.QueueExecutionView, id string) string {
+	if id == "" {
+		return "Unavailable"
+	}
+	for _, child := range view.LoopExecutions {
+		if child.LoopExecutionID != id {
+			continue
+		}
+		state := string(child.State)
+		switch child.State {
+		case "succeeded", "failed", "denied", "cancelled", "expired", "revoked":
+			return exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · outcome " + state
+		case "requested":
+			return exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · outcome pending"
+		case "started":
+			return exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · outcome in_progress"
+		default:
+			return exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · outcome " + state
+		}
+	}
+	if view.Disposition != nil && view.Disposition.QueueItem.ID != "" {
+		return "no exact dependency record · terminal " + string(view.Disposition.State) + " · " + view.Disposition.ReasonCode
+	}
+	return "no exact dependency record"
+}
+
+func queueControls(view app.QueueExecutionView, phase string) []consoleweb.QueueControlModel {
+	terminal := phase == "cancelled" || phase == "expired" || phase == "denied" || phase == "failed" || phase == "exhausted" || phase == "succeeded"
+	active := phase == "active"
+	leaseExpired := active && len(view.Claims) > 0 && !view.Claims[len(view.Claims)-1].ExpiresAt.After(time.Now().UTC())
+	retryBudget := view.Projection.Attempts < view.Item.MaxAttempts
+	control := func(label string, enabled bool, reason string) consoleweb.QueueControlModel {
+		if enabled {
+			reason = "eligible; authenticated API/CLI authority admission required"
+		}
+		return consoleweb.QueueControlModel{Label: label, Enabled: enabled, Reason: reason}
+	}
+	return []consoleweb.QueueControlModel{
+		control("Retry now", false, "live manual retry is denied; no authoritative durable runtime-stop acknowledgement exists"),
+		control("Reclaim expired lease", active && retryBudget && leaseExpired, "requires an expired active lease and remaining pinned retry budget"),
+		control("Cancel execution", !terminal, "terminal work cannot transition"),
+		control("Expire execution", leaseExpired, "requires an expired active lease"),
+		control("Mark retry exhausted", active && !retryBudget, "requires the final active attempt and exhausted pinned retry budget"),
+		control("Record authority revocation", !terminal, "terminal work cannot transition"),
+	}
 }
 
 func consoleTime(value time.Time) string {
@@ -545,6 +660,32 @@ func filterConsoleAgents(model *consoleweb.SurfaceModel, query, lifecycle string
 			continue
 		}
 		filtered = append(filtered, record)
+	}
+	model.Records = filtered
+	if model.State == "ready" && len(filtered) == 0 {
+		model.State = "filtered-empty"
+	}
+	return nil
+}
+
+func filterConsoleQueue(model *consoleweb.SurfaceModel, state string) error {
+	if state == "" {
+		state = "all"
+	}
+	switch state {
+	case "all", "queued", "claimable", "active", "retrying", "cancelled", "expired", "denied", "failed", "exhausted", "succeeded":
+	default:
+		return errors.New("invalid Execution Queue state filter")
+	}
+	model.QueueState = state
+	if state == "all" {
+		return nil
+	}
+	filtered := make([]consoleweb.RecordModel, 0, len(model.Records))
+	for _, record := range model.Records {
+		if record.Lifecycle == state {
+			filtered = append(filtered, record)
+		}
 	}
 	model.Records = filtered
 	if model.State == "ready" && len(filtered) == 0 {

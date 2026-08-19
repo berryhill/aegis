@@ -15,6 +15,9 @@ import (
 
 const SchemaVersion = "aegis.disposition.v1"
 
+// ReasonCode is a stable machine-readable terminal reason.
+type ReasonCode string
+
 // Record references evidence instead of copying or interpreting it.
 type Record struct {
 	SchemaVersion   string              `json:"schema_version"`
@@ -68,8 +71,9 @@ func Unmarshal(wire []byte) (Record, error) {
 }
 
 func validate(value Record, sealed bool) error {
-	terminal := value.State == execution.StateSucceeded || value.State == execution.StateFailed || value.State == execution.StateDenied || value.State == execution.StateCancelled || value.State == execution.StateExpired
-	if value.SchemaVersion != SchemaVersion || value.DispositionID == "" || value.GraphRunID == "" || value.LoopExecutionID == "" || value.AttemptID == "" || value.QueueItem.Validate() != nil || value.Authority.Validate() != nil || !terminal || value.ReasonCode == "" || value.OccurredAt.IsZero() {
+	terminal := value.State == execution.StateSucceeded || value.State == execution.StateFailed || value.State == execution.StateDenied || value.State == execution.StateCancelled || value.State == execution.StateExpired || value.State == execution.StateRevoked
+	childrenOK := (value.LoopExecutionID == "" && value.AttemptID == "") || (value.LoopExecutionID != "" && value.AttemptID != "")
+	if value.SchemaVersion != SchemaVersion || value.DispositionID == "" || value.GraphRunID == "" || !childrenOK || value.QueueItem.Validate() != nil || value.Authority.Validate() != nil || !terminal || value.ReasonCode == "" || value.OccurredAt.IsZero() {
 		return errors.New("invalid disposition")
 	}
 	if value.State == execution.StateSucceeded && len(value.ArtifactIDs) == 0 {

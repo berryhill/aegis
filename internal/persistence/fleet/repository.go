@@ -64,6 +64,7 @@ type RetryMutation struct {
 type CancellationMutation struct {
 	Cancellation queue.Cancellation
 	Transition   queue.QueueTransition
+	Disposition  disposition.Record
 }
 
 // Repository exposes create-only definition persistence. It deliberately has
@@ -115,7 +116,11 @@ type Repository interface {
 	RetryQueueItem(context.Context, RetryMutation, AuditFact) error
 	CancelQueueItem(context.Context, CancellationMutation, AuditFact) error
 	GetClaim(context.Context, string) (queue.Claim, error)
+	ListClaims(context.Context) ([]queue.Claim, error)
 	GetQueueProjection(context.Context, string) (queue.Projection, error)
+	ListQueueTransitions(context.Context, string) ([]queue.QueueTransition, error)
+	ListQueueRetries(context.Context, string) ([]queue.Retry, error)
+	ListQueueCancellations(context.Context, string) ([]queue.Cancellation, error)
 	GetAttempt(context.Context, string) (execution.Attempt, error)
 	ListAttempts(context.Context) ([]execution.Attempt, error)
 	CompleteQueueItem(context.Context, Completion, AuditFact, EvidenceReader) error

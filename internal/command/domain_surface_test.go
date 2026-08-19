@@ -23,7 +23,8 @@ func TestRootExposesFleetProductResources(t *testing.T) {
 		{"agents", "enable"}, {"agents", "disable"}, {"agents", "retire"},
 		{"loops", "list"}, {"loops", "publish"}, {"loops", "show"}, {"loops", "activate"}, {"loops", "retire"},
 		{"graphs", "list"}, {"graphs", "publish"}, {"graphs", "show"}, {"graphs", "submit"},
-		{"queue", "list"}, {"queue", "show"}, {"queue", "process"},
+		{"queue", "list"}, {"queue", "show"}, {"queue", "process"}, {"queue", "retry"},
+		{"queue", "cancel"}, {"queue", "expire"}, {"queue", "exhaust"},
 	} {
 		command, _, err := root.Find(path)
 		if err != nil || command == nil || command.Name() != path[len(path)-1] {

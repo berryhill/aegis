@@ -29,6 +29,7 @@ type SurfaceModel struct {
 	TotalCount    int
 	Query         string
 	Lifecycle     string
+	QueueState    string
 	TotalRecords  int
 	Actions       []ActionModel
 	Records       []RecordModel
@@ -71,6 +72,7 @@ type RecordModel struct {
 // success from the presence of runtime output.
 type QueueDetailModel struct {
 	QueueItem        []FieldModel
+	Dependencies     []FieldModel
 	Runtime          []FieldModel
 	GraphRun         QueueExecutionNodeModel
 	Loops            []QueueExecutionNodeModel
@@ -79,6 +81,10 @@ type QueueDetailModel struct {
 	Artifact         []FieldModel
 	Receipts         []QueueReceiptModel
 	Disposition      []FieldModel
+	Claims           []FieldModel
+	Retries          []FieldModel
+	Cancellations    []FieldModel
+	Controls         []QueueControlModel
 	ArtifactState    string
 	ReceiptState     string
 	DispositionState string
@@ -92,6 +98,12 @@ type QueueAttemptModel struct {
 }
 
 type QueueTimelineModel struct{ Title, State, At, Detail string }
+
+type QueueControlModel struct {
+	Label   string
+	Enabled bool
+	Reason  string
+}
 
 type QueueReceiptModel struct {
 	ID, Outcome, Claim, Verifier, ExpectedDigest, ObservedDigest, FailureCategory, ObservedAt string

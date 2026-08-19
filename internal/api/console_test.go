@@ -313,6 +313,106 @@ func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *te
 	}
 }
 
+func TestConsoleQueueFilterSeparatesLifecycleViews(t *testing.T) {
+	model := consoleweb.SurfaceModel{
+		State: "ready",
+		Records: []consoleweb.RecordModel{
+			{Key: "queued", Lifecycle: "queued"},
+			{Key: "failed", Lifecycle: "failed"},
+		},
+	}
+	if err := filterConsoleQueue(&model, "failed"); err != nil {
+		t.Fatal(err)
+	}
+	if model.QueueState != "failed" || len(model.Records) != 1 || model.Records[0].Key != "failed" {
+		t.Fatalf("filtered queue model=%+v", model)
+	}
+	if err := filterConsoleQueue(&model, "unknown"); err == nil {
+		t.Fatal("unknown queue state filter accepted")
+	}
+
+	empty := consoleweb.SurfaceModel{State: "ready", Records: []consoleweb.RecordModel{{Key: "queued", Lifecycle: "queued"}}}
+	if err := filterConsoleQueue(&empty, "succeeded"); err != nil {
+		t.Fatal(err)
+	}
+	if empty.State != "filtered-empty" || len(empty.Records) != 0 {
+		t.Fatalf("empty filtered queue model=%+v", empty)
+	}
+}
+
+func TestConsoleQueueRecordSeparatesLifecycleViewsAndOrdersCausalHistory(t *testing.T) {
+	now := time.Now().UTC()
+	base := app.QueueExecutionView{
+		Item:       queue.Item{ItemID: "queue-lifecycle", MaxAttempts: 2, EnqueuedAt: now.Add(-time.Hour)},
+		Projection: queue.Projection{State: queue.StateQueued, AvailableAt: now.Add(time.Hour)},
+		GraphRun:   execution.GraphRun{GraphRunID: "run-lifecycle"},
+	}
+	terminal := func(state execution.State, reason string) *disposition.Record {
+		return &disposition.Record{DispositionID: "disposition-lifecycle", State: state, ReasonCode: reason, OccurredAt: now}
+	}
+	cases := []struct {
+		name string
+		view app.QueueExecutionView
+		want string
+	}{
+		{"queued", base, "queued"},
+		{"claimable", func() app.QueueExecutionView { v := base; v.Projection.AvailableAt = now.Add(-time.Minute); return v }(), "claimable"},
+		{"active", func() app.QueueExecutionView { v := base; v.Projection.State = queue.StateClaimed; return v }(), "active"},
+		{"retrying", func() app.QueueExecutionView { v := base; v.Retries = []queue.Retry{{RetryID: "retry-1"}}; return v }(), "retrying"},
+		{"cancelled", func() app.QueueExecutionView { v := base; v.Projection.State = queue.StateCancelled; return v }(), "cancelled"},
+		{"expired", func() app.QueueExecutionView { v := base; v.Projection.State = queue.StateExpired; return v }(), "expired"},
+		{"denied", func() app.QueueExecutionView {
+			v := base
+			v.Projection.State = queue.StateDenied
+			v.Disposition = terminal(execution.StateDenied, "authority_revoked")
+			return v
+		}(), "denied"},
+		{"failed", func() app.QueueExecutionView {
+			v := base
+			v.Projection.State = queue.StateFailed
+			v.Disposition = terminal(execution.StateFailed, "runtime_failed")
+			return v
+		}(), "failed"},
+		{"exhausted", func() app.QueueExecutionView {
+			v := base
+			v.Projection.State = queue.StateFailed
+			v.Disposition = terminal(execution.StateFailed, "retry_exhausted")
+			return v
+		}(), "exhausted"},
+		{"succeeded", func() app.QueueExecutionView {
+			v := base
+			v.Projection.State = queue.StateSucceeded
+			v.Disposition = terminal(execution.StateSucceeded, "verified_success")
+			return v
+		}(), "succeeded"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := consoleQueueRecord(tc.view).Lifecycle; got != tc.want {
+				t.Fatalf("lifecycle=%q, want %q", got, tc.want)
+			}
+		})
+	}
+	view := base
+	view.Projection.State, view.Projection.Attempts = queue.StateClaimed, 1
+	view.Claims = []queue.Claim{{ClaimID: "claim-1", WorkerID: "worker-1", ClaimedAt: now.Add(-50 * time.Minute), ExpiresAt: now.Add(-40 * time.Minute)}}
+	view.Attempts = []execution.Attempt{{AttemptID: "attempt-1", ClaimID: "claim-1", AttemptNumber: 1, CreatedAt: now.Add(-49 * time.Minute)}}
+	view.Transitions = []queue.QueueTransition{{TransitionID: "transition-1", From: queue.StateQueued, To: queue.StateClaimed, OccurredAt: now.Add(-50 * time.Minute)}}
+	view.Retries = []queue.Retry{{RetryID: "retry-1", AttemptNumber: 1, Reclaimed: true, OccurredAt: now.Add(-39 * time.Minute), AvailableAt: now.Add(-38 * time.Minute)}}
+	record := consoleQueueRecord(view)
+	if len(record.Queue.Timeline) < 5 {
+		t.Fatalf("incomplete causal timeline: %+v", record.Queue.Timeline)
+	}
+	for index := 1; index < len(record.Queue.Timeline); index++ {
+		if record.Queue.Timeline[index].At < record.Queue.Timeline[index-1].At {
+			t.Fatalf("timeline is not causal: %+v", record.Queue.Timeline)
+		}
+	}
+	if record.Queue.Controls[0].Enabled || !record.Queue.Controls[1].Enabled || !record.Queue.Controls[3].Enabled || record.Queue.Controls[4].Enabled {
+		t.Fatalf("control eligibility is not fail-closed: %+v", record.Queue.Controls)
+	}
+}
+
 func TestConsoleRenderIsBoundedAndCancellationAware(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()

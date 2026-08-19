@@ -194,3 +194,18 @@ An explicit request such as `what is the value for credential: "demo"` or `I nee
 Without `credentials.design_provider` and its source credential, this must not be presented as a successful model turn. The command may reach Hermes and report its authentic provider-configuration failure. It uses disposable state and does not modify the normal Hermes profile.
 
 Clean up this repository-local example with `rm -f aegis .aegis.yaml .office-charter.json && rm -rf .aegis`. `aegis reset` deliberately rejects repository paths and is not a replacement for that explicit example cleanup.
+## Manual Execution Queue lifecycle
+
+The queue lifecycle surface is controller-authenticated and JSON-file driven. Use `aegis queue show ITEM` to read the immutable item, projection, GraphRun, LoopExecution, attempts, claims, transitions, retries, cancellations, evidence, and disposition. The mutation commands are:
+
+```sh
+aegis queue retry retry.json
+aegis queue cancel terminal.json
+aegis queue expire terminal.json
+aegis queue exhaust terminal.json
+aegis queue revoke terminal.json
+```
+
+`retry.json` supplies the exact queue `authority`, `queue_item_id`, fresh `retry_id` and `transition_id`, nanosecond `backoff`, whether this is an expired-lease `reclaimed` operation, and the matching stable `reason_code` (`lease_reclaimed` for reclaim). Reclaim is denied before lease expiry; lease duration is bounded to 1 second through 1 hour, backoff to 24 hours, and the pinned attempt budget cannot be raised. `terminal.json` supplies the exact authority, queue item, fresh cancellation/transition IDs, and the command's stable reason (`operator_cancelled`, `execution_expired`, `retry_exhausted`, or `authority_revoked`). Every operation repeats fresh authority admission and denies substitutions or terminal replay.
+
+The `/console/queue#/queue` page provides lifecycle filters, provenance, dependency state, a complete ordered timeline, and eligibility/denial explanations. Browser controls are read-only and do not authorize mutation. This MVI does not run an automated retry/expiry scheduler or distributed queue coordinator.

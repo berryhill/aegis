@@ -329,6 +329,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent Registry filter")
 			}
 		}
+		if domain == consoleQueue {
+			if err = filterConsoleQueue(&model, c.QueryParam("state")); err != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Execution Queue filter")
+			}
+		}
 		csrf, err := consoleManager.CSRF(c.Request())
 		if err != nil {
 			return consoleweb.PageModel{}, consoleError(err)
@@ -893,6 +898,96 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
 		}
 		value, err := svc.ProcessQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/retry", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.RetryQueueItemInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		value, err := svc.RetryQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/cancel", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.TerminalQueueItemInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		value, err := svc.CancelQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/expire", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.TerminalQueueItemInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		value, err := svc.ExpireQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/exhaust", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.TerminalQueueItemInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		value, err := svc.ExhaustQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/revoke", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.TerminalQueueItemInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		value, err := svc.RevokeQueueItemAs(c.Request().Context(), subject, input)
 		if err != nil {
 			return err
 		}

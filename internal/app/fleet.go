@@ -46,6 +46,8 @@ func IsFleetAmbiguous(err error) bool { return errors.Is(err, registry.ErrAmbigu
 // CLI or HTTP adapters to import the orchestration layer directly.
 type SubmitGraphInput = orchestration.SubmitGraphRequest
 type ProcessQueueItemInput = orchestration.WorkRequest
+type RetryQueueItemInput = orchestration.QueueRetryRequest
+type TerminalQueueItemInput = orchestration.QueueTerminalRequest
 
 // QueueItemView keeps the immutable admitted item separate from its
 // rebuildable lifecycle projection. Consumers must not mistake the initial
@@ -144,11 +146,19 @@ type SubmissionHistory struct {
 }
 
 type QueueExecutionView struct {
-	Item           queue.Item                     `json:"item"`
+	Item queue.Item `json:"item"`
+	// Submission is the admitted queued request with full mandate context. It
+	// is resolved through the repository independently of Item.Submission,
+	// which only carries the immutable submission digest reference.
+	Submission     queue.Submission               `json:"submission"`
 	Projection     queue.Projection               `json:"projection"`
 	GraphRun       execution.GraphRun             `json:"graph_run"`
 	LoopExecutions []execution.LoopExecution      `json:"loop_executions"`
 	Attempts       []execution.Attempt            `json:"attempts"`
+	Claims         []queue.Claim                  `json:"claims"`
+	Transitions    []queue.QueueTransition        `json:"transitions"`
+	Retries        []queue.Retry                  `json:"retries"`
+	Cancellations  []queue.Cancellation           `json:"cancellations"`
 	Runtime        registry.RuntimeBinding        `json:"runtime"`
 	Artifact       *evidence.RuntimeArtifact      `json:"artifact,omitempty"`
 	Receipts       []evidence.VerificationReceipt `json:"receipts"`
@@ -711,6 +721,10 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 	if err != nil {
 		return nil, err
 	}
+	claims, err := s.FleetRepository.ListClaims(ctx)
+	if err != nil {
+		return nil, err
+	}
 	result := make([]QueueExecutionView, 0, len(items))
 	for _, item := range items {
 		projection, loadErr := s.FleetRepository.GetQueueProjection(ctx, item.ItemID)
@@ -720,7 +734,28 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		if projection.QueueItemID != item.ItemID {
 			return nil, fleet.ErrCorrupt
 		}
-		view := QueueExecutionView{Item: item, Projection: projection, LoopExecutions: []execution.LoopExecution{}, Attempts: []execution.Attempt{}, Receipts: []evidence.VerificationReceipt{}}
+		view := QueueExecutionView{
+			Item: item, Projection: projection,
+			LoopExecutions: []execution.LoopExecution{}, Attempts: []execution.Attempt{}, Claims: []queue.Claim{},
+			Transitions: []queue.QueueTransition{}, Retries: []queue.Retry{}, Cancellations: []queue.Cancellation{},
+			Receipts: []evidence.VerificationReceipt{},
+		}
+		view.Submission, loadErr = s.FleetRepository.GetSubmission(ctx, item.Submission.ID)
+		if loadErr != nil || view.Submission.Digest != item.Submission.Digest || view.Submission.SubmissionID != item.Submission.ID {
+			return nil, fleet.ErrCorrupt
+		}
+		view.Transitions, err = s.FleetRepository.ListQueueTransitions(ctx, item.ItemID)
+		if err != nil {
+			return nil, err
+		}
+		view.Retries, err = s.FleetRepository.ListQueueRetries(ctx, item.ItemID)
+		if err != nil {
+			return nil, err
+		}
+		view.Cancellations, err = s.FleetRepository.ListQueueCancellations(ctx, item.ItemID)
+		if err != nil {
+			return nil, err
+		}
 		snapshot, loadErr := s.FleetRepository.GetGraphRunSnapshot(ctx, item.Snapshot.ID)
 		if loadErr != nil || snapshot.Digest != item.Snapshot.Digest {
 			return nil, fleet.ErrCorrupt
@@ -760,6 +795,14 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 				view.Attempts = append(view.Attempts, attempt)
 			}
 		}
+		for _, claim := range claims {
+			if claim.QueueItem.ID == item.ItemID {
+				if claim.QueueItem.Digest != item.Digest {
+					return nil, fleet.ErrCorrupt
+				}
+				view.Claims = append(view.Claims, claim)
+			}
+		}
 		if projection.State != queue.StateQueued && projection.State != queue.StateClaimed {
 			dispositionRecord, loadErr := s.FleetRepository.GetDispositionByGraphRun(ctx, item.GraphRunID)
 			if loadErr != nil || dispositionRecord.QueueItem.ID != item.ItemID || dispositionRecord.QueueItem.Digest != item.Digest {
@@ -794,6 +837,81 @@ func (s *Service) ListQueue(ctx context.Context) ([]QueueExecutionView, error) {
 		return nil, err
 	}
 	return s.ListQueueAs(ctx, subject)
+}
+
+func (s *Service) RetryQueueItemAs(ctx context.Context, subject core.Subject, input RetryQueueItemInput) (queue.Retry, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return queue.Retry{}, err
+	}
+	input.Subject = subject
+	return s.QueueWorker.Retry(ctx, input)
+}
+func (s *Service) RetryQueueItem(ctx context.Context, input RetryQueueItemInput) (queue.Retry, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return queue.Retry{}, err
+	}
+	return s.RetryQueueItemAs(ctx, subject, input)
+}
+
+func (s *Service) CancelQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return queue.Cancellation{}, err
+	}
+	input.Subject = subject
+	return s.QueueWorker.Cancel(ctx, input)
+}
+func (s *Service) CancelQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return queue.Cancellation{}, err
+	}
+	return s.CancelQueueItemAs(ctx, subject, input)
+}
+
+func (s *Service) ExpireQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return queue.Cancellation{}, err
+	}
+	input.Subject = subject
+	return s.QueueWorker.Expire(ctx, input)
+}
+func (s *Service) ExpireQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return queue.Cancellation{}, err
+	}
+	return s.ExpireQueueItemAs(ctx, subject, input)
+}
+
+func (s *Service) ExhaustQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return queue.Cancellation{}, err
+	}
+	input.Subject = subject
+	return s.QueueWorker.Exhaust(ctx, input)
+}
+func (s *Service) ExhaustQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return queue.Cancellation{}, err
+	}
+	return s.ExhaustQueueItemAs(ctx, subject, input)
+}
+
+func (s *Service) RevokeQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return queue.Cancellation{}, err
+	}
+	input.Subject = subject
+	return s.QueueWorker.Revoke(ctx, input)
+}
+func (s *Service) RevokeQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return queue.Cancellation{}, err
+	}
+	return s.RevokeQueueItemAs(ctx, subject, input)
 }
 
 func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (FleetSurface, error) {

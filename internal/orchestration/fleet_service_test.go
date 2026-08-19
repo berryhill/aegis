@@ -38,6 +38,10 @@ type fleetServiceRepository struct {
 	claim           queue.Claim
 	attempt         execution.Attempt
 	completion      fleet.Completion
+	projection      queue.Projection
+	retryMutation   fleet.RetryMutation
+	cancelMutation  fleet.CancellationMutation
+	terminalCtxErr  error
 }
 
 type staticFleetSource []registry.Candidate
@@ -67,10 +71,31 @@ func (repository *fleetServiceRepository) GetQueueItem(context.Context, string) 
 	return repository.accepted.QueueItem, nil
 }
 func (repository *fleetServiceRepository) GetQueueProjection(context.Context, string) (queue.Projection, error) {
+	if repository.projection.State != "" {
+		return repository.projection, nil
+	}
 	return queue.Projection{State: queue.StateQueued, AvailableAt: repository.accepted.QueueItem.AvailableAt}, nil
+}
+func (repository *fleetServiceRepository) GetClaim(context.Context, string) (queue.Claim, error) {
+	return repository.claim, nil
+}
+func (repository *fleetServiceRepository) RetryQueueItem(_ context.Context, mutation fleet.RetryMutation, _ fleet.AuditFact) error {
+	repository.retryMutation = mutation
+	return nil
+}
+func (repository *fleetServiceRepository) CancelQueueItem(ctx context.Context, mutation fleet.CancellationMutation, _ fleet.AuditFact) error {
+	repository.terminalCtxErr = ctx.Err()
+	repository.cancelMutation = mutation
+	return nil
 }
 func (repository *fleetServiceRepository) GetGraphRunSnapshot(context.Context, string) (graph.GraphRunSnapshot, error) {
 	return repository.accepted.Snapshot, nil
+}
+func (repository *fleetServiceRepository) ListLoopExecutions(context.Context) ([]execution.LoopExecution, error) {
+	if repository.loopExecution.LoopExecutionID == "" {
+		return []execution.LoopExecution{}, nil
+	}
+	return []execution.LoopExecution{repository.loopExecution}, nil
 }
 func (repository *fleetServiceRepository) CreateLoopExecution(_ context.Context, value execution.LoopExecution, _ fleet.AuditFact) (bool, error) {
 	repository.loopExecution = value
@@ -158,7 +183,7 @@ func (commands *sequencedAuthorityCommands) AuthorityAdmission(_ context.Context
 
 func TestFleetReadinessCoversEveryConsequentialAction(t *testing.T) {
 	service, _, _, subject, authorityRef, _ := fleetServiceFixture(t)
-	actions := []FleetAction{FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle, FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission, FleetActionClaim, FleetActionReclaim, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition}
+	actions := []FleetAction{FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle, FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission, FleetActionClaim, FleetActionReclaim, FleetActionQueueLifecycle, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition}
 	for _, action := range actions {
 		request := ReadinessRequest{Action: action, Subject: subject, Authority: authorityRef}
 		if action == FleetActionRegister {
@@ -407,6 +432,50 @@ func TestQueueWorkerRunsInjectedAdapterToDurableEvidenceDisposition(t *testing.T
 	}
 }
 
+func TestQueueWorkerBoundsAdapterByExactClaimLease(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		lease   time.Duration
+		allowed bool
+	}{
+		{"minimum", MinLeaseDuration, true},
+		{"maximum", MaxLeaseDuration, true},
+		{"below minimum", MinLeaseDuration - time.Nanosecond, false},
+		{"above maximum", MaxLeaseDuration + time.Nanosecond, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+			_, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-lease", IdempotencyKey: "submit-lease", SnapshotID: "snapshot-lease", QueueItemID: "queue-lease", GraphRunID: "run-lease", TransitionID: "queued-lease", RejectionID: "rejected-lease", MaxAttempts: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			blobs, err := store.Open(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			verifier, err := evidence.NewBlobVerifier(blobs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapter := &deadlineRuntimeAdapter{}
+			worker, err := NewQueueWorker(repository, service, blobs, verifier, adapter, service.now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = worker.Process(context.Background(), WorkRequest{Subject: subject, Authority: authorityRef, QueueItemID: "queue-lease", WorkerID: "worker-1", LoopExecutionID: "loop-execution-lease", ClaimID: "claim-lease", AttemptID: "attempt-lease", ClaimTransitionID: "claimed-lease", TerminalTransitionID: "terminal-lease", DispositionID: "disposition-lease", ArtifactID: "artifact-lease", LeaseDuration: test.lease})
+			if !test.allowed {
+				if !errors.Is(err, ErrWorkerDenied) || adapter.called {
+					t.Fatalf("outside lease bound reached adapter: called=%v err=%v", adapter.called, err)
+				}
+				return
+			}
+			if err != nil || !adapter.called || !adapter.deadline.Equal(service.now().Add(test.lease)) {
+				t.Fatalf("adapter deadline=%v want=%v called=%v err=%v", adapter.deadline, service.now().Add(test.lease), adapter.called, err)
+			}
+		})
+	}
+}
+
 func TestQueueWorkerRepeatsAdmissionAndDurablyDeniesRevokedRuntimeEffect(t *testing.T) {
 	service, repository, authority, subject, authorityRef, graphRef := fleetServiceFixture(t)
 	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-revoked", IdempotencyKey: "submit-revoked", SnapshotID: "snapshot-revoked", QueueItemID: "queue-revoked", GraphRunID: "run-revoked", TransitionID: "queued-revoked", RejectionID: "rejected-revoked", MaxAttempts: 1})
@@ -431,7 +500,7 @@ func TestQueueWorkerRepeatsAdmissionAndDurablyDeniesRevokedRuntimeEffect(t *test
 	if !errors.Is(err, ErrWorkerDenied) {
 		t.Fatalf("runtime revocation was not denied: result=%+v err=%v", result, err)
 	}
-	if commands.calls != 2 || result.Disposition.State != execution.StateDenied || result.Disposition.ReasonCode != "runtime_admission_denied" || result.Artifact != nil || len(result.Receipts) != 0 {
+	if commands.calls != 3 || result.Disposition.State != execution.StateDenied || result.Disposition.ReasonCode != "disposition_admission_denied" || result.Artifact != nil || len(result.Receipts) != 0 {
 		t.Fatalf("runtime denial did not preserve fresh admission and empty evidence: calls=%d result=%+v", commands.calls, result)
 	}
 	if repository.completion.Disposition.Digest != result.Disposition.Digest || repository.completion.Transition.To != queue.StateDenied {
@@ -465,6 +534,87 @@ func TestQueueWorkerRejectsAuthorityDriftBeforeClaim(t *testing.T) {
 	if repository.claim.ClaimID != "" || repository.loopExecution.LoopExecutionID != "" || repository.completion.Disposition.DispositionID != "" {
 		t.Fatalf("authority drift produced lifecycle side effects: claim=%+v loop=%+v completion=%+v", repository.claim, repository.loopExecution, repository.completion)
 	}
+}
+
+func TestQueueLifecycleRetryPreservesCausalityAndFailsClosed(t *testing.T) {
+	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-retry", IdempotencyKey: "submit-retry", SnapshotID: "snapshot-retry", QueueItemID: "queue-retry", GraphRunID: "run-retry", TransitionID: "queued-retry", RejectionID: "rejected-retry", MaxAttempts: 3})
+	if err != nil || decision.Accepted == nil {
+		t.Fatalf("prepare run: decision=%+v err=%v", decision, err)
+	}
+	item := repository.accepted.QueueItem
+	repository.claim, err = queue.NewClaim(queue.Claim{ClaimID: "claim-retry", QueueItem: digestRef(item.ItemID, item.Digest), AttemptID: "attempt-retry", WorkerID: "worker-1", Authority: authorityRef, ClaimedAt: service.now().Add(-time.Minute), ExpiresAt: service.now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.projection = queue.Projection{QueueItemID: item.ItemID, State: queue.StateClaimed, Attempts: 1, ActiveClaimID: repository.claim.ClaimID}
+	worker := newLifecycleTestWorker(t, repository, service)
+	if _, err = worker.Retry(context.Background(), QueueRetryRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, RetryID: "retry-live", TransitionID: "retried-live"}); !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("ordinary live retry preempted active runtime: %v", err)
+	}
+	retry, err := worker.Retry(context.Background(), QueueRetryRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, RetryID: "retry-1", TransitionID: "retried-1", Backoff: time.Minute, Reclaimed: true, ReasonCode: ReasonLeaseReclaimed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.QueueItem.ID != item.ItemID || retry.ClaimID != repository.claim.ClaimID || retry.AttemptNumber != 1 || !retry.AvailableAt.Equal(service.now().Add(time.Minute)) || repository.retryMutation.Transition.To != queue.StateQueued {
+		t.Fatalf("retry lost immutable causality or bounded availability: retry=%+v mutation=%+v", retry, repository.retryMutation)
+	}
+	wrongAuthority := authorityRef
+	wrongAuthority.Digest = "sha256:" + strings.Repeat("e", 64)
+	if _, err = worker.Retry(context.Background(), QueueRetryRequest{Subject: subject, Authority: wrongAuthority, QueueItemID: item.ItemID, RetryID: "retry-denied", TransitionID: "retried-denied", Reclaimed: true}); !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("authority substitution was not denied: %v", err)
+	}
+	if _, err = worker.Retry(context.Background(), QueueRetryRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, RetryID: "retry-unbounded", TransitionID: "retried-unbounded", Backoff: MaxRetryBackoff + time.Nanosecond, Reclaimed: true}); !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("unbounded backoff was not denied: %v", err)
+	}
+	repository.projection.Attempts = item.MaxAttempts
+	if _, err = worker.Retry(context.Background(), QueueRetryRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, RetryID: "retry-exhausted", TransitionID: "retried-exhausted", Reclaimed: true}); !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("retry beyond pinned budget was not denied: %v", err)
+	}
+}
+
+func TestQueueLifecycleCancelledBeforeAdmissionDeniesAndTerminalReplayDenies(t *testing.T) {
+	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+	decision, err := service.PrepareGraphRun(context.Background(), SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-cancel", IdempotencyKey: "submit-cancel", SnapshotID: "snapshot-cancel", QueueItemID: "queue-cancel", GraphRunID: "run-cancel", TransitionID: "queued-cancel", RejectionID: "rejected-cancel", MaxAttempts: 2})
+	if err != nil || decision.Accepted == nil {
+		t.Fatalf("prepare run: decision=%+v err=%v", decision, err)
+	}
+	item := repository.accepted.QueueItem
+	repository.projection = queue.Projection{QueueItemID: item.ItemID, State: queue.StateQueued}
+	worker := newLifecycleTestWorker(t, repository, service)
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := worker.Cancel(cancelled, QueueTerminalRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, CancellationID: "cancel-before-admission", TransitionID: "cancelled-before-admission", ReasonCode: ReasonOperatorCancelled}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("request cancelled before admission gained authority: %v", err)
+	}
+	if repository.cancelMutation.Cancellation.CancellationID != "" {
+		t.Fatal("pre-admission cancellation committed a lifecycle mutation")
+	}
+	record, err := worker.Cancel(context.Background(), QueueTerminalRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, CancellationID: "cancel-1", TransitionID: "cancelled-1", ReasonCode: ReasonOperatorCancelled})
+	if err != nil || record.QueueItem.ID != item.ItemID || repository.cancelMutation.Transition.To != queue.StateCancelled {
+		t.Fatalf("admitted cancellation did not commit: record=%+v mutation=%+v err=%v", record, repository.cancelMutation, err)
+	}
+	repository.projection.State = queue.StateCancelled
+	if _, err = worker.Cancel(context.Background(), QueueTerminalRequest{Subject: subject, Authority: authorityRef, QueueItemID: item.ItemID, CancellationID: "cancel-2", TransitionID: "cancelled-2"}); !errors.Is(err, ErrWorkerDenied) {
+		t.Fatalf("terminal replay was not denied: %v", err)
+	}
+}
+
+func newLifecycleTestWorker(t *testing.T, repository fleet.Repository, service *FleetService) *QueueWorker {
+	t.Helper()
+	blobs, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := evidence.NewBlobVerifier(blobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewQueueWorker(repository, service, blobs, verifier, NoKeyAdapter{}, service.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return worker
 }
 
 func TestRegisterFleetAgentUsesAuthenticatedBoundaryAndMetadataOnlyAudit(t *testing.T) {
@@ -576,6 +726,17 @@ func revisionReference(id string, revision uint64, digestChar string) reference.
 type fixedRuntimeAdapter struct{}
 
 func (fixedRuntimeAdapter) Execute(context.Context, RuntimeRequest) (RuntimeResult, error) {
+	return RuntimeResult{Output: []byte("[]"), MediaType: "application/json"}, nil
+}
+
+type deadlineRuntimeAdapter struct {
+	called   bool
+	deadline time.Time
+}
+
+func (adapter *deadlineRuntimeAdapter) Execute(ctx context.Context, _ RuntimeRequest) (RuntimeResult, error) {
+	adapter.called = true
+	adapter.deadline, _ = ctx.Deadline()
 	return RuntimeResult{Output: []byte("[]"), MediaType: "application/json"}, nil
 }
 

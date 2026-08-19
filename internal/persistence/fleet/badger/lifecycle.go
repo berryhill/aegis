@@ -156,6 +156,28 @@ func (s *Store) CreateLoopExecution(ctx context.Context, value execution.LoopExe
 		if !containsRevision(snapshot.Loops, value.Loop) || !containsRevision(snapshot.Participants, value.Participant) {
 			return fleet.ErrConflict
 		}
+		if e = scan(txn, familyLoopExecution, func(recordKey, wire []byte) error {
+			parts, keyErr := decodeKeyParts(recordKey, familyLoopExecution)
+			if keyErr != nil {
+				return keyErr
+			}
+			if len(parts) == 2 && parts[1] == "binding" {
+				return nil
+			}
+			if len(parts) != 1 {
+				return fleet.ErrCorrupt
+			}
+			existing, decodeErr := execution.UnmarshalLoopExecution(wire)
+			if decodeErr != nil {
+				return corrupt(decodeErr)
+			}
+			if existing.GraphRunID == value.GraphRunID && existing.GraphNodeID == value.GraphNodeID {
+				return fleet.ErrConflict
+			}
+			return nil
+		}); e != nil {
+			return e
+		}
 		if e := create(txn, recordKey, wire); e != nil {
 			return e
 		}
@@ -258,10 +280,12 @@ func (s *Store) RetryQueueItem(ctx context.Context, mutation fleet.RetryMutation
 		if e != nil || claim.QueueItem != mutation.Retry.QueueItem {
 			return fleet.ErrConflict
 		}
-		if (mutation.Retry.Reclaimed && mutation.Retry.OccurredAt.Before(claim.ExpiresAt)) || (!mutation.Retry.Reclaimed && !mutation.Retry.OccurredAt.Before(claim.ExpiresAt)) {
+		// No authoritative durable runtime-stop acknowledgement exists in this
+		// model. Therefore only expiry-backed reclaim may release an active claim.
+		if !mutation.Retry.Reclaimed || mutation.Retry.OccurredAt.Before(claim.ExpiresAt) {
 			return fleet.ErrConflict
 		}
-		if mutation.Transition.QueueItemID != item.ItemID || mutation.Transition.From != queue.StateClaimed || mutation.Transition.To != queue.StateQueued || mutation.Transition.ClaimID != claim.ClaimID || mutation.Transition.OccurredAt != mutation.Retry.OccurredAt {
+		if mutation.Transition.QueueItemID != item.ItemID || mutation.Transition.From != queue.StateClaimed || mutation.Transition.To != queue.StateQueued || mutation.Transition.ClaimID != claim.ClaimID || mutation.Transition.Reason != mutation.Retry.Reason || mutation.Transition.OccurredAt != mutation.Retry.OccurredAt {
 			return fleet.ErrConflict
 		}
 		next, e := queue.NewProjection(queue.Projection{QueueItemID: item.ItemID, State: queue.StateQueued, Attempts: projection.Attempts, AvailableAt: mutation.Retry.AvailableAt, LastTransitionID: mutation.Transition.TransitionID, UpdatedAt: mutation.Retry.OccurredAt})
@@ -297,6 +321,10 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 	if err != nil {
 		return err
 	}
+	dispositionWire, err := disposition.Marshal(mutation.Disposition)
+	if err != nil {
+		return err
+	}
 	return s.update(ctx, func(txn *badgerdb.Txn) error {
 		item, e := loadQueueItem(txn, mutation.Cancellation.QueueItem.ID)
 		if e != nil || mutation.Cancellation.QueueItem != digestRef(item.ItemID, item.Digest) {
@@ -306,17 +334,38 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 		if e != nil || validateProjectionBasis(txn, projection) != nil || (projection.State != queue.StateQueued && projection.State != queue.StateClaimed) {
 			return fleet.ErrConflict
 		}
-		if mutation.Transition.QueueItemID != item.ItemID || mutation.Transition.From != projection.State || mutation.Transition.To != queue.StateCancelled || mutation.Transition.OccurredAt != mutation.Cancellation.OccurredAt {
+		terminal := mutation.Transition.To == queue.StateCancelled || (mutation.Transition.To == queue.StateExpired && projection.State == queue.StateClaimed) || mutation.Transition.To == queue.StateRevoked || (mutation.Transition.To == queue.StateFailed && projection.State == queue.StateClaimed && projection.Attempts >= item.MaxAttempts)
+		if mutation.Transition.QueueItemID != item.ItemID || mutation.Transition.From != projection.State || !terminal || mutation.Transition.OccurredAt != mutation.Cancellation.OccurredAt {
+			return fleet.ErrConflict
+		}
+		expectedState := execution.StateCancelled
+		if mutation.Transition.To == queue.StateExpired {
+			expectedState = execution.StateExpired
+		} else if mutation.Transition.To == queue.StateFailed {
+			expectedState = execution.StateFailed
+		} else if mutation.Transition.To == queue.StateRevoked {
+			expectedState = execution.StateRevoked
+		}
+		if mutation.Cancellation.Reason != mutation.Transition.Reason || string(mutation.Disposition.ReasonCode) != mutation.Cancellation.Reason || mutation.Disposition.GraphRunID != item.GraphRunID || mutation.Disposition.QueueItem != mutation.Cancellation.QueueItem || mutation.Disposition.Authority != item.Authority || mutation.Disposition.State != expectedState || string(mutation.Disposition.ReasonCode) != mutation.Transition.Reason || mutation.Disposition.OccurredAt != mutation.Cancellation.OccurredAt {
 			return fleet.ErrConflict
 		}
 		if projection.State == queue.StateClaimed {
 			if mutation.Cancellation.ClaimID != projection.ActiveClaimID || mutation.Transition.ClaimID != projection.ActiveClaimID {
 				return fleet.ErrConflict
 			}
-		} else if mutation.Cancellation.ClaimID != "" || mutation.Transition.ClaimID != "" {
+			claim, loadErr := loadClaim(txn, projection.ActiveClaimID)
+			attemptWire, loadErr2 := get(txn, key(familyAttempt, claim.AttemptID))
+			attempt, decodeErr := execution.UnmarshalAttempt(attemptWire)
+			if loadErr != nil || loadErr2 != nil || decodeErr != nil || mutation.Disposition.AttemptID != attempt.AttemptID || mutation.Disposition.LoopExecutionID != attempt.LoopExecutionID || attempt.GraphRunID != item.GraphRunID {
+				return fleet.ErrConflict
+			}
+		} else if mutation.Cancellation.ClaimID != "" || mutation.Transition.ClaimID != "" || mutation.Disposition.AttemptID != "" || mutation.Disposition.LoopExecutionID != "" {
 			return fleet.ErrConflict
 		}
-		next, e := queue.NewProjection(queue.Projection{QueueItemID: item.ItemID, State: queue.StateCancelled, Attempts: projection.Attempts, AvailableAt: projection.AvailableAt, LastTransitionID: mutation.Transition.TransitionID, UpdatedAt: mutation.Cancellation.OccurredAt})
+		if _, found, loadErr := optional(txn, key(familyDispositionByRun, item.GraphRunID)); loadErr != nil || found {
+			return fleet.ErrConflict
+		}
+		next, e := queue.NewProjection(queue.Projection{QueueItemID: item.ItemID, State: mutation.Transition.To, Attempts: projection.Attempts, AvailableAt: projection.AvailableAt, LastTransitionID: mutation.Transition.TransitionID, UpdatedAt: mutation.Cancellation.OccurredAt})
 		if e != nil {
 			return e
 		}
@@ -328,6 +377,12 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 			return e
 		}
 		if e = create(txn, key(familyQueueTransition, item.ItemID, mutation.Transition.TransitionID), transitionWire); e != nil {
+			return e
+		}
+		if e = create(txn, key(familyDisposition, mutation.Disposition.DispositionID), dispositionWire); e != nil {
+			return e
+		}
+		if e = create(txn, key(familyDispositionByRun, item.GraphRunID), []byte(mutation.Disposition.DispositionID)); e != nil {
 			return e
 		}
 		if e = txn.Delete(key(familyClaimByItem, item.ItemID)); e != nil {
@@ -662,6 +717,76 @@ func (s *Store) ListLoopExecutions(ctx context.Context) (out []execution.LoopExe
 }
 func (s *Store) GetClaim(ctx context.Context, id string) (queue.Claim, error) {
 	return readRecord(s, ctx, familyClaim, id, queue.UnmarshalClaim, func(v queue.Claim) string { return v.ClaimID })
+}
+func (s *Store) ListClaims(ctx context.Context) (out []queue.Claim, err error) {
+	out = []queue.Claim{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyClaim, func(recordKey, wire []byte) error {
+			value, decodeErr := queue.UnmarshalClaim(wire)
+			parts, keyErr := decodeKeyParts(recordKey, familyClaim)
+			if decodeErr != nil || keyErr != nil || len(parts) != 1 || parts[0] != value.ClaimID {
+				return corrupt(errors.Join(decodeErr, keyErr))
+			}
+			out = append(out, value)
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].ClaimedAt.Before(out[j].ClaimedAt) })
+	return
+}
+func (s *Store) ListQueueTransitions(ctx context.Context, itemID string) (out []queue.QueueTransition, err error) {
+	out = []queue.QueueTransition{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyQueueTransition, func(recordKey, wire []byte) error {
+			value, decodeErr := queue.UnmarshalTransition(wire)
+			parts, keyErr := decodeKeyParts(recordKey, familyQueueTransition)
+			if decodeErr != nil || keyErr != nil || len(parts) != 2 || parts[0] != value.QueueItemID || parts[1] != value.TransitionID {
+				return corrupt(errors.Join(decodeErr, keyErr))
+			}
+			if value.QueueItemID == itemID {
+				out = append(out, value)
+			}
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].OccurredAt.Before(out[j].OccurredAt) })
+	return
+}
+func (s *Store) ListQueueRetries(ctx context.Context, itemID string) (out []queue.Retry, err error) {
+	out = []queue.Retry{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyQueueRetry, func(recordKey, wire []byte) error {
+			value, decodeErr := queue.UnmarshalRetry(wire)
+			parts, keyErr := decodeKeyParts(recordKey, familyQueueRetry)
+			if decodeErr != nil || keyErr != nil || len(parts) != 1 || parts[0] != value.RetryID {
+				return corrupt(errors.Join(decodeErr, keyErr))
+			}
+			if value.QueueItem.ID == itemID {
+				out = append(out, value)
+			}
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].OccurredAt.Before(out[j].OccurredAt) })
+	return
+}
+func (s *Store) ListQueueCancellations(ctx context.Context, itemID string) (out []queue.Cancellation, err error) {
+	out = []queue.Cancellation{}
+	err = s.view(ctx, func(txn *badgerdb.Txn) error {
+		return scan(txn, familyQueueCancellation, func(recordKey, wire []byte) error {
+			value, decodeErr := queue.UnmarshalCancellation(wire)
+			parts, keyErr := decodeKeyParts(recordKey, familyQueueCancellation)
+			if decodeErr != nil || keyErr != nil || len(parts) != 1 || parts[0] != value.CancellationID {
+				return corrupt(errors.Join(decodeErr, keyErr))
+			}
+			if value.QueueItem.ID == itemID {
+				out = append(out, value)
+			}
+			return nil
+		})
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].OccurredAt.Before(out[j].OccurredAt) })
+	return
 }
 func (s *Store) GetQueueProjection(ctx context.Context, id string) (out queue.Projection, err error) {
 	err = s.view(ctx, func(txn *badgerdb.Txn) error { out, err = loadQueueProjection(txn, id); return err })
