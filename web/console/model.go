@@ -11,33 +11,51 @@ const (
 )
 
 type PageModel struct {
-	Authenticated bool
-	CSRF          string
-	Surface       SurfaceModel
+	Authenticated  bool
+	CSRF           string
+	Authentication AuthenticationModel
+	Surface        SurfaceModel
+}
+
+type AuthenticationModel struct {
+	Status          string
+	ReasonCode      string
+	RecoveryCommand string
+	BootstrapTTL    string
+	SessionTTL      string
 }
 
 type SurfaceModel struct {
-	Domain        string
-	Title         string
-	Eyebrow       string
-	Description   string
-	State         string
-	Status        string
-	Source        string
-	ReasonCode    string
-	Authoritative bool
-	TotalCount    int
-	Query         string
-	Lifecycle     string
-	QueueState    string
-	TotalRecords  int
-	Actions       []ActionModel
-	Records       []RecordModel
-	ActiveRecords []RecordModel
-	FailedRecords []RecordModel
-	QueueStates   []string
-	Inspector     *RecordModel
-	InspectorOpen bool
+	Domain                string
+	Title                 string
+	Eyebrow               string
+	Description           string
+	State                 string
+	Status                string
+	Source                string
+	ReasonCode            string
+	Authoritative         bool
+	TotalCount            int
+	Query                 string
+	Lifecycle             string
+	QueueState            string
+	TotalRecords          int
+	Actions               []ActionModel
+	Records               []RecordModel
+	ActiveRecords         []RecordModel
+	FailedRecords         []RecordModel
+	QueueStates           []string
+	Inspector             *RecordModel
+	InspectorOpen         bool
+	CharterImportProposal CharterImportProposal
+}
+
+// CharterImportProposal is a review-only bridge to the existing CLI charter
+// workflow. It contains no browser mutation endpoint or authority input.
+type CharterImportProposal struct {
+	Notice          string
+	ValidateCommand string
+	ImportCommand   string
 }
 
 type ActionModel struct {

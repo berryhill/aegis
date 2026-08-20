@@ -26,7 +26,7 @@ templ Document(model PageModel) {
 						if model.Authenticated {
 							@Workspace(model.Surface)
 						} else {
-							@Authentication("")
+							@Authentication(model.Authentication)
 						}
 					</div>
 				</main>
@@ -88,7 +88,7 @@ templ NavigationIcon(icon string) {
 	}
 }
 
-templ Authentication(message string) {
+templ Authentication(model AuthenticationModel) {
 	<section id="authentication" class="auth-panel" aria-labelledby="authentication-title">
 		<span class="eyebrow">Principal authentication</span>
 		<h1 id="authentication-title">Sign the Aegis principal into this browser</h1>
@@ -102,12 +102,15 @@ templ Authentication(message string) {
 		<p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p>
 		<p>If the service is stopped, run <code>aegis service start</code> and retry. If the bootstrap expires, run <code>aegis console</code> again. Never paste an API bearer or put either credential in a URL.</p>
 		<p id="authentication-status" role="status" aria-live="polite">
-			if message != "" {
-				{ message }
+			if model.Status != "" {
+				{ model.Status } <code>{ model.ReasonCode }</code>
 			} else {
 				A temporary handoff for the existing Aegis principal is required.
 			}
 		</p>
+		if model.RecoveryCommand != "" {
+			<p class="inline-notice">Recovery: run <code>{ model.RecoveryCommand }</code>. Bootstrap lifetime: <strong>{ model.BootstrapTTL }</strong>. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
+		}
 		<form id="session-form" method="post" action="/console/session">
 			<label for="bootstrap">Temporary principal handoff</label>
 			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required/>
@@ -132,7 +135,11 @@ templ Workspace(surface SurfaceModel) {
 			</div>
 			for _, action := range surface.Actions {
 				if action.Primary {
-					<button class="primary" type="button" disabled?={ action.State != "ready" } title={ actionTitle(action) }>{ action.Label }</button>
+					if surface.Domain == DomainAgents && action.State == "ready" {
+						<a class="primary" href="#charter-import-review" title={ actionTitle(action) }>{ action.Label }</a>
+					} else {
+						<button class="primary" type="button" disabled title={ actionTitle(action) }>{ action.Label }</button>
+					}
 				}
 			}
 		</div>
@@ -151,8 +158,22 @@ templ Workspace(surface SurfaceModel) {
 			}
 		}
 		@DomainCollection(surface)
+		if surface.Domain == DomainAgents {
+			@CharterImportReview(surface.CharterImportProposal)
+		}
 		<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
 		@Inspector(surface, surface.Inspector, surface.InspectorOpen)
+	</section>
+}
+
+templ CharterImportReview(proposal CharterImportProposal) {
+	<section id="charter-import-review" class="panel" aria-labelledby="charter-import-title">
+		<div class="panel-body">
+			<div class="section-label">Review-only CLI proposal</div>
+			<h2 id="charter-import-title">Charter import review</h2>
+			<p class="inline-notice">{ proposal.Notice }</p>
+			<dl class="spec"><dt>Validate</dt><dd><code>{ proposal.ValidateCommand }</code></dd><dt>Import</dt><dd><code>{ proposal.ImportCommand }</code></dd></dl>
+		</div>
 	</section>
 }
 

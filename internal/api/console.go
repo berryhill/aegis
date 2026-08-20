@@ -167,6 +167,11 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 	switch domain {
 	case consoleAgents:
 		model.Title, model.Eyebrow, model.Description, readinessKey = "Agent Registry", "Participants", "Agents derived from immutable charter revisions. Select one to inspect its effective authority, provisioning evidence and readiness.", "registry"
+		model.CharterImportProposal = consoleweb.CharterImportProposal{
+			Notice:          "Review only. The browser does not import charters, provision agents, or grant authority; run the exact CLI commands from an authenticated terminal.",
+			ValidateCommand: "aegis charter validate <charter-file.json>",
+			ImportCommand:   "aegis charter import <charter-file.json>",
+		}
 		for _, value := range surface.Agents {
 			values = append(values, value)
 		}
