@@ -55,7 +55,7 @@ api:
   console:
     origin: http://127.0.0.1:{port}
     session_ttl: 1m
-    bootstrap_ttl: 15s
+    bootstrap_ttl: 45s
     max_page_size: 25
 audit:
   checkpoint_dir: {root}/checkpoints
@@ -173,7 +173,7 @@ curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datasta
 recovery_status=$(curl --silent --show-error -o "$workspace/recovery.html" -w '%{http_code}' -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data 'bootstrap=malformed' "http://127.0.0.1:$port/console/session")
 [ "$recovery_status" = 400 ]
 grep -F 'bootstrap_invalid_format' "$workspace/recovery.html" >/dev/null
-grep -F 'Bootstrap lifetime: <strong>15s</strong>' "$workspace/recovery.html" >/dev/null
+grep -F 'Bootstrap lifetime: <strong>45s</strong>' "$workspace/recovery.html" >/dev/null
 grep -F 'Browser session lifetime: <strong>1m0s</strong>' "$workspace/recovery.html" >/dev/null
 ! grep -F '>malformed<' "$workspace/recovery.html" >/dev/null
 
