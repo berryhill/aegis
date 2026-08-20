@@ -20,9 +20,11 @@ import (
 )
 
 var (
-	ErrUnauthenticated = errors.New("console authentication failed")
-	ErrDenied          = errors.New("console request denied")
-	ErrInvalidInput    = errors.New("invalid console input")
+	ErrUnauthenticated            = errors.New("console authentication failed")
+	ErrDenied                     = errors.New("console request denied")
+	ErrInvalidInput               = errors.New("invalid console input")
+	ErrBootstrapInvalidFormat     = errors.New("bootstrap_invalid_format")
+	ErrBootstrapConsumedOrExpired = errors.New("bootstrap_consumed_or_expired")
 )
 
 const CookieName = "aegis-console"
@@ -110,6 +112,9 @@ func (m *Manager) Exchange(request *http.Request, value string) (string, string,
 	if err := m.ValidateOrigin(request, true); err != nil {
 		return "", "", time.Time{}, err
 	}
+	if !validBootstrapFormat(value) {
+		return "", "", time.Time{}, ErrBootstrapInvalidFormat
+	}
 	now := m.now()
 	digest := sha256.Sum256([]byte(value))
 	m.mu.Lock()
@@ -117,8 +122,8 @@ func (m *Manager) Exchange(request *http.Request, value string) (string, string,
 	m.prune(now)
 	candidate, ok := m.bootstraps[digest]
 	delete(m.bootstraps, digest)
-	if !ok || value == "" || !now.Before(candidate.expires) || candidate.subject.PrincipalID == "" || !now.Before(candidate.subject.ExpiresAt) {
-		return "", "", time.Time{}, ErrUnauthenticated
+	if !ok || !now.Before(candidate.expires) || candidate.subject.PrincipalID == "" || !now.Before(candidate.subject.ExpiresAt) {
+		return "", "", time.Time{}, ErrBootstrapConsumedOrExpired
 	}
 	sessionValue, sessionDigest, err := opaque()
 	if err != nil {
@@ -134,6 +139,20 @@ func (m *Manager) Exchange(request *http.Request, value string) (string, string,
 	}
 	m.sessions[sessionDigest] = session{subject: candidate.subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires}
 	return sessionValue, csrf, expires, nil
+}
+
+func validBootstrapFormat(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			if character < 'a' || character > 'f' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {

@@ -56,6 +56,10 @@ type envelope struct {
 func classifyError(err error) (int, string, string) {
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
 	switch {
+	case errors.Is(err, console.ErrBootstrapInvalidFormat):
+		return http.StatusBadRequest, "bootstrap_invalid_format", "console bootstrap must be exactly 64 lowercase hexadecimal characters"
+	case errors.Is(err, console.ErrBootstrapConsumedOrExpired):
+		return http.StatusUnauthorized, "bootstrap_consumed_or_expired", "console bootstrap was consumed or expired"
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
 	case errors.Is(err, app.ErrDenied):
@@ -293,6 +297,28 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), authenticated)
 		return consoleManager.ValidateOrigin(c.Request(), false)
 	}
+	authenticationModel := func(reasonCode string) consoleweb.AuthenticationModel {
+		model := consoleweb.AuthenticationModel{
+			RecoveryCommand: "aegis console",
+			BootstrapTTL:    svc.Config.API.Console.BootstrapTTL.String(),
+			SessionTTL:      svc.Config.API.Console.SessionTTL.String(),
+		}
+		if reasonCode != "" {
+			model.Status = "Authentication failed. Request a new temporary handoff from the authenticated Aegis host."
+			model.ReasonCode = reasonCode
+		}
+		return model
+	}
+	renderAuthentication := func(c *echo.Context, status int, reasonCode string) error {
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(consoleweb.PageModel{
+			Authentication: authenticationModel(reasonCode),
+			Surface:        consoleweb.SurfaceModel{Domain: string(consoleAgents)},
+		}))
+		if err != nil {
+			return err
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	}
 	loadConsole := func(c *echo.Context, subject core.Subject, domain consoleDomain) (consoleweb.PageModel, error) {
 		if err := svc.RequirePrincipal(subject); err != nil {
 			return consoleweb.PageModel{}, err
@@ -352,7 +378,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console domain")
 		}
-		model := consoleweb.PageModel{Surface: consoleweb.SurfaceModel{Domain: string(domain)}}
+		model := consoleweb.PageModel{Authentication: authenticationModel(""), Surface: consoleweb.SurfaceModel{Domain: string(domain)}}
 		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
 			if raw := c.QueryParam("browser_handoff"); raw != "" {
 				consoleHost := c.Request().Host
@@ -405,12 +431,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	})
 	e.POST("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "browser_session_exchange_denied"); auditErr != nil {
+				return auditErr
+			}
+			return consoleError(err)
+		}
 		var input consoleSignals
 		nativeForm := isConsoleForm(c.Request())
 		if nativeForm {
 			bootstrap, err := decodeConsoleForm(c.Request(), "bootstrap")
 			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "invalid console form")
+				return renderAuthentication(c, http.StatusBadRequest, "bootstrap_invalid_format")
 			}
 			input.Bootstrap = bootstrap
 		} else if err := decode(c, &input); err != nil {
@@ -420,6 +452,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "browser_session_exchange_denied"); auditErr != nil {
 				return auditErr
+			}
+			if nativeForm && errors.Is(err, console.ErrBootstrapInvalidFormat) {
+				return renderAuthentication(c, http.StatusBadRequest, "bootstrap_invalid_format")
+			}
+			if nativeForm && errors.Is(err, console.ErrBootstrapConsumedOrExpired) {
+				return renderAuthentication(c, http.StatusUnauthorized, "bootstrap_consumed_or_expired")
 			}
 			return consoleError(err)
 		}

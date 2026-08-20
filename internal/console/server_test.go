@@ -1,6 +1,7 @@
 package console
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,82 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 )
+
+func TestBootstrapFormatClassificationAndOriginDenialDoesNotConsume(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	bootstrap, err := manager.IssueBootstrap(subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bootstrap) != 64 || strings.ToLower(bootstrap) != bootstrap {
+		t.Fatal("issued bootstrap does not use strict lowercase hexadecimal format")
+	}
+	validRequest := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
+	validRequest.Header.Set("Origin", "https://console.example.test")
+	for _, malformed := range []string{"", "abc", strings.Repeat("A", 64), strings.Repeat("g", 64), strings.Repeat("a", 63), strings.Repeat("a", 65)} {
+		if _, _, _, exchangeErr := manager.Exchange(validRequest, malformed); !errors.Is(exchangeErr, ErrBootstrapInvalidFormat) {
+			t.Fatalf("malformed bootstrap classified as %v", exchangeErr)
+		}
+	}
+	unknown := strings.Repeat("a", 64)
+	if _, _, _, exchangeErr := manager.Exchange(validRequest, unknown); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
+		t.Fatalf("unknown valid bootstrap classified as %v", exchangeErr)
+	}
+	crossOrigin := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
+	crossOrigin.Header.Set("Origin", "https://attacker.example")
+	if _, _, _, exchangeErr := manager.Exchange(crossOrigin, bootstrap); !errors.Is(exchangeErr, ErrDenied) {
+		t.Fatalf("cross-origin bootstrap exchange classified as %v", exchangeErr)
+	}
+	wrongHost := httptest.NewRequest(http.MethodPost, "https://other.example.test/console/session", nil)
+	wrongHost.Header.Set("Origin", "https://console.example.test")
+	if _, _, _, exchangeErr := manager.Exchange(wrongHost, bootstrap); !errors.Is(exchangeErr, ErrDenied) {
+		t.Fatalf("wrong-host bootstrap exchange classified as %v", exchangeErr)
+	}
+	if _, _, _, exchangeErr := manager.Exchange(validRequest, bootstrap); exchangeErr != nil {
+		t.Fatalf("cross-origin or host denial consumed bootstrap: %v", exchangeErr)
+	}
+	if _, _, _, exchangeErr := manager.Exchange(validRequest, bootstrap); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
+		t.Fatalf("replayed bootstrap classified as %v", exchangeErr)
+	}
+}
+
+func TestBootstrapExpiryAndSubjectExpiryShareUnavailableClassification(t *testing.T) {
+	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
+	request.Header.Set("Origin", "https://console.example.test")
+
+	bootstrapManager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrap, err := bootstrapManager.IssueBootstrap(core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(16 * time.Second)
+	if _, _, _, exchangeErr := bootstrapManager.Exchange(request, bootstrap); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
+		t.Fatalf("expired bootstrap classified as %v", exchangeErr)
+	}
+
+	now = time.Date(2026, 8, 20, 12, 1, 0, 0, time.UTC)
+	subjectManager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrap, err = subjectManager.IssueBootstrap(core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(5 * time.Second)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(6 * time.Second)
+	if _, _, _, exchangeErr := subjectManager.Exchange(request, bootstrap); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
+		t.Fatalf("subject-expired bootstrap classified as %v", exchangeErr)
+	}
+}
 
 func TestAuthenticatedSessionExchangeCSRFAndExpiry(t *testing.T) {
 	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)

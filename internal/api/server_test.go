@@ -304,6 +304,149 @@ func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 	}
 }
 
+func TestConsoleSessionErrorsPreserveNativeRecoveryAndJSONCodes(t *testing.T) {
+	svc := apiService(t)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.Listen = address
+	svc.Config.API.Console.Origin = "http://" + address
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if serveErr := <-done; serveErr != nil {
+			t.Error(serveErr)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	waitFor(t, "tcp", address)
+
+	var issued struct {
+		Bootstrap string `json:"bootstrap"`
+	}
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
+
+	for name, request := range map[string]*http.Request{
+		"cross-origin malformed form": func() *http.Request {
+			r, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap=malformed"))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Header.Set("Origin", "http://attacker.example")
+			return r
+		}(),
+		"missing-origin malformed JSON": func() *http.Request {
+			r, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":`))
+			r.Header.Set("Content-Type", "application/json")
+			return r
+		}(),
+		"wrong-host malformed JSON": func() *http.Request {
+			r, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":`))
+			r.Host = "other.example.test"
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("Origin", "http://"+address)
+			return r
+		}(),
+	} {
+		response, requestErr := http.DefaultClient.Do(request)
+		if requestErr != nil {
+			t.Fatalf("%s: %v", name, requestErr)
+		}
+		var denied envelope
+		if decodeErr := json.NewDecoder(response.Body).Decode(&denied); decodeErr != nil {
+			t.Fatalf("%s decode: %v", name, decodeErr)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusForbidden || denied.Code != "denied" {
+			t.Fatalf("%s status=%d code=%q", name, response.StatusCode, denied.Code)
+		}
+	}
+
+	native, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap=malformed"))
+	native.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	native.Header.Set("Origin", "http://"+address)
+	nativeResponse, err := http.DefaultClient.Do(native)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeBody, _ := io.ReadAll(nativeResponse.Body)
+	_ = nativeResponse.Body.Close()
+	if nativeResponse.StatusCode != http.StatusBadRequest || !strings.HasPrefix(nativeResponse.Header.Get("Content-Type"), "text/html") {
+		t.Fatalf("native malformed exchange status=%d type=%q", nativeResponse.StatusCode, nativeResponse.Header.Get("Content-Type"))
+	}
+	for _, required := range []string{"bootstrap_invalid_format", "aegis console", svc.Config.API.Console.BootstrapTTL.String(), svc.Config.API.Console.SessionTTL.String()} {
+		if !bytes.Contains(nativeBody, []byte(required)) {
+			t.Fatalf("native recovery omitted %q", required)
+		}
+	}
+	if bytes.Contains(nativeBody, []byte("malformed")) {
+		t.Fatal("native recovery reflected submitted bootstrap")
+	}
+
+	jsonRequest, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"malformed"}`))
+	jsonRequest.Header.Set("Content-Type", "application/json")
+	jsonRequest.Header.Set("Origin", "http://"+address)
+	jsonResponse, err := http.DefaultClient.Do(jsonRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failure envelope
+	if err = json.NewDecoder(jsonResponse.Body).Decode(&failure); err != nil {
+		t.Fatal(err)
+	}
+	_ = jsonResponse.Body.Close()
+	if jsonResponse.StatusCode != http.StatusBadRequest || failure.Code != "bootstrap_invalid_format" {
+		t.Fatalf("JSON malformed exchange status=%d code=%q", jsonResponse.StatusCode, failure.Code)
+	}
+
+	crossOrigin, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+issued.Bootstrap+`"}`))
+	crossOrigin.Header.Set("Content-Type", "application/json")
+	crossOrigin.Header.Set("Origin", "http://attacker.example")
+	crossOriginResponse, err := http.DefaultClient.Do(crossOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var denied envelope
+	if err = json.NewDecoder(crossOriginResponse.Body).Decode(&denied); err != nil {
+		t.Fatal(err)
+	}
+	_ = crossOriginResponse.Body.Close()
+	if crossOriginResponse.StatusCode != http.StatusForbidden || denied.Code != "denied" {
+		t.Fatalf("cross-origin exchange status=%d code=%q", crossOriginResponse.StatusCode, denied.Code)
+	}
+
+	valid, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+issued.Bootstrap+`"}`))
+	valid.Header.Set("Content-Type", "application/json")
+	valid.Header.Set("Origin", "http://"+address)
+	validResponse, err := http.DefaultClient.Do(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = validResponse.Body.Close()
+	if validResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("cross-origin denial consumed bootstrap: status=%d", validResponse.StatusCode)
+	}
+
+	replay, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+issued.Bootstrap+`"}`))
+	replay.Header.Set("Content-Type", "application/json")
+	replay.Header.Set("Origin", "http://"+address)
+	replayResponse, err := http.DefaultClient.Do(replay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replayFailure envelope
+	if err = json.NewDecoder(replayResponse.Body).Decode(&replayFailure); err != nil {
+		t.Fatal(err)
+	}
+	_ = replayResponse.Body.Close()
+	if replayResponse.StatusCode != http.StatusUnauthorized || replayFailure.Code != "bootstrap_consumed_or_expired" {
+		t.Fatalf("replay exchange status=%d code=%q", replayResponse.StatusCode, replayFailure.Code)
+	}
+}
+
 func TestBearerAloneCannotIssueConsoleBootstrapOverTCP(t *testing.T) {
 	svc := apiService(t)
 	probe, err := net.Listen("tcp", "127.0.0.1:0")

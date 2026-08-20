@@ -55,7 +55,7 @@ api:
   console:
     origin: http://127.0.0.1:{port}
     session_ttl: 1m
-    bootstrap_ttl: 15s
+    bootstrap_ttl: 45s
     max_page_size: 25
 audit:
   checkpoint_dir: {root}/checkpoints
@@ -165,9 +165,17 @@ if not status.startswith(b"HTTP/1.1 201 "):
 pathlib.Path(response_path).write_bytes(payload)
 PY
 grep -F 'Sign the Aegis principal into this browser' "$workspace/shell.html" >/dev/null
+grep -F 'Recovery: run' "$workspace/shell.html" >/dev/null
+grep -F 'aegis console' "$workspace/shell.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
 [ "$(wc -c <"$workspace/datastar.js")" -gt 1000 ]
+recovery_status=$(curl --silent --show-error -o "$workspace/recovery.html" -w '%{http_code}' -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data 'bootstrap=malformed' "http://127.0.0.1:$port/console/session")
+[ "$recovery_status" = 400 ]
+grep -F 'bootstrap_invalid_format' "$workspace/recovery.html" >/dev/null
+grep -F 'Bootstrap lifetime: <strong>45s</strong>' "$workspace/recovery.html" >/dev/null
+grep -F 'Browser session lifetime: <strong>1m0s</strong>' "$workspace/recovery.html" >/dev/null
+! grep -F '>malformed<' "$workspace/recovery.html" >/dev/null
 
 HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/bootstrap-response.json"
 python3 - "$workspace" <<'PY'
@@ -191,6 +199,9 @@ PY
 curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console" -o "$workspace/authenticated.html"
 grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
 grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null
+grep -F 'href="#charter-import-review"' "$workspace/authenticated.html" >/dev/null
+grep -F 'aegis charter validate &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
+grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
 ! grep -F 'Sign the Aegis principal into this browser' "$workspace/authenticated.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
 

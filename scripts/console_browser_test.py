@@ -253,6 +253,25 @@ def main() -> int:
 
         click(devtools, 'a[href="/console/agents#/agents"]')
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "seeded Agent Registry record")
+        session_requests_before = sum(
+            1
+            for event in devtools.events
+            if event.get("method") == "Network.requestWillBeSent"
+            and event.get("params", {}).get("request", {}).get("url", "").endswith("/console/session")
+        )
+        click(devtools, 'a[href="#charter-import-review"]')
+        wait_for(
+            devtools,
+            "location.hash === '#charter-import-review' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
+            "review-only charter import proposal",
+        )
+        session_requests_after = sum(
+            1
+            for event in devtools.events
+            if event.get("method") == "Network.requestWillBeSent"
+            and event.get("params", {}).get("request", {}).get("url", "").endswith("/console/session")
+        )
+        require(session_requests_after == session_requests_before, "charter import review link triggered a session mutation request")
         click(devtools, "#record-agent-alpha")
         wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('agent-alpha')", "Agent Registry detail")
         click(devtools, "#close-inspector")
@@ -291,6 +310,7 @@ def main() -> int:
             "bootstrap": "pass",
             "domains": list(expected.values()),
             "inspection": "pass",
+            "charter_import_review": "pass",
             "logout": "pass",
             "csp_violations": 0,
             "javascript_errors": 0,
