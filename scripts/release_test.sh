@@ -16,6 +16,7 @@ trap cleanup EXIT HUP INT TERM
 
 real_git=$(command -v git)
 script_source=$(pwd -P)/scripts/release.sh
+changelog_helper_source=$(pwd -P)/scripts/prepare-release-changelog.py
 mkdir -p "$root/bin"
 
 cat >"$root/bin/git" <<'EOF'
@@ -77,6 +78,7 @@ setup_repo() {
     origin="$root/$name/origin.git"
     mkdir -p "$repo/scripts"
     cp "$script_source" "$repo/scripts/release.sh"
+    cp "$changelog_helper_source" "$repo/scripts/prepare-release-changelog.py"
     cat >"$repo/CHANGELOG.md" <<'EOF'
 # Changelog
 
@@ -89,7 +91,7 @@ EOF
     "$real_git" init -q -b main "$repo"
     "$real_git" -C "$repo" config user.name 'Release Test'
     "$real_git" -C "$repo" config user.email 'release-test@example.invalid'
-    "$real_git" -C "$repo" add CHANGELOG.md scripts/release.sh
+    "$real_git" -C "$repo" add CHANGELOG.md scripts/release.sh scripts/prepare-release-changelog.py
     "$real_git" -C "$repo" commit -q -m initial
     "$real_git" init -q --bare "$origin"
     "$real_git" -C "$repo" remote add origin "$origin"
