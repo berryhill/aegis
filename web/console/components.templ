@@ -13,7 +13,7 @@ templ Document(model PageModel) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<meta name="color-scheme" content="dark"/>
-			<title>Aegis Console</title>
+			<title>{ documentTitle(model) }</title>
 			<link rel="stylesheet" href="/console/assets/app.css"/>
 		</head>
 		<body>
@@ -24,7 +24,11 @@ templ Document(model PageModel) {
 				<main class="content" id="main" tabindex="-1">
 					<div id="workspace">
 						if model.Authenticated {
-							@Workspace(model.Surface)
+							if model.CharterImport {
+								@CharterImportPage(model.Surface.CharterImportProposal)
+							} else {
+								@Workspace(model.Surface)
+							}
 						} else {
 							@Authentication(model.Authentication)
 						}
@@ -136,7 +140,7 @@ templ Workspace(surface SurfaceModel) {
 			for _, action := range surface.Actions {
 				if action.Primary {
 					if surface.Domain == DomainAgents && action.State == "ready" {
-						<a class="primary" href="#charter-import-review" title={ actionTitle(action) }>{ action.Label }</a>
+						<a class="primary" href="/console/agents/charter-import" title={ actionTitle(action) }>{ action.Label }</a>
 					} else {
 						<button class="primary" type="button" disabled title={ actionTitle(action) }>{ action.Label }</button>
 					}
@@ -158,22 +162,28 @@ templ Workspace(surface SurfaceModel) {
 			}
 		}
 		@DomainCollection(surface)
-		if surface.Domain == DomainAgents {
-			@CharterImportReview(surface.CharterImportProposal)
-		}
 		<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
 		@Inspector(surface, surface.Inspector, surface.InspectorOpen)
 	</section>
 }
 
-templ CharterImportReview(proposal CharterImportProposal) {
-	<section id="charter-import-review" class="panel" aria-labelledby="charter-import-title">
-		<div class="panel-body">
-			<div class="section-label">Review-only CLI proposal</div>
-			<h2 id="charter-import-title">Charter import review</h2>
-			<p class="inline-notice">{ proposal.Notice }</p>
-			<dl class="spec"><dt>Validate</dt><dd><code>{ proposal.ValidateCommand }</code></dd><dt>Import</dt><dd><code>{ proposal.ImportCommand }</code></dd></dl>
+templ CharterImportPage(proposal CharterImportProposal) {
+	<section class="surface active" id="charter-import-review" aria-labelledby="charter-import-title">
+		<div class="page-head">
+			<div class="surface-header">
+				<span class="eyebrow">Agent Registry</span>
+				<h1 id="charter-import-title">Charter import review</h1>
+				<p>Review the deterministic CLI path for validating and importing an agent charter.</p>
+			</div>
+			<a id="charter-import-back" class="ghost" href="/console/agents#/agents">Back to Agent Registry</a>
 		</div>
+		<section class="panel" aria-label="Review-only charter import guidance">
+			<div class="panel-body">
+				<div class="section-label">Review-only CLI proposal</div>
+				<p class="inline-notice">{ proposal.Notice }</p>
+				<dl class="spec"><dt>Validate</dt><dd><code>{ proposal.ValidateCommand }</code></dd><dt>Import</dt><dd><code>{ proposal.ImportCommand }</code></dd></dl>
+			</div>
+		</section>
 	</section>
 }
 
@@ -593,6 +603,7 @@ func agentMark(label string) string {
 }
 
 func fallbackTitle(title string) string { if title == "" { return "Fleet workspace" }; return title }
+func documentTitle(model PageModel) string { if model.CharterImport && model.Authenticated { return "Charter import review · Aegis Console" }; return "Aegis Console" }
 func currentPage(current bool) string { if current { return "page" }; return "false" }
 func actionTitle(action ActionModel) string { return action.State + ": " + action.ReasonCode }
 func hasBlockedAction(actions []ActionModel) bool { for _, action := range actions { if action.State != "ready" { return true } }; return false }

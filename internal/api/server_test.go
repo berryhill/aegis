@@ -593,6 +593,37 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 		})
 	}
 
+	charterImportResponse, err := client.Get("http://" + address + "/console/agents/charter-import")
+	if err != nil {
+		t.Fatal(err)
+	}
+	charterImportBody, _ := io.ReadAll(charterImportResponse.Body)
+	_ = charterImportResponse.Body.Close()
+	if charterImportResponse.StatusCode != http.StatusOK {
+		t.Fatalf("charter import route status=%d body=%s", charterImportResponse.StatusCode, charterImportBody)
+	}
+	for _, required := range [][]byte{[]byte("<title>Charter import review · Aegis Console</title>"), []byte("Charter import review"), []byte(`href="/console/agents#/agents"`), []byte("Review only"), []byte("aegis charter validate &lt;charter-file.json&gt;"), []byte("aegis charter import &lt;charter-file.json&gt;")} {
+		if !bytes.Contains(charterImportBody, required) {
+			t.Fatalf("charter import route missing %q: %s", required, charterImportBody)
+		}
+	}
+	if bytes.Contains(charterImportBody, []byte(`action="/console/agents/charter-import"`)) || bytes.Contains(charterImportBody, []byte("data-on:")) {
+		t.Fatalf("charter import route exposed charter-import mutation behavior: %s", charterImportBody)
+	}
+
+	unauthenticatedResponse, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + address + "/console/agents/charter-import")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthenticatedBody, _ := io.ReadAll(unauthenticatedResponse.Body)
+	_ = unauthenticatedResponse.Body.Close()
+	if unauthenticatedResponse.StatusCode != http.StatusOK || !bytes.Contains(unauthenticatedBody, []byte(`id="session-form"`)) {
+		t.Fatalf("unauthenticated charter import route did not render authentication recovery: status=%d body=%s", unauthenticatedResponse.StatusCode, unauthenticatedBody)
+	}
+	if bytes.Contains(unauthenticatedBody, []byte("aegis charter validate")) || bytes.Contains(unauthenticatedBody, []byte("aegis charter import")) {
+		t.Fatalf("unauthenticated charter import route exposed authenticated guidance: %s", unauthenticatedBody)
+	}
+
 	credentialsResponse, err := client.Get("http://" + address + "/console/credentials")
 	if err != nil {
 		t.Fatal(err)

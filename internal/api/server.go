@@ -407,10 +407,29 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
 	}
+	charterImportPage := func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		model := consoleweb.PageModel{Authentication: authenticationModel(""), Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
+		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
+			model, err = loadConsole(c, subject, consoleAgents)
+			if err != nil {
+				return err
+			}
+			model.CharterImport = true
+		}
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(model))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	}
 	e.GET("/console", consolePage)
 	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consoleCredentials} {
 		e.GET("/console/"+string(domain), consolePage)
 	}
+	e.GET("/console/agents/charter-import", charterImportPage)
 	e.GET("/favicon.ico", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
