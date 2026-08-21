@@ -15,6 +15,7 @@ type PageModel struct {
 	CSRF           string
 	Authentication AuthenticationModel
 	Surface        SurfaceModel
+	CharterImport  bool
 }
 
 type AuthenticationModel struct {
