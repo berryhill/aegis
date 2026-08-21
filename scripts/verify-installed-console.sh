@@ -199,9 +199,14 @@ PY
 curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console" -o "$workspace/authenticated.html"
 grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
 grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null
-grep -F 'href="#charter-import-review"' "$workspace/authenticated.html" >/dev/null
-grep -F 'aegis charter validate &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
-grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
+grep -F 'href="/console/agents/charter-import"' "$workspace/authenticated.html" >/dev/null
+! grep -F 'aegis charter validate &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
+! grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
+curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console/agents/charter-import" -o "$workspace/charter-import.html"
+grep -F '<title>Charter import review · Aegis Console</title>' "$workspace/charter-import.html" >/dev/null
+grep -F 'href="/console/agents#/agents"' "$workspace/charter-import.html" >/dev/null
+grep -F 'aegis charter validate &lt;charter-file.json&gt;' "$workspace/charter-import.html" >/dev/null
+grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/charter-import.html" >/dev/null
 ! grep -F 'Sign the Aegis principal into this browser' "$workspace/authenticated.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
 

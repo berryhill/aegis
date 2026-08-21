@@ -113,11 +113,32 @@ func TestWorkspaceEscapesContextualReadinessAndDisablesDeniedActions(t *testing.
 	}
 }
 
-func TestReadyAgentActionLinksToAlwaysVisibleCharterImportReview(t *testing.T) {
+func TestReadyAgentActionLinksToDedicatedCharterImportPage(t *testing.T) {
 	var output bytes.Buffer
 	model := PageModel{Authenticated: true, Surface: SurfaceModel{
 		Domain: DomainAgents, Title: "Agent Registry", State: "ready", Authoritative: true,
 		Actions: []ActionModel{{Key: "register_fleet_agent", Label: "Prepare charter import", State: "ready", ReasonCode: "ready", Primary: true}},
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{`href="/console/agents/charter-import"`, "Prepare charter import"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("ready Agent charter-import link missing %q: %s", required, html)
+		}
+	}
+	for _, absent := range []string{`href="#charter-import-review"`, `id="charter-import-review"`, "aegis charter validate", "aegis charter import"} {
+		if strings.Contains(html, absent) {
+			t.Fatalf("Agent Registry retained embedded charter-import content %q: %s", absent, html)
+		}
+	}
+}
+
+func TestCharterImportPageRendersDistinctReviewOnlyGuidance(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{Authenticated: true, CharterImport: true, Surface: SurfaceModel{
+		Domain: DomainAgents,
 		CharterImportProposal: CharterImportProposal{
 			Notice:          "Review only; the browser cannot import a charter or grant authority.",
 			ValidateCommand: "aegis charter validate <charter-file.json>",
@@ -128,13 +149,13 @@ func TestReadyAgentActionLinksToAlwaysVisibleCharterImportReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{`href="#charter-import-review"`, `id="charter-import-review"`, "Charter import review", "Review only", "aegis charter validate", "aegis charter import"} {
+	for _, required := range []string{"<title>Charter import review · Aegis Console</title>", `id="charter-import-title"`, "Charter import review", "Agent Registry", `href="/console/agents#/agents"`, "Back to Agent Registry", "Review only", "aegis charter validate &lt;charter-file.json&gt;", "aegis charter import &lt;charter-file.json&gt;"} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("ready Agent charter-import path missing %q: %s", required, html)
+			t.Fatalf("charter import page missing %q: %s", required, html)
 		}
 	}
-	if strings.Contains(html, "data-on:") {
-		t.Fatalf("charter import proposal gained browser mutation behavior: %s", html)
+	if strings.Contains(html, "data-on:") || strings.Contains(html, `action="/console/agents/charter-import"`) {
+		t.Fatalf("charter import page gained charter-import mutation behavior: %s", html)
 	}
 }
 
