@@ -55,7 +55,7 @@ candidate_revision=$(git -C "$work_root/candidate" rev-parse HEAD)
 
 (
   cd "$work_root/candidate"
-  make verify
+  AEGIS_PROOF_SOCKET_DIR="$repo" make verify
   git diff --check
   [ -z "$(git status --porcelain=v1)" ] || fail 'verification mutated the release candidate snapshot'
 )

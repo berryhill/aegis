@@ -52,6 +52,9 @@ EOF
   cat >"$fixture/Makefile" <<'EOF'
 verify:
 	@test -z "$$(git status --porcelain=v1)"
+	@test -n "$$AEGIS_PROOF_SOCKET_DIR"
+	@test -d "$$AEGIS_PROOF_SOCKET_DIR"
+	@test "$$AEGIS_PROOF_SOCKET_DIR" != "$$(pwd -P)"
 	@grep -Eq '^## \[1.2.3\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$$' CHANGELOG.md
 	@awk '/^## Unreleased$$/{getline; if ($$0 != "") exit 1; getline; if ($$0 !~ /^## \[1.2.3\] - /) exit 1}' CHANGELOG.md
 	@printf 'fixture verification passed\n'
