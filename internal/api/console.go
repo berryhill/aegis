@@ -409,11 +409,19 @@ func consoleLoopRecord(view app.LoopView) consoleweb.RecordModel {
 	} else if view.Lifecycle.State == "retired" {
 		readiness = "Retired; terminal lifecycle"
 	}
+	control := &consoleweb.LoopDetailModel{
+		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
+		CanRetire: view.Lifecycle.State != "retired",
+	}
+	if len(view.History) > 0 {
+		control.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
+	}
 	return consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.LoopID,
 		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
-		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID,
+		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: control,
 		Fields: []consoleweb.FieldModel{
 			{Label: "Executable steps", Value: strings.Join(steps, "\n")},
 			{Label: "Transitions", Value: strings.Join(transitions, "\n")},

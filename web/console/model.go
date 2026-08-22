@@ -16,6 +16,22 @@ type PageModel struct {
 	Authentication AuthenticationModel
 	Surface        SurfaceModel
 	CharterImport  bool
+	LoopComposer   *LoopComposerModel
+	CommandPreview *CommandPreviewModel
+	CommandReceipt *OperationReceiptModel
+}
+
+type LoopPublisherModel struct {
+	ID, Revision, Digest, Runtime string
+}
+
+type LoopComposerModel struct {
+	Publishers []LoopPublisherModel
+	Errors     []string
+}
+
+type CommandPreviewModel struct {
+	IntentID, CommandID, TargetID, TargetDigest, InputDigest, ExpiresAt string
 }
 
 type AuthenticationModel struct {
@@ -28,6 +44,7 @@ type AuthenticationModel struct {
 
 type SurfaceModel struct {
 	Domain                string
+	CSRF                  string
 	Title                 string
 	Eyebrow               string
 	Description           string
@@ -85,6 +102,12 @@ type RecordModel struct {
 	Graph        *GraphDetailModel
 	Queue        *QueueDetailModel
 	Credential   *CredentialDetailModel
+	Loop         *LoopDetailModel
+}
+
+type LoopDetailModel struct {
+	TargetID, Digest, PublisherID, ExpectedLifecycleDigest string
+	CanActivate, CanRetire                                 bool
 }
 
 // QueueDetailModel is a presentation-only projection of authoritative queue

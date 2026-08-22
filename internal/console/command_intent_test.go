@@ -112,6 +112,15 @@ func (f *commandFixture) preview(t *testing.T, key string) CommandPreview {
 	return preview
 }
 
+func TestCommandIntentAcceptsBoundedSlashAndColonTarget(t *testing.T) {
+	fixture := newCommandFixture(t)
+	fixture.target.ID = "42:tenant:team/review"
+	preview := fixture.preview(t, "target-grammar")
+	if preview.Target.ID != fixture.target.ID {
+		t.Fatalf("target=%q", preview.Target.ID)
+	}
+}
+
 func TestCommandIntentCommitsOnceAndReturnsAuthoritativeReadback(t *testing.T) {
 	fixture := newCommandFixture(t)
 	preview := fixture.preview(t, "request-1")
