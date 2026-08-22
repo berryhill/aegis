@@ -1,0 +1,36 @@
+package consoleweb
+
+// FoundationFixture is deterministic, non-routed review material for Chrome
+// visual and keyboard tests. It contains synthetic references only and no
+// secret-bearing value or mutation authority.
+templ FoundationFixture(viewport string) {
+	<main class="foundation-fixture" data-visual-fixture="interaction-foundation" data-viewport={ viewport }>
+		<h1>Interaction foundation review</h1>
+		@Notice(NoticeModel{Kind: "warning", Title: "Unresolved authority", Message: "Review the exact references before continuing.", ReasonCode: "authority_not_evaluated"})
+		@ExactReference(ExactReferenceModel{Label: "Exact Graph revision", ID: "graph-fixture", Revision: "r3", Digest: "sha256:fixture", Lifecycle: "active", Provenance: "fixture-fleet / fixture-owner"})
+		@AuthorityContext(AuthorityContextModel{Identity: "fixture-agent", Stanza: "review", Mandate: "fixture-mandate", State: "not-evaluated", ReasonCode: "authority_not_evaluated"})
+		@ErrorSummary("Correct these fields", []string{"Mandate reference is required"})
+		@FormField(FormFieldModel{ID: "fixture-mandate", Name: "mandate", Label: "Mandate reference", Help: "Enter an exact non-secret mandate reference.", Error: "Mandate reference is required", Required: true, Autocomplete: "off"})
+		@OperationReceipt(OperationReceiptModel{Title: "Graph submission", Outcome: "pending", OperationID: "operation-fixture", RecordedAt: "2026-08-21T00:00:00Z", Message: "Accepted for authoritative readback; success is not asserted."})
+		<div class="fixture-states">
+			@CollectionState(StateLoading, "Loading", "Loading authoritative state.", "")
+			@CollectionState(StateEmpty, "No records", "The authoritative collection is empty.", "")
+			@CollectionState(StateFilteredEmpty, "No matches", "No records match these filters.", "")
+			@CollectionState(StateDenied, "Denied", "No count is asserted.", "read_denied")
+			@CollectionState(StateUnavailable, "Unavailable", "This is not an empty collection.", "store_unavailable")
+			@CollectionState(StateDegraded, "Repair required", "No count is asserted.", "repair_required")
+			@CollectionState(StateError, "Error", "State could not be validated.", "invalid_projection")
+		</div>
+		@SafeSkeleton("Loading records", 4)
+		<div class="button-row">
+			<button id="open-fixture-dialog" type="button" class="primary" commandfor="fixture-dialog" command="show-modal">Open dialog</button>
+			<button id="open-fixture-drawer" type="button" class="ghost" commandfor="fixture-drawer" command="show-modal">Open drawer</button>
+		</div>
+		@Dialog(OverlayModel{ID: "fixture-dialog", Title: "Confirm exact operation", Description: "This fixture is intentionally unresolved."}) {
+			@Confirmation(ConfirmationModel{Title: "Submit Graph", Message: "The provisioner will use the exact reviewed references.", ConfirmLabel: "Submit", CancelLabel: "Cancel", DialogID: "fixture-dialog"})
+		}
+		@Drawer(OverlayModel{ID: "fixture-drawer", Title: "Exact record", Description: "Responsive record detail."}) {
+			@ExactReference(ExactReferenceModel{Label: "Exact Loop revision", ID: "loop-fixture", Revision: "r2", Digest: "sha256:loop-fixture", Lifecycle: "active", Provenance: "fixture-fleet"})
+		}
+	</main>
+}

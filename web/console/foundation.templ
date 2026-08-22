@@ -1,0 +1,164 @@
+package consoleweb
+
+import "strings"
+
+// Dialog and Drawer use the browser's native modal command contract. Chrome
+// owns focus containment, background inertness, Escape, and focus restoration;
+// native links and forms continue to own every consequential action.
+templ Dialog(model OverlayModel) {
+	<dialog id={ model.ID } class="interaction-overlay" aria-labelledby={ model.ID + "-title" } aria-describedby={ descriptionID(model) } data-overlay-kind="dialog">
+		<div class="interaction-dialog" tabindex="-1" data-overlay-panel>
+			<header><h2 id={ model.ID + "-title" } tabindex="-1" autofocus>{ model.Title }</h2><button type="button" class="ghost icon-button" commandfor={ model.ID } command="close" aria-label={ closeLabel(model) }>×</button></header>
+			if model.Description != "" {
+				<p id={ model.ID + "-description" }>{ model.Description }</p>
+			}
+			<div class="interaction-body">{ children... }</div>
+		</div>
+	</dialog>
+}
+
+templ Drawer(model OverlayModel) {
+	<dialog id={ model.ID } class="interaction-overlay interaction-drawer" aria-labelledby={ model.ID + "-title" } aria-describedby={ descriptionID(model) } data-overlay-kind="drawer">
+		<div class="interaction-drawer-panel" tabindex="-1" data-overlay-panel>
+			<header><h2 id={ model.ID + "-title" } tabindex="-1" autofocus>{ model.Title }</h2><button type="button" class="ghost icon-button" commandfor={ model.ID } command="close" aria-label={ closeLabel(model) }>×</button></header>
+			if model.Description != "" {
+				<p id={ model.ID + "-description" }>{ model.Description }</p>
+			}
+			<div class="interaction-body">{ children... }</div>
+		</div>
+	</dialog>
+}
+
+templ FormField(field FormFieldModel) {
+	<div class="form-field" data-invalid={ boolString(field.Error != "") }>
+		<label for={ field.ID }>{ field.Label }
+			if field.Required {
+				<span aria-hidden="true"> *</span>
+			}
+		</label>
+		if field.Help != "" {
+			<p class="field-help" id={ field.ID + "-help" }>{ field.Help }</p>
+		}
+		<input id={ field.ID } name={ field.Name } type={ fieldType(field) } value={ retainedValue(field) } required?={ field.Required } autocomplete={ field.Autocomplete } aria-invalid={ boolString(field.Error != "") } aria-describedby={ describedBy(field) }/>
+		if field.Error != "" {
+			<p class="field-error" id={ field.ID + "-error" }>{ field.Error }</p>
+		}
+	</div>
+}
+
+templ ErrorSummary(title string, errors []string) {
+	if len(errors) > 0 {
+		<section class="error-summary" role="alert" aria-labelledby="error-summary-title" tabindex="-1" data-error-summary>
+			<h2 id="error-summary-title">{ title }</h2>
+			<ul>
+				for _, message := range errors {
+					<li>{ message }</li>
+				}
+			</ul>
+		</section>
+	}
+}
+
+templ ExactReference(reference ExactReferenceModel) {
+	<dl class="exact-reference" aria-label={ reference.Label }><dt>Reference</dt><dd>{ reference.ID }</dd><dt>Revision</dt><dd>{ reference.Revision }</dd><dt>Digest</dt><dd><code>{ reference.Digest }</code></dd><dt>Lifecycle</dt><dd>{ reference.Lifecycle }</dd><dt>Provenance</dt><dd>{ reference.Provenance }</dd></dl>
+}
+
+templ AuthorityContext(authority AuthorityContextModel) {
+	<section class="authority-context" data-authority-state={ authority.State } aria-label="Display-only authority context">
+		<span class="truth-label">Display only · not an authority selector</span>
+		<dl><dt>Identity</dt><dd>{ authority.Identity }</dd><dt>Trust stanza</dt><dd>{ authority.Stanza }</dd><dt>Mandate</dt><dd>{ authority.Mandate }</dd><dt>Admission</dt><dd>{ authority.State }</dd>
+			if authority.ReasonCode != "" {
+				<dt>Reason</dt><dd><code>{ authority.ReasonCode }</code></dd>
+			}
+		</dl>
+	</section>
+}
+
+templ Confirmation(model ConfirmationModel) {
+	<section class={ "confirmation " + dangerClass(model.Dangerous) } aria-label={ model.Title }><h3>{ model.Title }</h3><p>{ model.Message }</p><div class="button-row">
+		if model.DialogID != "" {
+			<button type="button" class="ghost" commandfor={ model.DialogID } command="close">{ model.CancelLabel }</button>
+		} else {
+			<button type="button" class="ghost">{ model.CancelLabel }</button>
+		}
+		<button type="submit" class={ confirmClass(model.Dangerous) }>{ model.ConfirmLabel }</button></div></section>
+}
+
+templ OperationReceipt(receipt OperationReceiptModel) {
+	<article class="operation-receipt" data-outcome={ receipt.Outcome } role="status">
+		<header><h3>{ receipt.Title }</h3><span class="truth-label">{ receipt.Outcome }</span></header>
+		<dl><dt>Operation</dt><dd>{ receipt.OperationID }</dd><dt>Recorded</dt><dd>{ receipt.RecordedAt }</dd>
+			if receipt.ReasonCode != "" {
+				<dt>Reason</dt><dd><code>{ receipt.ReasonCode }</code></dd>
+			}
+		</dl><p>{ receipt.Message }</p>
+	</article>
+}
+
+templ Notice(notice NoticeModel) {
+	<section class="notice" data-kind={ notice.Kind } role={ noticeRole(notice.Kind) }><strong>{ notice.Title }</strong><span>{ notice.Message }</span>
+		if notice.ReasonCode != "" {
+			<code>{ notice.ReasonCode }</code>
+		}
+	</section>
+}
+
+templ FilterBar(action string, filters []FilterModel, query FormFieldModel) {
+	<form class="filter-bar" method="get" action={ action } aria-label="Collection filters">
+		for _, filter := range filters {
+			<label for={ filter.ID }>{ filter.Label }</label><select id={ filter.ID } name={ filter.Name }>
+				for _, option := range filter.Options {
+					<option value={ option.Value } selected?={ option.Value == filter.Value }>{ option.Label }</option>
+				}
+			</select>
+		}
+		if query.ID != "" {
+			@FormField(query)
+		}
+		<button class="secondary" type="submit">Apply filters</button>
+	</form>
+}
+
+templ Pagination(model PaginationModel) {
+	<nav class="pagination" aria-label={ model.Label }>
+		if model.HasPrevious {
+			<a class="ghost btn-sm" href={ model.PreviousURL }>Previous</a>
+		} else {
+			<span class="ghost btn-sm disabled" aria-disabled="true">Previous</span>
+		}
+		<span>{ model.Summary }</span>
+		if model.HasNext {
+			<a class="ghost btn-sm" href={ model.NextURL }>Next</a>
+		} else {
+			<span class="ghost btn-sm disabled" aria-disabled="true">Next</span>
+		}
+	</nav>
+}
+
+templ CollectionState(state VisualState, title string, message string, reasonCode string) {
+	<section class="collection-state" data-state={ string(state) } role="status"><strong>{ title }</strong><p>{ message }</p>
+		if reasonCode != "" {
+			<code>{ reasonCode }</code>
+		}
+	</section>
+}
+
+templ SafeSkeleton(label string, rows int) {
+	<div class="safe-skeleton" role="status" aria-label={ label } aria-busy="true">
+		for range skeletonRows(rows) {
+			<span aria-hidden="true"></span>
+		}
+		<span class="sr-only">{ label }</span>
+	</div>
+}
+
+func descriptionID(model OverlayModel) string { if model.Description == "" { return "" }; return model.ID + "-description" }
+func closeLabel(model OverlayModel) string { if strings.TrimSpace(model.CloseLabel) == "" { return "Close" }; return model.CloseLabel }
+func fieldType(field FormFieldModel) string { if field.Secret { return "password" }; if field.Type == "" { return "text" }; return field.Type }
+func retainedValue(field FormFieldModel) string { if field.Secret { return "" }; return field.Value }
+func describedBy(field FormFieldModel) string { values := []string{}; if field.Help != "" { values = append(values, field.ID+"-help") }; if field.Error != "" { values = append(values, field.ID+"-error") }; return strings.Join(values, " ") }
+func boolString(value bool) string { if value { return "true" }; return "false" }
+func dangerClass(value bool) string { if value { return "danger" }; return "" }
+func confirmClass(value bool) string { if value { return "danger-button" }; return "primary" }
+func noticeRole(kind string) string { if kind == "error" || kind == "denied" { return "alert" }; return "status" }
+func skeletonRows(rows int) []struct{} { if rows < 1 { rows = 3 }; if rows > 8 { rows = 8 }; return make([]struct{}, rows) }
