@@ -325,7 +325,7 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 			},
 			Vault:    CredentialVaultDetail{DeploymentID: "deployment-test", StoreID: "store-1", KEKID: "kek-1", KEKVersion: 1, SchemaVersion: "1", Custody: "host-file", LastCleanShutdown: true, State: "initialized", ReasonCode: "credentials_vault_ready"},
 			Backup:   CredentialBackupDetail{Available: false, Note: "Backups are ciphertext-only snapshots; the same KEK is required to reopen."},
-			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/api --kind api-token --created-by \"$OPERATOR\"", BackupCommand: "aegis secret backup <path-to-backup.db>", Notice: "Browser state cannot authorize credential mutation."},
+			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/api --kind api-token --created-by \"$OPERATOR\"", BackupCommand: "aegis secret backup", Notice: "Browser state cannot authorize credential mutation."},
 		},
 	}
 	revoked := RecordModel{
@@ -335,7 +335,7 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 		Credential: &CredentialDetailModel{
 			Reference: "github/legacy", Status: "revoked", CurrentVersion: 1, RevokedAt: "2026-08-18T14:00:00Z", Revocation: "rotation",
 			Vault:    CredentialVaultDetail{State: "initialized", ReasonCode: "credentials_vault_ready"},
-			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/legacy --kind api-token", BackupCommand: "aegis secret backup <path>", Notice: "Browser state cannot authorize credential mutation."},
+			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/legacy --kind api-token", BackupCommand: "aegis secret backup", Notice: "Browser state cannot authorize credential mutation."},
 		},
 	}
 	active.JSON = `{"id":"secret-1","status":"active","version_history":[],"vault":{"kek_id":"kek-1","kek_version":1}}`
@@ -366,6 +366,7 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 		`name="principal"`, `name="stanza"`, `name="mandate"`, `name="authority"`,
 		"Ciphertext\":", "WrappedDEK\":", "RecordNonce\":", "WrapNonce\":",
 		"source_env", "target_env",
+		"secret backup <", "secret backup --path", "secret backup /", "secret backup ./", "secret backup ../",
 	} {
 		if strings.Contains(html, forbidden) {
 			t.Fatalf("credential surface exposed %q: %s", forbidden, html)

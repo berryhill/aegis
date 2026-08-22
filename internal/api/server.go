@@ -84,6 +84,18 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusNotFound, "not_found", "fleet resource not found"
 	case app.IsFleetCorrupt(err):
 		return http.StatusServiceUnavailable, "repair_required", "fleet store repair required"
+	case app.IsCredentialNotFound(err):
+		return http.StatusNotFound, "credential_not_found", "credential record not found"
+	case app.IsCredentialRevoked(err):
+		return http.StatusConflict, "credential_revoked", "credential or version is revoked"
+	case app.IsCredentialAmbiguous(err):
+		return http.StatusConflict, "credential_ambiguous", "credential binding is ambiguous"
+	case app.IsCredentialConflict(err):
+		return http.StatusConflict, "credential_conflict", "credential state conflict"
+	case app.IsCredentialLocked(err):
+		return http.StatusLocked, "credential_locked", "credential authority is locked"
+	case errors.Is(err, app.ErrCredentialUnavailable):
+		return http.StatusServiceUnavailable, "credential_unavailable", "credential authority is unavailable"
 	case errors.Is(err, os.ErrNotExist):
 		return http.StatusNotFound, "not_found", "resource not found"
 	}
@@ -1015,6 +1027,82 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusCreated, map[string]string{"bootstrap": bootstrap, "expires": svc.Now().Add(svc.Config.API.Console.BootstrapTTL).UTC().Format(time.RFC3339)})
+	})
+	g.POST("/credentials", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.CreateCredentialInput
+		if err = decodeCredentialIntake(c, &input); err != nil {
+			return err
+		}
+		defer wipe(input.Value)
+		value, err := svc.CreateCredentialAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
+	g.POST("/credentials/:record/rotations", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.RotateCredentialInput
+		if err = decodeCredentialIntake(c, &input); err != nil {
+			return err
+		}
+		defer wipe(input.Value)
+		value, err := svc.RotateCredentialAs(c.Request().Context(), subject, c.Param("record"), input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
+	g.POST("/credentials/:record/revocations", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.RevokeCredentialInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.RevokeCredentialAs(c.Request().Context(), subject, c.Param("record"), input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
+	g.POST("/credentials/:record/bindings", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.BindCredentialInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.BindCredentialAs(c.Request().Context(), subject, c.Param("record"), input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
+	g.POST("/credentials/backup", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		if err = decode(c, &struct{}{}); err != nil {
+			return err
+		}
+		value, err := svc.BackupCredentialsAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
 	})
 	g.GET("/runtime", func(c *echo.Context) error {
 		x, err := svc.Runtime(c.Request().Context())
@@ -1982,4 +2070,22 @@ func decode(c *echo.Context, v any) error {
 		return nil
 	}
 	return echo.NewHTTPError(http.StatusBadRequest, "trailing JSON")
+}
+
+const maximumCredentialIntakeBytes int64 = 1 << 20
+
+// decodeCredentialIntake is a separate strict codec for one-use secret input.
+// []byte fields arrive as base64 JSON strings and are wiped by the handler.
+func decodeCredentialIntake(c *echo.Context, v any) error {
+	if c.Request().ContentLength > maximumCredentialIntakeBytes {
+		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "credential intake too large")
+	}
+	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, maximumCredentialIntakeBytes)
+	return decode(c, v)
+}
+
+func wipe(value []byte) {
+	for i := range value {
+		value[i] = 0
+	}
 }
