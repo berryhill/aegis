@@ -135,7 +135,7 @@ func TestReadyAgentActionLinksToDedicatedCharterImportPage(t *testing.T) {
 	}
 }
 
-func TestCharterImportPageRendersDistinctReviewOnlyGuidance(t *testing.T) {
+func TestCharterImportPageRendersRegistrationAndCLIImportGuidance(t *testing.T) {
 	var output bytes.Buffer
 	model := PageModel{Authenticated: true, CharterImport: true, Surface: SurfaceModel{
 		Domain: DomainAgents,
@@ -149,13 +149,34 @@ func TestCharterImportPageRendersDistinctReviewOnlyGuidance(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{"<title>Charter import review · Aegis Console</title>", `id="charter-import-title"`, "Charter import review", "Agent Registry", `href="/console/agents#/agents"`, "Back to Agent Registry", "Review only", "aegis charter validate &lt;charter-file.json&gt;", "aegis charter import &lt;charter-file.json&gt;"} {
+	for _, required := range []string{"<title>Agent registration · Aegis Console</title>", `id="charter-import-title"`, "Charter-backed Agent registration", "This workflow does not import the charter", "Agent Registry", `href="/console/agents#/agents"`, "Back to Agent Registry", "Review only", "aegis charter validate &lt;charter-file.json&gt;", "aegis charter import &lt;charter-file.json&gt;"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("charter import page missing %q: %s", required, html)
 		}
 	}
 	if strings.Contains(html, "data-on:") || strings.Contains(html, `action="/console/agents/charter-import"`) {
 		t.Fatalf("charter import page gained charter-import mutation behavior: %s", html)
+	}
+}
+
+func TestAgentRegistrationExecuteFormContainsOnlyCSRFAndReceipt(t *testing.T) {
+	var output bytes.Buffer
+	operation := &AgentOperationModel{Stage: "review", Receipt: strings.Repeat("a", 64), Charter: `secret-charter-raw`, Fixture: `secret-fixture-raw`, FleetID: "fleet-primary", SourceID: "source-1", AgentID: "agent-alpha"}
+	if err := CharterImportPage("csrf-token", CharterImportProposal{}, operation).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	start := strings.Index(html, `<form id="agent-registration-execute"`)
+	if start < 0 {
+		t.Fatalf("execute form missing: %s", html)
+	}
+	end := strings.Index(html[start:], `</form>`)
+	if end < 0 {
+		t.Fatalf("execute form not closed: %s", html)
+	}
+	form := html[start : start+end]
+	if !strings.Contains(form, `name="csrf"`) || !strings.Contains(form, `name="receipt"`) || strings.Contains(form, "secret-charter-raw") || strings.Contains(form, "secret-fixture-raw") || strings.Contains(form, `name="fleet_id"`) || strings.Contains(form, `name="source_id"`) {
+		t.Fatalf("execute form leaks or accepts raw artifacts: %s", form)
 	}
 }
 

@@ -142,6 +142,72 @@ func TestAuthenticatedSessionExchangeCSRFAndExpiry(t *testing.T) {
 	}
 }
 
+func TestReviewReceiptIsSessionBoundSingleUseExpiringAndReplaced(t *testing.T) {
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	newSession := func(subjectExpiry time.Time) *http.Request {
+		t.Helper()
+		bootstrap, issueErr := manager.IssueBootstrap(core.Subject{ID: "local", PrincipalID: "principal", ExpiresAt: subjectExpiry})
+		if issueErr != nil {
+			t.Fatal(issueErr)
+		}
+		exchange := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
+		exchange.Header.Set("Origin", "https://console.example.test")
+		sessionValue, _, _, exchangeErr := manager.Exchange(exchange, bootstrap)
+		if exchangeErr != nil {
+			t.Fatal(exchangeErr)
+		}
+		request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/agents/registration/execute", nil)
+		request.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
+		return request
+	}
+
+	firstSession := newSession(now.Add(90 * time.Second))
+	otherSession := newSession(now.Add(5 * time.Minute))
+	first, err := manager.IssueReviewReceipt(firstSession, "agent-registration", []byte("first"))
+	if err != nil || len(first) != 64 || strings.ToLower(first) != first {
+		t.Fatalf("issued receipt=%q err=%v", first, err)
+	}
+	if _, err = manager.ConsumeReviewReceipt(otherSession, "agent-registration", first); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("cross-session receipt classified as %v", err)
+	}
+	if _, err = manager.ConsumeReviewReceipt(firstSession, "other-purpose", first); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("wrong-purpose receipt classified as %v", err)
+	}
+	second, err := manager.IssueReviewReceipt(firstSession, "agent-registration", []byte("second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = manager.ConsumeReviewReceipt(firstSession, "agent-registration", first); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("replaced receipt classified as %v", err)
+	}
+	payload, err := manager.ConsumeReviewReceipt(firstSession, "agent-registration", second)
+	if err != nil || string(payload) != "second" {
+		t.Fatalf("consumed payload=%q err=%v", payload, err)
+	}
+	if _, err = manager.ConsumeReviewReceipt(firstSession, "agent-registration", second); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("replayed receipt classified as %v", err)
+	}
+
+	expiringSession := newSession(now.Add(30 * time.Second))
+	expiring, err := manager.IssueReviewReceipt(expiringSession, "agent-registration", []byte("expires"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(30 * time.Second)
+	if _, err = manager.ConsumeReviewReceipt(expiringSession, "agent-registration", expiring); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("expired receipt classified as %v", err)
+	}
+	for _, malformed := range []string{"", "abc", strings.Repeat("A", 64), strings.Repeat("g", 64), strings.Repeat("a", 63), strings.Repeat("a", 65)} {
+		if _, err = manager.ConsumeReviewReceipt(otherSession, "agent-registration", malformed); !errors.Is(err, ErrReviewReceiptInvalidFormat) {
+			t.Fatalf("malformed receipt %q classified as %v", malformed, err)
+		}
+	}
+}
+
 func TestSecurityHeadersOriginAndPaginationBounds(t *testing.T) {
 	manager, err := New(Config{Origin: "http://127.0.0.1:8443", SessionTTL: time.Minute, BootstrapTTL: 10 * time.Second, MaxPageSize: 50}, time.Now)
 	if err != nil {

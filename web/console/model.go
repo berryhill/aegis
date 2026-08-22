@@ -16,6 +16,18 @@ type PageModel struct {
 	Authentication AuthenticationModel
 	Surface        SurfaceModel
 	CharterImport  bool
+	AgentOperation *AgentOperationModel
+}
+
+// AgentOperationModel is a server-owned preparation or result projection. Raw
+// artifacts are used only to refill the preparation form after a denied review;
+// reviewed execution carries only a session-bound opaque receipt.
+type AgentOperationModel struct {
+	Stage, Status, ReasonCode, Charter, Fixture  string
+	Receipt, FleetID, SourceID, AgentID          string
+	CharterDigest, Revision, RevisionDigest      string
+	Runtime, Owner, Accountability               string
+	Capabilities, Policies, Lifecycle, ResultURL string
 }
 
 type AuthenticationModel struct {
@@ -28,6 +40,7 @@ type AuthenticationModel struct {
 
 type SurfaceModel struct {
 	Domain                string
+	CSRF                  string
 	Title                 string
 	Eyebrow               string
 	Description           string
@@ -70,6 +83,7 @@ type ActionModel struct {
 
 type RecordModel struct {
 	Key          string
+	Digest       string
 	Label        string
 	Summary      string
 	JSON         string

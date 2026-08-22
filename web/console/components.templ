@@ -25,7 +25,7 @@ templ Document(model PageModel) {
 					<div id="workspace">
 						if model.Authenticated {
 							if model.CharterImport {
-								@CharterImportPage(model.Surface.CharterImportProposal)
+								@CharterImportPage(model.CSRF, model.Surface.CharterImportProposal, model.AgentOperation)
 							} else {
 								@Workspace(model.Surface)
 							}
@@ -167,24 +167,59 @@ templ Workspace(surface SurfaceModel) {
 	</section>
 }
 
-templ CharterImportPage(proposal CharterImportProposal) {
+templ CharterImportPage(csrf string, proposal CharterImportProposal, operation *AgentOperationModel) {
 	<section class="surface active" id="charter-import-review" aria-labelledby="charter-import-title">
 		<div class="page-head">
 			<div class="surface-header">
 				<span class="eyebrow">Agent Registry</span>
-				<h1 id="charter-import-title">Charter import review</h1>
-				<p>Review the deterministic CLI path for validating and importing an agent charter.</p>
+				<h1 id="charter-import-title">Charter-backed Agent registration</h1>
+				<p>Validate and review a pre-imported charter and bounded current-fleet artifact before Agent registration. This workflow does not import the charter.</p>
 			</div>
 			<a id="charter-import-back" class="ghost" href="/console/agents#/agents">Back to Agent Registry</a>
 		</div>
-		<section class="panel" aria-label="Review-only charter import guidance">
-			<div class="panel-body">
-				<div class="section-label">Review-only CLI proposal</div>
-				<p class="inline-notice">{ proposal.Notice }</p>
-				<dl class="spec"><dt>Validate</dt><dd><code>{ proposal.ValidateCommand }</code></dd><dt>Import</dt><dd><code>{ proposal.ImportCommand }</code></dd></dl>
+		if operation != nil && operation.Status != "" {
+			<div class="collection-status" data-state={ operation.Stage } role="status"><strong>{ operation.Status }</strong>
+				if operation.ReasonCode != "" {
+					<code>{ operation.ReasonCode }</code>
+				}
 			</div>
-		</section>
+		}
+		if operation == nil || operation.Stage == "prepare" || operation.Stage == "error" {
+			<section class="panel" aria-label="Prepare Agent registration"><div class="panel-body">
+				<div class="section-label">Bounded source artifacts</div>
+				<p class="inline-notice">The browser cannot select identity or authority. The authenticated server requires the exact charter revision to exist already, validates both artifacts, and derives the exact candidate.</p>
+				<form id="agent-registration-prepare" method="post" action="/console/agents/registration/review">
+					<input type="hidden" name="csrf" value={ csrf }/>
+					<label for="charter">Charter JSON</label><textarea id="charter" name="charter" required maxlength="131072">{ operationValue(operation, "charter") }</textarea>
+					<label for="fixture">Current-fleet fixture JSON</label><textarea id="fixture" name="fixture" required maxlength="131072">{ operationValue(operation, "fixture") }</textarea>
+					<label for="fleet-id">Exact fleet ID</label><input id="fleet-id" name="fleet_id" required maxlength="63" value={ operationValue(operation, "fleet") }/>
+					<label for="source-id">Exact source ID</label><input id="source-id" name="source_id" required maxlength="63" value={ operationValue(operation, "source") }/>
+					<button class="primary" type="submit">Validate and review</button>
+				</form>
+			</div></section>
+		} else if operation.Stage == "review" {
+			<section class="panel" aria-label="Exact Agent registration review"><div class="panel-body">
+				<div class="section-label">Exact immutable registration proposal</div>
+				<dl class="spec"><dt>Agent</dt><dd>{ operation.AgentID }</dd><dt>Fleet source</dt><dd>{ operation.FleetID + " / current-fleet / " + operation.SourceID }</dd><dt>Charter</dt><dd>{ operation.CharterDigest }</dd><dt>Initial Agent revision</dt><dd>{ operation.Revision + " @ " + operation.RevisionDigest }</dd><dt>Runtime</dt><dd>{ operation.Runtime }</dd><dt>Owner</dt><dd>{ operation.Owner }</dd><dt>Accountability</dt><dd>{ operation.Accountability }</dd><dt>Capabilities</dt><dd>{ operation.Capabilities }</dd><dt>Policies</dt><dd>{ operation.Policies }</dd><dt>Lifecycle</dt><dd>{ operation.Lifecycle }</dd></dl>
+				<form id="agent-registration-execute" method="post" action="/console/agents/registration/execute">
+					<input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="receipt" value={ operation.Receipt }/>
+					<button class="primary" type="submit">Register Agent</button><a class="secondary" href="/console/agents">Cancel</a>
+				</form>
+			</div></section>
+		} else if operation.Stage == "success" {
+			<section class="panel"><div class="panel-body"><h2>Authoritative readback</h2><p>{ operation.Status }</p><a class="primary" href={ operation.ResultURL }>Open exact registered Agent</a></div></section>
+		}
+		<section class="panel" aria-label="CLI alternative"><div class="panel-body">
+			<div class="section-label">CLI alternative</div><p class="inline-notice">{ proposal.Notice }</p>
+			<dl class="spec"><dt>Validate</dt><dd><code>{ proposal.ValidateCommand }</code></dd><dt>Import</dt><dd><code>{ proposal.ImportCommand }</code></dd></dl>
+		</div></section>
 	</section>
+}
+
+func operationValue(operation *AgentOperationModel, field string) string {
+	if operation == nil { return "" }
+	switch field { case "charter": return operation.Charter; case "fixture": return operation.Fixture; case "fleet": return operation.FleetID; case "source": return operation.SourceID }
+	return ""
 }
 
 templ ActionReadiness(actions []ActionModel) {
@@ -337,6 +372,15 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 							<dt>{ field.Label }</dt><dd>{ field.Value }</dd>
 						}
 					</dl>
+					if surface.Domain == DomainAgents && record.Lifecycle != "retired" {
+						<div class="section-label">Lifecycle controls</div>
+						if record.Lifecycle == "enabled" {
+							@AgentLifecycleForm(surface, record, "disabled", "Disable Agent", false)
+						} else {
+							@AgentLifecycleForm(surface, record, "enabled", "Enable Agent", false)
+						}
+						@AgentLifecycleForm(surface, record, "retired", "Retire Agent permanently", true)
+					}
 				</div>
 			} else {
 				<a id="close-inspector" class="back-crumb" href={ consoleRoute(surface.Domain, "") } aria-label="Close inspector">← Back to { surface.Domain }</a>
@@ -344,6 +388,16 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 			}
 		}
 	</aside>
+}
+
+templ AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, label string, irreversible bool) {
+	<form class="lifecycle-form" method="post" action={ "/console/agents/" + url.PathEscape(record.Key) + "/lifecycle" }>
+		<input type="hidden" name="csrf" value={ surface.CSRF }/><input type="hidden" name="revision" value={ strings.TrimPrefix(record.Revision, "r") }/><input type="hidden" name="digest" value={ record.Digest }/><input type="hidden" name="lifecycle" value={ lifecycle }/>
+		if irreversible {
+			<label><input type="checkbox" name="confirm_retirement" value="retire" required/> I understand retirement is irreversible.</label>
+		}
+		<button class={ templ.KV("secondary", !irreversible), templ.KV("danger", irreversible) } type="submit">{ label }</button>
+	</form>
 }
 
 templ QueueInspector(surface SurfaceModel, record *RecordModel) {
@@ -603,7 +657,7 @@ func agentMark(label string) string {
 }
 
 func fallbackTitle(title string) string { if title == "" { return "Fleet workspace" }; return title }
-func documentTitle(model PageModel) string { if model.CharterImport && model.Authenticated { return "Charter import review · Aegis Console" }; return "Aegis Console" }
+func documentTitle(model PageModel) string { if model.CharterImport && model.Authenticated { return "Agent registration · Aegis Console" }; return "Aegis Console" }
 func currentPage(current bool) string { if current { return "page" }; return "false" }
 func actionTitle(action ActionModel) string { return action.State + ": " + action.ReasonCode }
 func hasBlockedAction(actions []ActionModel) bool { for _, action := range actions { if action.State != "ready" { return true } }; return false }

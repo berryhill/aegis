@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -69,9 +70,31 @@ type RegisterFleetAgentInput struct {
 	Identity registry.FleetSource `json:"identity"`
 }
 
+func NewRegisterFleetAgentInput(fixture []byte, fleetID, sourceID string) RegisterFleetAgentInput {
+	return RegisterFleetAgentInput{Fixture: append([]byte(nil), fixture...), Identity: registry.FleetSource{FleetID: fleetID, Kind: registry.CurrentFleetSourceKind, SourceID: sourceID}}
+}
+
+// AgentRegistrationProposal is a non-authorizing, server-derived preview of
+// the exact immutable registration that the application service would apply.
+type AgentRegistrationProposal struct {
+	AgentID, CharterDigest, RevisionDigest string
+	Revision                               uint64
+	FleetID, SourceID, Runtime             string
+	Owner, Accountability, Capabilities    string
+	Policies, Lifecycle                    string
+}
+
 type SetAgentLifecycleInput struct {
 	Expected  reference.RevisionRef `json:"expected"`
 	Lifecycle registry.Lifecycle    `json:"lifecycle"`
+}
+
+func NewSetAgentLifecycleInput(id string, revision uint64, digest, lifecycle string) (SetAgentLifecycleInput, error) {
+	state := registry.Lifecycle(lifecycle)
+	if state != registry.LifecycleEnabled && state != registry.LifecycleDisabled && state != registry.LifecycleRetired {
+		return SetAgentLifecycleInput{}, errors.New("invalid Agent lifecycle")
+	}
+	return SetAgentLifecycleInput{Expected: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: id, Revision: revision, Digest: digest}, Lifecycle: state}, nil
 }
 
 type PublishLoopInput struct {
@@ -271,6 +294,64 @@ func (s *Service) RegisterFleetAgent(ctx context.Context, input RegisterFleetAge
 		return FleetAgent{}, false, err
 	}
 	return s.RegisterFleetAgentAs(ctx, subject, input)
+}
+
+func (s *Service) PrepareFleetAgentRegistrationAs(ctx context.Context, subject core.Subject, charterData, fixtureData []byte, fleetID, sourceID string) (AgentRegistrationProposal, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return AgentRegistrationProposal{}, err
+	}
+	canonical, err := s.ValidateCharterAs(ctx, subject, charterData)
+	if err != nil {
+		return AgentRegistrationProposal{}, err
+	}
+	if canonical.Charter.CreatedBy != subject.PrincipalID {
+		return AgentRegistrationProposal{}, ErrDenied
+	}
+	stored, err := s.GetCharter(canonical.Charter.AgentID, canonical.Charter.Revision)
+	if err != nil {
+		return AgentRegistrationProposal{}, err
+	}
+	if stored.Digest != canonical.Digest {
+		return AgentRegistrationProposal{}, ErrConflict
+	}
+	source, err := registry.NewCurrentFleetFixtureSource(fixtureData)
+	if err != nil {
+		return AgentRegistrationProposal{}, err
+	}
+	candidates, err := source.Discover(ctx)
+	if err != nil {
+		return AgentRegistrationProposal{}, err
+	}
+	identity := registry.FleetSource{FleetID: fleetID, Kind: registry.CurrentFleetSourceKind, SourceID: sourceID}
+	var candidate *registry.Candidate
+	for index := range candidates {
+		if candidates[index].Source == identity {
+			if candidate != nil {
+				return AgentRegistrationProposal{}, ErrAmbiguous
+			}
+			candidate = &candidates[index]
+		}
+	}
+	if candidate == nil || candidate.AgentID != canonical.Charter.AgentID || candidate.Charter.ID != canonical.Charter.AgentID || candidate.Charter.Revision != canonical.Charter.Revision || candidate.Charter.Digest != canonical.Digest {
+		return AgentRegistrationProposal{}, ErrConflict
+	}
+	revision, err := registry.SealRevision(registry.AgentRevision{SchemaVersion: registry.AgentRevisionSchemaVersion, AgentID: candidate.AgentID, Revision: 1, Source: candidate.Source, Runtime: candidate.Runtime, Ownership: candidate.Ownership, Lifecycle: candidate.Lifecycle, Charter: candidate.Charter, CapabilityDeclarations: candidate.CapabilityDeclarations, PolicyRefs: candidate.PolicyRefs})
+	if err != nil {
+		return AgentRegistrationProposal{}, err
+	}
+	policies := make([]string, 0, len(candidate.PolicyRefs))
+	for _, policy := range candidate.PolicyRefs {
+		policies = append(policies, policy.ID+" @ "+policy.Digest)
+	}
+	capabilities := strings.Join(candidate.CapabilityDeclarations, ", ")
+	if capabilities == "" {
+		capabilities = "None declared"
+	}
+	policyText := strings.Join(policies, "\n")
+	if policyText == "" {
+		policyText = "None declared"
+	}
+	return AgentRegistrationProposal{AgentID: candidate.AgentID, CharterDigest: canonical.Digest, Revision: revision.Revision, RevisionDigest: revision.Digest, FleetID: fleetID, SourceID: sourceID, Runtime: candidate.Runtime.Adapter + " / " + candidate.Runtime.Runtime + " / " + candidate.Runtime.Target, Owner: candidate.Ownership.OwnerID, Accountability: candidate.Ownership.AccountabilityID, Capabilities: capabilities, Policies: policyText, Lifecycle: string(candidate.Lifecycle)}, nil
 }
 
 func (s *Service) RegisterFleetAgentAs(ctx context.Context, subject core.Subject, input RegisterFleetAgentInput) (FleetAgent, bool, error) {
