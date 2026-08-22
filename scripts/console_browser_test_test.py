@@ -100,5 +100,31 @@ class NativeKeyTest(unittest.TestCase):
             console_browser_test.key(mock.MagicMock(), "Enter")
 
 
+class NativeFormInputTest(unittest.TestCase):
+    def test_insert_text_requires_exact_browser_value_before_submission(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            {"x": 10, "y": 10, "width": 100, "height": 20, "hit": "password", "target": True},
+            True,
+            True,
+        ]
+
+        console_browser_test.insert_text(devtools, "#password", "candidate-password")
+
+        self.assertEqual(devtools.command.call_args, mock.call("Input.insertText", {"text": "candidate-password"}))
+        self.assertIn("candidate-password", devtools.evaluate.call_args_list[-1].args[0])
+
+    def test_insert_text_denies_when_browser_did_not_retain_value(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            {"x": 10, "y": 10, "width": 100, "height": 20, "hit": "password", "target": True},
+            True,
+            False,
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "did not retain text"):
+            console_browser_test.insert_text(devtools, "#password", "candidate-password")
+
+
 if __name__ == "__main__":
     unittest.main()

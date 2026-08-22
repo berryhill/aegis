@@ -190,6 +190,22 @@ def click(devtools: DevTools, selector: str) -> None:
         })
 
 
+def insert_text(devtools: DevTools, selector: str, text: str) -> None:
+    """Enter text through Chrome and require focus and exact DOM retention."""
+    click(devtools, selector)
+    wait_for(
+        devtools,
+        "document.activeElement === document.querySelector(" + json.dumps(selector) + ")",
+        f"focused browser control {selector}",
+    )
+    devtools.command("Input.insertText", {"text": text})
+    retained = devtools.evaluate(
+        "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
+        "return !!node && document.activeElement === node && node.value === " + json.dumps(text) + "; })()"
+    )
+    require(retained is True, f"browser control did not retain text: {selector}")
+
+
 def tap(devtools: DevTools, selector: str) -> None:
     """Send real browser touch events for controls under mobile emulation."""
     point = devtools.evaluate(
@@ -274,8 +290,7 @@ def main() -> int:
             devtools.command(domain + ".enable")
 
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
-        click(devtools, "#password")
-        devtools.command("Input.insertText", {"text": initial_password})
+        insert_text(devtools, "#password", initial_password)
         click(devtools, "#session-form button[type=submit]")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === 'Agent Registry'", "authenticated Agent Registry")
         time.sleep(0.5)
@@ -418,12 +433,9 @@ def main() -> int:
 
         click(devtools, "#open-password-rotation")
         wait_for(devtools, "document.querySelector('#principal-password-rotation')?.matches(':modal')", "reopen password rotation dialog")
-        click(devtools, "#current-password")
-        devtools.command("Input.insertText", {"text": initial_password})
-        click(devtools, "#new-password")
-        devtools.command("Input.insertText", {"text": replacement_password})
-        click(devtools, "#confirm-password")
-        devtools.command("Input.insertText", {"text": replacement_password})
+        insert_text(devtools, "#current-password", initial_password)
+        insert_text(devtools, "#new-password", replacement_password)
+        insert_text(devtools, "#confirm-password", replacement_password)
         click(devtools, '#principal-password-rotation input[name="approve"]')
         click(devtools, '#principal-password-rotation button[type="submit"]')
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "post-rotation sign-out")
@@ -435,8 +447,7 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "old-session invalidation")
         time.sleep(1)
 
-        click(devtools, "#password")
-        devtools.command("Input.insertText", {"text": replacement_password})
+        insert_text(devtools, "#password", replacement_password)
         click(devtools, "#session-form button[type=submit]")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout')", "replacement-password login")
         click(devtools, "#logout")
