@@ -24,6 +24,8 @@ type fleetServiceRepository struct {
 	agent           registry.AgentRevision
 	loop            loop.LoopRevision
 	graph           graph.GraphRevision
+	loopLifecycle   loop.Lifecycle
+	graphLifecycle  graph.Lifecycle
 	loadErr         error
 	accepted        *fleet.AcceptedSubmission
 	rejected        *queue.Rejection
@@ -56,8 +58,24 @@ func (repository *fleetServiceRepository) GetAgentRevision(context.Context, stri
 func (repository *fleetServiceRepository) GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error) {
 	return repository.loop, repository.loadErr
 }
+func (repository *fleetServiceRepository) ListLoopLifecycleEvents(context.Context) ([]loop.LifecycleEvent, error) {
+	if repository.loopLifecycle.LoopID != "" {
+		event := loop.LifecycleEvent{LoopID: repository.loopLifecycle.LoopID, State: repository.loopLifecycle.State, Digest: "lifecycle-current"}
+		if repository.loopLifecycle.State == loop.LifecycleActive {
+			event.Revision = loop.NewProvenanceRevision(repository.loopLifecycle.LoopID, repository.loopLifecycle.ActiveRevision, repository.loopLifecycle.ActiveDigest)
+		}
+		return []loop.LifecycleEvent{event}, repository.loadErr
+	}
+	return []loop.LifecycleEvent{{LoopID: repository.loop.LoopID, State: loop.LifecycleActive, Revision: loop.NewProvenanceRevision(repository.loop.LoopID, repository.loop.Revision, repository.loop.Digest), Digest: "lifecycle-current"}}, repository.loadErr
+}
 func (repository *fleetServiceRepository) GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error) {
 	return repository.graph, repository.loadErr
+}
+func (repository *fleetServiceRepository) GetGraphLifecycle(context.Context, string) (graph.Lifecycle, error) {
+	if repository.graphLifecycle.GraphID != "" {
+		return repository.graphLifecycle, repository.loadErr
+	}
+	return graph.Lifecycle{GraphID: repository.graph.GraphID, State: graph.LifecycleActive, ActiveRevision: repository.graph.Revision, ActiveDigest: repository.graph.Digest}, repository.loadErr
 }
 func (repository *fleetServiceRepository) AcceptSubmission(_ context.Context, value fleet.AcceptedSubmission, _ fleet.AuditFact) (bool, error) {
 	repository.accepted = &value
@@ -399,6 +417,19 @@ func TestGraphCompositionRequiresExactPinnedLoopInterface(t *testing.T) {
 	}
 	if repository.accepted != nil || repository.rejected == nil || repository.rejected.RejectionID != request.RejectionID {
 		t.Fatalf("submission mismatch crossed acceptance boundary: accepted=%+v rejected=%+v", repository.accepted, repository.rejected)
+	}
+}
+
+func TestFleetSubmissionDurablyRejectsInactiveExactLoop(t *testing.T) {
+	service, repository, _, subject, authorityRef, graphRef := fleetServiceFixture(t)
+	repository.loopLifecycle = loop.Lifecycle{LoopID: repository.loop.LoopID, State: loop.LifecycleRetired}
+	request := SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: graphRef, SubmissionID: "submission-inactive-loop", IdempotencyKey: "submit-inactive-loop", SnapshotID: "snapshot-inactive-loop", QueueItemID: "queue-inactive-loop", GraphRunID: "run-inactive-loop", TransitionID: "transition-inactive-loop", RejectionID: "rejection-inactive-loop", MaxAttempts: 1}
+	decision, err := service.PrepareGraphRun(context.Background(), request)
+	if err != nil || decision.Accepted != nil || decision.Rejection == nil || decision.Rejection.ReasonCode != "loop_inactive" {
+		t.Fatalf("inactive exact Loop was not durably rejected: decision=%+v err=%v", decision, err)
+	}
+	if repository.accepted != nil || repository.rejected == nil {
+		t.Fatalf("inactive Loop crossed Queue admission boundary: accepted=%+v rejected=%+v", repository.accepted, repository.rejected)
 	}
 }
 

@@ -470,6 +470,173 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		e.GET("/console/"+string(domain), consolePage)
 	}
 	e.GET("/console/agents/charter-import", charterImportPage)
+	e.GET("/console/graphs/compose", func(c *echo.Context) error {
+		if err := consoleHeaders(c, true); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		csrf, err := consoleManager.CSRF(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		agents, loops := consoleweb.GraphReferenceOptions(surface)
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphComposerDocument(consoleweb.GraphComposerModel{CSRF: csrf, Agents: agents, Loops: loops}))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.GET("/console/graphs/run", func(c *echo.Context) error {
+		if err := consoleHeaders(c, true); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		revisionNumber, err := requiredRevision(c.QueryParam("revision"))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "exact Graph revision is required")
+		}
+		revision, err := svc.GetGraphAs(c.Request().Context(), subject, c.QueryParam("graph"), revisionNumber)
+		if err != nil {
+			return err
+		}
+		if revision.Digest != c.QueryParam("digest") {
+			return echo.NewHTTPError(http.StatusConflict, "exact Graph digest changed or is unavailable")
+		}
+		lifecycle, err := svc.GetGraphLifecycleAs(c.Request().Context(), subject, revision.GraphID)
+		if err != nil {
+			return err
+		}
+		csrf, err := consoleManager.CSRF(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		inputs := make([]consoleweb.GraphRunInputModel, 0, len(revision.Inputs))
+		for _, input := range revision.Inputs {
+			inputs = append(inputs, consoleweb.GraphRunInputModel{ID: input.ID, Type: string(input.Type), Required: input.Required})
+		}
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphRunDocument(consoleweb.GraphRunFormModel{CSRF: csrf, GraphID: revision.GraphID, Revision: revision.Revision, Digest: revision.Digest, Lifecycle: string(lifecycle.State), Inputs: inputs}))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.POST("/console/graphs/publish", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		values, err := consoleweb.DecodeGraphConsoleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		csrf, err := consoleweb.ExactFormValue(values, "csrf")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		sessionID, err := consoleweb.ExactFormValue(values, "authority_session_id")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		authority, err := svc.FleetAuthorityForSessionAs(c.Request().Context(), subject, sessionID)
+		if err != nil {
+			return err
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		input, err := consoleweb.ParseGraphPublication(values, surface, authority)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		published, err := svc.PublishGraphAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		result := consoleweb.GraphActionResultModel{Title: "Graph publication recorded", Outcome: "published", Reason: "Exact validated revision stored; idempotent=" + strconv.FormatBool(published.Decision.Idempotent), GraphID: published.Revision.GraphID, RecordKey: published.Revision.GraphID + ":" + strconv.FormatUint(published.Revision.Revision, 10)}
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphActionResultDocument(result))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.POST("/console/graphs/submit", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		values, err := consoleweb.DecodeGraphConsoleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		csrf, err := consoleweb.ExactFormValue(values, "csrf")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		revisionNumber, err := strconv.ParseUint(consoleweb.OptionalFormValue(values, "graph_revision"), 10, 64)
+		if err != nil || revisionNumber == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "exact Graph revision is required")
+		}
+		revision, err := svc.GetGraphAs(c.Request().Context(), subject, consoleweb.OptionalFormValue(values, "graph_id"), revisionNumber)
+		if err != nil {
+			return err
+		}
+		sessionID, err := consoleweb.ExactFormValue(values, "authority_session_id")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		authority, authorityErr := svc.FleetAuthorityForSessionAs(c.Request().Context(), subject, sessionID)
+		if authorityErr != nil {
+			// Preserve the stable submission envelope and let the application
+			// boundary record one durable readiness_denied rejection. An invalid
+			// browser-supplied session never becomes an authority reference.
+			authority = app.SubmitGraphInput{}.Authority
+		}
+		input, err := consoleweb.ParseGraphSubmission(values, revision, authority)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		decision, err := svc.SubmitGraphAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		result := consoleweb.GraphActionResultModel{Title: "Graph submission decided", GraphID: revision.GraphID, RecordKey: revision.GraphID + ":" + strconv.FormatUint(revision.Revision, 10)}
+		if decision.Accepted != nil {
+			result.Outcome, result.Reason, result.QueueItemID = "accepted", "One immutable snapshot and Queue item bind the reviewed exact definitions and normalized inputs.", decision.Accepted.QueueItem.ItemID
+		} else if decision.Rejection != nil {
+			result.Outcome, result.Reason = "rejected · "+decision.Rejection.ReasonCode, decision.Rejection.Reason
+		} else {
+			return errors.New("submission decision is missing both acceptance and rejection")
+		}
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphActionResultDocument(result))
+		if err != nil {
+			return err
+		}
+		status := http.StatusCreated
+		if !decision.Created {
+			status = http.StatusOK
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	})
 	e.GET("/favicon.ico", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
