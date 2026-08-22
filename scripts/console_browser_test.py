@@ -173,9 +173,12 @@ def click(devtools: DevTools, selector: str) -> None:
     point = devtools.evaluate(
         "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
         "if (!node) return null; node.scrollIntoView({block: 'center', inline: 'center'}); const box = node.getBoundingClientRect();"
-        "return {x: box.left + box.width / 2, y: box.top + box.height / 2}; })()"
+        "const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);"
+        "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, hit: hit?.id || hit?.tagName || '', target: hit === node || node.contains(hit)}; })()"
     )
     require(isinstance(point, dict), f"browser control missing: {selector}")
+    require(point["width"] > 0 and point["height"] > 0, f"browser control is not visible: {selector}; state={point}")
+    require(bool(point["target"]), f"browser control is obscured: {selector}; state={point}")
     for event_type in ("mousePressed", "mouseReleased"):
         devtools.command("Input.dispatchMouseEvent", {
             "type": event_type,
@@ -263,12 +266,13 @@ def main() -> int:
             if event.get("method") == "Network.requestWillBeSent"
             and event.get("params", {}).get("request", {}).get("url", "").endswith(mutation_paths)
         )
-        click(devtools, 'a[href="#charter-import-review"]')
+        click(devtools, 'a[href="/console/agents/charter-import"]')
         wait_for(
             devtools,
-            "location.hash === '#charter-import-review' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
-            "review-only charter import proposal",
+            "location.pathname === '/console/agents/charter-import' && document.title === 'Charter import review · Aegis Console' && document.querySelector('#charter-import-title')?.textContent.trim() === 'Charter import review' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
+            "dedicated review-only charter import page",
         )
+        time.sleep(1.5)
         session_requests_after = sum(
             1
             for event in devtools.events
@@ -276,6 +280,8 @@ def main() -> int:
             and event.get("params", {}).get("request", {}).get("url", "").endswith(mutation_paths)
         )
         require(session_requests_after == session_requests_before, "charter import review link triggered a session mutation request")
+        click(devtools, "#charter-import-back")
+        wait_for(devtools, "location.pathname === '/console/agents' && document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "native back link to Agent Registry")
         click(devtools, "#record-agent-alpha")
         wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('agent-alpha')", "Agent Registry detail")
         click(devtools, "#close-inspector")
