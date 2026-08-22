@@ -22,6 +22,12 @@ Alternatively, download the matching archive and `SHA256SUMS` from the GitHub re
 
 Before publication, maintainers can run the separately gated `scripts/verify-release-candidate.sh` against an explicit clean source revision, supported Hermes executable, empty repository-local evidence workspace, and exact operator-authored decision JSON. It builds once, verifies that the resulting binary exposes the same exact embedded source revision, reuses one digest-bound native candidate, rehearses rollback and local-staging withdrawal, and records that no publication or production installation was mutated. The decision record is evidence of supplied intent, not authentication or publication authorization; `make release` remains the separate operator-controlled publication transaction. See the quickstart for the exact schema and invocation.
 
+Every pull request is also checked through the repository-owned release-readiness path. It creates a hook-isolated candidate from the exact clean source revision, applies the proposed changelog transformation, and runs the full verification chain without publishing. Run the same gate locally from a clean committed checkout:
+
+```sh
+make release-readiness VERSION=1.2.3 SOURCE_REVISION="$(git rev-parse HEAD)"
+```
+
 ```sh
 aegis update --check
 aegis update

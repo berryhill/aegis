@@ -8,7 +8,7 @@ export GOTOOLCHAIN := go1.26.6
 VERSION ?= 0.2.2
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
-.PHONY: verify console-generate console-verify authority-denial-matrix release-review release
+.PHONY: verify release-readiness console-generate console-verify authority-denial-matrix release-review release
 
 console-generate:
 	go generate ./web/console
@@ -27,8 +27,11 @@ verify:
 	test -z "$$(gofmt -l ./cmd ./internal ./web)"
 	go build ./cmd/aegis
 	python3 -m unittest scripts/console_browser_test_test.py
+	python3 -m unittest scripts/demo_no_key_test.py
 	python3 -m unittest scripts/operator_acceptance_poc_test.py
+	python3 -m unittest scripts/verify_installed_fleet_vertical_test.py
 	python3 -m unittest scripts/verify_release_archive_test.py
+	./scripts/verify_release_readiness_test.sh
 	./scripts/verify_installed_mvi_test.sh
 	./scripts/verify_release_candidate_test.sh
 	./scripts/verify-installed-mvi.sh
@@ -36,6 +39,9 @@ verify:
 	go test -race ./...
 	go vet ./...
 	$(GOVULNCHECK) ./...
+
+release-readiness:
+	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)"
 
 authority-denial-matrix:
 	./scripts/verify-authority-denial-matrix.sh

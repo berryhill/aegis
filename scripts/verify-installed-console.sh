@@ -1,7 +1,11 @@
 #!/bin/sh
 set -eu
 
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+socket_dir=${AEGIS_PROOF_SOCKET_DIR:-$repo}
+case "$socket_dir" in /*) ;; *) printf '%s\n' 'installed console proof socket directory must be absolute' >&2; exit 1 ;; esac
+[ -d "$socket_dir" ] && [ ! -L "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be one existing real directory' >&2; exit 1; }
+[ "$(CDPATH= cd -- "$socket_dir" && pwd -P)" = "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be canonical' >&2; exit 1; }
 candidate=${1:-}
 workspace=${2:-}
 [ "$#" -eq 2 ] || { printf '%s\n' 'usage: verify-installed-console.sh EXTRACTED_AEGIS DURABLE_WORKSPACE' >&2; exit 2; }
@@ -27,7 +31,8 @@ with socket.socket() as server:
     print(server.getsockname()[1])
 PY
 )
-socket=$repo/.c-$port.sock
+socket=$socket_dir/.c-$port.sock
+[ ! -e "$socket" ] && [ ! -L "$socket" ] || { printf '%s\n' 'installed console proof socket already exists' >&2; exit 1; }
 python3 - "$workspace" "$port" "$uid" "$user" "$socket" <<'PY'
 import pathlib, secrets, sys
 root, port, uid, user, socket = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
