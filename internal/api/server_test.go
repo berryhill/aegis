@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -22,6 +24,8 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
+	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/orchestration"
@@ -140,6 +144,34 @@ func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 		t.Fatal(err)
 	}
 	return fleetStore
+}
+
+func configureAPICredentials(t *testing.T, svc *app.Service) {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.Chmod(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(root, "authority.kek")
+	database := filepath.Join(root, "authority.db")
+	if err := credentials.CreateHostKey(keyPath, "api-test-kek"); err != nil {
+		t.Fatal(err)
+	}
+	custodian, err := credentials.LoadFileCustodian(keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := credentialbolt.Open(context.Background(), database, "deployment-api-test", custodian)
+	if err != nil {
+		custodian.Close()
+		t.Fatal(err)
+	}
+	svc.Config.Credentials.Authority = config.CredentialAuthority{Database: database, DeploymentID: "deployment-api-test", Custody: "host-file", KEKFile: keyPath}
+	svc.ConfigureCredentials(repository, custodian)
+	t.Cleanup(func() {
+		_ = svc.CredentialAuthority.Close()
+		custodian.Close()
+	})
 }
 
 func waitFor(t *testing.T, network, address string) {
@@ -970,6 +1002,155 @@ func apiRequest(t *testing.T, client *http.Client, method, path string, input, o
 		if err = json.NewDecoder(response.Body).Decode(output); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestCredentialMutationAPIUsesOneUseMetadataOnlyBoundary(t *testing.T) {
+	svc := apiService(t)
+	configureAPICredentials(t, svc)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	client := unixClient(svc.Config.API.UnixSocket)
+
+	unauthenticated, err := http.NewRequest(http.MethodPost, "http://unix/v1/credentials", strings.NewReader(`{"reference":"provider/denied","kind":"opaque","value":"YQ=="}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthenticated.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(unauthenticated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated credential mutation status=%d", response.StatusCode)
+	}
+
+	canary := make([]byte, 32)
+	if _, err := rand.Read(canary); err != nil {
+		t.Fatal(err)
+	}
+	encodedCanary := base64.StdEncoding.EncodeToString(canary)
+	var created app.CredentialView
+	apiRequest(t, client, http.MethodPost, "/v1/credentials", app.CreateCredentialInput{Reference: "provider/api-test", Kind: "api-token", Value: canary}, &created, http.StatusCreated)
+	if created.ID == "" || created.CurrentVersion != 1 {
+		t.Fatalf("incomplete metadata response: %+v", created)
+	}
+
+	rotatedCanary := make([]byte, 32)
+	if _, err := rand.Read(rotatedCanary); err != nil {
+		t.Fatal(err)
+	}
+	encodedRotated := base64.StdEncoding.EncodeToString(rotatedCanary)
+	var rotated app.CredentialView
+	apiRequest(t, client, http.MethodPost, "/v1/credentials/"+created.ID+"/rotations", app.RotateCredentialInput{Value: rotatedCanary}, &rotated, http.StatusCreated)
+	if rotated.CurrentVersion != 2 || len(rotated.VersionHistory) != 2 {
+		t.Fatalf("rotation did not append: %+v", rotated)
+	}
+
+	var binding app.CredentialBindingView
+	apiRequest(t, client, http.MethodPost, "/v1/credentials/"+created.ID+"/bindings", app.BindCredentialInput{AgentID: "agent-api", StanzaID: "principal", DeploymentID: "deployment-api-test", Scope: "provider:test", Destinations: []string{"api.example.test"}, Mode: "brokered", VersionPolicy: credentials.VersionPinned, PinnedVersion: 1, Enabled: true}, &binding, http.StatusCreated)
+	if binding.RecordID != created.ID || binding.PinnedVersion != 1 {
+		t.Fatalf("binding tuple was not preserved: %+v", binding)
+	}
+
+	var backup app.CredentialBackupResult
+	apiRequest(t, client, http.MethodPost, "/v1/credentials/backup", struct{}{}, &backup, http.StatusCreated)
+	if backup.Destination != "configured_ciphertext_backup" || strings.Contains(backup.Destination, string(os.PathSeparator)) {
+		t.Fatalf("backup exposed a host path: %+v", backup)
+	}
+	if _, err := os.Stat(svc.Config.Credentials.Authority.Database + ".backup"); err != nil {
+		t.Fatal(err)
+	}
+
+	var revoked app.CredentialRevocationView
+	apiRequest(t, client, http.MethodPost, "/v1/credentials/"+created.ID+"/revocations", app.RevokeCredentialInput{Reason: "operator-request"}, &revoked, http.StatusCreated)
+	if revoked.Status != credentials.StatusRevoked {
+		t.Fatalf("revocation was not retained: %+v", revoked)
+	}
+
+	retained, err := json.Marshal(struct {
+		Created, Rotated any
+		Binding          app.CredentialBindingView
+		Backup           app.CredentialBackupResult
+		Revoked          app.CredentialRevocationView
+	}{created, rotated, binding, backup, revoked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := svc.Store.AuditEvents()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auditBytes, err := json.Marshal(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, output := range [][]byte{retained, auditBytes} {
+		if bytes.Contains(output, []byte(encodedCanary)) || bytes.Contains(output, []byte(encodedRotated)) {
+			t.Fatal("credential canary reached retained output")
+		}
+	}
+
+	request, err := http.NewRequest(http.MethodPost, "http://unix/v1/credentials", strings.NewReader(`{"reference":"provider/invalid","kind":"opaque","value":"YQ==","unexpected":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer transport-secret")
+	request.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unknown credential field status=%d", response.StatusCode)
+	}
+
+	arbitraryBackup, err := http.NewRequest(http.MethodPost, "http://unix/v1/credentials/backup", strings.NewReader(`{"path":"/untrusted/browser-selected.backup"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	arbitraryBackup.Header.Set("Authorization", "Bearer transport-secret")
+	arbitraryBackup.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(arbitraryBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("browser-selected backup path status=%d", response.StatusCode)
+	}
+
+	oversized, err := http.NewRequest(http.MethodPost, "http://unix/v1/credentials", strings.NewReader(`{"reference":"provider/oversized","kind":"opaque","value":"`+strings.Repeat("A", int(maximumCredentialIntakeBytes)+1)+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	oversized.Header.Set("Authorization", "Bearer transport-secret")
+	oversized.Header.Set("Content-Type", "application/json")
+	response, err = client.Do(oversized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized credential intake status=%d", response.StatusCode)
+	}
+
+	views, err := svc.ListCredentialsAs(context.Background(), core.Subject{ID: "local-uid:" + svc.Config.Principal.UID, PrincipalID: svc.Config.Principal.ID, Issuer: "local-os", ExpiresAt: time.Now().Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 1 {
+		t.Fatalf("denied credential mutations changed authority: records=%d", len(views))
 	}
 }
 
