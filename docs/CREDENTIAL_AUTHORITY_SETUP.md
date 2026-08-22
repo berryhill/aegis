@@ -88,9 +88,18 @@ Selecting a record opens a read-only inspector that includes:
   absolute path; backups require the same KEK to reopen.
 - **Prepare credential / prepare vault backup** — review-only CLI previews of
   the exact `aegis secret put REFERENCE --kind KIND --created-by "$OPERATOR"`
-  and `aegis secret backup <PATH>` commands. The browser never POSTs them;
-  running them requires an authenticated operator session and the configured
-  KEK.
+  and `aegis secret backup` commands. The backup command accepts no path and
+  writes the policy-selected ciphertext snapshot beside the configured
+  authority database. The browser never POSTs these previews; running them
+  requires an authenticated operator session and the configured KEK.
+
+The separately protected local Unix API exposes the same typed principal-only
+create, rotate, revoke, bind, and backup application operations under
+`/v1/credentials`. Create and rotate use strict one-use request intake capped at
+1 MiB and return metadata only. The backup request must be exactly an empty JSON
+object; a caller cannot select a host path. These routes require bearer transport
+plus kernel `SO_PEERCRED` identity and do not make the browser workspace a
+mutation surface or expose a generic secret-read endpoint.
 
 The credential surface is intentionally non-gating for the rest of the
 fleet-control vertical: a missing, locked (`ErrPassphraseAuthentication`),
