@@ -300,7 +300,8 @@ func TestVersionProvenanceIsExactAndFailClosed(t *testing.T) {
 func TestBareInteractiveFirstRunEstablishesAuthorityWithoutManagerOnboarding(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
 	var out bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader("canary-password-value\ncanary-password-value\nyes\n/status\n/quit\n"), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	provider := &sequencePassphrases{values: [][]byte{[]byte("canary-password-value")}}
+	root := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--state-dir", statePath})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
@@ -335,7 +336,8 @@ func TestBareInteractiveFirstRunEstablishesAuthorityWithoutManagerOnboarding(t *
 func TestExplicitInitDeclineWritesNothing(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
 	var out bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader("principal-password\nprincipal-password\nno\n"), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	provider := &sequencePassphrases{values: [][]byte{[]byte("principal-password")}}
+	root := NewRoot(Dependencies{In: strings.NewReader("no\n"), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--state-dir", statePath, "init"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
@@ -353,7 +355,8 @@ func TestExplicitInitDeclineWritesNothing(t *testing.T) {
 
 func TestExplicitInitCreatesRestrictiveValidConfiguration(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
-	root := NewRoot(Dependencies{In: strings.NewReader("principal-password\nprincipal-password\n\n"), Out: io.Discard, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	provider := &sequencePassphrases{values: [][]byte{[]byte("principal-password")}}
+	root := NewRoot(Dependencies{In: strings.NewReader("\n"), Out: io.Discard, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--state-dir", statePath, "init"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
@@ -371,7 +374,8 @@ func TestFirstRunRecoversRecognizedInterruptedTemporary(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader("principal-password\nprincipal-password\nyes\n"), Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	provider := &sequencePassphrases{values: [][]byte{[]byte("principal-password")}}
+	root := NewRoot(Dependencies{In: strings.NewReader("yes\n"), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--state-dir", statePath, "init"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
