@@ -36,6 +36,7 @@ const (
 
 var commandIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,127}$`)
 var commandOpaqueIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$`)
+var commandTargetIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,511}$`)
 
 // CommandDefinition is the closed, versioned server-side contract for one
 // browser-accessible mutation. A page cannot enable a mutation unless its
@@ -208,7 +209,7 @@ func (s *CommandService) Preview(ctx context.Context, subject core.Subject, sess
 	if !ok {
 		return CommandPreview{}, ErrCommandUnknown
 	}
-	if request.SchemaVersion != CommandCatalogVersion || subject.ID == "" || sessionID == "" || !commandOpaqueIdentifier.MatchString(request.TargetID) || !validSHA256(request.ExpectedDigest) || !commandOpaqueIdentifier.MatchString(request.IdempotencyKey) || int64(len(request.Input)) > definition.MaxBodyBytes {
+	if request.SchemaVersion != CommandCatalogVersion || subject.ID == "" || sessionID == "" || !commandTargetIdentifier.MatchString(request.TargetID) || !validSHA256(request.ExpectedDigest) || !commandOpaqueIdentifier.MatchString(request.IdempotencyKey) || int64(len(request.Input)) > definition.MaxBodyBytes {
 		return CommandPreview{}, ErrInvalidInput
 	}
 	if err := rejectBrowserAuthorityFields(request.Input); err != nil {

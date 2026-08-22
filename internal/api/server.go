@@ -84,18 +84,6 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusNotFound, "not_found", "fleet resource not found"
 	case app.IsFleetCorrupt(err):
 		return http.StatusServiceUnavailable, "repair_required", "fleet store repair required"
-	case app.IsCredentialNotFound(err):
-		return http.StatusNotFound, "credential_not_found", "credential record not found"
-	case app.IsCredentialRevoked(err):
-		return http.StatusConflict, "credential_revoked", "credential or version is revoked"
-	case app.IsCredentialAmbiguous(err):
-		return http.StatusConflict, "credential_ambiguous", "credential binding is ambiguous"
-	case app.IsCredentialConflict(err):
-		return http.StatusConflict, "credential_conflict", "credential state conflict"
-	case app.IsCredentialLocked(err):
-		return http.StatusLocked, "credential_locked", "credential authority is locked"
-	case errors.Is(err, app.ErrCredentialUnavailable):
-		return http.StatusServiceUnavailable, "credential_unavailable", "credential authority is unavailable"
 	case errors.Is(err, os.ErrNotExist):
 		return http.StatusNotFound, "not_found", "resource not found"
 	}
@@ -182,13 +170,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
 	}
-	// The browser command path is live with a closed empty catalog. Product
-	// pages enable mutations only by adding a reviewed definition and its
-	// controller-side authority adapter here; unknown browser commands fail
-	// before any authority lookup or application-service call.
-	commandService, err := console.NewCommandService(nil, console.CommandAuthorityProviderFunc(func(context.Context, core.Subject, string, string) (console.CommandAuthorityBinding, error) {
-		return console.CommandAuthorityBinding{}, console.ErrDenied
-	}), svc.Now)
+	commandService, err := console.NewCommandService(loopCommandDefinitions(svc), loopCommandAuthorityProvider(svc), svc.Now)
 	if err != nil {
 		return fmt.Errorf("configure console commands: %w", err)
 	}
@@ -404,6 +386,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleweb.PageModel{}, consoleError(err)
 		}
+		model.CSRF = csrf
 		return consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: model}, nil
 	}
 	consolePage := func(c *echo.Context) error {
@@ -470,6 +453,40 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		e.GET("/console/"+string(domain), consolePage)
 	}
 	e.GET("/console/agents/charter-import", charterImportPage)
+	e.GET("/console/loops/compose", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		page, err := loadConsole(c, subject, consoleLoops)
+		if err != nil {
+			return err
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		readiness, ok := surface.Actions["loop_publish"]
+		if !ok || readiness.State != "ready" {
+			return app.ErrDenied
+		}
+		composer := &consoleweb.LoopComposerModel{Publishers: []consoleweb.LoopPublisherModel{}}
+		for _, agent := range surface.Agents {
+			if agent.Revision.Lifecycle != "enabled" {
+				continue
+			}
+			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: agent.Revision.AgentID, Revision: fmt.Sprintf("r%d", agent.Revision.Revision), Digest: agent.Revision.Digest, Runtime: agent.Revision.Runtime.Runtime})
+		}
+		page.LoopComposer = composer
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
 	e.GET("/console/graphs/compose", func(c *echo.Context) error {
 		if err := consoleHeaders(c, true); err != nil {
 			return consoleError(err)
@@ -854,6 +871,83 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return subject, sessionID, nil
 	}
+	renderLoopCommandPage := func(c *echo.Context, page consoleweb.PageModel, status int) error {
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
+		if err != nil {
+			return err
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	}
+	e.POST("/console/loops/preview", func(c *echo.Context) error {
+		form, err := decodeLoopComposerForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		head := emptyLoopHeadDigest(form.Revision.LoopID)
+		revisions, err := svc.FleetRepository.ListLoopRevisions(c.Request().Context())
+		if err != nil {
+			return err
+		}
+		var latest uint64
+		for _, revision := range revisions {
+			if revision.LoopID == form.Revision.LoopID && revision.Revision > latest {
+				latest, head = revision.Revision, revision.Digest
+			}
+		}
+		input, err := json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
+		if err != nil {
+			return err
+		}
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: loopPublishCommandID, TargetID: form.Revision.LoopID, ExpectedDigest: head, IdempotencyKey: form.PublicationKey, Input: input})
+		if err != nil {
+			return consoleError(err)
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: &consoleweb.CommandPreviewModel{IntentID: preview.IntentID, CommandID: preview.CommandID, TargetID: preview.Target.ID, TargetDigest: preview.Target.Digest, InputDigest: preview.InputDigest, ExpiresAt: preview.ExpiresAt.UTC().Format(time.RFC3339)}}
+		return renderLoopCommandPage(c, page, http.StatusOK)
+	})
+	e.POST("/console/loops/lifecycle-preview", func(c *echo.Context) error {
+		form, err := decodeLoopLifecycleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Loop lifecycle request")
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		input, err := json.Marshal(loopLifecycleCommandInput{PublisherID: form.PublisherID, State: form.State, ExpectedPreviousDigest: form.ExpectedPreviousDigest, IdempotencyKey: form.IdempotencyKey})
+		if err != nil {
+			return err
+		}
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: loopLifecycleCommandID, TargetID: form.TargetID, ExpectedDigest: form.ExpectedDigest, IdempotencyKey: form.IdempotencyKey, Input: input})
+		if err != nil {
+			return consoleError(err)
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: &consoleweb.CommandPreviewModel{IntentID: preview.IntentID, CommandID: preview.CommandID, TargetID: preview.Target.ID, TargetDigest: preview.Target.Digest, InputDigest: preview.InputDigest, ExpiresAt: preview.ExpiresAt.UTC().Format(time.RFC3339)}}
+		return renderLoopCommandPage(c, page, http.StatusOK)
+	})
+	e.POST("/console/loops/execute", func(c *echo.Context) error {
+		csrf, intentID, err := decodeLoopExecuteForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Loop confirmation")
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		receipt, err := commandService.Execute(c.Request().Context(), subject, sessionID, console.CommandExecuteRequest{SchemaVersion: console.CommandCatalogVersion, IntentID: intentID})
+		if err != nil {
+			return consoleError(err)
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback)}}
+		return renderLoopCommandPage(c, page, http.StatusOK)
+	})
 	e.POST("/console/api/commands/preview", func(c *echo.Context) error {
 		subject, sessionID, err := commandAdmission(c)
 		if err != nil {
@@ -1027,82 +1121,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusCreated, map[string]string{"bootstrap": bootstrap, "expires": svc.Now().Add(svc.Config.API.Console.BootstrapTTL).UTC().Format(time.RFC3339)})
-	})
-	g.POST("/credentials", func(c *echo.Context) error {
-		subject, err := requestSubject(c)
-		if err != nil {
-			return err
-		}
-		var input app.CreateCredentialInput
-		if err = decodeCredentialIntake(c, &input); err != nil {
-			return err
-		}
-		defer wipe(input.Value)
-		value, err := svc.CreateCredentialAs(c.Request().Context(), subject, input)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusCreated, value)
-	})
-	g.POST("/credentials/:record/rotations", func(c *echo.Context) error {
-		subject, err := requestSubject(c)
-		if err != nil {
-			return err
-		}
-		var input app.RotateCredentialInput
-		if err = decodeCredentialIntake(c, &input); err != nil {
-			return err
-		}
-		defer wipe(input.Value)
-		value, err := svc.RotateCredentialAs(c.Request().Context(), subject, c.Param("record"), input)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusCreated, value)
-	})
-	g.POST("/credentials/:record/revocations", func(c *echo.Context) error {
-		subject, err := requestSubject(c)
-		if err != nil {
-			return err
-		}
-		var input app.RevokeCredentialInput
-		if err = decode(c, &input); err != nil {
-			return err
-		}
-		value, err := svc.RevokeCredentialAs(c.Request().Context(), subject, c.Param("record"), input)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusCreated, value)
-	})
-	g.POST("/credentials/:record/bindings", func(c *echo.Context) error {
-		subject, err := requestSubject(c)
-		if err != nil {
-			return err
-		}
-		var input app.BindCredentialInput
-		if err = decode(c, &input); err != nil {
-			return err
-		}
-		value, err := svc.BindCredentialAs(c.Request().Context(), subject, c.Param("record"), input)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusCreated, value)
-	})
-	g.POST("/credentials/backup", func(c *echo.Context) error {
-		subject, err := requestSubject(c)
-		if err != nil {
-			return err
-		}
-		if err = decode(c, &struct{}{}); err != nil {
-			return err
-		}
-		value, err := svc.BackupCredentialsAs(c.Request().Context(), subject)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusCreated, value)
 	})
 	g.GET("/runtime", func(c *echo.Context) error {
 		x, err := svc.Runtime(c.Request().Context())
@@ -2070,22 +2088,4 @@ func decode(c *echo.Context, v any) error {
 		return nil
 	}
 	return echo.NewHTTPError(http.StatusBadRequest, "trailing JSON")
-}
-
-const maximumCredentialIntakeBytes int64 = 1 << 20
-
-// decodeCredentialIntake is a separate strict codec for one-use secret input.
-// []byte fields arrive as base64 JSON strings and are wiped by the handler.
-func decodeCredentialIntake(c *echo.Context, v any) error {
-	if c.Request().ContentLength > maximumCredentialIntakeBytes {
-		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "credential intake too large")
-	}
-	c.Request().Body = http.MaxBytesReader(c.Response(), c.Request().Body, maximumCredentialIntakeBytes)
-	return decode(c, v)
-}
-
-func wipe(value []byte) {
-	for i := range value {
-		value[i] = 0
-	}
 }
