@@ -1,7 +1,11 @@
 #!/bin/sh
 set -eu
 
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+socket_dir=${AEGIS_PROOF_SOCKET_DIR:-$repo}
+case "$socket_dir" in /*) ;; *) printf '%s\n' 'installed console proof socket directory must be absolute' >&2; exit 1 ;; esac
+[ -d "$socket_dir" ] && [ ! -L "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be one existing real directory' >&2; exit 1; }
+[ "$(CDPATH= cd -- "$socket_dir" && pwd -P)" = "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be canonical' >&2; exit 1; }
 candidate=${1:-}
 workspace=${2:-}
 [ "$#" -eq 2 ] || { printf '%s\n' 'usage: verify-installed-console.sh EXTRACTED_AEGIS DURABLE_WORKSPACE' >&2; exit 2; }
@@ -27,11 +31,14 @@ with socket.socket() as server:
     print(server.getsockname()[1])
 PY
 )
-socket=$repo/.c-$port.sock
+socket=$socket_dir/.c-$port.sock
+[ ! -e "$socket" ] && [ ! -L "$socket" ] || { printf '%s\n' 'installed console proof socket already exists' >&2; exit 1; }
 python3 - "$workspace" "$port" "$uid" "$user" "$socket" <<'PY'
-import pathlib, secrets, sys
+import json, pathlib, secrets, sys
 root, port, uid, user, socket = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 token = secrets.token_urlsafe(48)
+initial_password = secrets.token_urlsafe(32)
+replacement_password = secrets.token_urlsafe(32)
 token_path = root / "transport" / "api.token"
 token_path.parent.mkdir(mode=0o700)
 token_path.write_text(token + "\n", encoding="utf-8")
@@ -93,9 +100,16 @@ credentials:
 for name in ("aegis.yaml", "hermes-fixture"):
     (root / name).chmod(0o700 if name == "hermes-fixture" else 0o600)
 token_path.chmod(0o600)
+auth_input = root / "principal-auth-input.json"
+auth_input.write_text(json.dumps({"principal_id": "principal-1", "password": initial_password}), encoding="utf-8")
+auth_input.chmod(0o600)
+browser_passwords = root / "browser-passwords.json"
+browser_passwords.write_text(json.dumps({"initial": initial_password, "replacement": replacement_password}), encoding="utf-8")
+browser_passwords.chmod(0o600)
 PY
 mkdir -m 0700 "$workspace/state"
 go run "$repo/scripts/demo-authority-init" "$workspace/state/persistence/authority-v1" >/dev/null
+go run "$repo/scripts/demo-principal-auth-init" "$workspace/principal-auth-input.json" "$workspace/state" >/dev/null
 python3 - "$workspace/agent.json" <<'PY'
 import json, pathlib, sys
 digest = "sha256:" + ("a" * 64)
@@ -165,7 +179,7 @@ if not status.startswith(b"HTTP/1.1 201 "):
 pathlib.Path(response_path).write_bytes(payload)
 PY
 grep -F 'Sign the Aegis principal into this browser' "$workspace/shell.html" >/dev/null
-grep -F 'Recovery: run' "$workspace/shell.html" >/dev/null
+grep -F 'Alternate sign-in:' "$workspace/shell.html" >/dev/null
 grep -F 'aegis console' "$workspace/shell.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
@@ -173,7 +187,7 @@ curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datasta
 recovery_status=$(curl --silent --show-error -o "$workspace/recovery.html" -w '%{http_code}' -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data 'bootstrap=malformed' "http://127.0.0.1:$port/console/session")
 [ "$recovery_status" = 400 ]
 grep -F 'bootstrap_invalid_format' "$workspace/recovery.html" >/dev/null
-grep -F 'Bootstrap lifetime: <strong>45s</strong>' "$workspace/recovery.html" >/dev/null
+grep -F 'Handoff lifetime: <strong>45s</strong>' "$workspace/recovery.html" >/dev/null
 grep -F 'Browser session lifetime: <strong>1m0s</strong>' "$workspace/recovery.html" >/dev/null
 ! grep -F '>malformed<' "$workspace/recovery.html" >/dev/null
 
@@ -210,14 +224,13 @@ grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/charter-imp
 ! grep -F 'Sign the Aegis principal into this browser' "$workspace/authenticated.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
 
-HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/browser-bootstrap-response.json"
 if ! curl --fail --silent --show-error "http://127.0.0.1:$port/console" -o /dev/null; then
   printf 'installed console server became unreachable before browser proof; server_alive=%s\n' "$(kill -0 "$server_pid" 2>/dev/null && printf true || printf false)" >&2
   while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
   exit 1
 fi
 set +e
-python3 "$repo/scripts/console_browser_test.py" "http://127.0.0.1:$port" "$workspace/browser-bootstrap-response.json" "$workspace"
+python3 "$repo/scripts/console_browser_test.py" "http://127.0.0.1:$port" "$workspace/browser-passwords.json" "$workspace"
 browser_status=$?
 set -e
 if [ "$browser_status" -ne 0 ]; then

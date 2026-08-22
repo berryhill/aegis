@@ -3,6 +3,7 @@ package initialize
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/persistence/authority"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	"github.com/berryhill/aegis/internal/principalauth"
 )
 
 const (
@@ -24,15 +26,18 @@ const (
 )
 
 type Plan struct {
-	ConfigPath    string
-	StatePath     string
-	AuthorityPath string
-	Principal     config.Principal
-	Document      []byte
-	Partials      []string
-	TokenPath     string
-	UnixSocket    string
-	token         []byte
+	ConfigPath     string
+	StatePath      string
+	AuthorityPath  string
+	Principal      config.Principal
+	Document       []byte
+	Partials       []string
+	TokenPath      string
+	UnixSocket     string
+	PasswordPath   string
+	PasswordDigest string
+	token          []byte
+	password       *principalauth.Record
 }
 
 type OperationalAuthorityPlan struct {
@@ -95,7 +100,22 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	}
 	document := []byte(fmt.Sprintf("state_dir: %s\nprincipal:\n  id: %s\n  name: %s\n  uid: %s\n  user: %s\n  auth_ttl: %s\napi:\n  unix_socket: %s\n  token_file: %s\naudit:\n  checkpoint_dir: %s\n",
 		strconv.Quote(statePath), strconv.Quote(principal.ID), strconv.Quote(principal.Name), strconv.Quote(principal.UID), strconv.Quote(principal.User), principal.AuthTTL, strconv.Quote(unixSocket), strconv.Quote(tokenPath), strconv.Quote(candidate.Audit.CheckpointDir)))
-	return Plan{ConfigPath: inspection.Path, StatePath: statePath, AuthorityPath: filepath.Join(statePath, "persistence", "authority-v1"), Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...), TokenPath: tokenPath, UnixSocket: unixSocket, token: token}, nil
+	return Plan{ConfigPath: inspection.Path, StatePath: statePath, AuthorityPath: filepath.Join(statePath, "persistence", "authority-v1"), Principal: principal, Document: document, Partials: append([]string(nil), inspection.Partials...), TokenPath: tokenPath, UnixSocket: unixSocket, PasswordPath: filepath.Join(statePath, "auth", principalauth.FileName), token: token}, nil
+}
+
+func (s *Service) EnrollPrincipalPassword(plan Plan, password []byte) (Plan, error) {
+	record, err := principalauth.Enroll(plan.Principal.ID, password)
+	if err != nil {
+		return Plan{}, err
+	}
+	encoded, err := record.Marshal()
+	if err != nil {
+		return Plan{}, err
+	}
+	digest := sha256.Sum256(encoded)
+	plan.password = &record
+	plan.PasswordDigest = hex.EncodeToString(digest[:])
+	return plan, nil
 }
 
 func existingOrRandomToken(path string) ([]byte, error) {
@@ -196,6 +216,9 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if plan.password == nil || plan.PasswordPath == "" || plan.PasswordDigest == "" || plan.password.PrincipalID != plan.Principal.ID {
+		return errors.New("principal password enrollment is required before initialization")
+	}
 	current, err := s.verifiedCurrent()
 	if err != nil {
 		return err
@@ -229,6 +252,9 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	}
 	if err = publishToken(plan.TokenPath, plan.token); err != nil {
 		return fmt.Errorf("publish protected API transport: %w", err)
+	}
+	if err = principalauth.Publish(plan.PasswordPath, *plan.password); err != nil {
+		return fmt.Errorf("publish principal password verifier: %w", err)
 	}
 	if err = ctx.Err(); err != nil {
 		return err

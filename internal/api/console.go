@@ -19,6 +19,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/starfederation/datastar-go/datastar"
 )
@@ -129,6 +130,52 @@ func decodeConsoleForm(request *http.Request, field string) (string, error) {
 		return "", errors.New("invalid console form")
 	}
 	return values[field][0], nil
+}
+
+type passwordRotationForm struct {
+	Current      string
+	New          string
+	Confirmation string
+	CSRF         string
+	Approved     bool
+}
+
+func decodePasswordRotationForm(request *http.Request) (passwordRotationForm, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > 8192 {
+		return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 8193))
+	if err != nil || len(body) > 8192 {
+		return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+	}
+	values, err := url.ParseQuery(string(body))
+	fields := []string{"current_password", "new_password", "confirmation", "csrf", "approve"}
+	if err != nil || len(values) != len(fields) {
+		return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+	}
+	for _, field := range fields {
+		if len(values[field]) != 1 {
+			return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+		}
+	}
+	return passwordRotationForm{Current: values.Get("current_password"), New: values.Get("new_password"), Confirmation: values.Get("confirmation"), CSRF: values.Get("csrf"), Approved: values.Get("approve") == "rotate"}, nil
+}
+
+func replacePrincipalVerifier(path string, current, replacement principalauth.Record, authorize, complete func() error) error {
+	if authorize == nil || complete == nil {
+		return errors.New("principal password rotation audit callbacks are required")
+	}
+	if err := authorize(); err != nil {
+		return err
+	}
+	if err := principalauth.Replace(path, current, replacement); err != nil {
+		return err
+	}
+	if err := complete(); err != nil {
+		rollbackErr := principalauth.Replace(path, replacement, current)
+		return errors.Join(err, rollbackErr)
+	}
+	return nil
 }
 
 func renderConsole(ctx context.Context, component templ.Component) ([]byte, error) {

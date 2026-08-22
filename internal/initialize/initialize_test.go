@@ -118,6 +118,10 @@ func TestApplyPublishesSecureLayoutAndResumesEmptyAuthorityGeneration(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	plan, err = service.EnrollPrincipalPassword(plan, []byte("principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err = os.MkdirAll(state, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +197,10 @@ func TestApplyRevalidatesIdentityImmediatelyBeforePublication(t *testing.T) {
 	path := filepath.Join(root, "aegis.yaml")
 	service := testService(t)
 	plan, err := service.Plan(path, filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = service.EnrollPrincipalPassword(plan, []byte("principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}

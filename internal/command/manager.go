@@ -1,6 +1,7 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -144,6 +145,35 @@ func runFirstInitialization(cmd *cobra.Command, initializer *initialize.Service,
 	return runFirstInitializationWithInput(cmd, initializer, configPath, statePath, newTerminalInput(cmd.InOrStdin()))
 }
 
+func readPrincipalPassword(cmd *cobra.Command, input *terminalInput) ([]byte, error) {
+	var first, second []byte
+	var err error
+	if input.file != nil && term.IsTerminal(int(input.file.Fd())) {
+		first, err = readTerminalSecretBounded(cmd.Context(), input.file, cmd.ErrOrStderr(), "Principal password (minimum 12 bytes): ", 1024)
+		if err == nil {
+			second, err = readTerminalSecretBounded(cmd.Context(), input.file, cmd.ErrOrStderr(), "Confirm principal password: ", 1024)
+		}
+	} else {
+		var value string
+		value, _, err = input.ReadLine(cmd.Context(), 1024)
+		first = []byte(value)
+		if err == nil {
+			value, _, err = input.ReadLine(cmd.Context(), 1024)
+			second = []byte(value)
+		}
+	}
+	defer wipeSecret(second)
+	if err != nil {
+		wipeSecret(first)
+		return nil, errors.New("principal password intake failed")
+	}
+	if !bytes.Equal(first, second) {
+		wipeSecret(first)
+		return nil, errors.New("principal password confirmation does not match")
+	}
+	return first, nil
+}
+
 func operationalAuthorityAbsent(ctx context.Context, configPath string) bool {
 	inspection := config.Inspect(configPath)
 	if inspection.State != config.StateValid {
@@ -195,15 +225,25 @@ func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize
 	if err != nil {
 		return false, usage(err)
 	}
+	password, err := readPrincipalPassword(cmd, input)
+	if err != nil {
+		return false, usage(err)
+	}
+	defer wipeSecret(password)
+	plan, err = initializer.EnrollPrincipalPassword(plan, password)
+	if err != nil {
+		return false, usage(err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Principal authentication artifact SHA-256=%s\n", plan.PasswordDigest)
 	fmt.Fprintln(cmd.OutOrStdout(), "Aegis first-run initialization")
 	if len(plan.Partials) != 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "Recovery: remove %d recognized secure interrupted initialization artifact(s) before the atomic write.\n", len(plan.Partials))
 	}
 	approved, err := view.approve(cmd, input, bootstrapDecision{
 		Title:          "Create first-run Aegis configuration",
-		Recommendation: "Create the deterministic owner-only configuration for the authenticated local operator.",
-		Consequence:    "Atomically writes only Aegis configuration and local state scaffolding. No Hermes profile, model, credential, agent, Ollama service, or external system is created or modified; declining writes nothing.",
-		Details:        fmt.Sprintf("principal UID=%s user=%s; configuration=%s mode=0600; state=%s; new directories=0700; interrupted partials=%d; exact configuration:\n%s", plan.Principal.UID, plan.Principal.User, plan.ConfigPath, plan.StatePath, len(plan.Partials), plan.Document),
+		Recommendation: "Create the deterministic owner-only configuration and principal login verifier for the authenticated local operator.",
+		Consequence:    "Atomically writes Aegis configuration, local state scaffolding, and only a salted memory-hard principal password verifier. The password is distinct from credential-decryption authority and is never retained. No Hermes profile, model, credential, agent, Ollama service, or external system is created or modified; declining writes nothing.",
+		Details:        fmt.Sprintf("principal UID=%s user=%s; configuration=%s mode=0600; principal authentication verifier=%s mode=0600 algorithm=scrypt N=32768 r=8 p=1 artifact SHA-256=%s; state=%s; new directories=0700; interrupted partials=%d; exact configuration:\n%s", plan.Principal.UID, plan.Principal.User, plan.ConfigPath, plan.PasswordPath, plan.PasswordDigest, plan.StatePath, len(plan.Partials), plan.Document),
 	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Initialization declined; no writes were performed.")
