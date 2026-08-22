@@ -75,6 +75,45 @@ func TestAuthenticatedDocumentUsesNativeNavigationInspectionAndLogout(t *testing
 	}
 }
 
+func TestAuthenticatedDocumentPresentsPasswordRotationAsDangerousDialogAction(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{
+		Authenticated: true,
+		CSRF:          "csrf-value",
+		Surface:       SurfaceModel{Domain: DomainAgents, Title: "Agent Registry"},
+	}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		`id="open-password-rotation" type="button" class="ghost btn-sm" commandfor="principal-password-rotation" command="show-modal"`,
+		`<dialog id="principal-password-rotation"`, `data-overlay-kind="dialog"`,
+		`action="/console/password"`, `name="csrf" value="csrf-value"`,
+		`name="current_password" type="password" value="" required autocomplete="current-password"`,
+		`name="new_password" type="password" value="" required autocomplete="new-password" minlength="12"`,
+		`name="confirmation" type="password" value="" required autocomplete="new-password" minlength="12"`,
+		`name="approve" type="checkbox" value="rotate" required`,
+		`class="confirmation danger"`, `class="danger-button"`,
+		"revokes every existing browser session and one-time handoff",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("password rotation dialog missing %q: %s", required, html)
+		}
+	}
+	if strings.Contains(html, `<details class="panel" id="principal-password-rotation"`) {
+		t.Fatalf("password rotation still renders as a permanently appended details form: %s", html)
+	}
+	for _, name := range []string{"current_password", "new_password", "confirmation", "approve"} {
+		if strings.Count(html, `name="`+name+`"`) != 1 {
+			t.Fatalf("password rotation field %q must render exactly once: %s", name, html)
+		}
+	}
+	if strings.Count(html, `name="csrf" value="csrf-value"`) != 2 {
+		t.Fatalf("logout and password rotation must each carry the authenticated CSRF value: %s", html)
+	}
+}
+
 func TestWorkspaceEscapesContextualReadinessAndDisablesDeniedActions(t *testing.T) {
 	var output bytes.Buffer
 	hostile := `</span><script>globalThis.pwned=1</script>`

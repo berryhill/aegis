@@ -190,8 +190,8 @@ const (
 type NoticeModel struct{ Kind, Title, Message, ReasonCode string }
 
 type FormFieldModel struct {
-	ID, Name, Label, Type, Value, Help, Error, Autocomplete string
-	Required, Secret                                        bool
+	ID, Name, Label, Type, Value, Help, Error, Autocomplete, MinLength string
+	Required, Secret                                                   bool
 }
 
 type ExactReferenceModel struct{ Label, ID, Revision, Digest, Lifecycle, Provenance string }

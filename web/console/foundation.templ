@@ -39,7 +39,11 @@ templ FormField(field FormFieldModel) {
 		if field.Help != "" {
 			<p class="field-help" id={ field.ID + "-help" }>{ field.Help }</p>
 		}
-		<input id={ field.ID } name={ field.Name } type={ fieldType(field) } value={ retainedValue(field) } required?={ field.Required } autocomplete={ field.Autocomplete } aria-invalid={ boolString(field.Error != "") } aria-describedby={ describedBy(field) }/>
+		if field.MinLength != "" {
+			<input id={ field.ID } name={ field.Name } type={ fieldType(field) } value={ retainedValue(field) } required?={ field.Required } autocomplete={ field.Autocomplete } minlength={ field.MinLength } aria-invalid={ boolString(field.Error != "") } aria-describedby={ describedBy(field) }/>
+		} else {
+			<input id={ field.ID } name={ field.Name } type={ fieldType(field) } value={ retainedValue(field) } required?={ field.Required } autocomplete={ field.Autocomplete } aria-invalid={ boolString(field.Error != "") } aria-describedby={ describedBy(field) }/>
+		}
 		if field.Error != "" {
 			<p class="field-error" id={ field.ID + "-error" }>{ field.Error }</p>
 		}
