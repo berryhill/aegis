@@ -8,7 +8,7 @@ import pathlib
 import sys
 
 HARNESS_NAME = "aegis-console-security"
-HARNESS_VERSION = "2.1.0"
+HARNESS_VERSION = "2.2.0"
 MINIMUM_PYTHON = (3, 11)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -45,7 +45,8 @@ def main() -> int:
     require("https://" not in component and "http://" not in component, "external URL present in console template")
     require("<script" not in component and "data-on:" not in component and "data-bind:" not in component, "console template still requires CSP-blocked script execution")
     for native_control in (
-        'method="post" action="/console/session"',
+        'method="post" action="/console/login"',
+        'method="post" action="/console/password"',
         'method="post" action="/console/logout"',
         'path := fmt.Sprintf("/console/%s", domain)',
     ):
@@ -58,7 +59,7 @@ def main() -> int:
     for header in ("Content-Security-Policy", "frame-ancestors 'none'", "X-Content-Type-Options", "Referrer-Policy", "Cache-Control", "SameSiteStrictMode", "HttpOnly"):
         require(header in console, f"server security control missing: {header}")
     for route in (
-        '"/console"', '"/console/session"', '"/console/api/state"',
+        '"/console"', '"/console/login"', '"/console/password"', '"/console/session"', '"/console/api/state"',
         '"/console/fragments/surface"', '"/console/fragments/inspect"',
         '"/console/assets/datastar-v1.0.2.js"', '"/v1"',
     ):

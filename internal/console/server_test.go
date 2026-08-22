@@ -9,7 +9,193 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/principalauth"
 )
+
+func TestPrincipalPasswordLoginCreatesBoundedExactPrincipalSessionAndThrottlesFailures(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	verifier, err := principalauth.Enroll("principal", []byte("principal-password-canary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+	request.Header.Set("Origin", "https://console.example.test")
+	sessionValue, _, expires, subject, err := manager.Login(request, "client-one", []byte("principal-password-canary"))
+	if err != nil {
+		t.Fatalf("correct password denied: %v", err)
+	}
+	if subject.PrincipalID != "principal" || subject.Method != "password" || subject.Issuer != "aegis-principal-auth" || subject.ID == "" {
+		t.Fatalf("password login produced wrong subject: %+v", subject)
+	}
+	if !expires.Equal(now.Add(time.Minute)) || sessionValue == "" {
+		t.Fatalf("session was not bounded by principal authentication: expires=%s value=%q", expires, sessionValue)
+	}
+	for attempt := 0; attempt < 3; attempt++ {
+		_, _, _, _, loginErr := manager.Login(request, "client-two", []byte("wrong-password-value"))
+		if !errors.Is(loginErr, ErrInvalidCredentials) {
+			t.Fatalf("wrong password attempt %d classification=%v", attempt, loginErr)
+		}
+	}
+	_, _, _, _, err = manager.Login(request, "client-two", []byte("principal-password-canary"))
+	if !errors.Is(err, ErrLoginThrottled) {
+		t.Fatalf("bounded retry did not throttle client: %v", err)
+	}
+}
+
+func TestAuthenticatedPasswordRotationInvalidatesPriorSessionsAndBootstraps(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+	login.Header.Set("Origin", "https://console.example.test")
+	sessionValue, csrf, _, _, err := manager.Login(login, "client-one", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrap, err := manager.IssueBootstrap(core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotate := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/password", nil)
+	rotate.Header.Set("Origin", "https://console.example.test")
+	rotate.Header.Set("X-CSRF-Token", csrf)
+	rotate.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
+	var persisted principalauth.Record
+	err = manager.RotatePassword(rotate, "client-one", []byte("current-principal-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), true, func(current, replacement principalauth.Record, _ core.Subject) error {
+		persisted = replacement
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = persisted.Verify([]byte("replacement-principal-password")); err != nil {
+		t.Fatalf("replacement verifier not supplied to persistence: %v", err)
+	}
+	authenticated := httptest.NewRequest(http.MethodGet, "https://console.example.test/console", nil)
+	authenticated.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
+	if _, err = manager.Authenticate(authenticated); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("prior-generation session remained valid: %v", err)
+	}
+	exchange := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
+	exchange.Header.Set("Origin", "https://console.example.test")
+	if _, _, _, err = manager.Exchange(exchange, bootstrap); !errors.Is(err, ErrBootstrapConsumedOrExpired) {
+		t.Fatalf("prior-generation bootstrap remained valid: %v", err)
+	}
+	if _, _, _, _, err = manager.Login(login, "client-two", []byte("current-principal-password")); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("old password accepted after rotation: %v", err)
+	}
+	if _, _, _, _, err = manager.Login(login, "client-three", []byte("replacement-principal-password")); err != nil {
+		t.Fatalf("new password denied after rotation: %v", err)
+	}
+}
+
+func TestPasswordRotationFailsClosedBeforeReplacement(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+	login.Header.Set("Origin", "https://console.example.test")
+	sessionValue, csrf, _, _, err := manager.Login(login, "client", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotate := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/password", nil)
+	rotate.Header.Set("Origin", "https://console.example.test")
+	rotate.Header.Set("X-CSRF-Token", csrf)
+	rotate.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
+	called := false
+	for name, test := range map[string]struct {
+		current, next, confirm []byte
+		approved               bool
+	}{
+		"wrong current": {[]byte("wrong-current-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), true},
+		"mismatch":      {[]byte("current-principal-password"), []byte("replacement-principal-password"), []byte("different-principal-password"), true},
+		"not approved":  {[]byte("current-principal-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			called = false
+			err := manager.RotatePassword(rotate, "client", test.current, test.next, test.confirm, test.approved, func(_, _ principalauth.Record, _ core.Subject) error { called = true; return nil })
+			if err == nil || called {
+				t.Fatalf("unsafe rotation err=%v replacement_called=%v", err, called)
+			}
+		})
+	}
+	if err = manager.RotatePassword(rotate, "client", []byte("current-principal-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), true, func(_, _ principalauth.Record, _ core.Subject) error { return errors.New("audit unavailable") }); err == nil {
+		t.Fatal("replacement callback failure was ignored")
+	}
+	if _, _, _, _, err = manager.Login(login, "after-failure", []byte("current-principal-password")); err != nil {
+		t.Fatalf("failed replacement changed active verifier: %v", err)
+	}
+}
+
+func TestPasswordRotationThrottlesWrongCurrentPasswordAndResetsAfterWindow(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 2, LoginWindow: 30 * time.Second}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+	login.Header.Set("Origin", "https://console.example.test")
+	sessionValue, csrf, _, _, err := manager.Login(login, "client", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotate := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/password", nil)
+	rotate.Header.Set("Origin", "https://console.example.test")
+	rotate.Header.Set("X-CSRF-Token", csrf)
+	rotate.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
+	replace := func(_, _ principalauth.Record, _ core.Subject) error { return nil }
+	for attempt := 0; attempt < 2; attempt++ {
+		if err = manager.RotatePassword(rotate, "client", []byte("wrong-current-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), true, replace); !errors.Is(err, ErrInvalidCredentials) {
+			t.Fatalf("wrong-current attempt %d classification=%v", attempt, err)
+		}
+	}
+	if err = manager.RotatePassword(rotate, "client", []byte("current-principal-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), true, replace); !errors.Is(err, ErrLoginThrottled) {
+		t.Fatalf("rotation retry limit not enforced: %v", err)
+	}
+	now = now.Add(30 * time.Second)
+	if err = manager.RotatePassword(rotate, "client", []byte("current-principal-password"), []byte("replacement-principal-password"), []byte("replacement-principal-password"), true, replace); err != nil {
+		t.Fatalf("rotation throttle did not reset at window boundary: %v", err)
+	}
+}
+
+func TestPasswordSessionCookieUsesActualBoundedExpiry(t *testing.T) {
+	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
+	recorder := httptest.NewRecorder()
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 10 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.SetCookieUntil(recorder, "opaque-session", now.Add(time.Minute))
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("cookie count=%d", len(cookies))
+	}
+	cookie := cookies[0]
+	if cookie.MaxAge != 60 || !cookie.Expires.Equal(now.Add(time.Minute)) || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/console" {
+		t.Fatalf("password session cookie is not exactly bounded and protected: %+v", cookie)
+	}
+}
 
 func TestBootstrapFormatClassificationAndOriginDenialDoesNotConsume(t *testing.T) {
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)

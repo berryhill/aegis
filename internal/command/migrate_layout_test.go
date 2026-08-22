@@ -133,7 +133,7 @@ func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
 	}
 
 	var bootstrap bytes.Buffer
-	bootstrapRoot := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &bootstrap, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	bootstrapRoot := NewRoot(Dependencies{In: strings.NewReader("principal-password\nprincipal-password\nyes\n/status\n/quit\n"), Out: &bootstrap, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	if err := bootstrapRoot.Execute(); err != nil {
 		t.Fatal(err)
 	}

@@ -29,6 +29,7 @@ templ Document(model PageModel) {
 							} else {
 								@Workspace(model.Surface)
 							}
+							@PasswordRotation(model.CSRF)
 						} else {
 							@Authentication(model.Authentication)
 						}
@@ -97,27 +98,21 @@ templ Authentication(model AuthenticationModel) {
 		<span class="eyebrow">Principal authentication</span>
 		<h1 id="authentication-title">Sign the Aegis principal into this browser</h1>
 		<p>This signs the principal configured when Aegis was initialized into this browser. It does not create or change the principal, tenant, or authority context.</p>
-		<ol aria-label="Browser authentication steps">
-			<li>On the Aegis host, open a terminal as the initialized principal and run <code>aegis console</code>.</li>
-			<li>That command authenticates the host user and creates a temporary, single-use browser handoff.</li>
-			<li>Paste only that handoff below and submit promptly.</li>
-		</ol>
-		<p>The browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority. <code>aegis console</code> only hands the existing authenticated principal into this browser; it does not provision identity or grant authority.</p>
-		<p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p>
-		<p>If the service is stopped, run <code>aegis service start</code> and retry. If the bootstrap expires, run <code>aegis console</code> again. Never paste an API bearer or put either credential in a URL.</p>
+		<p>Enter the principal password enrolled during approved Aegis initialization. This is separate from the credential-authority passphrase and never selects credential decryption authority.</p>
+		<p>The browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority. Successful password verification authenticates only the configured principal; it does not provision identity or grant authority.</p>
 		<p id="authentication-status" role="status" aria-live="polite">
 			if model.Status != "" {
 				{ model.Status } <code>{ model.ReasonCode }</code>
 			} else {
-				A temporary handoff for the existing Aegis principal is required.
+				The enrolled principal password is required.
 			}
 		</p>
 		if model.RecoveryCommand != "" {
-			<p class="inline-notice">Recovery: run <code>{ model.RecoveryCommand }</code>. Bootstrap lifetime: <strong>{ model.BootstrapTTL }</strong>. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
+			<p class="inline-notice">Alternate sign-in: run <code>{ model.RecoveryCommand }</code> as the authenticated host principal for a one-time browser handoff. This does not reset or disclose the principal password. Handoff lifetime: <strong>{ model.BootstrapTTL }</strong>. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
 		}
-		<form id="session-form" method="post" action="/console/session">
-			<label for="bootstrap">Temporary principal handoff</label>
-			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required/>
+		<form id="session-form" method="post" action="/console/login">
+			<label for="password">Principal password</label>
+			<input id="password" name="password" type="password" autocomplete="current-password" required/>
 			<button class="primary" type="submit">Sign in as the Aegis principal</button>
 		</form>
 		<div class="service-state" data-state="loading" hidden>Loading authoritative state…</div>
@@ -127,6 +122,26 @@ templ Authentication(model AuthenticationModel) {
 		<div class="service-state" data-state="degraded_repair_required" hidden>Fleet state is degraded and requires repair. No count is asserted.</div>
 		<div class="service-state" data-state="error" hidden>Fleet state could not be loaded or validated.</div>
 	</section>
+}
+
+templ PasswordRotation(csrf string) {
+	<details class="panel" id="principal-password-rotation">
+		<summary>Rotate principal password</summary>
+		<div class="panel-body">
+			<p>Rotation requires the current password, exact confirmation, and explicit approval. It revokes every existing browser session and one-time handoff.</p>
+			<form method="post" action="/console/password">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label for="current-password">Current principal password</label>
+				<input id="current-password" name="current_password" type="password" autocomplete="current-password" required/>
+				<label for="new-password">New principal password</label>
+				<input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" required/>
+				<label for="confirm-password">Confirm new principal password</label>
+				<input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="12" required/>
+				<label><input name="approve" type="checkbox" value="rotate" required/> I approve replacing the principal-password verifier and revoking all browser sessions and one-time handoffs.</label>
+				<button class="primary" type="submit">Rotate password and revoke prior browser authentication</button>
+			</form>
+		</div>
+	</details>
 }
 
 templ Workspace(surface SurfaceModel) {
