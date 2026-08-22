@@ -156,7 +156,7 @@ def wait_for(devtools: DevTools, expression: str, description: str, timeout: flo
         time.sleep(0.05)
     state: Any = None
     try:
-        state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', body: document.body?.innerText.slice(0, 200) || ''})")
+        state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 200) || ''})")
     except (OSError, RuntimeError):
         state = "unavailable"
     requests = []
@@ -186,6 +186,22 @@ def click(devtools: DevTools, selector: str) -> None:
             "y": point["y"],
             "button": "left",
             "clickCount": 1,
+        })
+
+
+def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
+    """Send real browser key events instead of calling DOM handlers directly."""
+    modifiers = 8 if shift else 0
+    virtual_key = {"Tab": 9, "Escape": 27}.get(key_name)
+    require(virtual_key is not None, f"browser proof does not define a native key code for {key_name}")
+    for event_type in ("rawKeyDown", "keyUp"):
+        devtools.command("Input.dispatchKeyEvent", {
+            "type": event_type,
+            "key": key_name,
+            "code": key_name,
+            "modifiers": modifiers,
+            "windowsVirtualKeyCode": virtual_key,
+            "nativeVirtualKeyCode": virtual_key,
         })
 
 
@@ -255,7 +271,10 @@ def main() -> int:
         for domain, title in expected.items():
             click(devtools, f'a[href="/console/{domain}#/{domain}"]')
             wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#surface-title')?.textContent.trim() === " + json.dumps(title), title)
-            time.sleep(0.5)
+            # A native navigation fetches the document and retained assets.
+            # Respect the deliberately coarse pre-auth source limiter so the
+            # proof measures UI behavior instead of manufacturing a burst.
+            time.sleep(1.0)
 
         click(devtools, 'a[href="/console/agents#/agents"]')
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "seeded Agent Registry record")
@@ -286,6 +305,57 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('agent-alpha')", "Agent Registry detail")
         click(devtools, "#close-inspector")
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed Agent Registry detail")
+
+        # Exercise native declarative modal commands through real Chrome input.
+        # This fixture has no credential, authority selector, mutation endpoint,
+        # or executable product behavior.
+        injected = devtools.evaluate("""(() => {
+          const host = document.createElement('section');
+          host.id = 'foundation-browser-fixture';
+          host.innerHTML = `
+            <button id="open-fixture-dialog" type="button" commandfor="fixture-dialog" command="show-modal">Open dialog</button>
+            <button id="open-fixture-drawer" type="button" commandfor="fixture-drawer" command="show-modal">Open drawer</button>
+            <section class="collection-state" data-state="loading" role="status"><strong>Loading</strong><p>Loading authoritative state.</p></section>
+            <section class="collection-state" data-state="denied" role="status"><strong>Denied</strong><p>No count is asserted.</p><code>read_denied</code></section>
+            <dialog id="fixture-dialog" class="interaction-overlay" aria-labelledby="fixture-dialog-title" aria-describedby="fixture-dialog-description" data-overlay-kind="dialog">
+              <div class="interaction-dialog" tabindex="-1" data-overlay-panel>
+                <header><h2 id="fixture-dialog-title" tabindex="0" autofocus>Confirm exact operation</h2><button id="fixture-dialog-close" type="button" commandfor="fixture-dialog" command="close">Close</button></header>
+                <p id="fixture-dialog-description">Synthetic unresolved operation.</p>
+                <div class="interaction-body"><button id="fixture-dialog-cancel" type="button" commandfor="fixture-dialog" command="close">Cancel</button><button id="fixture-dialog-submit" type="button">Submit</button></div>
+              </div>
+            </dialog>
+            <dialog id="fixture-drawer" class="interaction-overlay interaction-drawer" aria-labelledby="fixture-drawer-title" data-overlay-kind="drawer">
+              <div class="interaction-drawer-panel" tabindex="-1" data-overlay-panel>
+                <header><h2 id="fixture-drawer-title" tabindex="0" autofocus>Exact record</h2><button id="fixture-drawer-close" type="button" commandfor="fixture-drawer" command="close">Close</button></header>
+                <div class="interaction-body"><button id="fixture-drawer-last" type="button">Last action</button></div>
+              </div>
+            </dialog>`;
+          document.body.append(host);
+          return !!document.querySelector('#fixture-dialog');
+        })()""")
+        require(injected is True, "Chrome could not install the synthetic interaction fixture")
+        click(devtools, "#open-fixture-dialog")
+        wait_for(devtools, "document.querySelector('#fixture-dialog').matches(':modal') && document.activeElement?.id === 'fixture-dialog-title'", "dialog initial focus")
+        dialog_state = devtools.evaluate("(() => { const logout = document.querySelector('#logout'); logout.focus(); return {modal: document.querySelector('#fixture-dialog').matches(':modal'), backgroundInert: document.activeElement !== logout, labelledBy: document.querySelector('#fixture-dialog').getAttribute('aria-labelledby')}; })()")
+        require(dialog_state == {"modal": True, "backgroundInert": True, "labelledBy": "fixture-dialog-title"}, f"dialog accessibility state was incomplete: {dialog_state}")
+        key(devtools, "Tab")
+        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-close'", "forward Tab into dialog")
+        key(devtools, "Tab", shift=True)
+        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-title'", "reverse-Tab containment")
+        key(devtools, "Tab")
+        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-close'", "forward-Tab remains deterministic after reverse navigation")
+        key(devtools, "Escape")
+        wait_for(devtools, "!document.querySelector('#fixture-dialog').open && document.activeElement?.id === 'open-fixture-dialog'", "dialog Escape close and focus restoration")
+
+        devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        click(devtools, "#open-fixture-drawer")
+        wait_for(devtools, "document.querySelector('#fixture-drawer').matches(':modal') && document.activeElement?.id === 'fixture-drawer-title'", "drawer initial focus")
+        responsive_state = devtools.evaluate("(() => { const panel = document.querySelector('.interaction-drawer-panel').getBoundingClientRect(); const loading = getComputedStyle(document.querySelector('[data-state=loading]')).borderColor; const denied = getComputedStyle(document.querySelector('[data-state=denied]')).borderColor; return {panelWidth: panel.width, viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, statesDiffer: loading !== denied}; })()")
+        require(isinstance(responsive_state, dict) and responsive_state["panelWidth"] <= responsive_state["viewport"] and not responsive_state["overflow"], f"drawer clipped the narrow viewport: {responsive_state}")
+        require(bool(responsive_state["statesDiffer"]), f"denied and loading visual states were not distinguishable: {responsive_state}")
+        key(devtools, "Escape")
+        wait_for(devtools, "!document.querySelector('#fixture-drawer').open && document.activeElement?.id === 'open-fixture-drawer'", "drawer Escape close and focus restoration")
+        devtools.command("Emulation.clearDeviceMetricsOverride")
 
         cookies = devtools.command("Network.getCookies", {"urls": [origin + "/console"]}).get("cookies", [])
         old_session = next((cookie for cookie in cookies if cookie.get("name") == "aegis-console"), None)
@@ -352,6 +422,15 @@ def main() -> int:
             "old_session_invalidation": "pass",
             "domains": list(expected.values()),
             "inspection": "pass",
+            "interaction_foundation": {
+                "dialog_initial_focus": "pass",
+                "tab_containment": "pass",
+                "reverse_tab_containment": "pass",
+                "escape_and_focus_restore": "pass",
+                "inert_background": "pass",
+                "responsive_drawer_390px": "pass",
+                "typed_state_distinction": "pass",
+            },
             "charter_import_review": "pass",
             "logout": "pass",
             "csp_violations": 0,

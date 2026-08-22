@@ -173,6 +173,51 @@ type FieldModel struct {
 	Value string
 }
 
+// VisualState presents an authoritative readback outcome. The browser never
+// derives or promotes it.
+type VisualState string
+
+const (
+	StateLoading       VisualState = "loading"
+	StateEmpty         VisualState = "empty"
+	StateFilteredEmpty VisualState = "filtered-empty"
+	StateDenied        VisualState = "denied"
+	StateUnavailable   VisualState = "unavailable"
+	StateDegraded      VisualState = "degraded"
+	StateError         VisualState = "error"
+)
+
+type NoticeModel struct{ Kind, Title, Message, ReasonCode string }
+
+type FormFieldModel struct {
+	ID, Name, Label, Type, Value, Help, Error, Autocomplete string
+	Required, Secret                                        bool
+}
+
+type ExactReferenceModel struct{ Label, ID, Revision, Digest, Lifecycle, Provenance string }
+
+// AuthorityContextModel is deliberately display-only. State is authoritative
+// admission readback, never an input or selector.
+type AuthorityContextModel struct{ Identity, Stanza, Mandate, State, ReasonCode string }
+
+type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message string }
+type FilterOptionModel struct{ Value, Label string }
+type FilterModel struct {
+	ID, Label, Name, Value string
+	Options                []FilterOptionModel
+}
+type PaginationModel struct {
+	Label, PreviousURL, NextURL, Summary string
+	HasPrevious, HasNext                 bool
+}
+type OverlayModel struct {
+	ID, Title, Description, CloseLabel string
+}
+type ConfirmationModel struct {
+	Title, Message, ConfirmLabel, CancelLabel, DialogID string
+	Dangerous                                           bool
+}
+
 // CredentialDetailModel is the metadata-only inspector projection of an
 // authoritative encrypted credential record. It deliberately omits secret
 // values, ciphertext, wrapped DEKs, nonces, and KEK bytes. The only KEK field

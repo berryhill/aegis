@@ -70,5 +70,35 @@ class PageWebsocketTest(unittest.TestCase):
         second_connection.close.assert_called_once_with()
 
 
+class NativeKeyTest(unittest.TestCase):
+    def test_escape_uses_trusted_native_key_codes(self):
+        devtools = mock.MagicMock()
+
+        console_browser_test.key(devtools, "Escape")
+
+        self.assertEqual(devtools.command.call_count, 2)
+        for call, event_type in zip(devtools.command.call_args_list, ("rawKeyDown", "keyUp")):
+            method, params = call.args
+            self.assertEqual(method, "Input.dispatchKeyEvent")
+            self.assertEqual(params["type"], event_type)
+            self.assertEqual(params["key"], "Escape")
+            self.assertEqual(params["windowsVirtualKeyCode"], 27)
+            self.assertEqual(params["nativeVirtualKeyCode"], 27)
+
+    def test_shift_tab_retains_modifier_and_native_key_code(self):
+        devtools = mock.MagicMock()
+
+        console_browser_test.key(devtools, "Tab", shift=True)
+
+        for call in devtools.command.call_args_list:
+            params = call.args[1]
+            self.assertEqual(params["modifiers"], 8)
+            self.assertEqual(params["windowsVirtualKeyCode"], 9)
+
+    def test_unknown_key_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "does not define a native key code"):
+            console_browser_test.key(mock.MagicMock(), "Enter")
+
+
 if __name__ == "__main__":
     unittest.main()
