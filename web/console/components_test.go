@@ -30,7 +30,7 @@ func TestDocumentUsesNativeInteractionsUnderStrictCSP(t *testing.T) {
 	if strings.Contains(html, "Authenticated control plane") || !strings.Contains(html, "Authentication required") {
 		t.Fatalf("signed-out header asserted authenticated state: %s", html)
 	}
-	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="denied"`, `data-state="unavailable"`, `data-state="degraded_repair_required"`, `data-state="error"`, `method="post"`, `action="/console/session"`} {
+	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="denied"`, `data-state="unavailable"`, `data-state="degraded_repair_required"`, `data-state="error"`, `method="post"`, `action="/console/login"`} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("document missing %q", required)
 		}
@@ -265,6 +265,83 @@ func TestGraphInspectorRendersTopologyExactBindingsAndFleetWideSubmissionTruth(t
 	}
 }
 
+func TestLoopComposerRendersStructuredBoundedContractWithoutAuthorityInputs(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{
+		Authenticated: true,
+		CSRF:          "csrf-loop",
+		Surface:       SurfaceModel{Domain: DomainLoops, Title: "Loops"},
+		LoopComposer: &LoopComposerModel{Publishers: []LoopPublisherModel{{
+			ID: "agent-builder", Revision: "r2", Digest: "sha256:agent", Runtime: "hermes-agent",
+		}}},
+	}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		`action="/console/loops/preview"`, `name="csrf"`, `value="csrf-loop"`,
+		`name="publisher_id"`, `value="agent-builder"`, `name="publication_key"`,
+		`name="loop_id"`, `name="revision"`, `name="previous_digest"`, `name="entry_step_id"`,
+		`name="inputs"`, `name="outputs"`, `name="steps"`, `name="step_ports"`,
+		`name="terminal_mappings"`, `name="evidence_claims"`, `name="transitions"`,
+		`name="transition_mappings"`, `name="required_evidence"`,
+		"Preview creates no Loop record", "server resolves the exact current Agent revision",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Loop composer missing %q: %s", required, html)
+		}
+	}
+	for _, forbidden := range []string{`name="authority"`, `name="authority_id"`, `name="authority_digest"`, `name="stanza"`, `name="mandate"`, `name="principal"`} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("Loop composer exposed controller authority input %q: %s", forbidden, html)
+		}
+	}
+}
+
+func TestLoopLifecycleAndConfirmationRemainDigestBound(t *testing.T) {
+	var output bytes.Buffer
+	detail := &LoopDetailModel{
+		TargetID: "loop.review:2", Digest: "sha256:revision", PublisherID: "agent-builder",
+		ExpectedLifecycleDigest: "sha256:lifecycle", CanActivate: true, CanRetire: true,
+	}
+	record := RecordModel{Key: detail.TargetID, Label: "loop.review", Revision: "r2", Lifecycle: "published", Readiness: "Eligible", Loop: detail}
+	model := PageModel{Authenticated: true, CSRF: "csrf-loop", Surface: SurfaceModel{
+		Domain: DomainLoops, Title: "Loops", CSRF: "csrf-loop", State: "ready", Authoritative: true,
+		Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true,
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		`action="/console/loops/lifecycle-preview"`, `name="target_id" value="loop.review:2"`,
+		`name="expected_digest" value="sha256:revision"`, `name="expected_previous_digest" value="sha256:lifecycle"`,
+		`name="publisher_id" value="agent-builder"`, `name="state" value="active"`, `name="state" value="retired"`,
+		"Preview activation", "Preview retirement", "execute-time admission resolves the exact publisher and authority again",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Loop lifecycle control missing %q: %s", required, html)
+		}
+	}
+
+	output.Reset()
+	model.Surface = SurfaceModel{Domain: DomainLoops, Title: "Loops"}
+	model.CommandPreview = &CommandPreviewModel{IntentID: "intent-1", CommandID: "loop.lifecycle", TargetID: detail.TargetID, TargetDigest: detail.Digest, InputDigest: "sha256:input", ExpiresAt: "2026-08-22T12:00:00Z"}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html = output.String()
+	for _, required := range []string{`action="/console/loops/execute"`, `name="intent_id" value="intent-1"`, "sha256:revision", "sha256:input", "Preview is non-persistent", "Confirm and execute"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Loop confirmation missing %q: %s", required, html)
+		}
+	}
+	if strings.Contains(html, `name="target_id"`) || strings.Contains(html, `name="authority_id"`) {
+		t.Fatalf("confirmation allowed browser mutation of a retained target or authority: %s", html)
+	}
+}
+
 func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t *testing.T) {
 	var output bytes.Buffer
 	record := RecordModel{Key: "queue-130", Label: "queue-130", Summary: "graph-run-130 · failed", Lifecycle: "failed", Revision: "snapshot-130", Runtime: "hermes-agent", Queue: &QueueDetailModel{
@@ -302,7 +379,7 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 	}
 }
 
-func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
+func TestAuthenticationAcceptsOnlyPrincipalPassword(t *testing.T) {
 	var output bytes.Buffer
 	if err := Authentication(AuthenticationModel{}).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
@@ -312,19 +389,10 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 		"Sign the Aegis principal into this browser",
 		"principal configured when Aegis was initialized",
 		"does not create or change the principal, tenant, or authority context",
-		"On the Aegis host, open a terminal as the initialized principal",
-		"aegis console",
-		"authenticates the host user and creates a temporary, single-use browser handoff",
 		"browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority",
-		"only hands the existing authenticated principal into this browser",
 		"does not provision identity or grant authority",
-		"submit promptly",
-		"without launching a browser",
-		"bare production",
-		"aegis service start",
-		"If the bootstrap expires",
-		"Never paste an API bearer",
-		"credential in a URL",
+		"principal password",
+		"credential-authority passphrase",
 	} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("authentication guidance missing %q: %s", required, html)
@@ -335,8 +403,8 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 			t.Fatalf("browser authentication exposes authority-bearing input %q: %s", forbidden, html)
 		}
 	}
-	if strings.Count(html, `<input`) != 1 || !strings.Contains(html, `name="bootstrap"`) {
-		t.Fatalf("browser authentication must accept exactly one bootstrap input: %s", html)
+	if strings.Count(html, `<input`) != 1 || !strings.Contains(html, `name="password"`) || !strings.Contains(html, `autocomplete="current-password"`) {
+		t.Fatalf("browser authentication must accept exactly one principal-password input: %s", html)
 	}
 }
 
@@ -355,7 +423,7 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 			},
 			Vault:    CredentialVaultDetail{DeploymentID: "deployment-test", StoreID: "store-1", KEKID: "kek-1", KEKVersion: 1, SchemaVersion: "1", Custody: "host-file", LastCleanShutdown: true, State: "initialized", ReasonCode: "credentials_vault_ready"},
 			Backup:   CredentialBackupDetail{Available: false, Note: "Backups are ciphertext-only snapshots; the same KEK is required to reopen."},
-			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/api --kind api-token --created-by \"$OPERATOR\"", BackupCommand: "aegis secret backup <path-to-backup.db>", Notice: "Browser state cannot authorize credential mutation."},
+			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/api --kind api-token --created-by \"$OPERATOR\"", BackupCommand: "aegis secret backup", Notice: "Browser state cannot authorize credential mutation."},
 		},
 	}
 	revoked := RecordModel{
@@ -365,7 +433,7 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 		Credential: &CredentialDetailModel{
 			Reference: "github/legacy", Status: "revoked", CurrentVersion: 1, RevokedAt: "2026-08-18T14:00:00Z", Revocation: "rotation",
 			Vault:    CredentialVaultDetail{State: "initialized", ReasonCode: "credentials_vault_ready"},
-			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/legacy --kind api-token", BackupCommand: "aegis secret backup <path>", Notice: "Browser state cannot authorize credential mutation."},
+			Proposal: CredentialProposalDetail{PutCommand: "aegis secret put github/legacy --kind api-token", BackupCommand: "aegis secret backup", Notice: "Browser state cannot authorize credential mutation."},
 		},
 	}
 	active.JSON = `{"id":"secret-1","status":"active","version_history":[],"vault":{"kek_id":"kek-1","kek_version":1}}`
@@ -396,6 +464,7 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 		`name="principal"`, `name="stanza"`, `name="mandate"`, `name="authority"`,
 		"Ciphertext\":", "WrappedDEK\":", "RecordNonce\":", "WrapNonce\":",
 		"source_env", "target_env",
+		"secret backup <", "secret backup --path", "secret backup /", "secret backup ./", "secret backup ../",
 	} {
 		if strings.Contains(html, forbidden) {
 			t.Fatalf("credential surface exposed %q: %s", forbidden, html)

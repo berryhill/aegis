@@ -80,39 +80,8 @@ prepare_changelog() {
     source_file=$1
     destination_file=$2
     release_date=$3
-    VERSION=$version RELEASE_DATE=$release_date SOURCE_FILE=$source_file DESTINATION_FILE=$destination_file python3 -c '
-import os
-from pathlib import Path
-
-source = Path(os.environ["SOURCE_FILE"])
-destination = Path(os.environ["DESTINATION_FILE"])
-text = source.read_text()
-version = os.environ["VERSION"]
-date = os.environ["RELEASE_DATE"]
-heading = f"## [{version}] - {date}"
-marker = "## Unreleased"
-if text.count(marker) != 1:
-    raise SystemExit("CHANGELOG.md must contain exactly one Unreleased heading")
-before, after = text.split(marker, 1)
-next_release = after.find("\n## ")
-pending = after if next_release < 0 else after[:next_release]
-existing = [line for line in text.splitlines() if line.startswith(f"## [{version}] - ")]
-if existing:
-    raise SystemExit(f"CHANGELOG.md already contains a {version} release heading")
-if not pending.strip():
-    raise SystemExit("CHANGELOG.md has no unreleased entries")
-# Restructure for Keep-a-Changelog convention: move the existing Unreleased
-# entries (with their ### Added/### Changed/### Fixed subsections) under the
-# new release heading, leave an empty Unreleased section on top, and preserve
-# everything else unchanged.
-if next_release < 0:
-    body_after_next = ""
-else:
-    body_after_next = after[next_release:]
-pending_text = pending.strip("\n")
-unreleased_block = marker + "\n\n" + heading + "\n\n" + pending_text + "\n"
-destination.write_text(before + unreleased_block + body_after_next)
-'
+    python3 scripts/prepare-release-changelog.py \
+        "$source_file" "$destination_file" "$version" "$release_date"
 }
 
 verify_tag_annotation() {
@@ -202,6 +171,15 @@ run_verification() {
     git clone --quiet --no-hardlinks "$(pwd -P)" "$verify_root/repo"
     if [ "$mode" = fresh ]; then
         cp CHANGELOG.md "$verify_root/repo/CHANGELOG.md"
+        # The release transformation is part of the candidate. Commit it only
+        # inside the disposable verification clone so every verifier, including
+        # source-provenance checks, receives one exact clean snapshot.
+        git -C "$verify_root/repo" add CHANGELOG.md
+        git -C "$verify_root/repo" \
+            -c core.hooksPath=/dev/null \
+            -c user.name='Aegis Release Verification' \
+            -c user.email='release-verification@aegis.invalid' \
+            commit --quiet -m "Prepare $tag verification candidate"
     else
         git -C "$verify_root/repo" checkout --quiet --detach "$commit"
     fi

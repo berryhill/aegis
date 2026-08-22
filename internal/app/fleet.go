@@ -125,6 +125,72 @@ type LoopLifecycleResult struct {
 	Idempotent bool                `json:"idempotent"`
 }
 
+// FleetCommandAuthority is the controller-derived binding used by browser
+// command adapters. Browser input never supplies any of these fields.
+type FleetCommandAuthority struct {
+	Authority reference.DigestRef
+	Publisher reference.RevisionRef
+	StanzaID  string
+	MandateID string
+	Runtime   string
+	ExpiresAt time.Time
+}
+
+// FleetCommandAuthorityAs resolves exactly one current runtime authority
+// context for the authenticated principal and its latest enabled publisher
+// Agent revision. Browser session identifiers are intentionally outside this
+// selector: the authenticated console session proves the principal, while the
+// controller-owned authority repositories prove runtime authority. Missing,
+// ambiguous, stale, revoked, expired, disabled, or retired state fails closed.
+func (s *Service) FleetCommandAuthorityAs(ctx context.Context, subject core.Subject) (FleetCommandAuthority, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return FleetCommandAuthority{}, err
+	}
+	if s.Authority == nil || s.AuthorityCommands == nil {
+		return FleetCommandAuthority{}, ErrDenied
+	}
+	contexts, err := s.Authority.ListAuthorityContexts(ctx)
+	if err != nil {
+		return FleetCommandAuthority{}, ErrDenied
+	}
+	var authority core.AuthorityContext
+	for _, candidate := range contexts {
+		if candidate.SubjectID != subject.ID {
+			continue
+		}
+		mandate, lookupErr := s.Authority.GetMandate(ctx, candidate.MandateID)
+		if lookupErr != nil {
+			return FleetCommandAuthority{}, ErrDenied
+		}
+		if core.ValidateAuthorityContext(candidate, mandate) != nil {
+			continue
+		}
+		admission, admissionErr := s.AuthorityCommands.AuthorityAdmission(ctx, candidate.ID, candidate.Digest, s.Now())
+		if admissionErr != nil {
+			return FleetCommandAuthority{}, ErrDenied
+		}
+		if !admission.Admitted || admission.AuthorityContext.ID != candidate.ID || admission.AuthorityContext.Digest != candidate.Digest {
+			continue
+		}
+		if authority.ID != "" {
+			return FleetCommandAuthority{}, ErrDenied
+		}
+		authority = candidate
+	}
+	if authority.ID == "" {
+		return FleetCommandAuthority{}, ErrDenied
+	}
+	publisher, err := s.FleetRepository.LatestAgentRevision(ctx, authority.AgentID)
+	if err != nil || publisher.Lifecycle != registry.LifecycleEnabled {
+		return FleetCommandAuthority{}, ErrDenied
+	}
+	return FleetCommandAuthority{
+		Authority: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: authority.ID, Digest: authority.Digest},
+		Publisher: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: publisher.AgentID, Revision: publisher.Revision, Digest: publisher.Digest},
+		StanzaID:  authority.Authority.StanzaID, MandateID: authority.MandateID, Runtime: authority.Runtime.Runtime, ExpiresAt: authority.ExpiresAt,
+	}, nil
+}
+
 type PublishGraphInput struct {
 	Authority              reference.DigestRef `json:"authority"`
 	Revision               graph.GraphRevision `json:"revision"`

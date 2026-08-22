@@ -101,22 +101,18 @@ func secretCmd(build builder) *cobra.Command {
 			return err
 		}
 		defer wipeSecret(value)
-		creator := options.createdBy
-		if creator == "" {
-			creator = subject.PrincipalID
+		if options.createdBy != "" && options.createdBy != subject.PrincipalID {
+			return app.ErrDenied
 		}
-		record, err := authority.Create(cmd.Context(), args[0], options.kind, creator, value)
+		service.CredentialAuthority = authority
+		view, err := service.CreateCredentialAs(cmd.Context(), subject, app.CreateCredentialInput{Reference: args[0], Kind: options.kind, Value: value})
 		if err != nil {
-			_ = service.AuditCredentialOperation(cmd.Context(), subject, "credential_created", "denied", "create_failed", "")
 			return err
 		}
-		if err = service.AuditCredentialOperation(cmd.Context(), subject, "credential_created", "ok", "operator_request", record.ID); err != nil {
-			return err
-		}
-		return output(cmd, record)
+		return output(cmd, view)
 	}}
 	put.Flags().StringVar(&options.kind, "kind", "opaque", "non-secret credential kind")
-	put.Flags().StringVar(&options.createdBy, "created-by", "", "authenticated creator identifier (defaults to principal)")
+	put.Flags().StringVar(&options.createdBy, "created-by", "", "must match the authenticated principal when set")
 	put.Flags().BoolVar(&options.stdin, "stdin", false, "read exact secret bytes from stdin instead of a no-echo terminal prompt")
 
 	metadata := &cobra.Command{Use: "metadata RECORD_ID", Short: "Inspect metadata without decrypting a value", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -162,15 +158,12 @@ func secretCmd(build builder) *cobra.Command {
 			return err
 		}
 		defer wipeSecret(value)
-		record, err := authority.Rotate(cmd.Context(), args[0], value)
+		service.CredentialAuthority = authority
+		view, err := service.RotateCredentialAs(cmd.Context(), subject, args[0], app.RotateCredentialInput{Value: value})
 		if err != nil {
-			_ = service.AuditCredentialOperation(cmd.Context(), subject, "credential_rotated", "denied", "rotation_failed", args[0])
 			return err
 		}
-		if err = service.AuditCredentialOperation(cmd.Context(), subject, "credential_rotated", "ok", "operator_request", args[0]); err != nil {
-			return err
-		}
-		return output(cmd, record)
+		return output(cmd, view)
 	}}
 	rotate.Flags().BoolVar(&options.stdin, "stdin", false, "read exact secret bytes from stdin instead of a no-echo terminal prompt")
 
@@ -180,14 +173,12 @@ func secretCmd(build builder) *cobra.Command {
 			return err
 		}
 		defer closeAuthority()
-		if err = authority.Revoke(cmd.Context(), args[0], options.version, options.reason); err != nil {
-			_ = service.AuditCredentialOperation(cmd.Context(), subject, "credential_revoked", "denied", "revocation_failed", args[0])
+		service.CredentialAuthority = authority
+		view, err := service.RevokeCredentialAs(cmd.Context(), subject, args[0], app.RevokeCredentialInput{Version: options.version, Reason: options.reason})
+		if err != nil {
 			return err
 		}
-		if err = service.AuditCredentialOperation(cmd.Context(), subject, "credential_revoked", "ok", options.reason, args[0]); err != nil {
-			return err
-		}
-		return output(cmd, map[string]any{"status": "revoked", "record_id": args[0], "version": options.version})
+		return output(cmd, view)
 	}}
 	revoke.Flags().Uint64Var(&options.version, "version", 0, "version to revoke (0 revokes the whole record)")
 	revoke.Flags().StringVar(&options.reason, "reason", "operator-request", "machine-readable revocation reason")
@@ -203,15 +194,12 @@ func secretCmd(build builder) *cobra.Command {
 		if options.pinned > 0 {
 			policy = credentials.VersionPinned
 		}
-		binding := credentials.CredentialBinding{Key: credentials.CredentialBindingKey{AgentID: options.agent, StanzaID: options.stanza, DeploymentID: configuredDeployment, Scope: options.scope}, SecretRecord: args[0], VersionPolicy: policy, PinnedVersion: options.pinned, Mode: options.mode, Destinations: options.destinations, Enabled: true}
-		if err = authority.Bind(cmd.Context(), binding); err != nil {
-			_ = service.AuditCredentialOperation(cmd.Context(), subject, "credential_bound", "denied", "binding_failed", args[0])
+		service.CredentialAuthority = authority
+		view, err := service.BindCredentialAs(cmd.Context(), subject, args[0], app.BindCredentialInput{AgentID: options.agent, StanzaID: options.stanza, DeploymentID: configuredDeployment, Scope: options.scope, Mode: options.mode, Destinations: options.destinations, VersionPolicy: policy, PinnedVersion: options.pinned, Enabled: true})
+		if err != nil {
 			return err
 		}
-		if err = service.AuditCredentialOperation(cmd.Context(), subject, "credential_bound", "ok", "operator_request", args[0]); err != nil {
-			return err
-		}
-		return output(cmd, binding)
+		return output(cmd, view)
 	}}
 	bind.Flags().StringVar(&options.agent, "agent", "", "exact logical agent ID")
 	bind.Flags().StringVar(&options.stanza, "stanza", "", "exact trust stanza ID")
@@ -223,20 +211,18 @@ func secretCmd(build builder) *cobra.Command {
 		_ = bind.MarkFlagRequired(flag)
 	}
 
-	backup := &cobra.Command{Use: "backup FILE", Short: "Create a consistent ciphertext-only bbolt snapshot", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	backup := &cobra.Command{Use: "backup", Short: "Create a policy-located ciphertext-only bbolt snapshot", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		service, subject, authority, closeAuthority, err := openCredentialAuthority(cmd, build)
 		if err != nil {
 			return err
 		}
 		defer closeAuthority()
-		if err = authority.Backup(cmd.Context(), args[0]); err != nil {
-			_ = service.AuditCredentialOperation(cmd.Context(), subject, "credential_backup_created", "denied", "backup_failed", "")
+		service.CredentialAuthority = authority
+		view, err := service.BackupCredentialsAs(cmd.Context(), subject)
+		if err != nil {
 			return err
 		}
-		if err = service.AuditCredentialOperation(cmd.Context(), subject, "credential_backup_created", "ok", "operator_request", ""); err != nil {
-			return err
-		}
-		return output(cmd, map[string]any{"status": "created", "path": args[0], "warning": "metadata remains sensitive; encrypt the backup to offline recovery recipients before it leaves the host"})
+		return output(cmd, view)
 	}}
 
 	command.AddCommand(initialize, put, metadata, list, rotate, revoke, bind, backup)

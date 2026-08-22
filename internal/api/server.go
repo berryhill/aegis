@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ import (
 	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/managergateway"
+	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -57,6 +59,8 @@ type envelope struct {
 func classifyError(err error) (int, string, string) {
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
 	switch {
+	case errors.Is(err, console.ErrCommandUnknown):
+		return http.StatusNotFound, "invalid_request", "console command is not registered"
 	case errors.Is(err, console.ErrBootstrapInvalidFormat):
 		return http.StatusBadRequest, "bootstrap_invalid_format", "console bootstrap must be exactly 64 lowercase hexadecimal characters"
 	case errors.Is(err, console.ErrBootstrapConsumedOrExpired):
@@ -150,11 +154,22 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if telemetry == nil {
 		telemetry = noopTelemetry{}
 	}
+	verifierPath := filepath.Join(svc.Config.StateDir, "auth", principalauth.FileName)
+	stored, err := principalauth.Load(verifierPath)
+	if err != nil {
+		return fmt.Errorf("load principal authentication verifier: %w", err)
+	}
+	verifier := &stored
 	consoleManager, err := console.New(console.Config{
-		Origin:       svc.Config.API.Console.Origin,
-		SessionTTL:   svc.Config.API.Console.SessionTTL,
-		BootstrapTTL: svc.Config.API.Console.BootstrapTTL,
-		MaxPageSize:  svc.Config.API.Console.MaxPageSize,
+		Origin:           svc.Config.API.Console.Origin,
+		SessionTTL:       svc.Config.API.Console.SessionTTL,
+		BootstrapTTL:     svc.Config.API.Console.BootstrapTTL,
+		MaxPageSize:      svc.Config.API.Console.MaxPageSize,
+		PasswordVerifier: verifier,
+		PrincipalID:      svc.Config.Principal.ID,
+		PrincipalAuthTTL: svc.Config.Principal.AuthTTL,
+		LoginBurst:       5,
+		LoginWindow:      5 * time.Minute,
 	}, svc.Now)
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
@@ -162,6 +177,10 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	managerGateway, err := managergateway.New(svc)
 	if err != nil {
 		return fmt.Errorf("configure manager gateway: %w", err)
+	}
+	commandService, err := console.NewCommandService(loopCommandDefinitions(svc), loopCommandAuthorityProvider(svc), svc.Now)
+	if err != nil {
+		return fmt.Errorf("configure console command service: %w", err)
 	}
 	e := echo.New()
 	var ready atomic.Bool
@@ -543,6 +562,208 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Redirect(http.StatusSeeOther, "/console/agents?record_key="+url.QueryEscape(agentID)+"#/agents")
 	})
+	e.GET("/console/agents/charter-import", charterImportPage)
+	e.GET("/console/loops/compose", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		page, err := loadConsole(c, subject, consoleLoops)
+		if err != nil {
+			return err
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		readiness, ok := surface.Actions["loop_publish"]
+		if !ok || readiness.State != "ready" {
+			return app.ErrDenied
+		}
+		composer := &consoleweb.LoopComposerModel{Publishers: []consoleweb.LoopPublisherModel{}}
+		for _, agent := range surface.Agents {
+			if agent.Revision.Lifecycle != "enabled" {
+				continue
+			}
+			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: agent.Revision.AgentID, Revision: fmt.Sprintf("r%d", agent.Revision.Revision), Digest: agent.Revision.Digest, Runtime: agent.Revision.Runtime.Runtime})
+		}
+		page.LoopComposer = composer
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.GET("/console/graphs/compose", func(c *echo.Context) error {
+		if err := consoleHeaders(c, true); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		csrf, err := consoleManager.CSRF(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		agents, loops := consoleweb.GraphReferenceOptions(surface)
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphComposerDocument(consoleweb.GraphComposerModel{CSRF: csrf, Agents: agents, Loops: loops}))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.GET("/console/graphs/run", func(c *echo.Context) error {
+		if err := consoleHeaders(c, true); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		revisionNumber, err := requiredRevision(c.QueryParam("revision"))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "exact Graph revision is required")
+		}
+		revision, err := svc.GetGraphAs(c.Request().Context(), subject, c.QueryParam("graph"), revisionNumber)
+		if err != nil {
+			return err
+		}
+		if revision.Digest != c.QueryParam("digest") {
+			return echo.NewHTTPError(http.StatusConflict, "exact Graph digest changed or is unavailable")
+		}
+		lifecycle, err := svc.GetGraphLifecycleAs(c.Request().Context(), subject, revision.GraphID)
+		if err != nil {
+			return err
+		}
+		csrf, err := consoleManager.CSRF(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		inputs := make([]consoleweb.GraphRunInputModel, 0, len(revision.Inputs))
+		for _, input := range revision.Inputs {
+			inputs = append(inputs, consoleweb.GraphRunInputModel{ID: input.ID, Type: string(input.Type), Required: input.Required})
+		}
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphRunDocument(consoleweb.GraphRunFormModel{CSRF: csrf, GraphID: revision.GraphID, Revision: revision.Revision, Digest: revision.Digest, Lifecycle: string(lifecycle.State), Inputs: inputs}))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.POST("/console/graphs/publish", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		values, err := consoleweb.DecodeGraphConsoleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		csrf, err := consoleweb.ExactFormValue(values, "csrf")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		sessionID, err := consoleweb.ExactFormValue(values, "authority_session_id")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		authority, err := svc.FleetAuthorityForSessionAs(c.Request().Context(), subject, sessionID)
+		if err != nil {
+			return err
+		}
+		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		input, err := consoleweb.ParseGraphPublication(values, surface, authority)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		published, err := svc.PublishGraphAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		result := consoleweb.GraphActionResultModel{Title: "Graph publication recorded", Outcome: "published", Reason: "Exact validated revision stored; idempotent=" + strconv.FormatBool(published.Decision.Idempotent), GraphID: published.Revision.GraphID, RecordKey: published.Revision.GraphID + ":" + strconv.FormatUint(published.Revision.Revision, 10)}
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphActionResultDocument(result))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
+	e.POST("/console/graphs/submit", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		values, err := consoleweb.DecodeGraphConsoleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		csrf, err := consoleweb.ExactFormValue(values, "csrf")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		revisionNumber, err := strconv.ParseUint(consoleweb.OptionalFormValue(values, "graph_revision"), 10, 64)
+		if err != nil || revisionNumber == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "exact Graph revision is required")
+		}
+		revision, err := svc.GetGraphAs(c.Request().Context(), subject, consoleweb.OptionalFormValue(values, "graph_id"), revisionNumber)
+		if err != nil {
+			return err
+		}
+		sessionID, err := consoleweb.ExactFormValue(values, "authority_session_id")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		authority, authorityErr := svc.FleetAuthorityForSessionAs(c.Request().Context(), subject, sessionID)
+		if authorityErr != nil {
+			// Preserve the stable submission envelope and let the application
+			// boundary record one durable readiness_denied rejection. An invalid
+			// browser-supplied session never becomes an authority reference.
+			authority = app.SubmitGraphInput{}.Authority
+		}
+		input, err := consoleweb.ParseGraphSubmission(values, revision, authority)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		decision, err := svc.SubmitGraphAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		result := consoleweb.GraphActionResultModel{Title: "Graph submission decided", GraphID: revision.GraphID, RecordKey: revision.GraphID + ":" + strconv.FormatUint(revision.Revision, 10)}
+		if decision.Accepted != nil {
+			result.Outcome, result.Reason, result.QueueItemID = "accepted", "One immutable snapshot and Queue item bind the reviewed exact definitions and normalized inputs.", decision.Accepted.QueueItem.ItemID
+		} else if decision.Rejection != nil {
+			result.Outcome, result.Reason = "rejected · "+decision.Rejection.ReasonCode, decision.Rejection.Reason
+		} else {
+			return errors.New("submission decision is missing both acceptance and rejection")
+		}
+		content, err := renderConsole(c.Request().Context(), consoleweb.GraphActionResultDocument(result))
+		if err != nil {
+			return err
+		}
+		status := http.StatusCreated
+		if !decision.Created {
+			status = http.StatusOK
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	})
 	e.GET("/favicon.ico", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
@@ -560,6 +781,80 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleError(err)
 		}
 		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.Datastar())
+	})
+	e.POST("/console/login", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
+				return auditErr
+			}
+			return consoleError(err)
+		}
+		password, err := decodeConsoleForm(c.Request(), "password")
+		if err != nil || len(password) > 1024 {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
+				return auditErr
+			}
+			return renderAuthentication(c, http.StatusUnauthorized, "invalid_credentials")
+		}
+		passwordBytes := []byte(password)
+		defer func() {
+			for index := range passwordBytes {
+				passwordBytes[index] = 0
+			}
+		}()
+		sessionValue, _, expires, subject, err := consoleManager.Login(c.Request(), sourceKey(c.Request()), passwordBytes)
+		if err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
+				return auditErr
+			}
+			return renderAuthentication(c, http.StatusUnauthorized, "invalid_credentials")
+		}
+		if err = svc.AuditConsoleSession(c.Request().Context(), subject, "success", "principal_password_authenticated"); err != nil {
+			consoleManager.RevokeSessionValue(sessionValue)
+			return err
+		}
+		consoleManager.SetCookieUntil(c.Response(), sessionValue, expires)
+		return c.Redirect(http.StatusSeeOther, "/console/agents#/agents")
+	})
+	e.POST("/console/password", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
+			return consoleError(err)
+		}
+		form, err := decodePasswordRotationForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid principal password rotation")
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		currentPassword := []byte(form.Current)
+		newPassword := []byte(form.New)
+		confirmation := []byte(form.Confirmation)
+		defer func() {
+			for _, secret := range [][]byte{currentPassword, newPassword, confirmation} {
+				for index := range secret {
+					secret[index] = 0
+				}
+			}
+		}()
+		err = consoleManager.RotatePassword(c.Request(), sourceKey(c.Request()), currentPassword, newPassword, confirmation, form.Approved, func(current, replacement principalauth.Record, subject core.Subject) error {
+			return replacePrincipalVerifier(verifierPath, current, replacement,
+				func() error {
+					return svc.AuditConsoleSession(c.Request().Context(), subject, "authorized", "principal_password_rotation_authorized")
+				},
+				func() error {
+					return svc.AuditConsoleSession(c.Request().Context(), subject, "success", "principal_password_rotated")
+				},
+			)
+		})
+		if err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_rotation_denied"); auditErr != nil {
+				return errors.Join(err, auditErr)
+			}
+			return renderAuthentication(c, http.StatusUnauthorized, "password_rotation_denied")
+		}
+		consoleManager.ClearCookie(c.Response())
+		return c.Redirect(http.StatusSeeOther, "/console")
 	})
 	e.POST("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
@@ -657,6 +952,141 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
 		}
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
+	})
+	decodeCommand := func(c *echo.Context, destination any) error {
+		if c.Request().Body == nil {
+			return console.ErrInvalidInput
+		}
+		body, err := io.ReadAll(io.LimitReader(c.Request().Body, console.CommandBodyBytesMax+1))
+		if err != nil || len(body) > console.CommandBodyBytesMax {
+			return console.ErrInvalidInput
+		}
+		if isConsoleForm(c.Request()) {
+			return console.DecodeCommandForm(body, destination)
+		}
+		mediaType, _, err := mime.ParseMediaType(c.Request().Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			return console.ErrInvalidInput
+		}
+		return console.DecodeCommandRequest(body, destination)
+	}
+	commandAdmission := func(c *echo.Context) (core.Subject, string, error) {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		subject, sessionID, err := consoleManager.AuthorizeCommand(c.Request())
+		if err != nil {
+			return core.Subject{}, "", consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return core.Subject{}, "", err
+		}
+		return subject, sessionID, nil
+	}
+	renderLoopCommandPage := func(c *echo.Context, page consoleweb.PageModel, status int) error {
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
+		if err != nil {
+			return err
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	}
+	e.POST("/console/loops/preview", func(c *echo.Context) error {
+		form, err := decodeLoopComposerForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		head := emptyLoopHeadDigest(form.Revision.LoopID)
+		revisions, err := svc.FleetRepository.ListLoopRevisions(c.Request().Context())
+		if err != nil {
+			return err
+		}
+		var latest uint64
+		for _, revision := range revisions {
+			if revision.LoopID == form.Revision.LoopID && revision.Revision > latest {
+				latest, head = revision.Revision, revision.Digest
+			}
+		}
+		input, err := json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
+		if err != nil {
+			return err
+		}
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: loopPublishCommandID, TargetID: form.Revision.LoopID, ExpectedDigest: head, IdempotencyKey: form.PublicationKey, Input: input})
+		if err != nil {
+			return consoleError(err)
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: &consoleweb.CommandPreviewModel{IntentID: preview.IntentID, CommandID: preview.CommandID, TargetID: preview.Target.ID, TargetDigest: preview.Target.Digest, InputDigest: preview.InputDigest, ExpiresAt: preview.ExpiresAt.UTC().Format(time.RFC3339)}}
+		return renderLoopCommandPage(c, page, http.StatusOK)
+	})
+	e.POST("/console/loops/lifecycle-preview", func(c *echo.Context) error {
+		form, err := decodeLoopLifecycleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Loop lifecycle request")
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		input, err := json.Marshal(loopLifecycleCommandInput{PublisherID: form.PublisherID, State: form.State, ExpectedPreviousDigest: form.ExpectedPreviousDigest, IdempotencyKey: form.IdempotencyKey})
+		if err != nil {
+			return err
+		}
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: loopLifecycleCommandID, TargetID: form.TargetID, ExpectedDigest: form.ExpectedDigest, IdempotencyKey: form.IdempotencyKey, Input: input})
+		if err != nil {
+			return consoleError(err)
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: &consoleweb.CommandPreviewModel{IntentID: preview.IntentID, CommandID: preview.CommandID, TargetID: preview.Target.ID, TargetDigest: preview.Target.Digest, InputDigest: preview.InputDigest, ExpiresAt: preview.ExpiresAt.UTC().Format(time.RFC3339)}}
+		return renderLoopCommandPage(c, page, http.StatusOK)
+	})
+	e.POST("/console/loops/execute", func(c *echo.Context) error {
+		csrf, intentID, err := decodeLoopExecuteForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Loop confirmation")
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		receipt, err := commandService.Execute(c.Request().Context(), subject, sessionID, console.CommandExecuteRequest{SchemaVersion: console.CommandCatalogVersion, IntentID: intentID})
+		if err != nil {
+			return consoleError(err)
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback)}}
+		return renderLoopCommandPage(c, page, http.StatusOK)
+	})
+	e.POST("/console/api/commands/preview", func(c *echo.Context) error {
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		var request console.CommandPreviewRequest
+		if err = decodeCommand(c, &request); err != nil {
+			return consoleError(err)
+		}
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, request)
+		if err != nil {
+			return consoleError(err)
+		}
+		return c.JSON(http.StatusOK, preview)
+	})
+	e.POST("/console/api/commands/execute", func(c *echo.Context) error {
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		var request console.CommandExecuteRequest
+		if err = decodeCommand(c, &request); err != nil {
+			return consoleError(err)
+		}
+		receipt, err := commandService.Execute(c.Request().Context(), subject, sessionID, request)
+		if err != nil {
+			return consoleError(err)
+		}
+		return c.JSON(http.StatusOK, receipt)
 	})
 	e.GET("/console/api/state", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)

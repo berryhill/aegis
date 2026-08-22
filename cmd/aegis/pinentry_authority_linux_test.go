@@ -32,7 +32,7 @@ func TestBasicAndAdvancedBootstrapRoutesReachSameArtifactDerivedStateAndResume(t
 		configPath := filepath.Join(installation, "aegis.yaml")
 		statePath := filepath.Join(installation, "state")
 		process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, runtimePath)
-		capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+		capture := awaitPinentryPrincipalEnrollmentPTY(t, master, nil)
 		if route == "advanced" {
 			_, _ = master.Write([]byte("advanced\r"))
 			// Match the stable hierarchy label rather than prose that may wrap at
@@ -112,7 +112,7 @@ func TestAuthorityPinentryCreateAndNonTTYUnlockCLI(t *testing.T) {
 	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, runtimePath)
 	defer master.Close()
 	defer slave.Close()
-	capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+	capture := awaitPinentryPrincipalEnrollmentPTY(t, master, nil)
 	_, _ = master.Write([]byte("\r"))
 	capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
@@ -157,7 +157,7 @@ func TestAuthorityPinentryCreateAndNonTTYUnlockCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(bytes.Fields(count)) != 3 {
+	if len(bytes.Fields(count)) != 5 {
 		t.Fatalf("pinentry requests=%d log=%q", len(bytes.Fields(count)), count)
 	}
 }
@@ -171,7 +171,7 @@ func TestAuthorityNoEchoPTYFallbackCLI(t *testing.T) {
 	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, "", "")
 	defer master.Close()
 	defer slave.Close()
-	capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+	capture := enrollPrincipalPasswordPTY(t, master, nil)
 	_, _ = master.Write([]byte("\r"))
 	capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
@@ -197,14 +197,15 @@ func TestAuthorityPinentryCancellationDoesNotMutateCLI(t *testing.T) {
 	root := t.TempDir()
 	binary := filepath.Join(root, "aegis")
 	pinentry := filepath.Join(root, "cancel-pinentry")
+	countFile := filepath.Join(root, "cancel-pinentry-count")
 	buildTestBinary(t, binary)
-	buildCancelPinentry(t, pinentry)
+	buildCancelPinentry(t, pinentry, countFile)
 	configPath := filepath.Join(root, "cancelled", "aegis.yaml")
 	statePath := filepath.Join(root, "cancelled", "state")
 	process, master, slave := startAuthorityPTY(t, binary, configPath, statePath, pinentry, "")
 	defer master.Close()
 	defer slave.Close()
-	capture := readPTYUntil(t, master, nil, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+	capture := awaitPinentryPrincipalEnrollmentPTY(t, master, nil)
 	_, _ = master.Write([]byte("\r"))
 	capture = readPTYUntil(t, master, capture, "Choose custody [Y=encrypted/n=exit/advanced]:", 5*time.Second)
 	_, _ = master.Write([]byte("\r"))
@@ -226,6 +227,25 @@ func TestAuthorityPinentryCancellationDoesNotMutateCLI(t *testing.T) {
 	if bytes.Contains(configuration, []byte("passphrase-file")) {
 		t.Fatal("cancel persisted authority configuration")
 	}
+}
+
+func enrollPrincipalPasswordPTY(t *testing.T, master *os.File, capture []byte) []byte {
+	t.Helper()
+	const password = "test-principal-password"
+	capture = readPTYUntil(t, master, capture, "Principal password (minimum 12 bytes):", 5*time.Second)
+	_, _ = master.Write([]byte(password + "\r"))
+	capture = readPTYUntil(t, master, capture, "Confirm principal password:", 5*time.Second)
+	_, _ = master.Write([]byte(password + "\r"))
+	capture = readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
+	if bytes.Contains(capture, []byte(password)) {
+		t.Fatal("principal password was echoed by PTY enrollment")
+	}
+	return capture
+}
+
+func awaitPinentryPrincipalEnrollmentPTY(t *testing.T, master *os.File, capture []byte) []byte {
+	t.Helper()
+	return readPTYUntil(t, master, capture, "Approve? [Y/n/details/basic/advanced]:", 5*time.Second)
 }
 
 func buildFakePinentry(t *testing.T, binary, countFile, canary string) {
@@ -252,12 +272,17 @@ func main(){
 	}
 }
 
-func buildCancelPinentry(t *testing.T, binary string) {
+func buildCancelPinentry(t *testing.T, binary, countFile string) {
 	t.Helper()
 	source := filepath.Join(t.TempDir(), "main.go")
-	program := `package main
+	program := fmt.Sprintf(`package main
 import("bufio";"fmt";"os";"strings")
-func main(){r:=bufio.NewReader(os.Stdin);fmt.Fprintln(os.Stdout,"OK fake");for{line,err:=r.ReadString('\n');if err!=nil{return};line=strings.TrimSpace(line);if strings.HasPrefix(line,"SET"){fmt.Fprintln(os.Stdout,"OK")}else if line=="GETPIN"{fmt.Fprintln(os.Stdout,"ERR 83886179")}else if line=="BYE"{return}}}`
+func main(){
+ f,_:=os.OpenFile(%q,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);fmt.Fprintln(f,"request");f.Close()
+ data,_:=os.ReadFile(%q);request:=len(strings.Fields(string(data)))
+ r:=bufio.NewReader(os.Stdin);fmt.Fprintln(os.Stdout,"OK fake")
+ for{line,err:=r.ReadString('\n');if err!=nil{return};line=strings.TrimSpace(line);if strings.HasPrefix(line,"SET"){fmt.Fprintln(os.Stdout,"OK")}else if line=="GETPIN"{if request<=2{fmt.Fprintln(os.Stdout,"D test-principal-password");fmt.Fprintln(os.Stdout,"OK")}else{fmt.Fprintln(os.Stdout,"ERR 83886179")}}else if line=="BYE"{return}}
+}`, countFile, countFile)
 	if err := os.WriteFile(source, []byte(program), 0600); err != nil {
 		t.Fatal(err)
 	}

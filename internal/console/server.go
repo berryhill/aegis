@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
@@ -27,6 +28,8 @@ var (
 	ErrBootstrapConsumedOrExpired = errors.New("bootstrap_consumed_or_expired")
 	ErrReviewReceiptInvalidFormat = errors.New("review_receipt_invalid_format")
 	ErrReviewReceiptUnavailable   = errors.New("review_receipt_unavailable")
+	ErrInvalidCredentials         = errors.New("principal authentication failed")
+	ErrLoginThrottled             = errors.New("principal authentication retry limit reached")
 )
 
 const CookieName = "aegis-console"
@@ -37,22 +40,29 @@ const (
 )
 
 type Config struct {
-	Origin       string
-	SessionTTL   time.Duration
-	BootstrapTTL time.Duration
-	MaxPageSize  int
+	Origin           string
+	SessionTTL       time.Duration
+	BootstrapTTL     time.Duration
+	MaxPageSize      int
+	PrincipalID      string
+	PrincipalAuthTTL time.Duration
+	PasswordVerifier *principalauth.Record
+	LoginBurst       int
+	LoginWindow      time.Duration
 }
 
 type bootstrap struct {
-	subject core.Subject
-	expires time.Time
+	subject    core.Subject
+	expires    time.Time
+	generation uint64
 }
 
 type session struct {
-	subject  core.Subject
-	csrf     string
-	csrfHash [32]byte
-	expires  time.Time
+	subject    core.Subject
+	csrf       string
+	csrfHash   [32]byte
+	expires    time.Time
+	generation uint64
 }
 
 type reviewReceipt struct {
@@ -63,14 +73,18 @@ type reviewReceipt struct {
 }
 
 type Manager struct {
-	mu         sync.Mutex
-	origin     *url.URL
-	config     Config
-	now        func() time.Time
-	bootstraps map[[32]byte]bootstrap
-	sessions   map[[32]byte]session
-	receipts   map[[32]byte]reviewReceipt
-	pending    map[[32]byte][32]byte
+	mu            sync.Mutex
+	rotationMu    sync.Mutex
+	origin        *url.URL
+	config        Config
+	now           func() time.Time
+	bootstraps    map[[32]byte]bootstrap
+	sessions      map[[32]byte]session
+	loginFailures map[string][]time.Time
+	loginInFlight map[string]int
+	generation    uint64
+	receipts      map[[32]byte]reviewReceipt
+	pending       map[[32]byte][32]byte
 }
 
 func New(config Config, now func() time.Time) (*Manager, error) {
@@ -84,7 +98,12 @@ func New(config Config, now func() time.Time) (*Manager, error) {
 	if origin.Scheme != "https" && !loopbackHost(origin.Hostname()) {
 		return nil, fmt.Errorf("%w: plaintext console transport is restricted to loopback", ErrInvalidInput)
 	}
-	return &Manager{origin: origin, config: config, now: now, bootstraps: make(map[[32]byte]bootstrap), sessions: make(map[[32]byte]session), receipts: make(map[[32]byte]reviewReceipt), pending: make(map[[32]byte][32]byte)}, nil
+	if config.PasswordVerifier != nil {
+		if config.PrincipalID == "" || config.PrincipalAuthTTL <= 0 || config.PrincipalAuthTTL > 15*time.Minute || config.PasswordVerifier.PrincipalID != config.PrincipalID || config.LoginBurst < 1 || config.LoginBurst > 20 || config.LoginWindow <= 0 || config.LoginWindow > 15*time.Minute {
+			return nil, fmt.Errorf("%w: principal password authentication configuration is invalid", ErrInvalidInput)
+		}
+	}
+	return &Manager{origin: origin, config: config, now: now, bootstraps: make(map[[32]byte]bootstrap), sessions: make(map[[32]byte]session), loginFailures: make(map[string][]time.Time), loginInFlight: make(map[string]int), generation: 1, receipts: make(map[[32]byte]reviewReceipt), pending: make(map[[32]byte][32]byte)}, nil
 }
 
 func loopbackHost(host string) bool {
@@ -104,6 +123,70 @@ func opaque() (string, [32]byte, error) {
 	return value, sha256.Sum256([]byte(value)), nil
 }
 
+func (m *Manager) Login(request *http.Request, client string, password []byte) (string, string, time.Time, core.Subject, error) {
+	if err := m.ValidateOrigin(request, true); err != nil {
+		return "", "", time.Time{}, core.Subject{}, err
+	}
+	now := m.now()
+	m.mu.Lock()
+	failures := m.pruneLoginFailures(client, now)
+	if m.config.PasswordVerifier == nil || client == "" || len(failures)+m.loginInFlight[client] >= m.config.LoginBurst {
+		m.mu.Unlock()
+		return "", "", time.Time{}, core.Subject{}, ErrLoginThrottled
+	}
+	m.loginInFlight[client]++
+	verifier := *m.config.PasswordVerifier
+	generation := m.generation
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.loginInFlight[client]--
+		if m.loginInFlight[client] == 0 {
+			delete(m.loginInFlight, client)
+		}
+		m.mu.Unlock()
+	}()
+	if err := verifier.Verify(password); err != nil {
+		m.mu.Lock()
+		m.loginFailures[client] = append(m.loginFailures[client], now)
+		m.mu.Unlock()
+		return "", "", time.Time{}, core.Subject{}, ErrInvalidCredentials
+	}
+	m.mu.Lock()
+	if generation != m.generation || m.config.PasswordVerifier == nil || verifier != *m.config.PasswordVerifier {
+		m.mu.Unlock()
+		return "", "", time.Time{}, core.Subject{}, ErrInvalidCredentials
+	}
+	delete(m.loginFailures, client)
+	m.mu.Unlock()
+	subjectValue, _, err := opaque()
+	if err != nil {
+		return "", "", time.Time{}, core.Subject{}, fmt.Errorf("generate principal authentication subject: %w", err)
+	}
+	subject := core.Subject{ID: "password:" + subjectValue, Kind: "principal", PrincipalID: m.config.PrincipalID, Issuer: "aegis-principal-auth", Method: "password", AuthenticatedAt: now, ExpiresAt: now.Add(m.config.PrincipalAuthTTL)}
+	sessionValue, sessionDigest, err := opaque()
+	if err != nil {
+		return "", "", time.Time{}, core.Subject{}, fmt.Errorf("generate console session: %w", err)
+	}
+	csrf, _, err := opaque()
+	if err != nil {
+		return "", "", time.Time{}, core.Subject{}, fmt.Errorf("generate CSRF value: %w", err)
+	}
+	expires := now.Add(m.config.SessionTTL)
+	if subject.ExpiresAt.Before(expires) {
+		expires = subject.ExpiresAt
+	}
+	m.mu.Lock()
+	m.prune(now)
+	if generation != m.generation {
+		m.mu.Unlock()
+		return "", "", time.Time{}, core.Subject{}, ErrInvalidCredentials
+	}
+	m.sessions[sessionDigest] = session{subject: subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires, generation: generation}
+	m.mu.Unlock()
+	return sessionValue, csrf, expires, subject, nil
+}
+
 func (m *Manager) IssueBootstrap(subject core.Subject) (string, error) {
 	now := m.now()
 	if subject.ID == "" || subject.PrincipalID == "" || !now.Before(subject.ExpiresAt) {
@@ -120,7 +203,7 @@ func (m *Manager) IssueBootstrap(subject core.Subject) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune(now)
-	m.bootstraps[digest] = bootstrap{subject: subject, expires: expires}
+	m.bootstraps[digest] = bootstrap{subject: subject, expires: expires, generation: m.generation}
 	return value, nil
 }
 
@@ -138,7 +221,7 @@ func (m *Manager) Exchange(request *http.Request, value string) (string, string,
 	m.prune(now)
 	candidate, ok := m.bootstraps[digest]
 	delete(m.bootstraps, digest)
-	if !ok || !now.Before(candidate.expires) || candidate.subject.PrincipalID == "" || !now.Before(candidate.subject.ExpiresAt) {
+	if !ok || candidate.generation != m.generation || !now.Before(candidate.expires) || candidate.subject.PrincipalID == "" || !now.Before(candidate.subject.ExpiresAt) {
 		return "", "", time.Time{}, ErrBootstrapConsumedOrExpired
 	}
 	sessionValue, sessionDigest, err := opaque()
@@ -153,7 +236,7 @@ func (m *Manager) Exchange(request *http.Request, value string) (string, string,
 	if candidate.subject.ExpiresAt.Before(expires) {
 		expires = candidate.subject.ExpiresAt
 	}
-	m.sessions[sessionDigest] = session{subject: candidate.subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires}
+	m.sessions[sessionDigest] = session{subject: candidate.subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires, generation: m.generation}
 	return sessionValue, csrf, expires, nil
 }
 
@@ -246,7 +329,7 @@ func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {
 	defer m.mu.Unlock()
 	m.prune(now)
 	candidate, ok := m.sessions[digest]
-	if !ok || !now.Before(candidate.expires) || !now.Before(candidate.subject.ExpiresAt) || candidate.subject.PrincipalID == "" {
+	if !ok || candidate.generation != m.generation || !now.Before(candidate.expires) || !now.Before(candidate.subject.ExpiresAt) || candidate.subject.PrincipalID == "" {
 		delete(m.sessions, digest)
 		return core.Subject{}, ErrUnauthenticated
 	}
@@ -271,6 +354,97 @@ func (m *Manager) AuthorizeMutation(request *http.Request) (core.Subject, error)
 		return core.Subject{}, ErrDenied
 	}
 	return subject, nil
+}
+
+// AuthorizeCommand repeats the complete browser mutation admission and returns
+// a server-derived session binding for command intents. The binding is a digest
+// of the opaque cookie value; neither the cookie nor its CSRF material leaves
+// the console boundary or enters command/audit records.
+func (m *Manager) AuthorizeCommand(request *http.Request) (core.Subject, string, error) {
+	subject, err := m.AuthorizeMutation(request)
+	if err != nil {
+		return core.Subject{}, "", err
+	}
+	cookie, err := request.Cookie(CookieName)
+	if err != nil || cookie.Value == "" {
+		return core.Subject{}, "", ErrUnauthenticated
+	}
+	digest := sha256.Sum256([]byte(cookie.Value))
+	return subject, "session-" + hex.EncodeToString(digest[:]), nil
+}
+
+// RotatePassword requires an authenticated same-origin session, its CSRF
+// proof, fresh verification of the current password, exact confirmation, and
+// explicit approval. The callback durably publishes and audits before the
+// manager activates the replacement.
+func (m *Manager) RotatePassword(request *http.Request, client string, currentPassword, newPassword, confirmation []byte, approved bool, replace func(principalauth.Record, principalauth.Record, core.Subject) error) error {
+	subject, err := m.AuthorizeMutation(request)
+	if err != nil {
+		return err
+	}
+	if client == "" || !approved || replace == nil || len(newPassword) != len(confirmation) || subtle.ConstantTimeCompare(newPassword, confirmation) != 1 {
+		return ErrInvalidInput
+	}
+	m.rotationMu.Lock()
+	defer m.rotationMu.Unlock()
+	m.mu.Lock()
+	cookie, err := request.Cookie(CookieName)
+	if err != nil {
+		m.mu.Unlock()
+		return ErrUnauthenticated
+	}
+	candidate, ok := m.sessions[sha256.Sum256([]byte(cookie.Value))]
+	now := m.now()
+	if !ok || candidate.generation != m.generation || !now.Before(candidate.expires) || !now.Before(candidate.subject.ExpiresAt) || m.config.PasswordVerifier == nil {
+		m.mu.Unlock()
+		return ErrUnauthenticated
+	}
+	if len(m.pruneLoginFailures(client, now)) >= m.config.LoginBurst {
+		m.mu.Unlock()
+		return ErrLoginThrottled
+	}
+	current := *m.config.PasswordVerifier
+	if err = current.Verify(currentPassword); err != nil {
+		m.loginFailures[client] = append(m.loginFailures[client], now)
+		m.mu.Unlock()
+		return ErrInvalidCredentials
+	}
+	replacement, err := principalauth.Enroll(m.config.PrincipalID, newPassword)
+	if err != nil {
+		m.mu.Unlock()
+		return ErrInvalidInput
+	}
+	m.mu.Unlock()
+	if err = replace(current, replacement, subject); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.config.PasswordVerifier == nil || *m.config.PasswordVerifier != current || candidate.generation != m.generation {
+		return principalauth.ErrVerifierChanged
+	}
+	m.config.PasswordVerifier = &replacement
+	m.generation++
+	m.sessions = make(map[[32]byte]session)
+	m.bootstraps = make(map[[32]byte]bootstrap)
+	m.loginFailures = make(map[string][]time.Time)
+	return nil
+}
+
+// pruneLoginFailures requires m.mu to be held.
+func (m *Manager) pruneLoginFailures(client string, now time.Time) []time.Time {
+	failures := m.loginFailures[client][:0]
+	for _, failure := range m.loginFailures[client] {
+		if now.Sub(failure) < m.config.LoginWindow {
+			failures = append(failures, failure)
+		}
+	}
+	if len(failures) == 0 {
+		delete(m.loginFailures, client)
+	} else {
+		m.loginFailures[client] = failures
+	}
+	return failures
 }
 
 func (m *Manager) CSRF(request *http.Request) (string, error) {
@@ -329,7 +503,15 @@ func (m *Manager) ValidateOrigin(request *http.Request, requireOrigin bool) erro
 }
 
 func (m *Manager) SetCookie(writer http.ResponseWriter, value string) {
-	http.SetCookie(writer, &http.Cookie{Name: CookieName, Value: value, Path: "/console", MaxAge: int(m.config.SessionTTL.Seconds()), HttpOnly: true, Secure: m.origin.Scheme == "https", SameSite: http.SameSiteStrictMode})
+	m.SetCookieUntil(writer, value, m.now().Add(m.config.SessionTTL))
+}
+
+func (m *Manager) SetCookieUntil(writer http.ResponseWriter, value string, expires time.Time) {
+	maxAge := int(expires.Sub(m.now()).Seconds())
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	http.SetCookie(writer, &http.Cookie{Name: CookieName, Value: value, Path: "/console", Expires: expires, MaxAge: maxAge, HttpOnly: true, Secure: m.origin.Scheme == "https", SameSite: http.SameSiteStrictMode})
 }
 
 func (m *Manager) ClearCookie(writer http.ResponseWriter) {
