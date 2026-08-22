@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
+	"github.com/berryhill/aegis/internal/principalauth"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
@@ -74,6 +77,53 @@ func TestConsoleFormDecoderAcceptsOneExactBoundedField(t *testing.T) {
 				t.Fatal("unsafe native form accepted")
 			}
 		})
+	}
+}
+
+func TestPasswordRotationFormRequiresExactClosedFieldSet(t *testing.T) {
+	valid := httptest.NewRequest(http.MethodPost, "/console/password", strings.NewReader("current_password=current-value&new_password=replacement-value&confirmation=replacement-value&csrf=csrf-value&approve=rotate"))
+	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	form, err := decodePasswordRotationForm(valid)
+	if err != nil || form.Current != "current-value" || form.New != "replacement-value" || form.Confirmation != form.New || form.CSRF != "csrf-value" || !form.Approved {
+		t.Fatalf("valid rotation form=%+v err=%v", form, err)
+	}
+	for name, raw := range map[string]string{
+		"missing approval": "current_password=current-value&new_password=replacement-value&confirmation=replacement-value&csrf=csrf-value",
+		"unknown field":    "current_password=current-value&new_password=replacement-value&confirmation=replacement-value&csrf=csrf-value&approve=rotate&authority=admin",
+		"duplicate":        "current_password=current-value&current_password=other&new_password=replacement-value&confirmation=replacement-value&csrf=csrf-value&approve=rotate",
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/console/password", strings.NewReader(raw))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if _, err := decodePasswordRotationForm(request); err == nil {
+				t.Fatal("unsafe rotation form accepted")
+			}
+		})
+	}
+}
+
+func TestPrincipalVerifierReplacementRollsBackWhenAuditFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth", principalauth.FileName)
+	current, err := principalauth.Enroll("principal", []byte("current-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := principalauth.Enroll("principal", []byte("replacement-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = principalauth.Publish(path, current); err != nil {
+		t.Fatal(err)
+	}
+	if err = replacePrincipalVerifier(path, current, replacement, func() error { return nil }, func() error { return errors.New("audit unavailable") }); err == nil {
+		t.Fatal("audit failure was ignored")
+	}
+	loaded, err := principalauth.Load(path)
+	if err != nil || loaded != current {
+		t.Fatalf("audit failure did not restore current verifier: loaded=%+v err=%v", loaded, err)
+	}
+	if info, statErr := os.Stat(path); statErr != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("rollback mode=%v err=%v", info.Mode().Perm(), statErr)
 	}
 }
 

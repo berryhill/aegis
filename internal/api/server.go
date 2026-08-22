@@ -26,6 +26,7 @@ import (
 	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/managergateway"
+	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -149,11 +150,21 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if telemetry == nil {
 		telemetry = noopTelemetry{}
 	}
+	verifierPath := filepath.Join(svc.Config.StateDir, "auth", principalauth.FileName)
+	verifier, err := principalauth.Load(verifierPath)
+	if err != nil {
+		return fmt.Errorf("load principal authentication verifier: %w", err)
+	}
 	consoleManager, err := console.New(console.Config{
-		Origin:       svc.Config.API.Console.Origin,
-		SessionTTL:   svc.Config.API.Console.SessionTTL,
-		BootstrapTTL: svc.Config.API.Console.BootstrapTTL,
-		MaxPageSize:  svc.Config.API.Console.MaxPageSize,
+		Origin:           svc.Config.API.Console.Origin,
+		SessionTTL:       svc.Config.API.Console.SessionTTL,
+		BootstrapTTL:     svc.Config.API.Console.BootstrapTTL,
+		MaxPageSize:      svc.Config.API.Console.MaxPageSize,
+		PrincipalID:      svc.Config.Principal.ID,
+		PrincipalAuthTTL: svc.Config.Principal.AuthTTL,
+		PasswordVerifier: &verifier,
+		LoginBurst:       5,
+		LoginWindow:      time.Minute,
 	}, svc.Now)
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
@@ -304,7 +315,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			SessionTTL:      svc.Config.API.Console.SessionTTL.String(),
 		}
 		if reasonCode != "" {
-			model.Status = "Authentication failed. Request a new temporary handoff from the authenticated Aegis host."
+			model.Status = "Authentication failed. Check the principal password or use an authenticated host handoff for alternate sign-in; the handoff does not reset the password."
 			model.ReasonCode = reasonCode
 		}
 		return model
@@ -428,6 +439,80 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleError(err)
 		}
 		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.Datastar())
+	})
+	e.POST("/console/login", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
+				return auditErr
+			}
+			return consoleError(err)
+		}
+		password, err := decodeConsoleForm(c.Request(), "password")
+		if err != nil || len(password) > 1024 {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
+				return auditErr
+			}
+			return renderAuthentication(c, http.StatusUnauthorized, "invalid_credentials")
+		}
+		passwordBytes := []byte(password)
+		defer func() {
+			for index := range passwordBytes {
+				passwordBytes[index] = 0
+			}
+		}()
+		sessionValue, _, expires, subject, err := consoleManager.Login(c.Request(), sourceKey(c.Request()), passwordBytes)
+		if err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
+				return auditErr
+			}
+			return renderAuthentication(c, http.StatusUnauthorized, "invalid_credentials")
+		}
+		if err = svc.AuditConsoleSession(c.Request().Context(), subject, "success", "principal_password_authenticated"); err != nil {
+			consoleManager.RevokeSessionValue(sessionValue)
+			return err
+		}
+		consoleManager.SetCookieUntil(c.Response(), sessionValue, expires)
+		return c.Redirect(http.StatusSeeOther, "/console/agents#/agents")
+	})
+	e.POST("/console/password", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
+			return consoleError(err)
+		}
+		form, err := decodePasswordRotationForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid principal password rotation")
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		currentPassword := []byte(form.Current)
+		newPassword := []byte(form.New)
+		confirmation := []byte(form.Confirmation)
+		defer func() {
+			for _, secret := range [][]byte{currentPassword, newPassword, confirmation} {
+				for index := range secret {
+					secret[index] = 0
+				}
+			}
+		}()
+		err = consoleManager.RotatePassword(c.Request(), sourceKey(c.Request()), currentPassword, newPassword, confirmation, form.Approved, func(current, replacement principalauth.Record, subject core.Subject) error {
+			return replacePrincipalVerifier(verifierPath, current, replacement,
+				func() error {
+					return svc.AuditConsoleSession(c.Request().Context(), subject, "authorized", "principal_password_rotation_authorized")
+				},
+				func() error {
+					return svc.AuditConsoleSession(c.Request().Context(), subject, "success", "principal_password_rotated")
+				},
+			)
+		})
+		if err != nil {
+			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_rotation_denied"); auditErr != nil {
+				return errors.Join(err, auditErr)
+			}
+			return renderAuthentication(c, http.StatusUnauthorized, "password_rotation_denied")
+		}
+		consoleManager.ClearCookie(c.Response())
+		return c.Redirect(http.StatusSeeOther, "/console")
 	})
 	e.POST("/console/session", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)

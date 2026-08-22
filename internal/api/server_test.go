@@ -28,6 +28,7 @@ import (
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
+	"github.com/berryhill/aegis/internal/principalauth"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
@@ -83,6 +84,13 @@ func apiService(t *testing.T) *app.Service {
 	cfg.API.Listen = "127.0.0.1:0"
 	cfg.API.UnixSocket = filepath.Join(root, "aegis.sock")
 	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
+	verifier, err := principalauth.Enroll(cfg.Principal.ID, []byte("api-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = principalauth.Publish(filepath.Join(cfg.StateDir, "auth", principalauth.FileName), verifier); err != nil {
+		t.Fatal(err)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	authorityPath := filepath.Join(state.Root(), "persistence", "authority-v1")
 	if _, err = authoritybadger.Initialize(context.Background(), authorityPath); err != nil {
