@@ -42,7 +42,7 @@ func Document(model PageModel) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(documentTitle(model))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 16, Col: 32}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 16, Col: 32}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -122,7 +122,7 @@ func Header(authenticated bool, csrf string, title string) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(fallbackTitle(title))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 46, Col: 53}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 46, Col: 53}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -151,7 +151,7 @@ func Header(authenticated bool, csrf string, title string) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 54, Col: 49}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 54, Col: 49}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 			if templ_7745c5c3_Err != nil {
@@ -277,7 +277,7 @@ func NavigationButton(domain string, label string, short string, current bool, i
 		var templ_7745c5c3_Var8 templ.SafeURL
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(domain, ""))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 76, Col: 52}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 76, Col: 52}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -290,7 +290,7 @@ func NavigationButton(domain string, label string, short string, current bool, i
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(domain)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 76, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 76, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 		if templ_7745c5c3_Err != nil {
@@ -303,7 +303,7 @@ func NavigationButton(domain string, label string, short string, current bool, i
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(currentPage(current))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 76, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 76, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 		if templ_7745c5c3_Err != nil {
@@ -324,7 +324,7 @@ func NavigationButton(domain string, label string, short string, current bool, i
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 77, Col: 54}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 77, Col: 54}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -337,7 +337,7 @@ func NavigationButton(domain string, label string, short string, current bool, i
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(short)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 77, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 77, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -431,7 +431,7 @@ func Authentication(model AuthenticationModel) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(model.Status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 110, Col: 18}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 110, Col: 18}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -444,7 +444,7 @@ func Authentication(model AuthenticationModel) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(model.ReasonCode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 110, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 110, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -472,7 +472,7 @@ func Authentication(model AuthenticationModel) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(model.RecoveryCommand)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 116, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 116, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 			if templ_7745c5c3_Err != nil {
@@ -485,7 +485,7 @@ func Authentication(model AuthenticationModel) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(model.BootstrapTTL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 116, Col: 130}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 116, Col: 130}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -498,7 +498,7 @@ func Authentication(model AuthenticationModel) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(model.SessionTTL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 116, Col: 195}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 116, Col: 195}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 			if templ_7745c5c3_Err != nil {
@@ -545,7 +545,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue("surface-" + surface.Domain)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 133, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 133, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
@@ -558,7 +558,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Eyebrow)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 136, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 136, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -571,7 +571,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 137, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 137, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 		if templ_7745c5c3_Err != nil {
@@ -584,7 +584,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 138, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 138, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
@@ -604,7 +604,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var25 string
 					templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(actionTitle(action))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 143, Col: 90}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 143, Col: 90}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 					if templ_7745c5c3_Err != nil {
@@ -617,7 +617,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var26 string
 					templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.JoinStringErrs(action.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 143, Col: 107}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 143, Col: 107}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var26))
 					if templ_7745c5c3_Err != nil {
@@ -635,7 +635,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var27 string
 					templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(actionTitle(action))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 145, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 145, Col: 80}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 					if templ_7745c5c3_Err != nil {
@@ -648,7 +648,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var28 string
 					templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(action.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 145, Col: 97}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 145, Col: 97}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 					if templ_7745c5c3_Err != nil {
@@ -676,7 +676,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var29 string
 		templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.State)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 151, Col: 79}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 151, Col: 79}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 		if templ_7745c5c3_Err != nil {
@@ -689,7 +689,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var30 string
 		templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Status)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 152, Col: 74}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 152, Col: 74}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 		if templ_7745c5c3_Err != nil {
@@ -707,7 +707,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 155, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 155, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
@@ -720,7 +720,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(surface.State))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 155, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 155, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
@@ -733,7 +733,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var33 string
 			templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(stateMessage(surface.State))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 155, Col: 142}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 155, Col: 142}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 			if templ_7745c5c3_Err != nil {
@@ -746,7 +746,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var34 string
 			templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(surface.ReasonCode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 155, Col: 177}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 155, Col: 177}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 			if templ_7745c5c3_Err != nil {
@@ -823,7 +823,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var36 string
 			templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(operation.Stage)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 181, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 181, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 			if templ_7745c5c3_Err != nil {
@@ -836,7 +836,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var37 string
 			templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 181, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 181, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var37))
 			if templ_7745c5c3_Err != nil {
@@ -854,7 +854,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 				var templ_7745c5c3_Var38 string
 				templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.JoinStringErrs(operation.ReasonCode)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 183, Col: 33}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 183, Col: 33}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 				if templ_7745c5c3_Err != nil {
@@ -878,7 +878,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 192, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 192, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 			if templ_7745c5c3_Err != nil {
@@ -891,7 +891,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.JoinStringErrs(operationValue(operation, "charter"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 193, Col: 150}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 193, Col: 150}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var40))
 			if templ_7745c5c3_Err != nil {
@@ -904,7 +904,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(operationValue(operation, "fixture"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 194, Col: 164}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 194, Col: 164}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 			if templ_7745c5c3_Err != nil {
@@ -917,7 +917,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(operationValue(operation, "fleet"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 195, Col: 152}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 195, Col: 152}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 			if templ_7745c5c3_Err != nil {
@@ -930,7 +930,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(operationValue(operation, "source"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 196, Col: 157}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 196, Col: 157}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 			if templ_7745c5c3_Err != nil {
@@ -948,7 +948,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.JoinStringErrs(operation.AgentID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 58}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 58}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var44))
 			if templ_7745c5c3_Err != nil {
@@ -961,7 +961,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.JoinStringErrs(operation.FleetID + " / current-fleet / " + operation.SourceID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 154}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 154}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var45))
 			if templ_7745c5c3_Err != nil {
@@ -974,7 +974,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var46 string
 			templ_7745c5c3_Var46, templ_7745c5c3_Err = templ.JoinStringErrs(operation.CharterDigest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 206}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 206}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 			if templ_7745c5c3_Err != nil {
@@ -987,7 +987,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var47 string
 			templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Revision + " @ " + operation.RevisionDigest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 303}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 303}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 			if templ_7745c5c3_Err != nil {
@@ -1000,7 +1000,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var48 string
 			templ_7745c5c3_Var48, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Runtime)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 349}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 349}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var48))
 			if templ_7745c5c3_Err != nil {
@@ -1013,7 +1013,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var49 string
 			templ_7745c5c3_Var49, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Owner)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 391}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 391}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var49))
 			if templ_7745c5c3_Err != nil {
@@ -1026,7 +1026,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var50 string
 			templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Accountability)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 451}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 451}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 			if templ_7745c5c3_Err != nil {
@@ -1039,7 +1039,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var51 string
 			templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Capabilities)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 507}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 507}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 			if templ_7745c5c3_Err != nil {
@@ -1052,7 +1052,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var52 string
 			templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Policies)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 555}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 555}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 			if templ_7745c5c3_Err != nil {
@@ -1065,7 +1065,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var53 string
 			templ_7745c5c3_Var53, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Lifecycle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 203, Col: 605}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 203, Col: 605}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var53))
 			if templ_7745c5c3_Err != nil {
@@ -1078,7 +1078,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var54 string
 			templ_7745c5c3_Var54, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrf)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 205, Col: 50}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 205, Col: 50}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var54)
 			if templ_7745c5c3_Err != nil {
@@ -1091,7 +1091,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var55 string
 			templ_7745c5c3_Var55, templ_7745c5c3_Err = templ.ResolveAttributeValue(operation.Receipt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 205, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 205, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var55)
 			if templ_7745c5c3_Err != nil {
@@ -1109,7 +1109,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var56 string
 			templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(operation.Status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 210, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 210, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 			if templ_7745c5c3_Err != nil {
@@ -1122,7 +1122,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 			var templ_7745c5c3_Var57 templ.SafeURL
 			templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinURLErrs(operation.ResultURL)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 210, Col: 153}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 210, Col: 153}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 			if templ_7745c5c3_Err != nil {
@@ -1140,7 +1140,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(proposal.Notice)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 213, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 213, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -1153,7 +1153,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 		var templ_7745c5c3_Var59 string
 		templ_7745c5c3_Var59, templ_7745c5c3_Err = templ.JoinStringErrs(proposal.ValidateCommand)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 214, Col: 73}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 214, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var59))
 		if templ_7745c5c3_Err != nil {
@@ -1166,7 +1166,7 @@ func CharterImportPage(csrf string, proposal CharterImportProposal, operation *A
 		var templ_7745c5c3_Var60 string
 		templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(proposal.ImportCommand)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 214, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 214, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 		if templ_7745c5c3_Err != nil {
@@ -1232,7 +1232,7 @@ func ActionReadiness(actions []ActionModel) templ.Component {
 					var templ_7745c5c3_Var62 string
 					templ_7745c5c3_Var62, templ_7745c5c3_Err = templ.ResolveAttributeValue(action.State)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 232, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 232, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var62)
 					if templ_7745c5c3_Err != nil {
@@ -1254,7 +1254,7 @@ func ActionReadiness(actions []ActionModel) templ.Component {
 					var templ_7745c5c3_Var64 string
 					templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var63).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var64)
 					if templ_7745c5c3_Err != nil {
@@ -1267,7 +1267,7 @@ func ActionReadiness(actions []ActionModel) templ.Component {
 					var templ_7745c5c3_Var65 string
 					templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(action.State))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 233, Col: 91}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 233, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 					if templ_7745c5c3_Err != nil {
@@ -1280,7 +1280,7 @@ func ActionReadiness(actions []ActionModel) templ.Component {
 					var templ_7745c5c3_Var66 string
 					templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(action.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 235, Col: 30}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 235, Col: 30}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 					if templ_7745c5c3_Err != nil {
@@ -1293,7 +1293,7 @@ func ActionReadiness(actions []ActionModel) templ.Component {
 					var templ_7745c5c3_Var67 string
 					templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(action.ReasonCode)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 236, Col: 36}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 236, Col: 36}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 					if templ_7745c5c3_Err != nil {
@@ -1311,7 +1311,7 @@ func ActionReadiness(actions []ActionModel) templ.Component {
 						var templ_7745c5c3_Var68 string
 						templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs(strings.Join(action.RepairActions, ", "))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 238, Col: 70}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 238, Col: 70}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 						if templ_7745c5c3_Err != nil {
@@ -1400,7 +1400,7 @@ func DomainCollection(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var70 string
 			templ_7745c5c3_Var70, templ_7745c5c3_Err = templ.ResolveAttributeValue("Filter " + surface.Title + " by lifecycle state")
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 263, Col: 121}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 263, Col: 121}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var70)
 			if templ_7745c5c3_Err != nil {
@@ -1462,7 +1462,7 @@ func DomainCollection(surface SurfaceModel) templ.Component {
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var71).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var72)
 				if templ_7745c5c3_Err != nil {
@@ -1475,7 +1475,7 @@ func DomainCollection(surface SurfaceModel) templ.Component {
 				var templ_7745c5c3_Var73 templ.SafeURL
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinURLErrs(queueURL("all"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 272, Col: 247}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 272, Col: 247}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1498,7 +1498,7 @@ func DomainCollection(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var75 string
 					templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var74).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var75)
 					if templ_7745c5c3_Err != nil {
@@ -1511,7 +1511,7 @@ func DomainCollection(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var76 templ.SafeURL
 					templ_7745c5c3_Var76, templ_7745c5c3_Err = templ.JoinURLErrs(queueURL(strings.ToLower(state)))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 274, Col: 146}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 274, Col: 146}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var76))
 					if templ_7745c5c3_Err != nil {
@@ -1524,7 +1524,7 @@ func DomainCollection(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var77 string
 					templ_7745c5c3_Var77, templ_7745c5c3_Err = templ.JoinStringErrs(state)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 274, Col: 156}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 274, Col: 156}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var77))
 					if templ_7745c5c3_Err != nil {
@@ -1600,7 +1600,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 		var templ_7745c5c3_Var79 string
 		templ_7745c5c3_Var79, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 289, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 289, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var79)
 		if templ_7745c5c3_Err != nil {
@@ -1613,7 +1613,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 		var templ_7745c5c3_Var80 string
 		templ_7745c5c3_Var80, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 289, Col: 127}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 289, Col: 127}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var80)
 		if templ_7745c5c3_Err != nil {
@@ -1626,7 +1626,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 		var templ_7745c5c3_Var81 string
 		templ_7745c5c3_Var81, templ_7745c5c3_Err = templ.JoinStringErrs(title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 289, Col: 137}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 289, Col: 137}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var81))
 		if templ_7745c5c3_Err != nil {
@@ -1639,7 +1639,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 		var templ_7745c5c3_Var82 string
 		templ_7745c5c3_Var82, templ_7745c5c3_Err = templ.JoinStringErrs(description)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 289, Col: 177}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 289, Col: 177}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var82))
 		if templ_7745c5c3_Err != nil {
@@ -1652,7 +1652,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 		var templ_7745c5c3_Var83 string
 		templ_7745c5c3_Var83, templ_7745c5c3_Err = templ.JoinStringErrs(countLabel(len(records), "execution"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 289, Col: 248}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 289, Col: 248}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var83))
 		if templ_7745c5c3_Err != nil {
@@ -1670,7 +1670,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 			var templ_7745c5c3_Var84 string
 			templ_7745c5c3_Var84, templ_7745c5c3_Err = templ.JoinStringErrs(empty)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 291, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 291, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var84))
 			if templ_7745c5c3_Err != nil {
@@ -1727,7 +1727,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var86 string
 			templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var86)
 			if templ_7745c5c3_Err != nil {
@@ -1740,7 +1740,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var87 string
 			templ_7745c5c3_Var87, templ_7745c5c3_Err = templ.ResolveAttributeValue(record.Lifecycle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 84}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var87)
 			if templ_7745c5c3_Err != nil {
@@ -1753,7 +1753,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var88 templ.SafeURL
 			templ_7745c5c3_Var88, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, record.Key))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 134}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 134}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var88))
 			if templ_7745c5c3_Err != nil {
@@ -1766,7 +1766,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 165}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 165}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
@@ -1779,7 +1779,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var90 string
 			templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(record.Summary)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 199}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 199}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 			if templ_7745c5c3_Err != nil {
@@ -1792,7 +1792,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var91 string
 			templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 239}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 239}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 			if templ_7745c5c3_Err != nil {
@@ -1814,7 +1814,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var93 string
 			templ_7745c5c3_Var93, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var92).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var93)
 			if templ_7745c5c3_Err != nil {
@@ -1827,7 +1827,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var94 string
 			templ_7745c5c3_Var94, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 314}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 314}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var94))
 			if templ_7745c5c3_Err != nil {
@@ -1840,7 +1840,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var95 string
 			templ_7745c5c3_Var95, templ_7745c5c3_Err = templ.JoinStringErrs(record.Runtime)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 301, Col: 345}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 301, Col: 345}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var95))
 			if templ_7745c5c3_Err != nil {
@@ -1887,7 +1887,7 @@ func AgentFilters(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var97 string
 		templ_7745c5c3_Var97, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.Query)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 308, Col: 117}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 308, Col: 117}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var97)
 		if templ_7745c5c3_Err != nil {
@@ -1940,7 +1940,7 @@ func AgentFilters(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var98 string
 		templ_7745c5c3_Var98, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d of %d agents", len(surface.Records), surface.TotalCount))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 316, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 316, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var98))
 		if templ_7745c5c3_Err != nil {
@@ -1982,7 +1982,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var100 string
 		templ_7745c5c3_Var100, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 321, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 321, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var100)
 		if templ_7745c5c3_Err != nil {
@@ -1995,7 +1995,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var101 templ.SafeURL
 		templ_7745c5c3_Var101, templ_7745c5c3_Err = templ.JoinURLErrs(recordURL(surface, record.Key))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 321, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 321, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var101))
 		if templ_7745c5c3_Err != nil {
@@ -2008,7 +2008,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var102 string
 		templ_7745c5c3_Var102, templ_7745c5c3_Err = templ.JoinStringErrs(agentMark(record.Label))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 322, Col: 89}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 322, Col: 89}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var102))
 		if templ_7745c5c3_Err != nil {
@@ -2021,7 +2021,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var103 string
 		templ_7745c5c3_Var103, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 322, Col: 142}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 322, Col: 142}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var103))
 		if templ_7745c5c3_Err != nil {
@@ -2034,7 +2034,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var104 string
 		templ_7745c5c3_Var104, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 322, Col: 176}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 322, Col: 176}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var104))
 		if templ_7745c5c3_Err != nil {
@@ -2047,7 +2047,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var105 string
 		templ_7745c5c3_Var105, templ_7745c5c3_Err = templ.JoinStringErrs(record.Runtime)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 322, Col: 198}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 322, Col: 198}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var105))
 		if templ_7745c5c3_Err != nil {
@@ -2070,7 +2070,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 			var templ_7745c5c3_Var107 string
 			templ_7745c5c3_Var107, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var106).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var107)
 			if templ_7745c5c3_Err != nil {
@@ -2083,7 +2083,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 			var templ_7745c5c3_Var108 string
 			templ_7745c5c3_Var108, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 324, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 324, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var108))
 			if templ_7745c5c3_Err != nil {
@@ -2101,7 +2101,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var109 string
 		templ_7745c5c3_Var109, templ_7745c5c3_Err = templ.JoinStringErrs(record.Source)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 327, Col: 40}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 327, Col: 40}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var109))
 		if templ_7745c5c3_Err != nil {
@@ -2114,7 +2114,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var110 string
 		templ_7745c5c3_Var110, templ_7745c5c3_Err = templ.JoinStringErrs(record.Owner)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 327, Col: 93}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 327, Col: 93}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var110))
 		if templ_7745c5c3_Err != nil {
@@ -2127,7 +2127,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var111 string
 		templ_7745c5c3_Var111, templ_7745c5c3_Err = templ.JoinStringErrs(record.Readiness)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 328, Col: 78}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 328, Col: 78}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var111))
 		if templ_7745c5c3_Err != nil {
@@ -2140,7 +2140,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var112 string
 		templ_7745c5c3_Var112, templ_7745c5c3_Err = templ.JoinStringErrs(record.Authority)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 328, Col: 136}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 328, Col: 136}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var112))
 		if templ_7745c5c3_Err != nil {
@@ -2153,7 +2153,7 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var113 string
 		templ_7745c5c3_Var113, templ_7745c5c3_Err = templ.JoinStringErrs(record.Provisioning)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 328, Col: 200}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 328, Col: 200}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var113))
 		if templ_7745c5c3_Err != nil {
@@ -2195,7 +2195,7 @@ func SearchBox(id, placeholder string) templ.Component {
 		var templ_7745c5c3_Var115 string
 		templ_7745c5c3_Var115, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 333, Col: 220}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 333, Col: 220}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var115)
 		if templ_7745c5c3_Err != nil {
@@ -2208,7 +2208,7 @@ func SearchBox(id, placeholder string) templ.Component {
 		var templ_7745c5c3_Var116 string
 		templ_7745c5c3_Var116, templ_7745c5c3_Err = templ.JoinStringErrs(placeholder)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 333, Col: 236}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 333, Col: 236}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var116))
 		if templ_7745c5c3_Err != nil {
@@ -2221,7 +2221,7 @@ func SearchBox(id, placeholder string) templ.Component {
 		var templ_7745c5c3_Var117 string
 		templ_7745c5c3_Var117, templ_7745c5c3_Err = templ.ResolveAttributeValue(id)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 333, Col: 260}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 333, Col: 260}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var117)
 		if templ_7745c5c3_Err != nil {
@@ -2234,7 +2234,7 @@ func SearchBox(id, placeholder string) templ.Component {
 		var templ_7745c5c3_Var118 string
 		templ_7745c5c3_Var118, templ_7745c5c3_Err = templ.ResolveAttributeValue(placeholder)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 333, Col: 302}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 333, Col: 302}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var118)
 		if templ_7745c5c3_Err != nil {
@@ -2277,7 +2277,7 @@ func CollectionCount(surface SurfaceModel, singular string) templ.Component {
 			var templ_7745c5c3_Var120 string
 			templ_7745c5c3_Var120, templ_7745c5c3_Err = templ.JoinStringErrs(countLabel(surface.TotalCount, singular))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 338, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 338, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var120))
 			if templ_7745c5c3_Err != nil {
@@ -2325,7 +2325,7 @@ func RecordPanel(surface SurfaceModel) templ.Component {
 		var templ_7745c5c3_Var122 string
 		templ_7745c5c3_Var122, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.Title + " records")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 345, Col: 133}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 345, Col: 133}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var122)
 		if templ_7745c5c3_Err != nil {
@@ -2343,7 +2343,7 @@ func RecordPanel(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var123 string
 			templ_7745c5c3_Var123, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 347, Col: 37}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 347, Col: 37}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var123)
 			if templ_7745c5c3_Err != nil {
@@ -2356,7 +2356,7 @@ func RecordPanel(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var124 templ.SafeURL
 			templ_7745c5c3_Var124, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, record.Key))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 347, Col: 87}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 347, Col: 87}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var124))
 			if templ_7745c5c3_Err != nil {
@@ -2411,7 +2411,7 @@ func RecordCard(domain string, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var126 string
 		templ_7745c5c3_Var126, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 353, Col: 48}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 353, Col: 48}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var126)
 		if templ_7745c5c3_Err != nil {
@@ -2424,7 +2424,7 @@ func RecordCard(domain string, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var127 templ.SafeURL
 		templ_7745c5c3_Var127, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(domain, record.Key))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 353, Col: 90}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 353, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var127))
 		if templ_7745c5c3_Err != nil {
@@ -2437,7 +2437,7 @@ func RecordCard(domain string, record RecordModel) templ.Component {
 		var templ_7745c5c3_Var128 string
 		templ_7745c5c3_Var128, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 353, Col: 186}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 353, Col: 186}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var128))
 		if templ_7745c5c3_Err != nil {
@@ -2510,7 +2510,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var130 string
 				templ_7745c5c3_Var130, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 366, Col: 94}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 366, Col: 94}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var130))
 				if templ_7745c5c3_Err != nil {
@@ -2523,7 +2523,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var131 string
 				templ_7745c5c3_Var131, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 366, Col: 121}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 366, Col: 121}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var131))
 				if templ_7745c5c3_Err != nil {
@@ -2545,7 +2545,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var133 string
 				templ_7745c5c3_Var133, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var132).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var133)
 				if templ_7745c5c3_Err != nil {
@@ -2558,7 +2558,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var134 string
 				templ_7745c5c3_Var134, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 366, Col: 193}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 366, Col: 193}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var134))
 				if templ_7745c5c3_Err != nil {
@@ -2571,7 +2571,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var135 templ.SafeURL
 				templ_7745c5c3_Var135, templ_7745c5c3_Err = templ.JoinURLErrs(registryURL(surface))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 366, Col: 281}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 366, Col: 281}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var135))
 				if templ_7745c5c3_Err != nil {
@@ -2584,7 +2584,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var136 string
 				templ_7745c5c3_Var136, templ_7745c5c3_Err = templ.JoinStringErrs(record.Readiness)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 368, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 368, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var136))
 				if templ_7745c5c3_Err != nil {
@@ -2602,7 +2602,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 					var templ_7745c5c3_Var137 string
 					templ_7745c5c3_Var137, templ_7745c5c3_Err = templ.JoinStringErrs(field.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 372, Col: 24}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 372, Col: 24}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var137))
 					if templ_7745c5c3_Err != nil {
@@ -2615,7 +2615,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 					var templ_7745c5c3_Var138 string
 					templ_7745c5c3_Var138, templ_7745c5c3_Err = templ.JoinStringErrs(field.Value)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 372, Col: 48}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 372, Col: 48}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var138))
 					if templ_7745c5c3_Err != nil {
@@ -2667,7 +2667,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var139 templ.SafeURL
 				templ_7745c5c3_Var139, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, ""))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 386, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 386, Col: 86}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var139))
 				if templ_7745c5c3_Err != nil {
@@ -2680,7 +2680,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var140 string
 				templ_7745c5c3_Var140, templ_7745c5c3_Err = templ.JoinStringErrs(surface.Domain)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 386, Col: 146}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 386, Col: 146}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var140))
 				if templ_7745c5c3_Err != nil {
@@ -2693,7 +2693,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var141 string
 				templ_7745c5c3_Var141, templ_7745c5c3_Err = templ.JoinStringErrs(record.Summary)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 387, Col: 92}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 387, Col: 92}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var141))
 				if templ_7745c5c3_Err != nil {
@@ -2706,7 +2706,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var142 string
 				templ_7745c5c3_Var142, templ_7745c5c3_Err = templ.JoinStringErrs(record.JSON)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 387, Col: 138}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 387, Col: 138}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var142))
 				if templ_7745c5c3_Err != nil {
@@ -2754,7 +2754,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var144 templ.SafeURL
 		templ_7745c5c3_Var144, templ_7745c5c3_Err = templ.JoinURLErrs("/console/agents/" + url.PathEscape(record.Key) + "/lifecycle")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 394, Col: 115}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 394, Col: 115}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var144))
 		if templ_7745c5c3_Err != nil {
@@ -2767,7 +2767,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var145 string
 		templ_7745c5c3_Var145, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.CSRF)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 395, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 395, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var145)
 		if templ_7745c5c3_Err != nil {
@@ -2780,7 +2780,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var146 string
 		templ_7745c5c3_Var146, templ_7745c5c3_Err = templ.ResolveAttributeValue(strings.TrimPrefix(record.Revision, "r"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 395, Col: 144}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 395, Col: 144}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var146)
 		if templ_7745c5c3_Err != nil {
@@ -2793,7 +2793,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var147 string
 		templ_7745c5c3_Var147, templ_7745c5c3_Err = templ.ResolveAttributeValue(record.Digest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 395, Col: 204}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 395, Col: 204}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var147)
 		if templ_7745c5c3_Err != nil {
@@ -2806,7 +2806,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var148 string
 		templ_7745c5c3_Var148, templ_7745c5c3_Err = templ.ResolveAttributeValue(lifecycle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 395, Col: 263}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 395, Col: 263}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var148)
 		if templ_7745c5c3_Err != nil {
@@ -2834,7 +2834,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var150 string
 		templ_7745c5c3_Var150, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var149).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var150)
 		if templ_7745c5c3_Err != nil {
@@ -2847,7 +2847,7 @@ func AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, la
 		var templ_7745c5c3_Var151 string
 		templ_7745c5c3_Var151, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 399, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 399, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var151))
 		if templ_7745c5c3_Err != nil {
@@ -2889,7 +2889,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var153 templ.SafeURL
 		templ_7745c5c3_Var153, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, ""))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 404, Col: 130}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 404, Col: 130}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var153))
 		if templ_7745c5c3_Err != nil {
@@ -2902,7 +2902,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var154 string
 		templ_7745c5c3_Var154, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 405, Col: 129}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 405, Col: 129}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var154))
 		if templ_7745c5c3_Err != nil {
@@ -2915,7 +2915,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var155 string
 		templ_7745c5c3_Var155, templ_7745c5c3_Err = templ.JoinStringErrs(record.Queue.GraphRun.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 405, Col: 165}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 405, Col: 165}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var155))
 		if templ_7745c5c3_Err != nil {
@@ -2928,7 +2928,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var156 string
 		templ_7745c5c3_Var156, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 405, Col: 197}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 405, Col: 197}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var156))
 		if templ_7745c5c3_Err != nil {
@@ -2950,7 +2950,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var158 string
 		templ_7745c5c3_Var158, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var157).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var158)
 		if templ_7745c5c3_Err != nil {
@@ -2963,7 +2963,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var159 string
 		templ_7745c5c3_Var159, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 405, Col: 287}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 405, Col: 287}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var159))
 		if templ_7745c5c3_Err != nil {
@@ -2986,7 +2986,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var161 string
 			templ_7745c5c3_Var161, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var160).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var161)
 			if templ_7745c5c3_Err != nil {
@@ -2999,7 +2999,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var162 string
 			templ_7745c5c3_Var162, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 407, Col: 95}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 407, Col: 95}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var162))
 			if templ_7745c5c3_Err != nil {
@@ -3045,7 +3045,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var164 string
 			templ_7745c5c3_Var164, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var163).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var164)
 			if templ_7745c5c3_Err != nil {
@@ -3058,7 +3058,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var165 string
 			templ_7745c5c3_Var165, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", attempt.Number))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 416, Col: 180}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 416, Col: 180}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var165))
 			if templ_7745c5c3_Err != nil {
@@ -3071,7 +3071,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var166 string
 			templ_7745c5c3_Var166, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 416, Col: 209}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 416, Col: 209}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var166))
 			if templ_7745c5c3_Err != nil {
@@ -3084,7 +3084,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var167 string
 			templ_7745c5c3_Var167, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 416, Col: 241}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 416, Col: 241}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var167))
 			if templ_7745c5c3_Err != nil {
@@ -3097,7 +3097,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var168 string
 			templ_7745c5c3_Var168, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.LoopID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 416, Col: 263}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 416, Col: 263}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var168))
 			if templ_7745c5c3_Err != nil {
@@ -3110,7 +3110,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var169 string
 			templ_7745c5c3_Var169, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.ClaimID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 416, Col: 302}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 416, Col: 302}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var169))
 			if templ_7745c5c3_Err != nil {
@@ -3157,7 +3157,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var170 string
 			templ_7745c5c3_Var170, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%t", control.Enabled))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 421, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 421, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var170)
 			if templ_7745c5c3_Err != nil {
@@ -3170,7 +3170,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var171 string
 			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.ResolveAttributeValue(control.Reason)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 421, Col: 128}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 421, Col: 128}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var171)
 			if templ_7745c5c3_Err != nil {
@@ -3183,7 +3183,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var172 string
 			templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(control.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 421, Col: 146}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 421, Col: 146}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 			if templ_7745c5c3_Err != nil {
@@ -3206,7 +3206,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var173 string
 			templ_7745c5c3_Var173, templ_7745c5c3_Err = templ.ResolveAttributeValue(event.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 428, Col: 32}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 428, Col: 32}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var173)
 			if templ_7745c5c3_Err != nil {
@@ -3219,7 +3219,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var174 string
 			templ_7745c5c3_Var174, templ_7745c5c3_Err = templ.JoinStringErrs(event.Title)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 428, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 428, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var174))
 			if templ_7745c5c3_Err != nil {
@@ -3232,7 +3232,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var175 string
 			templ_7745c5c3_Var175, templ_7745c5c3_Err = templ.JoinStringErrs(event.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 428, Col: 75}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 428, Col: 75}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var175))
 			if templ_7745c5c3_Err != nil {
@@ -3245,7 +3245,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var176 string
 			templ_7745c5c3_Var176, templ_7745c5c3_Err = templ.JoinStringErrs(event.At)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 428, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 428, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var176))
 			if templ_7745c5c3_Err != nil {
@@ -3258,7 +3258,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var177 string
 			templ_7745c5c3_Var177, templ_7745c5c3_Err = templ.JoinStringErrs(event.Detail)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 428, Col: 131}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 428, Col: 131}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var177))
 			if templ_7745c5c3_Err != nil {
@@ -3299,7 +3299,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var178 string
 			templ_7745c5c3_Var178, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 54}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 54}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var178))
 			if templ_7745c5c3_Err != nil {
@@ -3312,7 +3312,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var179 string
 			templ_7745c5c3_Var179, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", attempt.Number))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 103}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 103}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var179))
 			if templ_7745c5c3_Err != nil {
@@ -3325,7 +3325,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var180 string
 			templ_7745c5c3_Var180, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 164}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 164}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var180))
 			if templ_7745c5c3_Err != nil {
@@ -3338,7 +3338,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var181 string
 			templ_7745c5c3_Var181, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.LoopID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 214}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 214}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var181))
 			if templ_7745c5c3_Err != nil {
@@ -3351,7 +3351,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var182 string
 			templ_7745c5c3_Var182, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.ClaimID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 256}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 256}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var182))
 			if templ_7745c5c3_Err != nil {
@@ -3364,7 +3364,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var183 string
 			templ_7745c5c3_Var183, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.Created)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 300}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 300}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var183))
 			if templ_7745c5c3_Err != nil {
@@ -3377,7 +3377,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var184 string
 			templ_7745c5c3_Var184, templ_7745c5c3_Err = templ.JoinStringErrs(attempt.Digest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 436, Col: 342}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 436, Col: 342}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var184))
 			if templ_7745c5c3_Err != nil {
@@ -3395,7 +3395,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var185 string
 		templ_7745c5c3_Var185, templ_7745c5c3_Err = templ.JoinStringErrs(record.Queue.ArtifactState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 439, Col: 166}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 439, Col: 166}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var185))
 		if templ_7745c5c3_Err != nil {
@@ -3416,7 +3416,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var186 string
 		templ_7745c5c3_Var186, templ_7745c5c3_Err = templ.JoinStringErrs(record.Queue.ReceiptState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 440, Col: 168}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 440, Col: 168}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var186))
 		if templ_7745c5c3_Err != nil {
@@ -3439,7 +3439,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var188 string
 			templ_7745c5c3_Var188, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var187).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var188)
 			if templ_7745c5c3_Err != nil {
@@ -3452,7 +3452,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var189 string
 			templ_7745c5c3_Var189, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 77}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 77}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var189))
 			if templ_7745c5c3_Err != nil {
@@ -3465,7 +3465,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var190 string
 			templ_7745c5c3_Var190, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.Outcome)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 100}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 100}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var190))
 			if templ_7745c5c3_Err != nil {
@@ -3478,7 +3478,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var191 string
 			templ_7745c5c3_Var191, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.Claim)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 161}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 161}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var191))
 			if templ_7745c5c3_Err != nil {
@@ -3491,7 +3491,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var192 string
 			templ_7745c5c3_Var192, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.Verifier)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 216}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 216}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var192))
 			if templ_7745c5c3_Err != nil {
@@ -3504,7 +3504,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var193 string
 			templ_7745c5c3_Var193, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.ExpectedDigest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 275}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 275}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var193))
 			if templ_7745c5c3_Err != nil {
@@ -3517,7 +3517,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var194 string
 			templ_7745c5c3_Var194, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.ObservedDigest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 334}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 334}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var194))
 			if templ_7745c5c3_Err != nil {
@@ -3530,7 +3530,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var195 string
 			templ_7745c5c3_Var195, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.FailureCategory)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 395}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 395}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var195))
 			if templ_7745c5c3_Err != nil {
@@ -3543,7 +3543,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var196 string
 			templ_7745c5c3_Var196, templ_7745c5c3_Err = templ.JoinStringErrs(receipt.ObservedAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 442, Col: 443}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 442, Col: 443}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var196))
 			if templ_7745c5c3_Err != nil {
@@ -3561,7 +3561,7 @@ func QueueInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var197 string
 		templ_7745c5c3_Var197, templ_7745c5c3_Err = templ.JoinStringErrs(record.Queue.DispositionState)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 445, Col: 199}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 445, Col: 199}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var197))
 		if templ_7745c5c3_Err != nil {
@@ -3616,7 +3616,7 @@ func ExecutionNode(node QueueExecutionNodeModel) templ.Component {
 		var templ_7745c5c3_Var200 string
 		templ_7745c5c3_Var200, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var199).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var200)
 		if templ_7745c5c3_Err != nil {
@@ -3629,7 +3629,7 @@ func ExecutionNode(node QueueExecutionNodeModel) templ.Component {
 		var templ_7745c5c3_Var201 string
 		templ_7745c5c3_Var201, templ_7745c5c3_Err = templ.JoinStringErrs(node.Kind)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 450, Col: 86}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 450, Col: 86}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var201))
 		if templ_7745c5c3_Err != nil {
@@ -3642,7 +3642,7 @@ func ExecutionNode(node QueueExecutionNodeModel) templ.Component {
 		var templ_7745c5c3_Var202 string
 		templ_7745c5c3_Var202, templ_7745c5c3_Err = templ.JoinStringErrs(node.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 450, Col: 112}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 450, Col: 112}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var202))
 		if templ_7745c5c3_Err != nil {
@@ -3655,7 +3655,7 @@ func ExecutionNode(node QueueExecutionNodeModel) templ.Component {
 		var templ_7745c5c3_Var203 string
 		templ_7745c5c3_Var203, templ_7745c5c3_Err = templ.JoinStringErrs(node.State)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 450, Col: 141}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 450, Col: 141}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var203))
 		if templ_7745c5c3_Err != nil {
@@ -3668,7 +3668,7 @@ func ExecutionNode(node QueueExecutionNodeModel) templ.Component {
 		var templ_7745c5c3_Var204 string
 		templ_7745c5c3_Var204, templ_7745c5c3_Err = templ.JoinStringErrs(node.Binding)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 450, Col: 171}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 450, Col: 171}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var204))
 		if templ_7745c5c3_Err != nil {
@@ -3681,7 +3681,7 @@ func ExecutionNode(node QueueExecutionNodeModel) templ.Component {
 		var templ_7745c5c3_Var205 string
 		templ_7745c5c3_Var205, templ_7745c5c3_Err = templ.JoinStringErrs(node.Digest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 450, Col: 201}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 450, Col: 201}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var205))
 		if templ_7745c5c3_Err != nil {
@@ -3723,7 +3723,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var207 string
 		templ_7745c5c3_Var207, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 454, Col: 140}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 454, Col: 140}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var207))
 		if templ_7745c5c3_Err != nil {
@@ -3736,7 +3736,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var208 string
 		templ_7745c5c3_Var208, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 454, Col: 167}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 454, Col: 167}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var208))
 		if templ_7745c5c3_Err != nil {
@@ -3758,7 +3758,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var210 string
 		templ_7745c5c3_Var210, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var209).String())
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var210)
 		if templ_7745c5c3_Err != nil {
@@ -3771,7 +3771,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var211 string
 		templ_7745c5c3_Var211, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 454, Col: 239}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 454, Col: 239}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var211))
 		if templ_7745c5c3_Err != nil {
@@ -3784,7 +3784,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var212 templ.SafeURL
 		templ_7745c5c3_Var212, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, ""))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 454, Col: 339}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 454, Col: 339}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var212))
 		if templ_7745c5c3_Err != nil {
@@ -3797,7 +3797,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var213 string
 		templ_7745c5c3_Var213, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.Digest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 456, Col: 182}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 456, Col: 182}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var213))
 		if templ_7745c5c3_Err != nil {
@@ -3810,7 +3810,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var214 string
 		templ_7745c5c3_Var214, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.PreviousDigest)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 456, Col: 246}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 456, Col: 246}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var214))
 		if templ_7745c5c3_Err != nil {
@@ -3823,7 +3823,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 		var templ_7745c5c3_Var215 string
 		templ_7745c5c3_Var215, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.Validation)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 456, Col: 301}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 456, Col: 301}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var215))
 		if templ_7745c5c3_Err != nil {
@@ -3841,7 +3841,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var216 string
 			templ_7745c5c3_Var216, templ_7745c5c3_Err = templ.JoinStringErrs(node.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 459, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 459, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var216))
 			if templ_7745c5c3_Err != nil {
@@ -3854,7 +3854,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var217 string
 			templ_7745c5c3_Var217, templ_7745c5c3_Err = templ.JoinStringErrs(node.Participant)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 459, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 459, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var217))
 			if templ_7745c5c3_Err != nil {
@@ -3867,7 +3867,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var218 string
 			templ_7745c5c3_Var218, templ_7745c5c3_Err = templ.JoinStringErrs(node.Loop)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 459, Col: 130}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 459, Col: 130}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var218))
 			if templ_7745c5c3_Err != nil {
@@ -3880,7 +3880,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var219 string
 			templ_7745c5c3_Var219, templ_7745c5c3_Err = templ.JoinStringErrs(node.Inputs)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 459, Col: 169}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 459, Col: 169}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var219))
 			if templ_7745c5c3_Err != nil {
@@ -3893,7 +3893,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var220 string
 			templ_7745c5c3_Var220, templ_7745c5c3_Err = templ.JoinStringErrs(node.Outputs)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 459, Col: 211}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 459, Col: 211}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var220))
 			if templ_7745c5c3_Err != nil {
@@ -3912,7 +3912,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var221 string
 			templ_7745c5c3_Var221, templ_7745c5c3_Err = templ.JoinStringErrs(edge.ID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 462, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 462, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var221))
 			if templ_7745c5c3_Err != nil {
@@ -3925,7 +3925,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var222 string
 			templ_7745c5c3_Var222, templ_7745c5c3_Err = templ.JoinStringErrs(edge.From)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 462, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 462, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var222))
 			if templ_7745c5c3_Err != nil {
@@ -3938,7 +3938,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var223 string
 			templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(edge.To)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 462, Col: 92}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 462, Col: 92}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 			if templ_7745c5c3_Err != nil {
@@ -3951,7 +3951,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var224 string
 			templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinStringErrs(edge.Mappings)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 462, Col: 123}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 462, Col: 123}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 			if templ_7745c5c3_Err != nil {
@@ -4004,7 +4004,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var225 string
 			templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinStringErrs(run.Submission)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 91}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 91}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 			if templ_7745c5c3_Err != nil {
@@ -4017,7 +4017,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var226 string
 			templ_7745c5c3_Var226, templ_7745c5c3_Err = templ.JoinStringErrs(run.Snapshot)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 133}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 133}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var226))
 			if templ_7745c5c3_Err != nil {
@@ -4030,7 +4030,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var227 string
 			templ_7745c5c3_Var227, templ_7745c5c3_Err = templ.JoinStringErrs(run.QueueItem)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 178}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 178}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var227))
 			if templ_7745c5c3_Err != nil {
@@ -4043,7 +4043,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var228 string
 			templ_7745c5c3_Var228, templ_7745c5c3_Err = templ.JoinStringErrs(run.GraphRun)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 221}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 221}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var228))
 			if templ_7745c5c3_Err != nil {
@@ -4056,7 +4056,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var229 string
 			templ_7745c5c3_Var229, templ_7745c5c3_Err = templ.JoinStringErrs(run.Authority)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 273}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 273}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var229))
 			if templ_7745c5c3_Err != nil {
@@ -4069,7 +4069,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var230 string
 			templ_7745c5c3_Var230, templ_7745c5c3_Err = templ.JoinStringErrs(run.Mandate)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 313}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 313}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var230))
 			if templ_7745c5c3_Err != nil {
@@ -4082,7 +4082,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var231 string
 			templ_7745c5c3_Var231, templ_7745c5c3_Err = templ.JoinStringErrs(run.Runtime)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 353}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 353}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var231))
 			if templ_7745c5c3_Err != nil {
@@ -4095,7 +4095,7 @@ func GraphInspector(surface SurfaceModel, record *RecordModel) templ.Component {
 			var templ_7745c5c3_Var232 string
 			templ_7745c5c3_Var232, templ_7745c5c3_Err = templ.JoinStringErrs(run.Inputs)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 471, Col: 402}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 471, Col: 402}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var232))
 			if templ_7745c5c3_Err != nil {
@@ -4151,7 +4151,7 @@ func FieldList(fields []FieldModel, empty string) templ.Component {
 			var templ_7745c5c3_Var234 string
 			templ_7745c5c3_Var234, templ_7745c5c3_Err = templ.JoinStringErrs(empty)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 480, Col: 31}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 480, Col: 31}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var234))
 			if templ_7745c5c3_Err != nil {
@@ -4174,7 +4174,7 @@ func FieldList(fields []FieldModel, empty string) templ.Component {
 				var templ_7745c5c3_Var235 string
 				templ_7745c5c3_Var235, templ_7745c5c3_Err = templ.JoinStringErrs(field.Label)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 484, Col: 21}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 484, Col: 21}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var235))
 				if templ_7745c5c3_Err != nil {
@@ -4187,7 +4187,7 @@ func FieldList(fields []FieldModel, empty string) templ.Component {
 				var templ_7745c5c3_Var236 string
 				templ_7745c5c3_Var236, templ_7745c5c3_Err = templ.JoinStringErrs(field.Value)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 484, Col: 45}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 484, Col: 45}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var236))
 				if templ_7745c5c3_Err != nil {
@@ -4236,7 +4236,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var238 string
 			templ_7745c5c3_Var238, templ_7745c5c3_Err = templ.JoinStringErrs(surface.ReasonCode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 492, Col: 283}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 492, Col: 283}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var238))
 			if templ_7745c5c3_Err != nil {
@@ -4284,7 +4284,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var239 string
 			templ_7745c5c3_Var239, templ_7745c5c3_Err = templ.ResolveAttributeValue(surface.Query)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 504, Col: 126}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 504, Col: 126}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var239)
 			if templ_7745c5c3_Err != nil {
@@ -4297,7 +4297,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 			var templ_7745c5c3_Var240 string
 			templ_7745c5c3_Var240, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d of %d credentials", len(surface.Records), surface.TotalCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 506, Col: 124}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 506, Col: 124}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var240))
 			if templ_7745c5c3_Err != nil {
@@ -4330,7 +4330,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var241 string
 					templ_7745c5c3_Var241, templ_7745c5c3_Err = templ.ResolveAttributeValue("record-" + record.Key)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 41}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 41}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var241)
 					if templ_7745c5c3_Err != nil {
@@ -4343,7 +4343,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var242 templ.SafeURL
 					templ_7745c5c3_Var242, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, record.Key))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 91}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var242))
 					if templ_7745c5c3_Err != nil {
@@ -4356,7 +4356,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var243 string
 					templ_7745c5c3_Var243, templ_7745c5c3_Err = templ.JoinStringErrs(credentialMark(record.Label))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 186}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 186}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var243))
 					if templ_7745c5c3_Err != nil {
@@ -4369,7 +4369,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var244 string
 					templ_7745c5c3_Var244, templ_7745c5c3_Err = templ.JoinStringErrs(record.Label)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 217}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 217}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var244))
 					if templ_7745c5c3_Err != nil {
@@ -4382,7 +4382,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var245 string
 					templ_7745c5c3_Var245, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 258}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 258}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var245))
 					if templ_7745c5c3_Err != nil {
@@ -4404,7 +4404,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var247 string
 					templ_7745c5c3_Var247, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var246).String())
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var247)
 					if templ_7745c5c3_Err != nil {
@@ -4417,7 +4417,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var248 string
 					templ_7745c5c3_Var248, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 330}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 330}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var248))
 					if templ_7745c5c3_Err != nil {
@@ -4430,7 +4430,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var249 string
 					templ_7745c5c3_Var249, templ_7745c5c3_Err = templ.JoinStringErrs(record.Summary)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 516, Col: 359}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 516, Col: 359}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var249))
 					if templ_7745c5c3_Err != nil {
@@ -4498,7 +4498,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 		var templ_7745c5c3_Var251 templ.SafeURL
 		templ_7745c5c3_Var251, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, ""))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 534, Col: 130}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 534, Col: 130}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var251))
 		if templ_7745c5c3_Err != nil {
@@ -4521,7 +4521,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var252 string
 			templ_7745c5c3_Var252, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Reference)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 539, Col: 170}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 170}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var252))
 			if templ_7745c5c3_Err != nil {
@@ -4534,7 +4534,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var253 string
 			templ_7745c5c3_Var253, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 539, Col: 197}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 197}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var253))
 			if templ_7745c5c3_Err != nil {
@@ -4556,7 +4556,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var255 string
 			templ_7745c5c3_Var255, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var254).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var255)
 			if templ_7745c5c3_Err != nil {
@@ -4569,7 +4569,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var256 string
 			templ_7745c5c3_Var256, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 539, Col: 269}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 269}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var256))
 			if templ_7745c5c3_Err != nil {
@@ -4582,7 +4582,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var257 templ.SafeURL
 			templ_7745c5c3_Var257, templ_7745c5c3_Err = templ.JoinURLErrs(consoleRoute(surface.Domain, ""))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 539, Col: 369}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 369}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var257))
 			if templ_7745c5c3_Err != nil {
@@ -4605,7 +4605,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var259 string
 				templ_7745c5c3_Var259, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var258).String())
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var259)
 				if templ_7745c5c3_Err != nil {
@@ -4623,7 +4623,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var260 string
 			templ_7745c5c3_Var260, templ_7745c5c3_Err = templ.JoinStringErrs(record.Readiness)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 545, Col: 48}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 545, Col: 48}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var260))
 			if templ_7745c5c3_Err != nil {
@@ -4636,7 +4636,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var261 string
 			templ_7745c5c3_Var261, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Reference)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 548, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 548, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var261))
 			if templ_7745c5c3_Err != nil {
@@ -4649,7 +4649,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var262 string
 			templ_7745c5c3_Var262, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Reference)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 549, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 549, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var262))
 			if templ_7745c5c3_Err != nil {
@@ -4662,7 +4662,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var263 string
 			templ_7745c5c3_Var263, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Kind)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 550, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 550, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var263))
 			if templ_7745c5c3_Err != nil {
@@ -4684,7 +4684,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var265 string
 			templ_7745c5c3_Var265, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var264).String())
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 1, Col: 0}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1, Col: 0}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var265)
 			if templ_7745c5c3_Err != nil {
@@ -4697,7 +4697,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var266 string
 			templ_7745c5c3_Var266, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Status)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 551, Col: 105}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 551, Col: 105}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var266))
 			if templ_7745c5c3_Err != nil {
@@ -4710,7 +4710,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var267 string
 			templ_7745c5c3_Var267, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("v%d", record.Credential.CurrentVersion))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 552, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 552, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var267))
 			if templ_7745c5c3_Err != nil {
@@ -4723,7 +4723,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var268 string
 			templ_7745c5c3_Var268, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.CreatedAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 553, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 553, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var268))
 			if templ_7745c5c3_Err != nil {
@@ -4736,7 +4736,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var269 string
 			templ_7745c5c3_Var269, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.CreatedBy)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 554, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 554, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var269))
 			if templ_7745c5c3_Err != nil {
@@ -4749,7 +4749,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var270 string
 			templ_7745c5c3_Var270, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d credential binding(s)", record.Credential.BindingCount))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 555, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 555, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var270))
 			if templ_7745c5c3_Err != nil {
@@ -4767,7 +4767,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var271 string
 				templ_7745c5c3_Var271, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.RevokedAt)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 557, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 557, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var271))
 				if templ_7745c5c3_Err != nil {
@@ -4780,7 +4780,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var272 string
 				templ_7745c5c3_Var272, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Revocation)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 558, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 558, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var272))
 				if templ_7745c5c3_Err != nil {
@@ -4798,7 +4798,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var273 string
 			templ_7745c5c3_Var273, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Vault.State)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 563, Col: 59}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 563, Col: 59}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var273))
 			if templ_7745c5c3_Err != nil {
@@ -4811,7 +4811,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var274 string
 			templ_7745c5c3_Var274, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Vault.ReasonCode)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 564, Col: 64}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 564, Col: 64}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var274))
 			if templ_7745c5c3_Err != nil {
@@ -4824,7 +4824,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var275 string
 			templ_7745c5c3_Var275, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Vault.DeploymentID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 565, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 565, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var275))
 			if templ_7745c5c3_Err != nil {
@@ -4837,7 +4837,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var276 string
 			templ_7745c5c3_Var276, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Vault.StoreID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 566, Col: 55}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 566, Col: 55}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var276))
 			if templ_7745c5c3_Err != nil {
@@ -4850,7 +4850,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var277 string
 			templ_7745c5c3_Var277, templ_7745c5c3_Err = templ.JoinStringErrs(credFallback(record.Credential.Vault.Custody, "Unavailable"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 567, Col: 86}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 567, Col: 86}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var277))
 			if templ_7745c5c3_Err != nil {
@@ -4863,7 +4863,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var278 string
 			templ_7745c5c3_Var278, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Vault.SchemaVersion)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 568, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 568, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var278))
 			if templ_7745c5c3_Err != nil {
@@ -4876,7 +4876,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var279 string
 			templ_7745c5c3_Var279, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("id %s · version %d", record.Credential.Vault.KEKID, record.Credential.Vault.KEKVersion))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 569, Col: 123}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 569, Col: 123}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var279))
 			if templ_7745c5c3_Err != nil {
@@ -4889,7 +4889,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var280 string
 			templ_7745c5c3_Var280, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%t", record.Credential.Vault.LastCleanShutdown))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 570, Col: 98}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 570, Col: 98}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var280))
 			if templ_7745c5c3_Err != nil {
@@ -4902,7 +4902,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var281 string
 			templ_7745c5c3_Var281, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Vault.InitializedAt)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 571, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 571, Col: 70}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var281))
 			if templ_7745c5c3_Err != nil {
@@ -4930,7 +4930,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var282 string
 					templ_7745c5c3_Var282, templ_7745c5c3_Err = templ.ResolveAttributeValue(fmt.Sprintf("%d", version.Version))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 579, Col: 57}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 579, Col: 57}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var282)
 					if templ_7745c5c3_Err != nil {
@@ -4943,7 +4943,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var283 string
 					templ_7745c5c3_Var283, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("v%d", version.Version))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 580, Col: 52}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 580, Col: 52}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var283))
 					if templ_7745c5c3_Err != nil {
@@ -4956,7 +4956,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var284 string
 					templ_7745c5c3_Var284, templ_7745c5c3_Err = templ.JoinStringErrs(version.Algorithm)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 580, Col: 77}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 580, Col: 77}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var284))
 					if templ_7745c5c3_Err != nil {
@@ -4969,7 +4969,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var285 string
 					templ_7745c5c3_Var285, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d", version.KEKVersion))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 580, Col: 127}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 580, Col: 127}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var285))
 					if templ_7745c5c3_Err != nil {
@@ -4982,7 +4982,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var286 string
 					templ_7745c5c3_Var286, templ_7745c5c3_Err = templ.JoinStringErrs(version.CreatedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 581, Col: 32}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 581, Col: 32}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var286))
 					if templ_7745c5c3_Err != nil {
@@ -4995,7 +4995,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 					var templ_7745c5c3_Var287 string
 					templ_7745c5c3_Var287, templ_7745c5c3_Err = templ.JoinStringErrs(credFallback(version.CiphertextHash, "Unavailable"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 582, Col: 73}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 582, Col: 73}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var287))
 					if templ_7745c5c3_Err != nil {
@@ -5018,7 +5018,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var288 string
 			templ_7745c5c3_Var288, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%t", record.Credential.Backup.Available))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 589, Col: 88}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 589, Col: 88}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var288))
 			if templ_7745c5c3_Err != nil {
@@ -5036,7 +5036,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				var templ_7745c5c3_Var289 string
 				templ_7745c5c3_Var289, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Backup.TargetPath)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 591, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 591, Col: 71}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var289))
 				if templ_7745c5c3_Err != nil {
@@ -5054,7 +5054,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var290 string
 			templ_7745c5c3_Var290, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Backup.Note)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 593, Col: 52}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 593, Col: 52}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var290))
 			if templ_7745c5c3_Err != nil {
@@ -5067,7 +5067,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var291 string
 			templ_7745c5c3_Var291, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Proposal.Notice)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 596, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 596, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var291))
 			if templ_7745c5c3_Err != nil {
@@ -5080,7 +5080,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var292 string
 			templ_7745c5c3_Var292, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Proposal.PutCommand)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 597, Col: 96}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 597, Col: 96}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var292))
 			if templ_7745c5c3_Err != nil {
@@ -5093,7 +5093,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var293 string
 			templ_7745c5c3_Var293, templ_7745c5c3_Err = templ.JoinStringErrs(record.Credential.Proposal.BackupCommand)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 599, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 599, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var293))
 			if templ_7745c5c3_Err != nil {
@@ -5106,7 +5106,7 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 			var templ_7745c5c3_Var294 string
 			templ_7745c5c3_Var294, templ_7745c5c3_Err = templ.JoinStringErrs(record.JSON)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 602, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 602, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var294))
 			if templ_7745c5c3_Err != nil {
@@ -5164,7 +5164,7 @@ func RecordLabel(label string) templ.Component {
 		var templ_7745c5c3_Var296 string
 		templ_7745c5c3_Var296, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/components.templ`, Line: 618, Col: 47}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 618, Col: 47}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var296))
 		if templ_7745c5c3_Err != nil {
