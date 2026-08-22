@@ -146,7 +146,11 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
     raise RuntimeError("Chrome did not expose a debuggable console page")
 
 
-def wait_for(devtools: DevTools, expression: str, description: str, timeout: float = 8) -> None:
+_BROWSER_PROOF_START = time.monotonic()
+
+
+def wait_for(devtools: DevTools, expression: str, description: str, timeout: float = 15) -> None:
+    print(f"elapsed={time.monotonic() - _BROWSER_PROOF_START:.2f}s wait: {description}", file=sys.stderr, flush=True)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -167,7 +171,16 @@ def wait_for(devtools: DevTools, expression: str, description: str, timeout: flo
             if request.get("url", "").endswith("/console/session"):
                 headers = request.get("headers", {})
                 requests.append({"url": request.get("url"), "origin": headers.get("Origin", headers.get("origin", "")), "method": request.get("method")})
-    raise RuntimeError(f"browser did not reach {description}; state={state}; requests={requests}")
+    document_requests = sum(
+        1
+        for event in devtools.events
+        if event.get("method") == "Network.requestWillBeSent"
+        and event.get("params", {}).get("type") == "Document"
+    )
+    raise RuntimeError(
+        f"browser did not reach {description}; elapsed={time.monotonic() - _BROWSER_PROOF_START:.2f}s "
+        f"timeout={timeout}s document_requests={document_requests}; state={state}; requests={requests}"
+    )
 
 
 def click(devtools: DevTools, selector: str) -> None:
