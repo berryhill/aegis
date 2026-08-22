@@ -156,6 +156,8 @@ templ Workspace(surface SurfaceModel) {
 				if action.Primary {
 					if surface.Domain == DomainAgents && action.State == "ready" {
 						<a class="primary" href="/console/agents/charter-import" title={ actionTitle(action) }>{ action.Label }</a>
+					} else if surface.Domain == DomainGraphs && surface.Authoritative {
+						<a class="primary" href="/console/graphs/compose" title="Compose a candidate; publication still requires fresh exact authority admission">{ action.Label }</a>
 					} else {
 						<button class="primary" type="button" disabled title={ actionTitle(action) }>{ action.Label }</button>
 					}
@@ -412,7 +414,7 @@ templ ExecutionNode(node QueueExecutionNodeModel) {
 }
 
 templ GraphInspector(surface SurfaceModel, record *RecordModel) {
-	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ consoleRoute(surface.Domain, "") }>Back to Graphs</a></div>
+	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><div><a class="primary" href={ graphRunURL(record) }>Run Graph</a> <a id="close-inspector" class="secondary" href={ consoleRoute(surface.Domain, "") }>Back to Graphs</a></div></div>
 	<div class="graph-detail">
 		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Validation</dt><dd>{ record.Graph.Validation }</dd></dl></section>
 		<section aria-labelledby="graph-topology"><h3 id="graph-topology">Topology</h3><div class="topology-canvas">
@@ -625,6 +627,7 @@ func hasBlockedAction(actions []ActionModel) bool { for _, action := range actio
 func actionTag(state string) string { if state == "denied" { return "tag-denied" }; if state == "degraded_repair_required" { return "tag-degraded" }; return "tag-locked" }
 func collectionSingular(domain string) string { if domain == DomainGraphs { return "graph" }; return "Loop" }
 func countLabel(count int, singular string) string { suffix := "s"; if count == 1 { suffix = "" }; return fmt.Sprintf("%d %s%s", count, singular, suffix) }
+func graphRunURL(record *RecordModel) string { return "/console/graphs/run?graph=" + url.QueryEscape(record.Label) + "&revision=" + strings.TrimPrefix(record.Revision, "r") + "&digest=" + url.QueryEscape(record.Graph.Digest) }
 func stateHeading(state string) string {
 	if state == "" { return "Unknown" }
 	if state == "degraded_repair_required" { return "Repair required" }

@@ -91,7 +91,9 @@ type FleetRepository interface {
 	GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error)
 	LatestAgentRevision(context.Context, string) (registry.AgentRevision, error)
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)
+	ListLoopLifecycleEvents(context.Context) ([]loop.LifecycleEvent, error)
 	GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error)
+	GetGraphLifecycle(context.Context, string) (graph.Lifecycle, error)
 	AcceptSubmission(context.Context, fleet.AcceptedSubmission, fleet.AuditFact) (bool, error)
 	RejectSubmission(context.Context, queue.Rejection, fleet.AuditFact) (bool, error)
 }
@@ -165,6 +167,10 @@ func (service *FleetService) Readiness(ctx context.Context, request ReadinessReq
 		} else if value.Digest != request.Loop.Digest {
 			return readiness(request.Action, ReadinessDenied, "loop_revision_mismatch")
 		}
+		lifecycle, err := service.currentLoopLifecycle(ctx, request.Loop.ID)
+		if err != nil || lifecycle.State != loop.LifecycleActive || lifecycle.ActiveRevision != request.Loop.Revision || lifecycle.ActiveDigest != request.Loop.Digest {
+			return readinessWithRepair(request.Action, ReadinessDenied, "loop_revision_not_active", RepairPublishLoop)
+		}
 	}
 	if request.Graph.ID != "" {
 		value, err := service.repository.GetGraphRevision(ctx, request.Graph.ID, request.Graph.Revision)
@@ -172,6 +178,10 @@ func (service *FleetService) Readiness(ctx context.Context, request ReadinessReq
 			return result
 		} else if value.Digest != request.Graph.Digest {
 			return readiness(request.Action, ReadinessDenied, "graph_revision_mismatch")
+		}
+		lifecycle, err := service.repository.GetGraphLifecycle(ctx, request.Graph.ID)
+		if err != nil || lifecycle.State != graph.LifecycleActive || lifecycle.ActiveRevision != request.Graph.Revision || lifecycle.ActiveDigest != request.Graph.Digest {
+			return readinessWithRepair(request.Action, ReadinessDenied, "graph_revision_not_active", RepairPublishGraph)
 		}
 	}
 	return readiness(request.Action, ReadinessReady, "ready")
@@ -451,6 +461,10 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 		if !nodeMatchesLoopInterface(node, loopRevision) {
 			return graph.PublicationDecision{}, fmt.Errorf("%w: node_loop_interface_mismatch", ErrDenied)
 		}
+		loopLifecycle, err := service.currentLoopLifecycle(ctx, node.Loop.ID)
+		if err != nil || loopLifecycle.State != loop.LifecycleActive || loopLifecycle.ActiveRevision != node.Loop.Revision || loopLifecycle.ActiveDigest != node.Loop.Digest {
+			return graph.PublicationDecision{}, fmt.Errorf("%w: exact active Loop revision required", ErrDenied)
+		}
 		if node.Participant.ID == authority.AgentID {
 			if !agentMatchesAuthority(participant, authority, mandate) {
 				return graph.PublicationDecision{}, fmt.Errorf("%w: participant charter or runtime does not match authority", ErrDenied)
@@ -520,6 +534,10 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 		loopRevision, loadErr := service.repository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision)
 		if loadErr != nil || loopRevision.Digest != node.Loop.Digest || !nodeMatchesLoopInterface(node, loopRevision) {
 			return deny("loop_interface_mismatch", "exact Loop interface is unavailable or incompatible")
+		}
+		loopLifecycle, lifecycleErr := service.currentLoopLifecycle(ctx, node.Loop.ID)
+		if lifecycleErr != nil || loopLifecycle.State != loop.LifecycleActive || loopLifecycle.ActiveRevision != node.Loop.Revision || loopLifecycle.ActiveDigest != node.Loop.Digest {
+			return deny("loop_inactive", "exact Loop revision is not active")
 		}
 	}
 	for _, participant := range snapshot.Participants {
@@ -643,6 +661,32 @@ func nodeMatchesLoopInterface(node graph.Node, revision loop.LoopRevision) bool 
 		}
 	}
 	return true
+}
+
+func (service *FleetService) currentLoopLifecycle(ctx context.Context, loopID string) (loop.Lifecycle, error) {
+	events, err := service.repository.ListLoopLifecycleEvents(ctx)
+	if err != nil {
+		return loop.Lifecycle{}, err
+	}
+	current := loop.Lifecycle{LoopID: loopID, State: loop.LifecycleDraft}
+	previous := ""
+	for _, event := range events {
+		if event.LoopID != loopID {
+			continue
+		}
+		if event.PreviousDigest != previous {
+			return loop.Lifecycle{}, fleet.ErrCorrupt
+		}
+		previous = event.Digest
+		if event.State == loop.LifecycleActive {
+			current = loop.Lifecycle{LoopID: loopID, State: loop.LifecycleActive, ActiveRevision: event.Revision.Revision, ActiveDigest: event.Revision.Digest}
+		} else if event.State == loop.LifecycleRetired {
+			current = loop.Lifecycle{LoopID: loopID, State: loop.LifecycleRetired}
+		} else {
+			return loop.Lifecycle{}, fleet.ErrCorrupt
+		}
+	}
+	return current, nil
 }
 
 func graphContainsAgent(revision graph.GraphRevision, agentID string) bool {
