@@ -46,6 +46,49 @@ func TestPrincipalPasswordLoginCreatesBoundedExactPrincipalSessionAndThrottlesFa
 	}
 }
 
+func TestAuthorizeCommandDerivesSessionBindingAndRepeatsMutationAdmission(t *testing.T) {
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	verifier, err := principalauth.Enroll("principal", []byte("principal-password-canary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+	login.Header.Set("Origin", "https://console.example.test")
+	sessionValue, csrf, _, subject, err := manager.Login(login, "client-one", []byte("principal-password-canary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := func(csrfValue string) *http.Request {
+		request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/api/commands/preview", nil)
+		request.Header.Set("Origin", "https://console.example.test")
+		request.Header.Set("X-CSRF-Token", csrfValue)
+		request.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
+		return request
+	}
+	boundSubject, binding, err := manager.AuthorizeCommand(command(csrf))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if boundSubject.ID != subject.ID || !strings.HasPrefix(binding, "session-") || binding == sessionValue {
+		t.Fatalf("command admission exposed or misbound session context: subject=%+v binding=%q", boundSubject, binding)
+	}
+	_, repeatedBinding, err := manager.AuthorizeCommand(command(csrf))
+	if err != nil || repeatedBinding != binding {
+		t.Fatalf("same authenticated session did not produce stable binding: binding=%q err=%v", repeatedBinding, err)
+	}
+	if _, _, err = manager.AuthorizeCommand(command("forged-csrf")); !errors.Is(err, ErrDenied) {
+		t.Fatalf("forged CSRF admitted command: %v", err)
+	}
+	manager.RevokeSessionValue(sessionValue)
+	if _, _, err = manager.AuthorizeCommand(command(csrf)); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("revoked session admitted command: %v", err)
+	}
+}
+
 func TestAuthenticatedPasswordRotationInvalidatesPriorSessionsAndBootstraps(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))

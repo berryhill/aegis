@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -169,6 +170,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
 	}
+	// The browser command path is live with a closed empty catalog. Product
+	// pages enable mutations only by adding a reviewed definition and its
+	// controller-side authority adapter here; unknown browser commands fail
+	// before any authority lookup or application-service call.
+	commandService, err := console.NewCommandService(nil, console.CommandAuthorityProviderFunc(func(context.Context, core.Subject, string, string) (console.CommandAuthorityBinding, error) {
+		return console.CommandAuthorityBinding{}, console.ErrDenied
+	}), svc.Now)
+	if err != nil {
+		return fmt.Errorf("configure console commands: %w", err)
+	}
 	managerGateway, err := managergateway.New(svc)
 	if err != nil {
 		return fmt.Errorf("configure manager gateway: %w", err)
@@ -300,6 +311,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return app.ErrDenied
 		case errors.Is(err, console.ErrInvalidInput):
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console input")
+		case errors.Is(err, console.ErrCommandUnknown):
+			return echo.NewHTTPError(http.StatusNotFound, "console command is not registered")
+		case errors.Is(err, console.ErrCommandConflict), errors.Is(err, console.ErrCommandExpired):
+			return echo.NewHTTPError(http.StatusConflict, "console command intent conflict")
+		case errors.Is(err, console.ErrCommandFailed):
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "console command outcome is uncertain")
 		default:
 			return err
 		}
@@ -629,6 +646,64 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
 		}
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
+	})
+	decodeCommand := func(c *echo.Context, destination any) error {
+		if c.Request().Body == nil {
+			return console.ErrInvalidInput
+		}
+		body, err := io.ReadAll(io.LimitReader(c.Request().Body, console.CommandBodyBytesMax+1))
+		if err != nil || len(body) > console.CommandBodyBytesMax {
+			return console.ErrInvalidInput
+		}
+		if isConsoleForm(c.Request()) {
+			return console.DecodeCommandForm(body, destination)
+		}
+		mediaType, _, err := mime.ParseMediaType(c.Request().Header.Get("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			return console.ErrInvalidInput
+		}
+		return console.DecodeCommandRequest(body, destination)
+	}
+	commandAdmission := func(c *echo.Context) (core.Subject, string, error) {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		subject, sessionID, err := consoleManager.AuthorizeCommand(c.Request())
+		if err != nil {
+			return core.Subject{}, "", consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return core.Subject{}, "", err
+		}
+		return subject, sessionID, nil
+	}
+	e.POST("/console/api/commands/preview", func(c *echo.Context) error {
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		var request console.CommandPreviewRequest
+		if err = decodeCommand(c, &request); err != nil {
+			return consoleError(err)
+		}
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, request)
+		if err != nil {
+			return consoleError(err)
+		}
+		return c.JSON(http.StatusOK, preview)
+	})
+	e.POST("/console/api/commands/execute", func(c *echo.Context) error {
+		subject, sessionID, err := commandAdmission(c)
+		if err != nil {
+			return err
+		}
+		var request console.CommandExecuteRequest
+		if err = decodeCommand(c, &request); err != nil {
+			return consoleError(err)
+		}
+		receipt, err := commandService.Execute(c.Request().Context(), subject, sessionID, request)
+		if err != nil {
+			return consoleError(err)
+		}
+		return c.JSON(http.StatusOK, receipt)
 	})
 	e.GET("/console/api/state", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
