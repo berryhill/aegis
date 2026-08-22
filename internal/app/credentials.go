@@ -3,12 +3,25 @@ package app
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/credentials"
 )
+
+var ErrCredentialUnavailable = errors.New("credential authority unavailable")
+
+// Credential error predicates keep transport adapters on the application
+// boundary instead of coupling them to the credential authority package.
+func IsCredentialNotFound(err error) bool { return errors.Is(err, credentials.ErrNotFound) }
+func IsCredentialRevoked(err error) bool  { return errors.Is(err, credentials.ErrRevoked) }
+func IsCredentialAmbiguous(err error) bool {
+	return errors.Is(err, credentials.ErrAmbiguous)
+}
+func IsCredentialConflict(err error) bool { return errors.Is(err, credentials.ErrConflict) }
+func IsCredentialLocked(err error) bool   { return credentials.IsPassphraseAuthentication(err) }
 
 // CredentialVersionView is the immutable, metadata-only read of a single
 // encrypted credential version. It exposes the verification digest that the
@@ -30,6 +43,54 @@ type CredentialBackupView struct {
 	Available    bool      `json:"available"`
 	TargetPath   string    `json:"target_path,omitempty"`
 	LastBackupAt time.Time `json:"last_backup_at,omitempty"`
+}
+
+// Secret-bearing mutation inputs are shared application contracts. Value is a
+// mutable byte slice so transport adapters can wipe each one-use intake.
+type CreateCredentialInput struct {
+	Reference string `json:"reference"`
+	Kind      string `json:"kind"`
+	Value     []byte `json:"value"`
+}
+
+type RotateCredentialInput struct {
+	Value []byte `json:"value"`
+}
+type RevokeCredentialInput struct {
+	Version uint64 `json:"version"`
+	Reason  string `json:"reason"`
+}
+type BindCredentialInput struct {
+	AgentID       string   `json:"agent_id"`
+	StanzaID      string   `json:"stanza_id"`
+	DeploymentID  string   `json:"deployment_id"`
+	Scope         string   `json:"scope"`
+	Destinations  []string `json:"destinations"`
+	Mode          string   `json:"mode"`
+	VersionPolicy string   `json:"version_policy"`
+	PinnedVersion uint64   `json:"pinned_version,omitempty"`
+	Enabled       bool     `json:"enabled"`
+}
+type CredentialRevocationView struct {
+	RecordID string `json:"record_id"`
+	Version  uint64 `json:"version"`
+	Status   string `json:"status"`
+}
+type CredentialBindingView struct {
+	RecordID      string   `json:"record_id"`
+	AgentID       string   `json:"agent_id"`
+	StanzaID      string   `json:"stanza_id"`
+	DeploymentID  string   `json:"deployment_id"`
+	Scope         string   `json:"scope"`
+	Destinations  []string `json:"destinations"`
+	Mode          string   `json:"mode"`
+	VersionPolicy string   `json:"version_policy"`
+	PinnedVersion uint64   `json:"pinned_version,omitempty"`
+	Enabled       bool     `json:"enabled"`
+}
+type CredentialBackupResult struct {
+	Status      string `json:"status"`
+	Destination string `json:"destination"`
 }
 
 // VaultStatusView is the read-only projection of credentials.VaultStatus used
@@ -95,6 +156,98 @@ func (s *Service) ListCredentialsAs(ctx context.Context, subject core.Subject) (
 		return views[i].Status < views[j].Status
 	})
 	return views, nil
+}
+
+func (s *Service) CreateCredentialAs(ctx context.Context, subject core.Subject, input CreateCredentialInput) (CredentialView, error) {
+	if err := s.requireCredentialMutation(subject); err != nil {
+		return CredentialView{}, err
+	}
+	if len(input.Value) == 0 {
+		return CredentialView{}, errors.New("credential value is required")
+	}
+	record, err := s.CredentialAuthority.Create(ctx, input.Reference, input.Kind, subject.PrincipalID, input.Value)
+	if err != nil {
+		_ = s.AuditCredentialOperation(ctx, subject, "credential_created", "denied", "create_failed", "")
+		return CredentialView{}, err
+	}
+	if err = s.AuditCredentialOperation(ctx, subject, "credential_created", "ok", "operator_request", record.ID); err != nil {
+		return CredentialView{}, err
+	}
+	return s.buildCredentialView(ctx, record)
+}
+
+func (s *Service) RotateCredentialAs(ctx context.Context, subject core.Subject, recordID string, input RotateCredentialInput) (CredentialView, error) {
+	if err := s.requireCredentialMutation(subject); err != nil {
+		return CredentialView{}, err
+	}
+	if len(input.Value) == 0 {
+		return CredentialView{}, errors.New("credential value is required")
+	}
+	record, err := s.CredentialAuthority.Rotate(ctx, recordID, input.Value)
+	if err != nil {
+		_ = s.AuditCredentialOperation(ctx, subject, "credential_rotated", "denied", "rotation_failed", recordID)
+		return CredentialView{}, err
+	}
+	if err = s.AuditCredentialOperation(ctx, subject, "credential_rotated", "ok", "operator_request", recordID); err != nil {
+		return CredentialView{}, err
+	}
+	return s.buildCredentialView(ctx, record)
+}
+
+func (s *Service) RevokeCredentialAs(ctx context.Context, subject core.Subject, recordID string, input RevokeCredentialInput) (CredentialRevocationView, error) {
+	if err := s.requireCredentialMutation(subject); err != nil {
+		return CredentialRevocationView{}, err
+	}
+	if err := s.CredentialAuthority.Revoke(ctx, recordID, input.Version, input.Reason); err != nil {
+		_ = s.AuditCredentialOperation(ctx, subject, "credential_revoked", "denied", "revocation_failed", recordID)
+		return CredentialRevocationView{}, err
+	}
+	if err := s.AuditCredentialOperation(ctx, subject, "credential_revoked", "ok", input.Reason, recordID); err != nil {
+		return CredentialRevocationView{}, err
+	}
+	return CredentialRevocationView{RecordID: recordID, Version: input.Version, Status: credentials.StatusRevoked}, nil
+}
+
+func (s *Service) BindCredentialAs(ctx context.Context, subject core.Subject, recordID string, input BindCredentialInput) (CredentialBindingView, error) {
+	if err := s.requireCredentialMutation(subject); err != nil {
+		return CredentialBindingView{}, err
+	}
+	binding := credentials.CredentialBinding{Key: credentials.CredentialBindingKey{AgentID: input.AgentID, StanzaID: input.StanzaID, DeploymentID: input.DeploymentID, Scope: input.Scope}, SecretRecord: recordID, VersionPolicy: input.VersionPolicy, PinnedVersion: input.PinnedVersion, Mode: input.Mode, Destinations: append([]string(nil), input.Destinations...), Enabled: input.Enabled}
+	if err := s.CredentialAuthority.Bind(ctx, binding); err != nil {
+		_ = s.AuditCredentialOperation(ctx, subject, "credential_bound", "denied", "binding_failed", recordID)
+		return CredentialBindingView{}, err
+	}
+	if err := s.AuditCredentialOperation(ctx, subject, "credential_bound", "ok", "operator_request", recordID); err != nil {
+		return CredentialBindingView{}, err
+	}
+	return CredentialBindingView{RecordID: recordID, AgentID: input.AgentID, StanzaID: input.StanzaID, DeploymentID: input.DeploymentID, Scope: input.Scope, Destinations: append([]string(nil), input.Destinations...), Mode: input.Mode, VersionPolicy: input.VersionPolicy, PinnedVersion: input.PinnedVersion, Enabled: input.Enabled}, nil
+}
+
+// BackupCredentialsAs selects the destination entirely from server policy.
+// Browser and API callers cannot provide an arbitrary host path.
+func (s *Service) BackupCredentialsAs(ctx context.Context, subject core.Subject) (CredentialBackupResult, error) {
+	if err := s.requireCredentialMutation(subject); err != nil {
+		return CredentialBackupResult{}, err
+	}
+	path := filepath.Clean(s.Config.Credentials.Authority.Database) + ".backup"
+	if err := s.CredentialAuthority.Backup(ctx, path); err != nil {
+		_ = s.AuditCredentialOperation(ctx, subject, "credential_backup_created", "denied", "backup_failed", "")
+		return CredentialBackupResult{}, err
+	}
+	if err := s.AuditCredentialOperation(ctx, subject, "credential_backup_created", "ok", "operator_request", ""); err != nil {
+		return CredentialBackupResult{}, err
+	}
+	return CredentialBackupResult{Status: "created", Destination: "configured_ciphertext_backup"}, nil
+}
+
+func (s *Service) requireCredentialMutation(subject core.Subject) error {
+	if err := s.requirePrincipal(subject); err != nil {
+		return err
+	}
+	if !s.hasCredentials() {
+		return ErrCredentialUnavailable
+	}
+	return nil
 }
 
 // VaultStatusAs reports the vault classification that should drive the

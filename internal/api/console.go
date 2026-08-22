@@ -705,7 +705,7 @@ func credentialProposal(cred app.CredentialView, vault app.VaultStatusView) cons
 		reference = "provider:NAME"
 	}
 	put := fmt.Sprintf("aegis secret put %s --kind %s --created-by \"$OPERATOR\"", reference, fallback(cred.Kind, "opaque"))
-	backup := "aegis secret backup <path-to-backup.db>"
+	backup := "aegis secret backup"
 	return consoleweb.CredentialProposalDetail{
 		PutCommand:    put,
 		BackupCommand: backup,
