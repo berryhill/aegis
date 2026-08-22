@@ -35,6 +35,7 @@ type AuthorityPassphraseIntent uint8
 const (
 	AuthorityPassphraseCreate AuthorityPassphraseIntent = iota + 1
 	AuthorityPassphraseUnlock
+	PrincipalPasswordCreate
 )
 
 type AuthorityPassphraseRequest struct {
@@ -52,7 +53,7 @@ type authorityPassphraseContextKey struct{}
 func passphraseProvider(cmd interface{ Context() context.Context }) (AuthorityPassphraseProvider, error) {
 	provider, ok := cmd.Context().Value(authorityPassphraseContextKey{}).(AuthorityPassphraseProvider)
 	if !ok || provider == nil {
-		return nil, errors.New("authority passphrase provider is unavailable")
+		return nil, errors.New("protected secret provider is unavailable")
 	}
 	return provider, nil
 }
@@ -107,13 +108,15 @@ func newAuthorityPassphraseService(explicit func() string) *authorityPassphraseS
 }
 
 func (s *authorityPassphraseService) Acquire(ctx context.Context, request AuthorityPassphraseRequest) ([]byte, error) {
-	if request.Intent != AuthorityPassphraseCreate && request.Intent != AuthorityPassphraseUnlock {
-		return nil, &PassphraseError{Kind: PassphrasePolicy, reason: "invalid authority passphrase intent"}
+	if request.Intent != AuthorityPassphraseCreate && request.Intent != AuthorityPassphraseUnlock && request.Intent != PrincipalPasswordCreate {
+		return nil, &PassphraseError{Kind: PassphrasePolicy, reason: "invalid protected secret intent"}
 	}
 	for attempt := 0; attempt < passphraseRetryLimit; attempt++ {
 		mode := "unlock"
 		if request.Intent == AuthorityPassphraseCreate {
 			mode = "create"
+		} else if request.Intent == PrincipalPasswordCreate {
+			mode = "principal-create"
 		}
 		first, err := s.acquireOnce(ctx, request, mode)
 		if err != nil {
@@ -126,7 +129,11 @@ func (s *authorityPassphraseService) Acquire(ctx context.Context, request Author
 		if request.Intent == AuthorityPassphraseUnlock {
 			return first, nil
 		}
-		second, confirmErr := s.acquireOnce(ctx, request, "confirm")
+		confirmMode := "confirm"
+		if request.Intent == PrincipalPasswordCreate {
+			confirmMode = "principal-confirm"
+		}
+		second, confirmErr := s.acquireOnce(ctx, request, confirmMode)
 		if confirmErr != nil {
 			wipeSecret(first)
 			if IsPassphraseError(confirmErr, PassphrasePolicy) && attempt+1 < passphraseRetryLimit {
@@ -141,7 +148,11 @@ func (s *authorityPassphraseService) Acquire(ctx context.Context, request Author
 			return first, nil
 		}
 		wipeSecret(first)
-		mismatch := &PassphraseError{Kind: PassphrasePolicy, Interaction: true, reason: "authority passphrase confirmation does not match"}
+		mismatchReason := "authority passphrase confirmation does not match"
+		if request.Intent == PrincipalPasswordCreate {
+			mismatchReason = "principal password confirmation does not match"
+		}
+		mismatch := &PassphraseError{Kind: PassphrasePolicy, Interaction: true, reason: mismatchReason}
 		if attempt+1 == passphraseRetryLimit {
 			return nil, mismatch
 		}
@@ -160,7 +171,7 @@ func (s *authorityPassphraseService) acquireOnce(ctx context.Context, request Au
 	executable, discoveryErr := s.resolve()
 	var pinentryErr *PassphraseError
 	if discoveryErr == nil {
-		value, err := s.pinentry(ctx, executable, mode)
+		value, err := s.pinentry(ctx, executable, request.Intent, mode)
 		if err == nil {
 			return value, nil
 		}
@@ -205,7 +216,7 @@ func (s *authorityPassphraseService) resolve() (string, error) {
 	return path, nil
 }
 
-func (s *authorityPassphraseService) pinentry(parent context.Context, executable string, mode string) ([]byte, error) {
+func (s *authorityPassphraseService) pinentry(parent context.Context, executable string, intent AuthorityPassphraseIntent, mode string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(parent, s.timeout)
 	defer cancel()
 	cmd := s.command(ctx, executable)
@@ -243,7 +254,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 		_ = cmd.Wait()
 		close(watchDone)
 		if ctx.Err() != nil {
-			kind, reason = passphraseContextFailure(parent)
+			kind, reason = protectedSecretContextFailure(parent, intent)
 		}
 		if stderr.total > pinentryStderrLimit {
 			kind, reason = PassphraseProtocol, "pinentry exceeded the diagnostic output bound"
@@ -255,6 +266,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 		return fail(PassphraseProtocol, "pinentry returned an invalid greeting")
 	}
 
+	title := "Aegis credential authority"
 	description := "Unlock the Aegis credential authority. Minimum 12 bytes; the passphrase is not persisted."
 	prompt := "Authority passphrase:"
 	okText := "Unlock"
@@ -266,9 +278,19 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 		description = "Confirm the new Aegis credential authority passphrase. Minimum 12 bytes; it is not persisted."
 		prompt = "Confirm authority passphrase:"
 		okText = "Confirm"
+	} else if mode == "principal-create" {
+		title = "Aegis principal authentication"
+		description = "Create the Aegis principal login password. Minimum 12 bytes; only a salted verifier is persisted."
+		prompt = "New principal password:"
+		okText = "Continue"
+	} else if mode == "principal-confirm" {
+		title = "Aegis principal authentication"
+		description = "Confirm the Aegis principal login password. Minimum 12 bytes; only a salted verifier is persisted."
+		prompt = "Confirm principal password:"
+		okText = "Confirm"
 	}
 	for _, command := range []string{
-		"SETTITLE " + assuanEncode([]byte("Aegis credential authority")),
+		"SETTITLE " + assuanEncode([]byte(title)),
 		"SETDESC " + assuanEncode([]byte(description)),
 		"SETPROMPT " + assuanEncode([]byte(prompt)),
 		"SETOK " + assuanEncode([]byte(okText)),
@@ -316,7 +338,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 			if !seenData {
 				return fail(PassphraseProtocol, "pinentry returned protected success without data")
 			}
-			if policyErr := validateAuthorityPassphrase(data); policyErr != nil {
+			if policyErr := validateProtectedSecret(intent, data); policyErr != nil {
 				wipeSecret(data)
 				_, _ = io.WriteString(stdin, "BYE\n")
 				_ = stdin.Close()
@@ -326,7 +348,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 					return nil, &PassphraseError{Kind: PassphraseProtocol, Interaction: true, reason: "pinentry exceeded the diagnostic output bound"}
 				}
 				if waitErr != nil && ctx.Err() != nil {
-					kind, reason := passphraseContextFailure(parent)
+					kind, reason := protectedSecretContextFailure(parent, intent)
 					return nil, &PassphraseError{Kind: kind, Interaction: true, reason: reason}
 				}
 				return nil, policyErr
@@ -348,7 +370,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 			wipeSecret(data)
 			code, ok := assuanErrorCode(line)
 			if ok && code&0xffff == 99 {
-				return fail(PassphraseCancelled, "authority passphrase entry cancelled")
+				return fail(PassphraseCancelled, protectedSecretCancellationReason(intent))
 			}
 			return fail(PassphraseProtocol, "pinentry rejected protected input")
 		case strings.HasPrefix(line, "S "):
@@ -365,13 +387,21 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 	input, inputOK := request.Input.(*os.File)
 	output, outputOK := request.Diagnostic.(*os.File)
 	if !inputOK || !outputOK || !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) {
-		return nil, &PassphraseError{Kind: PassphraseUnavailable, reason: "authority passphrase intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"}
+		reason := "authority passphrase intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"
+		if request.Intent == PrincipalPasswordCreate {
+			reason = "principal password intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"
+		}
+		return nil, &PassphraseError{Kind: PassphraseUnavailable, reason: reason}
 	}
 	prompt := "Authority passphrase (minimum 12 bytes): "
 	if mode == "create" {
 		prompt = "New authority passphrase (minimum 12 bytes): "
 	} else if mode == "confirm" {
 		prompt = "Confirm authority passphrase: "
+	} else if mode == "principal-create" {
+		prompt = "Principal password (minimum 12 bytes): "
+	} else if mode == "principal-confirm" {
+		prompt = "Confirm principal password: "
 	}
 	value, err := readTerminalSecretBounded(ctx, input, output, prompt, authorityPassphraseMaximum)
 	if err != nil {
@@ -382,20 +412,53 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			kind, reason = PassphraseTimeout, "authority passphrase request timed out"
 		}
+		if request.Intent == PrincipalPasswordCreate {
+			reason = "principal password intake failed"
+			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
+				reason = "principal password entry cancelled"
+			} else if errors.Is(err, context.DeadlineExceeded) {
+				reason = "principal password request timed out"
+			}
+		}
 		return nil, &PassphraseError{Kind: kind, Interaction: true, reason: reason}
 	}
-	if err = validateAuthorityPassphrase(value); err != nil {
+	if err = validateProtectedSecret(request.Intent, value); err != nil {
 		wipeSecret(value)
 		return nil, err
 	}
 	return value, nil
 }
 
-func passphraseContextFailure(parent context.Context) (PassphraseErrorKind, string) {
+func protectedSecretCancellationReason(intent AuthorityPassphraseIntent) string {
+	if intent == PrincipalPasswordCreate {
+		return "principal password entry cancelled"
+	}
+	return "authority passphrase entry cancelled"
+}
+
+func protectedSecretContextFailure(parent context.Context, intent AuthorityPassphraseIntent) (PassphraseErrorKind, string) {
 	if errors.Is(parent.Err(), context.Canceled) {
-		return PassphraseCancelled, "authority passphrase entry cancelled"
+		return PassphraseCancelled, protectedSecretCancellationReason(intent)
+	}
+	if intent == PrincipalPasswordCreate {
+		return PassphraseTimeout, "principal password request timed out"
 	}
 	return PassphraseTimeout, "authority passphrase request timed out"
+}
+
+func validateProtectedSecret(intent AuthorityPassphraseIntent, value []byte) error {
+	if intent == PrincipalPasswordCreate {
+		if len(value) < authorityPassphraseMinimum || len(value) > authorityPassphraseMaximum {
+			return &PassphraseError{Kind: PassphrasePolicy, Interaction: true, reason: "principal password must be between 12 and 1024 bytes"}
+		}
+		for _, b := range value {
+			if b == 0 || b == '\r' || b == '\n' {
+				return &PassphraseError{Kind: PassphrasePolicy, Interaction: true, reason: "principal password contains unsupported control bytes"}
+			}
+		}
+		return nil
+	}
+	return validateAuthorityPassphrase(value)
 }
 
 func validateAuthorityPassphrase(value []byte) error {

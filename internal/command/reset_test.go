@@ -523,7 +523,8 @@ func TestResetThenBareOnboardingAndNonTTYBoundary(t *testing.T) {
 	}
 
 	var interactive bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader("principal-password\nprincipal-password\nyes\n/status\n/quit\n"), Out: &interactive, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	provider := &sequencePassphrases{values: [][]byte{[]byte("principal-password")}}
+	root := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &interactive, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--config", fixture.config, "--state-dir", fixture.state})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
