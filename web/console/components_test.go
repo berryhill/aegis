@@ -30,7 +30,7 @@ func TestDocumentUsesNativeInteractionsUnderStrictCSP(t *testing.T) {
 	if strings.Contains(html, "Authenticated control plane") || !strings.Contains(html, "Authentication required") {
 		t.Fatalf("signed-out header asserted authenticated state: %s", html)
 	}
-	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="denied"`, `data-state="unavailable"`, `data-state="degraded_repair_required"`, `data-state="error"`, `method="post"`, `action="/console/session"`} {
+	for _, required := range []string{"<nav", "<main", "aria-live", `id="authentication-status"`, `data-state="loading"`, `data-state="empty"`, `data-state="denied"`, `data-state="unavailable"`, `data-state="degraded_repair_required"`, `data-state="error"`, `method="post"`, `action="/console/login"`} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("document missing %q", required)
 		}
@@ -281,7 +281,7 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 	}
 }
 
-func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
+func TestAuthenticationAcceptsOnlyPrincipalPassword(t *testing.T) {
 	var output bytes.Buffer
 	if err := Authentication(AuthenticationModel{}).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
@@ -291,19 +291,10 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 		"Sign the Aegis principal into this browser",
 		"principal configured when Aegis was initialized",
 		"does not create or change the principal, tenant, or authority context",
-		"On the Aegis host, open a terminal as the initialized principal",
-		"aegis console",
-		"authenticates the host user and creates a temporary, single-use browser handoff",
 		"browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority",
-		"only hands the existing authenticated principal into this browser",
 		"does not provision identity or grant authority",
-		"submit promptly",
-		"without launching a browser",
-		"bare production",
-		"aegis service start",
-		"If the bootstrap expires",
-		"Never paste an API bearer",
-		"credential in a URL",
+		"principal password",
+		"credential-authority passphrase",
 	} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("authentication guidance missing %q: %s", required, html)
@@ -314,8 +305,8 @@ func TestAuthenticationExplainsAuthenticatedHostBootstrapHandoff(t *testing.T) {
 			t.Fatalf("browser authentication exposes authority-bearing input %q: %s", forbidden, html)
 		}
 	}
-	if strings.Count(html, `<input`) != 1 || !strings.Contains(html, `name="bootstrap"`) {
-		t.Fatalf("browser authentication must accept exactly one bootstrap input: %s", html)
+	if strings.Count(html, `<input`) != 1 || !strings.Contains(html, `name="password"`) || !strings.Contains(html, `autocomplete="current-password"`) {
+		t.Fatalf("browser authentication must accept exactly one principal-password input: %s", html)
 	}
 }
 

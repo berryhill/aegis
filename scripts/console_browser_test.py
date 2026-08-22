@@ -191,12 +191,15 @@ def click(devtools: DevTools, selector: str) -> None:
 
 def main() -> int:
     if len(sys.argv) != 4:
-        raise RuntimeError("usage: console_browser_test.py ORIGIN BOOTSTRAP_RESPONSE WORKSPACE")
+        raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE")
     origin = sys.argv[1].rstrip("/")
-    bootstrap_path = pathlib.Path(sys.argv[2])
+    password_path = pathlib.Path(sys.argv[2])
     workspace = pathlib.Path(sys.argv[3])
-    bootstrap = json.loads(bootstrap_path.read_text(encoding="utf-8"))["bootstrap"]
-    require(isinstance(bootstrap, str) and bool(bootstrap), "browser proof received no bootstrap")
+    passwords = json.loads(password_path.read_text(encoding="utf-8"))
+    initial_password = passwords.get("initial")
+    replacement_password = passwords.get("replacement")
+    require(isinstance(initial_password, str) and len(initial_password) >= 12, "browser proof received no initial password")
+    require(isinstance(replacement_password, str) and len(replacement_password) >= 12, "browser proof received no replacement password")
     chrome_home = workspace / "chrome"
     chrome_home.mkdir(mode=0o700)
     chrome_stderr_path = workspace / "chrome.stderr"
@@ -235,9 +238,9 @@ def main() -> int:
         for domain in ("Page", "Runtime", "Log", "Network", "Audits"):
             devtools.command(domain + ".enable")
 
-        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "bootstrap page")
-        click(devtools, "#bootstrap")
-        devtools.command("Input.insertText", {"text": bootstrap})
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
+        click(devtools, "#password")
+        devtools.command("Input.insertText", {"text": initial_password})
         click(devtools, "#session-form button[type=submit]")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === 'Agent Registry'", "authenticated Agent Registry")
         time.sleep(0.5)
@@ -256,11 +259,12 @@ def main() -> int:
 
         click(devtools, 'a[href="/console/agents#/agents"]')
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "seeded Agent Registry record")
+        mutation_paths = ("/console/session", "/console/login", "/console/password")
         session_requests_before = sum(
             1
             for event in devtools.events
             if event.get("method") == "Network.requestWillBeSent"
-            and event.get("params", {}).get("request", {}).get("url", "").endswith("/console/session")
+            and event.get("params", {}).get("request", {}).get("url", "").endswith(mutation_paths)
         )
         click(devtools, 'a[href="/console/agents/charter-import"]')
         wait_for(
@@ -273,7 +277,7 @@ def main() -> int:
             1
             for event in devtools.events
             if event.get("method") == "Network.requestWillBeSent"
-            and event.get("params", {}).get("request", {}).get("url", "").endswith("/console/session")
+            and event.get("params", {}).get("request", {}).get("url", "").endswith(mutation_paths)
         )
         require(session_requests_after == session_requests_before, "charter import review link triggered a session mutation request")
         click(devtools, "#charter-import-back")
@@ -282,6 +286,36 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('agent-alpha')", "Agent Registry detail")
         click(devtools, "#close-inspector")
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed Agent Registry detail")
+
+        cookies = devtools.command("Network.getCookies", {"urls": [origin + "/console"]}).get("cookies", [])
+        old_session = next((cookie for cookie in cookies if cookie.get("name") == "aegis-console"), None)
+        if not isinstance(old_session, dict):
+            raise RuntimeError("browser proof did not capture the pre-rotation session")
+        old_session_value = old_session.get("value")
+        require(isinstance(old_session_value, str) and bool(old_session_value), "browser proof captured an empty pre-rotation session")
+        click(devtools, "#principal-password-rotation summary")
+        wait_for(devtools, "document.querySelector('#principal-password-rotation')?.open === true", "open password rotation control")
+        click(devtools, "#current-password")
+        devtools.command("Input.insertText", {"text": initial_password})
+        click(devtools, "#new-password")
+        devtools.command("Input.insertText", {"text": replacement_password})
+        click(devtools, "#confirm-password")
+        devtools.command("Input.insertText", {"text": replacement_password})
+        click(devtools, '#principal-password-rotation input[name="approve"]')
+        click(devtools, '#principal-password-rotation button[type="submit"]')
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "post-rotation sign-out")
+        time.sleep(1)
+
+        restored = devtools.command("Network.setCookie", {"name": "aegis-console", "value": old_session_value, "url": origin + "/console", "httpOnly": True, "sameSite": "Strict"})
+        require(restored.get("success") is True, "browser proof could not restore the stale session for invalidation proof")
+        devtools.command("Page.navigate", {"url": origin + "/console"})
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "old-session invalidation")
+        time.sleep(1)
+
+        click(devtools, "#password")
+        devtools.command("Input.insertText", {"text": replacement_password})
+        click(devtools, "#session-form button[type=submit]")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout')", "replacement-password login")
         click(devtools, "#logout")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "logged-out console")
 
@@ -313,7 +347,9 @@ def main() -> int:
         require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
         print(json.dumps({
             "browser": "Google Chrome",
-            "bootstrap": "pass",
+            "password_login": "pass",
+            "password_rotation": "pass",
+            "old_session_invalidation": "pass",
             "domains": list(expected.values()),
             "inspection": "pass",
             "charter_import_review": "pass",

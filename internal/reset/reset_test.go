@@ -362,6 +362,10 @@ func TestCompleteResetAndFirstRunReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	initPlan, err = initializer.EnrollPrincipalPassword(initPlan, []byte("principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err = initializer.Apply(context.Background(), initPlan); err != nil {
 		t.Fatal(err)
 	}
