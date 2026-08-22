@@ -11,6 +11,14 @@ Install the latest tagged Aegis source with `go install github.com/berryhill/aeg
 
 Maintainers can exercise the exact release packaging path without publishing anything:
 
+Pull-request CI first proves the exact clean PR head can survive the release transformation and full repository verification. Run that same non-publishing gate locally after committing your changes:
+
+```sh
+make release-readiness VERSION=1.2.3 SOURCE_REVISION="$(git rev-parse HEAD)"
+```
+
+The gate rejects dirty or mismatched source and disables inherited Git hooks while constructing its isolated candidate.
+
 ```sh
 python3 scripts/verify-console-vendor.py
 python3 scripts/console_security_test.py
