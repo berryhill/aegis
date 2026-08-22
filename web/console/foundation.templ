@@ -8,7 +8,7 @@ import "strings"
 templ Dialog(model OverlayModel) {
 	<dialog id={ model.ID } class="interaction-overlay" aria-labelledby={ model.ID + "-title" } aria-describedby={ descriptionID(model) } data-overlay-kind="dialog">
 		<div class="interaction-dialog" tabindex="-1" data-overlay-panel>
-			<header><h2 id={ model.ID + "-title" } tabindex="-1" autofocus>{ model.Title }</h2><button type="button" class="ghost icon-button" commandfor={ model.ID } command="close" aria-label={ closeLabel(model) }>×</button></header>
+			<header><h2 id={ model.ID + "-title" } tabindex="0" autofocus>{ model.Title }</h2><button type="button" class="ghost icon-button" commandfor={ model.ID } command="close" aria-label={ closeLabel(model) }>×</button></header>
 			if model.Description != "" {
 				<p id={ model.ID + "-description" }>{ model.Description }</p>
 			}
@@ -20,7 +20,7 @@ templ Dialog(model OverlayModel) {
 templ Drawer(model OverlayModel) {
 	<dialog id={ model.ID } class="interaction-overlay interaction-drawer" aria-labelledby={ model.ID + "-title" } aria-describedby={ descriptionID(model) } data-overlay-kind="drawer">
 		<div class="interaction-drawer-panel" tabindex="-1" data-overlay-panel>
-			<header><h2 id={ model.ID + "-title" } tabindex="-1" autofocus>{ model.Title }</h2><button type="button" class="ghost icon-button" commandfor={ model.ID } command="close" aria-label={ closeLabel(model) }>×</button></header>
+			<header><h2 id={ model.ID + "-title" } tabindex="0" autofocus>{ model.Title }</h2><button type="button" class="ghost icon-button" commandfor={ model.ID } command="close" aria-label={ closeLabel(model) }>×</button></header>
 			if model.Description != "" {
 				<p id={ model.ID + "-description" }>{ model.Description }</p>
 			}

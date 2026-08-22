@@ -59,6 +59,12 @@ func TestDialogDrawerAndErrorSummaryExposeAccessibilityContracts(t *testing.T) {
 			t.Fatalf("interaction contract missing %q: %s", required, html)
 		}
 	}
+	for _, titleID := range []string{"review-title", "record-title"} {
+		contract := `id="` + titleID + `" tabindex="0" autofocus`
+		if !strings.Contains(html, contract) {
+			t.Fatalf("overlay title must be a deterministic native Tab stop for forward and reverse containment %q: %s", contract, html)
+		}
+	}
 	for _, forbidden := range []string{`aria-modal="true"`, ` open`, ` hidden`} {
 		if strings.Contains(dialog, forbidden) {
 			t.Fatalf("closed native dialog asserted unearned modal state %q: %s", forbidden, dialog)

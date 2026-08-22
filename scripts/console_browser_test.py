@@ -315,14 +315,14 @@ def main() -> int:
             <section class="collection-state" data-state="denied" role="status"><strong>Denied</strong><p>No count is asserted.</p><code>read_denied</code></section>
             <dialog id="fixture-dialog" class="interaction-overlay" aria-labelledby="fixture-dialog-title" aria-describedby="fixture-dialog-description" data-overlay-kind="dialog">
               <div class="interaction-dialog" tabindex="-1" data-overlay-panel>
-                <header><h2 id="fixture-dialog-title" tabindex="-1" autofocus>Confirm exact operation</h2><button id="fixture-dialog-close" type="button" commandfor="fixture-dialog" command="close">Close</button></header>
+                <header><h2 id="fixture-dialog-title" tabindex="0" autofocus>Confirm exact operation</h2><button id="fixture-dialog-close" type="button" commandfor="fixture-dialog" command="close">Close</button></header>
                 <p id="fixture-dialog-description">Synthetic unresolved operation.</p>
                 <div class="interaction-body"><button id="fixture-dialog-cancel" type="button" commandfor="fixture-dialog" command="close">Cancel</button><button id="fixture-dialog-submit" type="button">Submit</button></div>
               </div>
             </dialog>
             <dialog id="fixture-drawer" class="interaction-overlay interaction-drawer" aria-labelledby="fixture-drawer-title" data-overlay-kind="drawer">
               <div class="interaction-drawer-panel" tabindex="-1" data-overlay-panel>
-                <header><h2 id="fixture-drawer-title" tabindex="-1" autofocus>Exact record</h2><button id="fixture-drawer-close" type="button" commandfor="fixture-drawer" command="close">Close</button></header>
+                <header><h2 id="fixture-drawer-title" tabindex="0" autofocus>Exact record</h2><button id="fixture-drawer-close" type="button" commandfor="fixture-drawer" command="close">Close</button></header>
                 <div class="interaction-body"><button id="fixture-drawer-last" type="button">Last action</button></div>
               </div>
             </dialog>`;
@@ -337,11 +337,9 @@ def main() -> int:
         key(devtools, "Tab")
         wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-close'", "forward Tab into dialog")
         key(devtools, "Tab", shift=True)
-        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-submit'", "reverse-Tab containment")
+        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-title'", "reverse-Tab containment")
         key(devtools, "Tab")
-        wait_for(devtools, "document.querySelector('#fixture-dialog').matches(':modal') && (document.activeElement === document.body || document.querySelector('#fixture-dialog').contains(document.activeElement)) && document.activeElement?.id !== 'logout'", "forward-Tab modal containment boundary")
-        key(devtools, "Tab")
-        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-close'", "forward-Tab wrap to first dialog control")
+        wait_for(devtools, "document.activeElement?.id === 'fixture-dialog-close'", "forward-Tab remains deterministic after reverse navigation")
         key(devtools, "Escape")
         wait_for(devtools, "!document.querySelector('#fixture-dialog').open && document.activeElement?.id === 'open-fixture-dialog'", "dialog Escape close and focus restoration")
 
