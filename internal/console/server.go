@@ -279,6 +279,23 @@ func (m *Manager) AuthorizeMutation(request *http.Request) (core.Subject, error)
 	return subject, nil
 }
 
+// AuthorizeCommand repeats the complete browser mutation admission and returns
+// a server-derived session binding for command intents. The binding is a digest
+// of the opaque cookie value; neither the cookie nor its CSRF material leaves
+// the console boundary or enters command/audit records.
+func (m *Manager) AuthorizeCommand(request *http.Request) (core.Subject, string, error) {
+	subject, err := m.AuthorizeMutation(request)
+	if err != nil {
+		return core.Subject{}, "", err
+	}
+	cookie, err := request.Cookie(CookieName)
+	if err != nil || cookie.Value == "" {
+		return core.Subject{}, "", ErrUnauthenticated
+	}
+	digest := sha256.Sum256([]byte(cookie.Value))
+	return subject, "session-" + hex.EncodeToString(digest[:]), nil
+}
+
 // RotatePassword requires an authenticated same-origin session, its CSRF
 // proof, fresh verification of the current password, exact confirmation, and
 // explicit approval. The callback durably publishes and audits before the
