@@ -60,6 +60,8 @@ func classifyError(err error) (int, string, string) {
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
 	var operationError *consoleQueueOperationError
 	switch {
+	case errors.Is(err, console.ErrCommandUnknown):
+		return http.StatusNotFound, "invalid_request", "console command is not registered"
 	case errors.As(err, &operationError):
 		return operationError.status, operationError.code, operationError.message
 	case errors.Is(err, console.ErrBootstrapInvalidFormat):
@@ -205,31 +207,32 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		telemetry = noopTelemetry{}
 	}
 	verifierPath := filepath.Join(svc.Config.StateDir, "auth", principalauth.FileName)
-	verifier, err := principalauth.Load(verifierPath)
+	stored, err := principalauth.Load(verifierPath)
 	if err != nil {
 		return fmt.Errorf("load principal authentication verifier: %w", err)
 	}
+	verifier := &stored
 	consoleManager, err := console.New(console.Config{
 		Origin:           svc.Config.API.Console.Origin,
 		SessionTTL:       svc.Config.API.Console.SessionTTL,
 		BootstrapTTL:     svc.Config.API.Console.BootstrapTTL,
 		MaxPageSize:      svc.Config.API.Console.MaxPageSize,
+		PasswordVerifier: verifier,
 		PrincipalID:      svc.Config.Principal.ID,
 		PrincipalAuthTTL: svc.Config.Principal.AuthTTL,
-		PasswordVerifier: &verifier,
 		LoginBurst:       5,
-		LoginWindow:      time.Minute,
+		LoginWindow:      5 * time.Minute,
 	}, svc.Now)
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
 	}
-	commandService, err := console.NewCommandService(loopCommandDefinitions(svc), loopCommandAuthorityProvider(svc), svc.Now)
-	if err != nil {
-		return fmt.Errorf("configure console commands: %w", err)
-	}
 	managerGateway, err := managergateway.New(svc)
 	if err != nil {
 		return fmt.Errorf("configure manager gateway: %w", err)
+	}
+	commandService, err := console.NewCommandService(loopCommandDefinitions(svc), loopCommandAuthorityProvider(svc), svc.Now)
+	if err != nil {
+		return fmt.Errorf("configure console command service: %w", err)
 	}
 	e := echo.New()
 	var ready atomic.Bool
@@ -362,7 +365,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			SessionTTL:      svc.Config.API.Console.SessionTTL.String(),
 		}
 		if reasonCode != "" {
-			model.Status = "Authentication failed. Check the principal password or use an authenticated host handoff for alternate sign-in; the handoff does not reset the password."
+			model.Status = "Authentication failed. Request a new temporary handoff from the authenticated Aegis host."
 			model.ReasonCode = reasonCode
 		}
 		return model
@@ -484,11 +487,122 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
 	}
+	renderAgentOperation := func(c *echo.Context, status int, subject core.Subject, operation *consoleweb.AgentOperationModel) error {
+		model, err := loadConsole(c, subject, consoleAgents)
+		if err != nil {
+			return err
+		}
+		model.CharterImport, model.AgentOperation = true, operation
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(model))
+		if err != nil {
+			return err
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	}
+	authorizeAgentReview := func(c *echo.Context) (core.Subject, agentOperationForm, error) {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		form, err := decodeAgentOperationForm(c.Request())
+		if err != nil {
+			return core.Subject{}, agentOperationForm{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent operation form")
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return core.Subject{}, agentOperationForm{}, consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return core.Subject{}, agentOperationForm{}, err
+		}
+		return subject, form, nil
+	}
 	e.GET("/console", consolePage)
 	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consoleCredentials} {
 		e.GET("/console/"+string(domain), consolePage)
 	}
 	e.GET("/console/agents/charter-import", charterImportPage)
+	e.POST("/console/agents/registration/review", func(c *echo.Context) error {
+		subject, form, err := authorizeAgentReview(c)
+		if err != nil {
+			return err
+		}
+		operation, err := prepareAgentOperation(c.Request().Context(), svc, subject, form)
+		if err != nil {
+			return renderAgentOperation(c, http.StatusBadRequest, subject, &consoleweb.AgentOperationModel{Stage: "error", Status: "Registration proposal denied.", ReasonCode: agentOperationReason(err), Charter: form.Charter, Fixture: form.Fixture, FleetID: form.FleetID, SourceID: form.SourceID})
+		}
+		payload, err := encodeAgentReviewPayload(form)
+		if err != nil {
+			return err
+		}
+		operation.Receipt, err = consoleManager.IssueReviewReceipt(c.Request(), agentRegistrationReviewPurpose, payload)
+		if err != nil {
+			return consoleError(err)
+		}
+		return renderAgentOperation(c, http.StatusOK, subject, operation)
+	})
+	e.POST("/console/agents/registration/execute", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		execute, err := decodeAgentExecuteForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Agent execute form")
+		}
+		c.Request().Header.Set("X-CSRF-Token", execute.CSRF)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		payload, err := consoleManager.ConsumeReviewReceipt(c.Request(), agentRegistrationReviewPurpose, execute.Receipt)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "Agent registration review receipt denied")
+		}
+		form, err := decodeAgentReviewPayload(payload)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "Agent registration review receipt denied")
+		}
+		operation, err := prepareAgentOperation(c.Request().Context(), svc, subject, form)
+		if err != nil {
+			return renderAgentOperation(c, http.StatusConflict, subject, &consoleweb.AgentOperationModel{Stage: "error", Status: "Registration execute denied after authoritative revalidation.", ReasonCode: agentOperationReason(err), Charter: form.Charter, Fixture: form.Fixture, FleetID: form.FleetID, SourceID: form.SourceID})
+		}
+		agent, created, err := svc.RegisterFleetAgentAs(c.Request().Context(), subject, app.NewRegisterFleetAgentInput([]byte(form.Fixture), form.FleetID, form.SourceID))
+		if err != nil {
+			return renderAgentOperation(c, http.StatusConflict, subject, &consoleweb.AgentOperationModel{Stage: "error", Status: "Agent registration denied.", ReasonCode: agentOperationReason(err), Charter: form.Charter, Fixture: form.Fixture, FleetID: form.FleetID, SourceID: form.SourceID})
+		}
+		operation.Stage, operation.Status = "success", "Registered Agent with authoritative exact revision readback."
+		if !created {
+			operation.Status = "Exact Agent registration already existed; authoritative readback matched."
+		}
+		operation.Revision, operation.RevisionDigest = strconv.FormatUint(agent.Revision.Revision, 10), agent.Revision.Digest
+		operation.ResultURL = "/console/agents?record_key=" + url.QueryEscape(agent.Revision.AgentID) + "#/agents"
+		return renderAgentOperation(c, http.StatusOK, subject, operation)
+	})
+	e.POST("/console/agents/:agent/lifecycle", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		form, err := decodeAgentLifecycleForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Agent lifecycle form")
+		}
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		revision, err := strconv.ParseUint(form.Revision, 10, 64)
+		if err != nil || revision == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Agent lifecycle revision")
+		}
+		agentID := c.Param("agent")
+		input, err := app.NewSetAgentLifecycleInput(agentID, revision, form.Digest, form.Lifecycle)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid Agent lifecycle")
+		}
+		_, err = svc.SetAgentLifecycleAs(c.Request().Context(), subject, agentID, input)
+		if err != nil {
+			return err
+		}
+		return c.Redirect(http.StatusSeeOther, "/console/agents?record_key="+url.QueryEscape(agentID)+"#/agents")
+	})
 	e.GET("/console/loops/compose", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)

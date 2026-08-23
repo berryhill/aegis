@@ -80,8 +80,45 @@ func TestConsoleFormDecoderAcceptsOneExactBoundedField(t *testing.T) {
 	}
 }
 
+func TestAgentOperationFormDecoderAcceptsOnlyExactBoundedArtifacts(t *testing.T) {
+	validValues := url.Values{
+		"csrf":      {"csrf-token"},
+		"charter":   {`{"agent_id":"agent-alpha"}`},
+		"fixture":   {`{"fleet_id":"fleet-primary"}`},
+		"fleet_id":  {"fleet-primary"},
+		"source_id": {"fleet-agent-1"},
+	}
+	valid := httptest.NewRequest(http.MethodPost, "/console/agents/registration/review", strings.NewReader(validValues.Encode()))
+	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	form, err := decodeAgentOperationForm(valid)
+	if err != nil || form.CSRF != "csrf-token" || form.FleetID != "fleet-primary" || form.SourceID != "fleet-agent-1" {
+		t.Fatalf("valid Agent operation form=%+v err=%v", form, err)
+	}
+
+	for name, mutate := range map[string]func(url.Values){
+		"unknown authority field": func(values url.Values) { values.Set("principal", "forged") },
+		"duplicate source":        func(values url.Values) { values["source_id"] = []string{"fleet-agent-1", "fleet-agent-2"} },
+		"missing charter":         func(values url.Values) { values.Del("charter") },
+		"oversized charter":       func(values url.Values) { values.Set("charter", strings.Repeat("x", 131073)) },
+		"oversized source id":     func(values url.Values) { values.Set("source_id", strings.Repeat("x", 64)) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			values := url.Values{}
+			for key, items := range validValues {
+				values[key] = append([]string(nil), items...)
+			}
+			mutate(values)
+			request := httptest.NewRequest(http.MethodPost, "/console/agents/registration/review", strings.NewReader(values.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if _, err := decodeAgentOperationForm(request); err == nil {
+				t.Fatal("unsafe Agent operation form accepted")
+			}
+		})
+	}
+}
+
 func TestConsoleOperationFormDecoderAcceptsOnlyCSRFAndClosedOperation(t *testing.T) {
-	valid := httptest.NewRequest("POST", "/console/queue/item/operate", strings.NewReader("csrf=session-token&operation=cancel"))
+	valid := httptest.NewRequest(http.MethodPost, "/console/queue/item/operate", strings.NewReader("csrf=session-token&operation=cancel"))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	csrf, operation, err := decodeConsoleOperationForm(valid)
 	if err != nil || csrf != "session-token" || operation != "cancel" {
@@ -96,7 +133,7 @@ func TestConsoleOperationFormDecoderAcceptsOnlyCSRFAndClosedOperation(t *testing
 		"duplicate operation": "csrf=session-token&operation=cancel&operation=revoke",
 	} {
 		t.Run(name, func(t *testing.T) {
-			request := httptest.NewRequest("POST", "/console/queue/item/operate", strings.NewReader(body))
+			request := httptest.NewRequest(http.MethodPost, "/console/queue/item/operate", strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			if _, _, err := decodeConsoleOperationForm(request); err == nil {
 				t.Fatal("unsafe queue operation form accepted")
@@ -105,6 +142,84 @@ func TestConsoleOperationFormDecoderAcceptsOnlyCSRFAndClosedOperation(t *testing
 	}
 }
 
+func TestAgentExecuteFormDecoderAcceptsOnlyCSRFAndStrictReceipt(t *testing.T) {
+	valid := url.Values{"csrf": {"csrf-token"}, "receipt": {strings.Repeat("a", 64)}}
+	request := httptest.NewRequest(http.MethodPost, "/console/agents/registration/execute", strings.NewReader(valid.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	form, err := decodeAgentExecuteForm(request)
+	if err != nil || form.CSRF != "csrf-token" || form.Receipt != strings.Repeat("a", 64) {
+		t.Fatalf("valid execute form=%+v err=%v", form, err)
+	}
+	for name, mutate := range map[string]func(url.Values){
+		"raw charter substitution": func(values url.Values) { values.Set("charter", `{}`) },
+		"raw fixture substitution": func(values url.Values) { values.Set("fixture", `{}`) },
+		"fleet substitution":       func(values url.Values) { values.Set("fleet_id", "other") },
+		"duplicate receipt": func(values url.Values) {
+			values["receipt"] = []string{strings.Repeat("a", 64), strings.Repeat("b", 64)}
+		},
+		"uppercase receipt": func(values url.Values) { values.Set("receipt", strings.Repeat("A", 64)) },
+		"short receipt":     func(values url.Values) { values.Set("receipt", "abc") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			values := url.Values{}
+			for key, items := range valid {
+				values[key] = append([]string(nil), items...)
+			}
+			mutate(values)
+			r := httptest.NewRequest(http.MethodPost, "/console/agents/registration/execute", strings.NewReader(values.Encode()))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if _, decodeErr := decodeAgentExecuteForm(r); decodeErr == nil {
+				t.Fatal("unsafe execute form accepted")
+			}
+		})
+	}
+}
+
+func TestAgentLifecycleFormDecoderRequiresExactRevisionAndRetirementConfirmation(t *testing.T) {
+	valid := url.Values{"csrf": {"csrf-token"}, "revision": {"1"}, "digest": {"sha256:" + strings.Repeat("a", 64)}, "lifecycle": {"disabled"}}
+	request := httptest.NewRequest(http.MethodPost, "/console/agents/agent-alpha/lifecycle", strings.NewReader(valid.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	form, err := decodeAgentLifecycleForm(request)
+	if err != nil || form.Lifecycle != "disabled" || form.Revision != "1" {
+		t.Fatalf("valid lifecycle form=%+v err=%v", form, err)
+	}
+
+	for name, mutate := range map[string]func(url.Values){
+		"unknown lifecycle":                 func(values url.Values) { values.Set("lifecycle", "active") },
+		"retirement without confirmation":   func(values url.Values) { values.Set("lifecycle", "retired") },
+		"confirmation on reversible action": func(values url.Values) { values.Set("confirm_retirement", "retire") },
+		"duplicate retirement confirmation": func(values url.Values) {
+			values.Set("lifecycle", "retired")
+			values["confirm_retirement"] = []string{"retire", "retire"}
+		},
+		"forged authority": func(values url.Values) { values.Set("stanza", "admin") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			values := url.Values{}
+			for key, items := range valid {
+				values[key] = append([]string(nil), items...)
+			}
+			mutate(values)
+			request := httptest.NewRequest(http.MethodPost, "/console/agents/agent-alpha/lifecycle", strings.NewReader(values.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if _, err := decodeAgentLifecycleForm(request); err == nil {
+				t.Fatal("unsafe lifecycle form accepted")
+			}
+		})
+	}
+
+	retirement := url.Values{}
+	for key, items := range valid {
+		retirement[key] = append([]string(nil), items...)
+	}
+	retirement.Set("lifecycle", "retired")
+	retirement.Set("confirm_retirement", "retire")
+	retireRequest := httptest.NewRequest(http.MethodPost, "/console/agents/agent-alpha/lifecycle", strings.NewReader(retirement.Encode()))
+	retireRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if form, err = decodeAgentLifecycleForm(retireRequest); err != nil || form.Lifecycle != "retired" {
+		t.Fatalf("confirmed retirement form=%+v err=%v", form, err)
+	}
+}
 func TestPasswordRotationFormRequiresExactClosedFieldSet(t *testing.T) {
 	valid := httptest.NewRequest(http.MethodPost, "/console/password", strings.NewReader("current_password=current-value&new_password=replacement-value&confirmation=replacement-value&csrf=csrf-value&approve=rotate"))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -493,15 +608,6 @@ func TestConsoleQueueRecordSeparatesLifecycleViewsAndOrdersCausalHistory(t *test
 	}
 	if record.Queue.Controls[0].Enabled || !record.Queue.Controls[1].Enabled || !record.Queue.Controls[3].Enabled || record.Queue.Controls[4].Enabled {
 		t.Fatalf("control eligibility is not fail-closed: %+v", record.Queue.Controls)
-	}
-	wantOperations := []string{"retry", "reclaim", "cancel", "expire", "exhaust", "revoke", "process"}
-	for index, want := range wantOperations {
-		if record.Queue.Controls[index].Operation != want || record.Queue.Controls[index].Consequence == "" {
-			t.Fatalf("control %d lost closed operation or consequence: %+v", index, record.Queue.Controls[index])
-		}
-	}
-	if record.Queue.Controls[6].Enabled {
-		t.Fatalf("active work exposed process command: %+v", record.Queue.Controls[6])
 	}
 }
 

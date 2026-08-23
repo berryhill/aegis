@@ -806,13 +806,13 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 	if charterImportResponse.StatusCode != http.StatusOK {
 		t.Fatalf("charter import route status=%d body=%s", charterImportResponse.StatusCode, charterImportBody)
 	}
-	for _, required := range [][]byte{[]byte("<title>Charter import review · Aegis Console</title>"), []byte("Charter import review"), []byte(`href="/console/agents#/agents"`), []byte("Review only"), []byte("aegis charter validate &lt;charter-file.json&gt;"), []byte("aegis charter import &lt;charter-file.json&gt;")} {
+	for _, required := range [][]byte{[]byte("<title>Agent registration · Aegis Console</title>"), []byte("Charter-backed Agent registration"), []byte("This workflow does not import the charter"), []byte(`href="/console/agents#/agents"`), []byte(`action="/console/agents/registration/review"`), []byte("Validate and review"), []byte("aegis charter validate &lt;charter-file.json&gt;"), []byte("aegis charter import &lt;charter-file.json&gt;")} {
 		if !bytes.Contains(charterImportBody, required) {
 			t.Fatalf("charter import route missing %q: %s", required, charterImportBody)
 		}
 	}
-	if bytes.Contains(charterImportBody, []byte(`action="/console/agents/charter-import"`)) || bytes.Contains(charterImportBody, []byte("data-on:")) {
-		t.Fatalf("charter import route exposed charter-import mutation behavior: %s", charterImportBody)
+	if bytes.Contains(charterImportBody, []byte(`action="/console/agents/charter-import"`)) || bytes.Contains(charterImportBody, []byte(`action="/console/agents/registration/execute"`)) || bytes.Contains(charterImportBody, []byte("data-on:")) {
+		t.Fatalf("unreviewed charter import route exposed execute behavior: %s", charterImportBody)
 	}
 
 	unauthenticatedResponse, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + address + "/console/agents/charter-import")
@@ -851,6 +851,294 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 	}
 	if len(hostileSurface.Records) != 1 || strings.Contains(hostileSurface.Records[0].JSON, "<script>") {
 		t.Fatalf("hostile record label was not escaped: %#v", hostileSurface.Records)
+	}
+}
+
+func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *testing.T) {
+	svc := apiService(t)
+	fleetStore := configureAPIFleet(t, svc)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.Listen = address
+	svc.Config.API.Console.Origin = "http://" + address
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	waitFor(t, "tcp", address)
+
+	var issued struct {
+		Bootstrap string `json:"bootstrap"`
+	}
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(issued.Bootstrap)))
+	exchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	exchange.Header.Set("Origin", "http://"+address)
+	exchangeResponse, err := client.Do(exchange)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = exchangeResponse.Body.Close()
+	if exchangeResponse.StatusCode != http.StatusOK {
+		t.Fatalf("session exchange status=%d", exchangeResponse.StatusCode)
+	}
+	stateResponse, err := client.Get("http://" + address + "/console/api/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		CSRF string `json:"csrf"`
+	}
+	if err = json.NewDecoder(stateResponse.Body).Decode(&state); err != nil {
+		t.Fatal(err)
+	}
+	_ = stateResponse.Body.Close()
+	if state.CSRF == "" {
+		t.Fatal("authenticated console returned no CSRF capability")
+	}
+
+	charter := core.Charter{
+		SchemaVersion: core.SchemaVersion, AgentID: "agent-alpha", Name: "Agent Alpha", Revision: 1,
+		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "profile/alpha"},
+		Stanzas: []core.TrustStanza{{
+			ID: "principal", Name: "Principal", Enabled: true,
+			Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{"local-uid:" + strconv.Itoa(os.Getuid())}, PrincipalIDs: []string{"principal-1"}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},
+			Grant:          core.Grant{Capabilities: []string{"chat"}, Tools: []string{"no_mcp"}}, Scopes: core.Scopes{Memory: []string{"agent-alpha"}, Credentials: []string{"provider:test"}}, Session: core.SessionPolicy{MaximumLifetimeSec: 60, RequireReauth: true}, Approval: core.ApprovalPolicy{RequiredOperations: []string{"provision"}, MaximumLifetimeSec: 60, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Toolsets: []string{"no_mcp"}, Model: "fixture-model", Provider: "test"},
+		}},
+		CreatedBy: "principal-1", CreatedAt: time.Now().UTC().Truncate(time.Second),
+	}
+	canonical, err := core.Canonicalize(charter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	charterData, err := json.Marshal(charter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureData, err := json.Marshal(registry.CurrentFleetFixture{
+		SchemaVersion: registry.CurrentFleetFixtureSchemaVersion,
+		FleetID:       "fleet-primary",
+		Agents: []registry.CurrentFleetAgent{{
+			SourceID: "fleet-agent-1", AgentID: charter.AgentID,
+			Runtime:   registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "profile/alpha"},
+			Ownership: registry.Ownership{OwnerID: "principal-1", AccountabilityID: "team-platform"}, Lifecycle: registry.LifecycleEnabled,
+			Charter:                reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: charter.AgentID, Revision: charter.Revision, Digest: canonical.Digest},
+			CapabilityDeclarations: []string{"chat"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := url.Values{"csrf": {state.CSRF}, "charter": {string(charterData)}, "fixture": {string(fixtureData)}, "fleet_id": {"fleet-primary"}, "source_id": {"fleet-agent-1"}}
+	post := func(path string, values url.Values, origin string) (*http.Response, []byte) {
+		t.Helper()
+		request, requestErr := http.NewRequest(http.MethodPost, "http://"+address+path, strings.NewReader(values.Encode()))
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if origin != "" {
+			request.Header.Set("Origin", origin)
+		}
+		response, requestErr := client.Do(request)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		body, _ := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		return response, body
+	}
+	response, body := post("/console/agents/registration/review", operation, "http://"+address)
+	if response.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("Registration proposal denied")) {
+		t.Fatalf("missing stored charter review status=%d body=%s", response.StatusCode, body)
+	}
+	registrations, err := fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 0 {
+		t.Fatalf("missing stored charter review changed registry: registrations=%+v err=%v", registrations, err)
+	}
+	if _, err = svc.GetCharter(charter.AgentID, charter.Revision); err == nil {
+		t.Fatal("registration review imported a missing charter")
+	}
+	if err = svc.Store.SaveCharter(canonical); err != nil {
+		t.Fatal(err)
+	}
+
+	forged := url.Values{}
+	for key, items := range operation {
+		forged[key] = append([]string(nil), items...)
+	}
+	forged.Set("source_id", "substituted-source")
+	response, body = post("/console/agents/registration/review", forged, "http://"+address)
+	if response.StatusCode != http.StatusBadRequest || !bytes.Contains(body, []byte("Registration proposal denied")) {
+		t.Fatalf("substituted source review status=%d body=%s", response.StatusCode, body)
+	}
+	registrations, err = fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 0 {
+		t.Fatalf("denied review changed registry: registrations=%+v err=%v", registrations, err)
+	}
+	response, _ = post("/console/agents/registration/review", operation, "http://attacker.example")
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin review status=%d", response.StatusCode)
+	}
+
+	response, body = post("/console/agents/registration/review", operation, "http://"+address)
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte(`action="/console/agents/registration/execute"`)) || !bytes.Contains(body, []byte(canonical.Digest)) || !bytes.Contains(body, []byte("team-platform")) {
+		t.Fatalf("registration review status=%d body=%s", response.StatusCode, body)
+	}
+	receiptMarker := []byte(`name="receipt" value="`)
+	receiptStart := bytes.Index(body, receiptMarker)
+	if receiptStart < 0 {
+		t.Fatalf("registration review omitted receipt: %s", body)
+	}
+	receiptStart += len(receiptMarker)
+	receiptEnd := bytes.IndexByte(body[receiptStart:], '"')
+	if receiptEnd != 64 {
+		t.Fatalf("registration review emitted malformed receipt field")
+	}
+	receipt := string(body[receiptStart : receiptStart+receiptEnd])
+	execute := url.Values{"csrf": {state.CSRF}, "receipt": {receipt}}
+	registrations, err = fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 0 {
+		t.Fatalf("review mutated registry: registrations=%+v err=%v", registrations, err)
+	}
+
+	substitution := url.Values{"csrf": {state.CSRF}, "receipt": {receipt}, "charter": {string(charterData)}, "fixture": {string(fixtureData)}, "fleet_id": {"fleet-primary"}, "source_id": {"fleet-agent-1"}}
+	response, _ = post("/console/agents/registration/execute", substitution, "http://"+address)
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("raw candidate substitution status=%d", response.StatusCode)
+	}
+	registrations, err = fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 0 {
+		t.Fatalf("raw candidate substitution mutated registry: registrations=%+v err=%v", registrations, err)
+	}
+	if stored, getErr := svc.GetCharter(charter.AgentID, charter.Revision); getErr != nil || stored.Digest != canonical.Digest {
+		t.Fatalf("denied registration changed the pre-existing charter: stored=%+v err=%v", stored, getErr)
+	}
+
+	var secondIssued struct {
+		Bootstrap string `json:"bootstrap"`
+	}
+	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &secondIssued, http.StatusCreated)
+	secondJar, _ := cookiejar.New(nil)
+	secondClient := &http.Client{Jar: secondJar, Timeout: 5 * time.Second}
+	secondExchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(secondIssued.Bootstrap)))
+	secondExchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	secondExchange.Header.Set("Origin", "http://"+address)
+	secondResponse, err := secondClient.Do(secondExchange)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = secondResponse.Body.Close()
+	secondStateResponse, err := secondClient.Get("http://" + address + "/console/api/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secondState struct {
+		CSRF string `json:"csrf"`
+	}
+	if err = json.NewDecoder(secondStateResponse.Body).Decode(&secondState); err != nil {
+		t.Fatal(err)
+	}
+	_ = secondStateResponse.Body.Close()
+	crossSessionRequest, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/agents/registration/execute", strings.NewReader(url.Values{"csrf": {secondState.CSRF}, "receipt": {receipt}}.Encode()))
+	crossSessionRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	crossSessionRequest.Header.Set("Origin", "http://"+address)
+	crossSessionResponse, err := secondClient.Do(crossSessionRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = crossSessionResponse.Body.Close()
+	if crossSessionResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-session receipt status=%d", crossSessionResponse.StatusCode)
+	}
+	registrations, err = fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 0 {
+		t.Fatalf("cross-session receipt mutated registry: registrations=%+v err=%v", registrations, err)
+	}
+
+	response, body = post("/console/agents/registration/execute", execute, "http://"+address)
+	if response.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("Registered Agent with authoritative exact revision readback")) || !bytes.Contains(body, []byte("Open exact registered Agent")) {
+		t.Fatalf("registration execute status=%d body=%s", response.StatusCode, body)
+	}
+	registrations, err = fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 1 || registrations[0].AgentID != charter.AgentID {
+		t.Fatalf("registration readback=%+v err=%v", registrations, err)
+	}
+	if stored, getErr := svc.GetCharter(charter.AgentID, charter.Revision); getErr != nil || stored.Digest != canonical.Digest {
+		t.Fatalf("Agent registration changed the pre-existing charter: stored=%+v err=%v", stored, getErr)
+	}
+	response, _ = post("/console/agents/registration/execute", execute, "http://"+address)
+	if response.StatusCode != http.StatusForbidden {
+		t.Fatalf("replayed registration receipt status=%d", response.StatusCode)
+	}
+	registrations, err = fleetStore.ListAgentRegistrations(ctx)
+	if err != nil || len(registrations) != 1 {
+		t.Fatalf("replayed registration receipt mutated registry: registrations=%+v err=%v", registrations, err)
+	}
+	// The security-denial probes above intentionally add requests to this
+	// end-to-end lifecycle test; allow the production source bucket to refill
+	// before exercising the unchanged lifecycle sequence below.
+	time.Sleep(time.Second)
+	initial, err := fleetStore.LatestAgentRevision(ctx, charter.AgentID)
+	if err != nil || initial.Revision != 1 || initial.Digest == "" || initial.Charter.Digest != canonical.Digest {
+		t.Fatalf("initial authoritative revision=%+v err=%v", initial, err)
+	}
+
+	lifecycle := url.Values{"csrf": {state.CSRF}, "revision": {"1"}, "digest": {initial.Digest}, "lifecycle": {"disabled"}}
+	response, body = post("/console/agents/"+charter.AgentID+"/lifecycle", lifecycle, "http://"+address)
+	if response.StatusCode != http.StatusOK || response.Request.URL.Path != "/console/agents" {
+		t.Fatalf("disable lifecycle status=%d final=%s body=%s", response.StatusCode, response.Request.URL, body)
+	}
+	disabled, err := fleetStore.LatestAgentRevision(ctx, charter.AgentID)
+	if err != nil || disabled.Revision != 2 || disabled.Lifecycle != registry.LifecycleDisabled || disabled.Digest == initial.Digest {
+		t.Fatalf("disabled authoritative revision=%+v err=%v", disabled, err)
+	}
+	response, _ = post("/console/agents/"+charter.AgentID+"/lifecycle", lifecycle, "http://"+address)
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("stale lifecycle revision status=%d", response.StatusCode)
+	}
+	latest, err := fleetStore.LatestAgentRevision(ctx, charter.AgentID)
+	if err != nil || latest.Digest != disabled.Digest {
+		t.Fatalf("stale lifecycle request mutated state: latest=%+v err=%v", latest, err)
+	}
+	enable := url.Values{"csrf": {state.CSRF}, "revision": {"2"}, "digest": {disabled.Digest}, "lifecycle": {"enabled"}}
+	response, body = post("/console/agents/"+charter.AgentID+"/lifecycle", enable, "http://"+address)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("enable lifecycle status=%d body=%s", response.StatusCode, body)
+	}
+	enabled, err := fleetStore.LatestAgentRevision(ctx, charter.AgentID)
+	if err != nil || enabled.Revision != 3 || enabled.Lifecycle != registry.LifecycleEnabled {
+		t.Fatalf("enabled authoritative revision=%+v err=%v", enabled, err)
+	}
+	retire := url.Values{"csrf": {state.CSRF}, "revision": {"3"}, "digest": {enabled.Digest}, "lifecycle": {"retired"}, "confirm_retirement": {"retire"}}
+	response, body = post("/console/agents/"+charter.AgentID+"/lifecycle", retire, "http://"+address)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("retire lifecycle status=%d body=%s", response.StatusCode, body)
+	}
+	retired, err := fleetStore.LatestAgentRevision(ctx, charter.AgentID)
+	if err != nil || retired.Revision != 4 || retired.Lifecycle != registry.LifecycleRetired {
+		t.Fatalf("retired authoritative revision=%+v err=%v", retired, err)
+	}
+	reenable := url.Values{"csrf": {state.CSRF}, "revision": {"4"}, "digest": {retired.Digest}, "lifecycle": {"enabled"}}
+	response, _ = post("/console/agents/"+charter.AgentID+"/lifecycle", reenable, "http://"+address)
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("retired Agent re-enable status=%d", response.StatusCode)
+	}
+	latest, err = fleetStore.LatestAgentRevision(ctx, charter.AgentID)
+	if err != nil || latest.Digest != retired.Digest {
+		t.Fatalf("retired Agent re-enable mutated state: latest=%+v err=%v", latest, err)
 	}
 }
 

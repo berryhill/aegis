@@ -26,6 +26,170 @@ import (
 )
 
 const maxConsolePatchBytes = 1 << 20
+const maxAgentOperationFormBytes = 512 << 10
+const agentRegistrationReviewPurpose = "agent-registration"
+
+type agentOperationForm struct {
+	CSRF, Charter, Fixture, FleetID, SourceID string
+}
+
+type agentExecuteForm struct {
+	CSRF, Receipt string
+}
+
+type agentReviewPayload struct {
+	Charter  string `json:"charter"`
+	Fixture  string `json:"fixture"`
+	FleetID  string `json:"fleet_id"`
+	SourceID string `json:"source_id"`
+}
+
+func validReviewReceiptToken(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func decodeAgentExecuteForm(request *http.Request) (agentExecuteForm, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > 8192 {
+		return agentExecuteForm{}, errors.New("invalid Agent execute form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 8193))
+	if err != nil || len(body) > 8192 {
+		return agentExecuteForm{}, errors.New("invalid Agent execute form")
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil || len(values) != 2 || len(values["csrf"]) != 1 || len(values["receipt"]) != 1 || values.Get("csrf") == "" || !validReviewReceiptToken(values.Get("receipt")) {
+		return agentExecuteForm{}, errors.New("invalid Agent execute form")
+	}
+	return agentExecuteForm{CSRF: values.Get("csrf"), Receipt: values.Get("receipt")}, nil
+}
+
+func encodeAgentReviewPayload(form agentOperationForm) ([]byte, error) {
+	return json.Marshal(agentReviewPayload{Charter: form.Charter, Fixture: form.Fixture, FleetID: form.FleetID, SourceID: form.SourceID})
+}
+
+func decodeAgentReviewPayload(payload []byte) (agentOperationForm, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var value agentReviewPayload
+	if err := decoder.Decode(&value); err != nil {
+		return agentOperationForm{}, errors.New("invalid Agent review receipt payload")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return agentOperationForm{}, errors.New("invalid Agent review receipt payload")
+	}
+	form := agentOperationForm{Charter: value.Charter, Fixture: value.Fixture, FleetID: value.FleetID, SourceID: value.SourceID}
+	if form.Charter == "" || form.Fixture == "" || form.FleetID == "" || form.SourceID == "" || len(form.Charter) > 131072 || len(form.Fixture) > 131072 || len(form.FleetID) > 63 || len(form.SourceID) > 63 {
+		return agentOperationForm{}, errors.New("invalid Agent review receipt payload")
+	}
+	return form, nil
+}
+
+func decodeAgentOperationForm(request *http.Request) (agentOperationForm, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > maxAgentOperationFormBytes {
+		return agentOperationForm{}, errors.New("invalid Agent operation form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, maxAgentOperationFormBytes+1))
+	if err != nil || len(body) > maxAgentOperationFormBytes {
+		return agentOperationForm{}, errors.New("invalid Agent operation form")
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil || len(values) != 5 {
+		return agentOperationForm{}, errors.New("invalid Agent operation form")
+	}
+	value := func(key string) (string, bool) {
+		items, ok := values[key]
+		if !ok || len(items) != 1 || items[0] == "" {
+			return "", false
+		}
+		return items[0], true
+	}
+	csrf, csrfOK := value("csrf")
+	charter, charterOK := value("charter")
+	fixture, fixtureOK := value("fixture")
+	fleetID, fleetOK := value("fleet_id")
+	sourceID, sourceOK := value("source_id")
+	if !csrfOK || !charterOK || !fixtureOK || !fleetOK || !sourceOK || len(charter) > 131072 || len(fixture) > 131072 || len(fleetID) > 63 || len(sourceID) > 63 {
+		return agentOperationForm{}, errors.New("invalid Agent operation form")
+	}
+	return agentOperationForm{CSRF: csrf, Charter: charter, Fixture: fixture, FleetID: fleetID, SourceID: sourceID}, nil
+}
+
+type agentLifecycleForm struct {
+	CSRF, Revision, Digest string
+	Lifecycle              string
+}
+
+func decodeAgentLifecycleForm(request *http.Request) (agentLifecycleForm, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > 8192 {
+		return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 8193))
+	if err != nil || len(body) > 8192 {
+		return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil || (len(values) != 4 && len(values) != 5) {
+		return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+	}
+	for key := range values {
+		if key != "csrf" && key != "revision" && key != "digest" && key != "lifecycle" && key != "confirm_retirement" {
+			return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+		}
+	}
+	one := func(key string) (string, bool) {
+		items := values[key]
+		if len(items) != 1 || items[0] == "" {
+			return "", false
+		}
+		return items[0], true
+	}
+	csrf, csrfOK := one("csrf")
+	revision, revisionOK := one("revision")
+	digest, digestOK := one("digest")
+	lifecycleRaw, lifecycleOK := one("lifecycle")
+	confirmItems := values["confirm_retirement"]
+	if len(confirmItems) > 1 {
+		return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+	}
+	confirm := ""
+	if len(confirmItems) == 1 {
+		confirm = confirmItems[0]
+	}
+	if !csrfOK || !revisionOK || !digestOK || !lifecycleOK || (lifecycleRaw == "retired" && confirm != "retire") || (lifecycleRaw != "retired" && confirm != "") {
+		return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+	}
+	if lifecycleRaw != "enabled" && lifecycleRaw != "disabled" && lifecycleRaw != "retired" {
+		return agentLifecycleForm{}, errors.New("invalid Agent lifecycle form")
+	}
+	return agentLifecycleForm{CSRF: csrf, Revision: revision, Digest: digest, Lifecycle: lifecycleRaw}, nil
+}
+
+func prepareAgentOperation(ctx context.Context, service *app.Service, subject core.Subject, form agentOperationForm) (*consoleweb.AgentOperationModel, error) {
+	proposal, err := service.PrepareFleetAgentRegistrationAs(ctx, subject, []byte(form.Charter), []byte(form.Fixture), form.FleetID, form.SourceID)
+	if err != nil {
+		return nil, err
+	}
+	return &consoleweb.AgentOperationModel{
+		Stage: "review", Status: "Validated exact charter and fleet candidate; no state has been changed.",
+		Charter: form.Charter, Fixture: form.Fixture, FleetID: form.FleetID, SourceID: form.SourceID,
+		AgentID: proposal.AgentID, CharterDigest: proposal.CharterDigest, Revision: strconv.FormatUint(proposal.Revision, 10), RevisionDigest: proposal.RevisionDigest,
+		Runtime: proposal.Runtime, Owner: proposal.Owner, Accountability: proposal.Accountability,
+		Capabilities: proposal.Capabilities, Policies: proposal.Policies, Lifecycle: proposal.Lifecycle,
+	}, nil
+}
+
+func agentOperationReason(err error) string {
+	_, code, _ := classifyError(err)
+	return code
+}
 
 func validateBrowserHandoff(raw, consoleHost string) (string, error) {
 	target, err := url.Parse(raw)
@@ -358,7 +522,7 @@ func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
 		policies = append(policies, "None declared")
 	}
 	return consoleweb.RecordModel{
-		Key: revision.AgentID, Label: revision.AgentID, Summary: revision.AgentID + " · " + string(revision.Lifecycle),
+		Key: revision.AgentID, Digest: revision.Digest, Label: revision.AgentID, Summary: revision.AgentID + " · " + string(revision.Lifecycle),
 		Lifecycle: string(revision.Lifecycle), Readiness: readiness,
 		Revision: fmt.Sprintf("r%d", revision.Revision), Runtime: revision.Runtime.Target,
 		Source: revision.Source.FleetID + " / " + revision.Source.Kind + " / " + revision.Source.SourceID, Owner: revision.Ownership.OwnerID,

@@ -367,8 +367,8 @@ def main() -> int:
         click(devtools, 'a[href="/console/agents/charter-import"]')
         wait_for(
             devtools,
-            "location.pathname === '/console/agents/charter-import' && document.title === 'Charter import review · Aegis Console' && document.querySelector('#charter-import-title')?.textContent.trim() === 'Charter import review' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
-            "dedicated review-only charter import page",
+            "location.pathname === '/console/agents/charter-import' && document.title === 'Agent registration · Aegis Console' && document.querySelector('#charter-import-title')?.textContent.trim() === 'Charter-backed Agent registration' && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter validate') && document.querySelector('#charter-import-review')?.textContent.includes('aegis charter import')",
+            "dedicated Agent registration page",
         )
         time.sleep(1.5)
         session_requests_after = sum(

@@ -26,11 +26,18 @@ var (
 	ErrInvalidInput               = errors.New("invalid console input")
 	ErrBootstrapInvalidFormat     = errors.New("bootstrap_invalid_format")
 	ErrBootstrapConsumedOrExpired = errors.New("bootstrap_consumed_or_expired")
+	ErrReviewReceiptInvalidFormat = errors.New("review_receipt_invalid_format")
+	ErrReviewReceiptUnavailable   = errors.New("review_receipt_unavailable")
 	ErrInvalidCredentials         = errors.New("principal authentication failed")
 	ErrLoginThrottled             = errors.New("principal authentication retry limit reached")
 )
 
 const CookieName = "aegis-console"
+
+const (
+	reviewReceiptTTL             = 2 * time.Minute
+	maxReviewReceiptPayloadBytes = 512 << 10
+)
 
 type Config struct {
 	Origin           string
@@ -58,6 +65,13 @@ type session struct {
 	generation uint64
 }
 
+type reviewReceipt struct {
+	session [32]byte
+	purpose string
+	payload []byte
+	expires time.Time
+}
+
 type Manager struct {
 	mu            sync.Mutex
 	rotationMu    sync.Mutex
@@ -69,6 +83,8 @@ type Manager struct {
 	loginFailures map[string][]time.Time
 	loginInFlight map[string]int
 	generation    uint64
+	receipts      map[[32]byte]reviewReceipt
+	pending       map[[32]byte][32]byte
 }
 
 func New(config Config, now func() time.Time) (*Manager, error) {
@@ -87,7 +103,7 @@ func New(config Config, now func() time.Time) (*Manager, error) {
 			return nil, fmt.Errorf("%w: principal password authentication configuration is invalid", ErrInvalidInput)
 		}
 	}
-	return &Manager{origin: origin, config: config, now: now, bootstraps: make(map[[32]byte]bootstrap), sessions: make(map[[32]byte]session), loginFailures: make(map[string][]time.Time), loginInFlight: make(map[string]int), generation: 1}, nil
+	return &Manager{origin: origin, config: config, now: now, bootstraps: make(map[[32]byte]bootstrap), sessions: make(map[[32]byte]session), loginFailures: make(map[string][]time.Time), loginInFlight: make(map[string]int), generation: 1, receipts: make(map[[32]byte]reviewReceipt), pending: make(map[[32]byte][32]byte)}, nil
 }
 
 func loopbackHost(host string) bool {
@@ -236,6 +252,67 @@ func validBootstrapFormat(value string) bool {
 		}
 	}
 	return true
+}
+
+func (m *Manager) IssueReviewReceipt(request *http.Request, purpose string, payload []byte) (string, error) {
+	if purpose == "" || len(purpose) > 128 || len(payload) == 0 || len(payload) > maxReviewReceiptPayloadBytes {
+		return "", ErrDenied
+	}
+	if _, err := m.Authenticate(request); err != nil {
+		return "", err
+	}
+	cookie, _ := request.Cookie(CookieName)
+	sessionDigest := sha256.Sum256([]byte(cookie.Value))
+	value, receiptDigest, err := opaque()
+	if err != nil {
+		return "", fmt.Errorf("generate review receipt: %w", err)
+	}
+	now := m.now()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prune(now)
+	candidate, ok := m.sessions[sessionDigest]
+	if !ok || !now.Before(candidate.expires) || !now.Before(candidate.subject.ExpiresAt) {
+		return "", ErrUnauthenticated
+	}
+	expires := now.Add(reviewReceiptTTL)
+	if candidate.expires.Before(expires) {
+		expires = candidate.expires
+	}
+	if candidate.subject.ExpiresAt.Before(expires) {
+		expires = candidate.subject.ExpiresAt
+	}
+	if previous, exists := m.pending[sessionDigest]; exists {
+		delete(m.receipts, previous)
+	}
+	m.receipts[receiptDigest] = reviewReceipt{session: sessionDigest, purpose: purpose, payload: append([]byte(nil), payload...), expires: expires}
+	m.pending[sessionDigest] = receiptDigest
+	return value, nil
+}
+
+func (m *Manager) ConsumeReviewReceipt(request *http.Request, purpose, value string) ([]byte, error) {
+	if !validBootstrapFormat(value) {
+		return nil, ErrReviewReceiptInvalidFormat
+	}
+	cookie, err := request.Cookie(CookieName)
+	if err != nil || cookie.Value == "" {
+		return nil, ErrReviewReceiptUnavailable
+	}
+	now := m.now()
+	sessionDigest := sha256.Sum256([]byte(cookie.Value))
+	receiptDigest := sha256.Sum256([]byte(value))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prune(now)
+	sessionCandidate, sessionOK := m.sessions[sessionDigest]
+	pending, pendingOK := m.pending[sessionDigest]
+	receiptCandidate, receiptOK := m.receipts[receiptDigest]
+	if !sessionOK || !now.Before(sessionCandidate.expires) || !now.Before(sessionCandidate.subject.ExpiresAt) || !pendingOK || pending != receiptDigest || !receiptOK || receiptCandidate.session != sessionDigest || receiptCandidate.purpose != purpose || !now.Before(receiptCandidate.expires) {
+		return nil, ErrReviewReceiptUnavailable
+	}
+	delete(m.receipts, receiptDigest)
+	delete(m.pending, sessionDigest)
+	return append([]byte(nil), receiptCandidate.payload...), nil
 }
 
 func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {
@@ -396,6 +473,10 @@ func (m *Manager) Revoke(request *http.Request) {
 func (m *Manager) RevokeSessionValue(value string) {
 	digest := sha256.Sum256([]byte(value))
 	m.mu.Lock()
+	if receipt, ok := m.pending[digest]; ok {
+		delete(m.receipts, receipt)
+		delete(m.pending, digest)
+	}
 	delete(m.sessions, digest)
 	m.mu.Unlock()
 }
@@ -475,7 +556,19 @@ func (m *Manager) prune(now time.Time) {
 	}
 	for key, value := range m.sessions {
 		if !now.Before(value.expires) || !now.Before(value.subject.ExpiresAt) {
+			if receipt, ok := m.pending[key]; ok {
+				delete(m.receipts, receipt)
+				delete(m.pending, key)
+			}
 			delete(m.sessions, key)
+		}
+	}
+	for key, value := range m.receipts {
+		if !now.Before(value.expires) {
+			delete(m.receipts, key)
+			if m.pending[value.session] == key {
+				delete(m.pending, value.session)
+			}
 		}
 	}
 }
