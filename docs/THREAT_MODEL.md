@@ -24,6 +24,8 @@ flowchart LR
   Bootstrap -->|exact-origin exchange| Browser
   Browser -->|HttpOnly cookie + Origin/Host/CSRF| Intent[Short-lived closed-catalog command intent]
   Intent -->|fresh authority + exact target admission| Aegis
+  Browser -->|CSRF + exact reviewed credential form| CredentialReceipt[One-use session/purpose-bound receipt]
+  CredentialReceipt -->|consume then fresh exact target/version validation| CredentialAuthority[Encrypted credential authority]
   TokenFile[Owner-only generated token file] -->|transport authentication only| Daemon[Aegis serve: sole online store owner]
   UserService[Explicitly approved systemd --user unit] -->|same-account supervision; no implicit linger| Daemon
   Caller -->|authenticated Unix transport; no direct-store fallback while online| Daemon

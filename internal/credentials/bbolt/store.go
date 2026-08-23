@@ -488,6 +488,82 @@ func (s *Store) List(ctx context.Context, query string, limit int) ([]credential
 	return result, err
 }
 
+func (s *Store) Query(ctx context.Context, query credentials.SecretRecordQuery) (credentials.SecretRecordPage, error) {
+	page := credentials.SecretRecordPage{Records: []credentials.SecretRecord{}, Offset: query.Offset}
+	if err := ctx.Err(); err != nil {
+		return page, err
+	}
+	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 || len(query.Search) > 128 || strings.ContainsAny(query.Search, "\r\n\x00") || (query.RecordID != "" && !credentials.ValidateIdentifier(query.RecordID)) || (query.Status != "all" && query.Status != credentials.StatusActive && query.Status != credentials.StatusRevoked) {
+		return page, errors.New("invalid credential collection query")
+	}
+	needle := strings.ToLower(strings.TrimSpace(query.Search))
+	records := make([]credentials.SecretRecord, 0)
+	err := s.db.View(func(tx *bolt.Tx) error {
+		cursor := tx.Bucket(recordBucket).Cursor()
+		for key, value := cursor.First(); key != nil; key, value = cursor.Next() {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if bytes.HasPrefix(key, []byte("ref\x00")) {
+				continue
+			}
+			var record credentials.SecretRecord
+			if err := decode(value, &record); err != nil {
+				return err
+			}
+			if err := credentials.ValidateRecord(record); err != nil {
+				return err
+			}
+			if query.Status != "all" && record.Status != query.Status {
+				continue
+			}
+			haystack := strings.ToLower(strings.Join([]string{record.Reference, record.Kind, record.ID, record.CreatedBy}, " "))
+			if needle != "" && !strings.Contains(haystack, needle) {
+				continue
+			}
+			records = append(records, record)
+		}
+		return nil
+	})
+	if err != nil {
+		return page, err
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Status != records[j].Status {
+			return records[i].Status < records[j].Status
+		}
+		if records[i].Reference != records[j].Reference {
+			return records[i].Reference < records[j].Reference
+		}
+		return records[i].ID < records[j].ID
+	})
+	page.Total = len(records)
+	if query.RecordID != "" {
+		index := -1
+		for candidate := range records {
+			if records[candidate].ID == query.RecordID {
+				index = candidate
+				break
+			}
+		}
+		if index < 0 {
+			return credentials.SecretRecordPage{}, credentials.ErrNotFound
+		}
+		page.Offset = (index / query.Limit) * query.Limit
+	}
+	if page.Offset > page.Total || (page.Offset == page.Total && page.Total > 0) {
+		return credentials.SecretRecordPage{}, errors.New("credential collection page is out of range")
+	}
+	end := page.Offset + query.Limit
+	if end > page.Total {
+		end = page.Total
+	}
+	if page.Offset < page.Total {
+		page.Records = append(page.Records, records[page.Offset:end]...)
+	}
+	return page, nil
+}
+
 func (s *Store) Counts(ctx context.Context) (credentials.SecretCounts, error) {
 	var counts credentials.SecretCounts
 	if err := ctx.Err(); err != nil {

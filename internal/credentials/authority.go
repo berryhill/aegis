@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -90,6 +91,17 @@ func (a *Authority) List(ctx context.Context, query string, limit int) ([]Secret
 		return nil, errors.New("credential list query or limit is invalid")
 	}
 	return a.repository.List(ctx, query, limit)
+}
+
+func (a *Authority) Query(ctx context.Context, query SecretRecordQuery) (SecretRecordPage, error) {
+	repository, ok := a.repository.(QueryRepository)
+	if !ok {
+		return SecretRecordPage{}, errors.New("credential repository does not support authoritative collection queries")
+	}
+	if query.Limit < 1 || query.Limit > 100 || query.Offset < 0 || len(query.Search) > 128 || strings.ContainsAny(query.Search, "\r\n\x00") || (query.RecordID != "" && !ValidateIdentifier(query.RecordID)) || (query.Status != "all" && query.Status != StatusActive && query.Status != StatusRevoked) {
+		return SecretRecordPage{}, errors.New("credential collection query is invalid")
+	}
+	return repository.Query(ctx, query)
 }
 
 func (a *Authority) Counts(ctx context.Context) (SecretCounts, error) {
