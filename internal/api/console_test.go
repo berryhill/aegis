@@ -117,6 +117,31 @@ func TestAgentOperationFormDecoderAcceptsOnlyExactBoundedArtifacts(t *testing.T)
 	}
 }
 
+func TestConsoleOperationFormDecoderAcceptsOnlyCSRFAndClosedOperation(t *testing.T) {
+	valid := httptest.NewRequest(http.MethodPost, "/console/queue/item/operate", strings.NewReader("csrf=session-token&operation=cancel"))
+	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	csrf, operation, err := decodeConsoleOperationForm(valid)
+	if err != nil || csrf != "session-token" || operation != "cancel" {
+		t.Fatalf("valid operation form csrf=%q operation=%q err=%v", csrf, operation, err)
+	}
+
+	for name, body := range map[string]string{
+		"missing csrf":        "operation=cancel",
+		"missing operation":   "csrf=session-token",
+		"unknown field":       "csrf=session-token&operation=cancel&authority=admin",
+		"duplicate csrf":      "csrf=one&csrf=two&operation=cancel",
+		"duplicate operation": "csrf=session-token&operation=cancel&operation=revoke",
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/console/queue/item/operate", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if _, _, err := decodeConsoleOperationForm(request); err == nil {
+				t.Fatal("unsafe queue operation form accepted")
+			}
+		})
+	}
+}
+
 func TestAgentExecuteFormDecoderAcceptsOnlyCSRFAndStrictReceipt(t *testing.T) {
 	valid := url.Values{"csrf": {"csrf-token"}, "receipt": {strings.Repeat("a", 64)}}
 	request := httptest.NewRequest(http.MethodPost, "/console/agents/registration/execute", strings.NewReader(valid.Encode()))

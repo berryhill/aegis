@@ -297,6 +297,21 @@ func decodeConsoleForm(request *http.Request, field string) (string, error) {
 	return values[field][0], nil
 }
 
+func decodeConsoleOperationForm(request *http.Request) (string, string, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > 8192 {
+		return "", "", errors.New("invalid console operation form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 8193))
+	if err != nil || len(body) > 8192 {
+		return "", "", errors.New("invalid console operation form")
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil || len(values) != 2 || len(values["csrf"]) != 1 || len(values["operation"]) != 1 {
+		return "", "", errors.New("invalid console operation form")
+	}
+	return values["csrf"][0], values["operation"][0], nil
+}
+
 type passwordRotationForm struct {
 	Current      string
 	New          string
@@ -1006,20 +1021,198 @@ func queueControls(view app.QueueExecutionView, phase string) []consoleweb.Queue
 	active := phase == "active"
 	leaseExpired := active && len(view.Claims) > 0 && !view.Claims[len(view.Claims)-1].ExpiresAt.After(time.Now().UTC())
 	retryBudget := view.Projection.Attempts < view.Item.MaxAttempts
-	control := func(label string, enabled bool, reason string) consoleweb.QueueControlModel {
+	control := func(operation, label string, enabled bool, reason, consequence string) consoleweb.QueueControlModel {
 		if enabled {
-			reason = "eligible; authenticated API/CLI authority admission required"
+			reason = "eligible; submit to repeat authenticated authority admission"
 		}
-		return consoleweb.QueueControlModel{Label: label, Enabled: enabled, Reason: reason}
+		return consoleweb.QueueControlModel{Operation: operation, Label: label, Enabled: enabled, Reason: reason, Consequence: consequence}
 	}
 	return []consoleweb.QueueControlModel{
-		control("Retry now", false, "live manual retry is denied; no authoritative durable runtime-stop acknowledgement exists"),
-		control("Reclaim expired lease", active && retryBudget && leaseExpired, "requires an expired active lease and remaining pinned retry budget"),
-		control("Cancel execution", !terminal, "terminal work cannot transition"),
-		control("Expire execution", leaseExpired, "requires an expired active lease"),
-		control("Mark retry exhausted", active && !retryBudget, "requires the final active attempt and exhausted pinned retry budget"),
-		control("Record authority revocation", !terminal, "terminal work cannot transition"),
+		control("retry", "Retry active execution", false, "live manual retry is denied; no authoritative durable runtime-stop acknowledgement exists", "Denied until Aegis can prove the active runtime stopped."),
+		control("reclaim", "Reclaim expired lease", active && retryBudget && leaseExpired, "requires an expired active lease and remaining pinned retry budget", "Ends the stale claim and returns the exact item to the queue without increasing its pinned retry bound."),
+		control("cancel", "Cancel execution", !terminal, "terminal work cannot transition", "Records an operator cancellation and terminal disposition; running work is not asserted stopped by the browser."),
+		control("expire", "Expire execution", leaseExpired, "requires an expired active lease", "Records expiry for the exact expired claim and its terminal disposition."),
+		control("exhaust", "Mark retry exhausted", active && !retryBudget, "requires the final active attempt and exhausted pinned retry budget", "Records retry exhaustion as failed; it does not upgrade partial evidence to success."),
+		control("revoke", "Record authority revocation", !terminal, "terminal work cannot transition", "Records revocation and a distinct terminal disposition after fresh authority admission."),
+		control("process", "Process execution", phase == "claimable", "requires currently claimable work and remaining pinned retry budget", "Claims the exact item, launches its pinned runtime, verifies required evidence, and records a terminal disposition."),
 	}
+}
+
+type consoleIDFunc func(string) (string, error)
+
+type consoleQueueOperator interface {
+	Get(ctx context.Context, subject core.Subject, itemID string) (app.QueueExecutionView, error)
+	Process(ctx context.Context, subject core.Subject, input app.ProcessQueueItemInput) error
+	Reclaim(ctx context.Context, subject core.Subject, input app.RetryQueueItemInput) error
+	Cancel(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error
+	Expire(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error
+	Exhaust(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error
+	Revoke(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error
+}
+
+type appConsoleQueueOperator struct{ service *app.Service }
+
+func (o appConsoleQueueOperator) Get(ctx context.Context, subject core.Subject, itemID string) (app.QueueExecutionView, error) {
+	return o.service.GetQueueItemAs(ctx, subject, itemID)
+}
+func (o appConsoleQueueOperator) Process(ctx context.Context, subject core.Subject, input app.ProcessQueueItemInput) error {
+	_, err := o.service.ProcessQueueItemAs(ctx, subject, input)
+	return err
+}
+func (o appConsoleQueueOperator) Reclaim(ctx context.Context, subject core.Subject, input app.RetryQueueItemInput) error {
+	_, err := o.service.RetryQueueItemAs(ctx, subject, input)
+	return err
+}
+func (o appConsoleQueueOperator) Cancel(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error {
+	_, err := o.service.CancelQueueItemAs(ctx, subject, input)
+	return err
+}
+func (o appConsoleQueueOperator) Expire(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error {
+	_, err := o.service.ExpireQueueItemAs(ctx, subject, input)
+	return err
+}
+func (o appConsoleQueueOperator) Exhaust(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error {
+	_, err := o.service.ExhaustQueueItemAs(ctx, subject, input)
+	return err
+}
+func (o appConsoleQueueOperator) Revoke(ctx context.Context, subject core.Subject, input app.TerminalQueueItemInput) error {
+	_, err := o.service.RevokeQueueItemAs(ctx, subject, input)
+	return err
+}
+
+type consoleQueueOperationError struct {
+	status  int
+	code    string
+	message string
+	cause   error
+}
+
+func (e *consoleQueueOperationError) Error() string {
+	if e.cause != nil {
+		return e.message + ": " + e.cause.Error()
+	}
+	return e.message
+}
+func (e *consoleQueueOperationError) Unwrap() error { return e.cause }
+
+func queueOperationError(status int, code, message string, cause error) error {
+	return &consoleQueueOperationError{status: status, code: code, message: message, cause: cause}
+}
+
+func classifyQueueOperationFailure(err error, staleMessage string) error {
+	switch {
+	case errors.Is(err, app.ErrDenied) || app.IsFleetDenied(err):
+		return queueOperationError(http.StatusForbidden, "queue_operation_denied", "queue operation denied after fresh authority admission", err)
+	case errors.Is(err, app.ErrAmbiguous) || app.IsFleetAmbiguous(err):
+		return queueOperationError(http.StatusConflict, "queue_operation_ambiguous", "queue operation denied because authoritative state is ambiguous", err)
+	case errors.Is(err, app.ErrConflict) || app.IsFleetConflict(err):
+		return queueOperationError(http.StatusConflict, "queue_operation_invalid_transition", "queue operation is not a valid transition from the authoritative state", err)
+	default:
+		return queueOperationError(http.StatusConflict, "queue_operation_stale_state", staleMessage, err)
+	}
+}
+
+func operateConsoleQueueItem(ctx context.Context, operator consoleQueueOperator, subject core.Subject, itemID, operation string, newID consoleIDFunc) error {
+	if itemID == "" || strings.ContainsAny(itemID, "\r\n") {
+		return queueOperationError(http.StatusBadRequest, "queue_operation_malformed", "invalid queue item", nil)
+	}
+	if operation != "process" && operation != "reclaim" && operation != "cancel" && operation != "expire" && operation != "exhaust" && operation != "revoke" && operation != "retry" {
+		return queueOperationError(http.StatusBadRequest, "queue_operation_malformed", "unknown queue operation", nil)
+	}
+	selected, err := operator.Get(ctx, subject, itemID)
+	if err != nil {
+		return err
+	}
+	if selected.Item.ItemID != itemID {
+		return queueOperationError(http.StatusConflict, "queue_operation_ambiguous", "authoritative queue item does not match the requested item", nil)
+	}
+	id := func(prefix string) (string, error) { return newID(prefix) }
+	switch operation {
+	case "process":
+		loopExecutionID := ""
+		if len(selected.LoopExecutions) > 1 {
+			return queueOperationError(http.StatusConflict, "queue_operation_ambiguous", "queue item has ambiguous Loop execution binding", nil)
+		}
+		if len(selected.LoopExecutions) == 1 {
+			loopExecutionID = selected.LoopExecutions[0].LoopExecutionID
+		} else if loopExecutionID, err = id("loop-execution"); err != nil {
+			return err
+		}
+		claimID, err := id("claim")
+		if err != nil {
+			return err
+		}
+		attemptID, err := id("attempt")
+		if err != nil {
+			return err
+		}
+		claimTransitionID, err := id("transition-claim")
+		if err != nil {
+			return err
+		}
+		terminalTransitionID, err := id("transition-terminal")
+		if err != nil {
+			return err
+		}
+		dispositionID, err := id("disposition")
+		if err != nil {
+			return err
+		}
+		artifactID, err := id("artifact")
+		if err != nil {
+			return err
+		}
+		workerID, err := id("console-worker")
+		if err != nil {
+			return err
+		}
+		err = operator.Process(ctx, subject, app.ProcessQueueItemInput{Authority: selected.Item.Authority, QueueItemID: itemID, WorkerID: workerID, LoopExecutionID: loopExecutionID, ClaimID: claimID, AttemptID: attemptID, ClaimTransitionID: claimTransitionID, TerminalTransitionID: terminalTransitionID, DispositionID: dispositionID, ArtifactID: artifactID, LeaseDuration: 5 * time.Minute})
+		if err != nil {
+			return classifyQueueOperationFailure(err, "queue processing denied because authoritative state changed")
+		}
+		return nil
+	case "reclaim":
+		retryID, err := id("retry")
+		if err != nil {
+			return err
+		}
+		transitionID, err := id("transition-reclaim")
+		if err != nil {
+			return err
+		}
+		err = operator.Reclaim(ctx, subject, app.RetryQueueItemInput{Authority: selected.Item.Authority, QueueItemID: itemID, RetryID: retryID, TransitionID: transitionID, Reclaimed: true, ReasonCode: app.QueueReasonLeaseReclaimed})
+		if err != nil {
+			return classifyQueueOperationFailure(err, "expired-lease reclaim denied by current authoritative state")
+		}
+		return nil
+	case "cancel", "expire", "exhaust", "revoke":
+		cancellationID, err := id(operation)
+		if err != nil {
+			return err
+		}
+		transitionID, err := id("transition-" + operation)
+		if err != nil {
+			return err
+		}
+		input := app.TerminalQueueItemInput{Authority: selected.Item.Authority, QueueItemID: itemID, CancellationID: cancellationID, TransitionID: transitionID}
+		switch operation {
+		case "cancel":
+			err = operator.Cancel(ctx, subject, input)
+		case "expire":
+			err = operator.Expire(ctx, subject, input)
+		case "exhaust":
+			err = operator.Exhaust(ctx, subject, input)
+		case "revoke":
+			err = operator.Revoke(ctx, subject, input)
+		}
+		if err != nil {
+			return classifyQueueOperationFailure(err, operation+" denied by current authoritative state")
+		}
+		return nil
+	case "retry":
+		return queueOperationError(http.StatusConflict, "queue_operation_live_retry_denied", "live retry denied without authoritative runtime-stop acknowledgement", nil)
+	}
+	return queueOperationError(http.StatusBadRequest, "queue_operation_malformed", "unknown queue operation", nil)
 }
 
 func consoleTime(value time.Time) string {
