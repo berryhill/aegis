@@ -20,6 +20,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/starfederation/datastar-go/datastar"
 )
@@ -145,6 +146,52 @@ func decodeConsoleOperationForm(request *http.Request) (string, string, error) {
 		return "", "", errors.New("invalid console operation form")
 	}
 	return values["csrf"][0], values["operation"][0], nil
+}
+
+type passwordRotationForm struct {
+	Current      string
+	New          string
+	Confirmation string
+	CSRF         string
+	Approved     bool
+}
+
+func decodePasswordRotationForm(request *http.Request) (passwordRotationForm, error) {
+	if !isConsoleForm(request) || request.Body == nil || request.ContentLength > 8192 {
+		return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+	}
+	body, err := io.ReadAll(io.LimitReader(request.Body, 8193))
+	if err != nil || len(body) > 8192 {
+		return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+	}
+	values, err := url.ParseQuery(string(body))
+	fields := []string{"current_password", "new_password", "confirmation", "csrf", "approve"}
+	if err != nil || len(values) != len(fields) {
+		return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+	}
+	for _, field := range fields {
+		if len(values[field]) != 1 {
+			return passwordRotationForm{}, errors.New("invalid principal password rotation form")
+		}
+	}
+	return passwordRotationForm{Current: values.Get("current_password"), New: values.Get("new_password"), Confirmation: values.Get("confirmation"), CSRF: values.Get("csrf"), Approved: values.Get("approve") == "rotate"}, nil
+}
+
+func replacePrincipalVerifier(path string, current, replacement principalauth.Record, authorize, complete func() error) error {
+	if authorize == nil || complete == nil {
+		return errors.New("principal password rotation audit callbacks are required")
+	}
+	if err := authorize(); err != nil {
+		return err
+	}
+	if err := principalauth.Replace(path, current, replacement); err != nil {
+		return err
+	}
+	if err := complete(); err != nil {
+		rollbackErr := principalauth.Replace(path, replacement, current)
+		return errors.Join(err, rollbackErr)
+	}
+	return nil
 }
 
 func renderConsole(ctx context.Context, component templ.Component) ([]byte, error) {
@@ -378,11 +425,19 @@ func consoleLoopRecord(view app.LoopView) consoleweb.RecordModel {
 	} else if view.Lifecycle.State == "retired" {
 		readiness = "Retired; terminal lifecycle"
 	}
+	control := &consoleweb.LoopDetailModel{
+		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
+		CanRetire: view.Lifecycle.State != "retired",
+	}
+	if len(view.History) > 0 {
+		control.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
+	}
 	return consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.LoopID,
 		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
-		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID,
+		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: control,
 		Fields: []consoleweb.FieldModel{
 			{Label: "Executable steps", Value: strings.Join(steps, "\n")},
 			{Label: "Transitions", Value: strings.Join(transitions, "\n")},
@@ -674,7 +729,7 @@ func credentialProposal(cred app.CredentialView, vault app.VaultStatusView) cons
 		reference = "provider:NAME"
 	}
 	put := fmt.Sprintf("aegis secret put %s --kind %s --created-by \"$OPERATOR\"", reference, fallback(cred.Kind, "opaque"))
-	backup := "aegis secret backup <path-to-backup.db>"
+	backup := "aegis secret backup"
 	return consoleweb.CredentialProposalDetail{
 		PutCommand:    put,
 		BackupCommand: backup,

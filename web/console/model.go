@@ -16,6 +16,22 @@ type PageModel struct {
 	Authentication AuthenticationModel
 	Surface        SurfaceModel
 	CharterImport  bool
+	LoopComposer   *LoopComposerModel
+	CommandPreview *CommandPreviewModel
+	CommandReceipt *OperationReceiptModel
+}
+
+type LoopPublisherModel struct {
+	ID, Revision, Digest, Runtime string
+}
+
+type LoopComposerModel struct {
+	Publishers []LoopPublisherModel
+	Errors     []string
+}
+
+type CommandPreviewModel struct {
+	IntentID, CommandID, TargetID, TargetDigest, InputDigest, ExpiresAt string
 }
 
 type AuthenticationModel struct {
@@ -28,6 +44,7 @@ type AuthenticationModel struct {
 
 type SurfaceModel struct {
 	Domain                string
+	CSRF                  string
 	Title                 string
 	Eyebrow               string
 	Description           string
@@ -49,7 +66,6 @@ type SurfaceModel struct {
 	Inspector             *RecordModel
 	InspectorOpen         bool
 	CharterImportProposal CharterImportProposal
-	CSRF                  string
 }
 
 // CharterImportProposal is a review-only bridge to the existing CLI charter
@@ -86,6 +102,12 @@ type RecordModel struct {
 	Graph        *GraphDetailModel
 	Queue        *QueueDetailModel
 	Credential   *CredentialDetailModel
+	Loop         *LoopDetailModel
+}
+
+type LoopDetailModel struct {
+	TargetID, Digest, PublisherID, ExpectedLifecycleDigest string
+	CanActivate, CanRetire                                 bool
 }
 
 // QueueDetailModel is a presentation-only projection of authoritative queue
@@ -174,6 +196,51 @@ type GraphRunModel struct {
 type FieldModel struct {
 	Label string
 	Value string
+}
+
+// VisualState presents an authoritative readback outcome. The browser never
+// derives or promotes it.
+type VisualState string
+
+const (
+	StateLoading       VisualState = "loading"
+	StateEmpty         VisualState = "empty"
+	StateFilteredEmpty VisualState = "filtered-empty"
+	StateDenied        VisualState = "denied"
+	StateUnavailable   VisualState = "unavailable"
+	StateDegraded      VisualState = "degraded"
+	StateError         VisualState = "error"
+)
+
+type NoticeModel struct{ Kind, Title, Message, ReasonCode string }
+
+type FormFieldModel struct {
+	ID, Name, Label, Type, Value, Help, Error, Autocomplete string
+	Required, Secret                                        bool
+}
+
+type ExactReferenceModel struct{ Label, ID, Revision, Digest, Lifecycle, Provenance string }
+
+// AuthorityContextModel is deliberately display-only. State is authoritative
+// admission readback, never an input or selector.
+type AuthorityContextModel struct{ Identity, Stanza, Mandate, State, ReasonCode string }
+
+type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message string }
+type FilterOptionModel struct{ Value, Label string }
+type FilterModel struct {
+	ID, Label, Name, Value string
+	Options                []FilterOptionModel
+}
+type PaginationModel struct {
+	Label, PreviousURL, NextURL, Summary string
+	HasPrevious, HasNext                 bool
+}
+type OverlayModel struct {
+	ID, Title, Description, CloseLabel string
+}
+type ConfirmationModel struct {
+	Title, Message, ConfirmLabel, CancelLabel, DialogID string
+	Dangerous                                           bool
 }
 
 // CredentialDetailModel is the metadata-only inspector projection of an

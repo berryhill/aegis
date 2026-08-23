@@ -32,6 +32,7 @@ import (
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
+	"github.com/berryhill/aegis/internal/principalauth"
 	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
@@ -279,6 +280,13 @@ func apiService(t *testing.T) *app.Service {
 	cfg.API.Listen = "127.0.0.1:0"
 	cfg.API.UnixSocket = filepath.Join(root, "aegis.sock")
 	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
+	verifier, err := principalauth.Enroll(cfg.Principal.ID, []byte("api-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = principalauth.Publish(filepath.Join(cfg.StateDir, "auth", principalauth.FileName), verifier); err != nil {
+		t.Fatal(err)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	authorityPath := filepath.Join(state.Root(), "persistence", "authority-v1")
 	if _, err = authoritybadger.Initialize(context.Background(), authorityPath); err != nil {
@@ -968,6 +976,32 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 		t.Fatalf("excessive page size status=%d", excess.StatusCode)
 	}
 	_ = excess.Body.Close()
+	commandBody := `{"schema_version":"aegis.console-command-catalog.v1","command_id":"unregistered.command","target_id":"agent-1","expected_digest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","idempotency_key":"browser-test","input":{}}`
+	commandRequest, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/api/commands/preview", strings.NewReader(commandBody))
+	commandRequest.Header.Set("Origin", "http://"+address)
+	commandRequest.Header.Set("X-CSRF-Token", established.CSRF)
+	commandRequest.Header.Set("Content-Type", "application/json")
+	commandResponse, err := client.Do(commandRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandResponseBody, _ := io.ReadAll(commandResponse.Body)
+	_ = commandResponse.Body.Close()
+	if commandResponse.StatusCode != http.StatusNotFound || !bytes.Contains(commandResponseBody, []byte(`"code":"invalid_request"`)) {
+		t.Fatalf("authenticated browser command path status=%d body=%s", commandResponse.StatusCode, commandResponseBody)
+	}
+	forgedCommand, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/api/commands/preview", strings.NewReader(commandBody))
+	forgedCommand.Header.Set("Origin", "http://"+address)
+	forgedCommand.Header.Set("X-CSRF-Token", "forged")
+	forgedCommand.Header.Set("Content-Type", "application/json")
+	forgedCommandResponse, err := client.Do(forgedCommand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = forgedCommandResponse.Body.Close()
+	if forgedCommandResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("forged browser command CSRF status=%d", forgedCommandResponse.StatusCode)
+	}
 	logout, _ := http.NewRequest(http.MethodDelete, "http://"+address+"/console/session", nil)
 	logout.Header.Set("Origin", "http://attacker.example")
 	logout.Header.Set("X-CSRF-Token", established.CSRF)

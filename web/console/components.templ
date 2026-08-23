@@ -24,11 +24,18 @@ templ Document(model PageModel) {
 				<main class="content" id="main" tabindex="-1">
 					<div id="workspace">
 						if model.Authenticated {
-							if model.CharterImport {
+							if model.LoopComposer != nil {
+								@LoopComposerPage(*model.LoopComposer, model.CSRF)
+							} else if model.CommandPreview != nil {
+								@CommandPreviewPage(*model.CommandPreview, model.CSRF)
+							} else if model.CommandReceipt != nil {
+								@CommandReceiptPage(*model.CommandReceipt)
+							} else if model.CharterImport {
 								@CharterImportPage(model.Surface.CharterImportProposal)
 							} else {
 								@Workspace(model.Surface)
 							}
+							@PasswordRotation(model.CSRF)
 						} else {
 							@Authentication(model.Authentication)
 						}
@@ -97,27 +104,21 @@ templ Authentication(model AuthenticationModel) {
 		<span class="eyebrow">Principal authentication</span>
 		<h1 id="authentication-title">Sign the Aegis principal into this browser</h1>
 		<p>This signs the principal configured when Aegis was initialized into this browser. It does not create or change the principal, tenant, or authority context.</p>
-		<ol aria-label="Browser authentication steps">
-			<li>On the Aegis host, open a terminal as the initialized principal and run <code>aegis console</code>.</li>
-			<li>That command authenticates the host user and creates a temporary, single-use browser handoff.</li>
-			<li>Paste only that handoff below and submit promptly.</li>
-		</ol>
-		<p>The browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority. <code>aegis console</code> only hands the existing authenticated principal into this browser; it does not provision identity or grant authority.</p>
-		<p><code>aegis console</code> prints the handoff without launching a browser. A bare production <code>aegis</code> may instead start the approved service and open the browser automatically.</p>
-		<p>If the service is stopped, run <code>aegis service start</code> and retry. If the bootstrap expires, run <code>aegis console</code> again. Never paste an API bearer or put either credential in a URL.</p>
+		<p>Enter the principal password enrolled during approved Aegis initialization. This is separate from the credential-authority passphrase and never selects credential decryption authority.</p>
+		<p>The browser cannot select a principal, actor, tenant, trust stanza, mandate, or authority. Successful password verification authenticates only the configured principal; it does not provision identity or grant authority.</p>
 		<p id="authentication-status" role="status" aria-live="polite">
 			if model.Status != "" {
 				{ model.Status } <code>{ model.ReasonCode }</code>
 			} else {
-				A temporary handoff for the existing Aegis principal is required.
+				The enrolled principal password is required.
 			}
 		</p>
 		if model.RecoveryCommand != "" {
-			<p class="inline-notice">Recovery: run <code>{ model.RecoveryCommand }</code>. Bootstrap lifetime: <strong>{ model.BootstrapTTL }</strong>. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
+			<p class="inline-notice">Alternate sign-in: run <code>{ model.RecoveryCommand }</code> as the authenticated host principal for a one-time browser handoff. This does not reset or disclose the principal password. Handoff lifetime: <strong>{ model.BootstrapTTL }</strong>. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
 		}
-		<form id="session-form" method="post" action="/console/session">
-			<label for="bootstrap">Temporary principal handoff</label>
-			<input id="bootstrap" name="bootstrap" type="password" autocomplete="off" required/>
+		<form id="session-form" method="post" action="/console/login">
+			<label for="password">Principal password</label>
+			<input id="password" name="password" type="password" autocomplete="current-password" required/>
 			<button class="primary" type="submit">Sign in as the Aegis principal</button>
 		</form>
 		<div class="service-state" data-state="loading" hidden>Loading authoritative state…</div>
@@ -127,6 +128,26 @@ templ Authentication(model AuthenticationModel) {
 		<div class="service-state" data-state="degraded_repair_required" hidden>Fleet state is degraded and requires repair. No count is asserted.</div>
 		<div class="service-state" data-state="error" hidden>Fleet state could not be loaded or validated.</div>
 	</section>
+}
+
+templ PasswordRotation(csrf string) {
+	<details class="panel" id="principal-password-rotation">
+		<summary>Rotate principal password</summary>
+		<div class="panel-body">
+			<p>Rotation requires the current password, exact confirmation, and explicit approval. It revokes every existing browser session and one-time handoff.</p>
+			<form method="post" action="/console/password">
+				<input type="hidden" name="csrf" value={ csrf }/>
+				<label for="current-password">Current principal password</label>
+				<input id="current-password" name="current_password" type="password" autocomplete="current-password" required/>
+				<label for="new-password">New principal password</label>
+				<input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" required/>
+				<label for="confirm-password">Confirm new principal password</label>
+				<input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="12" required/>
+				<label><input name="approve" type="checkbox" value="rotate" required/> I approve replacing the principal-password verifier and revoking all browser sessions and one-time handoffs.</label>
+				<button class="primary" type="submit">Rotate password and revoke prior browser authentication</button>
+			</form>
+		</div>
+	</details>
 }
 
 templ Workspace(surface SurfaceModel) {
@@ -141,6 +162,10 @@ templ Workspace(surface SurfaceModel) {
 				if action.Primary {
 					if surface.Domain == DomainAgents && action.State == "ready" {
 						<a class="primary" href="/console/agents/charter-import" title={ actionTitle(action) }>{ action.Label }</a>
+					} else if surface.Domain == DomainLoops && action.State == "ready" {
+						<a class="primary" href="/console/loops/compose" title={ actionTitle(action) }>{ action.Label }</a>
+					} else if surface.Domain == DomainGraphs && surface.Authoritative {
+						<a class="primary" href="/console/graphs/compose" title="Compose a candidate; publication still requires fresh exact authority admission">{ action.Label }</a>
 					} else {
 						<button class="primary" type="button" disabled title={ actionTitle(action) }>{ action.Label }</button>
 					}
@@ -185,6 +210,48 @@ templ CharterImportPage(proposal CharterImportProposal) {
 			</div>
 		</section>
 	</section>
+}
+
+templ LoopComposerPage(model LoopComposerModel, csrf string) {
+	<section class="surface active" aria-labelledby="loop-composer-title">
+		<div class="page-head"><div class="surface-header"><span class="eyebrow">Loops</span><h1 id="loop-composer-title">Publish immutable Loop revision</h1><p>Compose a bounded typed revision. Preview creates no Loop record; confirmation repeats target, publisher, principal, stanza, mandate, and authority admission.</p></div><a class="secondary" href="/console/loops">Cancel</a></div>
+		@ErrorSummary("Correct the Loop composer", model.Errors)
+		<form class="panel panel-body" method="post" action="/console/loops/preview">
+			<input type="hidden" name="csrf" value={ csrf }/>
+			<label for="loop-publisher">Eligible enabled publisher</label><select id="loop-publisher" name="publisher_id" required>
+				for _, publisher := range model.Publishers {
+					<option value={ publisher.ID }>{ publisher.ID } · { publisher.Revision } · { publisher.Runtime }</option>
+				}
+			</select><p class="field-help">The selection is a request only. The server resolves the exact current Agent revision and denies unless it is the sole admitted authority Agent.</p>
+			<div class="graph-grid"><div><label for="loop-id">Loop ID</label><input id="loop-id" name="loop_id" required maxlength="128"/></div><div><label for="loop-revision">Revision</label><input id="loop-revision" name="revision" type="number" min="1" required/></div><div><label for="loop-previous">Previous digest</label><input id="loop-previous" name="previous_digest" placeholder="blank for revision 1"/></div><div><label for="loop-key">Publication idempotency key</label><input id="loop-key" name="publication_key" required maxlength="128"/></div><div><label for="loop-entry">Entry step ID</label><input id="loop-entry" name="entry_step_id" required maxlength="128"/></div></div>
+			<p class="inline-notice">Line fields use CSV. Quote a value with standard CSV quotes when it contains a comma. Limits: 128 Loop ports, 256 steps, 1,024 transitions, 128 evidence requirements, 10 attempts, and 1,000 traversals.</p>
+			@LoopTextarea("loop-inputs", "inputs", "Loop inputs", "id,type,required", false)
+			@LoopTextarea("loop-outputs", "outputs", "Loop outputs", "id,type,required", false)
+			@LoopTextarea("loop-steps", "steps", "Steps", "id,kind,max_attempts,gate_mode,terminal_outcome", true)
+			@LoopTextarea("loop-step-ports", "step_ports", "Step ports", "step_id,input|output,port_id,type,required", false)
+			@LoopTextarea("loop-terminal-mappings", "terminal_mappings", "Terminal output mappings", "terminal_step_id,source_port,loop_output_port", false)
+			@LoopTextarea("loop-claims", "evidence_claims", "Evidence claims", "step_id,claim,media_type,expected_digest,verifier_id,policy_version", false)
+			@LoopTextarea("loop-transitions", "transitions", "Transitions", "id,from_step_id,to_step_id,condition,max_traversals", false)
+			@LoopTextarea("loop-mappings", "transition_mappings", "Transition mappings", "transition_id,source_port,target_port", false)
+			@LoopTextarea("loop-required-evidence", "required_evidence", "Required evidence", "claim,producer_step_id", false)
+			<button class="primary" type="submit" disabled?={ len(model.Publishers) == 0 }>Preview exact publication</button>
+		</form>
+	</section>
+}
+
+templ LoopTextarea(id, name, label, placeholder string, required bool) {
+	<div class="form-field"><label for={ id }>{ label }</label><p class="field-help">One { placeholder } record per line.</p><textarea id={ id } name={ name } rows="4" required?={ required } placeholder={ placeholder }></textarea></div>
+}
+
+templ CommandPreviewPage(model CommandPreviewModel, csrf string) {
+	<section class="surface active" aria-labelledby="command-preview-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Review exact command</span><h1 id="command-preview-title">Confirm Loop mutation</h1><p>Preview is non-persistent. Confirmation repeats fresh authority and exact target admission.</p></div></div>
+		<dl class="exact-reference"><dt>Command</dt><dd>{ model.CommandID }</dd><dt>Target</dt><dd>{ model.TargetID }</dd><dt>Target digest</dt><dd><code>{ model.TargetDigest }</code></dd><dt>Normalized input digest</dt><dd><code>{ model.InputDigest }</code></dd><dt>Expires</dt><dd>{ model.ExpiresAt }</dd></dl>
+		<form method="post" action="/console/loops/execute"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="intent_id" value={ model.IntentID }/>@Confirmation(ConfirmationModel{Title: "Confirm exact Loop mutation", Message: "Only the displayed digest-bound intent will execute. Closing or cancelling creates no Loop or lifecycle record.", ConfirmLabel: "Confirm and execute", CancelLabel: "Cancel", Dangerous: model.CommandID == "loop.lifecycle"})</form>
+	</section>
+}
+
+templ CommandReceiptPage(model OperationReceiptModel) {
+	<section class="surface active" aria-labelledby="command-receipt-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Authoritative readback</span><h1 id="command-receipt-title">Loop operation receipt</h1></div><a class="primary" href="/console/loops">Return to Loops</a></div>@OperationReceipt(model)</section>
 }
 
 templ ActionReadiness(actions []ActionModel) {
@@ -327,6 +394,8 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 				@GraphInspector(surface, record)
 			} else if record.Credential != nil {
 				@CredentialInspector(surface, record)
+			} else if record.Loop != nil {
+				@LoopInspector(surface, record)
 			} else if len(record.Fields) > 0 {
 				<div class="detail-head"><div class="detail-title"><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ registryURL(surface) }>Back to Registry</a></div>
 				<div class="panel-body">
@@ -344,6 +413,29 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 			}
 		}
 	</aside>
+}
+
+templ LoopInspector(surface SurfaceModel, record *RecordModel) {
+	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href="/console/loops">Back to Loops</a></div>
+	<div class="panel-body"><div class="section-label">Readiness</div><div class="inline-notice">{ record.Readiness }. Browser controls request a command only; execute-time admission resolves the exact publisher and authority again.</div>
+		<div class="button-row">
+			if record.Loop.CanActivate {
+				@LoopLifecycleForm(surface.CSRF, record.Loop, "active", "Preview activation", false)
+			}
+			if record.Loop.CanRetire {
+				@LoopLifecycleForm(surface.CSRF, record.Loop, "retired", "Preview retirement", true)
+			}
+		</div>
+		<div class="section-label">Provenance and contract</div><dl id="inspector-fields" class="spec">
+			for _, field := range record.Fields {
+				<dt>{ field.Label }</dt><dd>{ field.Value }</dd>
+			}
+		</dl>
+	</div>
+}
+
+templ LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string, dangerous bool) {
+	<form method="post" action="/console/loops/lifecycle-preview"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="target_id" value={ detail.TargetID }/><input type="hidden" name="expected_digest" value={ detail.Digest }/><input type="hidden" name="publisher_id" value={ detail.PublisherID }/><input type="hidden" name="state" value={ state }/><input type="hidden" name="expected_previous_digest" value={ detail.ExpectedLifecycleDigest }/><input type="hidden" name="idempotency_key" value={ detail.TargetID + "-" + state + "-" + detail.ExpectedLifecycleDigest }/><button type="submit" class={ templ.KV("secondary", !dangerous), templ.KV("danger-button", dangerous) }>{ label }</button></form>
 }
 
 templ QueueInspector(surface SurfaceModel, record *RecordModel) {
@@ -402,7 +494,7 @@ templ ExecutionNode(node QueueExecutionNodeModel) {
 }
 
 templ GraphInspector(surface SurfaceModel, record *RecordModel) {
-	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ consoleRoute(surface.Domain, "") }>Back to Graphs</a></div>
+	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><div><a class="primary" href={ graphRunURL(record) }>Run Graph</a> <a id="close-inspector" class="secondary" href={ consoleRoute(surface.Domain, "") }>Back to Graphs</a></div></div>
 	<div class="graph-detail">
 		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Validation</dt><dd>{ record.Graph.Validation }</dd></dl></section>
 		<section aria-labelledby="graph-topology"><h3 id="graph-topology">Topology</h3><div class="topology-canvas">
@@ -615,6 +707,7 @@ func hasBlockedAction(actions []ActionModel) bool { for _, action := range actio
 func actionTag(state string) string { if state == "denied" { return "tag-denied" }; if state == "degraded_repair_required" { return "tag-degraded" }; return "tag-locked" }
 func collectionSingular(domain string) string { if domain == DomainGraphs { return "graph" }; return "Loop" }
 func countLabel(count int, singular string) string { suffix := "s"; if count == 1 { suffix = "" }; return fmt.Sprintf("%d %s%s", count, singular, suffix) }
+func graphRunURL(record *RecordModel) string { return "/console/graphs/run?graph=" + url.QueryEscape(record.Label) + "&revision=" + strings.TrimPrefix(record.Revision, "r") + "&digest=" + url.QueryEscape(record.Graph.Digest) }
 func stateHeading(state string) string {
 	if state == "" { return "Unknown" }
 	if state == "degraded_repair_required" { return "Repair required" }
