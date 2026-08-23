@@ -562,7 +562,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Redirect(http.StatusSeeOther, "/console/agents?record_key="+url.QueryEscape(agentID)+"#/agents")
 	})
-	e.GET("/console/agents/charter-import", charterImportPage)
 	e.GET("/console/loops/compose", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)

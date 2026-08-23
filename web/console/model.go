@@ -12,14 +12,14 @@ const (
 
 type PageModel struct {
 	Authenticated  bool
-	CSRF            string
-	Authentication  AuthenticationModel
-	Surface         SurfaceModel
-	CharterImport   bool
-	AgentOperation  *AgentOperationModel
-	LoopComposer    *LoopComposerModel
-	CommandPreview  *CommandPreviewModel
-	CommandReceipt  *OperationReceiptModel
+	CSRF           string
+	Authentication AuthenticationModel
+	Surface        SurfaceModel
+	CharterImport  bool
+	AgentOperation *AgentOperationModel
+	LoopComposer   *LoopComposerModel
+	CommandPreview *CommandPreviewModel
+	CommandReceipt *OperationReceiptModel
 }
 
 // AgentOperationModel is a server-owned preparation or result projection. Raw
