@@ -143,9 +143,11 @@ type QueueAttemptModel struct {
 type QueueTimelineModel struct{ Title, State, At, Detail string }
 
 type QueueControlModel struct {
-	Label   string
-	Enabled bool
-	Reason  string
+	Operation   string
+	Label       string
+	Enabled     bool
+	Reason      string
+	Consequence string
 }
 
 type QueueReceiptModel struct {
