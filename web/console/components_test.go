@@ -283,6 +283,83 @@ func TestGraphInspectorRendersTopologyExactBindingsAndFleetWideSubmissionTruth(t
 	}
 }
 
+func TestLoopComposerRendersStructuredBoundedContractWithoutAuthorityInputs(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{
+		Authenticated: true,
+		CSRF:          "csrf-loop",
+		Surface:       SurfaceModel{Domain: DomainLoops, Title: "Loops"},
+		LoopComposer: &LoopComposerModel{Publishers: []LoopPublisherModel{{
+			ID: "agent-builder", Revision: "r2", Digest: "sha256:agent", Runtime: "hermes-agent",
+		}}},
+	}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		`action="/console/loops/preview"`, `name="csrf"`, `value="csrf-loop"`,
+		`name="publisher_id"`, `value="agent-builder"`, `name="publication_key"`,
+		`name="loop_id"`, `name="revision"`, `name="previous_digest"`, `name="entry_step_id"`,
+		`name="inputs"`, `name="outputs"`, `name="steps"`, `name="step_ports"`,
+		`name="terminal_mappings"`, `name="evidence_claims"`, `name="transitions"`,
+		`name="transition_mappings"`, `name="required_evidence"`,
+		"Preview creates no Loop record", "server resolves the exact current Agent revision",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Loop composer missing %q: %s", required, html)
+		}
+	}
+	for _, forbidden := range []string{`name="authority"`, `name="authority_id"`, `name="authority_digest"`, `name="stanza"`, `name="mandate"`, `name="principal"`} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("Loop composer exposed controller authority input %q: %s", forbidden, html)
+		}
+	}
+}
+
+func TestLoopLifecycleAndConfirmationRemainDigestBound(t *testing.T) {
+	var output bytes.Buffer
+	detail := &LoopDetailModel{
+		TargetID: "loop.review:2", Digest: "sha256:revision", PublisherID: "agent-builder",
+		ExpectedLifecycleDigest: "sha256:lifecycle", CanActivate: true, CanRetire: true,
+	}
+	record := RecordModel{Key: detail.TargetID, Label: "loop.review", Revision: "r2", Lifecycle: "published", Readiness: "Eligible", Loop: detail}
+	model := PageModel{Authenticated: true, CSRF: "csrf-loop", Surface: SurfaceModel{
+		Domain: DomainLoops, Title: "Loops", CSRF: "csrf-loop", State: "ready", Authoritative: true,
+		Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true,
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{
+		`action="/console/loops/lifecycle-preview"`, `name="target_id" value="loop.review:2"`,
+		`name="expected_digest" value="sha256:revision"`, `name="expected_previous_digest" value="sha256:lifecycle"`,
+		`name="publisher_id" value="agent-builder"`, `name="state" value="active"`, `name="state" value="retired"`,
+		"Preview activation", "Preview retirement", "execute-time admission resolves the exact publisher and authority again",
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Loop lifecycle control missing %q: %s", required, html)
+		}
+	}
+
+	output.Reset()
+	model.Surface = SurfaceModel{Domain: DomainLoops, Title: "Loops"}
+	model.CommandPreview = &CommandPreviewModel{IntentID: "intent-1", CommandID: "loop.lifecycle", TargetID: detail.TargetID, TargetDigest: detail.Digest, InputDigest: "sha256:input", ExpiresAt: "2026-08-22T12:00:00Z"}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html = output.String()
+	for _, required := range []string{`action="/console/loops/execute"`, `name="intent_id" value="intent-1"`, "sha256:revision", "sha256:input", "Preview is non-persistent", "Confirm and execute"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Loop confirmation missing %q: %s", required, html)
+		}
+	}
+	if strings.Contains(html, `name="target_id"`) || strings.Contains(html, `name="authority_id"`) {
+		t.Fatalf("confirmation allowed browser mutation of a retained target or authority: %s", html)
+	}
+}
+
 func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t *testing.T) {
 	var output bytes.Buffer
 	record := RecordModel{Key: "queue-130", Label: "queue-130", Summary: "graph-run-130 · failed", Lifecycle: "failed", Revision: "snapshot-130", Runtime: "hermes-agent", Queue: &QueueDetailModel{

@@ -168,6 +168,41 @@ class WaitForDiagnosticsTest(unittest.TestCase):
                 console_browser_test.wait_for(devtools, "document.readyState === 'complete'", "reach authenticated console", timeout=1)
         self.assertEqual(state_reads, 1, "wait_for should read state exactly once after timeout")
 
+    def test_wait_for_reports_only_auth_transitions_after_action_boundary(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = lambda expression: (
+            {"path": "/console", "ready": "complete", "title": "", "auth": "required", "active": "BODY", "modal": "", "body": "auth"}
+            if expression.startswith("({path:")
+            else None
+        )
+        devtools.events = [
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/login", "method": "POST"}, "type": "Document"}},
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/logout", "method": "POST"}, "type": "Document"}},
+        ]
+        start = console_browser_test._BROWSER_PROOF_START
+        monotonic = iter([start, start, start + 1, start + 1, start + 1])
+        with mock.patch.object(console_browser_test.time, "monotonic", side_effect=lambda: next(monotonic)), mock.patch.object(console_browser_test.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, r"requests=\[\{'url': 'http://127.0.0.1:8000/console/logout', 'method': 'POST', 'type': 'Document'\}\]"):
+                console_browser_test.wait_for(
+                    devtools,
+                    "false",
+                    "open narrow password rotation dialog",
+                    timeout=1,
+                    diagnostic_event_start=1,
+                )
+
+
+class AuthenticationBoundaryTest(unittest.TestCase):
+    def test_requires_authenticated_console_immediately_before_action(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.return_value = {"authenticated": False, "login": True, "path": "/console", "ready": "complete"}
+        devtools.events = [
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/logout", "method": "POST"}, "type": "Document"}},
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "browser lost authentication before narrow password rotation"):
+            console_browser_test.require_authenticated_console(devtools, "before narrow password rotation")
+
 
 if __name__ == "__main__":
     unittest.main()

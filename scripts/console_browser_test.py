@@ -149,7 +149,45 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
 _BROWSER_PROOF_START = time.monotonic()
 
 
-def wait_for(devtools: DevTools, expression: str, description: str, timeout: float = 15) -> None:
+def console_auth_requests(events: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return sanitized authentication transitions without form bodies or secrets."""
+    auth_paths = ("/console/login", "/console/session", "/console/logout", "/console/password")
+    requests: list[dict[str, str]] = []
+    for event in events:
+        if event.get("method") != "Network.requestWillBeSent":
+            continue
+        params = event.get("params", {})
+        request = params.get("request", {})
+        url = str(request.get("url", ""))
+        if not url.endswith(auth_paths):
+            continue
+        requests.append({
+            "url": url,
+            "method": str(request.get("method", "")),
+            "type": str(params.get("type", "")),
+        })
+    return requests
+
+
+def require_authenticated_console(devtools: DevTools, description: str) -> None:
+    state = devtools.evaluate(
+        "({authenticated: !!document.querySelector('#logout'), login: !!document.querySelector('#session-form'), "
+        "path: location.pathname + location.search, ready: document.readyState})"
+    )
+    require(
+        state == {"authenticated": True, "login": False, "path": "/console/agents", "ready": "complete"},
+        f"browser lost authentication {description}; state={state}; auth_requests={console_auth_requests(devtools.events)}",
+    )
+
+
+def wait_for(
+    devtools: DevTools,
+    expression: str,
+    description: str,
+    timeout: float = 15,
+    *,
+    diagnostic_event_start: int = 0,
+) -> None:
     print(f"elapsed={time.monotonic() - _BROWSER_PROOF_START:.2f}s wait: {description}", file=sys.stderr, flush=True)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -164,16 +202,10 @@ def wait_for(devtools: DevTools, expression: str, description: str, timeout: flo
         state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 200) || ''})")
     except (OSError, RuntimeError):
         state = "unavailable"
-    requests = []
-    for event in devtools.events:
-        if event.get("method") == "Network.requestWillBeSent":
-            request = event.get("params", {}).get("request", {})
-            if request.get("url", "").endswith("/console/session"):
-                headers = request.get("headers", {})
-                requests.append({"url": request.get("url"), "origin": headers.get("Origin", headers.get("origin", "")), "method": request.get("method")})
+    requests = console_auth_requests(devtools.events[diagnostic_event_start:])
     document_requests = sum(
         1
-        for event in devtools.events
+        for event in devtools.events[diagnostic_event_start:]
         if event.get("method") == "Network.requestWillBeSent"
         and event.get("params", {}).get("type") == "Document"
     )
@@ -435,9 +467,25 @@ def main() -> int:
         )
         require(rotation_requests_after_cancel == rotation_requests_before, "canceling password rotation submitted the form")
 
+        require_authenticated_console(devtools, "before narrow password rotation")
+        narrow_transition_start = len(devtools.events)
+        click(devtools, "#open-password-rotation")
+        wait_for(
+            devtools,
+            "document.querySelector('#principal-password-rotation')?.matches(':modal')",
+            "reopen password rotation dialog before narrow viewport",
+            diagnostic_event_start=narrow_transition_start,
+        )
+        # Keep the authenticated native dialog open while narrowing the viewport.
+        # Dispatching synthetic mouse or touch input after mobile emulation can
+        # replace the document in headless Chrome instead of running the command.
         devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
-        tap(devtools, "#open-password-rotation")
-        wait_for(devtools, "document.querySelector('#principal-password-rotation')?.matches(':modal')", "open narrow password rotation dialog")
+        wait_for(
+            devtools,
+            "document.querySelector('#principal-password-rotation')?.matches(':modal')",
+            "retain open password rotation dialog at narrow viewport",
+            diagnostic_event_start=narrow_transition_start,
+        )
         narrow_rotation = devtools.evaluate("(() => { const panel = document.querySelector('#principal-password-rotation [data-overlay-panel]'); const rect = panel.getBoundingClientRect(); return {left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, viewportWidth: innerWidth, viewportHeight: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth, scrollable: panel.scrollHeight <= panel.clientHeight || getComputedStyle(panel).overflowY === 'auto'}; })()")
         require(isinstance(narrow_rotation, dict) and narrow_rotation["left"] >= 0 and narrow_rotation["right"] <= narrow_rotation["viewportWidth"] and narrow_rotation["top"] >= 0 and narrow_rotation["bottom"] <= narrow_rotation["viewportHeight"] and not narrow_rotation["overflow"] and narrow_rotation["scrollable"], f"password rotation dialog clipped the narrow viewport: {narrow_rotation}")
         key(devtools, "Escape")

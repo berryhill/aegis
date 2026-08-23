@@ -170,6 +170,71 @@ func TestPinentryCreateUsesTwoFreshRequestsAndRetriesMismatch(t *testing.T) {
 	}
 }
 
+func TestPinentryPrincipalPasswordCreateUsesTwoFreshRequestsAndPrincipalChrome(t *testing.T) {
+	const canary = "principal-password-value"
+	capture := filepath.Join(t.TempDir(), "protocol")
+	var calls atomic.Int32
+	service := testPassphraseService(t, func() string { return "success" }, func() string {
+		calls.Add(1)
+		return canary
+	}, capture)
+	value, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: PrincipalPasswordCreate, Diagnostic: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wipeSecret(value)
+	if string(value) != canary || calls.Load() != 2 {
+		t.Fatalf("value length=%d calls=%d", len(value), calls.Load())
+	}
+	transcript, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{
+		"SETTITLE Aegis principal authentication",
+		"SETDESC Create the Aegis principal login password. Minimum 12 bytes; only a salted verifier is persisted.",
+		"SETPROMPT New principal password:",
+		"SETDESC Confirm the Aegis principal login password. Minimum 12 bytes; only a salted verifier is persisted.",
+		"SETPROMPT Confirm principal password:",
+	} {
+		if !bytes.Contains(transcript, []byte(command)) {
+			t.Fatalf("missing command %q in %s", command, transcript)
+		}
+	}
+	if bytes.Count(transcript, []byte("GETPIN\n")) != 2 {
+		t.Fatalf("expected two fresh protected requests: %s", transcript)
+	}
+	for _, forbidden := range [][]byte{[]byte("credential authority"), []byte("passphrase"), []byte(canary)} {
+		if bytes.Contains(transcript, forbidden) {
+			t.Fatalf("principal password request contained forbidden content %q", forbidden)
+		}
+	}
+}
+
+func TestReadPrincipalPasswordUsesProtectedProvider(t *testing.T) {
+	provider := &recordingPassphrases{value: []byte("principal-password-value")}
+	cmd := testCommandWithProvider(provider)
+	password, err := readPrincipalPassword(cmd, newTerminalInput(strings.NewReader("terminal-input-must-not-be-read\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wipeSecret(password)
+	if string(password) != "principal-password-value" || provider.calls != 1 || provider.intent != PrincipalPasswordCreate {
+		t.Fatalf("password length=%d calls=%d intent=%d", len(password), provider.calls, provider.intent)
+	}
+}
+
+func TestPrincipalPasswordCancellationUsesPrincipalSpecificError(t *testing.T) {
+	service := testPassphraseService(t, func() string { return "cancel" }, func() string { return "unused-password" }, "")
+	_, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: PrincipalPasswordCreate, Diagnostic: io.Discard})
+	if err == nil || !IsPassphraseError(err, PassphraseCancelled) {
+		t.Fatalf("error=%v", err)
+	}
+	if got := err.Error(); got != "principal password entry cancelled" {
+		t.Fatalf("error=%q", got)
+	}
+}
+
 func TestPinentryPolicyBoundsUseBytes(t *testing.T) {
 	for _, test := range []struct {
 		name  string
@@ -363,6 +428,18 @@ func testCommandWithProvider(provider AuthorityPassphraseProvider) *cobra.Comman
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)
 	return cmd
+}
+
+type recordingPassphrases struct {
+	value  []byte
+	calls  int
+	intent AuthorityPassphraseIntent
+}
+
+func (s *recordingPassphrases) Acquire(_ context.Context, request AuthorityPassphraseRequest) ([]byte, error) {
+	s.calls++
+	s.intent = request.Intent
+	return append([]byte(nil), s.value...), nil
 }
 
 type sequencePassphrases struct {

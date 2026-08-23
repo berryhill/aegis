@@ -1,7 +1,6 @@
 package command
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -145,33 +144,12 @@ func runFirstInitialization(cmd *cobra.Command, initializer *initialize.Service,
 	return runFirstInitializationWithInput(cmd, initializer, configPath, statePath, newTerminalInput(cmd.InOrStdin()))
 }
 
-func readPrincipalPassword(cmd *cobra.Command, input *terminalInput) ([]byte, error) {
-	var first, second []byte
-	var err error
-	if input.file != nil && term.IsTerminal(int(input.file.Fd())) {
-		first, err = readTerminalSecretBounded(cmd.Context(), input.file, cmd.ErrOrStderr(), "Principal password (minimum 12 bytes): ", 1024)
-		if err == nil {
-			second, err = readTerminalSecretBounded(cmd.Context(), input.file, cmd.ErrOrStderr(), "Confirm principal password: ", 1024)
-		}
-	} else {
-		var value string
-		value, _, err = input.ReadLine(cmd.Context(), 1024)
-		first = []byte(value)
-		if err == nil {
-			value, _, err = input.ReadLine(cmd.Context(), 1024)
-			second = []byte(value)
-		}
-	}
-	defer wipeSecret(second)
+func readPrincipalPassword(cmd *cobra.Command, _ *terminalInput) ([]byte, error) {
+	provider, err := passphraseProvider(cmd)
 	if err != nil {
-		wipeSecret(first)
-		return nil, errors.New("principal password intake failed")
+		return nil, err
 	}
-	if !bytes.Equal(first, second) {
-		wipeSecret(first)
-		return nil, errors.New("principal password confirmation does not match")
-	}
-	return first, nil
+	return provider.Acquire(cmd.Context(), AuthorityPassphraseRequest{Intent: PrincipalPasswordCreate, Input: cmd.InOrStdin(), Diagnostic: cmd.ErrOrStderr()})
 }
 
 func operationalAuthorityAbsent(ctx context.Context, configPath string) bool {
