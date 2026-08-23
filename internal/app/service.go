@@ -251,7 +251,7 @@ func (s *Service) requirePrincipal(sub core.Subject) error {
 func (s *Service) RequirePrincipal(sub core.Subject) error { return s.requirePrincipal(sub) }
 
 // AuditConsoleSession emits metadata-only browser authentication evidence.
-// Session, bootstrap, CSRF, cookie, and bearer material are never accepted.
+// Session, password, CSRF, cookie, and bearer material are never accepted.
 func (s *Service) AuditConsoleSession(ctx context.Context, subject core.Subject, outcome, reason string) error {
 	return s.audit(ctx, core.AuditEvent{Type: "console_session", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: outcome, Reason: reason})
 }

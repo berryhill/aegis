@@ -62,7 +62,6 @@ api:
   console:
     origin: http://127.0.0.1:{port}
     session_ttl: 10m
-    bootstrap_ttl: 45s
     max_page_size: 25
 audit:
   checkpoint_dir: {root}/checkpoints
@@ -179,37 +178,31 @@ if not status.startswith(b"HTTP/1.1 201 "):
 pathlib.Path(response_path).write_bytes(payload)
 PY
 grep -F 'Sign the Aegis principal into this browser' "$workspace/shell.html" >/dev/null
-grep -F 'Alternate sign-in:' "$workspace/shell.html" >/dev/null
-grep -F 'aegis console' "$workspace/shell.html" >/dev/null
+grep -F 'The enrolled principal password is required.' "$workspace/shell.html" >/dev/null
+grep -F 'Password authentication is required for every new browser session.' "$workspace/shell.html" >/dev/null
+! grep -F 'Alternate sign-in:' "$workspace/shell.html" >/dev/null
 ! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
 [ "$(wc -c <"$workspace/datastar.js")" -gt 1000 ]
-recovery_status=$(curl --silent --show-error -o "$workspace/recovery.html" -w '%{http_code}' -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data 'bootstrap=malformed' "http://127.0.0.1:$port/console/session")
-[ "$recovery_status" = 400 ]
-grep -F 'bootstrap_invalid_format' "$workspace/recovery.html" >/dev/null
-grep -F 'Handoff lifetime: <strong>45s</strong>' "$workspace/recovery.html" >/dev/null
-grep -F 'Browser session lifetime: <strong>10m0s</strong>' "$workspace/recovery.html" >/dev/null
-! grep -F '>malformed<' "$workspace/recovery.html" >/dev/null
+former_session_status=$(curl --silent --show-error -D "$workspace/former-session-headers" -o "$workspace/former-session-response" -w '%{http_code}' -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data 'bootstrap=malformed' "http://127.0.0.1:$port/console/session")
+[ "$former_session_status" = 405 ]
+! grep -Fi 'set-cookie:' "$workspace/former-session-headers" >/dev/null
 
-HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/bootstrap-response.json"
+HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/console-response.json"
 python3 - "$workspace" <<'PY'
-import json, pathlib, sys
+import json, pathlib, sys, urllib.parse
 root = pathlib.Path(sys.argv[1])
-response = json.loads((root / "bootstrap-response.json").read_text())
-if set(response) != {"bootstrap", "console_origin", "expires_at", "reusable_bearer_exposed", "single_use"}:
+response = json.loads((root / "console-response.json").read_text())
+if set(response) != {"authentication_required", "console_origin", "login_url"}:
     raise SystemExit("installed console command response shape is invalid")
-if not response["bootstrap"] or not response["single_use"] or response["reusable_bearer_exposed"]:
-    raise SystemExit("installed console bootstrap response is invalid")
-(root / "exchange.json").write_text(json.dumps({"bootstrap": response["bootstrap"]}), encoding="utf-8")
-(root / "exchange.json").chmod(0o600)
+if response["authentication_required"] != "principal_password" or response["login_url"] != response["console_origin"].rstrip("/") + "/console":
+    raise SystemExit("installed console command did not require the principal password")
+passwords = json.loads((root / "browser-passwords.json").read_text())
+login_form = root / "login-form"
+login_form.write_text(urllib.parse.urlencode({"password": passwords["initial"]}), encoding="ascii")
+login_form.chmod(0o600)
 PY
-curl --fail --silent --show-error -c "$workspace/cookies" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/json' --data-binary "@$workspace/exchange.json" "http://127.0.0.1:$port/console/session" -o "$workspace/session-response.json"
-python3 - "$workspace/session-response.json" <<'PY'
-import json, pathlib, sys
-response = json.loads(pathlib.Path(sys.argv[1]).read_text())
-if set(response) != {"csrf", "expires"} or not all(response.values()):
-    raise SystemExit("installed console session response is invalid")
-PY
+curl --fail --silent --show-error -c "$workspace/cookies" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data-binary "@$workspace/login-form" "http://127.0.0.1:$port/console/login" -o "$workspace/login-response.html"
 curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console" -o "$workspace/authenticated.html"
 grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
 grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null

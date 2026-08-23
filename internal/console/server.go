@@ -24,8 +24,6 @@ var (
 	ErrUnauthenticated            = errors.New("console authentication failed")
 	ErrDenied                     = errors.New("console request denied")
 	ErrInvalidInput               = errors.New("invalid console input")
-	ErrBootstrapInvalidFormat     = errors.New("bootstrap_invalid_format")
-	ErrBootstrapConsumedOrExpired = errors.New("bootstrap_consumed_or_expired")
 	ErrReviewReceiptInvalidFormat = errors.New("review_receipt_invalid_format")
 	ErrReviewReceiptUnavailable   = errors.New("review_receipt_unavailable")
 	ErrInvalidCredentials         = errors.New("principal authentication failed")
@@ -42,19 +40,12 @@ const (
 type Config struct {
 	Origin           string
 	SessionTTL       time.Duration
-	BootstrapTTL     time.Duration
 	MaxPageSize      int
 	PrincipalID      string
 	PrincipalAuthTTL time.Duration
 	PasswordVerifier *principalauth.Record
 	LoginBurst       int
 	LoginWindow      time.Duration
-}
-
-type bootstrap struct {
-	subject    core.Subject
-	expires    time.Time
-	generation uint64
 }
 
 type session struct {
@@ -78,7 +69,6 @@ type Manager struct {
 	origin        *url.URL
 	config        Config
 	now           func() time.Time
-	bootstraps    map[[32]byte]bootstrap
 	sessions      map[[32]byte]session
 	loginFailures map[string][]time.Time
 	loginInFlight map[string]int
@@ -88,7 +78,7 @@ type Manager struct {
 }
 
 func New(config Config, now func() time.Time) (*Manager, error) {
-	if now == nil || config.SessionTTL <= 0 || config.SessionTTL > 15*time.Minute || config.BootstrapTTL <= 0 || config.BootstrapTTL > time.Minute || config.MaxPageSize < 1 || config.MaxPageSize > 1000 {
+	if now == nil || config.SessionTTL <= 0 || config.SessionTTL > 15*time.Minute || config.MaxPageSize < 1 || config.MaxPageSize > 1000 {
 		return nil, fmt.Errorf("%w: console limits must be positive and bounded", ErrInvalidInput)
 	}
 	origin, err := url.Parse(config.Origin)
@@ -103,7 +93,7 @@ func New(config Config, now func() time.Time) (*Manager, error) {
 			return nil, fmt.Errorf("%w: principal password authentication configuration is invalid", ErrInvalidInput)
 		}
 	}
-	return &Manager{origin: origin, config: config, now: now, bootstraps: make(map[[32]byte]bootstrap), sessions: make(map[[32]byte]session), loginFailures: make(map[string][]time.Time), loginInFlight: make(map[string]int), generation: 1, receipts: make(map[[32]byte]reviewReceipt), pending: make(map[[32]byte][32]byte)}, nil
+	return &Manager{origin: origin, config: config, now: now, sessions: make(map[[32]byte]session), loginFailures: make(map[string][]time.Time), loginInFlight: make(map[string]int), generation: 1, receipts: make(map[[32]byte]reviewReceipt), pending: make(map[[32]byte][32]byte)}, nil
 }
 
 func loopbackHost(host string) bool {
@@ -121,6 +111,20 @@ func opaque() (string, [32]byte, error) {
 	}
 	value := hex.EncodeToString(material[:])
 	return value, sha256.Sum256([]byte(value)), nil
+}
+
+func validOpaqueFormat(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			if character < 'a' || character > 'f' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (m *Manager) Login(request *http.Request, client string, password []byte) (string, string, time.Time, core.Subject, error) {
@@ -187,73 +191,6 @@ func (m *Manager) Login(request *http.Request, client string, password []byte) (
 	return sessionValue, csrf, expires, subject, nil
 }
 
-func (m *Manager) IssueBootstrap(subject core.Subject) (string, error) {
-	now := m.now()
-	if subject.ID == "" || subject.PrincipalID == "" || !now.Before(subject.ExpiresAt) {
-		return "", ErrDenied
-	}
-	value, digest, err := opaque()
-	if err != nil {
-		return "", fmt.Errorf("generate console bootstrap: %w", err)
-	}
-	expires := now.Add(m.config.BootstrapTTL)
-	if subject.ExpiresAt.Before(expires) {
-		expires = subject.ExpiresAt
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.prune(now)
-	m.bootstraps[digest] = bootstrap{subject: subject, expires: expires, generation: m.generation}
-	return value, nil
-}
-
-func (m *Manager) Exchange(request *http.Request, value string) (string, string, time.Time, error) {
-	if err := m.ValidateOrigin(request, true); err != nil {
-		return "", "", time.Time{}, err
-	}
-	if !validBootstrapFormat(value) {
-		return "", "", time.Time{}, ErrBootstrapInvalidFormat
-	}
-	now := m.now()
-	digest := sha256.Sum256([]byte(value))
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.prune(now)
-	candidate, ok := m.bootstraps[digest]
-	delete(m.bootstraps, digest)
-	if !ok || candidate.generation != m.generation || !now.Before(candidate.expires) || candidate.subject.PrincipalID == "" || !now.Before(candidate.subject.ExpiresAt) {
-		return "", "", time.Time{}, ErrBootstrapConsumedOrExpired
-	}
-	sessionValue, sessionDigest, err := opaque()
-	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("generate console session: %w", err)
-	}
-	csrf, _, err := opaque()
-	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("generate CSRF value: %w", err)
-	}
-	expires := now.Add(m.config.SessionTTL)
-	if candidate.subject.ExpiresAt.Before(expires) {
-		expires = candidate.subject.ExpiresAt
-	}
-	m.sessions[sessionDigest] = session{subject: candidate.subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires, generation: m.generation}
-	return sessionValue, csrf, expires, nil
-}
-
-func validBootstrapFormat(value string) bool {
-	if len(value) != 64 {
-		return false
-	}
-	for _, character := range value {
-		if character < '0' || character > '9' {
-			if character < 'a' || character > 'f' {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func (m *Manager) IssueReviewReceipt(request *http.Request, purpose string, payload []byte) (string, error) {
 	if purpose == "" || len(purpose) > 128 || len(payload) == 0 || len(payload) > maxReviewReceiptPayloadBytes {
 		return "", ErrDenied
@@ -291,7 +228,7 @@ func (m *Manager) IssueReviewReceipt(request *http.Request, purpose string, payl
 }
 
 func (m *Manager) ConsumeReviewReceipt(request *http.Request, purpose, value string) ([]byte, error) {
-	if !validBootstrapFormat(value) {
+	if !validOpaqueFormat(value) {
 		return nil, ErrReviewReceiptInvalidFormat
 	}
 	cookie, err := request.Cookie(CookieName)
@@ -317,7 +254,7 @@ func (m *Manager) ConsumeReviewReceipt(request *http.Request, purpose, value str
 }
 
 func (m *Manager) CancelReviewReceipt(request *http.Request, purpose, value string) error {
-	if !validBootstrapFormat(value) {
+	if !validOpaqueFormat(value) {
 		return ErrReviewReceiptInvalidFormat
 	}
 	cookie, err := request.Cookie(CookieName)
@@ -452,7 +389,6 @@ func (m *Manager) RotatePassword(request *http.Request, client string, currentPa
 	m.config.PasswordVerifier = &replacement
 	m.generation++
 	m.sessions = make(map[[32]byte]session)
-	m.bootstraps = make(map[[32]byte]bootstrap)
 	m.loginFailures = make(map[string][]time.Time)
 	return nil
 }
@@ -504,13 +440,6 @@ func (m *Manager) RevokeSessionValue(value string) {
 		delete(m.pending, digest)
 	}
 	delete(m.sessions, digest)
-	m.mu.Unlock()
-}
-
-func (m *Manager) RevokeBootstrap(value string) {
-	digest := sha256.Sum256([]byte(value))
-	m.mu.Lock()
-	delete(m.bootstraps, digest)
 	m.mu.Unlock()
 }
 
@@ -586,11 +515,6 @@ func (m *Manager) deleteReceipt(key [32]byte) {
 }
 
 func (m *Manager) prune(now time.Time) {
-	for key, value := range m.bootstraps {
-		if !now.Before(value.expires) {
-			delete(m.bootstraps, key)
-		}
-	}
 	for key, value := range m.sessions {
 		if !now.Before(value.expires) || !now.Before(value.subject.ExpiresAt) {
 			if receipt, ok := m.pending[key]; ok {

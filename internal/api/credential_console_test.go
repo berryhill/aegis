@@ -214,22 +214,18 @@ func newCredentialRouteFixtureWithTTL(t *testing.T, sessionTTL time.Duration) *c
 
 func (f *credentialRouteFixture) newSession() (*http.Client, string) {
 	f.t.Helper()
-	var issued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(f.t, unixClient(f.svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	exchange, _ := http.NewRequest(http.MethodPost, "http://"+f.address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(issued.Bootstrap)))
-	exchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	exchange.Header.Set("Origin", "http://"+f.address)
-	response, err := client.Do(exchange)
+	login, _ := http.NewRequest(http.MethodPost, "http://"+f.address+"/console/login", strings.NewReader(url.Values{"password": {"api-principal-password"}}.Encode()))
+	login.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	login.Header.Set("Origin", "http://"+f.address)
+	response, err := client.Do(login)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusSeeOther {
-		f.t.Fatalf("session exchange status=%d", response.StatusCode)
+		f.t.Fatalf("principal-password login status=%d", response.StatusCode)
 	}
 	stateResponse, err := client.Get("http://" + f.address + "/console/api/state")
 	if err != nil {
@@ -372,10 +368,11 @@ func TestConsoleCredentialRoutesCoverAllOperationsAndFailClosedReceipts(t *testi
 }
 
 func TestConsoleCredentialReviewDeniesExpiredSession(t *testing.T) {
-	// Leave enough time to exchange the bootstrap and read CSRF state on slow
-	// builders; post() adds a further rate-limit delay before the assertion.
-	f := newCredentialRouteFixtureWithTTL(t, 500*time.Millisecond)
-	time.Sleep(510 * time.Millisecond)
+	// Leave enough time for the deliberately expensive principal-password
+	// verification and CSRF readback under the race detector. post() adds a
+	// further rate-limit delay after the session has expired.
+	f := newCredentialRouteFixtureWithTTL(t, 3*time.Second)
+	time.Sleep(3100 * time.Millisecond)
 	response, body := f.post(f.client, "/console/credentials/operation/review", url.Values{"csrf": {f.csrf}, "operation": {"backup"}})
 	if response.StatusCode != http.StatusUnauthorized || !bytes.Contains(body, []byte(`"code":"unauthenticated"`)) {
 		t.Fatalf("expired credential session status=%d body=%s", response.StatusCode, body)
