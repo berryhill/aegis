@@ -100,5 +100,109 @@ class NativeKeyTest(unittest.TestCase):
             console_browser_test.key(mock.MagicMock(), "Enter")
 
 
+class NativeFormInputTest(unittest.TestCase):
+    def test_insert_text_requires_exact_browser_value_before_submission(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            {"x": 10, "y": 10, "width": 100, "height": 20, "hit": "password", "target": True},
+            True,
+            True,
+        ]
+
+        console_browser_test.insert_text(devtools, "#password", "candidate-password")
+
+        self.assertEqual(devtools.command.call_args, mock.call("Input.insertText", {"text": "candidate-password"}))
+        self.assertIn("candidate-password", devtools.evaluate.call_args_list[-1].args[0])
+
+    def test_insert_text_denies_when_browser_did_not_retain_value(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            {"x": 10, "y": 10, "width": 100, "height": 20, "hit": "password", "target": True},
+            True,
+            False,
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "did not retain text"):
+            console_browser_test.insert_text(devtools, "#password", "candidate-password")
+
+
+class WaitForDiagnosticsTest(unittest.TestCase):
+    def test_wait_for_reports_elapsed_time_and_document_request_count_on_failure(self):
+        devtools = mock.MagicMock()
+        # evaluate returns None (predicate never true) for every loop iteration,
+        # then the state dict once the timeout fires. Because the inner loop
+        # evaluates the predicate many times, the side_effect must always return
+        # a falsy value until the post-timeout state read.
+        state_reads = 0
+
+        def evaluate_side_effect(expression):
+            nonlocal state_reads
+            if expression.startswith("({path:"):
+                state_reads += 1
+                return {"path": "/console", "ready": "complete", "title": "", "auth": "required", "active": "BODY", "modal": "", "body": "auth"}
+            return None
+
+        devtools.evaluate.side_effect = evaluate_side_effect
+        devtools.events = [
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/", "headers": {}, "method": "GET"}, "type": "Document"}},
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/assets/app.css", "headers": {}, "method": "GET"}}},
+        ]
+        # Pin monotonic so the loop iterates a few times (deadline expires) then
+        # exit; the post-timeout state read happens once. The mock value must
+        # stay below the real process monotonic so elapsed stays non-negative.
+        REAL_START = console_browser_test._BROWSER_PROOF_START
+        sequence = [REAL_START, REAL_START + 0.1, REAL_START + 0.2, REAL_START + 0.3, REAL_START + 0.4, REAL_START + 0.5, REAL_START + 1.5, REAL_START + 2.0, REAL_START + 2.1]
+        monotonic_calls = iter(sequence)
+
+        def monotonic():
+            try:
+                return next(monotonic_calls)
+            except StopIteration:
+                return sequence[-1]
+
+        with mock.patch.object(console_browser_test.time, "monotonic", side_effect=monotonic), mock.patch.object(console_browser_test.time, "sleep"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                r"browser did not reach reach authenticated console; elapsed=[\d.]+s timeout=1s document_requests=1",
+            ):
+                console_browser_test.wait_for(devtools, "document.readyState === 'complete'", "reach authenticated console", timeout=1)
+        self.assertEqual(state_reads, 1, "wait_for should read state exactly once after timeout")
+
+    def test_wait_for_reports_only_auth_transitions_after_action_boundary(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = lambda expression: (
+            {"path": "/console", "ready": "complete", "title": "", "auth": "required", "active": "BODY", "modal": "", "body": "auth"}
+            if expression.startswith("({path:")
+            else None
+        )
+        devtools.events = [
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/login", "method": "POST"}, "type": "Document"}},
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/logout", "method": "POST"}, "type": "Document"}},
+        ]
+        start = console_browser_test._BROWSER_PROOF_START
+        monotonic = iter([start, start, start + 1, start + 1, start + 1])
+        with mock.patch.object(console_browser_test.time, "monotonic", side_effect=lambda: next(monotonic)), mock.patch.object(console_browser_test.time, "sleep"):
+            with self.assertRaisesRegex(RuntimeError, r"requests=\[\{'url': 'http://127.0.0.1:8000/console/logout', 'method': 'POST', 'type': 'Document'\}\]"):
+                console_browser_test.wait_for(
+                    devtools,
+                    "false",
+                    "open narrow password rotation dialog",
+                    timeout=1,
+                    diagnostic_event_start=1,
+                )
+
+
+class AuthenticationBoundaryTest(unittest.TestCase):
+    def test_requires_authenticated_console_immediately_before_action(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.return_value = {"authenticated": False, "login": True, "path": "/console", "ready": "complete"}
+        devtools.events = [
+            {"method": "Network.requestWillBeSent", "params": {"request": {"url": "http://127.0.0.1:8000/console/logout", "method": "POST"}, "type": "Document"}},
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "browser lost authentication before narrow password rotation"):
+            console_browser_test.require_authenticated_console(devtools, "before narrow password rotation")
+
+
 if __name__ == "__main__":
     unittest.main()
