@@ -120,7 +120,8 @@ class DevTools:
     def evaluate(self, expression: str) -> Any:
         result = self.command("Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True})
         value = result.get("result", {})
-        require("exceptionDetails" not in result, "browser evaluation raised an exception")
+        exception = result.get("exceptionDetails")
+        require(exception is None, f"browser evaluation raised an exception: {exception}")
         return value.get("value")
 
     def close(self) -> None:
@@ -145,7 +146,49 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
     raise RuntimeError("Chrome did not expose a debuggable console page")
 
 
-def wait_for(devtools: DevTools, expression: str, description: str, timeout: float = 8) -> None:
+_BROWSER_PROOF_START = time.monotonic()
+
+
+def console_auth_requests(events: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Return sanitized authentication transitions without form bodies or secrets."""
+    auth_paths = ("/console/login", "/console/session", "/console/logout", "/console/password")
+    requests: list[dict[str, str]] = []
+    for event in events:
+        if event.get("method") != "Network.requestWillBeSent":
+            continue
+        params = event.get("params", {})
+        request = params.get("request", {})
+        url = str(request.get("url", ""))
+        if not url.endswith(auth_paths):
+            continue
+        requests.append({
+            "url": url,
+            "method": str(request.get("method", "")),
+            "type": str(params.get("type", "")),
+        })
+    return requests
+
+
+def require_authenticated_console(devtools: DevTools, description: str) -> None:
+    state = devtools.evaluate(
+        "({authenticated: !!document.querySelector('#logout'), login: !!document.querySelector('#session-form'), "
+        "path: location.pathname + location.search, ready: document.readyState})"
+    )
+    require(
+        state == {"authenticated": True, "login": False, "path": "/console/agents", "ready": "complete"},
+        f"browser lost authentication {description}; state={state}; auth_requests={console_auth_requests(devtools.events)}",
+    )
+
+
+def wait_for(
+    devtools: DevTools,
+    expression: str,
+    description: str,
+    timeout: float = 15,
+    *,
+    diagnostic_event_start: int = 0,
+) -> None:
+    print(f"elapsed={time.monotonic() - _BROWSER_PROOF_START:.2f}s wait: {description}", file=sys.stderr, flush=True)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -159,14 +202,17 @@ def wait_for(devtools: DevTools, expression: str, description: str, timeout: flo
         state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 200) || ''})")
     except (OSError, RuntimeError):
         state = "unavailable"
-    requests = []
-    for event in devtools.events:
-        if event.get("method") == "Network.requestWillBeSent":
-            request = event.get("params", {}).get("request", {})
-            if request.get("url", "").endswith("/console/session"):
-                headers = request.get("headers", {})
-                requests.append({"url": request.get("url"), "origin": headers.get("Origin", headers.get("origin", "")), "method": request.get("method")})
-    raise RuntimeError(f"browser did not reach {description}; state={state}; requests={requests}")
+    requests = console_auth_requests(devtools.events[diagnostic_event_start:])
+    document_requests = sum(
+        1
+        for event in devtools.events[diagnostic_event_start:]
+        if event.get("method") == "Network.requestWillBeSent"
+        and event.get("params", {}).get("type") == "Document"
+    )
+    raise RuntimeError(
+        f"browser did not reach {description}; elapsed={time.monotonic() - _BROWSER_PROOF_START:.2f}s "
+        f"timeout={timeout}s document_requests={document_requests}; state={state}; requests={requests}"
+    )
 
 
 def click(devtools: DevTools, selector: str) -> None:
@@ -187,6 +233,40 @@ def click(devtools: DevTools, selector: str) -> None:
             "button": "left",
             "clickCount": 1,
         })
+
+
+def insert_text(devtools: DevTools, selector: str, text: str) -> None:
+    """Enter text through Chrome and require focus and exact DOM retention."""
+    click(devtools, selector)
+    wait_for(
+        devtools,
+        "document.activeElement === document.querySelector(" + json.dumps(selector) + ")",
+        f"focused browser control {selector}",
+    )
+    devtools.command("Input.insertText", {"text": text})
+    retained = devtools.evaluate(
+        "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
+        "return !!node && document.activeElement === node && node.value === " + json.dumps(text) + "; })()"
+    )
+    require(retained is True, f"browser control did not retain text: {selector}")
+
+
+def tap(devtools: DevTools, selector: str) -> None:
+    """Send real browser touch events for controls under mobile emulation."""
+    point = devtools.evaluate(
+        "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
+        "if (!node) return null; node.scrollIntoView({block: 'center', inline: 'center'}); const box = node.getBoundingClientRect();"
+        "const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);"
+        "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, target: hit === node || node.contains(hit)}; })()"
+    )
+    require(isinstance(point, dict), f"browser control missing: {selector}")
+    require(point["width"] > 0 and point["height"] > 0, f"browser control is not visible: {selector}; state={point}")
+    require(bool(point["target"]), f"browser control is obscured: {selector}; state={point}")
+    devtools.command("Input.dispatchTouchEvent", {
+        "type": "touchStart",
+        "touchPoints": [{"x": point["x"], "y": point["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
+    })
+    devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
 
 
 def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
@@ -255,8 +335,7 @@ def main() -> int:
             devtools.command(domain + ".enable")
 
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
-        click(devtools, "#password")
-        devtools.command("Input.insertText", {"text": initial_password})
+        insert_text(devtools, "#password", initial_password)
         click(devtools, "#session-form button[type=submit]")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === 'Agent Registry'", "authenticated Agent Registry")
         time.sleep(0.5)
@@ -312,11 +391,10 @@ def main() -> int:
         injected = devtools.evaluate("""(() => {
           const host = document.createElement('section');
           host.id = 'foundation-browser-fixture';
+          host.style.cssText = 'position: fixed; inset: 0 auto auto 0; z-index: 1000';
           host.innerHTML = `
             <button id="open-fixture-dialog" type="button" commandfor="fixture-dialog" command="show-modal">Open dialog</button>
             <button id="open-fixture-drawer" type="button" commandfor="fixture-drawer" command="show-modal">Open drawer</button>
-            <section class="collection-state" data-state="loading" role="status"><strong>Loading</strong><p>Loading authoritative state.</p></section>
-            <section class="collection-state" data-state="denied" role="status"><strong>Denied</strong><p>No count is asserted.</p><code>read_denied</code></section>
             <dialog id="fixture-dialog" class="interaction-overlay" aria-labelledby="fixture-dialog-title" aria-describedby="fixture-dialog-description" data-overlay-kind="dialog">
               <div class="interaction-dialog" tabindex="-1" data-overlay-panel>
                 <header><h2 id="fixture-dialog-title" tabindex="0" autofocus>Confirm exact operation</h2><button id="fixture-dialog-close" type="button" commandfor="fixture-dialog" command="close">Close</button></header>
@@ -327,7 +405,11 @@ def main() -> int:
             <dialog id="fixture-drawer" class="interaction-overlay interaction-drawer" aria-labelledby="fixture-drawer-title" data-overlay-kind="drawer">
               <div class="interaction-drawer-panel" tabindex="-1" data-overlay-panel>
                 <header><h2 id="fixture-drawer-title" tabindex="0" autofocus>Exact record</h2><button id="fixture-drawer-close" type="button" commandfor="fixture-drawer" command="close">Close</button></header>
-                <div class="interaction-body"><button id="fixture-drawer-last" type="button">Last action</button></div>
+                <div class="interaction-body">
+                  <section class="collection-state" data-state="loading" role="status"><strong>Loading</strong><p>Loading authoritative state.</p></section>
+                  <section class="collection-state" data-state="denied" role="status"><strong>Denied</strong><p>No count is asserted.</p><code>read_denied</code></section>
+                  <button id="fixture-drawer-last" type="button">Last action</button>
+                </div>
               </div>
             </dialog>`;
           document.body.append(host);
@@ -348,7 +430,7 @@ def main() -> int:
         wait_for(devtools, "!document.querySelector('#fixture-dialog').open && document.activeElement?.id === 'open-fixture-dialog'", "dialog Escape close and focus restoration")
 
         devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
-        click(devtools, "#open-fixture-drawer")
+        tap(devtools, "#open-fixture-drawer")
         wait_for(devtools, "document.querySelector('#fixture-drawer').matches(':modal') && document.activeElement?.id === 'fixture-drawer-title'", "drawer initial focus")
         responsive_state = devtools.evaluate("(() => { const panel = document.querySelector('.interaction-drawer-panel').getBoundingClientRect(); const loading = getComputedStyle(document.querySelector('[data-state=loading]')).borderColor; const denied = getComputedStyle(document.querySelector('[data-state=denied]')).borderColor; return {panelWidth: panel.width, viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth, statesDiffer: loading !== denied}; })()")
         require(isinstance(responsive_state, dict) and responsive_state["panelWidth"] <= responsive_state["viewport"] and not responsive_state["overflow"], f"drawer clipped the narrow viewport: {responsive_state}")
@@ -363,14 +445,58 @@ def main() -> int:
             raise RuntimeError("browser proof did not capture the pre-rotation session")
         old_session_value = old_session.get("value")
         require(isinstance(old_session_value, str) and bool(old_session_value), "browser proof captured an empty pre-rotation session")
-        click(devtools, "#principal-password-rotation summary")
-        wait_for(devtools, "document.querySelector('#principal-password-rotation')?.open === true", "open password rotation control")
-        click(devtools, "#current-password")
-        devtools.command("Input.insertText", {"text": initial_password})
-        click(devtools, "#new-password")
-        devtools.command("Input.insertText", {"text": replacement_password})
-        click(devtools, "#confirm-password")
-        devtools.command("Input.insertText", {"text": replacement_password})
+        rotation_requests_before = sum(
+            1
+            for event in devtools.events
+            if event.get("method") == "Network.requestWillBeSent"
+            and event.get("params", {}).get("request", {}).get("url", "").endswith("/console/password")
+        )
+        click(devtools, "#open-password-rotation")
+        wait_for(devtools, "document.querySelector('#principal-password-rotation')?.matches(':modal') && document.activeElement?.id === 'principal-password-rotation-title'", "open password rotation dialog with initial focus")
+        desktop_rotation = devtools.evaluate("(() => { const panel = document.querySelector('#principal-password-rotation [data-overlay-panel]').getBoundingClientRect(); return {panelWidth: panel.width, panelHeight: panel.height, viewportWidth: innerWidth, viewportHeight: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth}; })()")
+        require(isinstance(desktop_rotation, dict) and desktop_rotation["panelWidth"] <= desktop_rotation["viewportWidth"] and desktop_rotation["panelHeight"] <= desktop_rotation["viewportHeight"] and not desktop_rotation["overflow"], f"password rotation dialog clipped the desktop viewport: {desktop_rotation}")
+        key(devtools, "Tab")
+        wait_for(devtools, "document.activeElement?.getAttribute('aria-label') === 'Cancel password rotation'", "password rotation deterministic focus order")
+        click(devtools, '#principal-password-rotation button[command="close"]')
+        wait_for(devtools, "!document.querySelector('#principal-password-rotation').open && document.activeElement?.id === 'open-password-rotation'", "cancel password rotation without submission")
+        rotation_requests_after_cancel = sum(
+            1
+            for event in devtools.events
+            if event.get("method") == "Network.requestWillBeSent"
+            and event.get("params", {}).get("request", {}).get("url", "").endswith("/console/password")
+        )
+        require(rotation_requests_after_cancel == rotation_requests_before, "canceling password rotation submitted the form")
+
+        require_authenticated_console(devtools, "before narrow password rotation")
+        narrow_transition_start = len(devtools.events)
+        click(devtools, "#open-password-rotation")
+        wait_for(
+            devtools,
+            "document.querySelector('#principal-password-rotation')?.matches(':modal')",
+            "reopen password rotation dialog before narrow viewport",
+            diagnostic_event_start=narrow_transition_start,
+        )
+        # Keep the authenticated native dialog open while narrowing the viewport.
+        # Dispatching synthetic mouse or touch input after mobile emulation can
+        # replace the document in headless Chrome instead of running the command.
+        devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        wait_for(
+            devtools,
+            "document.querySelector('#principal-password-rotation')?.matches(':modal')",
+            "retain open password rotation dialog at narrow viewport",
+            diagnostic_event_start=narrow_transition_start,
+        )
+        narrow_rotation = devtools.evaluate("(() => { const panel = document.querySelector('#principal-password-rotation [data-overlay-panel]'); const rect = panel.getBoundingClientRect(); return {left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, viewportWidth: innerWidth, viewportHeight: innerHeight, overflow: document.documentElement.scrollWidth > innerWidth, scrollable: panel.scrollHeight <= panel.clientHeight || getComputedStyle(panel).overflowY === 'auto'}; })()")
+        require(isinstance(narrow_rotation, dict) and narrow_rotation["left"] >= 0 and narrow_rotation["right"] <= narrow_rotation["viewportWidth"] and narrow_rotation["top"] >= 0 and narrow_rotation["bottom"] <= narrow_rotation["viewportHeight"] and not narrow_rotation["overflow"] and narrow_rotation["scrollable"], f"password rotation dialog clipped the narrow viewport: {narrow_rotation}")
+        key(devtools, "Escape")
+        wait_for(devtools, "!document.querySelector('#principal-password-rotation').open && document.activeElement?.id === 'open-password-rotation'", "narrow password rotation Escape close and focus restoration")
+        devtools.command("Emulation.clearDeviceMetricsOverride")
+
+        click(devtools, "#open-password-rotation")
+        wait_for(devtools, "document.querySelector('#principal-password-rotation')?.matches(':modal')", "reopen password rotation dialog")
+        insert_text(devtools, "#current-password", initial_password)
+        insert_text(devtools, "#new-password", replacement_password)
+        insert_text(devtools, "#confirm-password", replacement_password)
         click(devtools, '#principal-password-rotation input[name="approve"]')
         click(devtools, '#principal-password-rotation button[type="submit"]')
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "post-rotation sign-out")
@@ -382,8 +508,7 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form') && !document.querySelector('#logout')", "old-session invalidation")
         time.sleep(1)
 
-        click(devtools, "#password")
-        devtools.command("Input.insertText", {"text": replacement_password})
+        insert_text(devtools, "#password", replacement_password)
         click(devtools, "#session-form button[type=submit]")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout')", "replacement-password login")
         click(devtools, "#logout")

@@ -57,6 +57,7 @@ templ Header(authenticated bool, csrf string, title string) {
 			<span class="topbar-status"><span class="status-dot" aria-hidden="true"></span><span class="ts-full">Authentication required</span><span class="ts-short">Signed out</span></span>
 		}
 		if authenticated {
+			<button id="open-password-rotation" type="button" class="ghost btn-sm" commandfor="principal-password-rotation" command="show-modal">Rotate password</button>
 			<form class="logout-form" method="post" action="/console/logout">
 				<input type="hidden" name="csrf" value={ csrf }/>
 				<button id="logout" class="ghost btn-sm" type="submit">Sign out</button>
@@ -131,23 +132,22 @@ templ Authentication(model AuthenticationModel) {
 }
 
 templ PasswordRotation(csrf string) {
-	<details class="panel" id="principal-password-rotation">
-		<summary>Rotate principal password</summary>
-		<div class="panel-body">
-			<p>Rotation requires the current password, exact confirmation, and explicit approval. It revokes every existing browser session and one-time handoff.</p>
-			<form method="post" action="/console/password">
-				<input type="hidden" name="csrf" value={ csrf }/>
-				<label for="current-password">Current principal password</label>
-				<input id="current-password" name="current_password" type="password" autocomplete="current-password" required/>
-				<label for="new-password">New principal password</label>
-				<input id="new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" required/>
-				<label for="confirm-password">Confirm new principal password</label>
-				<input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="12" required/>
-				<label><input name="approve" type="checkbox" value="rotate" required/> I approve replacing the principal-password verifier and revoking all browser sessions and one-time handoffs.</label>
-				<button class="primary" type="submit">Rotate password and revoke prior browser authentication</button>
-			</form>
-		</div>
-	</details>
+	@Dialog(OverlayModel{
+		ID: "principal-password-rotation",
+		Title: "Rotate principal password",
+		Description: "Set a new password for the authenticated principal. This revokes every existing browser session and one-time handoff.",
+		CloseLabel: "Cancel password rotation",
+	}) {
+		<form method="post" action="/console/password">
+			<input type="hidden" name="csrf" value={ csrf }/>
+			@Notice(NoticeModel{Kind: "warning", Title: "Authentication impact", Message: "You will need to sign in again with the new password after rotation."})
+			@FormField(FormFieldModel{ID: "current-password", Name: "current_password", Label: "Current principal password", Required: true, Secret: true, Autocomplete: "current-password"})
+			@FormField(FormFieldModel{ID: "new-password", Name: "new_password", Label: "New principal password", Help: "Use at least 12 characters.", Required: true, Secret: true, Autocomplete: "new-password", MinLength: "12"})
+			@FormField(FormFieldModel{ID: "confirm-password", Name: "confirmation", Label: "Confirm new principal password", Required: true, Secret: true, Autocomplete: "new-password", MinLength: "12"})
+			<label><input name="approve" type="checkbox" value="rotate" required/> I approve replacing the principal-password verifier and revoking all browser sessions and one-time handoffs.</label>
+			@Confirmation(ConfirmationModel{Title: "Confirm password rotation", Message: "This action cannot preserve prior browser authentication.", ConfirmLabel: "Rotate password and sign out everywhere", CancelLabel: "Cancel", DialogID: "principal-password-rotation", Dangerous: true})
+		</form>
+	}
 }
 
 templ Workspace(surface SurfaceModel) {

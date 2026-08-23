@@ -50,7 +50,7 @@ principal:
   name: Installed Proof Principal
   uid: "{uid}"
   user: {user}
-  auth_ttl: 2m
+  auth_ttl: 10m
 api:
   listen: 127.0.0.1:{port}
   unix_socket: {socket}
@@ -61,7 +61,7 @@ api:
   max_body_bytes: 1048576
   console:
     origin: http://127.0.0.1:{port}
-    session_ttl: 1m
+    session_ttl: 10m
     bootstrap_ttl: 45s
     max_page_size: 25
 audit:
@@ -188,7 +188,7 @@ recovery_status=$(curl --silent --show-error -o "$workspace/recovery.html" -w '%
 [ "$recovery_status" = 400 ]
 grep -F 'bootstrap_invalid_format' "$workspace/recovery.html" >/dev/null
 grep -F 'Handoff lifetime: <strong>45s</strong>' "$workspace/recovery.html" >/dev/null
-grep -F 'Browser session lifetime: <strong>1m0s</strong>' "$workspace/recovery.html" >/dev/null
+grep -F 'Browser session lifetime: <strong>10m0s</strong>' "$workspace/recovery.html" >/dev/null
 ! grep -F '>malformed<' "$workspace/recovery.html" >/dev/null
 
 HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/bootstrap-response.json"
