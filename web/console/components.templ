@@ -32,6 +32,8 @@ templ Document(model PageModel) {
 								@CommandReceiptPage(*model.CommandReceipt)
 							} else if model.CharterImport || model.AgentOperation != nil {
 								@CharterImportPage(model.CSRF, model.Surface.CharterImportProposal, model.AgentOperation)
+							} else if model.CredentialOperation != nil {
+								@CredentialOperationPage(model.CSRF, model.CredentialOperation)
 							} else {
 								@Workspace(model.Surface)
 							}
@@ -166,6 +168,8 @@ templ Workspace(surface SurfaceModel) {
 						<a class="primary" href="/console/loops/compose" title={ actionTitle(action) }>{ action.Label }</a>
 					} else if surface.Domain == DomainGraphs && surface.Authoritative {
 						<a class="primary" href="/console/graphs/compose" title="Compose a candidate; publication still requires fresh exact authority admission">{ action.Label }</a>
+					} else if surface.Domain == DomainCredentials && surface.Authoritative {
+						<a class="primary" href="/console/credentials/operation?operation=create">Create credential</a>
 					} else {
 						<button class="primary" type="button" disabled title={ actionTitle(action) }>{ action.Label }</button>
 					}
@@ -187,8 +191,10 @@ templ Workspace(surface SurfaceModel) {
 			}
 		}
 		@DomainCollection(surface)
-		<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
-		@Inspector(surface, surface.Inspector, surface.InspectorOpen)
+		if surface.Domain != DomainCredentials {
+			<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
+			@Inspector(surface, surface.Inspector, surface.InspectorOpen)
+		}
 	</section>
 }
 
@@ -584,6 +590,84 @@ templ FieldList(fields []FieldModel, empty string) {
 	}
 }
 
+templ CredentialOperationPage(csrf string, operation *CredentialOperationModel) {
+	<section class="surface active" aria-labelledby="credential-operation-title">
+		if operation.Stage != "review" {
+			<nav class="crumb-row" aria-label="Breadcrumb"><a class="back-crumb" href="/console/credentials">← Cancel and return to Credentials</a></nav>
+		}
+		<span class="eyebrow">Reviewed credential operation</span><h1 id="credential-operation-title">{ credentialOperationTitle(operation.Operation) }</h1>
+		<p>Only encrypted-authority metadata is rendered. Secret values are one-use, never repopulated, and cleared after every response.</p>
+		if operation.Status != "" {
+			<p role="status">{ operation.Status }
+				if operation.ReasonCode != "" {
+					<code>{ operation.ReasonCode }</code>
+				}
+			</p>
+		}
+		if operation.Result != nil {
+			@OperationReceipt(*operation.Result)
+		}
+		if operation.Stage == "review" {
+			<div class="panel"><div class="panel-body"><h2>Review exact operation</h2>@CredentialOperationMetadata(operation)
+			<section class={ "confirmation " + dangerClass(operation.Operation == "revoke") } aria-label="Confirm reviewed operation"><h3>Confirm reviewed operation</h3><p>Authority and current record state are revalidated before mutation. Cancel consumes this exact receipt and immediately wipes its retained payload.</p><div class="button-row">
+				<form method="post" action="/console/credentials/operation/cancel" autocomplete="off"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="receipt" value={ operation.Receipt }/><button class="ghost" type="submit">Cancel and wipe review</button></form>
+				<form method="post" action="/console/credentials/operation/execute" autocomplete="off"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="receipt" value={ operation.Receipt }/><button type="submit" class={ confirmClass(operation.Operation == "revoke") }>Confirm</button></form>
+			</div></section></div></div>
+		} else if operation.Result == nil {
+			<form class="panel" method="post" action="/console/credentials/operation/review" autocomplete="off"><div class="panel-body"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="operation" value={ operation.Operation }/>
+				@CredentialOperationFields(operation)
+				<div class="button-row"><a class="ghost" href="/console/credentials">Cancel</a><button class="primary" type="submit">Review</button></div>
+			</div></form>
+		}
+	</section>
+}
+
+templ CredentialOperationFields(operation *CredentialOperationModel) {
+	if operation.Operation == "create" {
+		@FormField(FormFieldModel{ID:"reference", Name:"reference", Label:"Reference", Value:operation.Reference, Required:true})
+		@FormField(FormFieldModel{ID:"kind", Name:"kind", Label:"Kind", Value:operation.Kind, Required:true})
+	}
+	if operation.Operation == "rotate" || operation.Operation == "revoke" || operation.Operation == "bind" {
+		@FormField(FormFieldModel{ID:"record_id", Name:"record_id", Label:"Exact record ID", Value:operation.RecordID, Required:true})
+	}
+	if operation.Operation == "create" || operation.Operation == "rotate" {
+		@FormField(FormFieldModel{ID:"credential-value", Name:"value", Label:"Credential value", Secret:true, Required:true, Autocomplete:"new-password"})
+	}
+	if operation.Operation == "revoke" {
+		@FormField(FormFieldModel{ID:"version", Name:"version", Label:"Exact version", Type:"number", Value:operation.Version, Required:true})
+		@FormField(FormFieldModel{ID:"reason", Name:"reason", Label:"Revocation reason", Value:operation.Reason, Required:true})
+	}
+	if operation.Operation == "bind" {
+		@FormField(FormFieldModel{ID:"agent-id", Name:"agent_id", Label:"Agent ID", Value:operation.AgentID, Required:true})
+		@FormField(FormFieldModel{ID:"stanza-id", Name:"stanza_id", Label:"Stanza ID", Value:operation.StanzaID, Required:true})
+		@FormField(FormFieldModel{ID:"deployment-id", Name:"deployment_id", Label:"Deployment ID", Value:operation.DeploymentID, Required:true})
+		@FormField(FormFieldModel{ID:"scope", Name:"scope", Label:"Scope", Value:operation.Scope, Required:true})
+		@FormField(FormFieldModel{ID:"destinations", Name:"destinations", Label:"Destinations (comma separated)", Value:operation.Destinations, Required:true})
+		@FormField(FormFieldModel{ID:"mode", Name:"mode", Label:"Mode", Value:operation.Mode, Required:true})
+		@FormField(FormFieldModel{ID:"version-policy", Name:"version_policy", Label:"Version policy", Value:operation.VersionPolicy, Required:true})
+		@FormField(FormFieldModel{ID:"pinned-version", Name:"pinned_version", Label:"Pinned version", Type:"number", Value:operation.PinnedVersion})
+	}
+}
+
+templ CredentialOperationMetadata(operation *CredentialOperationModel) {
+	<dl class="spec"><dt>Operation</dt><dd>{ operation.Operation }</dd>
+	if operation.RecordID != "" {
+		<dt>Exact record</dt><dd><code>{ operation.RecordID }</code></dd>
+	}
+	if operation.Reference != "" {
+		<dt>Reference</dt><dd>{ operation.Reference }</dd>
+	}
+	if operation.Version != "" {
+		<dt>Exact version</dt><dd>{ operation.Version }</dd>
+	}
+	if operation.Scope != "" {
+		<dt>Exact binding tuple</dt><dd><code>{ operation.AgentID + " / " + operation.StanzaID + " / " + operation.DeploymentID + " / " + operation.Scope }</code></dd>
+	}
+	</dl>
+}
+
+func credentialOperationTitle(operation string) string { switch operation { case "create": return "Create credential"; case "rotate": return "Rotate credential"; case "revoke": return "Revoke credential"; case "bind": return "Create exact binding"; case "backup": return "Create policy-constrained backup" }; return "Credential operation denied" }
+
 templ CredentialWorkspace(surface SurfaceModel) {
 	if !surface.Authoritative {
 		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head"><span class="count">Count unavailable</span></div><div class="panel"><p class="empty-note">The credential authority is unavailable; no count is asserted. { surface.ReasonCode }</p></div></div></section>
@@ -599,8 +683,8 @@ templ CredentialWorkspace(surface SurfaceModel) {
 							<option value="revoked" selected?={ surface.Lifecycle == "revoked" }>Revoked</option>
 						</select></label>
 						<label class="search"><span class="sr-only">Search credentials</span><input name="q" type="search" value={ surface.Query } placeholder="Search credentials" autocomplete="off" maxlength="128"/></label>
-						<button class="secondary" type="submit">Apply</button>
-						<span class="count" aria-live="polite">{ fmt.Sprintf("%d of %d credentials", len(surface.Records), surface.TotalCount) }</span>
+						<button class="secondary" type="submit">Apply</button><a class="ghost" href="/console/credentials">Clear</a>
+						<span class="count" aria-live="polite">{ fmt.Sprintf("%d matching in bounded collection · %d authoritative total", credentialMatchingCount(surface), surface.TotalCount) }</span>
 					</form>
 				</div>
 				if surface.State == "filtered-empty" {
@@ -613,6 +697,9 @@ templ CredentialWorkspace(surface SurfaceModel) {
 							<li><a id={ "record-" + record.Key } href={ consoleRoute(surface.Domain, record.Key) }><span class="rc-top"><span class="rc-mark" aria-hidden="true">{ credentialMark(record.Label) }</span><strong>{ record.Label }</strong></span><span>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span> · { record.Summary }</span></a></li>
 						}
 					</ul></div></div>
+					if surface.Pagination.Label != "" {
+						@Pagination(surface.Pagination)
+					}
 				}
 			</div>
 			<aside class="detail credential-detail" aria-label="Selected credential">
@@ -642,7 +729,7 @@ templ CredentialInspector(surface SurfaceModel, record *RecordModel) {
 			<div class="inline-notice">{ record.Readiness }. This view never authorizes credential mutation; browser state cannot bind or rotate encrypted secrets.</div>
 			<div class="section-label">Provenance</div>
 			<dl class="spec">
-				<dt>Stable record ID</dt><dd>{ record.Credential.Reference }</dd>
+				<dt>Stable record ID</dt><dd>{ credFallback(record.Credential.ID, record.Key) }</dd>
 				<dt>Reference</dt><dd>{ record.Credential.Reference }</dd>
 				<dt>Kind</dt><dd>{ record.Credential.Kind }</dd>
 				<dt>Status</dt><dd><span class={ "lifecycle " + record.Credential.Status }>{ record.Credential.Status }</span></dd>
@@ -689,6 +776,14 @@ templ CredentialInspector(surface SurfaceModel, record *RecordModel) {
 				}
 				<dt>Note</dt><dd>{ record.Credential.Backup.Note }</dd>
 			</dl>
+			<div class="section-label">Reviewed operations</div>
+			<div class="button-row">
+				if record.Lifecycle == "active" {
+					<a class="secondary" href={ credentialOperationURL("rotate", record.Credential.ID) }>Rotate</a><a class="secondary" href={ credentialOperationURL("revoke", record.Credential.ID) }>Revoke</a><a class="secondary" href={ credentialOperationURL("bind", record.Credential.ID) }>Bind exact tuple</a>
+				}
+				<a class="secondary" href="/console/credentials/operation?operation=backup">Create ciphertext backup</a>
+			</div>
+			<p class="inline-notice">Initialize, unlock, reveal, restore, arbitrary-path backup, and KEK operations remain CLI-only. Browser requests cannot select custody or a host path.</p>
 			<div class="section-label">Prepare credential (review only)</div>
 			<p class="inline-notice">{ record.Credential.Proposal.Notice }</p>
 			<pre class="cli-preview" id="credential-proposal-put">{ record.Credential.Proposal.PutCommand }</pre>
@@ -699,6 +794,17 @@ templ CredentialInspector(surface SurfaceModel, record *RecordModel) {
 			<pre id="inspector-record">{ record.JSON }</pre>
 		</div>
 	}
+}
+
+func credentialMatchingCount(surface SurfaceModel) int {
+	if surface.TotalRecords == 0 && len(surface.Records) > 0 { return len(surface.Records) }
+	return surface.TotalRecords
+}
+
+func credentialOperationURL(operation, recordID string) string {
+	values := url.Values{"operation": {operation}}
+	if recordID != "" { values.Set("record_id", recordID) }
+	return "/console/credentials/operation?" + values.Encode()
 }
 
 func credentialMark(label string) string {

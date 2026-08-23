@@ -82,6 +82,8 @@ templ Confirmation(model ConfirmationModel) {
 	<section class={ "confirmation " + dangerClass(model.Dangerous) } aria-label={ model.Title }><h3>{ model.Title }</h3><p>{ model.Message }</p><div class="button-row">
 		if model.DialogID != "" {
 			<button type="button" class="ghost" commandfor={ model.DialogID } command="close">{ model.CancelLabel }</button>
+		} else if model.CancelURL != "" {
+			<a class="ghost" href={ model.CancelURL }>{ model.CancelLabel }</a>
 		} else {
 			<button type="button" class="ghost">{ model.CancelLabel }</button>
 		}

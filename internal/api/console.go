@@ -841,6 +841,7 @@ func consoleCredentialRecord(cred app.CredentialView, vault app.VaultStatusView)
 		recordLabel = fmt.Sprintf("%s · %s · v%d", recordLabel, cred.Status, cred.CurrentVersion)
 	}
 	detail := &consoleweb.CredentialDetailModel{
+		ID:             cred.ID,
 		Reference:      fallback(cred.Reference, ""),
 		Kind:           fallback(cred.Kind, ""),
 		Status:         fallback(cred.Status, ""),
@@ -1301,8 +1302,111 @@ func filterConsoleCredentials(model *consoleweb.SurfaceModel, query, status stri
 		filtered = append(filtered, record)
 	}
 	model.Records = filtered
+	model.TotalRecords = len(filtered)
 	if model.State == "ready" && len(filtered) == 0 {
 		model.State = "filtered-empty"
+	}
+	return nil
+}
+
+func paginateConsoleCredentials(model *consoleweb.SurfaceModel, rawPage string, limit int, query url.Values) error {
+	page := 1
+	if rawPage != "" {
+		parsed, err := strconv.Atoi(rawPage)
+		if err != nil || parsed < 1 || parsed > 10000 {
+			return errors.New("invalid Credentials page")
+		}
+		page = parsed
+	}
+	total := len(model.Records)
+	start := (page - 1) * limit
+	if start > total || (start == total && total > 0) {
+		return errors.New("invalid Credentials page")
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	if start < total {
+		model.Records = model.Records[start:end]
+	} else {
+		model.Records = nil
+	}
+	pageURL := func(target int) string {
+		values := url.Values{}
+		for key, entries := range query {
+			for _, entry := range entries {
+				values.Add(key, entry)
+			}
+		}
+		values.Del("record_key")
+		if target > 1 {
+			values.Set("page", strconv.Itoa(target))
+		} else {
+			values.Del("page")
+		}
+		path := "/console/credentials"
+		if encoded := values.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		return path + "#/credentials"
+	}
+	pages := 1
+	if total > 0 {
+		pages = (total + limit - 1) / limit
+	}
+	model.Pagination = consoleweb.PaginationModel{Label: fmt.Sprintf("Page %d of %d", page, pages), Summary: fmt.Sprintf("Showing %d–%d of %d matching records", min(start+1, total), end, total), HasPrevious: page > 1, HasNext: end < total}
+	if model.Pagination.HasPrevious {
+		model.Pagination.PreviousURL = pageURL(page - 1)
+	}
+	if model.Pagination.HasNext {
+		model.Pagination.NextURL = pageURL(page + 1)
+	}
+	return nil
+}
+
+func applyCredentialPage(model *consoleweb.SurfaceModel, page app.CredentialCollectionPage, query url.Values) error {
+	if page.Page < 1 || page.Limit < 1 || page.Total < 0 {
+		return errors.New("invalid authoritative Credentials page")
+	}
+	start := (page.Page - 1) * page.Limit
+	end := start + len(model.Records)
+	if start > page.Total || end > page.Total || (start == page.Total && page.Total > 0) {
+		return errors.New("invalid authoritative Credentials page")
+	}
+	model.TotalRecords = page.Total
+	if page.Total == 0 && model.State == "ready" {
+		model.State = "filtered-empty"
+	}
+	pageURL := func(target int) string {
+		values := url.Values{}
+		for key, entries := range query {
+			for _, entry := range entries {
+				values.Add(key, entry)
+			}
+		}
+		values.Del("record_key")
+		if target > 1 {
+			values.Set("page", strconv.Itoa(target))
+		} else {
+			values.Del("page")
+		}
+		path := "/console/credentials"
+		if encoded := values.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		return path + "#/credentials"
+	}
+	pages := 1
+	if page.Total > 0 {
+		pages = (page.Total + page.Limit - 1) / page.Limit
+	}
+	model.Pagination = consoleweb.PaginationModel{Label: fmt.Sprintf("Page %d of %d", page.Page, pages), Summary: fmt.Sprintf("Showing %d–%d of %d matching records", min(start+1, page.Total), end, page.Total), HasPrevious: page.Page > 1, HasNext: end < page.Total}
+	if model.Pagination.HasPrevious {
+		model.Pagination.PreviousURL = pageURL(page.Page - 1)
+	}
+	if model.Pagination.HasNext {
+		model.Pagination.NextURL = pageURL(page.Page + 1)
 	}
 	return nil
 }
@@ -1354,6 +1458,13 @@ func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb
 	actions := make([]consoleweb.ActionModel, 0, len(specs))
 	for _, spec := range specs {
 		readiness, ok := surface.Actions[spec.key]
+		if !ok && domain == consoleCredentials {
+			credentialReadiness, available := surface.Readiness["credentials"]
+			if available && credentialReadiness.Authoritative && credentialReadiness.State == "ready" {
+				actions = append(actions, consoleweb.ActionModel{Key: spec.key, Label: spec.label, State: "ready", ReasonCode: "credential_authority_ready", Primary: spec.primary})
+				continue
+			}
+		}
 		if !ok {
 			actions = append(actions, consoleweb.ActionModel{Key: spec.key, Label: spec.label, State: "unavailable", ReasonCode: "action_readiness_missing", Primary: spec.primary})
 			continue

@@ -283,7 +283,7 @@ func (m *Manager) IssueReviewReceipt(request *http.Request, purpose string, payl
 		expires = candidate.subject.ExpiresAt
 	}
 	if previous, exists := m.pending[sessionDigest]; exists {
-		delete(m.receipts, previous)
+		m.deleteReceipt(previous)
 	}
 	m.receipts[receiptDigest] = reviewReceipt{session: sessionDigest, purpose: purpose, payload: append([]byte(nil), payload...), expires: expires}
 	m.pending[sessionDigest] = receiptDigest
@@ -310,9 +310,35 @@ func (m *Manager) ConsumeReviewReceipt(request *http.Request, purpose, value str
 	if !sessionOK || !now.Before(sessionCandidate.expires) || !now.Before(sessionCandidate.subject.ExpiresAt) || !pendingOK || pending != receiptDigest || !receiptOK || receiptCandidate.session != sessionDigest || receiptCandidate.purpose != purpose || !now.Before(receiptCandidate.expires) {
 		return nil, ErrReviewReceiptUnavailable
 	}
-	delete(m.receipts, receiptDigest)
+	result := append([]byte(nil), receiptCandidate.payload...)
+	m.deleteReceipt(receiptDigest)
 	delete(m.pending, sessionDigest)
-	return append([]byte(nil), receiptCandidate.payload...), nil
+	return result, nil
+}
+
+func (m *Manager) CancelReviewReceipt(request *http.Request, purpose, value string) error {
+	if !validBootstrapFormat(value) {
+		return ErrReviewReceiptInvalidFormat
+	}
+	cookie, err := request.Cookie(CookieName)
+	if err != nil || cookie.Value == "" {
+		return ErrReviewReceiptUnavailable
+	}
+	now := m.now()
+	sessionDigest := sha256.Sum256([]byte(cookie.Value))
+	receiptDigest := sha256.Sum256([]byte(value))
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prune(now)
+	sessionCandidate, sessionOK := m.sessions[sessionDigest]
+	pending, pendingOK := m.pending[sessionDigest]
+	receiptCandidate, receiptOK := m.receipts[receiptDigest]
+	if !sessionOK || !now.Before(sessionCandidate.expires) || !now.Before(sessionCandidate.subject.ExpiresAt) || !pendingOK || pending != receiptDigest || !receiptOK || receiptCandidate.session != sessionDigest || receiptCandidate.purpose != purpose || !now.Before(receiptCandidate.expires) {
+		return ErrReviewReceiptUnavailable
+	}
+	m.deleteReceipt(receiptDigest)
+	delete(m.pending, sessionDigest)
+	return nil
 }
 
 func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {
@@ -474,7 +500,7 @@ func (m *Manager) RevokeSessionValue(value string) {
 	digest := sha256.Sum256([]byte(value))
 	m.mu.Lock()
 	if receipt, ok := m.pending[digest]; ok {
-		delete(m.receipts, receipt)
+		m.deleteReceipt(receipt)
 		delete(m.pending, digest)
 	}
 	delete(m.sessions, digest)
@@ -548,6 +574,17 @@ func (m *Manager) ApplySecurityHeaders(header http.Header, authenticated bool) {
 	}
 }
 
+// deleteReceipt requires m.mu to be held and clears any secret-bearing review
+// payload before releasing the map reference.
+func (m *Manager) deleteReceipt(key [32]byte) {
+	if receipt, ok := m.receipts[key]; ok {
+		for index := range receipt.payload {
+			receipt.payload[index] = 0
+		}
+		delete(m.receipts, key)
+	}
+}
+
 func (m *Manager) prune(now time.Time) {
 	for key, value := range m.bootstraps {
 		if !now.Before(value.expires) {
@@ -557,7 +594,7 @@ func (m *Manager) prune(now time.Time) {
 	for key, value := range m.sessions {
 		if !now.Before(value.expires) || !now.Before(value.subject.ExpiresAt) {
 			if receipt, ok := m.pending[key]; ok {
-				delete(m.receipts, receipt)
+				m.deleteReceipt(receipt)
 				delete(m.pending, key)
 			}
 			delete(m.sessions, key)
@@ -565,7 +602,7 @@ func (m *Manager) prune(now time.Time) {
 	}
 	for key, value := range m.receipts {
 		if !now.Before(value.expires) {
-			delete(m.receipts, key)
+			m.deleteReceipt(key)
 			if m.pending[value.session] == key {
 				delete(m.pending, value.session)
 			}

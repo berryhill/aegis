@@ -11,15 +11,16 @@ const (
 )
 
 type PageModel struct {
-	Authenticated  bool
-	CSRF           string
-	Authentication AuthenticationModel
-	Surface        SurfaceModel
-	CharterImport  bool
-	AgentOperation *AgentOperationModel
-	LoopComposer   *LoopComposerModel
-	CommandPreview *CommandPreviewModel
-	CommandReceipt *OperationReceiptModel
+	Authenticated       bool
+	CSRF                string
+	Authentication      AuthenticationModel
+	Surface             SurfaceModel
+	CharterImport       bool
+	AgentOperation      *AgentOperationModel
+	LoopComposer        *LoopComposerModel
+	CommandPreview      *CommandPreviewModel
+	CommandReceipt      *OperationReceiptModel
+	CredentialOperation *CredentialOperationModel
 }
 
 // AgentOperationModel is a server-owned preparation or result projection. Raw
@@ -77,7 +78,18 @@ type SurfaceModel struct {
 	QueueStates           []string
 	Inspector             *RecordModel
 	InspectorOpen         bool
+	Pagination            PaginationModel
 	CharterImportProposal CharterImportProposal
+}
+
+// CredentialOperationModel contains only metadata safe for browser rendering.
+// Secret input remains only in the session-bound, one-use review receipt.
+type CredentialOperationModel struct {
+	Stage, Operation, Status, ReasonCode, Receipt    string
+	RecordID, Reference, Kind, Version, Reason       string
+	AgentID, StanzaID, DeploymentID, Scope           string
+	Destinations, Mode, VersionPolicy, PinnedVersion string
+	Result                                           *OperationReceiptModel
 }
 
 // CharterImportProposal is a review-only bridge to the existing CLI charter
@@ -253,6 +265,7 @@ type OverlayModel struct {
 }
 type ConfirmationModel struct {
 	Title, Message, ConfirmLabel, CancelLabel, DialogID string
+	CancelURL                                           string
 	Dangerous                                           bool
 }
 
@@ -261,6 +274,7 @@ type ConfirmationModel struct {
 // values, ciphertext, wrapped DEKs, nonces, and KEK bytes. The only KEK field
 // exposed is the immutable version.
 type CredentialDetailModel struct {
+	ID             string
 	Reference      string
 	Kind           string
 	Status         string

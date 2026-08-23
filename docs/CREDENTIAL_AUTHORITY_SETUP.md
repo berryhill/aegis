@@ -62,44 +62,11 @@ Keep KEK/recovery material separate from database backups. Disable core dumps an
 
 ## Browser credentials surface
 
-The authenticated Aegis console renders a dedicated `#/credentials` workspace
-that surfaces the encrypted authority as authoritative metadata only. The
-shell, the navigation rail, and the page header all remain native same-origin
-HTML; no browser JavaScript, no inline executable content, and no Datastar
-expression evaluation. The workspace shows one card per credential with the
-record reference, kind, current version, status chip, last update, and binding
-count. Status filter (`all` / `active` / `revoked`) and exact-reference search
-are submitted through native same-origin forms; no browser state ever
-authorizes a credential mutation.
+The authenticated Aegis console renders a dedicated `#/credentials` workspace as native same-origin HTML. It performs authoritative repository-side search and active/revoked filtering, reports matching and vault-wide counts, pages deterministically, and resolves exact deep links even when the target is beyond the first 100 records. Cards and inspectors remain metadata-only: record provenance, status, versions, algorithms, KEK version identifiers, verification digests, binding counts, vault metadata, and backup status may be shown; secret values, ciphertext, wrapped DEKs, nonces, and KEK bytes are never projected.
 
-Selecting a record opens a read-only inspector that includes:
+The browser supports reviewed create, rotate, revoke, exact-binding, and policy-selected ciphertext-backup operations. Strict bounded forms accept no caller-supplied principal, authority context, or backup path. Review requires an authenticated principal session plus exact Host/Origin/CSRF admission, validates the exact target, and retains the bounded operation payload only behind a short-lived, one-use receipt bound to that session and the credential-operation purpose. Confirm consumes the receipt, decodes it strictly, reloads the exact authoritative target and version, and returns metadata-only readback. Cancel is also an authenticated same-origin CSRF-protected POST: it consumes the exact receipt and immediately wipes the retained payload. Cross-session, wrong-purpose, malformed, expired, replayed, stale-target, version-drifted, and missing-CSRF requests deny without mutation.
 
-- **Provenance** — stable record ID, reference, kind, status, current version,
-  created-by, created-at, binding count, revoked-at and revocation reason when
-  applicable.
-- **Vault summary** — deployment ID, store ID, custody mode, schema version,
-  KEK ID and KEK version (the only KEK fields rendered; no KEK bytes, no
-  wrapped DEKs, no record nonces, no ciphertext), last clean shutdown, and
-  initialized-at.
-- **Version history** — every encrypted version with algorithm, KEK version,
-  creation time, and verification digest (`sha256:...`). The encrypted bytes
-  themselves are never projected.
-- **Backup status** — whether a ciphertext-only backup is on disk and its
-  absolute path; backups require the same KEK to reopen.
-- **Prepare credential / prepare vault backup** — review-only CLI previews of
-  the exact `aegis secret put REFERENCE --kind KIND --created-by "$OPERATOR"`
-  and `aegis secret backup` commands. The backup command accepts no path and
-  writes the policy-selected ciphertext snapshot beside the configured
-  authority database. The browser never POSTs these previews; running them
-  requires an authenticated operator session and the configured KEK.
-
-The separately protected local Unix API exposes the same typed principal-only
-create, rotate, revoke, bind, and backup application operations under
-`/v1/credentials`. Create and rotate use strict one-use request intake capped at
-1 MiB and return metadata only. The backup request must be exactly an empty JSON
-object; a caller cannot select a host path. These routes require bearer transport
-plus kernel `SO_PEERCRED` identity and do not make the browser workspace a
-mutation surface or expose a generic secret-read endpoint.
+The separately protected local Unix API exposes the same typed principal-only create, rotate, revoke, bind, and backup application operations under `/v1/credentials`. Create and rotate use strict one-use request intake capped at 1 MiB and return metadata only. The backup request must be exactly an empty JSON object; a caller cannot select a host path. Browser and API operations do not add initialize, unlock, reveal, restore, KEK administration, generic secret reads, or arbitrary-path backups.
 
 The credential surface is intentionally non-gating for the rest of the
 fleet-control vertical: a missing, locked (`ErrPassphraseAuthentication`),

@@ -392,6 +392,30 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleweb.PageModel{Authenticated: true, Surface: consoleweb.SurfaceModel{Domain: string(domain), Title: "Fleet control", State: "unavailable", Status: "Fleet control unavailable. No collection was treated as empty."}}, nil
 		}
+		var credentialPage *app.CredentialCollectionPage
+		if domain == consoleCredentials {
+			query := strings.TrimSpace(c.QueryParam("q"))
+			status := c.QueryParam("status")
+			if status == "" {
+				status = "all"
+			}
+			if len(query) > 128 || strings.ContainsAny(query, "\r\n\x00") || (status != "all" && status != "active" && status != "revoked") {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Credentials filter")
+			}
+			pageNumber := 1
+			if raw := c.QueryParam("page"); raw != "" {
+				pageNumber, err = strconv.Atoi(raw)
+				if err != nil || pageNumber < 1 || pageNumber > 10000 {
+					return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Credentials page")
+				}
+			}
+			page, queryErr := svc.QueryCredentialsAs(c.Request().Context(), subject, app.CredentialCollectionQuery{Search: query, Status: status, RecordID: c.QueryParam("record_key"), Page: pageNumber, Limit: limit})
+			if queryErr != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Credentials query")
+			}
+			credentialPage = &page
+			surface.Credentials = page.Records
+		}
 		if len(surface.Agents) > limit {
 			surface.Agents = surface.Agents[:limit]
 		}
@@ -403,9 +427,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		if len(surface.Queue) > limit {
 			surface.Queue = surface.Queue[:limit]
-		}
-		if len(surface.Credentials) > limit {
-			surface.Credentials = surface.Credentials[:limit]
 		}
 		model, err := consoleSurfaceModel(surface, domain)
 		if err != nil {
@@ -419,6 +440,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if domain == consoleQueue {
 			if err = filterConsoleQueue(&model, c.QueryParam("state")); err != nil {
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Execution Queue filter")
+			}
+		}
+		if domain == consoleCredentials && credentialPage != nil {
+			model.Query = strings.TrimSpace(c.QueryParam("q"))
+			model.Lifecycle = c.QueryParam("status")
+			if model.Lifecycle == "" {
+				model.Lifecycle = "all"
+			}
+			if err = applyCredentialPage(&model, *credentialPage, c.QueryParams()); err != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Credentials page")
 			}
 		}
 		csrf, err := consoleManager.CSRF(c.Request())
@@ -487,6 +518,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
 	}
+	renderCredentialOperation := func(c *echo.Context, status int, subject core.Subject, operation *consoleweb.CredentialOperationModel) error {
+		model, err := loadConsole(c, subject, consoleCredentials)
+		if err != nil {
+			return err
+		}
+		model.CredentialOperation = operation
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(model))
+		if err != nil {
+			return err
+		}
+		return c.Blob(status, "text/html; charset=utf-8", content)
+	}
 	renderAgentOperation := func(c *echo.Context, status int, subject core.Subject, operation *consoleweb.AgentOperationModel) error {
 		model, err := loadConsole(c, subject, consoleAgents)
 		if err != nil {
@@ -520,6 +563,111 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		e.GET("/console/"+string(domain), consolePage)
 	}
 	e.GET("/console/agents/charter-import", charterImportPage)
+	e.GET("/console/credentials/operation", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			return renderAuthentication(c, http.StatusUnauthorized, "console_authentication_required")
+		}
+		operation := c.QueryParam("operation")
+		switch operation {
+		case "create", "rotate", "revoke", "bind", "backup":
+		default:
+			return echo.NewHTTPError(http.StatusBadRequest, "credential operation is not browser-enabled")
+		}
+		return renderCredentialOperation(c, http.StatusOK, subject, credentialOperationModel(credentialOperationForm{Operation: operation, RecordID: c.QueryParam("record_id")}, "prepare"))
+	})
+	e.POST("/console/credentials/operation/review", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		form, err := decodeCredentialOperationForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid credential operation form")
+		}
+		defer wipeBytes(form.Value)
+		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		if err = verifyCredentialTarget(subject, svc, c.Request(), form); err != nil {
+			operation := credentialOperationModel(form, "prepare")
+			operation.Status, operation.ReasonCode = "Credential operation denied during authoritative review.", "credential_target_denied"
+			return renderCredentialOperation(c, http.StatusConflict, subject, operation)
+		}
+		payload, err := encodeCredentialReview(form)
+		if err != nil {
+			return err
+		}
+		defer wipeBytes(payload)
+		receipt, err := consoleManager.IssueReviewReceipt(c.Request(), credentialReviewPurpose, payload)
+		if err != nil {
+			return consoleError(err)
+		}
+		operation := credentialOperationModel(form, "review")
+		operation.Receipt, operation.Status = receipt, "Review prepared; no state has changed and no secret is rendered."
+		return renderCredentialOperation(c, http.StatusOK, subject, operation)
+	})
+	e.POST("/console/credentials/operation/cancel", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		execute, err := decodeAgentExecuteForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid credential cancellation")
+		}
+		c.Request().Header.Set("X-CSRF-Token", execute.CSRF)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		if err = consoleManager.CancelReviewReceipt(c.Request(), credentialReviewPurpose, execute.Receipt); err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "credential review receipt expired, consumed, or denied")
+		}
+		return c.Redirect(http.StatusSeeOther, "/console/credentials#/credentials")
+	})
+	e.POST("/console/credentials/operation/execute", func(c *echo.Context) error {
+		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+		execute, err := decodeAgentExecuteForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid credential confirmation")
+		}
+		c.Request().Header.Set("X-CSRF-Token", execute.CSRF)
+		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		payload, err := consoleManager.ConsumeReviewReceipt(c.Request(), credentialReviewPurpose, execute.Receipt)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "credential review receipt expired, consumed, or denied")
+		}
+		defer wipeBytes(payload)
+		form, err := decodeCredentialReview(payload)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "credential review receipt denied")
+		}
+		defer wipeBytes(form.Value)
+		operation := credentialOperationModel(form, "result")
+		if err = verifyCredentialTarget(subject, svc, c.Request(), form); err != nil {
+			operation.Status, operation.ReasonCode = "Credential operation denied after authoritative revalidation.", "credential_target_conflict"
+			return renderCredentialOperation(c, http.StatusConflict, subject, operation)
+		}
+		resultID, message, err := executeCredentialOperation(svc, c.Request(), subject, form)
+		if err != nil {
+			operation.Status, operation.ReasonCode = "Credential operation denied.", "credential_operation_denied"
+			return renderCredentialOperation(c, http.StatusConflict, subject, operation)
+		}
+		operation.Status, operation.Result = "Credential operation completed with metadata-only authoritative readback.", credentialReceipt(form.Operation, resultID, message)
+		return renderCredentialOperation(c, http.StatusOK, subject, operation)
+	})
 	e.POST("/console/agents/registration/review", func(c *echo.Context) error {
 		subject, form, err := authorizeAgentReview(c)
 		if err != nil {

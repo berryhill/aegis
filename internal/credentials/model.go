@@ -93,6 +93,29 @@ type SecretCounts struct {
 	Revoked int `json:"revoked"`
 }
 
+// SecretRecordQuery is the authoritative bounded collection contract used by
+// operational consoles. Offset is ignored when RecordID is present; the
+// repository resolves the page containing that exact filtered record.
+type SecretRecordQuery struct {
+	Search   string
+	Status   string
+	RecordID string
+	Offset   int
+	Limit    int
+}
+
+type SecretRecordPage struct {
+	Records []SecretRecord
+	Total   int
+	Offset  int
+}
+
+// QueryRepository is an optional extension kept separate from Repository so
+// existing custody adapters cannot silently claim collection-query support.
+type QueryRepository interface {
+	Query(context.Context, SecretRecordQuery) (SecretRecordPage, error)
+}
+
 type Repository interface {
 	StoreID() string
 	DeploymentID() string

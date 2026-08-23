@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,6 +138,45 @@ func TestAuthorityCreateBindUseRotateRevokeAndNoPlaintextPersistence(t *testing.
 	}
 	if containsBytes(database, firstSecret) || containsBytes(database, secondSecret) {
 		t.Fatal("authority database contains plaintext secret")
+	}
+}
+
+func TestAuthoritativeCollectionQueryFindsAndPagesBeyondFirstHundred(t *testing.T) {
+	_, authority, _, _ := openAuthority(t)
+	ctx := context.Background()
+	var target credentials.SecretRecord
+	for index := 0; index < 125; index++ {
+		reference := fmt.Sprintf("provider-%03d", index)
+		record, err := authority.Create(ctx, reference, "api-token", "principal-1", []byte(fmt.Sprintf("canary-%03d", index)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 117 {
+			target = record
+		}
+	}
+	page, err := authority.Query(ctx, credentials.SecretRecordQuery{Search: "provider-", Status: credentials.StatusActive, Offset: 100, Limit: 10})
+	if err != nil || page.Total != 125 || page.Offset != 100 || len(page.Records) != 10 || page.Records[0].Reference != "provider-100" {
+		t.Fatalf("authoritative page mismatch: page=%+v err=%v", page, err)
+	}
+	deep, err := authority.Query(ctx, credentials.SecretRecordQuery{Search: "provider-", Status: credentials.StatusActive, RecordID: target.ID, Limit: 10})
+	if err != nil || deep.Total != 125 || deep.Offset != 110 || len(deep.Records) != 10 || deep.Records[7].ID != target.ID {
+		t.Fatalf("deep-link page mismatch: page=%+v err=%v", deep, err)
+	}
+	filtered, err := authority.Query(ctx, credentials.SecretRecordQuery{Search: "provider-117", Status: credentials.StatusActive, Limit: 10})
+	if err != nil || filtered.Total != 1 || len(filtered.Records) != 1 || filtered.Records[0].ID != target.ID {
+		t.Fatalf("deep search mismatch: page=%+v err=%v", filtered, err)
+	}
+	if _, err = authority.Query(ctx, credentials.SecretRecordQuery{Search: "provider-000", Status: credentials.StatusActive, RecordID: target.ID, Limit: 10}); !errors.Is(err, credentials.ErrNotFound) {
+		t.Fatalf("deep link outside filtered collection did not fail closed: %v", err)
+	}
+	for _, invalid := range []credentials.SecretRecordQuery{
+		{Search: "provider-\n", Status: credentials.StatusActive, Limit: 10},
+		{Status: credentials.StatusActive, RecordID: "not a valid record id", Limit: 10},
+	} {
+		if _, err = authority.Query(ctx, invalid); err == nil {
+			t.Fatalf("unsafe authoritative query accepted: %+v", invalid)
+		}
 	}
 }
 

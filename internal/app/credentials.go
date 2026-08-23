@@ -93,6 +93,62 @@ type CredentialBackupResult struct {
 	Destination string `json:"destination"`
 }
 
+type CredentialCollectionQuery struct {
+	Search, Status, RecordID string
+	Page, Limit              int
+}
+
+type CredentialCollectionPage struct {
+	Records []CredentialView
+	Total   int
+	Page    int
+	Limit   int
+}
+
+// QueryCredentialsAs performs filtering, deterministic pagination, matching
+// counts, and exact deep-link resolution inside the authoritative store.
+func (s *Service) QueryCredentialsAs(ctx context.Context, subject core.Subject, query CredentialCollectionQuery) (CredentialCollectionPage, error) {
+	if err := s.requirePrincipal(subject); err != nil {
+		return CredentialCollectionPage{}, err
+	}
+	if !s.hasCredentials() {
+		return CredentialCollectionPage{Records: []CredentialView{}, Page: 1, Limit: query.Limit}, nil
+	}
+	if query.Status == "" {
+		query.Status = "all"
+	}
+	if query.Page < 1 || query.Page > 10000 || query.Limit < 1 || query.Limit > 100 {
+		return CredentialCollectionPage{}, errors.New("credential collection page is invalid")
+	}
+	result, err := s.CredentialAuthority.Query(ctx, credentials.SecretRecordQuery{Search: query.Search, Status: query.Status, RecordID: query.RecordID, Offset: (query.Page - 1) * query.Limit, Limit: query.Limit})
+	if err != nil {
+		return CredentialCollectionPage{}, err
+	}
+	page := CredentialCollectionPage{Records: make([]CredentialView, 0, len(result.Records)), Total: result.Total, Page: result.Offset/query.Limit + 1, Limit: query.Limit}
+	for _, record := range result.Records {
+		view, viewErr := s.buildCredentialView(ctx, record)
+		if viewErr != nil {
+			return CredentialCollectionPage{}, viewErr
+		}
+		page.Records = append(page.Records, view)
+	}
+	return page, nil
+}
+
+func (s *Service) CredentialAs(ctx context.Context, subject core.Subject, recordID string) (CredentialView, error) {
+	if err := s.requirePrincipal(subject); err != nil {
+		return CredentialView{}, err
+	}
+	if !s.hasCredentials() {
+		return CredentialView{}, ErrCredentialUnavailable
+	}
+	record, err := s.CredentialAuthority.Metadata(ctx, recordID)
+	if err != nil {
+		return CredentialView{}, err
+	}
+	return s.buildCredentialView(ctx, record)
+}
+
 // VaultStatusView is the read-only projection of credentials.VaultStatus used
 // by the dashboard. It intentionally embeds the domain type and adds
 // classification fields (state, reason code) the surface needs.

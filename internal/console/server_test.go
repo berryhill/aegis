@@ -1,6 +1,8 @@
 package console
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -433,6 +435,66 @@ func TestReviewReceiptIsSessionBoundSingleUseExpiringAndReplaced(t *testing.T) {
 	for _, malformed := range []string{"", "abc", strings.Repeat("A", 64), strings.Repeat("g", 64), strings.Repeat("a", 63), strings.Repeat("a", 65)} {
 		if _, err = manager.ConsumeReviewReceipt(otherSession, "agent-registration", malformed); !errors.Is(err, ErrReviewReceiptInvalidFormat) {
 			t.Fatalf("malformed receipt %q classified as %v", malformed, err)
+		}
+	}
+}
+
+func TestReviewReceiptCancellationIsExactSessionBoundAndWipesPayload(t *testing.T) {
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	newSession := func() *http.Request {
+		bootstrap, issueErr := manager.IssueBootstrap(core.Subject{ID: "local", PrincipalID: "principal", ExpiresAt: now.Add(5 * time.Minute)})
+		if issueErr != nil {
+			t.Fatal(issueErr)
+		}
+		exchange := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
+		exchange.Header.Set("Origin", "https://console.example.test")
+		value, _, _, exchangeErr := manager.Exchange(exchange, bootstrap)
+		if exchangeErr != nil {
+			t.Fatal(exchangeErr)
+		}
+		request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/credentials/operation/cancel", nil)
+		request.AddCookie(&http.Cookie{Name: CookieName, Value: value})
+		return request
+	}
+	owner, other := newSession(), newSession()
+	secretPayload := []byte("retained-secret-bearing-review")
+	receipt, err := manager.IssueReviewReceipt(owner, "credential-operation", secretPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(receipt))
+	retained := manager.receipts[digest].payload
+	if err = manager.CancelReviewReceipt(other, "credential-operation", receipt); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("cross-session cancellation classified as %v", err)
+	}
+	if err = manager.CancelReviewReceipt(owner, "other-purpose", receipt); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("wrong-purpose cancellation classified as %v", err)
+	}
+	if _, err = manager.ConsumeReviewReceipt(owner, "credential-operation", receipt); err != nil {
+		t.Fatalf("denied cancellation consumed receipt: %v", err)
+	}
+	receipt, err = manager.IssueReviewReceipt(owner, "credential-operation", secretPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest = sha256.Sum256([]byte(receipt))
+	retained = manager.receipts[digest].payload
+	if err = manager.CancelReviewReceipt(owner, "credential-operation", receipt); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(retained, make([]byte, len(retained))) {
+		t.Fatal("cancelled review payload was not wiped before release")
+	}
+	if _, err = manager.ConsumeReviewReceipt(owner, "credential-operation", receipt); !errors.Is(err, ErrReviewReceiptUnavailable) {
+		t.Fatalf("cancelled receipt remained executable: %v", err)
+	}
+	for _, malformed := range []string{"", "abc", strings.Repeat("A", 64), strings.Repeat("a", 63)} {
+		if err = manager.CancelReviewReceipt(owner, "credential-operation", malformed); !errors.Is(err, ErrReviewReceiptInvalidFormat) {
+			t.Fatalf("malformed cancellation %q classified as %v", malformed, err)
 		}
 	}
 }
