@@ -166,7 +166,8 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 
 | Threat | Control | Residual limit |
 |---|---|---|
-| Prompt, browser, or caller reason selects authority | Reload the immutable queue item and repeat fresh exact-context admission; typed lifecycle reasons; no grant union | Console eligibility is informational only |
+| Prompt, browser, or caller reason selects authority | Closed console operation vocabulary; session, exact-origin, CSRF, and principal checks; reload immutable queue item; generate identifiers server-side; repeat fresh exact-context admission; no grant union | Eligibility is advisory and stale submissions still deny |
+| Forged or replayed browser lifecycle operation | Accept only CSRF plus one operation; reject unknown/duplicate fields; bind exact path item to authoritative reload; classify malformed, unauthorized, ambiguous, invalid-transition, stale-state, and live-retry denial separately | Same-account browser compromise can submit as its still-valid principal session; it cannot broaden that session's authority |
 | Live retry creates concurrent runtime effects | Live preemption is denied; reclaim requires an expired bounded lease | No distributed lease coordinator |
 | Retry substitutes GraphRun or LoopExecution | Preserve the immutable GraphRun and one LoopExecution; create only a new bounded claim/attempt | Single-node worker only |
 | Cancellation or expiry disappears with caller cancellation | Authenticate and admit first, then detach only the bounded atomic terminal commit | Host/process loss still relies on qualified store durability |

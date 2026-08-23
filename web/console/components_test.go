@@ -256,8 +256,9 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 		Artifact:  []FieldModel{{Label: "Artifact", Value: "artifact-130"}}, ArtifactState: "Authoritative runtime artifact",
 		Receipts: []QueueReceiptModel{{ID: "receipt-130", Outcome: "passed", Claim: "review-receipt", Verifier: "artifact-verifier / v1"}}, ReceiptState: "Authoritative verifier receipts",
 		Disposition: []FieldModel{{Label: "State", Value: "failed"}, {Label: "Reason code", Value: "runtime_exit_nonzero"}}, DispositionState: "Authoritative terminal disposition",
+		Controls: []QueueControlModel{{Operation: "cancel", Label: "Cancel execution", Enabled: true, Reason: "eligible", Consequence: "Records an operator cancellation."}, {Operation: "retry", Label: "Retry active execution", Enabled: false, Reason: "runtime stop is unproven", Consequence: "Denied until Aegis proves runtime stop."}},
 	}}
-	model := PageModel{Authenticated: true, Surface: SurfaceModel{Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true, TotalCount: 1, QueueState: "failed", QueueStates: []string{"failed"}, FailedRecords: []RecordModel{record}, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true}}
+	model := PageModel{Authenticated: true, CSRF: "csrf-session", Surface: SurfaceModel{Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true, TotalCount: 1, QueueState: "failed", QueueStates: []string{"failed"}, FailedRecords: []RecordModel{record}, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true, CSRF: "csrf-session"}}
 	if err := Document(model).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
@@ -275,6 +276,14 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 		if !strings.Contains(html, required) {
 			t.Fatalf("execution detail missing %q", required)
 		}
+	}
+	for _, required := range []string{`method="post"`, `action="/console/queue/queue-130/operate"`, `name="csrf" value="csrf-session"`, `name="operation" value="cancel"`, `name="operation" value="retry"`, "Records an operator cancellation.", "Denied until Aegis proves runtime stop."} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("execution lifecycle controls missing %q: %s", required, html)
+		}
+	}
+	if strings.Count(html, `type="submit" class="secondary"`) != 2 || !strings.Contains(html, `value="cancel"><p><strong>Cancel execution`) || !strings.Contains(html, `value="retry"><p><strong>Retry active execution`) || !strings.Contains(html, `class="secondary" disabled data-eligible="false"`) {
+		t.Fatalf("queue controls did not preserve exact eligibility: %s", html)
 	}
 	if strings.Contains(html, "Succeeded execution") || strings.Contains(html, "execution succeeded") {
 		t.Fatalf("passing receipt or Graph run upgraded failed queue truth: %s", html)

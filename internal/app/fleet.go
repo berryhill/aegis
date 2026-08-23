@@ -48,6 +48,8 @@ type ProcessQueueItemInput = orchestration.WorkRequest
 type RetryQueueItemInput = orchestration.QueueRetryRequest
 type TerminalQueueItemInput = orchestration.QueueTerminalRequest
 
+const QueueReasonLeaseReclaimed = orchestration.ReasonLeaseReclaimed
+
 // QueueItemView keeps the immutable admitted item separate from its
 // rebuildable lifecycle projection. Consumers must not mistake the initial
 // item state for the current queue state.

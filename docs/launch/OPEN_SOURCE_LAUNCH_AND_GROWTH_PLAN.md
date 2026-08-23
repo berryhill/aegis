@@ -83,7 +83,7 @@ The first release must not claim:
 - Fleet deployment, selective projections, or enterprise secret-manager integration.
 - General multi-runtime or multi-tenant production readiness.
 - Complete prompt-injection prevention or formal information-flow security.
-- A complete or externally supported general Agent Registry, Loop, Graph, or Execution Queue product. The narrow public CLI/API vertical, authority-bound Loop activation/retirement, bounded Hermes gateway execution, and live read-only console inspection exist, but browser mutation controls, Graph lifecycle application, live-provider acceptance, and general scheduling remain launch work.
+- A complete or externally supported general Agent Registry, Loop, Graph, or Execution Queue product. The narrow public CLI/API vertical, authority-bound Loop activation/retirement, bounded Hermes gateway execution, live console inspection, and closed principal-authenticated Queue process/reclaim/terminal controls exist, but Graph lifecycle application, live-provider acceptance, automated lifecycle scheduling, and general scheduling remain launch work.
 - Complete fleet-control lifecycle tooling. Qualified persistence, atomic submission/claim/retry/cancellation facts, public thin-vertical wiring, one runtime-routed single-node worker with bounded Hermes execution, and installed fake-gateway proof exist, but migration/backup operations, dirty-store recovery, automated lifecycle scheduling, multi-node scheduling, and live-provider acceptance remain unimplemented.
 - Fleet-control readiness based on a global health, onboarding, or credential-ready boolean.
 

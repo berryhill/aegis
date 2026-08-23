@@ -49,6 +49,7 @@ type SurfaceModel struct {
 	Inspector             *RecordModel
 	InspectorOpen         bool
 	CharterImportProposal CharterImportProposal
+	CSRF                  string
 }
 
 // CharterImportProposal is a review-only bridge to the existing CLI charter
@@ -120,9 +121,11 @@ type QueueAttemptModel struct {
 type QueueTimelineModel struct{ Title, State, At, Detail string }
 
 type QueueControlModel struct {
-	Label   string
-	Enabled bool
-	Reason  string
+	Operation   string
+	Label       string
+	Enabled     bool
+	Reason      string
+	Consequence string
 }
 
 type QueueReceiptModel struct {

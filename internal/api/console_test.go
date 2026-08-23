@@ -77,6 +77,31 @@ func TestConsoleFormDecoderAcceptsOneExactBoundedField(t *testing.T) {
 	}
 }
 
+func TestConsoleOperationFormDecoderAcceptsOnlyCSRFAndClosedOperation(t *testing.T) {
+	valid := httptest.NewRequest("POST", "/console/queue/item/operate", strings.NewReader("csrf=session-token&operation=cancel"))
+	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	csrf, operation, err := decodeConsoleOperationForm(valid)
+	if err != nil || csrf != "session-token" || operation != "cancel" {
+		t.Fatalf("valid operation form csrf=%q operation=%q err=%v", csrf, operation, err)
+	}
+
+	for name, body := range map[string]string{
+		"missing csrf":        "operation=cancel",
+		"missing operation":   "csrf=session-token",
+		"unknown field":       "csrf=session-token&operation=cancel&authority=admin",
+		"duplicate csrf":      "csrf=one&csrf=two&operation=cancel",
+		"duplicate operation": "csrf=session-token&operation=cancel&operation=revoke",
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest("POST", "/console/queue/item/operate", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if _, _, err := decodeConsoleOperationForm(request); err == nil {
+				t.Fatal("unsafe queue operation form accepted")
+			}
+		})
+	}
+}
+
 func TestConsoleSignalsAreStrictAndPresentationOnly(t *testing.T) {
 	for name, raw := range map[string]string{
 		"authority": `{"authority":"admin"}`,
@@ -418,6 +443,15 @@ func TestConsoleQueueRecordSeparatesLifecycleViewsAndOrdersCausalHistory(t *test
 	}
 	if record.Queue.Controls[0].Enabled || !record.Queue.Controls[1].Enabled || !record.Queue.Controls[3].Enabled || record.Queue.Controls[4].Enabled {
 		t.Fatalf("control eligibility is not fail-closed: %+v", record.Queue.Controls)
+	}
+	wantOperations := []string{"retry", "reclaim", "cancel", "expire", "exhaust", "revoke", "process"}
+	for index, want := range wantOperations {
+		if record.Queue.Controls[index].Operation != want || record.Queue.Controls[index].Consequence == "" {
+			t.Fatalf("control %d lost closed operation or consequence: %+v", index, record.Queue.Controls[index])
+		}
+	}
+	if record.Queue.Controls[6].Enabled {
+		t.Fatalf("active work exposed process command: %+v", record.Queue.Controls[6])
 	}
 }
 

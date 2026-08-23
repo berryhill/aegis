@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,7 +56,10 @@ type envelope struct {
 
 func classifyError(err error) (int, string, string) {
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
+	var operationError *consoleQueueOperationError
 	switch {
+	case errors.As(err, &operationError):
+		return operationError.status, operationError.code, operationError.message
 	case errors.Is(err, console.ErrBootstrapInvalidFormat):
 		return http.StatusBadRequest, "bootstrap_invalid_format", "console bootstrap must be exactly 64 lowercase hexadecimal characters"
 	case errors.Is(err, console.ErrBootstrapConsumedOrExpired):
@@ -126,6 +130,49 @@ func (l *limiter) allow(key string) bool {
 	return true
 }
 func requestID() string { b := make([]byte, 12); _, _ = rand.Read(b); return hex.EncodeToString(b) }
+
+func randomConsoleID(prefix string) (string, error) {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", fmt.Errorf("generate console operation identifier: %w", err)
+	}
+	return prefix + "-" + hex.EncodeToString(value), nil
+}
+
+func mapConsoleError(err error) error {
+	switch {
+	case errors.Is(err, console.ErrUnauthenticated):
+		return app.ErrUnauthenticated
+	case errors.Is(err, console.ErrDenied):
+		return app.ErrDenied
+	case errors.Is(err, console.ErrInvalidInput):
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid console input")
+	default:
+		return err
+	}
+}
+
+func consoleQueueOperationHandler(svc *app.Service, manager *console.Manager, operator consoleQueueOperator, newID consoleIDFunc) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		manager.ApplySecurityHeaders(c.Response().Header(), true)
+		csrf, operation, err := decodeConsoleOperationForm(c.Request())
+		if err != nil {
+			return queueOperationError(http.StatusBadRequest, "queue_operation_malformed", "invalid queue operation form", err)
+		}
+		c.Request().Header.Set("X-CSRF-Token", csrf)
+		subject, err := manager.AuthorizeMutation(c.Request())
+		if err != nil {
+			return mapConsoleError(err)
+		}
+		if err = svc.RequirePrincipal(subject); err != nil {
+			return err
+		}
+		if err = operateConsoleQueueItem(c.Request().Context(), operator, subject, c.Param("item"), operation, newID); err != nil {
+			return err
+		}
+		return c.Redirect(http.StatusSeeOther, "/console/queue?record_key="+url.QueryEscape(c.Param("item"))+"#/queue")
+	}
+}
 
 func sourceKey(request *http.Request) string {
 	host, _, err := net.SplitHostPort(request.RemoteAddr)
@@ -281,18 +328,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, map[string]any{"status": "ready", "audit": auditStatus})
 	})
-	consoleError := func(err error) error {
-		switch {
-		case errors.Is(err, console.ErrUnauthenticated):
-			return app.ErrUnauthenticated
-		case errors.Is(err, console.ErrDenied):
-			return app.ErrDenied
-		case errors.Is(err, console.ErrInvalidInput):
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid console input")
-		default:
-			return err
-		}
-	}
+	consoleError := mapConsoleError
 	consoleHeaders := func(c *echo.Context, authenticated bool) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), authenticated)
 		return consoleManager.ValidateOrigin(c.Request(), false)
@@ -364,6 +400,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleweb.PageModel{}, consoleError(err)
 		}
+		model.CSRF = csrf
 		return consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: model}, nil
 	}
 	consolePage := func(c *echo.Context) error {
@@ -545,6 +582,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
+	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
 	e.GET("/console/api/state", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
 		subject, err := consoleManager.Authenticate(c.Request())

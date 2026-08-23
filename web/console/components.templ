@@ -362,9 +362,14 @@ templ QueueInspector(surface SurfaceModel, record *RecordModel) {
 				<span class="canvas-arrow" aria-hidden="true">↓</span><article class={ "execution-node " + attempt.State }><span class="node-kind">Attempt { fmt.Sprintf("%d", attempt.Number) }</span><strong>{ attempt.ID }</strong><span>{ attempt.State } · { attempt.LoopID }</span><small>claim { attempt.ClaimID }</small></article>
 			}
 		</div></section>
-		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Pinned queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")<h4>Dependencies</h4>@FieldList(record.Queue.Dependencies, "No dependency records")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")<h4>Lifecycle controls</h4><p class="inline-notice">Eligibility is authoritative readback. Browser mutation is disabled; authenticated API/CLI authority admission is required.</p>
+		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Pinned queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")<h4>Dependencies</h4>@FieldList(record.Queue.Dependencies, "No dependency records")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")<h4>Lifecycle controls</h4><p class="inline-notice">Each command reloads the exact queue item and repeats fresh authority admission. Review the consequence before submitting; stale or ineligible commands fail closed.</p>
 			for _, control := range record.Queue.Controls {
-				<button type="button" class="secondary" disabled data-eligible={ fmt.Sprintf("%t", control.Enabled) } title={ control.Reason }>{ control.Label }</button>
+				<form class="queue-control" method="post" action={ "/console/queue/" + url.PathEscape(record.Key) + "/operate" }>
+					<input type="hidden" name="csrf" value={ surface.CSRF }/>
+					<input type="hidden" name="operation" value={ control.Operation }/>
+					<p><strong>{ control.Label }</strong><span>{ control.Consequence }</span></p>
+					<button type="submit" class="secondary" disabled?={ !control.Enabled } data-eligible={ fmt.Sprintf("%t", control.Enabled) } title={ control.Reason }>{ control.Label }</button>
+				</form>
 			}
 		</div></aside>
 	</div>

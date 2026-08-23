@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/user"
@@ -21,17 +23,21 @@ import (
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
+	consoleauth "github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/evidence"
+	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/orchestration"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
+	queue "github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
+	"github.com/labstack/echo/v5"
 )
 
 type telemetryRecorder struct {
@@ -56,6 +62,196 @@ func (b *blockingTelemetry) ObserveHTTP(context.Context, HTTPObservation) {
 		close(b.entered)
 		<-b.release
 	})
+}
+
+type recordingConsoleQueueOperator struct {
+	view         app.QueueExecutionView
+	getErr       error
+	operationErr error
+	gotItem      string
+	gotSubject   core.Subject
+	operation    string
+	process      app.ProcessQueueItemInput
+	retry        app.RetryQueueItemInput
+	terminal     app.TerminalQueueItemInput
+}
+
+func (o *recordingConsoleQueueOperator) Get(_ context.Context, subject core.Subject, itemID string) (app.QueueExecutionView, error) {
+	o.gotSubject, o.gotItem = subject, itemID
+	return o.view, o.getErr
+}
+func (o *recordingConsoleQueueOperator) Process(_ context.Context, _ core.Subject, input app.ProcessQueueItemInput) error {
+	o.operation, o.process = "process", input
+	return o.operationErr
+}
+func (o *recordingConsoleQueueOperator) Reclaim(_ context.Context, _ core.Subject, input app.RetryQueueItemInput) error {
+	o.operation, o.retry = "reclaim", input
+	return o.operationErr
+}
+func (o *recordingConsoleQueueOperator) Cancel(_ context.Context, _ core.Subject, input app.TerminalQueueItemInput) error {
+	o.operation, o.terminal = "cancel", input
+	return o.operationErr
+}
+func (o *recordingConsoleQueueOperator) Expire(_ context.Context, _ core.Subject, input app.TerminalQueueItemInput) error {
+	o.operation, o.terminal = "expire", input
+	return o.operationErr
+}
+func (o *recordingConsoleQueueOperator) Exhaust(_ context.Context, _ core.Subject, input app.TerminalQueueItemInput) error {
+	o.operation, o.terminal = "exhaust", input
+	return o.operationErr
+}
+func (o *recordingConsoleQueueOperator) Revoke(_ context.Context, _ core.Subject, input app.TerminalQueueItemInput) error {
+	o.operation, o.terminal = "revoke", input
+	return o.operationErr
+}
+
+func consoleQueueRouteFixture(t *testing.T, svc *app.Service) (*consoleauth.Manager, *http.Cookie, string) {
+	t.Helper()
+	now := svc.Now()
+	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, svc.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subject := core.Subject{ID: "local-uid:test", PrincipalID: svc.Config.Principal.ID, AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	bootstrap, err := manager.IssueBootstrap(subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchange := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/session", nil)
+	exchange.Header.Set("Origin", "http://127.0.0.1")
+	session, csrf, _, err := manager.Exchange(exchange, bootstrap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	manager.SetCookie(recorder, session)
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("console session cookies=%d", len(cookies))
+	}
+	return manager, cookies[0], csrf
+}
+
+func serveConsoleQueueOperation(t *testing.T, svc *app.Service, manager *consoleauth.Manager, cookie *http.Cookie, csrf, operation string, operator consoleQueueOperator) *httptest.ResponseRecorder {
+	t.Helper()
+	e := echo.New()
+	e.HTTPErrorHandler = func(c *echo.Context, err error) {
+		status, code, message := classifyError(err)
+		_ = c.JSON(status, envelope{Code: code, Message: message, RequestID: "test-request"})
+	}
+	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, manager, operator, func(prefix string) (string, error) {
+		return prefix + "-server", nil
+	}))
+	form := url.Values{"csrf": {csrf}, "operation": {operation}}
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/queue-authoritative/operate", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "http://127.0.0.1")
+	if cookie != nil {
+		request.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	e.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func TestConsoleQueueOperationRouteWiresAllClosedOperationsWithServerBindings(t *testing.T) {
+	svc := apiService(t)
+	manager, cookie, csrf := consoleQueueRouteFixture(t, svc)
+	view := app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}, LoopExecutions: []execution.LoopExecution{{LoopExecutionID: "loop-existing"}}}
+
+	for _, operation := range []string{"process", "reclaim", "cancel", "expire", "exhaust", "revoke"} {
+		t.Run(operation, func(t *testing.T) {
+			operator := &recordingConsoleQueueOperator{view: view}
+			response := serveConsoleQueueOperation(t, svc, manager, cookie, csrf, operation, operator)
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/console/queue?record_key=queue-authoritative#/queue" {
+				t.Fatalf("operation=%s status=%d location=%q body=%s", operation, response.Code, response.Header().Get("Location"), response.Body.String())
+			}
+			if operator.gotItem != "queue-authoritative" || operator.gotSubject.PrincipalID != svc.Config.Principal.ID || operator.operation != operation {
+				t.Fatalf("operation=%s did not preserve authenticated authoritative binding: %+v", operation, operator)
+			}
+			switch operation {
+			case "process":
+				if operator.process.QueueItemID != "queue-authoritative" || operator.process.LoopExecutionID != "loop-existing" || operator.process.WorkerID != "console-worker-server" || operator.process.ClaimID != "claim-server" || operator.process.AttemptID != "attempt-server" || operator.process.ClaimTransitionID != "transition-claim-server" || operator.process.TerminalTransitionID != "transition-terminal-server" || operator.process.DispositionID != "disposition-server" || operator.process.ArtifactID != "artifact-server" || operator.process.LeaseDuration != 5*time.Minute {
+					t.Fatalf("process input was not generated and bound server-side: %+v", operator.process)
+				}
+			case "reclaim":
+				if operator.retry.QueueItemID != "queue-authoritative" || operator.retry.RetryID != "retry-server" || operator.retry.TransitionID != "transition-reclaim-server" || !operator.retry.Reclaimed || operator.retry.ReasonCode != app.QueueReasonLeaseReclaimed {
+					t.Fatalf("reclaim input was not generated and bound server-side: %+v", operator.retry)
+				}
+			default:
+				if operator.terminal.QueueItemID != "queue-authoritative" || operator.terminal.CancellationID != operation+"-server" || operator.terminal.TransitionID != "transition-"+operation+"-server" {
+					t.Fatalf("terminal input was not generated and bound server-side: %+v", operator.terminal)
+				}
+			}
+		})
+	}
+	generatedLoop := &recordingConsoleQueueOperator{view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}}
+	response := serveConsoleQueueOperation(t, svc, manager, cookie, csrf, "process", generatedLoop)
+	if response.Code != http.StatusSeeOther || generatedLoop.process.LoopExecutionID != "loop-execution-server" {
+		t.Fatalf("missing Loop execution binding was not generated server-side: status=%d input=%+v", response.Code, generatedLoop.process)
+	}
+}
+
+func TestConsoleQueueOperationRouteRequiresSessionAndCSRF(t *testing.T) {
+	svc := apiService(t)
+	manager, cookie, csrf := consoleQueueRouteFixture(t, svc)
+	view := app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}
+
+	unauthenticated := serveConsoleQueueOperation(t, svc, manager, nil, csrf, "cancel", &recordingConsoleQueueOperator{view: view})
+	if unauthenticated.Code != http.StatusUnauthorized || !strings.Contains(unauthenticated.Body.String(), `"code":"unauthenticated"`) {
+		t.Fatalf("missing session status=%d body=%s", unauthenticated.Code, unauthenticated.Body.String())
+	}
+	wrongCSRF := serveConsoleQueueOperation(t, svc, manager, cookie, "wrong-csrf", "cancel", &recordingConsoleQueueOperator{view: view})
+	if wrongCSRF.Code != http.StatusForbidden || !strings.Contains(wrongCSRF.Body.String(), `"code":"denied"`) {
+		t.Fatalf("wrong CSRF status=%d body=%s", wrongCSRF.Code, wrongCSRF.Body.String())
+	}
+
+	e := echo.New()
+	e.HTTPErrorHandler = func(c *echo.Context, err error) {
+		status, code, message := classifyError(err)
+		_ = c.JSON(status, envelope{Code: code, Message: message, RequestID: "test-request"})
+	}
+	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, manager, &recordingConsoleQueueOperator{view: view}, func(prefix string) (string, error) {
+		return prefix + "-server", nil
+	}))
+	malformedRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/queue-authoritative/operate", strings.NewReader("csrf="+url.QueryEscape(csrf)+"&operation=cancel&authority=forged"))
+	malformedRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	malformedRequest.Header.Set("Origin", "http://127.0.0.1")
+	malformedRequest.AddCookie(cookie)
+	malformed := httptest.NewRecorder()
+	e.ServeHTTP(malformed, malformedRequest)
+	if malformed.Code != http.StatusBadRequest || !strings.Contains(malformed.Body.String(), `"code":"queue_operation_malformed"`) {
+		t.Fatalf("malformed operation form status=%d body=%s", malformed.Code, malformed.Body.String())
+	}
+}
+
+func TestConsoleQueueOperationDenialsAreDistinctAndFailClosed(t *testing.T) {
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: time.Now().Add(time.Minute)}
+	serverID := func(prefix string) (string, error) { return prefix + "-server", nil }
+	tests := []struct {
+		name, operation, code string
+		view                  app.QueueExecutionView
+		operationErr          error
+	}{
+		{name: "malformed", operation: "forged", code: "queue_operation_malformed"},
+		{name: "authoritative item mismatch", operation: "cancel", code: "queue_operation_ambiguous", view: app.QueueExecutionView{Item: queue.Item{ItemID: "different-item"}}},
+		{name: "ambiguous binding", operation: "process", code: "queue_operation_ambiguous", view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}, LoopExecutions: []execution.LoopExecution{{LoopExecutionID: "one"}, {LoopExecutionID: "two"}}}},
+		{name: "live retry", operation: "retry", code: "queue_operation_live_retry_denied", view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}},
+		{name: "unauthorized", operation: "cancel", code: "queue_operation_denied", view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}, operationErr: app.ErrDenied},
+		{name: "ambiguous authority", operation: "cancel", code: "queue_operation_ambiguous", view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}, operationErr: app.ErrAmbiguous},
+		{name: "invalid transition", operation: "cancel", code: "queue_operation_invalid_transition", view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}, operationErr: app.ErrConflict},
+		{name: "stale state", operation: "cancel", code: "queue_operation_stale_state", view: app.QueueExecutionView{Item: queue.Item{ItemID: "queue-authoritative"}}, operationErr: errors.New("projection changed")},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			operator := &recordingConsoleQueueOperator{view: test.view, operationErr: test.operationErr}
+			err := operateConsoleQueueItem(context.Background(), operator, subject, "queue-authoritative", test.operation, serverID)
+			status, code, _ := classifyError(err)
+			if err == nil || code != test.code || status < 400 || status >= 500 {
+				t.Fatalf("denial err=%v status=%d code=%q want=%q", err, status, code, test.code)
+			}
+		})
+	}
 }
 
 func apiService(t *testing.T) *app.Service {
