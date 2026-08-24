@@ -76,7 +76,7 @@ The bare command MUST behave as follows:
 | Invocation | TTY state | Required behavior |
 |---|---|---|
 | development-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then start the built-in manager. |
-| production-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready, obtain a single-use console bootstrap, and open the configured browser console. |
+| production-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready and open the configured browser console at its password gate without issuing a session. |
 | `aegis` | stdin or stdout is not an interactive terminal | Fail with a stable usage error explaining that interactive manager mode requires a terminal and naming deterministic subcommands. It MUST NOT read arbitrary piped content as chat or secret intake. |
 | `aegis --help` | any | Render normal Cobra help; MUST NOT initialize or start a runtime. |
 | `aegis --version` or existing version command | any | Preserve existing version behavior. |
@@ -84,7 +84,7 @@ The bare command MUST behave as follows:
 | `aegis manager` | interactive terminal | Explicit built-in manager startup. |
 | `aegis init` | interactive terminal | Run or resume deterministic initialization without automatically requiring a model conversation. |
 
-A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. Production browser launch MUST occur only after authenticated service readiness and protected bootstrap issuance. Automatic exchange MUST be limited to a plaintext loopback console origin, MUST use a random correlation-bound temporary endpoint with a maximum 15-second lifetime and one atomic claimant, and MUST NOT include the bootstrap in the browser URL. The temporary endpoint MUST exchange the bootstrap server-side, forward only the validated `HttpOnly` console cookie for the configured host, and redirect to `/console`. The platform launcher MUST receive the correlation-only handoff URL as one direct process argument without shell interpretation. If automatic handoff cannot run or the platform launcher fails, Aegis MUST preserve the configured manual URL/bootstrap handoff. It MUST NOT use package-level mutable Cobra commands or global Viper state.
+A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. Production browser launch MUST occur only after authenticated service readiness. The platform launcher MUST receive the clean configured `/console` URL as one direct process argument without shell interpretation. Launch MUST NOT issue, exchange, or forward browser authentication material; every new browser session MUST require exact-origin verification of the enrolled principal password. If the platform launcher fails, Aegis MUST report the configured URL and password requirement without claiming a session. It MUST NOT use package-level mutable Cobra commands or global Viper state.
 
 ### 3.3 Non-interactive compatibility
 

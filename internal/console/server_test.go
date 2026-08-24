@@ -20,7 +20,7 @@ func TestPrincipalPasswordLoginCreatesBoundedExactPrincipalSessionAndThrottlesFa
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestAuthorizeCommandDerivesSessionBindingAndRepeatsMutationAdmission(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,23 +91,19 @@ func TestAuthorizeCommandDerivesSessionBindingAndRepeatsMutationAdmission(t *tes
 	}
 }
 
-func TestAuthenticatedPasswordRotationInvalidatesPriorSessionsAndBootstraps(t *testing.T) {
+func TestAuthenticatedPasswordRotationInvalidatesPriorSessions(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
 	login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
 	login.Header.Set("Origin", "https://console.example.test")
 	sessionValue, csrf, _, _, err := manager.Login(login, "client-one", []byte("current-principal-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	bootstrap, err := manager.IssueBootstrap(core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,11 +127,6 @@ func TestAuthenticatedPasswordRotationInvalidatesPriorSessionsAndBootstraps(t *t
 	if _, err = manager.Authenticate(authenticated); !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("prior-generation session remained valid: %v", err)
 	}
-	exchange := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
-	exchange.Header.Set("Origin", "https://console.example.test")
-	if _, _, _, err = manager.Exchange(exchange, bootstrap); !errors.Is(err, ErrBootstrapConsumedOrExpired) {
-		t.Fatalf("prior-generation bootstrap remained valid: %v", err)
-	}
 	if _, _, _, _, err = manager.Login(login, "client-two", []byte("current-principal-password")); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("old password accepted after rotation: %v", err)
 	}
@@ -150,7 +141,7 @@ func TestPasswordRotationFailsClosedBeforeReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +186,7 @@ func TestPasswordRotationThrottlesWrongCurrentPasswordAndResetsAfterWindow(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 2, LoginWindow: 30 * time.Second}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 2, LoginWindow: 30 * time.Second}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +218,7 @@ func TestPasswordRotationThrottlesWrongCurrentPasswordAndResetsAfterWindow(t *te
 func TestPasswordSessionCookieUsesActualBoundedExpiry(t *testing.T) {
 	now := time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
 	recorder := httptest.NewRecorder()
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 10 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 10 * time.Minute, MaxPageSize: 100}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,100 +233,20 @@ func TestPasswordSessionCookieUsesActualBoundedExpiry(t *testing.T) {
 	}
 }
 
-func TestBootstrapFormatClassificationAndOriginDenialDoesNotConsume(t *testing.T) {
-	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
-	if err != nil {
-		t.Fatal(err)
-	}
-	subject := core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	bootstrap, err := manager.IssueBootstrap(subject)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(bootstrap) != 64 || strings.ToLower(bootstrap) != bootstrap {
-		t.Fatal("issued bootstrap does not use strict lowercase hexadecimal format")
-	}
-	validRequest := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
-	validRequest.Header.Set("Origin", "https://console.example.test")
-	for _, malformed := range []string{"", "abc", strings.Repeat("A", 64), strings.Repeat("g", 64), strings.Repeat("a", 63), strings.Repeat("a", 65)} {
-		if _, _, _, exchangeErr := manager.Exchange(validRequest, malformed); !errors.Is(exchangeErr, ErrBootstrapInvalidFormat) {
-			t.Fatalf("malformed bootstrap classified as %v", exchangeErr)
-		}
-	}
-	unknown := strings.Repeat("a", 64)
-	if _, _, _, exchangeErr := manager.Exchange(validRequest, unknown); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
-		t.Fatalf("unknown valid bootstrap classified as %v", exchangeErr)
-	}
-	crossOrigin := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
-	crossOrigin.Header.Set("Origin", "https://attacker.example")
-	if _, _, _, exchangeErr := manager.Exchange(crossOrigin, bootstrap); !errors.Is(exchangeErr, ErrDenied) {
-		t.Fatalf("cross-origin bootstrap exchange classified as %v", exchangeErr)
-	}
-	wrongHost := httptest.NewRequest(http.MethodPost, "https://other.example.test/console/session", nil)
-	wrongHost.Header.Set("Origin", "https://console.example.test")
-	if _, _, _, exchangeErr := manager.Exchange(wrongHost, bootstrap); !errors.Is(exchangeErr, ErrDenied) {
-		t.Fatalf("wrong-host bootstrap exchange classified as %v", exchangeErr)
-	}
-	if _, _, _, exchangeErr := manager.Exchange(validRequest, bootstrap); exchangeErr != nil {
-		t.Fatalf("cross-origin or host denial consumed bootstrap: %v", exchangeErr)
-	}
-	if _, _, _, exchangeErr := manager.Exchange(validRequest, bootstrap); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
-		t.Fatalf("replayed bootstrap classified as %v", exchangeErr)
-	}
-}
-
-func TestBootstrapExpiryAndSubjectExpiryShareUnavailableClassification(t *testing.T) {
-	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
-	request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
-	request.Header.Set("Origin", "https://console.example.test")
-
-	bootstrapManager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
-	if err != nil {
-		t.Fatal(err)
-	}
-	bootstrap, err := bootstrapManager.IssueBootstrap(core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(16 * time.Second)
-	if _, _, _, exchangeErr := bootstrapManager.Exchange(request, bootstrap); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
-		t.Fatalf("expired bootstrap classified as %v", exchangeErr)
-	}
-
-	now = time.Date(2026, 8, 20, 12, 1, 0, 0, time.UTC)
-	subjectManager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
-	if err != nil {
-		t.Fatal(err)
-	}
-	bootstrap, err = subjectManager.IssueBootstrap(core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(5 * time.Second)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	now = now.Add(6 * time.Second)
-	if _, _, _, exchangeErr := subjectManager.Exchange(request, bootstrap); !errors.Is(exchangeErr, ErrBootstrapConsumedOrExpired) {
-		t.Fatalf("subject-expired bootstrap classified as %v", exchangeErr)
-	}
-}
-
-func TestAuthenticatedSessionExchangeCSRFAndExpiry(t *testing.T) {
+func TestAuthenticatedPasswordSessionCSRFAndExpiry(t *testing.T) {
 	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject := core.Subject{ID: "local-uid:1000", PrincipalID: "principal", AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	bootstrap, err := manager.IssueBootstrap(subject)
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bootstrap == "" {
-		t.Fatal("empty bootstrap")
-	}
-	request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", strings.NewReader(`{"bootstrap":"`+bootstrap+`"}`))
+	request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
 	request.Header.Set("Origin", "https://console.example.test")
 	recorder := httptest.NewRecorder()
-	session, csrf, expires, err := manager.Exchange(request, bootstrap)
+	session, csrf, expires, subject, err := manager.Login(request, "client", []byte("current-principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,9 +257,6 @@ func TestAuthenticatedSessionExchangeCSRFAndExpiry(t *testing.T) {
 	cookie := recorder.Result().Cookies()[0]
 	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/console" || cookie.Domain != "" {
 		t.Fatalf("unsafe cookie: %+v", cookie)
-	}
-	if _, _, _, err = manager.Exchange(request, bootstrap); err == nil {
-		t.Fatal("bootstrap replay accepted")
 	}
 	authenticated := httptest.NewRequest(http.MethodGet, "https://console.example.test/console/api/state", nil)
 	authenticated.AddCookie(cookie)
@@ -375,29 +283,29 @@ func TestAuthenticatedSessionExchangeCSRFAndExpiry(t *testing.T) {
 
 func TestReviewReceiptIsSessionBoundSingleUseExpiringAndReplaced(t *testing.T) {
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	verifier, err := principalauth.Enroll("principal", []byte("current-principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	newSession := func(subjectExpiry time.Time) *http.Request {
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: 30 * time.Second, PasswordVerifier: &verifier, LoginBurst: 10, LoginWindow: time.Minute}, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	newSession := func(client string) *http.Request {
 		t.Helper()
-		bootstrap, issueErr := manager.IssueBootstrap(core.Subject{ID: "local", PrincipalID: "principal", ExpiresAt: subjectExpiry})
-		if issueErr != nil {
-			t.Fatal(issueErr)
-		}
-		exchange := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
-		exchange.Header.Set("Origin", "https://console.example.test")
-		sessionValue, _, _, exchangeErr := manager.Exchange(exchange, bootstrap)
-		if exchangeErr != nil {
-			t.Fatal(exchangeErr)
+		login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+		login.Header.Set("Origin", "https://console.example.test")
+		sessionValue, _, _, _, loginErr := manager.Login(login, client, []byte("current-principal-password"))
+		if loginErr != nil {
+			t.Fatal(loginErr)
 		}
 		request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/agents/registration/execute", nil)
 		request.AddCookie(&http.Cookie{Name: CookieName, Value: sessionValue})
 		return request
 	}
 
-	firstSession := newSession(now.Add(90 * time.Second))
-	otherSession := newSession(now.Add(5 * time.Minute))
+	firstSession := newSession("first")
+	otherSession := newSession("other")
 	first, err := manager.IssueReviewReceipt(firstSession, "agent-registration", []byte("first"))
 	if err != nil || len(first) != 64 || strings.ToLower(first) != first {
 		t.Fatalf("issued receipt=%q err=%v", first, err)
@@ -423,7 +331,7 @@ func TestReviewReceiptIsSessionBoundSingleUseExpiringAndReplaced(t *testing.T) {
 		t.Fatalf("replayed receipt classified as %v", err)
 	}
 
-	expiringSession := newSession(now.Add(30 * time.Second))
+	expiringSession := newSession("expiring")
 	expiring, err := manager.IssueReviewReceipt(expiringSession, "agent-registration", []byte("expires"))
 	if err != nil {
 		t.Fatal(err)
@@ -441,20 +349,20 @@ func TestReviewReceiptIsSessionBoundSingleUseExpiringAndReplaced(t *testing.T) {
 
 func TestReviewReceiptCancellationIsExactSessionBoundAndWipesPayload(t *testing.T) {
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, func() time.Time { return now })
+	verifier, err := principalauth.Enroll("principal", []byte("principal-password-canary"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: 5 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
 	newSession := func() *http.Request {
-		bootstrap, issueErr := manager.IssueBootstrap(core.Subject{ID: "local", PrincipalID: "principal", ExpiresAt: now.Add(5 * time.Minute)})
-		if issueErr != nil {
-			t.Fatal(issueErr)
-		}
-		exchange := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/session", nil)
-		exchange.Header.Set("Origin", "https://console.example.test")
-		value, _, _, exchangeErr := manager.Exchange(exchange, bootstrap)
-		if exchangeErr != nil {
-			t.Fatal(exchangeErr)
+		login := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/login", nil)
+		login.Header.Set("Origin", "https://console.example.test")
+		value, _, _, _, loginErr := manager.Login(login, "review-receipt-test", []byte("principal-password-canary"))
+		if loginErr != nil {
+			t.Fatal(loginErr)
 		}
 		request := httptest.NewRequest(http.MethodPost, "https://console.example.test/console/credentials/operation/cancel", nil)
 		request.AddCookie(&http.Cookie{Name: CookieName, Value: value})
@@ -500,7 +408,7 @@ func TestReviewReceiptCancellationIsExactSessionBoundAndWipesPayload(t *testing.
 }
 
 func TestSecurityHeadersOriginAndPaginationBounds(t *testing.T) {
-	manager, err := New(Config{Origin: "http://127.0.0.1:8443", SessionTTL: time.Minute, BootstrapTTL: 10 * time.Second, MaxPageSize: 50}, time.Now)
+	manager, err := New(Config{Origin: "http://127.0.0.1:8443", SessionTTL: time.Minute, MaxPageSize: 50}, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +433,7 @@ func TestSecurityHeadersOriginAndPaginationBounds(t *testing.T) {
 			t.Fatalf("invalid page size %q accepted", value)
 		}
 	}
-	if _, err := New(Config{Origin: "http://192.0.2.10:8443", SessionTTL: time.Minute, BootstrapTTL: time.Second, MaxPageSize: 10}, time.Now); err == nil {
+	if _, err := New(Config{Origin: "http://192.0.2.10:8443", SessionTTL: time.Minute, MaxPageSize: 10}, time.Now); err == nil {
 		t.Fatal("plaintext non-loopback console origin accepted")
 	}
 }

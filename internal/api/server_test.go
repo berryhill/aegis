@@ -108,19 +108,17 @@ func (o *recordingConsoleQueueOperator) Revoke(_ context.Context, _ core.Subject
 
 func consoleQueueRouteFixture(t *testing.T, svc *app.Service) (*consoleauth.Manager, *http.Cookie, string) {
 	t.Helper()
-	now := svc.Now()
-	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, BootstrapTTL: 15 * time.Second, MaxPageSize: 100}, svc.Now)
+	verifier, err := principalauth.Enroll(svc.Config.Principal.ID, []byte("test-principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	subject := core.Subject{ID: "local-uid:test", PrincipalID: svc.Config.Principal.ID, AuthenticatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	bootstrap, err := manager.IssueBootstrap(subject)
+	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: svc.Config.Principal.ID, PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, svc.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	exchange := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/session", nil)
-	exchange.Header.Set("Origin", "http://127.0.0.1")
-	session, csrf, _, err := manager.Exchange(exchange, bootstrap)
+	login := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/login", nil)
+	login.Header.Set("Origin", "http://127.0.0.1")
+	session, csrf, _, _, err := manager.Login(login, "test-client", []byte("test-principal-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +129,45 @@ func consoleQueueRouteFixture(t *testing.T, svc *app.Service) (*consoleauth.Mana
 		t.Fatalf("console session cookies=%d", len(cookies))
 	}
 	return manager, cookies[0], csrf
+}
+
+func loginConsole(t *testing.T, address string) (*http.Client, string) {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
+	request, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/login", strings.NewReader(url.Values{"password": {"api-principal-password"}}.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("Origin", "http://"+address)
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK || response.Request.URL.Path != "/console/agents" {
+		t.Fatalf("principal-password login status=%d final=%s body=%s", response.StatusCode, response.Request.URL, body)
+	}
+	stateResponse, err := client.Get("http://" + address + "/console/api/state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		CSRF string `json:"csrf"`
+	}
+	if err = json.NewDecoder(stateResponse.Body).Decode(&state); err != nil {
+		t.Fatal(err)
+	}
+	_ = stateResponse.Body.Close()
+	if stateResponse.StatusCode != http.StatusOK || state.CSRF == "" {
+		t.Fatalf("authenticated console state status=%d csrf=%t", stateResponse.StatusCode, state.CSRF != "")
+	}
+	return client, state.CSRF
 }
 
 func serveConsoleQueueOperation(t *testing.T, svc *app.Service, manager *consoleauth.Manager, cookie *http.Cookie, csrf, operation string, operator consoleQueueOperator) *httptest.ResponseRecorder {
@@ -473,6 +510,53 @@ func TestBearerAloneCannotCreatePrincipalIdentity(t *testing.T) {
 	}
 }
 
+func TestPasswordlessConsoleSessionRoutesAreNotExposed(t *testing.T) {
+	svc := apiService(t)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.Listen = address
+	svc.Config.API.Console.Origin = "http://" + address
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	defer func() {
+		cancel()
+		if serveErr := <-done; serveErr != nil {
+			t.Error(serveErr)
+		}
+	}()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	waitFor(t, "tcp", address)
+
+	bootstrapRequest, _ := http.NewRequest(http.MethodPost, "http://unix/v1/console/bootstrap", strings.NewReader("{}"))
+	bootstrapRequest.Header.Set("Authorization", "Bearer transport-secret")
+	bootstrapRequest.Header.Set("Content-Type", "application/json")
+	bootstrapResponse, err := unixClient(svc.Config.API.UnixSocket).Do(bootstrapRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = bootstrapResponse.Body.Close()
+	if bootstrapResponse.StatusCode != http.StatusNotFound || len(bootstrapResponse.Cookies()) != 0 {
+		t.Fatalf("passwordless bootstrap route status=%d cookies=%v", bootstrapResponse.StatusCode, bootstrapResponse.Cookies())
+	}
+
+	exchangeRequest, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+strings.Repeat("a", 64)+`"}`))
+	exchangeRequest.Header.Set("Content-Type", "application/json")
+	exchangeRequest.Header.Set("Origin", "http://"+address)
+	exchangeResponse, err := http.DefaultClient.Do(exchangeRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = exchangeResponse.Body.Close()
+	if exchangeResponse.StatusCode != http.StatusMethodNotAllowed || len(exchangeResponse.Cookies()) != 0 {
+		t.Fatalf("passwordless session exchange status=%d cookies=%v", exchangeResponse.StatusCode, exchangeResponse.Cookies())
+	}
+}
+
 func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -508,7 +592,7 @@ func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 	}
 }
 
-func TestConsoleSessionErrorsPreserveNativeRecoveryAndJSONCodes(t *testing.T) {
+func TestRemovedConsoleSessionRouteCannotAuthenticate(t *testing.T) {
 	svc := apiService(t)
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -530,124 +614,16 @@ func TestConsoleSessionErrorsPreserveNativeRecoveryAndJSONCodes(t *testing.T) {
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	waitFor(t, "tcp", address)
 
-	var issued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
-
-	for name, request := range map[string]*http.Request{
-		"cross-origin malformed form": func() *http.Request {
-			r, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap=malformed"))
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			r.Header.Set("Origin", "http://attacker.example")
-			return r
-		}(),
-		"missing-origin malformed JSON": func() *http.Request {
-			r, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":`))
-			r.Header.Set("Content-Type", "application/json")
-			return r
-		}(),
-		"wrong-host malformed JSON": func() *http.Request {
-			r, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":`))
-			r.Host = "other.example.test"
-			r.Header.Set("Content-Type", "application/json")
-			r.Header.Set("Origin", "http://"+address)
-			return r
-		}(),
-	} {
-		response, requestErr := http.DefaultClient.Do(request)
-		if requestErr != nil {
-			t.Fatalf("%s: %v", name, requestErr)
-		}
-		var denied envelope
-		if decodeErr := json.NewDecoder(response.Body).Decode(&denied); decodeErr != nil {
-			t.Fatalf("%s decode: %v", name, decodeErr)
-		}
-		_ = response.Body.Close()
-		if response.StatusCode != http.StatusForbidden || denied.Code != "denied" {
-			t.Fatalf("%s status=%d code=%q", name, response.StatusCode, denied.Code)
-		}
-	}
-
-	native, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap=malformed"))
-	native.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	native.Header.Set("Origin", "http://"+address)
-	nativeResponse, err := http.DefaultClient.Do(native)
+	request, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+strings.Repeat("a", 64)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://"+address)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	nativeBody, _ := io.ReadAll(nativeResponse.Body)
-	_ = nativeResponse.Body.Close()
-	if nativeResponse.StatusCode != http.StatusBadRequest || !strings.HasPrefix(nativeResponse.Header.Get("Content-Type"), "text/html") {
-		t.Fatalf("native malformed exchange status=%d type=%q", nativeResponse.StatusCode, nativeResponse.Header.Get("Content-Type"))
-	}
-	for _, required := range []string{"bootstrap_invalid_format", "aegis console", svc.Config.API.Console.BootstrapTTL.String(), svc.Config.API.Console.SessionTTL.String()} {
-		if !bytes.Contains(nativeBody, []byte(required)) {
-			t.Fatalf("native recovery omitted %q", required)
-		}
-	}
-	if bytes.Contains(nativeBody, []byte("malformed")) {
-		t.Fatal("native recovery reflected submitted bootstrap")
-	}
-
-	jsonRequest, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"malformed"}`))
-	jsonRequest.Header.Set("Content-Type", "application/json")
-	jsonRequest.Header.Set("Origin", "http://"+address)
-	jsonResponse, err := http.DefaultClient.Do(jsonRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var failure envelope
-	if err = json.NewDecoder(jsonResponse.Body).Decode(&failure); err != nil {
-		t.Fatal(err)
-	}
-	_ = jsonResponse.Body.Close()
-	if jsonResponse.StatusCode != http.StatusBadRequest || failure.Code != "bootstrap_invalid_format" {
-		t.Fatalf("JSON malformed exchange status=%d code=%q", jsonResponse.StatusCode, failure.Code)
-	}
-
-	crossOrigin, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+issued.Bootstrap+`"}`))
-	crossOrigin.Header.Set("Content-Type", "application/json")
-	crossOrigin.Header.Set("Origin", "http://attacker.example")
-	crossOriginResponse, err := http.DefaultClient.Do(crossOrigin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var denied envelope
-	if err = json.NewDecoder(crossOriginResponse.Body).Decode(&denied); err != nil {
-		t.Fatal(err)
-	}
-	_ = crossOriginResponse.Body.Close()
-	if crossOriginResponse.StatusCode != http.StatusForbidden || denied.Code != "denied" {
-		t.Fatalf("cross-origin exchange status=%d code=%q", crossOriginResponse.StatusCode, denied.Code)
-	}
-
-	valid, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+issued.Bootstrap+`"}`))
-	valid.Header.Set("Content-Type", "application/json")
-	valid.Header.Set("Origin", "http://"+address)
-	validResponse, err := http.DefaultClient.Do(valid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = validResponse.Body.Close()
-	if validResponse.StatusCode != http.StatusCreated {
-		t.Fatalf("cross-origin denial consumed bootstrap: status=%d", validResponse.StatusCode)
-	}
-
-	replay, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader(`{"bootstrap":"`+issued.Bootstrap+`"}`))
-	replay.Header.Set("Content-Type", "application/json")
-	replay.Header.Set("Origin", "http://"+address)
-	replayResponse, err := http.DefaultClient.Do(replay)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var replayFailure envelope
-	if err = json.NewDecoder(replayResponse.Body).Decode(&replayFailure); err != nil {
-		t.Fatal(err)
-	}
-	_ = replayResponse.Body.Close()
-	if replayResponse.StatusCode != http.StatusUnauthorized || replayFailure.Code != "bootstrap_consumed_or_expired" {
-		t.Fatalf("replay exchange status=%d code=%q", replayResponse.StatusCode, replayFailure.Code)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusMethodNotAllowed || len(response.Cookies()) != 0 {
+		t.Fatalf("removed passwordless session route status=%d cookies=%v", response.StatusCode, response.Cookies())
 	}
 }
 
@@ -705,26 +681,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	waitFor(t, "tcp", address)
 
-	var issued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
-	if issued.Bootstrap == "" {
-		t.Fatal("server issued empty browser bootstrap")
-	}
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
-	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(issued.Bootstrap)))
-	exchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	exchange.Header.Set("Origin", "http://"+address)
-	exchangeResponse, err := client.Do(exchange)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = exchangeResponse.Body.Close()
-	if exchangeResponse.StatusCode != http.StatusOK || exchangeResponse.Request.URL.Path != "/console/agents" {
-		t.Fatalf("native session exchange status=%d final=%s", exchangeResponse.StatusCode, exchangeResponse.Request.URL)
-	}
+	client, _ := loginConsole(t, address)
 
 	routes := []struct {
 		domain, title, eyebrow, hash, actionLabel, actionKey string
@@ -877,23 +834,7 @@ func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *te
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	waitFor(t, "tcp", address)
 
-	var issued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
-	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
-	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(issued.Bootstrap)))
-	exchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	exchange.Header.Set("Origin", "http://"+address)
-	exchangeResponse, err := client.Do(exchange)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = exchangeResponse.Body.Close()
-	if exchangeResponse.StatusCode != http.StatusOK {
-		t.Fatalf("session exchange status=%d", exchangeResponse.StatusCode)
-	}
+	client, _ := loginConsole(t, address)
 	stateResponse, err := client.Get("http://" + address + "/console/api/state")
 	if err != nil {
 		t.Fatal(err)
@@ -1027,20 +968,7 @@ func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *te
 		t.Fatalf("denied registration changed the pre-existing charter: stored=%+v err=%v", stored, getErr)
 	}
 
-	var secondIssued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &secondIssued, http.StatusCreated)
-	secondJar, _ := cookiejar.New(nil)
-	secondClient := &http.Client{Jar: secondJar, Timeout: 5 * time.Second}
-	secondExchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(secondIssued.Bootstrap)))
-	secondExchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	secondExchange.Header.Set("Origin", "http://"+address)
-	secondResponse, err := secondClient.Do(secondExchange)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = secondResponse.Body.Close()
+	secondClient, _ := loginConsole(t, address)
 	secondStateResponse, err := secondClient.Get("http://" + address + "/console/api/state")
 	if err != nil {
 		t.Fatal(err)
@@ -1159,13 +1087,6 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	waitFor(t, "tcp", address)
 
-	var issued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &issued, http.StatusCreated)
-	if issued.Bootstrap == "" {
-		t.Fatal("server issued empty browser bootstrap")
-	}
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, Timeout: 5 * time.Second}
 	shell, err := client.Get("http://" + address + "/console")
@@ -1186,37 +1107,21 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	if asset.StatusCode != http.StatusOK || !strings.HasPrefix(asset.Header.Get("Content-Type"), "text/javascript") || len(assetBody) < 1000 {
 		t.Fatalf("self-hosted Datastar asset status=%d type=%q bytes=%d", asset.StatusCode, asset.Header.Get("Content-Type"), len(assetBody))
 	}
-	exchangeBody, _ := json.Marshal(map[string]string{"bootstrap": issued.Bootstrap})
-	forgedBody, _ := json.Marshal(map[string]string{"bootstrap": issued.Bootstrap, "authority": "forged-admin"})
-	forged, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", bytes.NewReader(forgedBody))
-	forged.Header.Set("Content-Type", "application/json")
+	forged, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/login", strings.NewReader(url.Values{"password": {"api-principal-password"}, "authority": {"forged-admin"}}.Encode()))
+	forged.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	forged.Header.Set("Origin", "http://"+address)
 	forgedResponse, err := client.Do(forged)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if forgedResponse.StatusCode != http.StatusBadRequest {
-		t.Fatalf("forged authority field status=%d", forgedResponse.StatusCode)
+	if forgedResponse.StatusCode != http.StatusUnauthorized || len(forgedResponse.Cookies()) != 0 {
+		t.Fatalf("forged authority field status=%d cookies=%v", forgedResponse.StatusCode, forgedResponse.Cookies())
 	}
 	_ = forgedResponse.Body.Close()
-	exchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", bytes.NewReader(exchangeBody))
-	exchange.Header.Set("Content-Type", "application/json")
-	exchange.Header.Set("Origin", "http://"+address)
-	response, err := client.Do(exchange)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var established struct {
-		CSRF    string `json:"csrf"`
-		Expires string `json:"expires"`
-	}
-	if err = json.NewDecoder(response.Body).Decode(&established); err != nil {
-		t.Fatal(err)
-	}
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusCreated || established.CSRF == "" || established.Expires == "" || strings.Contains(string(shellBody), issued.Bootstrap) {
-		t.Fatalf("session exchange status=%d csrf=%t", response.StatusCode, established.CSRF != "")
-	}
+	client, csrf := loginConsole(t, address)
+	established := struct {
+		CSRF string
+	}{CSRF: csrf}
 	state, err := client.Get("http://" + address + "/console/api/state?limit=10")
 	if err != nil {
 		t.Fatal(err)
@@ -1313,22 +1218,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 		t.Fatalf("Datastar logout patch status=%d body=%s", loggedOut.StatusCode, loggedOutBody)
 	}
 
-	var nativeIssued struct {
-		Bootstrap string `json:"bootstrap"`
-	}
-	apiRequest(t, unixClient(svc.Config.API.UnixSocket), http.MethodPost, "/v1/console/bootstrap", map[string]any{}, &nativeIssued, http.StatusCreated)
-	nativeExchange, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/session", strings.NewReader("bootstrap="+url.QueryEscape(nativeIssued.Bootstrap)))
-	nativeExchange.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	nativeExchange.Header.Set("Origin", "http://"+address)
-	nativeAuthenticated, err := client.Do(nativeExchange)
-	if err != nil {
-		t.Fatal(err)
-	}
-	nativeAuthenticatedBody, _ := io.ReadAll(nativeAuthenticated.Body)
-	_ = nativeAuthenticated.Body.Close()
-	if nativeAuthenticated.StatusCode != http.StatusOK || nativeAuthenticated.Request.URL.Path != "/console/agents" || nativeAuthenticated.Request.URL.Fragment != "/agents" || !bytes.Contains(nativeAuthenticatedBody, []byte("Agent Registry")) || bytes.Contains(nativeAuthenticatedBody, []byte("Sign the Aegis principal into this browser")) {
-		t.Fatalf("native bootstrap flow status=%d final=%s body=%s", nativeAuthenticated.StatusCode, nativeAuthenticated.Request.URL, nativeAuthenticatedBody)
-	}
+	client, nativeCSRF := loginConsole(t, address)
 	nativeGraphs, err := client.Get("http://" + address + "/console?domain=graphs")
 	if err != nil {
 		t.Fatal(err)
@@ -1338,18 +1228,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	if nativeGraphs.StatusCode != http.StatusOK || !bytes.Contains(nativeGraphsBody, []byte("Graphs")) || !bytes.Contains(nativeGraphsBody, []byte("authoritative collection is empty")) {
 		t.Fatalf("native graph navigation status=%d body=%s", nativeGraphs.StatusCode, nativeGraphsBody)
 	}
-	nativeState, err := client.Get("http://" + address + "/console/api/state")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var nativeSession struct {
-		CSRF string `json:"csrf"`
-	}
-	if err = json.NewDecoder(nativeState.Body).Decode(&nativeSession); err != nil {
-		t.Fatal(err)
-	}
-	_ = nativeState.Body.Close()
-	nativeLogout, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/logout", strings.NewReader("csrf="+url.QueryEscape(nativeSession.CSRF)))
+	nativeLogout, _ := http.NewRequest(http.MethodPost, "http://"+address+"/console/logout", strings.NewReader("csrf="+url.QueryEscape(nativeCSRF)))
 	nativeLogout.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	nativeLogout.Header.Set("Origin", "http://"+address)
 	nativeLoggedOut, err := client.Do(nativeLogout)

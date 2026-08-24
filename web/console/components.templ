@@ -116,9 +116,7 @@ templ Authentication(model AuthenticationModel) {
 				The enrolled principal password is required.
 			}
 		</p>
-		if model.RecoveryCommand != "" {
-			<p class="inline-notice">Alternate sign-in: run <code>{ model.RecoveryCommand }</code> as the authenticated host principal for a one-time browser handoff. This does not reset or disclose the principal password. Handoff lifetime: <strong>{ model.BootstrapTTL }</strong>. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
-		}
+		<p class="inline-notice">Password authentication is required for every new browser session. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
 		<form id="session-form" method="post" action="/console/login">
 			<label for="password">Principal password</label>
 			<input id="password" name="password" type="password" autocomplete="current-password" required/>
@@ -137,7 +135,7 @@ templ PasswordRotation(csrf string) {
 	@Dialog(OverlayModel{
 		ID: "principal-password-rotation",
 		Title: "Rotate principal password",
-		Description: "Set a new password for the authenticated principal. This revokes every existing browser session and one-time handoff.",
+		Description: "Set a new password for the authenticated principal. This revokes every existing browser session.",
 		CloseLabel: "Cancel password rotation",
 	}) {
 		<form method="post" action="/console/password">
@@ -146,7 +144,7 @@ templ PasswordRotation(csrf string) {
 			@FormField(FormFieldModel{ID: "current-password", Name: "current_password", Label: "Current principal password", Required: true, Secret: true, Autocomplete: "current-password"})
 			@FormField(FormFieldModel{ID: "new-password", Name: "new_password", Label: "New principal password", Help: "Use at least 12 characters.", Required: true, Secret: true, Autocomplete: "new-password", MinLength: "12"})
 			@FormField(FormFieldModel{ID: "confirm-password", Name: "confirmation", Label: "Confirm new principal password", Required: true, Secret: true, Autocomplete: "new-password", MinLength: "12"})
-			<label><input name="approve" type="checkbox" value="rotate" required/> I approve replacing the principal-password verifier and revoking all browser sessions and one-time handoffs.</label>
+			<label><input name="approve" type="checkbox" value="rotate" required/> I approve replacing the principal-password verifier and revoking all browser sessions.</label>
 			@Confirmation(ConfirmationModel{Title: "Confirm password rotation", Message: "This action cannot preserve prior browser authentication.", ConfirmLabel: "Rotate password and sign out everywhere", CancelLabel: "Cancel", DialogID: "principal-password-rotation", Dangerous: true})
 		</form>
 	}
