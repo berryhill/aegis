@@ -9,8 +9,8 @@ principal:
   auth_ttl: 15m
 api:
   listen: 127.0.0.1:8443
-  # Kernel-authenticated local API transport. The authenticated console
-  # bootstrap must be requested here; TCP bearer possession cannot grant principal authority.
+  # Kernel-authenticated local API transport. Browser sessions are created only
+  # by principal-password login; TCP bearer possession cannot grant principal authority.
   # Both paths must be absolute. Generate the owner-only token file locally;
   # never put its reusable value in this configuration, argv, or source control.
   unix_socket: REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR/aegis.sock
@@ -27,7 +27,6 @@ api:
     # Use an exact https origin and configure both TLS files for remote access.
     origin: http://127.0.0.1:8443
     session_ttl: 5m
-    bootstrap_ttl: 30s
     max_page_size: 100
 retention:
   design_homes: false

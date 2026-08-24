@@ -64,10 +64,6 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusNotFound, "invalid_request", "console command is not registered"
 	case errors.As(err, &operationError):
 		return operationError.status, operationError.code, operationError.message
-	case errors.Is(err, console.ErrBootstrapInvalidFormat):
-		return http.StatusBadRequest, "bootstrap_invalid_format", "console bootstrap must be exactly 64 lowercase hexadecimal characters"
-	case errors.Is(err, console.ErrBootstrapConsumedOrExpired):
-		return http.StatusUnauthorized, "bootstrap_consumed_or_expired", "console bootstrap was consumed or expired"
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
 	case errors.Is(err, app.ErrDenied):
@@ -93,9 +89,8 @@ func classifyError(err error) (int, string, string) {
 	case errors.Is(err, os.ErrNotExist):
 		return http.StatusNotFound, "not_found", "resource not found"
 	}
-	var httpError *echo.HTTPError
-	if errors.As(err, &httpError) {
-		status = httpError.Code
+	if httpStatus := echo.StatusCode(err); httpStatus != 0 {
+		status = httpStatus
 		if status < 500 {
 			code, message = "invalid_request", http.StatusText(status)
 		}
@@ -215,7 +210,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	consoleManager, err := console.New(console.Config{
 		Origin:           svc.Config.API.Console.Origin,
 		SessionTTL:       svc.Config.API.Console.SessionTTL,
-		BootstrapTTL:     svc.Config.API.Console.BootstrapTTL,
 		MaxPageSize:      svc.Config.API.Console.MaxPageSize,
 		PasswordVerifier: verifier,
 		PrincipalID:      svc.Config.Principal.ID,
@@ -359,13 +353,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return consoleManager.ValidateOrigin(c.Request(), false)
 	}
 	authenticationModel := func(reasonCode string) consoleweb.AuthenticationModel {
-		model := consoleweb.AuthenticationModel{
-			RecoveryCommand: "aegis console",
-			BootstrapTTL:    svc.Config.API.Console.BootstrapTTL.String(),
-			SessionTTL:      svc.Config.API.Console.SessionTTL.String(),
-		}
+		model := consoleweb.AuthenticationModel{SessionTTL: svc.Config.API.Console.SessionTTL.String()}
 		if reasonCode != "" {
-			model.Status = "Authentication failed. Request a new temporary handoff from the authenticated Aegis host."
+			model.Status = "Authentication failed. Enter the enrolled principal password."
 			model.ReasonCode = reasonCode
 		}
 		return model
@@ -495,17 +485,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		model := consoleweb.PageModel{Authentication: authenticationModel(""), Surface: consoleweb.SurfaceModel{Domain: string(domain)}}
 		if subject, err := consoleManager.Authenticate(c.Request()); err == nil {
-			if raw := c.QueryParam("browser_handoff"); raw != "" {
-				consoleHost := c.Request().Host
-				if host, _, splitErr := net.SplitHostPort(consoleHost); splitErr == nil {
-					consoleHost = host
-				}
-				confirmation, confirmErr := validateBrowserHandoff(raw, consoleHost)
-				if confirmErr != nil {
-					return echo.NewHTTPError(http.StatusBadRequest, "invalid browser handoff confirmation")
-				}
-				return c.Redirect(http.StatusSeeOther, confirmation)
-			}
 			model, err = loadConsole(c, subject, domain)
 			if err != nil {
 				return err
@@ -1066,60 +1045,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		consoleManager.ClearCookie(c.Response())
 		return c.Redirect(http.StatusSeeOther, "/console")
 	})
-	e.POST("/console/session", func(c *echo.Context) error {
-		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
-		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
-			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "browser_session_exchange_denied"); auditErr != nil {
-				return auditErr
-			}
-			return consoleError(err)
-		}
-		var input consoleSignals
-		nativeForm := isConsoleForm(c.Request())
-		if nativeForm {
-			bootstrap, err := decodeConsoleForm(c.Request(), "bootstrap")
-			if err != nil {
-				return renderAuthentication(c, http.StatusBadRequest, "bootstrap_invalid_format")
-			}
-			input.Bootstrap = bootstrap
-		} else if err := decode(c, &input); err != nil {
-			return err
-		}
-		sessionValue, csrf, expires, err := consoleManager.Exchange(c.Request(), input.Bootstrap)
-		if err != nil {
-			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "browser_session_exchange_denied"); auditErr != nil {
-				return auditErr
-			}
-			if nativeForm && errors.Is(err, console.ErrBootstrapInvalidFormat) {
-				return renderAuthentication(c, http.StatusBadRequest, "bootstrap_invalid_format")
-			}
-			if nativeForm && errors.Is(err, console.ErrBootstrapConsumedOrExpired) {
-				return renderAuthentication(c, http.StatusUnauthorized, "bootstrap_consumed_or_expired")
-			}
-			return consoleError(err)
-		}
-		if err = svc.AuditConsoleSession(c.Request().Context(), core.Subject{PrincipalID: svc.Config.Principal.ID}, "success", "browser_session_issued"); err != nil {
-			consoleManager.RevokeSessionValue(sessionValue)
-			return err
-		}
-		consoleManager.SetCookie(c.Response(), sessionValue)
-		if nativeForm {
-			return c.Redirect(http.StatusSeeOther, "/console/agents#/agents")
-		}
-		if wantsDatastar(c.Request()) {
-			c.Request().AddCookie(&http.Cookie{Name: console.CookieName, Value: sessionValue})
-			subject, authErr := consoleManager.Authenticate(c.Request())
-			if authErr != nil {
-				return consoleError(authErr)
-			}
-			model, loadErr := loadConsole(c, subject, consoleAgents)
-			if loadErr != nil {
-				return loadErr
-			}
-			return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
-		}
-		return c.JSON(http.StatusCreated, map[string]string{"csrf": csrf, "expires": expires.UTC().Format(time.RFC3339)})
-	})
 	e.GET("/console/fragments/surface", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
 		if err := validateConsoleSignals(c.Request()); err != nil {
@@ -1421,27 +1346,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.NoContent(http.StatusNoContent)
-	})
-	g.POST("/console/bootstrap", func(c *echo.Context) error {
-		subject, err := requestSubject(c)
-		if err != nil {
-			return err
-		}
-		if err = svc.RequirePrincipal(subject); err != nil {
-			if auditErr := svc.AuditConsoleSession(c.Request().Context(), subject, "denied", "browser_bootstrap_principal_denied"); auditErr != nil {
-				return auditErr
-			}
-			return err
-		}
-		bootstrap, err := consoleManager.IssueBootstrap(subject)
-		if err != nil {
-			return consoleError(err)
-		}
-		if err = svc.AuditConsoleSession(c.Request().Context(), subject, "success", "browser_bootstrap_issued"); err != nil {
-			consoleManager.RevokeBootstrap(bootstrap)
-			return err
-		}
-		return c.JSON(http.StatusCreated, map[string]string{"bootstrap": bootstrap, "expires": svc.Now().Add(svc.Config.API.Console.BootstrapTTL).UTC().Format(time.RFC3339)})
 	})
 	g.GET("/runtime", func(c *echo.Context) error {
 		x, err := svc.Runtime(c.Request().Context())

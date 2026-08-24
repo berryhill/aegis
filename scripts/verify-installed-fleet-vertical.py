@@ -131,7 +131,7 @@ def main() -> int:
             output.write(
                 f"api:\n  listen: 127.0.0.1:{console_port}\n  unix_socket: {console_socket}\n"
                 f"  token_file: {token_path}\n  read_timeout: 5s\n  write_timeout: 5s\n  shutdown_timeout: 2s\n  max_body_bytes: 1048576\n"
-                f"  console:\n    origin: {console_origin}\n    session_ttl: 10m\n    bootstrap_ttl: 45s\n    max_page_size: 25\n"
+                f"  console:\n    origin: {console_origin}\n    session_ttl: 10m\n    max_page_size: 25\n"
                 "credentials:\n  references: {}\n  provider_auth: {}\n"
             )
 

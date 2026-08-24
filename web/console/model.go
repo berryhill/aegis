@@ -48,11 +48,9 @@ type CommandPreviewModel struct {
 }
 
 type AuthenticationModel struct {
-	Status          string
-	ReasonCode      string
-	RecoveryCommand string
-	BootstrapTTL    string
-	SessionTTL      string
+	Status     string
+	ReasonCode string
+	SessionTTL string
 }
 
 type SurfaceModel struct {

@@ -95,7 +95,7 @@ func TestAuthenticatedDocumentPresentsPasswordRotationAsDangerousDialogAction(t 
 		`name="confirmation" type="password" value="" required autocomplete="new-password" minlength="12"`,
 		`name="approve" type="checkbox" value="rotate" required`,
 		`class="confirmation danger"`, `class="danger-button"`,
-		"revokes every existing browser session and one-time handoff",
+		"revokes every existing browser session",
 	} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("password rotation dialog missing %q: %s", required, html)
@@ -219,20 +219,25 @@ func TestAgentRegistrationExecuteFormContainsOnlyCSRFAndReceipt(t *testing.T) {
 	}
 }
 
-func TestAuthenticationRendersTypedRecoveryWithoutSubmittedBootstrap(t *testing.T) {
+func TestAuthenticationRendersPasswordOnlyRecovery(t *testing.T) {
 	var output bytes.Buffer
-	model := AuthenticationModel{Status: "Authentication failed", ReasonCode: "bootstrap_invalid_format", RecoveryCommand: "aegis console", BootstrapTTL: "30s", SessionTTL: "5m0s"}
+	model := AuthenticationModel{Status: "Authentication failed", ReasonCode: "principal_password_authentication_denied", SessionTTL: "5m0s"}
 	if err := Authentication(model).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{"Authentication failed", "bootstrap_invalid_format", "aegis console", "30s", "5m0s"} {
+	for _, required := range []string{"Authentication failed", "principal_password_authentication_denied", "Password authentication is required", "5m0s"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("authentication recovery missing %q: %s", required, html)
 		}
 	}
 	if strings.Contains(html, `value=`) {
 		t.Fatalf("authentication error re-rendered a submitted value: %s", html)
+	}
+	for _, forbidden := range []string{"bootstrap", "one-time browser handoff", "Alternate sign-in"} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("authentication recovery retained passwordless path %q: %s", forbidden, html)
+		}
 	}
 }
 

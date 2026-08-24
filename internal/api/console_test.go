@@ -30,50 +30,25 @@ import (
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
-func TestBrowserHandoffConfirmationIsRestrictedToExactLoopbackCapability(t *testing.T) {
-	valid := "http://127.0.0.1:34803/confirmed/" + strings.Repeat("a", 43)
-	if got, err := validateBrowserHandoff(valid, "127.0.0.1"); err != nil || got != valid {
-		t.Fatalf("valid browser handoff=%q err=%v", got, err)
-	}
-	for name, raw := range map[string]string{
-		"empty":         "",
-		"remote":        "http://example.test:34803/confirmed/" + strings.Repeat("a", 43),
-		"host mismatch": "http://localhost:34803/confirmed/" + strings.Repeat("a", 43),
-		"wrong scheme":  "https://127.0.0.1:34803/confirmed/" + strings.Repeat("a", 43),
-		"missing port":  "http://127.0.0.1/confirmed/" + strings.Repeat("a", 43),
-		"wrong path":    "http://127.0.0.1:34803/handoff/" + strings.Repeat("a", 43),
-		"short token":   "http://127.0.0.1:34803/confirmed/short",
-		"query":         valid + "?authority=admin",
-		"fragment":      valid + "#authority",
-		"user info":     "http://operator@127.0.0.1:34803/confirmed/" + strings.Repeat("a", 43),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := validateBrowserHandoff(raw, "127.0.0.1"); err == nil {
-				t.Fatalf("unsafe browser handoff accepted: %q", raw)
-			}
-		})
-	}
-}
-
 func TestConsoleFormDecoderAcceptsOneExactBoundedField(t *testing.T) {
-	valid := httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=single-use%2Btoken"))
+	valid := httptest.NewRequest("POST", "/console/login", strings.NewReader("password=bounded%2Bpassword"))
 	valid.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
-	value, err := decodeConsoleForm(valid, "bootstrap")
-	if err != nil || value != "single-use+token" {
+	value, err := decodeConsoleForm(valid, "password")
+	if err != nil || value != "bounded+password" {
 		t.Fatalf("valid native form value=%q err=%v", value, err)
 	}
 
 	for name, request := range map[string]*http.Request{
-		"wrong content type": httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=value")),
-		"unknown field":      httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=value&authority=admin")),
-		"duplicate field":    httptest.NewRequest("POST", "/console/session", strings.NewReader("bootstrap=one&bootstrap=two")),
-		"oversized":          httptest.NewRequest("POST", "/console/session", bytes.NewReader(bytes.Repeat([]byte("x"), 8193))),
+		"wrong content type": httptest.NewRequest("POST", "/console/login", strings.NewReader("password=value")),
+		"unknown field":      httptest.NewRequest("POST", "/console/login", strings.NewReader("password=value&authority=admin")),
+		"duplicate field":    httptest.NewRequest("POST", "/console/login", strings.NewReader("password=one&password=two")),
+		"oversized":          httptest.NewRequest("POST", "/console/login", bytes.NewReader(bytes.Repeat([]byte("x"), 8193))),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name != "wrong content type" {
 				request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
-			if _, err := decodeConsoleForm(request, "bootstrap"); err == nil {
+			if _, err := decodeConsoleForm(request, "password"); err == nil {
 				t.Fatal("unsafe native form accepted")
 			}
 		})
