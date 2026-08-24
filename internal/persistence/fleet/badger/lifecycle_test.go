@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -128,6 +129,72 @@ func TestAcceptedSubmissionAndInitialClaimAreAtomicDurableFacts(t *testing.T) {
 	}
 	if got, err := store.GetDisposition(ctx, dispositionRecord.DispositionID); err != nil || got.Digest != dispositionRecord.Digest {
 		t.Fatalf("durable disposition readback: got=%+v err=%v", got, err)
+	}
+}
+
+// TestSeedInstalledConsoleWorkflow is an opt-in launch-proof fixture builder.
+// It uses the validated persistence APIs and is inert in ordinary test runs.
+func TestSeedInstalledConsoleWorkflow(t *testing.T) {
+	workspace := os.Getenv("AEGIS_INSTALLED_CONSOLE_FIXTURE_WORKSPACE")
+	if workspace == "" {
+		t.Skip("installed console fixture workspace not requested")
+	}
+	ctx := context.Background()
+	store, accepted := lifecycleFixture(t, ctx, filepath.Join(workspace, "state", "persistence", schemaVersion), "installed-console-submission")
+	secondaryLoop, _ := loopFixture(t)
+	secondaryLoop.LoopID = "loop.secondary"
+	secondaryLoop.Digest = ""
+	secondaryLoop, secondaryValidation, err := loop.NewRevision(secondaryLoop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: secondaryLoop, Validation: secondaryValidation, Provenance: loopPublicationProvenance(t, secondaryLoop, secondaryValidation), IdempotencyKey: "installed-console-secondary-loop"}, audit("loop.published", secondaryLoop.LoopID)); err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID))
+	if err != nil || !created {
+		t.Fatalf("accept installed console submission: created=%v err=%v", created, err)
+	}
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{
+		LoopExecutionID: "loop-execution-1", GraphRunID: accepted.GraphRun.GraphRunID, GraphNodeID: "echo",
+		Loop: accepted.Snapshot.Loops[0], Participant: accepted.Snapshot.Participants[0], CreatedAt: accepted.Submission.SubmittedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created, err = store.CreateLoopExecution(ctx, loopExecution, audit("loop-execution.created", loopExecution.LoopExecutionID)); err != nil || !created {
+		t.Fatalf("create installed Loop execution: created=%v err=%v", created, err)
+	}
+	claim, attempt, transition := claimFixture(t, accepted, loopExecution, "claim-1", "attempt-1")
+	if err = store.ClaimQueueItem(ctx, claim, attempt, transition, audit("queue.claimed", claim.ClaimID)); err != nil {
+		t.Fatal(err)
+	}
+	evidenceStore, err := recordstore.Open(filepath.Join(workspace, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDigest, err := evidenceStore.PutBlob([]byte("artifact output"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := evidence.RuntimeArtifact{ID: "artifact-1", AttemptID: attempt.AttemptID, OwnerID: loopExecution.Participant.ID, ActionID: "echo", RunID: loopExecution.LoopExecutionID, AuthorityContextID: claim.Authority.ID, AuthorityContextDigest: claim.Authority.Digest, Digest: artifactDigest, ContentRef: artifactDigest, MediaType: "application/json", CreatedAt: claim.ClaimedAt}
+	receipt := evidence.VerificationReceipt{ID: "receipt-1", AttemptID: attempt.AttemptID, ArtifactID: artifact.ID, ActionID: artifact.ActionID, RunID: artifact.RunID, OwnerID: artifact.OwnerID, AuthorityContextID: artifact.AuthorityContextID, AuthorityContextDigest: artifact.AuthorityContextDigest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1, Claim: "exact-output", MediaType: artifact.MediaType, ExpectedDigest: artifactDigest, ObservedDigest: artifactDigest, Outcome: evidence.Passed, ObservedAt: claim.ClaimedAt}
+	persistReceiptInto(t, evidenceStore, &receipt)
+	dispositionRecord, err := disposition.New(disposition.Record{DispositionID: "disposition-1", GraphRunID: attempt.GraphRunID, LoopExecutionID: attempt.LoopExecutionID, AttemptID: attempt.AttemptID, QueueItem: attempt.QueueItem, Authority: claim.Authority, State: execution.StateSucceeded, ReasonCode: "evidence_satisfied", ArtifactIDs: []string{artifact.ID}, ReceiptIDs: []string{receipt.ID}, OccurredAt: claim.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := queue.NewTransition(queue.QueueTransition{TransitionID: "transition-terminal-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateClaimed, To: queue.StateSucceeded, ClaimID: claim.ClaimID, Reason: "evidence_satisfied", OccurredAt: claim.ClaimedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion := fleet.Completion{Claim: claim, Artifact: &artifact, Receipts: []evidence.VerificationReceipt{receipt}, Disposition: dispositionRecord, Transition: terminal}
+	sealCompletion(t, &completion, evidenceStore)
+	if err = store.CompleteQueueItem(ctx, completion, completionAudit(completion), evidenceStore); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 

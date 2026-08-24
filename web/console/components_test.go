@@ -286,6 +286,30 @@ func TestAgentRegistryRendersOperatorContractWithoutClaimingBrowserAuthority(t *
 	}
 }
 
+func TestDefinitionFiltersPaginationAndRelatedRecordsAreNativeLinks(t *testing.T) {
+	var output bytes.Buffer
+	record := RecordModel{Key: "loop-review:2", Label: "loop-review", Lifecycle: "active", Loop: &LoopDetailModel{}, Links: []LinkModel{{Label: "Publisher Agent", Detail: "agent-reviewer r7 @ sha256:agent", URL: "/console/agents?record_key=agent-reviewer#/agents"}}}
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{
+		Domain: DomainLoops, Title: "Loops", State: "ready", Authoritative: true, Query: "review", Lifecycle: "active",
+		Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true,
+		Pagination: PaginationModel{Label: "Page 2 of 3", Summary: "Showing 2–2 of 3 matching records", HasPrevious: true, PreviousURL: "/console/loops?q=review#/loops", HasNext: true, NextURL: "/console/loops?page=3&q=review#/loops"},
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{`action="/console/loops"`, `name="q"`, `value="review"`, `name="lifecycle"`, `value="active" selected`, `href="/console/loops?q=review#/loops"`, `href="/console/loops?page=3&amp;q=review#/loops"`, "Related exact records", `href="/console/agents?record_key=agent-reviewer#/agents"`} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("coherent collection control missing %q: %s", required, html)
+		}
+	}
+	for _, forbidden := range []string{`disabled title="Filtering is delivered`, `>Current bounded result<`} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("dead collection control remained %q: %s", forbidden, html)
+		}
+	}
+}
+
 func TestGraphInspectorRendersTopologyExactBindingsAndFleetWideSubmissionTruth(t *testing.T) {
 	var output bytes.Buffer
 	record := RecordModel{Key: "graph-review:4", Label: "graph-review", Revision: "r4", Lifecycle: "active", Graph: &GraphDetailModel{
@@ -429,6 +453,21 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 	}
 	if strings.Contains(html, "Succeeded execution") || strings.Contains(html, "execution succeeded") {
 		t.Fatalf("passing receipt or Graph run upgraded failed queue truth: %s", html)
+	}
+}
+
+func TestQueueReadyPrimaryActionLinksToTypedSubmission(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{Authenticated: true, Surface: SurfaceModel{
+		Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true,
+		Actions: []ActionModel{{Key: "submission", Label: "Prepare execution request", State: "ready", Primary: true}},
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	if !strings.Contains(html, `href="/console/graphs/run"`) || strings.Contains(html, `disabled title="">Prepare execution request</button>`) {
+		t.Fatalf("ready Queue submission action is not wired: %s", html)
 	}
 }
 

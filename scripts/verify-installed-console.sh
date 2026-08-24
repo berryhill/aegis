@@ -8,233 +8,30 @@ case "$socket_dir" in /*) ;; *) printf '%s\n' 'installed console proof socket di
 [ "$(CDPATH= cd -- "$socket_dir" && pwd -P)" = "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be canonical' >&2; exit 1; }
 candidate=${1:-}
 workspace=${2:-}
-[ "$#" -eq 2 ] || { printf '%s\n' 'usage: verify-installed-console.sh EXTRACTED_AEGIS DURABLE_WORKSPACE' >&2; exit 2; }
+[ "$#" -eq 2 ] || { printf '%s\n' 'usage: verify-installed-console.sh CANDIDATE_AEGIS DURABLE_WORKSPACE' >&2; exit 2; }
 case "$workspace" in "$repo"/*) ;; *) printf '%s\n' 'installed console proof workspace must be repository-local' >&2; exit 1 ;; esac
 [ -x "$candidate" ] && [ ! -L "$candidate" ] || { printf '%s\n' 'installed console candidate must be one executable' >&2; exit 1; }
 [ ! -e "$workspace" ] || { printf '%s\n' 'installed console proof workspace must not exist' >&2; exit 1; }
 mkdir -m 0700 "$workspace"
-server_pid=
-socket=
 cleanup() {
-  if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true; fi
-  if [ -n "$socket" ]; then rm -f "$socket" "$socket.lock"; fi
-  rm -rf "$workspace"
+  status=$?
+  if [ "$status" -eq 0 ] || [ "${AEGIS_KEEP_FAILED_PROOF:-0}" != 1 ]; then
+    rm -rf "$workspace"
+  else
+    printf 'installed console proof workspace retained after failure: %s\n' "$workspace" >&2
+  fi
 }
 trap cleanup EXIT HUP INT TERM
 
-uid=$(id -u)
-user=$(id -un)
-port=$(python3 - <<'PY'
-import socket
-with socket.socket() as server:
-    server.bind(("127.0.0.1", 0))
-    print(server.getsockname()[1])
-PY
-)
-socket=$socket_dir/.c-$port.sock
-[ ! -e "$socket" ] && [ ! -L "$socket" ] || { printf '%s\n' 'installed console proof socket already exists' >&2; exit 1; }
-python3 - "$workspace" "$port" "$uid" "$user" "$socket" <<'PY'
-import json, pathlib, secrets, sys
-root, port, uid, user, socket = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-token = secrets.token_urlsafe(48)
-initial_password = secrets.token_urlsafe(32)
-replacement_password = secrets.token_urlsafe(32)
-token_path = root / "transport" / "api.token"
-token_path.parent.mkdir(mode=0o700)
-token_path.write_text(token + "\n", encoding="utf-8")
-(root / "aegis.yaml").write_text(f'''state_dir: {root}/state
-runtime_default: hermes
-hermes_executable: {root}/hermes-fixture
-principal:
-  id: principal-1
-  name: Installed Proof Principal
-  uid: "{uid}"
-  user: {user}
-  auth_ttl: 10m
-api:
-  listen: 127.0.0.1:{port}
-  unix_socket: {socket}
-  token_file: {token_path}
-  read_timeout: 5s
-  write_timeout: 5s
-  shutdown_timeout: 2s
-  max_body_bytes: 1048576
-  console:
-    origin: http://127.0.0.1:{port}
-    session_ttl: 10m
-    max_page_size: 25
-audit:
-  checkpoint_dir: {root}/checkpoints
-manager:
-  enabled: false
-  runtime: hermes
-  security_context: secrets-manager
-  cleanup_timeout: 2s
-  hermes:
-    context_length: 65536
-    gateway_start_timeout: 2s
-    turn_timeout: 2s
-    maximum_response_bytes: 1048576
-  inference:
-    runtime: ollama
-    mode: external-local
-    executable: ollama
-    keep_alive: 1m
-    start_timeout: 2s
-    request_timeout: 2s
-    maximum_request_bytes: 1048576
-    maximum_response_bytes: 1048576
-  ingress:
-    maximum_message_bytes: 262144
-    maximum_message_runes: 262144
-    scan_timeout: 250ms
-    bounded_decode_depth: 2
-  transcript:
-    retention: session
-credentials:
-  references: {{}}
-  provider_auth: {{}}
-''', encoding="utf-8")
-(root / "hermes-fixture").write_text("#!/bin/sh\nprintf 'Hermes Agent v0.18.2\\nInstall directory: /isolated/installed-console-proof\\n'\n", encoding="utf-8")
-for name in ("aegis.yaml", "hermes-fixture"):
-    (root / name).chmod(0o700 if name == "hermes-fixture" else 0o600)
-token_path.chmod(0o600)
-auth_input = root / "principal-auth-input.json"
-auth_input.write_text(json.dumps({"principal_id": "principal-1", "password": initial_password}), encoding="utf-8")
-auth_input.chmod(0o600)
-browser_passwords = root / "browser-passwords.json"
-browser_passwords.write_text(json.dumps({"initial": initial_password, "replacement": replacement_password}), encoding="utf-8")
-browser_passwords.chmod(0o600)
-PY
-mkdir -m 0700 "$workspace/state"
+mkdir -m 0700 "$workspace/state" "$workspace/state/persistence"
 go run "$repo/scripts/demo-authority-init" "$workspace/state/persistence/authority-v1" >/dev/null
-go run "$repo/scripts/demo-principal-auth-init" "$workspace/principal-auth-input.json" "$workspace/state" >/dev/null
-python3 - "$workspace/agent.json" <<'PY'
-import json, pathlib, sys
-digest = "sha256:" + ("a" * 64)
-fixture = {
-    "schema_version": "aegis.current-fleet.fixture.v1",
-    "fleet_id": "fleet-primary",
-    "agents": [{
-        "source_id": "fleet-agent-1",
-        "agent_id": "agent-alpha",
-        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "target": "profile/alpha"},
-        "ownership": {"owner_id": "operator-primary", "accountability_id": "team-platform"},
-        "lifecycle": "enabled",
-        "charter": {"schema_version": "aegis.reference.revision.v1", "id": "agent-alpha", "revision": 7, "digest": digest},
-        "capability_declarations": [],
-        "policy_refs": [],
-    }],
-}
-request = {
-    "fixture": fixture,
-    "identity": {"fleet_id": "fleet-primary", "kind": "current-fleet", "source_id": "fleet-agent-1"},
-}
-path = pathlib.Path(sys.argv[1])
-path.write_text(json.dumps(request), encoding="utf-8")
-path.chmod(0o600)
-PY
 (cd "$repo" && go test ./internal/api -run '^TestServeSingletonDeniesBeforeActiveSocketMutation$' -count=1)
-HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" serve >"$workspace/server.log" 2>&1 &
-server_pid=$!
 
-ready=false
-for _ in $(seq 1 100); do
-  if curl --fail --silent --show-error "http://127.0.0.1:$port/console" -o "$workspace/shell.html"; then ready=true; break; fi
-  kill -0 "$server_pid" 2>/dev/null || {
-    printf '%s\n' 'installed console server exited before readiness' >&2
-    while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
-    exit 1
-  }
-  sleep 0.05
-done
-[ "$ready" = true ] || {
-  printf '%s\n' 'installed console server did not become ready' >&2
-  while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
-  exit 1
-}
-python3 - "$socket" "$workspace/transport/api.token" "$workspace/agent.json" "$workspace/agent-response.json" <<'PY'
-import pathlib, socket, sys
-socket_path, token_path, request_path, response_path = sys.argv[1:]
-token = pathlib.Path(token_path).read_text(encoding="utf-8").strip()
-body = pathlib.Path(request_path).read_bytes()
-auth_header = b"Author" + b"ization: " + b"Bear" + b"er " + token.encode("ascii")
-request = (
-    b"POST /v1/agents HTTP/1.1\r\nHost: unix\r\n" + auth_header +
-    b"\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
-)
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-    client.connect(socket_path)
-    client.sendall(request)
-    response = bytearray()
-    while True:
-        chunk = client.recv(65536)
-        if not chunk:
-            break
-        response.extend(chunk)
-status, _, payload = bytes(response).partition(b"\r\n\r\n")
-if not status.startswith(b"HTTP/1.1 201 "):
-    raise SystemExit("installed console fixture registration failed")
-pathlib.Path(response_path).write_bytes(payload)
-PY
-grep -F 'Sign the Aegis principal into this browser' "$workspace/shell.html" >/dev/null
-grep -F 'The enrolled principal password is required.' "$workspace/shell.html" >/dev/null
-grep -F 'Password authentication is required for every new browser session.' "$workspace/shell.html" >/dev/null
-! grep -F 'Alternate sign-in:' "$workspace/shell.html" >/dev/null
-! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/shell.html" >/dev/null
-curl --fail --silent --show-error "http://127.0.0.1:$port/console/assets/datastar-v1.0.2.js" -o "$workspace/datastar.js"
-[ "$(wc -c <"$workspace/datastar.js")" -gt 1000 ]
-former_session_status=$(curl --silent --show-error -D "$workspace/former-session-headers" -o "$workspace/former-session-response" -w '%{http_code}' -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data 'bootstrap=malformed' "http://127.0.0.1:$port/console/session")
-[ "$former_session_status" = 405 ]
-! grep -Fi 'set-cookie:' "$workspace/former-session-headers" >/dev/null
+AEGIS_INSTALLED_CONSOLE_BROWSER="$repo/scripts/console_browser_test.py" \
+AEGIS_INSTALLED_CONSOLE_REPO="$repo" \
+AEGIS_PROOF_SOCKET_DIR="$socket_dir" \
+python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$candidate" "$workspace"
 
-HOME=$workspace "$candidate" --config "$workspace/aegis.yaml" console >"$workspace/console-response.json"
-python3 - "$workspace" <<'PY'
-import json, pathlib, sys, urllib.parse
-root = pathlib.Path(sys.argv[1])
-response = json.loads((root / "console-response.json").read_text())
-if set(response) != {"authentication_required", "console_origin", "login_url"}:
-    raise SystemExit("installed console command response shape is invalid")
-if response["authentication_required"] != "principal_password" or response["login_url"] != response["console_origin"].rstrip("/") + "/console":
-    raise SystemExit("installed console command did not require the principal password")
-passwords = json.loads((root / "browser-passwords.json").read_text())
-login_form = root / "login-form"
-login_form.write_text(urllib.parse.urlencode({"password": passwords["initial"]}), encoding="ascii")
-login_form.chmod(0o600)
-PY
-curl --fail --silent --show-error -c "$workspace/cookies" -H "Origin: http://127.0.0.1:$port" -H 'Content-Type: application/x-www-form-urlencoded' --data-binary "@$workspace/login-form" "http://127.0.0.1:$port/console/login" -o "$workspace/login-response.html"
-curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console" -o "$workspace/authenticated.html"
-grep -F 'Agent Registry' "$workspace/authenticated.html" >/dev/null
-grep -F 'agent-alpha' "$workspace/authenticated.html" >/dev/null
-grep -F 'href="/console/agents/charter-import"' "$workspace/authenticated.html" >/dev/null
-! grep -F 'aegis charter validate &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
-! grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/authenticated.html" >/dev/null
-curl --fail --silent --show-error -b "$workspace/cookies" "http://127.0.0.1:$port/console/agents/charter-import" -o "$workspace/charter-import.html"
-grep -F '<title>Agent registration · Aegis Console</title>' "$workspace/charter-import.html" >/dev/null
-grep -F 'Charter-backed Agent registration' "$workspace/charter-import.html" >/dev/null
-grep -F 'href="/console/agents#/agents"' "$workspace/charter-import.html" >/dev/null
-grep -F 'aegis charter validate &lt;charter-file.json&gt;' "$workspace/charter-import.html" >/dev/null
-grep -F 'aegis charter import &lt;charter-file.json&gt;' "$workspace/charter-import.html" >/dev/null
-! grep -F 'Sign the Aegis principal into this browser' "$workspace/authenticated.html" >/dev/null
-! grep -F '/console/assets/datastar-v1.0.2.js' "$workspace/authenticated.html" >/dev/null
-
-if ! curl --fail --silent --show-error "http://127.0.0.1:$port/console" -o /dev/null; then
-  printf 'installed console server became unreachable before browser proof; server_alive=%s\n' "$(kill -0 "$server_pid" 2>/dev/null && printf true || printf false)" >&2
-  while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
-  exit 1
-fi
-set +e
-python3 "$repo/scripts/console_browser_test.py" "http://127.0.0.1:$port" "$workspace/browser-passwords.json" "$workspace"
-browser_status=$?
-set -e
-if [ "$browser_status" -ne 0 ]; then
-  printf 'installed browser proof failed; server_alive=%s browser_status=%s\n' "$(kill -0 "$server_pid" 2>/dev/null && printf true || printf false)" "$browser_status" >&2
-  while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/server.log"
-  if [ -f "$workspace/chrome.stderr" ]; then
-    printf '%s\n' 'Chrome diagnostics:' >&2
-    while IFS= read -r line; do printf '%s\n' "$line" >&2; done <"$workspace/chrome.stderr"
-  fi
-  exit "$browser_status"
-fi
-
-printf '%s\n' 'installed console verified: extracted_binary=true token_file_transport=true singleton_denial=true daemon_console=true retained_asset_direct=true retained_asset_loaded=false authenticated_surface=true real_chrome=true archive_members=1'
+archive_extracted=false
+[ "${AEGIS_CANDIDATE_ARCHIVE_EXTRACTED:-0}" = 1 ] && archive_extracted=true
+printf 'installed console verified: candidate_single_binary=true archive_extracted=%s charter_validate_import=true browser_authenticated_agent_registration=true loop_publish_activate=true graph_publish=true typed_submission=true queue_process=true evidence_receipt_disposition=true server_restart=true durable_reconstruction=true later_agent_loop_revisions=true durable_rejection=true credential_journey_separate=true filters=true pagination=true responsive=true csp=true real_chrome=true\n' "$archive_extracted"

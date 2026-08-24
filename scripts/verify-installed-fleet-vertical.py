@@ -14,8 +14,12 @@ import json
 import os
 from pathlib import Path
 import pwd
+import secrets
+import socket
 import subprocess
 import sys
+import time
+import urllib.request
 from datetime import datetime, timezone
 from typing import Any, NoReturn
 
@@ -100,6 +104,73 @@ def main() -> int:
     config.chmod(0o600)
     environment = os.environ.copy()
     environment["HOME"] = str(home)
+    console_browser = environment.get("AEGIS_INSTALLED_CONSOLE_BROWSER")
+    console_repo = environment.get("AEGIS_INSTALLED_CONSOLE_REPO")
+    console_passwords = root / "browser-passwords.json"
+    console_origin = ""
+    console_socket = ""
+    if console_browser:
+        if not console_repo:
+            fail("installed console integration omitted its repository root")
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            console_port = probe.getsockname()[1]
+        socket_dir = Path(environment.get("AEGIS_PROOF_SOCKET_DIR", console_repo)).resolve(strict=True)
+        console_socket = str(socket_dir / f".installed-console-{console_port}.sock")
+        console_origin = f"http://127.0.0.1:{console_port}"
+        token_path = root / "transport" / "api.token"
+        token_path.parent.mkdir(mode=0o700)
+        token_path.write_text(secrets.token_urlsafe(48) + "\n", encoding="utf-8")
+        token_path.chmod(0o600)
+        initial_password, replacement_password = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        write_json(console_passwords, {"initial": initial_password, "replacement": replacement_password})
+        auth_input = root / "principal-auth-input.json"
+        write_json(auth_input, {"principal_id": "principal-1", "password": initial_password})
+        subprocess.run(["go", "run", str(Path(console_repo) / "scripts/demo-principal-auth-init"), str(auth_input), str(root / "state")], cwd=console_repo, check=True, stdout=subprocess.DEVNULL)
+        with config.open("a", encoding="utf-8") as output:
+            output.write(
+                f"api:\n  listen: 127.0.0.1:{console_port}\n  unix_socket: {console_socket}\n"
+                f"  token_file: {token_path}\n  read_timeout: 5s\n  write_timeout: 5s\n  shutdown_timeout: 2s\n  max_body_bytes: 1048576\n"
+                f"  console:\n    origin: {console_origin}\n    session_ttl: 10m\n    max_page_size: 25\n"
+                "credentials:\n  references: {}\n  provider_auth: {}\n"
+            )
+
+    def browser_phase(phase: str, charter: Path | None = None, fixture: Path | None = None) -> None:
+        if not console_browser:
+            return
+        server_log = (root / f"server-{phase}.log").open("w", encoding="utf-8")
+        server = subprocess.Popen([str(binary), "--config", str(config), "serve"], cwd=repository, env=environment, stdout=server_log, stderr=subprocess.STDOUT, text=True)
+        try:
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if server.poll() is not None:
+                    fail(f"installed console server exited during {phase} startup")
+                try:
+                    with urllib.request.urlopen(console_origin + "/console", timeout=1):
+                        break
+                except OSError:
+                    time.sleep(0.05)
+            else:
+                fail(f"installed console server was not ready for {phase}")
+            command = [sys.executable, console_browser, console_origin, str(console_passwords), str(root)]
+            if phase == "registration":
+                if charter is None or fixture is None:
+                    fail("registration phase omitted bounded source artifacts")
+                command.extend(["register", str(charter), str(fixture)])
+            completed = subprocess.run(command, cwd=console_repo, env=environment, text=True, timeout=120, check=False)
+            if completed.returncode != 0:
+                fail(f"real-browser {phase} phase exited {completed.returncode}")
+        finally:
+            server.terminate()
+            try:
+                server.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait(timeout=5)
+            server_log.close()
+            if console_socket:
+                Path(console_socket).unlink(missing_ok=True)
+                Path(console_socket + ".lock").unlink(missing_ok=True)
 
     def aegis(*arguments: str, input_file: Path | None = None, expect_list: bool = False) -> Any:
         command = [str(binary), "--config", str(config), *arguments]
@@ -147,11 +218,47 @@ def main() -> int:
         }],
         "created_by": "principal-1", "created_at": now,
     })
+    validated_charter = aegis("charter", "validate", input_file=charter_file)
+    if validated_charter.get("digest", "").startswith("sha256:") is False:
+        fail("credential-independent charter validation omitted its canonical digest")
     canonical = aegis("charter", "import", input_file=charter_file)
     charter_digest = canonical.get("digest")
     if not isinstance(charter_digest, str) or not charter_digest.startswith("sha256:"):
         fail("charter import omitted its canonical digest")
 
+    digest_a = "sha256:" + "a" * 64
+    fleet_fixture = {
+        "schema_version": "aegis.current-fleet.fixture.v1",
+        "fleet_id": "proof-fleet",
+        "agents": [{
+            "source_id": "proof-source", "agent_id": "proof-agent",
+            "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "target": "aegis-owned-ephemeral"},
+            "ownership": {"owner_id": "principal-1", "accountability_id": "installed-proof"},
+            "lifecycle": "enabled",
+            "charter": {"schema_version": "aegis.reference.revision.v1", "id": "proof-agent", "revision": 1, "digest": charter_digest},
+            "capability_declarations": ["fleet.execute"],
+        }],
+    }
+    fleet_fixture_file = fixtures / "current-fleet.json"
+    write_json(fleet_fixture_file, fleet_fixture)
+    agent_file = fixtures / "agent.json"
+    write_json(agent_file, {
+        "fixture": fleet_fixture,
+        "identity": {"fleet_id": "proof-fleet", "kind": "current-fleet", "source_id": "proof-source"},
+    })
+    if console_browser:
+        browser_phase("registration", charter_file, fleet_fixture_file)
+        agent_revision = aegis("agents", "show", "proof-agent", "1")["revision"]
+        registered = {"created": True, "agent": {"revision": agent_revision}}
+    else:
+        registered = aegis("agents", "register", input_file=agent_file)
+        agent_revision = registered["agent"]["revision"]
+    if not registered.get("created") or agent_revision["charter"]["digest"] != charter_digest:
+        fail("registry did not retain immutable charter provenance")
+
+    # Start the authority-bearing runtime session only after the browser
+    # registration server has shut down. Clean server shutdown intentionally
+    # invalidates active runtime authority, so an earlier mandate would be stale.
     plan = aegis("plan", "preview", "proof-agent", "--revision", "1")
     plan_id = plan["plan"]["id"]
     approval = aegis("approval", "request", plan_id, "--ttl", "5m")
@@ -163,28 +270,6 @@ def main() -> int:
     preview = aegis("session", "preview", "proof-agent", "--revision", "1", "--stanza", "principal")
     session = aegis("session", "start", preview["mandate"]["id"])
     authority = aegis("session", "authority", session["id"])
-
-    digest_a = "sha256:" + "a" * 64
-    agent_file = fixtures / "agent.json"
-    write_json(agent_file, {
-        "fixture": {
-            "schema_version": "aegis.current-fleet.fixture.v1",
-            "fleet_id": "proof-fleet",
-            "agents": [{
-                "source_id": "proof-source", "agent_id": "proof-agent",
-                "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "target": "aegis-owned-ephemeral"},
-                "ownership": {"owner_id": "principal-1", "accountability_id": "installed-proof"},
-                "lifecycle": "enabled",
-                "charter": {"schema_version": "aegis.reference.revision.v1", "id": "proof-agent", "revision": 1, "digest": charter_digest},
-                "capability_declarations": ["fleet.execute"],
-            }],
-        },
-        "identity": {"fleet_id": "proof-fleet", "kind": "current-fleet", "source_id": "proof-source"},
-    })
-    registered = aegis("agents", "register", input_file=agent_file)
-    agent_revision = registered["agent"]["revision"]
-    if not registered.get("created") or agent_revision["charter"]["digest"] != charter_digest:
-        fail("registry did not retain immutable charter provenance")
 
     ref = lambda value, identifier: {"schema_version": "aegis.reference.revision.v1", "id": identifier, "revision": 1, "digest": value["digest"]}
     expected_output_digest = "sha256:" + hashlib.sha256(b"installed Hermes queue output").hexdigest()
@@ -345,6 +430,19 @@ def main() -> int:
     if aegis("agents", "show", "proof-agent", "1")["revision"]["digest"] != agent_revision["digest"]:
         fail("Agent lifecycle administration changed historical revision 1")
 
+    # Keep enough immutable draft definitions to exercise bounded console
+    # pagination after the durable server restart. These are ordinary candidate
+    # CLI publications, not persistence fixtures.
+    for index in (2, 3):
+        draft = json.loads(loop_file.read_text(encoding="utf-8"))
+        draft["revision"]["loop_id"] = f"proof-loop-{index}"
+        draft["idempotency_key"] = f"installed-proof-loop-{index}"
+        draft_path = fixtures / f"loop-{index}.json"
+        write_json(draft_path, draft)
+        published_draft = aegis("loops", "publish", input_file=draft_path)
+        if published_draft.get("validation", {}).get("outcome") != "valid":
+            fail(f"draft Loop {index} was not valid")
+
     evidence = {
         "schema_version": 1,
         "binary": str(binary),
@@ -365,6 +463,7 @@ def main() -> int:
     }
     evidence_path = root / "installed-fleet-vertical-evidence.json"
     write_json(evidence_path, evidence)
+    browser_phase("reconstruction")
     print("installed fleet vertical verified: registry=immutable_history_and_lifecycle loop=authority_bound_lifecycle_verified graph=valid queue=succeeded hermes_gateway=bounded disposable_home=removed fresh_admission=verified evidence=attempt_bound durable_rejection=verified historical_reconstruction=verified credentials=none")
     return 0
 

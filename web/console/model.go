@@ -122,11 +122,16 @@ type RecordModel struct {
 	Authority    string
 	Provisioning string
 	Fields       []FieldModel
+	Links        []LinkModel
 	Graph        *GraphDetailModel
 	Queue        *QueueDetailModel
 	Credential   *CredentialDetailModel
 	Loop         *LoopDetailModel
 }
+
+// LinkModel is a presentation-only transition to an exact related record.
+// Its stable record URL never carries identity or authority input.
+type LinkModel struct{ Label, Detail, URL string }
 
 type LoopDetailModel struct {
 	TargetID, Digest, PublisherID, ExpectedLifecycleDigest string
@@ -151,6 +156,7 @@ type QueueDetailModel struct {
 	Retries          []FieldModel
 	Cancellations    []FieldModel
 	Controls         []QueueControlModel
+	Links            []LinkModel
 	ArtifactState    string
 	ReceiptState     string
 	DispositionState string
@@ -188,6 +194,7 @@ type GraphDetailModel struct {
 	Policies            []FieldModel
 	AcceptedRuns        []GraphRunModel
 	RejectedSubmissions []FieldModel
+	Links               []LinkModel
 }
 
 type GraphNodeModel struct {

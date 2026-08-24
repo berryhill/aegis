@@ -382,6 +382,27 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleweb.PageModel{Authenticated: true, Surface: consoleweb.SurfaceModel{Domain: string(domain), Title: "Fleet control", State: "unavailable", Status: "Fleet control unavailable. No collection was treated as empty."}}, nil
 		}
+		if domain == consoleAgents && c.QueryParam("revision") != "" {
+			revision, revisionErr := requiredRevision(c.QueryParam("revision"))
+			if revisionErr != nil || c.QueryParam("record_key") == "" {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent Registry revision")
+			}
+			exact, exactErr := svc.GetFleetAgentAs(c.Request().Context(), subject, c.QueryParam("record_key"), revision)
+			if exactErr != nil {
+				return consoleweb.PageModel{}, exactErr
+			}
+			replaced := false
+			for index := range surface.Agents {
+				if surface.Agents[index].Revision.AgentID == exact.Revision.AgentID {
+					surface.Agents[index] = exact
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent Registry revision")
+			}
+		}
 		var credentialPage *app.CredentialCollectionPage
 		if domain == consoleCredentials {
 			query := strings.TrimSpace(c.QueryParam("q"))
@@ -406,18 +427,6 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			credentialPage = &page
 			surface.Credentials = page.Records
 		}
-		if len(surface.Agents) > limit {
-			surface.Agents = surface.Agents[:limit]
-		}
-		if len(surface.Loops) > limit {
-			surface.Loops = surface.Loops[:limit]
-		}
-		if len(surface.Graphs) > limit {
-			surface.Graphs = surface.Graphs[:limit]
-		}
-		if len(surface.Queue) > limit {
-			surface.Queue = surface.Queue[:limit]
-		}
 		model, err := consoleSurfaceModel(surface, domain)
 		if err != nil {
 			return consoleweb.PageModel{}, err
@@ -427,9 +436,22 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent Registry filter")
 			}
 		}
+		if domain == consoleLoops || domain == consoleGraphs {
+			if err = filterConsoleDefinitions(&model, c.QueryParam("q"), c.QueryParam("lifecycle")); err != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid definition filter")
+			}
+		}
 		if domain == consoleQueue {
 			if err = filterConsoleQueue(&model, c.QueryParam("state")); err != nil {
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Execution Queue filter")
+			}
+		}
+		if domain != consoleCredentials {
+			if err = paginateConsoleCollection(&model, c.QueryParam("page"), c.QueryParam("record_key"), limit, c.QueryParams()); err != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid console page")
+			}
+			if domain == consoleQueue {
+				syncConsoleQueueBands(&model)
 			}
 		}
 		if domain == consoleCredentials && credentialPage != nil {

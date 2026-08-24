@@ -166,6 +166,8 @@ templ Workspace(surface SurfaceModel) {
 						<a class="primary" href="/console/loops/compose" title={ actionTitle(action) }>{ action.Label }</a>
 					} else if surface.Domain == DomainGraphs && surface.Authoritative {
 						<a class="primary" href="/console/graphs/compose" title="Compose a candidate; publication still requires fresh exact authority admission">{ action.Label }</a>
+					} else if surface.Domain == DomainQueue && action.State == "ready" {
+						<a class="primary" href="/console/graphs/run" title="Prepare a typed Graph submission; admission and Queue creation remain server-authoritative">{ action.Label }</a>
 					} else if surface.Domain == DomainCredentials && surface.Authoritative {
 						<a class="primary" href="/console/credentials/operation?operation=create">Create credential</a>
 					} else {
@@ -190,7 +192,9 @@ templ Workspace(surface SurfaceModel) {
 		}
 		@DomainCollection(surface)
 		if surface.Domain != DomainCredentials {
-			<div class="pagination" aria-label="Collection pagination"><button class="ghost btn-sm" disabled>Previous</button><span>Current bounded result</span><button class="ghost btn-sm" disabled>Next</button></div>
+			if surface.Pagination.Label != "" {
+				@Pagination(surface.Pagination)
+			}
 			@Inspector(surface, surface.Inspector, surface.InspectorOpen)
 		}
 	</section>
@@ -331,7 +335,7 @@ templ DomainCollection(surface SurfaceModel) {
 			<div class="list-bar">@CollectionCount(surface, "agent")</div>
 		}
 	} else if surface.Domain == DomainGraphs || surface.Domain == DomainLoops {
-		<div class="toolbar"><div class="seg-group" role="group" aria-label={ "Filter " + surface.Title + " by lifecycle state" }><button class="seg active" type="button" disabled>All</button></div>@SearchBox(surface.Domain+"-search", "Search "+surface.Title)@CollectionCount(surface, collectionSingular(surface.Domain))</div>
+		@DefinitionFilters(surface)
 		@RecordPanel(surface)
 	} else if surface.Domain == DomainQueue {
 		if surface.Authoritative {
@@ -400,8 +404,16 @@ templ AgentCard(surface SurfaceModel, record RecordModel) {
 	</a>
 }
 
-templ SearchBox(id, placeholder string) {
-	<div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><label class="sr-only" for={ id }>{ placeholder }</label><input id={ id } type="search" placeholder={ placeholder } autocomplete="off" disabled title="Filtering is delivered with the domain list contract"/></div>
+templ DefinitionFilters(surface SurfaceModel) {
+	<form class="toolbar" method="get" action={ "/console/" + surface.Domain } aria-label={ "Filter " + surface.Title }>
+		<label class="lifecycle-filter"><span class="sr-only">Lifecycle</span><select name="lifecycle">
+			for _, state := range []string{"all", "draft", "published", "active", "inactive", "retired"} {
+				<option value={ state } selected?={ surface.Lifecycle == state }>{ stateHeading(state) }</option>
+			}
+		</select></label>
+		<label class="search" for={ surface.Domain + "-search" }><span class="sr-only">Search { surface.Title }</span><input id={ surface.Domain + "-search" } name="q" type="search" value={ surface.Query } placeholder={ "Search " + surface.Title } autocomplete="off" maxlength="128"/></label>
+		<button class="secondary" type="submit">Apply</button><a class="ghost" href={ consoleRoute(surface.Domain, "") }>Clear</a>@CollectionCount(surface, collectionSingular(surface.Domain))
+	</form>
 }
 
 templ CollectionCount(surface SurfaceModel, singular string) {
@@ -439,6 +451,7 @@ templ Inspector(surface SurfaceModel, record *RecordModel, open bool) {
 				<div class="detail-head"><div class="detail-title"><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href={ registryURL(surface) }>Back to Registry</a></div>
 				<div class="panel-body">
 					<div class="section-label">Readiness</div><div class="inline-notice">{ record.Readiness }. Readiness is derived from the immutable lifecycle record; this browser view grants no runtime authority.</div>
+					@RelatedRecords(record.Links)
 					<div class="section-label">Provenance and authority</div>
 					<dl id="inspector-fields" class="spec">
 						for _, field := range record.Fields {
@@ -476,6 +489,7 @@ templ AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, l
 templ LoopInspector(surface SurfaceModel, record *RecordModel) {
 	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href="/console/loops">Back to Loops</a></div>
 	<div class="panel-body"><div class="section-label">Readiness</div><div class="inline-notice">{ record.Readiness }. Browser controls request a command only; execute-time admission resolves the exact publisher and authority again.</div>
+		@RelatedRecords(record.Links)
 		<div class="button-row">
 			if record.Loop.CanActivate {
 				@LoopLifecycleForm(surface.CSRF, record.Loop, "active", "Preview activation", false)
@@ -512,7 +526,7 @@ templ QueueInspector(surface SurfaceModel, record *RecordModel) {
 				<span class="canvas-arrow" aria-hidden="true">↓</span><article class={ "execution-node " + attempt.State }><span class="node-kind">Attempt { fmt.Sprintf("%d", attempt.Number) }</span><strong>{ attempt.ID }</strong><span>{ attempt.State } · { attempt.LoopID }</span><small>claim { attempt.ClaimID }</small></article>
 			}
 		</div></section>
-		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Pinned queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")<h4>Dependencies</h4>@FieldList(record.Queue.Dependencies, "No dependency records")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")<h4>Lifecycle controls</h4><p class="inline-notice">Each command reloads the exact queue item and repeats fresh authority admission. Review the consequence before submitting; stale or ineligible commands fail closed.</p>
+		<aside class="gw-pane gw-inspector execution-inspector" aria-labelledby="execution-inspector"><div class="gw-head"><h3 class="gw-title" id="execution-inspector">Inspector</h3></div><div class="gw-body"><h4>Pinned queue identity</h4>@FieldList(record.Queue.QueueItem, "Queue identity unavailable")@RelatedRecords(record.Queue.Links)<h4>Dependencies</h4>@FieldList(record.Queue.Dependencies, "No dependency records")<h4>Runtime binding</h4>@FieldList(record.Queue.Runtime, "Runtime binding unavailable")<h4>Lifecycle controls</h4><p class="inline-notice">Each command reloads the exact queue item and repeats fresh authority admission. Review the consequence before submitting; stale or ineligible commands fail closed.</p>
 			for _, control := range record.Queue.Controls {
 				<form class="queue-control" method="post" action={ "/console/queue/" + url.PathEscape(record.Key) + "/operate" }>
 					<input type="hidden" name="csrf" value={ surface.CSRF }/>
@@ -554,7 +568,7 @@ templ ExecutionNode(node QueueExecutionNodeModel) {
 templ GraphInspector(surface SurfaceModel, record *RecordModel) {
 	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><div><a class="primary" href={ graphRunURL(record) }>Run Graph</a> <a id="close-inspector" class="secondary" href={ consoleRoute(surface.Domain, "") }>Back to Graphs</a></div></div>
 	<div class="graph-detail">
-		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Validation</dt><dd>{ record.Graph.Validation }</dd></dl></section>
+		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Validation</dt><dd>{ record.Graph.Validation }</dd></dl>@RelatedRecords(record.Graph.Links)</section>
 		<section aria-labelledby="graph-topology"><h3 id="graph-topology">Topology</h3><div class="topology-canvas">
 			for _, node := range record.Graph.Nodes {
 				<article class="topology-node"><strong>{ node.ID }</strong><span>Agent · { node.Participant }</span><span>Loop · { node.Loop }</span><small>Inputs · { node.Inputs }</small><small>Outputs · { node.Outputs }</small></article>
@@ -585,6 +599,16 @@ templ FieldList(fields []FieldModel, empty string) {
 				<dt>{ field.Label }</dt><dd>{ field.Value }</dd>
 			}
 		</dl>
+	}
+}
+
+templ RelatedRecords(links []LinkModel) {
+	if len(links) > 0 {
+		<div class="section-label">Related exact records</div><ul class="record-list related-records">
+			for _, link := range links {
+				<li><a href={ link.URL }><span><strong>{ link.Label }</strong><small>{ link.Detail }</small></span><span>Open exact record →</span></a></li>
+			}
+		</ul>
 	}
 }
 
