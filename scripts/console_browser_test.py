@@ -199,7 +199,7 @@ def wait_for(
         time.sleep(0.05)
     state: Any = None
     try:
-        state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 200) || ''})")
+        state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 1200) || ''})")
     except (OSError, RuntimeError):
         state = "unavailable"
     requests = console_auth_requests(devtools.events[diagnostic_event_start:])
@@ -216,13 +216,22 @@ def wait_for(
 
 
 def click(devtools: DevTools, selector: str) -> None:
+    present = devtools.evaluate(
+        "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
+        "if (!node) return false; node.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); return true; })()"
+    )
+    require(present is True, f"browser control missing: {selector}")
+    # Measure only after the browser has applied the scroll. A single evaluation
+    # can retain the pre-scroll rectangle while the hit test uses post-scroll
+    # layout, producing a false obscured-control result for lower inspector rows.
+    time.sleep(0.05)
     point = devtools.evaluate(
         "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
-        "if (!node) return null; node.scrollIntoView({block: 'center', inline: 'center'}); const box = node.getBoundingClientRect();"
+        "if (!node) return null; const box = node.getBoundingClientRect();"
         "const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);"
         "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, hit: hit?.id || hit?.tagName || '', target: hit === node || node.contains(hit)}; })()"
     )
-    require(isinstance(point, dict), f"browser control missing: {selector}")
+    require(isinstance(point, dict), f"browser control missing after scroll: {selector}")
     require(point["width"] > 0 and point["height"] > 0, f"browser control is not visible: {selector}; state={point}")
     require(bool(point["target"]), f"browser control is obscured: {selector}; state={point}")
     for event_type in ("mousePressed", "mouseReleased"):
@@ -249,6 +258,21 @@ def insert_text(devtools: DevTools, selector: str, text: str) -> None:
         "return !!node && document.activeElement === node && node.value === " + json.dumps(text) + "; })()"
     )
     require(retained is True, f"browser control did not retain text: {selector}")
+
+
+def replace_text(devtools: DevTools, selector: str, text: str) -> None:
+    """Replace an existing native form value using keyboard selection."""
+    click(devtools, selector)
+    for event_type in ("rawKeyDown", "keyUp"):
+        devtools.command("Input.dispatchKeyEvent", {
+            "type": event_type, "key": "a", "code": "KeyA", "modifiers": 2,
+            "windowsVirtualKeyCode": 65, "nativeVirtualKeyCode": 65,
+        })
+    devtools.command("Input.insertText", {"text": text})
+    retained = devtools.evaluate(
+        "document.querySelector(" + json.dumps(selector) + ")?.value === " + json.dumps(text)
+    )
+    require(retained is True, f"browser control did not replace text: {selector}")
 
 
 def tap(devtools: DevTools, selector: str) -> None:
@@ -286,17 +310,20 @@ def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE")
+    if len(sys.argv) not in (4, 7):
+        raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [register CHARTER_JSON CURRENT_FLEET_JSON]")
     origin = sys.argv[1].rstrip("/")
     password_path = pathlib.Path(sys.argv[2])
     workspace = pathlib.Path(sys.argv[3])
     passwords = json.loads(password_path.read_text(encoding="utf-8"))
     initial_password = passwords.get("initial")
     replacement_password = passwords.get("replacement")
+    registration_only = len(sys.argv) == 7 and sys.argv[4] == "register"
+    if len(sys.argv) == 7 and not registration_only:
+        raise RuntimeError("unsupported installed-console browser phase")
     require(isinstance(initial_password, str) and len(initial_password) >= 12, "browser proof received no initial password")
     require(isinstance(replacement_password, str) and len(replacement_password) >= 12, "browser proof received no replacement password")
-    chrome_home = workspace / "chrome"
+    chrome_home = workspace / ("chrome-registration" if registration_only else "chrome-inspection")
     chrome_home.mkdir(mode=0o700)
     chrome_stderr_path = workspace / "chrome.stderr"
     chrome_stderr = chrome_stderr_path.open("w", encoding="utf-8")
@@ -340,6 +367,25 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === 'Agent Registry'", "authenticated Agent Registry")
         time.sleep(0.5)
 
+        if registration_only:
+            charter_json = pathlib.Path(sys.argv[5]).read_text(encoding="utf-8")
+            fixture_json = pathlib.Path(sys.argv[6]).read_text(encoding="utf-8")
+            devtools.command("Page.navigate", {"url": origin + "/console/agents/charter-import"})
+            wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#agent-registration-prepare')", "authenticated Agent registration form")
+            insert_text(devtools, "#charter", charter_json)
+            insert_text(devtools, "#fixture", fixture_json)
+            insert_text(devtools, "#fleet-id", "proof-fleet")
+            insert_text(devtools, "#source-id", "missing-proof-source")
+            click(devtools, '#agent-registration-prepare button[type="submit"]')
+            wait_for(devtools, "document.readyState === 'complete' && document.body.innerText.includes('Registration proposal denied') && !!document.querySelector('#agent-registration-prepare')", "invalid current-fleet source denied without registration")
+            replace_text(devtools, "#source-id", "proof-source")
+            click(devtools, '#agent-registration-prepare button[type="submit"]')
+            wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#agent-registration-execute') && document.body.textContent.includes('Exact immutable registration proposal')", "exact Agent registration review")
+            click(devtools, '#agent-registration-execute button[type="submit"]')
+            wait_for(devtools, "document.readyState === 'complete' && document.body.innerText.includes('Registered Agent with authoritative exact revision readback') && !!document.querySelector('a[href*=\"record_key=proof-agent\"]')", "browser-authenticated Agent registration")
+            print(json.dumps({"browser": "Google Chrome", "browser_authenticated_agent_registration": "pass", "invalid_source_denial": "pass", "credentials_used_for_fleet_workflow": False}, sort_keys=True))
+            return 0
+
         expected = {
             "agents": "Agent Registry",
             "graphs": "Graphs",
@@ -356,7 +402,7 @@ def main() -> int:
             time.sleep(1.0)
 
         click(devtools, 'a[href="/console/agents#/agents"]')
-        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "seeded Agent Registry record")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')", "installed Agent Registry record")
         mutation_paths = ("/console/session", "/console/login", "/console/password")
         session_requests_before = sum(
             1
@@ -379,9 +425,45 @@ def main() -> int:
         )
         require(session_requests_after == session_requests_before, "charter import review link triggered a session mutation request")
         click(devtools, "#charter-import-back")
-        wait_for(devtools, "location.pathname === '/console/agents' && document.readyState === 'complete' && !!document.querySelector('#record-agent-alpha')", "native back link to Agent Registry")
-        click(devtools, "#record-agent-alpha")
-        wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('agent-alpha')", "Agent Registry detail")
+        wait_for(devtools, "location.pathname === '/console/agents' && document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')", "native back link to Agent Registry")
+        time.sleep(0.5)
+        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents"})
+        wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('proof-agent') && location.search.includes('revision=1')", "exact Agent Registry revision detail")
+
+        # Traverse the installed immutable fleet-control chain only through the
+        # product's rendered related-record links.
+        click(devtools, '.related-records a[href^="/console/loops?record_key=proof-loop%3A1"]')
+        wait_for(devtools, "location.pathname === '/console/loops' && location.search.includes('record_key=proof-loop%3A1') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "Agent to exact Loop related record")
+        time.sleep(0.5)
+        devtools.command("Page.reload", {"ignoreCache": True})
+        wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "reloaded exact Loop canonical URL")
+        time.sleep(0.5)
+        click(devtools, '.related-records a[href^="/console/graphs?record_key=proof-graph%3A1"]')
+        wait_for(devtools, "location.pathname === '/console/graphs' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact Graph related record")
+        time.sleep(0.5)
+        click(devtools, '.related-records a[href^="/console/queue?record_key=queue-accepted"]')
+        wait_for(devtools, "location.pathname === '/console/queue' && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to Queue evidence, receipt, and disposition chain")
+        time.sleep(0.5)
+
+        devtools.evaluate("history.back()")
+        wait_for(devtools, "location.pathname === '/console/graphs' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "browser Back restored exact Graph")
+        time.sleep(0.5)
+        devtools.evaluate("history.forward()")
+        wait_for(devtools, "location.pathname === '/console/queue' && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted'", "browser Forward restored exact Queue record")
+        time.sleep(0.5)
+
+        devtools.command("Page.navigate", {"url": origin + "/console/loops?q=loop&lifecycle=draft&limit=1#/loops"})
+        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('q=loop') && location.search.includes('lifecycle=draft') && document.querySelectorAll('#surface-list a').length === 1 && !!document.querySelector('.pagination a')", "installed Loop search, lifecycle filter, and first bounded page")
+        time.sleep(0.5)
+        click(devtools, '.pagination a')
+        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('page=2') && location.search.includes('q=loop') && location.search.includes('lifecycle=draft') && document.querySelectorAll('#surface-list a').length === 1", "bounded pagination preserving Loop filters")
+        time.sleep(0.5)
+
+        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents"})
+        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#inspector-fields')?.textContent.includes('1 @ sha256:')", "canonical direct load of exact Agent revision")
+        time.sleep(0.5)
+        devtools.command("Page.reload", {"ignoreCache": True})
+        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-agent'", "reloaded exact Agent revision")
         click(devtools, "#close-inspector")
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed Agent Registry detail")
 

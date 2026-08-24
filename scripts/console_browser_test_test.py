@@ -104,6 +104,7 @@ class NativeFormInputTest(unittest.TestCase):
     def test_insert_text_requires_exact_browser_value_before_submission(self):
         devtools = mock.MagicMock()
         devtools.evaluate.side_effect = [
+            True,
             {"x": 10, "y": 10, "width": 100, "height": 20, "hit": "password", "target": True},
             True,
             True,
@@ -117,6 +118,7 @@ class NativeFormInputTest(unittest.TestCase):
     def test_insert_text_denies_when_browser_did_not_retain_value(self):
         devtools = mock.MagicMock()
         devtools.evaluate.side_effect = [
+            True,
             {"x": 10, "y": 10, "width": 100, "height": 20, "hit": "password", "target": True},
             True,
             False,

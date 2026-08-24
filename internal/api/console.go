@@ -460,13 +460,13 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Agent Registry record")
 			}
-			record = consoleAgentRecord(agent)
+			record = consoleAgentRecord(agent, surface)
 		} else if domain == consoleLoops {
 			loopView, ok := value.(app.LoopView)
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Loop record")
 			}
-			record = consoleLoopRecord(loopView)
+			record = consoleLoopRecord(loopView, surface.Graphs)
 		} else if domain == consoleGraphs {
 			graphView, ok := value.(app.GraphView)
 			if !ok {
@@ -478,7 +478,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Execution Queue record")
 			}
-			record = consoleQueueRecord(queueView)
+			record = consoleQueueRecord(queueView, surface.Graphs)
 		} else if domain == consoleCredentials {
 			cred, ok := value.(app.CredentialView)
 			if !ok {
@@ -502,7 +502,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 	return model, nil
 }
 
-func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
+func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) consoleweb.RecordModel {
 	revision := agent.Revision
 	readiness := "Lifecycle eligible; fresh authority admission required"
 	if revision.Lifecycle == "disabled" {
@@ -521,7 +521,7 @@ func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
 	if len(policies) == 0 {
 		policies = append(policies, "None declared")
 	}
-	return consoleweb.RecordModel{
+	record := consoleweb.RecordModel{
 		Key: revision.AgentID, Digest: revision.Digest, Label: revision.AgentID, Summary: revision.AgentID + " · " + string(revision.Lifecycle),
 		Lifecycle: string(revision.Lifecycle), Readiness: readiness,
 		Revision: fmt.Sprintf("r%d", revision.Revision), Runtime: revision.Runtime.Target,
@@ -543,9 +543,27 @@ func consoleAgentRecord(agent app.FleetAgent) consoleweb.RecordModel {
 			{Label: "Provisioning evidence", Value: "Not present on the Agent Registry revision"},
 		},
 	}
+	for _, surface := range surfaces {
+		for _, loopView := range surface.Loops {
+			publisher := loopView.Provenance.PublisherAgent
+			if publisher.ID == revision.AgentID && publisher.Revision == revision.Revision && publisher.Digest == revision.Digest {
+				loopRevision := loopView.Revision
+				record.Links = append(record.Links, consoleweb.LinkModel{Label: "Published Loop", Detail: exactRevisionLabel(loopRevision.LoopID, loopRevision.Revision, loopRevision.Digest), URL: consoleRecordURL(consoleLoops, loopRevision.LoopID+":"+strconv.FormatUint(loopRevision.Revision, 10))})
+			}
+		}
+		for _, graphView := range surface.Graphs {
+			for _, node := range graphView.Revision.Nodes {
+				if node.Participant.ID == revision.AgentID && node.Participant.Revision == revision.Revision && node.Participant.Digest == revision.Digest {
+					graphRevision := graphView.Revision
+					record.Links = append(record.Links, consoleweb.LinkModel{Label: "Bound Graph · " + node.ID, Detail: exactRevisionLabel(graphRevision.GraphID, graphRevision.Revision, graphRevision.Digest), URL: consoleRecordURL(consoleGraphs, graphRevision.GraphID+":"+strconv.FormatUint(graphRevision.Revision, 10))})
+				}
+			}
+		}
+	}
+	return record
 }
 
-func consoleLoopRecord(view app.LoopView) consoleweb.RecordModel {
+func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
 	steps := make([]string, 0, len(revision.Steps))
 	maxAttempts := uint16(0)
@@ -597,11 +615,12 @@ func consoleLoopRecord(view app.LoopView) consoleweb.RecordModel {
 	if len(view.History) > 0 {
 		control.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
 	}
-	return consoleweb.RecordModel{
+	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.LoopID,
 		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: control,
+		Links: []consoleweb.LinkModel{{Label: "Publisher Agent", Detail: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest), URL: consoleAgentRevisionURL(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision)}},
 		Fields: []consoleweb.FieldModel{
 			{Label: "Executable steps", Value: strings.Join(steps, "\n")},
 			{Label: "Transitions", Value: strings.Join(transitions, "\n")},
@@ -616,6 +635,17 @@ func consoleLoopRecord(view app.LoopView) consoleweb.RecordModel {
 			{Label: "Immutable revision", Value: fmt.Sprintf("%s revision %d @ %s", revision.LoopID, revision.Revision, revision.Digest)},
 		},
 	}
+	for _, graphs := range graphSets {
+		for _, graphView := range graphs {
+			for _, node := range graphView.Revision.Nodes {
+				if node.Loop.ID == revision.LoopID && node.Loop.Revision == revision.Revision && node.Loop.Digest == revision.Digest {
+					graphRevision := graphView.Revision
+					record.Links = append(record.Links, consoleweb.LinkModel{Label: "Bound Graph · " + node.ID, Detail: exactRevisionLabel(graphRevision.GraphID, graphRevision.Revision, graphRevision.Digest), URL: consoleRecordURL(consoleGraphs, graphRevision.GraphID+":"+strconv.FormatUint(graphRevision.Revision, 10))})
+				}
+			}
+		}
+	}
+	return record
 }
 
 func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw string) consoleweb.RecordModel {
@@ -654,6 +684,10 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 			ID: node.ID, Participant: exactRevisionLabel(node.Participant.ID, node.Participant.Revision, node.Participant.Digest),
 			Loop: exactRevisionLabel(node.Loop.ID, node.Loop.Revision, node.Loop.Digest), Inputs: strings.Join(inputs, ", "), Outputs: strings.Join(outputs, ", "),
 		})
+		detail.Links = append(detail.Links,
+			consoleweb.LinkModel{Label: "Agent · " + node.ID, Detail: exactRevisionLabel(node.Participant.ID, node.Participant.Revision, node.Participant.Digest), URL: consoleAgentRevisionURL(node.Participant.ID, node.Participant.Revision)},
+			consoleweb.LinkModel{Label: "Loop · " + node.ID, Detail: exactRevisionLabel(node.Loop.ID, node.Loop.Revision, node.Loop.Digest), URL: consoleRecordURL(consoleLoops, node.Loop.ID+":"+strconv.FormatUint(node.Loop.Revision, 10))},
+		)
 	}
 	for _, dependency := range revision.Dependencies {
 		mappings := make([]string, 0, len(dependency.Mappings))
@@ -677,6 +711,7 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 			GraphRun:   accepted.GraphRun.GraphRunID, Authority: accepted.Submission.Authority.ID + " @ " + accepted.Submission.Authority.Digest,
 			Mandate: accepted.Submission.MandateID, Runtime: accepted.Submission.Runtime, Inputs: strings.Join(inputs, "\n"),
 		})
+		detail.Links = append(detail.Links, consoleweb.LinkModel{Label: "Execution Queue", Detail: accepted.QueueItem.ItemID + " @ " + accepted.QueueItem.Digest, URL: consoleRecordURL(consoleQueue, accepted.QueueItem.ItemID)})
 	}
 	for _, rejection := range history.Rejected {
 		detail.RejectedSubmissions = append(detail.RejectedSubmissions, consoleweb.FieldModel{Label: rejection.SubmissionID, Value: rejection.ReasonCode + " · " + rejection.Reason})
@@ -700,7 +735,7 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 	}
 }
 
-func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
+func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	state := queuePhase(view)
 	detail := &consoleweb.QueueDetailModel{
 		QueueItem: []consoleweb.FieldModel{
@@ -724,6 +759,16 @@ func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
 		ReceiptState:     "Unavailable — no authoritative verifier receipt is attached.",
 		DispositionState: "Pending — no authoritative terminal disposition is attached.",
 	}
+	for _, graphs := range graphSets {
+		for _, graphView := range graphs {
+			for _, run := range graphView.Runs {
+				if run.QueueItem.ItemID == view.Item.ItemID {
+					revision := graphView.Revision
+					detail.Links = append(detail.Links, consoleweb.LinkModel{Label: "Graph revision", Detail: exactRevisionLabel(revision.GraphID, revision.Revision, revision.Digest), URL: consoleRecordURL(consoleGraphs, revision.GraphID+":"+strconv.FormatUint(revision.Revision, 10))})
+				}
+			}
+		}
+	}
 	for _, dependency := range view.Item.Dependencies {
 		detail.Dependencies = append(detail.Dependencies, consoleweb.FieldModel{Label: dependency.ID, Value: queueDependencyValue(view, dependency.ID)})
 	}
@@ -731,6 +776,10 @@ func consoleQueueRecord(view app.QueueExecutionView) consoleweb.RecordModel {
 	for _, child := range view.LoopExecutions {
 		detail.Loops = append(detail.Loops, consoleweb.QueueExecutionNodeModel{ID: child.LoopExecutionID, Kind: "Loop execution · " + child.GraphNodeID, State: string(child.State), Binding: exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · participant " + exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest), Digest: child.Digest})
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Loop execution", State: string(child.State), At: consoleTime(child.CreatedAt), Detail: child.LoopExecutionID + " · node " + child.GraphNodeID})
+		detail.Links = append(detail.Links,
+			consoleweb.LinkModel{Label: "Agent · " + child.GraphNodeID, Detail: exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest), URL: consoleAgentRevisionURL(child.Participant.ID, child.Participant.Revision)},
+			consoleweb.LinkModel{Label: "Loop · " + child.GraphNodeID, Detail: exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest), URL: consoleRecordURL(consoleLoops, child.Loop.ID+":"+strconv.FormatUint(child.Loop.Revision, 10))},
+		)
 	}
 	for _, attempt := range view.Attempts {
 		detail.Attempts = append(detail.Attempts, consoleweb.QueueAttemptModel{ID: attempt.AttemptID, Number: attempt.AttemptNumber, State: string(attempt.State), LoopID: attempt.LoopExecutionID, ClaimID: attempt.ClaimID, Created: consoleTime(attempt.CreatedAt), Digest: attempt.Digest})
@@ -1236,6 +1285,18 @@ func exactRevisionLabel(id string, revision uint64, digest string) string {
 	return fmt.Sprintf("%s r%d @ %s", id, revision, digest)
 }
 
+func consoleRecordURL(domain consoleDomain, key string) string {
+	fragment := "#/" + string(domain)
+	if domain == consoleQueue {
+		fragment += "/" + url.PathEscape(key)
+	}
+	return "/console/" + string(domain) + "?record_key=" + url.QueryEscape(key) + fragment
+}
+
+func consoleAgentRevisionURL(id string, revision uint64) string {
+	return "/console/agents?record_key=" + url.QueryEscape(id) + "&revision=" + strconv.FormatUint(revision, 10) + "#/agents"
+}
+
 // filterConsoleAgents filters the Agent Registry surface by stable ID substring
 // and exact lifecycle. Lifecycle is one of "all", "enabled", "disabled",
 // "retired". The reference search is exact-after-prefix and bounded.
@@ -1268,6 +1329,109 @@ func filterConsoleAgents(model *consoleweb.SurfaceModel, query, lifecycle string
 	model.Records = filtered
 	if model.State == "ready" && len(filtered) == 0 {
 		model.State = "filtered-empty"
+	}
+	return nil
+}
+
+func filterConsoleDefinitions(model *consoleweb.SurfaceModel, query, lifecycle string) error {
+	query = strings.TrimSpace(query)
+	if len(query) > 128 || strings.ContainsAny(query, "\r\n\x00") {
+		return errors.New("invalid definition search")
+	}
+	if lifecycle == "" {
+		lifecycle = "all"
+	}
+	switch lifecycle {
+	case "all", "draft", "published", "active", "inactive", "retired":
+	default:
+		return errors.New("invalid definition lifecycle filter")
+	}
+	model.Query, model.Lifecycle = query, lifecycle
+	needle := strings.ToLower(query)
+	filtered := make([]consoleweb.RecordModel, 0, len(model.Records))
+	for _, record := range model.Records {
+		if lifecycle != "all" && record.Lifecycle != lifecycle {
+			continue
+		}
+		if needle != "" && !strings.Contains(strings.ToLower(record.Label+" "+record.Summary+" "+record.Runtime+" "+record.Source), needle) {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	model.Records = filtered
+	model.TotalCount = len(filtered)
+	if model.State == "ready" && len(filtered) == 0 {
+		model.State = "filtered-empty"
+	}
+	return nil
+}
+
+func paginateConsoleCollection(model *consoleweb.SurfaceModel, rawPage, recordKey string, limit int, query url.Values) error {
+	if limit < 1 || limit > 100 {
+		return errors.New("invalid console page limit")
+	}
+	page := 1
+	if rawPage != "" {
+		parsed, err := strconv.Atoi(rawPage)
+		if err != nil || parsed < 1 || parsed > 10000 {
+			return errors.New("invalid console page")
+		}
+		page = parsed
+	}
+	if recordKey != "" {
+		found := -1
+		for index := range model.Records {
+			if model.Records[index].Key == recordKey {
+				found = index
+				break
+			}
+		}
+		if found < 0 {
+			return errors.New("unknown console record")
+		}
+		page = found/limit + 1
+	}
+	total := len(model.Records)
+	model.TotalRecords = total
+	start := (page - 1) * limit
+	if start > total || (start == total && total > 0) {
+		return errors.New("invalid console page")
+	}
+	end := min(start+limit, total)
+	if start < total {
+		model.Records = model.Records[start:end]
+	} else {
+		model.Records = nil
+	}
+	pageURL := func(target int) string {
+		values := url.Values{}
+		for key, entries := range query {
+			for _, entry := range entries {
+				values.Add(key, entry)
+			}
+		}
+		values.Del("record_key")
+		if target > 1 {
+			values.Set("page", strconv.Itoa(target))
+		} else {
+			values.Del("page")
+		}
+		path := "/console/" + model.Domain
+		if encoded := values.Encode(); encoded != "" {
+			path += "?" + encoded
+		}
+		return path + "#/" + model.Domain
+	}
+	pages := 1
+	if total > 0 {
+		pages = (total + limit - 1) / limit
+	}
+	model.Pagination = consoleweb.PaginationModel{Label: fmt.Sprintf("Page %d of %d", page, pages), Summary: fmt.Sprintf("Showing %d–%d of %d matching records", min(start+1, total), end, total), HasPrevious: page > 1, HasNext: end < total}
+	if model.Pagination.HasPrevious {
+		model.Pagination.PreviousURL = pageURL(page - 1)
+	}
+	if model.Pagination.HasNext {
+		model.Pagination.NextURL = pageURL(page + 1)
 	}
 	return nil
 }
@@ -1435,6 +1599,22 @@ func filterConsoleQueue(model *consoleweb.SurfaceModel, state string) error {
 		model.State = "filtered-empty"
 	}
 	return nil
+}
+
+// syncConsoleQueueBands derives the summary bands from the exact filtered,
+// paginated collection rendered below them. This prevents records outside the
+// selected lifecycle or bounded page from leaking into the visible result.
+func syncConsoleQueueBands(model *consoleweb.SurfaceModel) {
+	model.ActiveRecords = nil
+	model.FailedRecords = nil
+	for _, record := range model.Records {
+		switch record.Lifecycle {
+		case "active":
+			model.ActiveRecords = append(model.ActiveRecords, record)
+		case "failed":
+			model.FailedRecords = append(model.FailedRecords, record)
+		}
+	}
 }
 
 func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb.ActionModel {

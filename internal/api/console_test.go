@@ -306,6 +306,62 @@ func TestConsoleDomainAndRecordSelectorsFailClosed(t *testing.T) {
 	}
 }
 
+func TestConsoleCollectionPaginationPreservesFiltersAndDeepLinks(t *testing.T) {
+	model := consoleweb.SurfaceModel{Domain: string(consoleLoops), State: "ready", Records: []consoleweb.RecordModel{
+		{Key: "loop-a:1", Label: "loop-a", Lifecycle: "active"},
+		{Key: "loop-b:1", Label: "loop-b", Lifecycle: "draft"},
+		{Key: "loop-c:1", Label: "loop-c", Lifecycle: "active"},
+	}}
+	if err := filterConsoleDefinitions(&model, "loop", "all"); err != nil {
+		t.Fatal(err)
+	}
+	query := url.Values{"q": {"loop"}, "lifecycle": {"all"}, "limit": {"1"}, "record_key": {"loop-c:1"}}
+	if err := paginateConsoleCollection(&model, "1", "loop-c:1", 1, query); err != nil {
+		t.Fatal(err)
+	}
+	if len(model.Records) != 1 || model.Records[0].Key != "loop-c:1" || model.TotalRecords != 3 {
+		t.Fatalf("deep link did not resolve its canonical page: %+v", model)
+	}
+	if model.TotalCount != 3 {
+		t.Fatalf("definition count did not report the filtered authoritative collection: %+v", model)
+	}
+	if model.Pagination.Label != "Page 3 of 3" || model.Pagination.PreviousURL != "/console/loops?lifecycle=all&limit=1&page=2&q=loop#/loops" || model.Pagination.HasNext {
+		t.Fatalf("pagination did not preserve canonical filters: %+v", model.Pagination)
+	}
+	if err := paginateConsoleCollection(&consoleweb.SurfaceModel{Domain: string(consoleLoops), Records: []consoleweb.RecordModel{{Key: "loop-a:1"}}}, "1", "missing", 1, nil); err == nil {
+		t.Fatal("unknown deep-linked record was accepted")
+	}
+	for _, input := range []struct{ query, lifecycle string }{{strings.Repeat("x", 129), "all"}, {"x\ny", "all"}, {"", "enabled"}} {
+		candidate := consoleweb.SurfaceModel{}
+		if err := filterConsoleDefinitions(&candidate, input.query, input.lifecycle); err == nil {
+			t.Fatalf("unsafe definition filter accepted: %+v", input)
+		}
+	}
+}
+
+func TestConsoleRecordURLBindsStableRecordAndNeverAuthority(t *testing.T) {
+	if got := consoleRecordURL(consoleGraphs, "graph/a:2"); got != "/console/graphs?record_key=graph%2Fa%3A2#/graphs" {
+		t.Fatalf("graph cross-link=%q", got)
+	}
+	if got := consoleRecordURL(consoleQueue, "queue/a"); got != "/console/queue?record_key=queue%2Fa#/queue/queue%2Fa" {
+		t.Fatalf("queue cross-link=%q", got)
+	}
+}
+
+func TestConsoleAgentRelatedRecordsRequireExactImmutableRevision(t *testing.T) {
+	digest := func(marker string) string { return "sha256:" + strings.Repeat(marker, 64) }
+	agentDigest := digest("a")
+	agent := app.FleetAgent{Revision: registry.AgentRevision{AgentID: "agent-reviewer", Revision: 2, Digest: agentDigest}}
+	surface := app.FleetSurface{Loops: []app.LoopView{
+		{Revision: loop.LoopRevision{LoopID: "loop-exact", Revision: 1, Digest: digest("b")}, Provenance: loop.PublicationProvenance{PublisherAgent: loop.ProvenanceRevision{ID: "agent-reviewer", Revision: 2, Digest: agentDigest}}},
+		{Revision: loop.LoopRevision{LoopID: "loop-stale", Revision: 1, Digest: digest("c")}, Provenance: loop.PublicationProvenance{PublisherAgent: loop.ProvenanceRevision{ID: "agent-reviewer", Revision: 1, Digest: digest("d")}}},
+	}}
+	record := consoleAgentRecord(agent, surface)
+	if len(record.Links) != 1 || record.Links[0].URL != "/console/loops?record_key=loop-exact%3A1#/loops" {
+		t.Fatalf("Agent related records crossed immutable revisions: %+v", record.Links)
+	}
+}
+
 func TestAgentRegistryFiltersAreBoundedStableAndPresentationOnly(t *testing.T) {
 	model := consoleweb.SurfaceModel{
 		Domain: string(consoleAgents), State: "ready", TotalRecords: 3,
@@ -418,6 +474,9 @@ func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *test
 	if record.Key != "loop.review:3" || record.Lifecycle != "active" || record.Runtime != "hermes-agent" || record.Source != "agent-reviewer" || record.Authority != "authority-review" {
 		t.Fatalf("Loop summary lost exact bindings: %+v", record)
 	}
+	if len(record.Links) != 1 || record.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=7#/agents" {
+		t.Fatalf("Loop publisher link lost exact Agent revision: %+v", record.Links)
+	}
 	values := make(map[string]string, len(record.Fields))
 	for _, field := range record.Fields {
 		values[field.Label] = field.Value
@@ -464,6 +523,9 @@ func TestConsoleGraphRecordPreservesExactTopologyLifecycleAndSubmissionTruth(t *
 	if record.Graph.Nodes[0].Loop != exactRevisionLabel("loop-review", 7, digest("d")) || record.Graph.Nodes[0].Inputs != "brief:string required=true" || record.Graph.Edges[0].Mappings != "draft → draft" {
 		t.Fatalf("exact Loop binding or interface lost: %+v", record.Graph)
 	}
+	if record.Graph.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents" {
+		t.Fatalf("Graph participant link lost exact Agent revision: %+v", record.Graph.Links)
+	}
 	if len(record.Graph.AcceptedRuns) != 1 || record.Graph.AcceptedRuns[0].Snapshot != "snapshot-1 @ "+digest("2") || record.Graph.AcceptedRuns[0].Authority != "authority-1 @ "+digest("4") || !strings.Contains(record.Graph.AcceptedRuns[0].Inputs, `brief (string) = "inspect"`) {
 		t.Fatalf("immutable accepted snapshot lost: %+v", record.Graph.AcceptedRuns)
 	}
@@ -503,6 +565,9 @@ func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *te
 	if len(record.Queue.Loops) != 1 || record.Queue.Loops[0].Binding != wantBinding {
 		t.Fatalf("exact Loop/participant provenance lost: %+v", record.Queue.Loops)
 	}
+	if len(record.Queue.Links) < 2 || record.Queue.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents" {
+		t.Fatalf("Queue participant link lost exact Agent revision: %+v", record.Queue.Links)
+	}
 	if len(record.Queue.Attempts) != 1 || record.Queue.Attempts[0].ClaimID != "claim-130" || len(record.Queue.Receipts) != 1 || record.Queue.Receipts[0].Outcome != "passed" {
 		t.Fatalf("attempt or receipt provenance lost: %+v", record.Queue)
 	}
@@ -524,6 +589,12 @@ func TestConsoleQueueFilterSeparatesLifecycleViews(t *testing.T) {
 	}
 	if model.QueueState != "failed" || len(model.Records) != 1 || model.Records[0].Key != "failed" {
 		t.Fatalf("filtered queue model=%+v", model)
+	}
+	model.ActiveRecords = []consoleweb.RecordModel{{Key: "outside-filter", Lifecycle: "active"}}
+	model.FailedRecords = []consoleweb.RecordModel{{Key: "outside-page", Lifecycle: "failed"}}
+	syncConsoleQueueBands(&model)
+	if len(model.ActiveRecords) != 0 || len(model.FailedRecords) != 1 || model.FailedRecords[0].Key != "failed" {
+		t.Fatalf("queue bands escaped filtered page: active=%+v failed=%+v", model.ActiveRecords, model.FailedRecords)
 	}
 	if err := filterConsoleQueue(&model, "unknown"); err == nil {
 		t.Fatal("unknown queue state filter accepted")

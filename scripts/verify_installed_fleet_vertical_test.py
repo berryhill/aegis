@@ -12,6 +12,10 @@ class InstalledFleetVerticalContract(unittest.TestCase):
     def test_release_shaped_verifier_runs_repository_owned_vertical(self) -> None:
         verifier = (REPO / "scripts" / "verify-installed-mvi.sh").read_text(encoding="utf-8")
         self.assertIn('verify-installed-fleet-vertical.py" "$install/aegis" "$proof/vertical"', verifier)
+        self.assertIn(
+            'AEGIS_CANDIDATE_ARCHIVE_EXTRACTED=1 \\\n  "$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"',
+            verifier,
+        )
         proof = REPO / "scripts" / "verify-installed-fleet-vertical.py"
         self.assertTrue(proof.is_file(), "repository-owned installed fleet vertical is missing")
 
