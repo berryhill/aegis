@@ -34,6 +34,8 @@ jobs:
           python3 scripts/console_security_test.py
           go generate ./web/console
           git diff --exit-code -- web/console go.mod go.sum
+          go run ./internal/skillbundle/cmd validate .
+          go run ./internal/skillbundle/cmd evaluate .
           go mod tidy
           git diff --exit-code -- go.mod go.sum
           test -z "$(gofmt -l ./cmd ./internal ./web)"
