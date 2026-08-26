@@ -8,7 +8,7 @@ export GOTOOLCHAIN := go1.26.6
 VERSION ?= 0.2.2
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
 
-.PHONY: verify release-readiness console-generate console-verify authority-denial-matrix release-review release
+.PHONY: verify skillbundle-verify release-readiness console-generate console-verify authority-denial-matrix release-review release
 
 console-generate:
 	go generate ./web/console
@@ -19,7 +19,13 @@ console-verify:
 	go generate ./web/console
 	git diff --exit-code -- web/console go.mod go.sum
 
+skillbundle-verify:
+	go test ./internal/skillbundle/...
+	go run ./internal/skillbundle/cmd validate .
+	go run ./internal/skillbundle/cmd evaluate .
+
 verify:
+	$(MAKE) skillbundle-verify
 	$(MAKE) console-verify
 	go mod tidy
 	git diff --exit-code -- go.mod go.sum

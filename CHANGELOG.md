@@ -6,6 +6,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Added the repository-owned official Aegis Hermes skill-suite foundation: a thin advisory routing skill, strict compatibility/authority/capability/inventory manifest, structural evaluation suite, fail-closed validation including complete dependency-cycle denial, and a deterministic release archive. Release packaging publishes the separately checksummed skills archive, and archive verification requires its embedded immutable source revision to exactly match the expected release revision.
 - Completed the credential custody, vault lifecycle, and operational Credentials surface (#131). Typed application/repository queries provide authoritative active/revoked search, counts, deterministic pagination, exact lookup beyond the first 100 records, immutable version history, binding counts, and vault metadata without projecting secret values, ciphertext, or key material. Authenticated native browser workflows now review and execute create, rotate, revoke, exact binding, and policy-selected ciphertext backup through strict forms, exact-origin CSRF, one-use session-bound receipts, fresh target/version revalidation, and metadata-only readback. Cancelling review consumes the exact receipt and immediately wipes its retained payload. Initialization, unlock, reveal, restore, KEK administration, and arbitrary-path backup remain CLI-only; missing, locked, corrupt, or unavailable credentials do not change Registry, Loop, Graph, or Queue readiness.
 
 ### Changed

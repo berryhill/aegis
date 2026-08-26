@@ -88,6 +88,11 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   rm -rf "$stage"
 done
 
+go run ./internal/skillbundle/cmd validate .
+go run ./internal/skillbundle/cmd evaluate .
+go run ./internal/skillbundle/cmd build . "$dist" "$version" "$expected_revision"
+go run ./internal/skillbundle/cmd verify "$dist/aegis-skills_v${version}.tar.gz" "$expected_revision"
+
 (
   cd "$dist"
   sha256sum *.tar.gz >SHA256SUMS
@@ -145,4 +150,4 @@ python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$install/aegis" "$pr
 AEGIS_CANDIDATE_ARCHIVE_EXTRACTED=1 \
   "$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"
 
-printf 'installed MVI verified: version=%s source_revision=%s targets=4 checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_native_forms retained_asset_direct=true retained_asset_loaded=false real_chrome=true\n' "$version" "$expected_revision"
+printf 'installed MVI verified: version=%s source_revision=%s targets=4 skill_bundle=validated_evaluated_reproducible checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_native_forms retained_asset_direct=true retained_asset_loaded=false real_chrome=true\n' "$version" "$expected_revision"

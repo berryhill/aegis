@@ -36,6 +36,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/principalauth":     {},
+	"internal/skillbundle":       {"internal/skillbundle"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
 	"internal/app":               {"internal/config", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
 	"internal/managergateway":    {"internal/app", "internal/core", "internal/manager", "internal/slash"},
@@ -48,7 +49,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
 	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
-	"reference": {}, "registry": {}, "safefs": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
+	"reference": {}, "registry": {}, "safefs": {}, "skillbundle": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 	"userservice": {},
 }
 
