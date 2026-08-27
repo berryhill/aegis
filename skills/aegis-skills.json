@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:06bf3fc541c3558758325de660d4823a7385ab340b6438107a67b8821a48f256",
+    "content_digest": "sha256:85077d546bb031aaf740bd3df220a394ccd93c90b52a9f90ad5ddc10271b1ff7",
     "source_revision": "repository"
   },
   "operations": [
@@ -17,6 +17,11 @@
     {
       "operation": "aegis.trust-context.inspect",
       "primary_skill": "aegis-trust-context-inspection",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.audit.verify",
+      "primary_skill": "aegis-audit-verification",
       "availability": "shipped"
     }
   ],
@@ -71,6 +76,37 @@
           "path": "references/inspection-fixtures.json",
           "sha256": "sha256:7baf2d7a2e46975a4b8b72fb52b7eb958d848f08531e17ecb903460802bf2bd9",
           "size": 5822
+        }
+      ]
+    },
+    {
+      "slug": "aegis-audit-verification",
+      "version": "0.1.0",
+      "path": "skills/aegis-audit-verification",
+      "description": "Verify and explain authoritative Aegis audit chains, delivery state, receipts, and reconstructable history without creating or repairing authority.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.audit.verify"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:efa452e6e6fec89318fb60c6b3bb20246cbd610fc9652ad915b85617fe397fbe",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:16f4f365581d563a4483f8942aa2bbe30676090275a342275e9e3df57c98c1d2",
+          "size": 7437
+        },
+        {
+          "path": "references/audit-fixtures.json",
+          "sha256": "sha256:e2a69f85091fd5108a0808df9eb918742386cfd7562df2af6244f9f6949e97c1",
+          "size": 7397
         }
       ]
     }
