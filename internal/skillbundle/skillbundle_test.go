@@ -357,6 +357,162 @@ func TestAuditVerificationSkill(t *testing.T) {
 	}
 }
 
+func TestApprovalProvisioningSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-approval-provisioning"
+		operation = "aegis.approval-provisioning.review"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-charter-design,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillText := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
+	for _, required := range []string{
+		"aegis plan preview AGENT --revision REVISION --environment local",
+		"aegis plan show PLAN_ID",
+		"aegis approval request PLAN_ID --ttl DURATION",
+		"aegis approval show APPROVAL_ID",
+		"aegis approval approve APPROVAL_ID",
+		"aegis approval reject APPROVAL_ID",
+		"aegis provision PLAN_ID APPROVAL_ID",
+		"GET /v1/receipts/:id",
+		"there is no shipped receipt CLI command",
+		"no standalone recovery CLI is shipped",
+		"authority_not_unioned: true",
+		"Conversational words such as “looks good” are not the typed decision",
+		"must not be retried blindly with the consumed approval",
+		"does not activate a runtime",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing approval/provisioning contract %q", required)
+		}
+	}
+
+	var document struct {
+		Fixtures []struct {
+			ID                  string         `json:"id"`
+			AuthoritativeResult map[string]any `json:"authoritative_result"`
+		} `json:"fixtures"`
+	}
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "provisioning-fixtures.json"))
+	mustDecode(t, fixtureBytes, &document)
+	fixtureByID := make(map[string]map[string]any, len(document.Fixtures))
+	for _, fixture := range document.Fixtures {
+		fixtureByID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{
+		"verified-exact-plan",
+		"changed-plan",
+		"consumed-replay",
+		"interrupted-recovered",
+		"interrupted-manual-intervention",
+	} {
+		if fixtureByID[id] == nil {
+			t.Errorf("provisioning fixtures missing %q", id)
+		}
+	}
+
+	verified := fixtureByID["verified-exact-plan"]
+	plan, planOK := verified["plan"].(map[string]any)
+	approval, approvalOK := verified["approval"].(map[string]any)
+	receipt, receiptOK := verified["receipt"].(map[string]any)
+	effective, effectiveOK := verified["effective_authority"].(map[string]any)
+	if !planOK || !approvalOK || !receiptOK || !effectiveOK {
+		t.Fatalf("verified fixture lacks correlated records: %#v", verified)
+	}
+	for _, field := range []string{"plan_id", "plan_digest", "charter_digest"} {
+		planField := field
+		if field == "plan_id" {
+			planField = "id"
+		} else if field == "plan_digest" {
+			planField = "digest"
+		}
+		if approval[field] != plan[planField] || receipt[field] != plan[planField] {
+			t.Errorf("verified fixture %s is not exactly correlated: plan=%#v approval=%#v receipt=%#v", field, plan[planField], approval[field], receipt[field])
+		}
+	}
+	if receipt["approval_id"] != approval["id"] || receipt["status"] != "verified" || receipt["failure"] != nil || receipt["finished_at"] == nil || approval["status"] != "consumed" || effective["authority_not_unioned"] != true {
+		t.Errorf("verified fixture does not prove finished receipt, consumed exact approval, and separated authority: %#v", verified)
+	}
+	runtime, runtimeOK := plan["runtime"].(map[string]any)
+	planEnvironment, planEnvironmentOK := plan["environment"].(map[string]any)
+	approvalEnvironment, approvalEnvironmentOK := approval["environment"].(map[string]any)
+	if !runtimeOK || !planEnvironmentOK || !approvalEnvironmentOK || approval["runtime"] != runtime["runtime"] || approval["runtime_version"] != runtime["version"] || approvalEnvironment["name"] != planEnvironment["name"] {
+		t.Errorf("verified fixture runtime/environment bindings do not match: plan=%#v approval=%#v", plan, approval)
+	}
+	review, reviewOK := verified["review"].(map[string]any)
+	requestedByStanza, requestedOK := review["requested_toolsets"].(map[string]any)
+	selectedTools, selectedOK := effective["tools"].([]any)
+	stanzaID, stanzaIDOK := effective["stanza_id"].(string)
+	requestedTools, stanzaOK := requestedByStanza[stanzaID].([]any)
+	if !reviewOK || !requestedOK || !selectedOK || !stanzaIDOK || !stanzaOK || len(selectedTools) != len(requestedTools) {
+		t.Fatalf("verified fixture lacks separately matched requested/effective toolsets: review=%#v effective=%#v", review, effective)
+	}
+	for i := range selectedTools {
+		if selectedTools[i] != requestedTools[i] {
+			t.Errorf("verified fixture effective toolset does not match requested stanza toolset: requested=%#v selected=%#v", requestedTools, selectedTools)
+		}
+	}
+	effects, effectsOK := plan["effects"].([]any)
+	artifacts, artifactsOK := receipt["artifacts"].([]any)
+	if !effectsOK || !artifactsOK || len(effects) != 1 || len(artifacts) != len(effects) {
+		t.Fatalf("verified fixture effect/artifact cardinality mismatch: effects=%#v artifacts=%#v", plan["effects"], receipt["artifacts"])
+	}
+	effect, effectOK := effects[0].(map[string]any)
+	artifact, artifactOK := artifacts[0].(map[string]any)
+	if !effectOK || !artifactOK || artifact["path"] != effect["target"] || artifact["action"] != effect["kind"] || artifact["digest"] != effect["digest"] || artifact["verified"] != true {
+		t.Errorf("verified fixture artifact does not exactly match approved effect: effect=%#v artifact=%#v", effects[0], artifacts[0])
+	}
+
+	changed := fixtureByID["changed-plan"]
+	if changed["status"] != "denied" || changed["approval_plan_digest"] == changed["current_plan_digest"] {
+		t.Errorf("changed-plan fixture is not a fail-closed mismatch: %#v", changed)
+	}
+	if replay := fixtureByID["consumed-replay"]; replay["status"] != "consumed" || replay["consumed_at"] == nil {
+		t.Errorf("consumed replay fixture is reusable or incomplete: %#v", replay)
+	}
+	for _, id := range []string{"interrupted-recovered", "interrupted-manual-intervention"} {
+		if got := fixtureByID[id]["status"]; got != "failed" {
+			t.Errorf("interrupted fixture %q status = %#v, want failed", id, got)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("provisioning fixture contains forbidden secret/path material %q", forbidden)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
