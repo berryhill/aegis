@@ -1,6 +1,11 @@
 # Official Hermes skill suite
 
-The repository-root `skills/` directory is the canonical reviewed source for the official portable Aegis Hermes skills. Each installable skill is one immediate child directory containing `SKILL.md`. `skills/aegis/SKILL.md` is a thin discovery and routing skill; it does not authenticate, authorize, approve, provision, activate, execute, or attest completion.
+The repository-root `skills/` directory is the canonical reviewed source for the official portable Aegis Hermes skills. Each installable skill is one immediate child directory containing `SKILL.md`. The bundle ships two skills:
+
+- `skills/aegis/SKILL.md` is a thin discovery and routing skill.
+- `skills/aegis-trust-context-inspection/SKILL.md` is an advisory, read-only skill that routes authenticated-principal, exact-stanza, existing-mandate, and effective-authority inspection to typed Aegis read surfaces.
+
+Neither skill authenticates, authorizes, approves, issues a mandate, provisions, activates, executes, widens authority, or attests completion. Installing either skill grants no Aegis authority. The inspection skill cannot select or union trust stanzas and does not turn fixture content or model narration into live authority.
 
 The strict `skills/aegis-skills.json` manifest binds the bundle and each skill to exact content digests, compatibility ranges, operation ownership, dependencies, authority class, required operations and toolsets, sensitivity, network, filesystem, and file inventory declarations. `skills/evaluations.json` carries the non-secret structural evaluation cases. Neither file grants runtime authority.
 
@@ -16,11 +21,13 @@ Hermes Agent `>=0.18.0,<0.19.0` discovers immediate skill directories beneath a 
 
 1. `hermes skills tap add berryhill/aegis` records the tap in the selected `HERMES_HOME`.
 2. `hermes skills search aegis` shows the repository path and provenance.
-3. `hermes skills inspect berryhill/aegis/skills/aegis` previews the skill without installation.
-4. `hermes skills install berryhill/aegis/skills/aegis --yes` installs the direct repository skill.
-5. `hermes skills list` and `hermes skills audit aegis` provide installed readback and Hermes's independent security scan.
+3. `hermes skills inspect berryhill/aegis/skills/aegis` previews the routing skill without installation.
+4. `hermes skills inspect berryhill/aegis/skills/aegis-trust-context-inspection` previews the read-only trust-context inspection skill without installation.
+5. `hermes skills install berryhill/aegis/skills/aegis --yes` installs the direct repository routing skill.
+6. `hermes skills install berryhill/aegis/skills/aegis-trust-context-inspection --yes` installs the direct repository inspection skill.
+7. `hermes skills list`, `hermes skills audit aegis`, and `hermes skills audit aegis-trust-context-inspection` provide installed readback and Hermes's independent security scans.
 
-Tap registration is discovery only; it does not install or enable a skill. Direct installation mutates the selected Hermes profile, so it requires an explicit operator choice. Discussion or design work is not installation authorization.
+Tap registration is discovery only; it does not install or enable a skill. Direct installation mutates the selected Hermes profile, so it requires an explicit operator choice. Installation makes advisory instructions available to Hermes; it does not authenticate a principal, select a stanza, issue a mandate, or grant Aegis authority. Discussion or design work is not installation authorization.
 
 ## Disposable-profile proof
 

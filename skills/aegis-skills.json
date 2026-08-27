@@ -2,16 +2,21 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:7beaa531c03af45271ed614b4de1fffa41099d7c4bcd819fbdc10d23837b3136",
+    "content_digest": "sha256:06bf3fc541c3558758325de660d4823a7385ab340b6438107a67b8821a48f256",
     "source_revision": "repository"
   },
   "operations": [
     {
       "operation": "aegis.route",
       "primary_skill": "aegis",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.trust-context.inspect",
+      "primary_skill": "aegis-trust-context-inspection",
       "availability": "shipped"
     }
   ],
@@ -36,6 +41,36 @@
           "path": "SKILL.md",
           "sha256": "sha256:339327fd26b9d8f285fb443bc217cb31ea2e9a17eb467b6055a272b101c73896",
           "size": 3363
+        }
+      ]
+    },
+    {
+      "slug": "aegis-trust-context-inspection",
+      "version": "0.1.0",
+      "path": "skills/aegis-trust-context-inspection",
+      "description": "Inspect and explain one authenticated Aegis trust context through shipped typed read surfaces without establishing or widening authority.",
+      "dependencies": [
+        "aegis"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.trust-context.inspect"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:a6472ecd0c50da6dccab6785d79e6a4ade6ccd959c1407fbed58542fee1be92b",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:7421f1645ffc9e0dcb31290cd8abef693411b7ba61230ea03d16980d931f6916",
+          "size": 5099
+        },
+        {
+          "path": "references/inspection-fixtures.json",
+          "sha256": "sha256:7baf2d7a2e46975a4b8b72fb52b7eb958d848f08531e17ecb903460802bf2bd9",
+          "size": 5822
         }
       ]
     }
