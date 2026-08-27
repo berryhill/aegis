@@ -154,6 +154,68 @@ func TestTrustContextInspectionSkill(t *testing.T) {
 	}
 }
 
+func TestCharterDesignSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-charter-design"
+		operation = "aegis.charter.design"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if len(skill.Dependencies) != 1 || skill.Dependencies[0] != "aegis" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillText := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
+	for _, required := range []string{
+		"aegis design --draft REQUIREMENTS_FILE",
+		"aegis design --smoke",
+		"aegis charter validate FILE",
+		"aegis charter import FILE",
+		"aegis charter list AGENT",
+		"aegis charter show AGENT [REVISION]",
+		"aegis charter explain AGENT [REVISION] --stanza STANZA --environment ENVIRONMENT",
+		"aegis charter effective AGENT [REVISION] --stanza STANZA --environment ENVIRONMENT",
+		"authority_not_unioned",
+		"Charter import is a consequential canonical write",
+		"Both shipped design modes import a successful proposal",
+		"Smoke mode is non-interactive, but it is not non-mutating",
+		"Never describe smoke as a protocol-only or non-mutating check",
+		"Never describe a proposal as validated",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing charter design contract %q", required)
+		}
+	}
+}
+
 func TestAuditVerificationSkill(t *testing.T) {
 	root := repositoryRoot(t)
 	manifest, err := Validate(root)
