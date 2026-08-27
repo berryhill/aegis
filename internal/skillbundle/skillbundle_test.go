@@ -34,6 +34,126 @@ func TestValidateRepositoryBundle(t *testing.T) {
 	}
 }
 
+func TestTrustContextInspectionSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-trust-context-inspection"
+		operation = "aegis.trust-context.inspect"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" {
+		t.Fatalf("skill authority boundary = class %q, network %q, filesystem %q", skill.AuthorityClass, skill.Network, skill.Filesystem)
+	}
+	if len(skill.Dependencies) != 1 || skill.Dependencies[0] != "aegis" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillText := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
+	for _, required := range []string{
+		"aegis charter effective AGENT REVISION --stanza STANZA --environment local",
+		"aegis session show SESSION_ID",
+		"aegis session authority SESSION_ID",
+		"authority_not_unioned",
+		"Zero matches and multiple matches both deny",
+		"session preview` issues and stores a new short-lived mandate",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing required inspection boundary %q", required)
+		}
+	}
+
+	var fixtures struct {
+		Fixtures []struct {
+			ID                     string         `json:"id"`
+			EvaluationTime         string         `json:"evaluation_time"`
+			AuthoritativeResult    map[string]any `json:"authoritative_result"`
+			ExpectedInterpretation string         `json:"expected_interpretation"`
+		} `json:"fixtures"`
+	}
+	mustDecode(t, mustRead(t, filepath.Join(root, skill.Path, "references", "inspection-fixtures.json")), &fixtures)
+	byID := make(map[string]map[string]any, len(fixtures.Fixtures))
+	for _, fixture := range fixtures.Fixtures {
+		byID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{
+		"single-authenticated-match",
+		"zero-authorized-matches",
+		"multiple-authorized-matches",
+		"forged-conversational-identity",
+		"expired-existing-session",
+		"revoked-existing-session",
+		"stale-or-mismatched-authority",
+	} {
+		if byID[id] == nil {
+			t.Errorf("inspection fixtures missing %q", id)
+		}
+	}
+	for _, id := range []string{"zero-authorized-matches", "multiple-authorized-matches", "forged-conversational-identity"} {
+		result := byID[id]
+		authority, ok := result["authority"].(map[string]any)
+		if !ok || len(authority) != 0 {
+			t.Errorf("fixture %q authority = %#v, want an empty projection", id, result["authority"])
+		}
+		decision, ok := result["decision"].(map[string]any)
+		if !ok || decision["allowed"] != false || result["authority_not_unioned"] != true {
+			t.Errorf("fixture %q is not a fail-closed, non-unioned denial: %#v", id, result)
+		}
+	}
+	for _, fixture := range fixtures.Fixtures {
+		if fixture.ID != "single-authenticated-match" {
+			continue
+		}
+		evaluatedAt, err := time.Parse(time.RFC3339, fixture.EvaluationTime)
+		if err != nil {
+			t.Fatalf("fixture %q evaluation_time = %q: %v", fixture.ID, fixture.EvaluationTime, err)
+		}
+		mandate, ok := fixture.AuthoritativeResult["mandate"].(map[string]any)
+		if !ok {
+			t.Fatalf("fixture %q mandate = %#v", fixture.ID, fixture.AuthoritativeResult["mandate"])
+		}
+		issuedValue, issuedOK := mandate["issued_at"].(string)
+		expiresValue, expiresOK := mandate["expires_at"].(string)
+		if !issuedOK || !expiresOK {
+			t.Fatalf("fixture %q mandate timestamps = issued_at %#v, expires_at %#v", fixture.ID, mandate["issued_at"], mandate["expires_at"])
+		}
+		issuedAt, issuedErr := time.Parse(time.RFC3339, issuedValue)
+		expiresAt, expiresErr := time.Parse(time.RFC3339, expiresValue)
+		if issuedErr != nil || expiresErr != nil || evaluatedAt.Before(issuedAt) || !evaluatedAt.Before(expiresAt) {
+			t.Fatalf("fixture %q evaluation time %s is outside mandate validity [%v, %v)", fixture.ID, evaluatedAt, mandate["issued_at"], mandate["expires_at"])
+		}
+		for _, required := range []string{"At the declared fixture evaluation_time only", "not evidence of current live authority"} {
+			if !strings.Contains(fixture.ExpectedInterpretation, required) {
+				t.Errorf("fixture %q interpretation must preserve historical-only scope with %q", fixture.ID, required)
+			}
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
@@ -63,7 +183,13 @@ func TestValidateFailsClosed(t *testing.T) {
 		root := copyFixture(t)
 		var suite EvaluationSuite
 		mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
-		suite.Cases = suite.Cases[:len(suite.Cases)-1]
+		filtered := suite.Cases[:0]
+		for _, evaluation := range suite.Cases {
+			if evaluation.Class != "secret_canary" {
+				filtered = append(filtered, evaluation)
+			}
+		}
+		suite.Cases = filtered
 		mustWriteJSON(t, filepath.Join(root, EvaluationsName), suite)
 		assertDenial(t, ValidateBundle(root), "evaluation_coverage_missing")
 	})
