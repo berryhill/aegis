@@ -154,6 +154,147 @@ func TestTrustContextInspectionSkill(t *testing.T) {
 	}
 }
 
+func TestAuditVerificationSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-audit-verification"
+		operation = "aegis.audit.verify"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillText := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
+	for _, required := range []string{
+		"aegis audit list",
+		"aegis audit verify",
+		"aegis audit delivery-status",
+		"aegis audit verify-delivery",
+		"aegis audit deliver --limit LIMIT",
+		"aegis audit rebuild-projection",
+		"there is no separate shipped `aegis audit timeline` command",
+		"Never rewrite, append, suppress, reorder, delete, repair, sign, or attest canonical history",
+		"Keep these classes distinct",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing audit verification contract %q", required)
+		}
+	}
+
+	var document struct {
+		Fixtures []struct {
+			ID                  string         `json:"id"`
+			AuthoritativeResult map[string]any `json:"authoritative_result"`
+		} `json:"fixtures"`
+	}
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "audit-fixtures.json"))
+	mustDecode(t, fixtureBytes, &document)
+	fixtureByID := make(map[string]map[string]any, len(document.Fixtures))
+	for _, fixture := range document.Fixtures {
+		fixtureByID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{
+		"valid-identity-to-runtime-lineage",
+		"tampered-event",
+		"tampered-checkpoint",
+		"delivery-pending",
+		"delivery-degraded",
+		"delivery-unverifiable",
+		"audit-storage-unavailable",
+		"interrupted-projection-recovery",
+	} {
+		if fixtureByID[id] == nil {
+			t.Errorf("audit fixtures missing %q", id)
+		}
+	}
+
+	valid := fixtureByID["valid-identity-to-runtime-lineage"]
+	verification, ok := valid["verification"].(map[string]any)
+	if !ok || verification["valid"] != true {
+		t.Fatalf("valid lineage lacks authoritative verification: %#v", valid["verification"])
+	}
+	events, ok := valid["events"].([]any)
+	if !ok || len(events) != 4 {
+		t.Fatalf("valid lineage events = %#v", valid["events"])
+	}
+	previous := ""
+	for index, raw := range events {
+		event, eventOK := raw.(map[string]any)
+		if !eventOK || event["previous_digest"] != previous {
+			t.Fatalf("valid lineage breaks at event %d: %#v", index, raw)
+		}
+		previous, _ = event["event_digest"].(string)
+		if event["id"] == "" || previous == "" {
+			t.Fatalf("valid lineage event %d lacks immutable identity: %#v", index, event)
+		}
+	}
+	checkpoint, ok := valid["checkpoint"].(map[string]any)
+	if !ok || checkpoint["last_digest"] != previous || checkpoint["signature_verified"] != true {
+		t.Fatalf("valid lineage checkpoint does not bind verified head: %#v", checkpoint)
+	}
+	last := events[len(events)-1].(map[string]any)
+	for _, field := range []string{"principal_id", "agent_id", "stanza_id", "charter_digest", "approval_id", "provisioning_id", "mandate_id", "session_id", "runtime"} {
+		if last[field] == nil || last[field] == "" {
+			t.Errorf("valid lineage final event missing %q: %#v", field, last)
+		}
+	}
+
+	if failure := fixtureByID["tampered-event"]; failure["valid"] != false || failure["failure_kind"] != "event_digest" || failure["failure_index"] != float64(2) {
+		t.Errorf("tampered-event does not stop at exact event: %#v", failure)
+	}
+	if failure := fixtureByID["tampered-checkpoint"]; failure["valid"] != false || failure["failure_kind"] != "checkpoint_head" {
+		t.Errorf("tampered-checkpoint does not stop at checkpoint: %#v", failure)
+	}
+	states := map[string]string{
+		"delivery-pending":          "pending",
+		"delivery-degraded":         "degraded",
+		"delivery-unverifiable":     "unverifiable",
+		"audit-storage-unavailable": "unavailable",
+	}
+	for id, want := range states {
+		if got := fixtureByID[id]["state"]; got != want {
+			t.Errorf("fixture %q state = %#v, want %q", id, got, want)
+		}
+	}
+	if events := fixtureByID["audit-storage-unavailable"]["events"]; events != nil {
+		t.Errorf("unavailable storage rendered as event data: %#v", events)
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("audit fixture contains forbidden secret/path material %q", forbidden)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)

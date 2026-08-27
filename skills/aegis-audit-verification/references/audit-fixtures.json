@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "valid-identity-to-runtime-lineage",
+      "surface": "aegis audit list after successful aegis audit verify",
+      "verification_time": "2026-01-01T00:04:00Z",
+      "authoritative_result": {
+        "verification": {"valid": true},
+        "events": [
+          {
+            "id": "evt-auth-example",
+            "type": "authentication_succeeded",
+            "subject_id": "local-uid:1001",
+            "principal_id": "principal-example",
+            "outcome": "ok",
+            "reason": "authenticated_principal",
+            "previous_digest": "",
+            "event_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "id": "evt-approval-example",
+            "type": "charter_approved",
+            "principal_id": "principal-example",
+            "agent_id": "agent-example",
+            "stanza_id": "operator",
+            "charter_revision": 7,
+            "charter_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "approval_id": "approval-example",
+            "outcome": "ok",
+            "reason": "exact_digest_approved",
+            "previous_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "event_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "id": "evt-provision-example",
+            "type": "provisioning_completed",
+            "principal_id": "principal-example",
+            "agent_id": "agent-example",
+            "stanza_id": "operator",
+            "charter_revision": 7,
+            "charter_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "approval_id": "approval-example",
+            "provisioning_id": "provision-example",
+            "outcome": "ok",
+            "reason": "approved_revision_applied",
+            "previous_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "event_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          },
+          {
+            "id": "evt-session-example",
+            "type": "session_started",
+            "principal_id": "principal-example",
+            "agent_id": "agent-example",
+            "stanza_id": "operator",
+            "charter_revision": 7,
+            "charter_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "approval_id": "approval-example",
+            "provisioning_id": "provision-example",
+            "mandate_id": "mandate-example",
+            "session_id": "session-example",
+            "runtime": "hermes-agent",
+            "outcome": "ok",
+            "reason": "clean_session_started",
+            "previous_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "event_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        ],
+        "checkpoint": {
+          "count": 4,
+          "last_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "key_id": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signature_verified": true
+        },
+        "delivery": {
+          "state": "healthy",
+          "reason": "audit_delivery_current",
+          "canonical_events": 4,
+          "projected_events": 4,
+          "pending": 0,
+          "retryable_failures": 0,
+          "terminal_failures": 0,
+          "current": true,
+          "verifiable": true
+        }
+      },
+      "expected_interpretation": "Only because authoritative verification succeeded, reconstruct principal-example through one operator stanza, exact charter revision and digest, approval, provisioning, mandate, session, and explicit Hermes runtime. Report the fixture as historical derived evidence, not a live checkpoint or completion receipt."
+    },
+    {
+      "id": "tampered-event",
+      "surface": "aegis audit verify",
+      "authoritative_result": {
+        "valid": false,
+        "state": "corrupt",
+        "error": "audit event 2 digest mismatch",
+        "failure_kind": "event_digest",
+        "failure_index": 2
+      },
+      "expected_interpretation": "Stop at event index 2 and report corrupt. Do not emit a lineage or success summary."
+    },
+    {
+      "id": "tampered-checkpoint",
+      "surface": "aegis audit verify",
+      "authoritative_result": {
+        "valid": false,
+        "state": "corrupt",
+        "error": "audit chain does not contain retained checkpoint head",
+        "failure_kind": "checkpoint_head"
+      },
+      "expected_interpretation": "Stop at the checkpoint failure and report corrupt. Do not emit a lineage or success summary."
+    },
+    {
+      "id": "delivery-pending",
+      "surface": "aegis audit delivery-status",
+      "authoritative_result": {
+        "state": "pending",
+        "reason": "audit_delivery_pending",
+        "canonical_events": 4,
+        "projected_events": 3,
+        "pending": 1,
+        "retryable_failures": 0,
+        "terminal_failures": 0,
+        "current": false,
+        "verifiable": true
+      },
+      "expected_interpretation": "Report pending and verifiable but not current; do not report delivered or corrupt."
+    },
+    {
+      "id": "delivery-degraded",
+      "surface": "aegis audit delivery-status",
+      "authoritative_result": {
+        "state": "degraded",
+        "reason": "audit_delivery_retryable_failure",
+        "canonical_events": 4,
+        "projected_events": 2,
+        "pending": 2,
+        "retryable_failures": 1,
+        "terminal_failures": 0,
+        "current": false,
+        "verifiable": true
+      },
+      "expected_interpretation": "Report degraded with the retryable failure count; do not collapse it into pending, unavailable, or corrupt."
+    },
+    {
+      "id": "delivery-unverifiable",
+      "surface": "aegis audit delivery-status",
+      "authoritative_result": {
+        "state": "unverifiable",
+        "reason": "audit_projection_unverifiable",
+        "canonical_events": 0,
+        "projected_events": 0,
+        "pending": 0,
+        "retryable_failures": 0,
+        "terminal_failures": 0,
+        "current": false,
+        "verifiable": false
+      },
+      "expected_interpretation": "Report unverifiable. Zero aggregate counts in this failure shape are not proof of empty canonical history."
+    },
+    {
+      "id": "audit-storage-unavailable",
+      "surface": "aegis audit list",
+      "authoritative_result": {
+        "state": "unavailable",
+        "reason": "audit_storage_unavailable",
+        "events": null
+      },
+      "expected_interpretation": "Report unavailable with no event-count claim. Never render unavailable storage as an empty event list."
+    },
+    {
+      "id": "interrupted-projection-recovery",
+      "surface": "aegis audit verify-delivery before explicit rebuild",
+      "authoritative_result": {
+        "valid": true,
+        "current": false,
+        "recovery_authorized": false
+      },
+      "expected_interpretation": "Report valid derived prefix but not current. Do not infer delivery from process exit and do not rebuild without explicit authenticated principal authorization."
+    }
+  ]
+}
