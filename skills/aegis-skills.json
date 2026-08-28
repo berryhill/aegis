@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:f66f56d4930d24a2bb2a529376abf66794108a189ffbee26e80da34ee8961bbe",
+    "content_digest": "sha256:a56139c803f1fcf4ae4bc653c403cd8bb4036325e2c60051211fe94202e6515b",
     "source_revision": "repository"
   },
   "operations": [
@@ -32,6 +32,11 @@
     {
       "operation": "aegis.approval-provisioning.review",
       "primary_skill": "aegis-approval-provisioning",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.session.operate",
+      "primary_skill": "aegis-session-operations",
       "availability": "shipped"
     }
   ],
@@ -175,6 +180,38 @@
           "path": "references/provisioning-fixtures.json",
           "sha256": "sha256:e3ff45980da2da3352e6dc70f405ddb85ecdba5442ca93e9aab93e11099d21a4",
           "size": 4950
+        }
+      ]
+    },
+    {
+      "slug": "aegis-session-operations",
+      "version": "0.1.0",
+      "path": "skills/aegis-session-operations",
+      "description": "Preview and operate clean mandate-bound Hermes sessions through shipped Aegis lifecycle services without moving identity or authority into the model.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.session.operate"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:29d0e8845023144ebdc58d2fc4956518a15f0fd480db864d266879007796c607",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:8a9f9205db00328a1466f668364bfdb94c6fcecf586b47fb1fbb86c7c05bc7ea",
+          "size": 9912
+        },
+        {
+          "path": "references/session-fixtures.json",
+          "sha256": "sha256:10514f8844dd31515a641a50def0d03f6ec140f0933e5d7632eef3722ea34487",
+          "size": 4010
         }
       ]
     }
