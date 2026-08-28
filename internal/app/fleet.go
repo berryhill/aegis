@@ -79,11 +79,18 @@ func NewRegisterFleetAgentInput(fixture []byte, fleetID, sourceID string) Regist
 // AgentRegistrationProposal is a non-authorizing, server-derived preview of
 // the exact immutable registration that the application service would apply.
 type AgentRegistrationProposal struct {
-	AgentID, CharterDigest, RevisionDigest string
-	Revision                               uint64
-	FleetID, SourceID, Runtime             string
-	Owner, Accountability, Capabilities    string
-	Policies, Lifecycle                    string
+	AgentID        string `json:"agent_id"`
+	CharterDigest  string `json:"charter_digest"`
+	RevisionDigest string `json:"revision_digest"`
+	Revision       uint64 `json:"revision"`
+	FleetID        string `json:"fleet_id"`
+	SourceID       string `json:"source_id"`
+	Runtime        string `json:"runtime"`
+	Owner          string `json:"owner"`
+	Accountability string `json:"accountability"`
+	Capabilities   string `json:"capabilities"`
+	Policies       string `json:"policies"`
+	Lifecycle      string `json:"lifecycle"`
 }
 
 type SetAgentLifecycleInput struct {

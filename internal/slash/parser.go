@@ -230,6 +230,20 @@ func validateGrammar(request Request) error {
 		if len(args) > 1 || (len(args) == 1 && args[0] != "verify") {
 			return usage()
 		}
+	case "agents":
+		if len(args) == 1 && (args[0] == "readiness" || args[0] == "list") {
+			return nil
+		}
+		if len(args) >= 2 && len(args) <= 3 && args[0] == "show" {
+			return nil
+		}
+		if len(args) == 5 && args[0] == "prepare" {
+			return nil
+		}
+		if len(args) == 6 && args[0] == "register" {
+			return nil
+		}
+		return usage()
 	case "complete":
 		if len(args) != 1 {
 			return usage()

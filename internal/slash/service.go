@@ -237,6 +237,8 @@ func (s *Service) Execute(ctx context.Context, manager Context, request Request)
 		result, err = s.report(result, manager, request)
 	case "audit":
 		result, err = s.audit(ctx, result, manager, request)
+	case "agents":
+		result, err = s.agents(ctx, result, manager, request)
 	case "cancel":
 		result, err = s.cancel(result, manager, request)
 	case "clear":

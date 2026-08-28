@@ -152,7 +152,7 @@ func runGatewayManager(cmd *cobra.Command, configPath string) error {
 	output := tui.NewSynchronizedWriter(cmd.OutOrStdout())
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), nil)
 	composer := tui.NewComposer(cmd.InOrStdin(), output, int(cfg.Manager.Ingress.MaximumMessageBytes))
-	fmt.Fprintf(output, "AEGIS / manager — authenticated gateway client\nGateway owns authority and writable application state. Session expires %s.\nCommands: /status, /context, /help, /cancel, /exit\n", expires.UTC().Format(time.RFC3339))
+	fmt.Fprintf(output, "AEGIS / manager — authenticated gateway client\nGateway owns authority and writable application state. Session expires %s.\nAgent Registry: /agents readiness, /agents list, /help agents\nCommands: /status, /context, /help, /cancel, /exit\n", expires.UTC().Format(time.RFC3339))
 	for {
 		input, eof, readErr := composer.Read(cmd.Context(), ">", capabilities)
 		if readErr != nil {

@@ -15,8 +15,11 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/evidence"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/orchestration"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/store"
 )
@@ -67,6 +70,63 @@ func execute(t *testing.T, service *Service, registry *Registry, manager Context
 		t.Fatalf("execute %s: %v (%+v)", input, err, result)
 	}
 	return result
+}
+
+func configureSlashFleet(t *testing.T, service *Service) {
+	t.Helper()
+	application := service.app
+	repository, err := fleetbadger.Open(context.Background(), filepath.Join(application.Config.StateDir, "persistence", "fleet-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	fleetService, err := orchestration.NewFleetService(repository, application.Authority, application.AuthorityCommands, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
+		return application.RequirePrincipal(subject)
+	}, nil, application.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifier, err := evidence.NewBlobVerifier(application.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := orchestration.NewQueueWorker(repository, fleetService, application.Store, verifier, orchestration.NoKeyAdapter{}, application.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = application.ConfigureFleet(repository, fleetService, worker); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentRegistryManagerReadinessAndDenials(t *testing.T) {
+	service, registry, manager := serviceFixture(t)
+	unavailable := execute(t, service, registry, manager, "/agents readiness")
+	if unavailable.State != "unavailable" || unavailable.Reason != "agent_registry_unavailable" {
+		t.Fatalf("unconfigured Registry did not fail closed: %+v", unavailable)
+	}
+
+	configureSlashFleet(t, service)
+	ready := execute(t, service, registry, manager, "/agents readiness")
+	if ready.State != "completed" || ready.Reason != "agent_registry_ready" || ready.Data["ready"] != true || ready.Data["agent_count"] != 0 || ready.Data["empty_registry_valid"] != true {
+		t.Fatalf("empty Registry readiness = %+v", ready)
+	}
+	list := execute(t, service, registry, manager, "/agents list")
+	if list.State != "completed" || list.Reason != "agent_registry_list" || list.Data["count"] != 0 || list.Data["empty_registry_valid"] != true {
+		t.Fatalf("empty Registry list = %+v", list)
+	}
+	invalidRevision := execute(t, service, registry, manager, "/agents show agent-alpha zero")
+	if invalidRevision.State != "failed" || invalidRevision.Reason != "invalid_agent_revision" {
+		t.Fatalf("invalid revision did not fail closed: %+v", invalidRevision)
+	}
+	missing := execute(t, service, registry, manager, "/agents show agent-alpha")
+	if missing.State != "failed" || missing.Reason != "agent_not_found" {
+		t.Fatalf("missing Agent readback = %+v", missing)
+	}
+	badInput := execute(t, service, registry, manager, "/agents register missing-charter missing-fixture fleet-primary source-alpha sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if badInput.State != "failed" || badInput.Reason != "invalid_charter_input" {
+		t.Fatalf("missing registration inputs did not fail before mutation: %+v", badInput)
+	}
 }
 
 func TestCoreScanCoverageEquivalenceAndTruthfulAdapterBoundary(t *testing.T) {
