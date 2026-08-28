@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "verified-exact-plan",
+      "surface": "aegis provision response correlated with fresh plan and approval readback",
+      "authoritative_result": {
+        "plan": {
+          "id": "plan-example",
+          "agent_id": "agent-example",
+          "revision": 7,
+          "charter_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "runtime": {
+            "runtime": "hermes-agent",
+            "version": "0.18.2",
+            "executable": "hermes",
+            "adapter_version": "0.1.0"
+          },
+          "environment": {"name": "local"},
+          "effects": [
+            {
+              "kind": "create_file",
+              "target": "provisioned/agent-example/revision-7.json",
+              "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "consequential": true
+            }
+          ]
+        },
+        "review": {
+          "requested_toolsets": {"operator": ["no_mcp"]},
+          "memory_scopes": {"operator": ["operator-memory"]},
+          "credential_scopes": {"operator": []},
+          "approval_requirements": {"operator": {"maximum_lifetime_sec": 300, "single_use": true}}
+        },
+        "approval": {
+          "id": "approval-example",
+          "plan_id": "plan-example",
+          "plan_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "charter_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "runtime": "hermes-agent",
+          "runtime_version": "0.18.2",
+          "environment": {"name": "local"},
+          "status": "consumed",
+          "requested_by": "principal-example",
+          "approved_by": "principal-example",
+          "consumed_at": "2026-01-01T00:02:00Z"
+        },
+        "receipt": {
+          "id": "receipt-example",
+          "plan_id": "plan-example",
+          "plan_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "approval_id": "approval-example",
+          "charter_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "status": "verified",
+          "artifacts": [
+            {
+              "path": "provisioned/agent-example/revision-7.json",
+              "action": "create_file",
+              "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "verified": true
+            }
+          ],
+          "finished_at": "2026-01-01T00:02:01Z"
+        },
+        "effective_authority": {
+          "stanza_id": "operator",
+          "tools": ["no_mcp"],
+          "authority_not_unioned": true
+        }
+      },
+      "expected_interpretation": "Report verified only after exact plan, approval, receipt, effect-to-artifact, and separately selected effective-toolset correlation. This proves one Aegis-owned create-file result, not activation or a running Hermes session."
+    },
+    {
+      "id": "changed-plan",
+      "surface": "fresh plan readback before apply",
+      "authoritative_result": {
+        "approval_plan_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "current_plan_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "status": "denied"
+      },
+      "expected_interpretation": "Deny changed-plan mismatch before apply. Do not update the approval binding or choose the newer plan."
+    },
+    {
+      "id": "consumed-replay",
+      "surface": "aegis approval show before apply",
+      "authoritative_result": {
+        "status": "consumed",
+        "consumed_at": "2026-01-01T00:02:00Z"
+      },
+      "expected_interpretation": "Deny replay distinctly. Process interruption does not make a consumed approval reusable."
+    },
+    {
+      "id": "interrupted-recovered",
+      "surface": "protected receipt readback after Aegis startup recovery",
+      "authoritative_result": {
+        "status": "failed",
+        "failure": "interrupted provisioning recovered",
+        "artifacts": []
+      },
+      "expected_interpretation": "Report failed and recovered, not verified. Matching newly published Aegis-owned artifacts were rolled back; a new plan and approval are required for another apply."
+    },
+    {
+      "id": "interrupted-manual-intervention",
+      "surface": "protected receipt readback after Aegis startup recovery",
+      "authoritative_result": {
+        "status": "failed",
+        "failure": "manual intervention required because exact authority binding was unavailable",
+        "artifacts": []
+      },
+      "expected_interpretation": "Report failed with manual intervention required. Do not remove a non-matching artifact or claim rollback, verification, or completion."
+    }
+  ]
+}

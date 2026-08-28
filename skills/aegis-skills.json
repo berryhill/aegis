@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:5e3cb98f1bfa61beb3e909dffc1868ec7ef75ba69964e087a59e9b0904fdd5de",
+    "content_digest": "sha256:a56139c803f1fcf4ae4bc653c403cd8bb4036325e2c60051211fe94202e6515b",
     "source_revision": "repository"
   },
   "operations": [
@@ -30,6 +30,11 @@
       "availability": "shipped"
     },
     {
+      "operation": "aegis.approval-provisioning.review",
+      "primary_skill": "aegis-approval-provisioning",
+      "availability": "shipped"
+    },
+    {
       "operation": "aegis.session.operate",
       "primary_skill": "aegis-session-operations",
       "availability": "shipped"
@@ -50,12 +55,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:92b1f58a8f942fdcb8a72dc95365eb614821a1a880f4a532da9fe727dcae2068",
+      "content_digest": "sha256:ebea965e4681696d94b453f529a3d2ce106aded89b194c99e36d4ea6e5d76383",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:339327fd26b9d8f285fb443bc217cb31ea2e9a17eb467b6055a272b101c73896",
-          "size": 3363
+          "sha256": "sha256:b9d76cff10a4482c06cc38f52364bff8e1879f98f83c5f5d66d5422c635afc83",
+          "size": 3613
         }
       ]
     },
@@ -142,6 +147,39 @@
           "path": "references/audit-fixtures.json",
           "sha256": "sha256:e2a69f85091fd5108a0808df9eb918742386cfd7562df2af6244f9f6949e97c1",
           "size": 7397
+        }
+      ]
+    },
+    {
+      "slug": "aegis-approval-provisioning",
+      "version": "0.1.0",
+      "path": "skills/aegis-approval-provisioning",
+      "description": "Review exact Aegis provisioning plans and guide authenticated approval, deterministic apply, recovery, and receipt verification without granting authority to the model.",
+      "dependencies": [
+        "aegis",
+        "aegis-charter-design",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.approval-provisioning.review"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:2614c9edb97723ffb51b97e42391a38ffcaee88c226e949588fbc56c20b0f6e6",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:7346a3f6f666ecebbe3177c4998398f5ffb6cbe140f901c62e274da9864ea107",
+          "size": 8670
+        },
+        {
+          "path": "references/provisioning-fixtures.json",
+          "sha256": "sha256:e3ff45980da2da3352e6dc70f405ddb85ecdba5442ca93e9aab93e11099d21a4",
+          "size": 4950
         }
       ]
     },
