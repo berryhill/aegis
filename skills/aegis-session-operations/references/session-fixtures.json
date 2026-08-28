@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "exact-preview-and-clean-start",
+      "operation": "aegis.session.operate",
+      "authoritative_result": {
+        "preview": {
+          "allowed": true,
+          "reason": "exactly_one_authorized_match",
+          "subject_id": "subject-example",
+          "agent_id": "agent-example",
+          "stanza_id": "operator",
+          "charter_revision": 3,
+          "charter_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "mandate_id": "mandate-example",
+          "runtime": "hermes",
+          "runtime_version": "0.18.0",
+          "toolsets": ["no_mcp"],
+          "memory_scope": [],
+          "credential_scope": [],
+          "expires_at": "2030-01-01T00:10:00Z"
+        },
+        "session": {
+          "session_id": "session-example",
+          "status": "running",
+          "mandate_id": "mandate-example",
+          "runtime": "hermes",
+          "verified_toolsets": ["no_mcp"],
+          "toolset_verification": "launch_arguments",
+          "runtime_process_alive": true,
+          "disposable_home": true,
+          "host_sandbox": false
+        }
+      },
+      "expected_interpretation": "The exact mandate may start one clean Hermes session. The disposable home and minimal environment do not grant host sandboxing, and this fixture is not live authority."
+    },
+    {
+      "id": "ambiguous-stanza-denial",
+      "operation": "aegis.session.operate",
+      "authoritative_result": {
+        "allowed": false,
+        "reason": "multiple_authorized_matches",
+        "matching_count": 2,
+        "mandate": {},
+        "authority": {}
+      },
+      "expected_interpretation": "Deny without issuing a mandate, starting Hermes, choosing a stanza in the model, or unioning grants."
+    },
+    {
+      "id": "malformed-start-denial",
+      "operation": "aegis.session.operate",
+      "authoritative_result": {
+        "allowed": false,
+        "reason": "mandate_binding_invalid",
+        "mismatched_fields": ["subject_id", "charter_digest"],
+        "session": {}
+      },
+      "expected_interpretation": "Deny start because the subject and immutable charter binding do not exactly match; do not repair the mandate."
+    },
+    {
+      "id": "stale-process-replay-denial",
+      "operation": "aegis.session.operate",
+      "authoritative_result": {
+        "allowed": false,
+        "reason": "process_identity_mismatch",
+        "pid_reused": true,
+        "same_process_start": false,
+        "same_host_boot": false,
+        "authority_active": false
+      },
+      "expected_interpretation": "A PID is not authority. Deny stale or wrong-boot process adoption and require fresh Aegis session state."
+    },
+    {
+      "id": "interrupted-revocation-recovery",
+      "operation": "aegis.session.operate",
+      "authoritative_result": {
+        "command_exit_known": false,
+        "session_readback": {
+          "session_id": "session-ended-example",
+          "status": "revoked",
+          "end_reason": "operator_policy"
+        },
+        "audit_verification": {
+          "valid": true,
+          "event_type": "session",
+          "outcome": "revoked",
+          "mandate_id": "mandate-ended-example"
+        }
+      },
+      "expected_interpretation": "Use durable session readback and verified canonical audit evidence after interruption; process exit is not completion evidence."
+    },
+    {
+      "id": "cross-stanza-canary-denial",
+      "operation": "aegis.session.operate",
+      "authoritative_result": {
+        "allowed": false,
+        "reason": "cross_stanza_scope_violation",
+        "source_stanza": "reviewer",
+        "destination_stanza": "operator",
+        "memory_value_returned": false,
+        "credential_value_returned": false,
+        "session_status": "revoked"
+      },
+      "expected_interpretation": "Stop without repeating canary material, preserve the isolation failure, and require an authorized clean replacement session."
+    }
+  ]
+}

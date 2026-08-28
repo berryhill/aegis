@@ -1,6 +1,6 @@
 # Official Hermes skill suite
 
-The repository-root `skills/` directory is the canonical reviewed source for the official portable Aegis Hermes skills. Each installable skill is one immediate child directory containing `SKILL.md`. The bundle ships six skills:
+The repository-root `skills/` directory is the canonical reviewed source for the official portable Aegis Hermes skills. Each installable skill is one immediate child directory containing `SKILL.md`. The bundle ships seven skills:
 
 - `skills/aegis/SKILL.md` is a thin discovery and routing skill.
 - `skills/aegis-charter-design/SKILL.md` is an advisory skill for principal-only disposable Hermes design and authoritative charter validation, import, listing, readback, explanation, and effective-authority inspection.
@@ -8,8 +8,11 @@ The repository-root `skills/` directory is the canonical reviewed source for the
 - `skills/aegis-audit-verification/SKILL.md` is an advisory verification skill for canonical audit chains, signed checkpoints, reconstructable lineage, immutable receipt references, and distinct delivery/projection states.
 - `skills/aegis-approval-provisioning/SKILL.md` is an advisory skill for exact provisioning-plan review, authenticated single-use decisions, deterministic Aegis-owned apply, interrupted-intent recovery, and receipt verification.
 - `skills/aegis-agent-registry/SKILL.md` is an advisory skill for exact existing-fleet registration, immutable current/history inspection, and append-only enabled/disabled/retired lifecycle governance.
+- `skills/aegis-session-operations/SKILL.md` is an advisory routing skill for previewing and operating clean, mandate-bound Hermes sessions through typed Aegis lifecycle services.
 
-No suite skill authenticates, authorizes, approves, issues a mandate, provisions, activates, executes, widens authority, signs checkpoints, emits audit events, or attests completion. Installing a skill grants no Aegis authority. The charter skill cannot authorize its proposal, bypass Aegis's canonical import service, or union trust stanzas; it explicitly warns that successful `design --draft` and `design --smoke` runs both perform canonical imports. The inspection skill cannot select or union trust stanzas. The audit skill cannot repair canonical history or silently deliver/rebuild derived state. The approval/provisioning skill cannot decide, apply, recover, or widen a plan outside typed Aegis authority. The Agent Registry skill cannot infer ownership, treat a Hermes profile as canonical identity, rewrite revisions, or mutate lifecycle outside typed Aegis admission. Fixture content and model narration are never live authority or evidence.
+No suite skill authenticates, authorizes, approves, issues a mandate, provisions, activates, executes, widens authority, signs checkpoints, emits audit events, or attests completion. Installing a skill grants no Aegis authority. The charter skill cannot authorize its proposal, bypass Aegis's canonical import service, or union trust stanzas; it explicitly warns that successful `design --draft` and `design --smoke` runs both perform canonical imports. The inspection skill cannot select or union trust stanzas. The audit skill cannot repair canonical history or silently deliver/rebuild derived state. The approval/provisioning skill cannot decide, apply, recover, or widen a plan outside typed Aegis authority. The Agent Registry skill cannot infer ownership, treat a Hermes profile as canonical identity, rewrite revisions, or mutate lifecycle outside typed Aegis admission. The session-operations skill cannot authenticate the caller, select or union stanzas, issue authority itself, launch Hermes directly, or mutate lifecycle records. Its `aegis session preview` route is consequential because authoritative Aegis services issue and store a short-lived mandate; `start`, `revoke`, and `terminate` remain separate consequential Aegis lifecycle operations that require explicit authorization and authoritative readback. Fixture content and model narration are never live authority or evidence.
+
+The session skill progressively discloses non-secret interpretation examples from `skills/aegis-session-operations/references/session-fixtures.json` and routes normative questions to `specs/RUNTIME_AND_SESSIONS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/AUDIT.md`, and installed command help. Those references grant no identity, mandate, process, authority, or receipt evidence. A material authority or stanza change requires a new mandate, immutable authority context, disposable Hermes home, and clean process; permissions are never unioned across stanzas.
 
 The strict `skills/aegis-skills.json` manifest binds the bundle and each skill to exact content digests, compatibility ranges, operation ownership, dependencies, authority class, required operations and toolsets, sensitivity, network, filesystem, and file inventory declarations. `skills/evaluations.json` carries the non-secret structural evaluation cases. Neither file grants runtime authority.
 
@@ -31,13 +34,15 @@ Hermes Agent `>=0.18.0,<0.19.0` discovers immediate skill directories beneath a 
 6. `hermes skills inspect berryhill/aegis/skills/aegis-audit-verification` previews the read-only audit verification skill.
 7. `hermes skills inspect berryhill/aegis/skills/aegis-approval-provisioning` previews the approval and provisioning skill without installation.
 8. `hermes skills inspect berryhill/aegis/skills/aegis-agent-registry` previews the Agent Registry skill without installation.
-9. `hermes skills install berryhill/aegis/skills/aegis --yes` installs the direct repository routing skill.
-10. `hermes skills install berryhill/aegis/skills/aegis-charter-design --yes` installs the direct repository charter skill.
-11. `hermes skills install berryhill/aegis/skills/aegis-trust-context-inspection --yes` installs the direct repository inspection skill.
-12. `hermes skills install berryhill/aegis/skills/aegis-audit-verification --yes` installs the direct repository audit skill.
-13. `hermes skills install berryhill/aegis/skills/aegis-approval-provisioning --yes` installs the direct repository approval and provisioning skill.
-14. `hermes skills install berryhill/aegis/skills/aegis-agent-registry --yes` installs the direct repository Agent Registry skill.
-15. `hermes skills list` and `hermes skills audit SLUG` provide installed readback and Hermes's independent security scans.
+9. `hermes skills inspect berryhill/aegis/skills/aegis-session-operations` previews the session-operations skill without installation.
+10. `hermes skills install berryhill/aegis/skills/aegis --yes` installs the direct repository routing skill.
+11. `hermes skills install berryhill/aegis/skills/aegis-charter-design --yes` installs the direct repository charter skill.
+12. `hermes skills install berryhill/aegis/skills/aegis-trust-context-inspection --yes` installs the direct repository inspection skill.
+13. `hermes skills install berryhill/aegis/skills/aegis-audit-verification --yes` installs the direct repository audit skill.
+14. `hermes skills install berryhill/aegis/skills/aegis-approval-provisioning --yes` installs the direct repository approval and provisioning skill.
+15. `hermes skills install berryhill/aegis/skills/aegis-agent-registry --yes` installs the direct repository Agent Registry skill.
+16. `hermes skills install berryhill/aegis/skills/aegis-session-operations --yes` installs the direct repository session-operations skill.
+17. `hermes skills list` and `hermes skills audit SLUG` provide installed readback and Hermes's independent security scans.
 
 Tap registration is discovery only; it does not install or enable a skill. Direct installation mutates the selected Hermes profile, so it requires an explicit operator choice. Installation makes advisory instructions available to Hermes; it does not authenticate a principal, select a stanza, issue a mandate, or grant Aegis authority. Discussion or design work is not installation authorization.
 

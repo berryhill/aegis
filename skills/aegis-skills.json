@@ -5,7 +5,7 @@
     "version": "0.2.7",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:602414e2aacbab4e6e32a835bac223c40b6e11ba769217a678d5e949c6ef1f5b",
+    "content_digest": "sha256:e3c02106ff0aed773be79df537c01f12b9ddfe1641bf49303a1864babc1cfb45",
     "source_revision": "repository"
   },
   "operations": [
@@ -37,6 +37,11 @@
     {
       "operation": "aegis.agent-registry.govern",
       "primary_skill": "aegis-agent-registry",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.session.operate",
+      "primary_skill": "aegis-session-operations",
       "availability": "shipped"
     }
   ],
@@ -211,6 +216,38 @@
           "path": "references/registry-fixtures.json",
           "sha256": "sha256:715949fd384214a113e9ff0924f03ee4f17bc3cab79be688f00742f8bcc4aa75",
           "size": 4563
+        }
+      ]
+    },
+    {
+      "slug": "aegis-session-operations",
+      "version": "0.1.0",
+      "path": "skills/aegis-session-operations",
+      "description": "Preview and operate clean mandate-bound Hermes sessions through shipped Aegis lifecycle services without moving identity or authority into the model.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.session.operate"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:29d0e8845023144ebdc58d2fc4956518a15f0fd480db864d266879007796c607",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:8a9f9205db00328a1466f668364bfdb94c6fcecf586b47fb1fbb86c7c05bc7ea",
+          "size": 9912
+        },
+        {
+          "path": "references/session-fixtures.json",
+          "sha256": "sha256:10514f8844dd31515a641a50def0d03f6ec140f0933e5d7632eef3722ea34487",
+          "size": 4010
         }
       ]
     }
