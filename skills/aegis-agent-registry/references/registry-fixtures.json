@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "registered-exact-participant",
+      "surface": "aegis agents register response",
+      "authoritative_result": {
+        "created": true,
+        "registration": {
+          "schema_version": "aegis.registry.registration.v1",
+          "agent_id": "agent-example",
+          "source": {"fleet_id": "fleet-example", "kind": "current-fleet", "source_id": "source-example"},
+          "initial_revision": {"id": "agent-example", "revision": 1, "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+        },
+        "revision": {
+          "schema_version": "aegis.registry.agent-revision.v1",
+          "agent_id": "agent-example",
+          "revision": 1,
+          "source": {"fleet_id": "fleet-example", "kind": "current-fleet", "source_id": "source-example"},
+          "runtime": {"adapter": "hermes", "runtime": "hermes-agent-0.18", "target": "profile-example"},
+          "ownership": {"owner_id": "owner-example", "accountability_id": "accountability-example"},
+          "lifecycle": "enabled",
+          "charter": {"id": "agent-example", "revision": 3, "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+          "capability_declarations": ["fleet-read"],
+          "policy_refs": [{"id": "policy-example", "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "expected_interpretation": "Report a newly created immutable revision only after the registration initial_revision and returned revision agree exactly. The runtime target is not a canonical Hermes profile identity or proof of deployment."
+    },
+    {
+      "id": "duplicate-identical",
+      "surface": "aegis agents register idempotent response",
+      "authoritative_result": {
+        "created": false,
+        "agent_id": "agent-example",
+        "revision": 1,
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_interpretation": "Report idempotent existing readback, not a new revision or update."
+    },
+    {
+      "id": "duplicate-different-conflict",
+      "surface": "typed registration error",
+      "authoritative_result": {
+        "state": "conflict",
+        "reason": "existing Agent or source has different canonical content"
+      },
+      "expected_interpretation": "Deny as conflict. Never overwrite the existing registration or synthesize revision 2."
+    },
+    {
+      "id": "stale-lifecycle-revision",
+      "surface": "typed lifecycle error",
+      "authoritative_result": {
+        "state": "conflict",
+        "expected": {"id": "agent-example", "revision": 1, "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        "current": {"id": "agent-example", "revision": 2, "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}
+      },
+      "expected_interpretation": "Deny stale replay and require a fresh current exact revision; do not retarget the caller's mutation automatically."
+    },
+    {
+      "id": "disabled-history-readable",
+      "surface": "aegis agents history response",
+      "authoritative_result": {
+        "current_lifecycle": "disabled",
+        "history_readable": true,
+        "new_executable_participation": "denied"
+      },
+      "expected_interpretation": "Keep immutable history readable while preserving typed denial of new executable participation. Disablement is not deletion."
+    },
+    {
+      "id": "retired-reactivation-denied",
+      "surface": "typed lifecycle error plus history readback",
+      "authoritative_result": {
+        "current_lifecycle": "retired",
+        "requested_lifecycle": "enabled",
+        "state": "denied",
+        "reason": "retired",
+        "history_readable": true
+      },
+      "expected_interpretation": "Deny reactivation distinctly and preserve historical reads. The model cannot unretire the Agent."
+    },
+    {
+      "id": "interrupted-registration-readback",
+      "surface": "post-interruption exact show and history",
+      "authoritative_result": {
+        "process_exit_known": true,
+        "canonical_result": "unavailable"
+      },
+      "expected_interpretation": "Do not infer registration or completion from process exit. Retry an exact authenticated read and classify the canonical record as created, idempotently existing, conflict, or unavailable."
+    }
+  ]
+}
