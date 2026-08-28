@@ -106,6 +106,32 @@ func TestRegistryDrivesAvailabilityPolicyAuditAndResultNames(t *testing.T) {
 	}
 }
 
+func TestAgentRegistryGrammarIsClosedAndExact(t *testing.T) {
+	registry := testRegistry(t)
+	accepted := []string{
+		"/agents readiness", "/agents list", "/agents show agent-alpha", "/agents show agent-alpha 1",
+		"/agents prepare charter.json fixture.json fleet-primary source-alpha",
+		"/agents register charter.json fixture.json fleet-primary source-alpha sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	for _, input := range accepted {
+		request, err := registry.Parse(input)
+		if err != nil || request.Canonical != "agents" {
+			t.Fatalf("parse %q = %+v, %v", input, request, err)
+		}
+	}
+	denied := []string{
+		"/agents", "/agents readiness extra", "/agents show", "/agents show alpha 1 extra",
+		"/agents prepare charter.json fixture.json fleet-only",
+		"/agents register charter.json fixture.json fleet-primary source-alpha",
+		"/agents delete agent-alpha", "/agents list;id",
+	}
+	for _, input := range denied {
+		if _, err := registry.Parse(input); err == nil {
+			t.Fatalf("accepted non-canonical Agent Registry form %q", input)
+		}
+	}
+}
+
 func FuzzParserNeverTreatsUnknownAsKnown(f *testing.F) {
 	for _, seed := range []string{"/help", " /status", "//status", "/unknown", "/help 'scan'", "/help a|b", "/quit"} {
 		f.Add(seed)

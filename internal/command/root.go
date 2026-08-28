@@ -464,7 +464,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 					return err
 				}
 			}
-			return launchConsole(cmd, o, deps.OpenBrowser)
+			// A successful first-run gateway activation enters the authenticated
+			// terminal manager in this process after presenting the signed-out
+			// console URL. Browser launch failure is already reported with the
+			// exact manual URL and must not hide the usable gateway manager.
+			return enterPostActivationSurfaces(cmd, o, deps.OpenBrowser, func() error {
+				return runGatewayManager(cmd, o.configFile)
+			})
 		}
 		return runManager(cmd, build)
 	}
@@ -493,6 +499,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	wrapAuthorityCleanup(root)
 	return root
+}
+
+func enterPostActivationSurfaces(cmd *cobra.Command, options *rootOptions, opener BrowserOpener, manager func() error) error {
+	if err := launchConsole(cmd, options, opener); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Aegis: %v; continuing with the authenticated terminal manager\n", err)
+	}
+	return manager()
 }
 
 func requiresGateway(profile ExecutionProfile) bool {

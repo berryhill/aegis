@@ -11,6 +11,7 @@ flowchart TB
   CLI -->|aegis console: direct URL; no session issuance| Console
   CLI -->|bare startup: exact installed + loaded ExecStart identity, activity, authenticated readiness| StartupAdmission[Observational gateway admission]
   StartupAdmission -->|healthy + explicit console action| BrowserLauncher[Direct argument-safe platform browser launcher]
+  StartupAdmission -->|fresh successful activation: present console first, then authenticate manager| ManagerGateway
   StartupAdmission -. terminal unavailable: deny, no second writer .-> CLI
   BrowserLauncher -->|clean /console URL; no cookie| Console
   Password[Enrolled principal password verifier] -->|exact-origin verification| Console
@@ -114,6 +115,7 @@ flowchart TB
   Registry --> ManagerCommands[Authenticated command service]
   ManagerCommands --> State
   ManagerCommands --> Audit
+  ManagerCommands -->|closed readiness/list/show/prepare/register; exact digest confirmation| AgentRegistry
   Watch[Leased event source manager: unavailable] -. no active source .-> ManagerCommands
   Manager -->|authoritative typed events| TUI
   ManagerGateway -->|runtime/model typed events| Sanitize[Contextual terminal sanitizer]
