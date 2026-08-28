@@ -21,7 +21,7 @@ func TestValidateRepositoryBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if manifest.Bundle.Name != "aegis-hermes-skills" || len(manifest.Skills) == 0 {
+	if manifest.Bundle.Name != "aegis-hermes-skills" || manifest.Bundle.Version != "0.2.6" || len(manifest.Skills) != 5 {
 		t.Fatalf("Validate() returned unexpected manifest: %#v", manifest.Bundle)
 	}
 
@@ -353,6 +353,101 @@ func TestAuditVerificationSkill(t *testing.T) {
 	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
 		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
 			t.Errorf("audit fixture contains forbidden secret/path material %q", forbidden)
+		}
+	}
+}
+
+func TestSessionOperationsSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-session-operations"
+		operation = "aegis.session.operate"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillText := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
+	for _, required := range []string{
+		"aegis session preview AGENT --revision REVISION --stanza STANZA --environment local",
+		"aegis session start MANDATE_ID",
+		"aegis session list",
+		"aegis session show SESSION_ID",
+		"aegis session authority SESSION_ID",
+		"aegis session revoke SESSION_ID --reason REASON",
+		"aegis session terminate SESSION_ID --reason REASON",
+		"Preview is consequential",
+		"Never union stanzas",
+		"not host filesystem, network, container, or VM sandboxing",
+		"A PID alone never identifies the authorized process",
+		"there is no separate shipped session-receipt command",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing session operations contract %q", required)
+		}
+	}
+
+	var document struct {
+		Fixtures []struct {
+			ID                  string         `json:"id"`
+			AuthoritativeResult map[string]any `json:"authoritative_result"`
+		} `json:"fixtures"`
+	}
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "session-fixtures.json"))
+	mustDecode(t, fixtureBytes, &document)
+	fixtureByID := make(map[string]map[string]any, len(document.Fixtures))
+	for _, fixture := range document.Fixtures {
+		fixtureByID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{
+		"exact-preview-and-clean-start",
+		"ambiguous-stanza-denial",
+		"malformed-start-denial",
+		"stale-process-replay-denial",
+		"interrupted-revocation-recovery",
+		"cross-stanza-canary-denial",
+	} {
+		if fixtureByID[id] == nil {
+			t.Errorf("session fixtures missing %q", id)
+		}
+	}
+	for _, id := range []string{"ambiguous-stanza-denial", "malformed-start-denial", "stale-process-replay-denial", "cross-stanza-canary-denial"} {
+		if fixtureByID[id]["allowed"] != false {
+			t.Errorf("fixture %q does not fail closed: %#v", id, fixtureByID[id])
+		}
+	}
+	for _, forbidden := range []string{"/home/", "runtime_home", "private_key", "access_token"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("session fixture contains forbidden secret/path material %q", forbidden)
 		}
 	}
 }
