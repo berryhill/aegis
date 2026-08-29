@@ -769,6 +769,105 @@ func TestLoopAuthoringSkill(t *testing.T) {
 	}
 }
 
+func TestGraphAuthoringSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-graph-authoring"
+		operation = "aegis.graph.author"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-agent-registry,aegis-loop-authoring,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"aegis graphs list",
+		"aegis graphs publish FILE",
+		"aegis graphs show GRAPH REVISION",
+		"aegis graphs submit FILE",
+		"Never union stanza grants",
+		"exact immutable Agent revision and one exact immutable Loop revision",
+		"typed Graph input ports are the shipped input schema",
+		"expected_previous_digest",
+		"Aegis canonicalizes each value, sorts normalized inputs by port ID",
+		"accepted and rejected outcomes distinct",
+		"Queue acceptance is not a claim, runtime attempt, verified evidence, or terminal success",
+		"There is no shipped CLI Graph activation or retirement command",
+		"successful publication atomically records the exact published revision as the active Graph lifecycle selection",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing Graph authoring contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(skillBytes)), forbidden) {
+			t.Errorf("Graph skill contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"compose-publish-and-submit-graph-revision":  "happy_path",
+		"deny-graph-prompt-authority":                "authority_denial",
+		"deny-malformed-graph-revision":              "malformed_input",
+		"deny-stale-graph-predecessor-or-submission": "stale_replay",
+		"recover-interrupted-graph-submission":       "interruption_recovery",
+		"deny-graph-secret-canary":                   "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, ok := caseByID[id]
+		if !ok {
+			t.Errorf("Graph evaluations missing %q", id)
+			continue
+		}
+		if evaluation.Class != class {
+			t.Errorf("Graph evaluation %q class = %q, want %q", id, evaluation.Class, class)
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("Graph happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" {
+			t.Errorf("Graph denial %q expected = %q, want deny", id, evaluation.Expected)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)

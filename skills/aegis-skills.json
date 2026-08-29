@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.8",
+    "version": "0.2.9",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:3ccad628af797a0a281f50df0dfbb791ee0ea1fbe561636e539ce99e749674f0",
+    "content_digest": "sha256:6b60baa3df6d9100ee177bd367f305ea8e6fbfe139b6b6bcce2239cc4d27ea1c",
     "source_revision": "repository"
   },
   "operations": [
@@ -47,6 +47,11 @@
     {
       "operation": "aegis.loop.author",
       "primary_skill": "aegis-loop-authoring",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.graph.author",
+      "primary_skill": "aegis-graph-authoring",
       "availability": "shipped"
     }
   ],
@@ -280,6 +285,35 @@
           "path": "SKILL.md",
           "sha256": "sha256:1c9985d93f13e4da79f01fe9306afb5c40b096bd40824ab7b92bff5a88fc5246",
           "size": 9231
+        }
+      ]
+    },
+    {
+      "slug": "aegis-graph-authoring",
+      "version": "0.1.0",
+      "path": "skills/aegis-graph-authoring",
+      "description": "Compose, publish, inspect, and submit immutable typed Aegis Graph revisions through shipped services without moving identity, authority, or queue admission into the model.",
+      "dependencies": [
+        "aegis",
+        "aegis-agent-registry",
+        "aegis-loop-authoring",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.graph.author"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:9f364e125adb7609a40e24608b7b32550e3837d219ec4314a1e374bdc88418e1",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:e1f1dc7cac063c03cd625c4767d5ed0c2a42215a56397e9a55ff6c5dc24fad32",
+          "size": 12689
         }
       ]
     }
