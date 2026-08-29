@@ -220,7 +220,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
 	}
-	managerGateway, err := managergateway.New(svc)
+	managerGateway, err := managergateway.New(ctx, svc)
 	if err != nil {
 		return fmt.Errorf("configure manager gateway: %w", err)
 	}
@@ -1336,6 +1336,26 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusOK, result)
+	})
+	g.POST("/manager/sessions/:session/turns", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input struct {
+			Input string `json:"input"`
+		}
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		message, err := managerGateway.Turn(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
+		if err != nil {
+			if errors.Is(err, app.ErrUnauthenticated) || errors.Is(err, app.ErrDenied) || errors.Is(err, app.ErrExpired) {
+				return err
+			}
+			return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]string{"message": message})
 	})
 	g.DELETE("/manager/sessions/:session", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
