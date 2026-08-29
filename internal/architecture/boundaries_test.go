@@ -39,7 +39,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/skillbundle":       {"internal/skillbundle"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/store"},
 	"internal/app":               {"internal/config", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
-	"internal/managergateway":    {"internal/app", "internal/core", "internal/manager", "internal/slash"},
+	"internal/managergateway":    {"internal/app", "internal/core", "internal/credentials", "internal/manager", "internal/slash"},
 	"internal/console":           {"internal/core", "internal/principalauth"},
 	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway", "internal/principalauth"},
 }

@@ -194,6 +194,17 @@ func Serve(ctx context.Context, svc *app.Service) error {
 	return ServeWithTelemetry(ctx, svc, noopTelemetry{})
 }
 
+func managerGatewayWriteTimeout(cfg config.Config) time.Duration {
+	writeTimeout := cfg.API.WriteTimeout
+	startup := cfg.Manager.Inference.StartTimeout + 3*cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
+	for _, candidate := range []time.Duration{startup, cfg.Manager.Hermes.TurnTimeout} {
+		if candidate > writeTimeout {
+			writeTimeout = candidate
+		}
+	}
+	return writeTimeout + 5*time.Second
+}
+
 func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemetry) error {
 	if svc.Config.API.Token == "" {
 		return errors.New("api.token is required to serve the protected control plane")
@@ -220,7 +231,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
 	}
-	managerGateway, err := managergateway.New(svc)
+	managerGateway, err := managergateway.New(ctx, svc)
 	if err != nil {
 		return fmt.Errorf("configure manager gateway: %w", err)
 	}
@@ -1337,6 +1348,26 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, result)
 	})
+	g.POST("/manager/sessions/:session/turns", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input struct {
+			Input string `json:"input"`
+		}
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		message, err := managerGateway.Turn(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
+		if err != nil {
+			if errors.Is(err, app.ErrUnauthenticated) || errors.Is(err, app.ErrDenied) || errors.Is(err, app.ErrExpired) {
+				return err
+			}
+			return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+		}
+		return c.JSON(http.StatusOK, map[string]string{"message": message})
+	})
 	g.DELETE("/manager/sessions/:session", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -2107,7 +2138,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, d)
 	})
-	srv := &http.Server{Addr: svc.Config.API.Listen, Handler: e, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: svc.Config.API.ReadTimeout, WriteTimeout: svc.Config.API.WriteTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 256 << 10}
+	srv := &http.Server{Addr: svc.Config.API.Listen, Handler: e, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: svc.Config.API.ReadTimeout, WriteTimeout: managerGatewayWriteTimeout(svc.Config), IdleTimeout: 60 * time.Second, MaxHeaderBytes: 256 << 10}
 	srv.ConnContext = func(connectionContext context.Context, connection net.Conn) context.Context {
 		if connection.LocalAddr().Network() == "unix" {
 			return unixPeerContext(connectionContext, connection)
