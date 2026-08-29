@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/managergateway"
 	"github.com/berryhill/aegis/internal/slash"
 )
@@ -17,6 +19,25 @@ type gatewayRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f gatewayRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	return f(request)
+}
+
+func TestGatewayManagerClientTimeoutCoversSequentialStartup(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.API.UnixSocket = "/unused/aegis.sock"
+	cfg.API.Token = "configured-reference"
+	cfg.Manager.Inference.StartTimeout = 2 * time.Minute
+	cfg.Manager.Inference.RequestTimeout = 45 * time.Second
+	cfg.Manager.Hermes.GatewayStartTimeout = 20 * time.Second
+	cfg.Manager.Hermes.TurnTimeout = 4 * time.Minute
+
+	client, err := newGatewayManagerClient(cfg)
+	if err != nil {
+		t.Fatalf("construct manager gateway client: %v", err)
+	}
+	want := 2*time.Minute + 3*45*time.Second + 20*time.Second
+	if client.http.Timeout < want {
+		t.Fatalf("client timeout=%s, want at least %s for sequential manager startup operations", client.http.Timeout, want)
+	}
 }
 
 func TestRenderGatewayHelpIsHumanReadable(t *testing.T) {

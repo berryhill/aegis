@@ -38,9 +38,9 @@ func newGatewayManagerClient(cfg config.Config) (*gatewayManagerClient, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", cfg.API.UnixSocket)
 	}}
 	requestTimeout := cfg.Manager.Hermes.TurnTimeout
-	startupTimeout := cfg.Manager.Inference.StartTimeout + cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
-	if startupTimeout > requestTimeout {
-		requestTimeout = startupTimeout
+	startup := cfg.Manager.Inference.StartTimeout + 3*cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
+	if startup > requestTimeout {
+		requestTimeout = startup
 	}
 	if requestTimeout < 30*time.Second {
 		requestTimeout = 30 * time.Second

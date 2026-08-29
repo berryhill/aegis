@@ -196,8 +196,8 @@ func Serve(ctx context.Context, svc *app.Service) error {
 
 func managerGatewayWriteTimeout(cfg config.Config) time.Duration {
 	writeTimeout := cfg.API.WriteTimeout
-	startupTimeout := cfg.Manager.Inference.StartTimeout + cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
-	for _, candidate := range []time.Duration{startupTimeout, cfg.Manager.Hermes.TurnTimeout} {
+	startup := cfg.Manager.Inference.StartTimeout + 3*cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
+	for _, candidate := range []time.Duration{startup, cfg.Manager.Hermes.TurnTimeout} {
 		if candidate > writeTimeout {
 			writeTimeout = candidate
 		}

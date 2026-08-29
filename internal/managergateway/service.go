@@ -42,13 +42,14 @@ type session struct {
 }
 
 type Service struct {
-	app      *app.Service
-	registry *slash.Registry
-	commands *slash.Service
-	now      func() time.Time
-	ctx      context.Context
-	mu       sync.Mutex
-	sessions map[string]session
+	app            *app.Service
+	registry       *slash.Registry
+	commands       *slash.Service
+	now            func() time.Time
+	ctx            context.Context
+	conversationMu sync.Mutex
+	mu             sync.Mutex
+	sessions       map[string]session
 }
 
 func New(parent context.Context, application *app.Service) (*Service, error) {
@@ -76,6 +77,15 @@ func opaque(size int) (string, error) {
 func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error) {
 	if err := s.app.RequirePrincipal(subject); err != nil {
 		return Opened{}, err
+	}
+	s.conversationMu.Lock()
+	defer s.conversationMu.Unlock()
+	admissionNow := s.now()
+	if err := s.closeExpiredConversations(admissionNow); err != nil {
+		return Opened{}, fmt.Errorf("retire expired manager conversation: %w", err)
+	}
+	if s.hasActiveConversation(admissionNow) {
+		return Opened{}, fmt.Errorf("%w: manager_conversation_already_active", app.ErrDenied)
 	}
 	idMaterial, err := opaque(12)
 	if err != nil {
@@ -132,6 +142,36 @@ func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error
 	return Opened{ID: id, Token: token, ExpiresAt: expires, Mode: mode, Reason: reason, NextStep: nextStep}, nil
 }
 
+func (s *Service) hasActiveConversation(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, entry := range s.sessions {
+		if entry.runtime != nil && now.Before(entry.expires) && now.Before(entry.subject.ExpiresAt) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) closeExpiredConversations(now time.Time) error {
+	var expired []*conversation
+	s.mu.Lock()
+	for id, entry := range s.sessions {
+		if entry.runtime != nil && (!now.Before(entry.expires) || !now.Before(entry.subject.ExpiresAt)) {
+			delete(s.sessions, id)
+			expired = append(expired, entry.runtime)
+		}
+	}
+	s.mu.Unlock()
+	var result error
+	for _, runtime := range expired {
+		cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+		result = errors.Join(result, runtime.Close(cleanup, managerdomain.EndSessionExpired))
+		cancel()
+	}
+	return result
+}
+
 func (s *Service) watchSession(entry session) {
 	timer := time.NewTimer(max(time.Until(entry.expires), 0))
 	defer timer.Stop()
@@ -150,6 +190,10 @@ func (s *Service) watchSession(entry session) {
 		case <-entry.runtime.failures:
 			reason = managerdomain.EndRuntimeFailed
 		}
+	}
+	if entry.runtime != nil {
+		s.conversationMu.Lock()
+		defer s.conversationMu.Unlock()
 	}
 	s.mu.Lock()
 	current, exists := s.sessions[entry.id]
@@ -192,6 +236,13 @@ func lifecycleState(mode string) slash.LifecycleState {
 	return slash.Degraded
 }
 
+func managerTurnContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
 func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, input string) (string, error) {
 	entry, err := s.authenticate(subject, id, token)
 	if err != nil {
@@ -207,13 +258,19 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	if entry.mode != "conversational" || entry.runtime == nil {
 		return "", fmt.Errorf("%s: conversational local inference unavailable; next: %s", entry.reason, entry.nextStep)
 	}
-	return entry.runtime.Turn(ctx, input)
+	turnCtx, cancel := managerTurnContext(ctx, s.app.Config.Manager.Hermes.TurnTimeout)
+	defer cancel()
+	return entry.runtime.Turn(turnCtx, input)
 }
 
 func (s *Service) Close(ctx context.Context, subject core.Subject, id, token string) error {
 	entry, err := s.authenticate(subject, id, token)
 	if err != nil {
 		return err
+	}
+	if entry.runtime != nil {
+		s.conversationMu.Lock()
+		defer s.conversationMu.Unlock()
 	}
 	s.mu.Lock()
 	delete(s.sessions, id)
@@ -246,15 +303,8 @@ func (s *Service) authenticate(subject core.Subject, id, token string) (session,
 
 func (s *Service) prune(now time.Time) {
 	for id, entry := range s.sessions {
-		if !now.Before(entry.expires) || !now.Before(entry.subject.ExpiresAt) {
+		if (!now.Before(entry.expires) || !now.Before(entry.subject.ExpiresAt)) && entry.runtime == nil {
 			delete(s.sessions, id)
-			if entry.runtime != nil {
-				go func(runtime *conversation) {
-					cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
-					defer cancel()
-					_ = runtime.Close(cleanup, managerdomain.EndSessionExpired)
-				}(entry.runtime)
-			}
 		}
 	}
 }

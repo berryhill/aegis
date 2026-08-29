@@ -20,8 +20,9 @@ func TestManagerGatewayWriteTimeoutCoversStartupAndTurns(t *testing.T) {
 	cfg.Manager.Hermes.TurnTimeout = 4 * time.Minute
 
 	got := managerGatewayWriteTimeout(cfg)
-	if got < 4*time.Minute {
-		t.Fatalf("write timeout=%s, want coverage for longest manager operation", got)
+	want := 2*time.Minute + 3*45*time.Second + 20*time.Second + 5*time.Second
+	if got < want {
+		t.Fatalf("write timeout=%s, want at least %s for sequential manager startup operations", got, want)
 	}
 }
 
