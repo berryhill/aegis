@@ -1141,7 +1141,7 @@ func TestEvidenceDispositionSkill(t *testing.T) {
 	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
 		t.Fatalf("skill authority boundary = %#v", skill)
 	}
-	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-graph-authoring,aegis-loop-authoring,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-execution-queue,aegis-graph-authoring,aegis-loop-authoring,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
 		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
 	}
 

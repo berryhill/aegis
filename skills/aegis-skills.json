@@ -399,6 +399,7 @@
       "description": "Inspect exact Aegis execution evidence and route authenticated outcome disposition through shipped services without treating process state or model narration as proof.",
       "dependencies": [
         "aegis",
+        "aegis-execution-queue",
         "aegis-graph-authoring",
         "aegis-loop-authoring",
         "aegis-trust-context-inspection",
