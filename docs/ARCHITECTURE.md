@@ -10,8 +10,8 @@ flowchart TB
   CLI -->|authenticated Unix client; no direct-store fallback while online| API
   CLI -->|aegis console: direct URL; no session issuance| Console
   CLI -->|bare startup: exact installed + loaded ExecStart identity, activity, authenticated readiness| StartupAdmission[Observational gateway admission]
-  StartupAdmission -->|fresh activation or healthy + explicit console action| BrowserLauncher[Direct argument-safe platform browser launcher]
-  StartupAdmission -->|healthy + explicit terminal action| ManagerGateway
+  StartupAdmission -->|healthy + explicit console action| BrowserLauncher[Direct argument-safe platform browser launcher]
+  StartupAdmission -->|fresh successful activation: present console first, then authenticate manager| ManagerGateway
   StartupAdmission -. terminal unavailable: deny, no second writer .-> CLI
   BrowserLauncher -->|clean /console URL; no cookie| Console
   Password[Enrolled principal password verifier] -->|exact-origin verification| Console
