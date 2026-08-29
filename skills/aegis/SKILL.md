@@ -16,7 +16,7 @@ Use this skill to identify the relevant Aegis product domain and point the user 
 
 ## Route by domain
 
-- Agent identity, immutable registration, and lifecycle: Agent Registry through `aegis agents` or `/v1/agents`.
+- Agent identity, immutable registration, exact history, and lifecycle: use `aegis-agent-registry` and only its shipped `aegis agents`, `/v1/agents`, and fleet-readiness surfaces.
 - Versioned workflow definitions: Loops through `aegis loops` or `/v1/loops`.
 - Exact Agent and Loop revision composition: Graphs through `aegis graphs` or `/v1/graphs`.
 - Submission, claims, attempts, lifecycle, evidence, and disposition: Execution Queue through `aegis queue` or `/v1/queue`.

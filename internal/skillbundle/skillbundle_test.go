@@ -608,6 +608,71 @@ func TestApprovalProvisioningSkill(t *testing.T) {
 	}
 }
 
+func TestAgentRegistrySkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	const slug, operation = "aegis-agent-registry", "aegis.agent-registry.govern"
+	var skill *Skill
+	var owner *OperationOwner
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+		}
+	}
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("Agent Registry operation owner = %#v", owner)
+	}
+	if skill == nil || skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("Agent Registry skill contract = %#v", skill)
+	}
+	text := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
+	for _, required := range []string{"aegis agents register FILE", "aegis agents list", "aegis agents show AGENT [REVISION]", "aegis agents history AGENT", "aegis agents enable AGENT FILE", "aegis agents disable AGENT FILE", "aegis agents retire AGENT FILE", "there is no shipped standalone `aegis agents readiness` CLI command", "A Hermes profile is a runtime/provisioning artifact or projection, never the canonical Agent Registry", "An identical retry is idempotent", "A retired Agent cannot be re-enabled or disabled"} {
+		if !strings.Contains(text, required) {
+			t.Errorf("SKILL.md missing Agent Registry contract %q", required)
+		}
+	}
+	var document struct {
+		Fixtures []struct {
+			ID                  string         `json:"id"`
+			AuthoritativeResult map[string]any `json:"authoritative_result"`
+		} `json:"fixtures"`
+	}
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "registry-fixtures.json"))
+	mustDecode(t, fixtureBytes, &document)
+	byID := make(map[string]map[string]any, len(document.Fixtures))
+	for _, fixture := range document.Fixtures {
+		byID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{"registered-exact-participant", "duplicate-identical", "duplicate-different-conflict", "stale-lifecycle-revision", "disabled-history-readable", "retired-reactivation-denied", "interrupted-registration-readback"} {
+		if byID[id] == nil {
+			t.Errorf("Registry fixtures missing %q", id)
+		}
+	}
+	registered := byID["registered-exact-participant"]
+	registration, registrationOK := registered["registration"].(map[string]any)
+	revision, revisionOK := registered["revision"].(map[string]any)
+	initial, initialOK := registration["initial_revision"].(map[string]any)
+	if !registrationOK || !revisionOK || !initialOK || registration["agent_id"] != revision["agent_id"] || initial["revision"] != revision["revision"] || initial["digest"] != revision["digest"] {
+		t.Errorf("registered fixture does not exactly bind initial revision: %#v", registered)
+	}
+	if byID["duplicate-identical"]["created"] != false || byID["duplicate-different-conflict"]["state"] != "conflict" || byID["retired-reactivation-denied"]["history_readable"] != true {
+		t.Errorf("Registry fixtures do not preserve idempotent, conflict, and readable-history states")
+	}
+	for _, forbidden := range []string{"/home/", "access_token", "runtime_home", "private_key"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("Registry fixture contains forbidden material %q", forbidden)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
