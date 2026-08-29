@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.9",
+    "version": "0.2.10",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:6b60baa3df6d9100ee177bd367f305ea8e6fbfe139b6b6bcce2239cc4d27ea1c",
+    "content_digest": "sha256:fa072a42ea4187f0e3c79b02564ad97bca247d5012e90e37ab679f52e2587878",
     "source_revision": "repository"
   },
   "operations": [
@@ -53,6 +53,11 @@
       "operation": "aegis.graph.author",
       "primary_skill": "aegis-graph-authoring",
       "availability": "shipped"
+    },
+    {
+      "operation": "aegis.execution-queue.operate",
+      "primary_skill": "aegis-execution-queue",
+      "availability": "shipped"
     }
   ],
   "skills": [
@@ -70,12 +75,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:9b6913af7d349554f124e9e7cf089798626b458e9c4c38d4da254453025c4eff",
+      "content_digest": "sha256:3f049b19b93b07160a12fcea30c094a6c8ff3cddfb801e1d1ccb43a0cf8e7510",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:6d73bc0588abc6b5027a44e52ef5e6cad1e97a9437bdd57be58dc0a66bec254f",
-          "size": 3681
+          "sha256": "sha256:1c1fec254e9aa06048e7af36c1227ca90946813f16c25f08420d5f0405926a53",
+          "size": 3715
         }
       ]
     },
@@ -314,6 +319,33 @@
           "path": "SKILL.md",
           "sha256": "sha256:e1f1dc7cac063c03cd625c4767d5ed0c2a42215a56397e9a55ff6c5dc24fad32",
           "size": 12689
+        }
+      ]
+    },
+    {
+      "slug": "aegis-execution-queue",
+      "version": "0.1.0",
+      "path": "skills/aegis-execution-queue",
+      "description": "Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.execution-queue.operate"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:8e51dbab49c2dbc6b7826e16a940bfaa42aaaed0c3058b65bb7006138a57866e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:12cc4bf2987dcfdad056601e9d978cb468d462abd174004d2b5f3fb6ac1dfbb9",
+          "size": 10942
         }
       ]
     }
