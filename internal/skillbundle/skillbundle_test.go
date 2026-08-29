@@ -868,6 +868,108 @@ func TestGraphAuthoringSkill(t *testing.T) {
 	}
 }
 
+func TestExecutionQueueSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-execution-queue"
+		operation = "aegis.execution-queue.operate"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"aegis queue list",
+		"aegis queue show ITEM",
+		"aegis queue process FILE",
+		"aegis queue retry FILE",
+		"aegis queue cancel FILE",
+		"aegis queue expire FILE",
+		"aegis queue exhaust FILE",
+		"aegis queue revoke FILE",
+		"There is no separate reclaim command",
+		"reclaimed: true",
+		"reason_code: \"lease_reclaimed\"",
+		"Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, and general multi-node execution are unavailable",
+		"A claim is a bounded single-winner lease, not runtime admission",
+		"Dependencies gate claim eligibility",
+		"Process exit and runtime narration satisfy none of these records",
+		"Cancelled, expired, exhausted, revoked, denied, failed, and succeeded remain distinct outcomes",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing Execution Queue contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(skillBytes)), forbidden) {
+			t.Errorf("Execution Queue skill contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"inspect-and-operate-execution-queue": "happy_path",
+		"deny-queue-prompt-authority":         "authority_denial",
+		"deny-malformed-queue-operation":      "malformed_input",
+		"deny-live-lease-reclaim":             "stale_replay",
+		"recover-interrupted-queue-operation": "interruption_recovery",
+		"deny-queue-secret-canary":            "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, ok := caseByID[id]
+		if !ok {
+			t.Errorf("Execution Queue evaluations missing %q", id)
+			continue
+		}
+		if evaluation.Class != class {
+			t.Errorf("Execution Queue evaluation %q class = %q, want %q", id, evaluation.Class, class)
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("Execution Queue happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" {
+			t.Errorf("Execution Queue denial %q expected = %q, want deny", id, evaluation.Expected)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
