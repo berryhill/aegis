@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.10",
+    "version": "0.2.12",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:5102d9b1d6794f2c672b2af112b0e444356c909cac0cdffa76c7fbfb8c28c48e",
+    "content_digest": "sha256:41bbd4f0c0c07a90928895c8e8e98b165ca0e7d0453a5a1b0b027ed25287105c",
     "source_revision": "repository"
   },
   "operations": [
@@ -55,6 +55,16 @@
       "availability": "shipped"
     },
     {
+      "operation": "aegis.execution-queue.operate",
+      "primary_skill": "aegis-execution-queue",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.credential-authority.operate",
+      "primary_skill": "aegis-credential-authority",
+      "availability": "shipped"
+    },
+    {
       "operation": "aegis.evidence-disposition.inspect",
       "primary_skill": "aegis-evidence-disposition",
       "availability": "shipped"
@@ -75,12 +85,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:f5652a36f696c7f46efe37b369c2932c2aa3674b6a357a9b14c1586b667b1aa6",
+      "content_digest": "sha256:63e723a1e726a57900fdd0a819846f31c081b6834681baf46fa7bde56c8d0c13",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:35b674b553d9f6f8250d64264b574e5a40d6521aaf92d6393b7dcffa0d929f37",
-          "size": 3802
+          "sha256": "sha256:fabf439603060490dced972883981f1d92e7b2497598d9afcc6318ce1e92e5c9",
+          "size": 4154
         }
       ]
     },
@@ -319,6 +329,66 @@
           "path": "SKILL.md",
           "sha256": "sha256:e1f1dc7cac063c03cd625c4767d5ed0c2a42215a56397e9a55ff6c5dc24fad32",
           "size": 12689
+        }
+      ]
+    },
+    {
+      "slug": "aegis-execution-queue",
+      "version": "0.1.0",
+      "path": "skills/aegis-execution-queue",
+      "description": "Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.execution-queue.operate"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:8e51dbab49c2dbc6b7826e16a940bfaa42aaaed0c3058b65bb7006138a57866e",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:12cc4bf2987dcfdad056601e9d978cb468d462abd174004d2b5f3fb6ac1dfbb9",
+          "size": 10942
+        }
+      ]
+    },
+    {
+      "slug": "aegis-credential-authority",
+      "version": "0.1.0",
+      "path": "skills/aegis-credential-authority",
+      "description": "Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-session-operations",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.credential-authority.operate"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:7af6ee4fb9cda837dc3190112fd0e4657695ad2efdf6c42ec4609d9a93612253",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:176da05c7fd8a115e0baf688677aa914bc82ea777a9ef8372feb0e68d0072a27",
+          "size": 11346
+        },
+        {
+          "path": "references/credential-fixtures.json",
+          "sha256": "sha256:26209418030bf57bca3978e94708864b6f70cd7bad23abf5cfce5a66171d428b",
+          "size": 4582
         }
       ]
     },

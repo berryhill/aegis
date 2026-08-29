@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +24,9 @@ type Opened struct {
 	ID        string    `json:"id"`
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires"`
+	Mode      string    `json:"mode"`
+	Reason    string    `json:"reason,omitempty"`
+	NextStep  string    `json:"next_step,omitempty"`
 }
 
 type session struct {
@@ -31,26 +35,35 @@ type session struct {
 	subject  core.Subject
 	issuedAt time.Time
 	expires  time.Time
+	mode     string
+	reason   string
+	nextStep string
+	runtime  *conversation
 }
 
 type Service struct {
-	app      *app.Service
-	registry *slash.Registry
-	commands *slash.Service
-	now      func() time.Time
-	mu       sync.Mutex
-	sessions map[string]session
+	app            *app.Service
+	registry       *slash.Registry
+	commands       *slash.Service
+	now            func() time.Time
+	ctx            context.Context
+	conversationMu sync.Mutex
+	mu             sync.Mutex
+	sessions       map[string]session
 }
 
-func New(application *app.Service) (*Service, error) {
+func New(parent context.Context, application *app.Service) (*Service, error) {
 	if application == nil {
 		return nil, errors.New("manager gateway requires an application service")
+	}
+	if parent == nil {
+		return nil, errors.New("manager gateway requires a lifecycle context")
 	}
 	registry, err := slash.NewRegistry()
 	if err != nil {
 		return nil, err
 	}
-	return &Service{app: application, registry: registry, commands: slash.NewService(application, registry), now: application.Now, sessions: make(map[string]session)}, nil
+	return &Service{app: application, registry: registry, commands: slash.NewService(application, registry), now: application.Now, ctx: parent, sessions: make(map[string]session)}, nil
 }
 
 func opaque(size int) (string, error) {
@@ -64,6 +77,15 @@ func opaque(size int) (string, error) {
 func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error) {
 	if err := s.app.RequirePrincipal(subject); err != nil {
 		return Opened{}, err
+	}
+	s.conversationMu.Lock()
+	defer s.conversationMu.Unlock()
+	admissionNow := s.now()
+	if err := s.closeExpiredConversations(admissionNow); err != nil {
+		return Opened{}, fmt.Errorf("retire expired manager conversation: %w", err)
+	}
+	if s.hasActiveConversation(admissionNow) {
+		return Opened{}, fmt.Errorf("%w: manager_conversation_already_active", app.ErrDenied)
 	}
 	idMaterial, err := opaque(12)
 	if err != nil {
@@ -82,18 +104,109 @@ func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error
 		return Opened{}, app.ErrExpired
 	}
 	id := "mgr-" + idMaterial
-	entry := session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: now, expires: expires}
+	runtime, runtimeErr := startConversation(ctx, s.ctx, s.app, subject, id, expires)
+	mode, reason, nextStep := "conversational", "", ""
+	if runtimeErr != nil {
+		mode, reason = "degraded", managerReason(runtimeErr)
+		nextStep = managerNextStep(reason)
+	}
+	if !s.now().Before(expires) {
+		if runtime != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+			defer cancel()
+			_ = runtime.Close(cleanup, managerdomain.EndSessionExpired)
+		}
+		return Opened{}, app.ErrExpired
+	}
+	entry := session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: now, expires: expires, mode: mode, reason: reason, nextStep: nextStep, runtime: runtime}
 	s.mu.Lock()
 	s.prune(now)
 	s.sessions[id] = entry
 	s.mu.Unlock()
-	if err = s.app.AuditManagerStartup(ctx, subject, "ok", "gateway_manager_session_issued", map[string]string{"route": "authenticated-unix-gateway"}); err != nil {
+	outcome, auditReason := "ok", "manager_ready"
+	if mode == "degraded" {
+		outcome, auditReason = "degraded", reason
+	}
+	if err = s.app.AuditManagerStartup(ctx, subject, outcome, auditReason, map[string]string{"route": "authenticated-unix-gateway", "runtime": "hermes", "model": s.app.Config.Manager.Inference.Model}); err != nil {
 		s.mu.Lock()
 		delete(s.sessions, id)
 		s.mu.Unlock()
+		if runtime != nil {
+			cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+			defer cancel()
+			_ = runtime.Close(cleanup, managerdomain.EndStartupFailed)
+		}
 		return Opened{}, err
 	}
-	return Opened{ID: id, Token: token, ExpiresAt: expires}, nil
+	go s.watchSession(entry)
+	return Opened{ID: id, Token: token, ExpiresAt: expires, Mode: mode, Reason: reason, NextStep: nextStep}, nil
+}
+
+func (s *Service) hasActiveConversation(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, entry := range s.sessions {
+		if entry.runtime != nil && now.Before(entry.expires) && now.Before(entry.subject.ExpiresAt) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) closeExpiredConversations(now time.Time) error {
+	var expired []*conversation
+	s.mu.Lock()
+	for id, entry := range s.sessions {
+		if entry.runtime != nil && (!now.Before(entry.expires) || !now.Before(entry.subject.ExpiresAt)) {
+			delete(s.sessions, id)
+			expired = append(expired, entry.runtime)
+		}
+	}
+	s.mu.Unlock()
+	var result error
+	for _, runtime := range expired {
+		cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+		result = errors.Join(result, runtime.Close(cleanup, managerdomain.EndSessionExpired))
+		cancel()
+	}
+	return result
+}
+
+func (s *Service) watchSession(entry session) {
+	timer := time.NewTimer(max(time.Until(entry.expires), 0))
+	defer timer.Stop()
+	reason := managerdomain.EndSessionExpired
+	if entry.runtime == nil {
+		select {
+		case <-timer.C:
+		case <-s.ctx.Done():
+			reason = managerdomain.EndTermination
+		}
+	} else {
+		select {
+		case <-timer.C:
+		case <-s.ctx.Done():
+			reason = managerdomain.EndTermination
+		case <-entry.runtime.failures:
+			reason = managerdomain.EndRuntimeFailed
+		}
+	}
+	if entry.runtime != nil {
+		s.conversationMu.Lock()
+		defer s.conversationMu.Unlock()
+	}
+	s.mu.Lock()
+	current, exists := s.sessions[entry.id]
+	if exists && current.token == entry.token {
+		delete(s.sessions, entry.id)
+	}
+	s.mu.Unlock()
+	if !exists || current.token != entry.token || entry.runtime == nil {
+		return
+	}
+	cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+	defer cancel()
+	_ = entry.runtime.Close(cleanup, reason)
 }
 
 func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, input string) (slash.Result, error) {
@@ -108,12 +221,46 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 	manager := slash.Context{
 		Subject: entry.subject, StanzaID: managerdomain.SecurityContext,
 		MandateID: entry.id, MandateIssued: entry.issuedAt, MandateExpiry: entry.expires,
-		MandateState: "active", Lifecycle: slash.Active, RuntimeState: "gateway-owned",
+		MandateState: "active", Lifecycle: lifecycleState(entry.mode), RuntimeState: entry.mode,
 		Route: "authenticated-unix-gateway", PolicyVersion: managerdomain.PolicyVersion,
 		PolicyDigest: managerdomain.PolicyDigest(),
-		Readiness:    map[string]string{"authority": "gateway-owned", "runtime": "gateway-owned"},
+		Readiness:    map[string]string{"authority": "gateway-owned", "runtime": entry.mode, "reason": entry.reason, "next_step": entry.nextStep},
 	}
 	return s.commands.Execute(ctx, manager, request)
+}
+
+func lifecycleState(mode string) slash.LifecycleState {
+	if mode == "conversational" {
+		return slash.Active
+	}
+	return slash.Degraded
+}
+
+func managerTurnContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if timeout <= 0 {
+		return context.WithCancel(parent)
+	}
+	return context.WithTimeout(parent, timeout)
+}
+
+func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, input string) (string, error) {
+	entry, err := s.authenticate(subject, id, token)
+	if err != nil {
+		return "", err
+	}
+	detection := slash.Detect(input)
+	if strings.TrimSpace(input) == "" || detection == slash.Command {
+		return "", errors.New("ordinary manager turn required")
+	}
+	if detection == slash.LiteralSlash {
+		input = slash.UnescapeLiteral(input)
+	}
+	if entry.mode != "conversational" || entry.runtime == nil {
+		return "", fmt.Errorf("%s: conversational local inference unavailable; next: %s", entry.reason, entry.nextStep)
+	}
+	turnCtx, cancel := managerTurnContext(ctx, s.app.Config.Manager.Hermes.TurnTimeout)
+	defer cancel()
+	return entry.runtime.Turn(turnCtx, input)
 }
 
 func (s *Service) Close(ctx context.Context, subject core.Subject, id, token string) error {
@@ -121,9 +268,20 @@ func (s *Service) Close(ctx context.Context, subject core.Subject, id, token str
 	if err != nil {
 		return err
 	}
+	if entry.runtime != nil {
+		s.conversationMu.Lock()
+		defer s.conversationMu.Unlock()
+	}
 	s.mu.Lock()
 	delete(s.sessions, id)
 	s.mu.Unlock()
+	if entry.runtime != nil {
+		cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+		defer cancel()
+		if closeErr := entry.runtime.Close(cleanup, managerdomain.EndUserExit); closeErr != nil {
+			return closeErr
+		}
+	}
 	return s.app.AuditManagerSession(ctx, entry.subject, "ok", "gateway_client_exit", map[string]string{"route": "authenticated-unix-gateway"})
 }
 
@@ -145,8 +303,28 @@ func (s *Service) authenticate(subject core.Subject, id, token string) (session,
 
 func (s *Service) prune(now time.Time) {
 	for id, entry := range s.sessions {
-		if !now.Before(entry.expires) || !now.Before(entry.subject.ExpiresAt) {
+		if (!now.Before(entry.expires) || !now.Before(entry.subject.ExpiresAt)) && entry.runtime == nil {
 			delete(s.sessions, id)
 		}
+	}
+}
+
+func managerReason(err error) string {
+	for _, reason := range []string{managerdomain.ReasonModelAbsent, managerdomain.ReasonDigestMismatch, managerdomain.ReasonNotCertified, managerdomain.ReasonAuthorityUnavailable, managerdomain.ReasonAuthorityInvalid, managerdomain.ReasonRuntimeUnsupported, managerdomain.ReasonContextUnsupported, managerdomain.ReasonOllamaUnavailable, managerdomain.ReasonModelLoadFailed, managerdomain.ReasonRouteMismatch, managerdomain.ReasonGatewayProtocol} {
+		if strings.Contains(err.Error(), reason) {
+			return reason
+		}
+	}
+	return managerdomain.ReasonRuntimeUnsupported
+}
+
+func managerNextStep(reason string) string {
+	switch reason {
+	case managerdomain.ReasonModelAbsent:
+		return "aegis manager model candidates"
+	case managerdomain.ReasonNotCertified:
+		return "aegis manager model status"
+	default:
+		return "aegis manager model status"
 	}
 }

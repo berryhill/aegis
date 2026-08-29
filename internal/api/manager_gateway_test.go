@@ -6,7 +6,25 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
+
+	"github.com/berryhill/aegis/internal/config"
 )
+
+func TestManagerGatewayWriteTimeoutCoversStartupAndTurns(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.API.WriteTimeout = 30 * time.Second
+	cfg.Manager.Inference.StartTimeout = 2 * time.Minute
+	cfg.Manager.Inference.RequestTimeout = 45 * time.Second
+	cfg.Manager.Hermes.GatewayStartTimeout = 20 * time.Second
+	cfg.Manager.Hermes.TurnTimeout = 4 * time.Minute
+
+	got := managerGatewayWriteTimeout(cfg)
+	want := 2*time.Minute + 3*45*time.Second + 20*time.Second + 5*time.Second
+	if got < want {
+		t.Fatalf("write timeout=%s, want at least %s for sequential manager startup operations", got, want)
+	}
+}
 
 func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T) {
 	svc := apiService(t)
@@ -28,14 +46,28 @@ func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T)
 		ID      string `json:"id"`
 		Token   string `json:"token"`
 		Expires string `json:"expires"`
+		Mode    string `json:"mode"`
+		Reason  string `json:"reason"`
+		Next    string `json:"next_step"`
 	}
 	if err = json.NewDecoder(response.Body).Decode(&session); err != nil {
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	if session.ID == "" || session.Token == "" || session.Expires == "" {
+	if session.ID == "" || session.Token == "" || session.Expires == "" || session.Mode != "degraded" || session.Reason != "manager_model_absent" || session.Next == "" {
 		t.Fatalf("incomplete session metadata: %+v", session)
 	}
+
+	turn := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/"+session.ID+"/turns", map[string]string{"input": "hello"})
+	turn.Header.Set("X-Aegis-Manager-Session", session.Token)
+	response, err = client.Do(turn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("degraded turn status=%d, want 503", response.StatusCode)
+	}
+	_ = response.Body.Close()
 
 	command := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/"+session.ID+"/commands", map[string]string{"input": "/status"})
 	command.Header.Set("X-Aegis-Manager-Session", session.Token)
