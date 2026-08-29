@@ -673,6 +673,102 @@ func TestAgentRegistrySkill(t *testing.T) {
 	}
 }
 
+func TestLoopAuthoringSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-loop-authoring"
+		operation = "aegis.loop.author"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"aegis loops list",
+		"aegis loops publish FILE",
+		"aegis loops show LOOP REVISION",
+		"aegis loops activate LOOP FILE",
+		"aegis loops retire LOOP FILE",
+		"Zero, multiple, stale, expired, revoked, disabled, retired, substituted, or drifted matches deny",
+		"Never union stanza grants",
+		"Revisions must be contiguous",
+		"process exit",
+		"Retirement is terminal",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing Loop authoring contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(skillBytes)), forbidden) {
+			t.Errorf("Loop skill contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"author-publish-and-activate-loop-revision": "happy_path",
+		"deny-loop-prompt-authority":                "authority_denial",
+		"deny-malformed-loop-revision":              "malformed_input",
+		"deny-stale-loop-predecessor":               "stale_replay",
+		"recover-interrupted-loop-lifecycle":        "interruption_recovery",
+		"deny-loop-secret-canary":                   "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, ok := caseByID[id]
+		if !ok {
+			t.Errorf("Loop evaluations missing %q", id)
+			continue
+		}
+		if evaluation.Class != class {
+			t.Errorf("Loop evaluation %q class = %q, want %q", id, evaluation.Class, class)
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("Loop happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" {
+			t.Errorf("Loop denial %q expected = %q, want deny", id, evaluation.Expected)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
