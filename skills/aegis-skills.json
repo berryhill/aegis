@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:e3c02106ff0aed773be79df537c01f12b9ddfe1641bf49303a1864babc1cfb45",
+    "content_digest": "sha256:3ccad628af797a0a281f50df0dfbb791ee0ea1fbe561636e539ce99e749674f0",
     "source_revision": "repository"
   },
   "operations": [
@@ -42,6 +42,11 @@
     {
       "operation": "aegis.session.operate",
       "primary_skill": "aegis-session-operations",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.loop.author",
+      "primary_skill": "aegis-loop-authoring",
       "availability": "shipped"
     }
   ],
@@ -248,6 +253,33 @@
           "path": "references/session-fixtures.json",
           "sha256": "sha256:10514f8844dd31515a641a50def0d03f6ec140f0933e5d7632eef3722ea34487",
           "size": 4010
+        }
+      ]
+    },
+    {
+      "slug": "aegis-loop-authoring",
+      "version": "0.1.0",
+      "path": "skills/aegis-loop-authoring",
+      "description": "Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.loop.author"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:249efa2baf806acc5269c525d5a6052a56c97e20e78ceb38d754a9f5ffeb786a",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:1c9985d93f13e4da79f01fe9306afb5c40b096bd40824ab7b92bff5a88fc5246",
+          "size": 9231
         }
       ]
     }
