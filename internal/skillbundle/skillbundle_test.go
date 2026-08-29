@@ -868,6 +868,165 @@ func TestGraphAuthoringSkill(t *testing.T) {
 	}
 }
 
+func TestEvidenceDispositionSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-evidence-disposition"
+		operation = "aegis.evidence-disposition.inspect"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-graph-authoring,aegis-loop-authoring,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"aegis queue list",
+		"aegis queue show ITEM",
+		"aegis queue process FILE",
+		"aegis queue retry FILE",
+		"aegis queue cancel FILE",
+		"aegis queue expire FILE",
+		"aegis queue exhaust FILE",
+		"aegis queue revoke FILE",
+		"Never union trust stanzas",
+		"independently reloaded content-addressed output",
+		"exact claim, producer action, verifier ID, policy version, media type, and expected digest",
+		"Process status and artifact acceptance are separate",
+		"The current CLI has no separate `evidence`, `receipt`, `disposition`, `accept`, `reject`, `needs-review`, or `reevaluate` command",
+		"append-only reviewer reevaluation history and a reviewer-authored needs-review disposition are unavailable",
+		"needs review`: an operator-facing diagnostic",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing evidence/disposition contract %q", required)
+		}
+	}
+
+	var document struct {
+		Fixtures []struct {
+			ID                  string         `json:"id"`
+			AuthoritativeResult map[string]any `json:"authoritative_result"`
+		} `json:"fixtures"`
+	}
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "evidence-fixtures.json"))
+	mustDecode(t, fixtureBytes, &document)
+	fixtureByID := make(map[string]map[string]any, len(document.Fixtures))
+	for _, fixture := range document.Fixtures {
+		fixtureByID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{
+		"verified-success-exact-lineage", "missing-artifact", "wrong-content-digest",
+		"stale-authority-replay", "cross-attempt-receipt-mismatch", "unverifiable-receipt",
+		"incomplete-required-claims", "distinct-terminal-outcomes", "historical-definition-reconstruction",
+		"reevaluation-unavailable", "interrupted-process-readback", "secret-canary-denial",
+	} {
+		if fixtureByID[id] == nil {
+			t.Errorf("evidence fixtures missing %q", id)
+		}
+	}
+	if success := fixtureByID["verified-success-exact-lineage"]; success["artifact_reloaded"] != true || success["receipts_reloaded"] != true || success["all_bindings_match"] != true || success["disposition_state"] != "succeeded" {
+		t.Errorf("success fixture lacks independently verified exact lineage: %#v", success)
+	}
+	for _, id := range []string{"missing-artifact", "wrong-content-digest", "stale-authority-replay", "cross-attempt-receipt-mismatch", "unverifiable-receipt", "incomplete-required-claims", "interrupted-process-readback"} {
+		if fixtureByID[id]["verified_success"] != false {
+			t.Errorf("fixture %q does not deny verified success: %#v", id, fixtureByID[id])
+		}
+	}
+	if reevaluation := fixtureByID["reevaluation-unavailable"]; reevaluation["availability"] != "unavailable" || reevaluation["existing_disposition_preserved"] != true || reevaluation["new_disposition_recorded"] != false || reevaluation["reviewer_provenance_recorded"] != false {
+		t.Errorf("unsupported reevaluation fixture fabricates or rewrites history: %#v", reevaluation)
+	}
+	for _, id := range []string{"wrong-content-digest", "unverifiable-receipt", "interrupted-process-readback"} {
+		if fixtureByID[id]["classification"] != "needs_review" {
+			t.Errorf("uncommitted evidence failure %q classification = %#v, want needs_review", id, fixtureByID[id]["classification"])
+		}
+	}
+	if replay := fixtureByID["cross-attempt-receipt-mismatch"]; replay["classification"] != "failed_verification" || replay["reason_code"] != "evidence_verification_failed" || replay["failure_category"] != nil {
+		t.Errorf("cross-attempt replay invents non-persisted receipt detail: %#v", replay)
+	}
+	outcomes, ok := fixtureByID["distinct-terminal-outcomes"]["classifications"].([]any)
+	if !ok {
+		t.Fatalf("distinct terminal outcomes are malformed: %#v", fixtureByID["distinct-terminal-outcomes"])
+	}
+	wantExhaustion := false
+	for _, outcome := range outcomes {
+		if outcome == "exhausted" {
+			t.Error("distinct terminal outcomes invent an exhausted state")
+		}
+		if outcome == "failed:retry_exhausted" {
+			wantExhaustion = true
+		}
+	}
+	if !wantExhaustion {
+		t.Error("distinct terminal outcomes omit failed:retry_exhausted state/reason pair")
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"inspect-exact-evidence-and-disposition":   "happy_path",
+		"deny-reviewer-display-authority":          "authority_denial",
+		"deny-incomplete-evidence":                 "malformed_input",
+		"deny-cross-attempt-evidence-replay":       "stale_replay",
+		"recover-interrupted-evidence-disposition": "interruption_recovery",
+		"deny-evidence-secret-canary":              "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, exists := caseByID[id]
+		if !exists {
+			t.Errorf("evidence/disposition evaluations missing %q", id)
+			continue
+		}
+		if evaluation.Class != class {
+			t.Errorf("evidence/disposition evaluation %q class = %q, want %q", id, evaluation.Class, class)
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("evidence/disposition happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" {
+			t.Errorf("evidence/disposition denial %q expected = %q, want deny", id, evaluation.Expected)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "runtime_home", "private_key", "access_token"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("evidence fixture contains forbidden secret/path material %q", forbidden)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
