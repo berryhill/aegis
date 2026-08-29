@@ -194,6 +194,17 @@ func Serve(ctx context.Context, svc *app.Service) error {
 	return ServeWithTelemetry(ctx, svc, noopTelemetry{})
 }
 
+func managerGatewayWriteTimeout(cfg config.Config) time.Duration {
+	writeTimeout := cfg.API.WriteTimeout
+	startupTimeout := cfg.Manager.Inference.StartTimeout + cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
+	for _, candidate := range []time.Duration{startupTimeout, cfg.Manager.Hermes.TurnTimeout} {
+		if candidate > writeTimeout {
+			writeTimeout = candidate
+		}
+	}
+	return writeTimeout + 5*time.Second
+}
+
 func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemetry) error {
 	if svc.Config.API.Token == "" {
 		return errors.New("api.token is required to serve the protected control plane")
@@ -2127,7 +2138,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, d)
 	})
-	srv := &http.Server{Addr: svc.Config.API.Listen, Handler: e, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: svc.Config.API.ReadTimeout, WriteTimeout: svc.Config.API.WriteTimeout, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 256 << 10}
+	srv := &http.Server{Addr: svc.Config.API.Listen, Handler: e, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: svc.Config.API.ReadTimeout, WriteTimeout: managerGatewayWriteTimeout(svc.Config), IdleTimeout: 60 * time.Second, MaxHeaderBytes: 256 << 10}
 	srv.ConnContext = func(connectionContext context.Context, connection net.Conn) context.Context {
 		if connection.LocalAddr().Network() == "unix" {
 			return unixPeerContext(connectionContext, connection)

@@ -11,6 +11,20 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 )
 
+func TestManagerGatewayWriteTimeoutCoversStartupAndTurns(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.API.WriteTimeout = 30 * time.Second
+	cfg.Manager.Inference.StartTimeout = 2 * time.Minute
+	cfg.Manager.Inference.RequestTimeout = 45 * time.Second
+	cfg.Manager.Hermes.GatewayStartTimeout = 20 * time.Second
+	cfg.Manager.Hermes.TurnTimeout = 4 * time.Minute
+
+	got := managerGatewayWriteTimeout(cfg)
+	if got < 4*time.Minute {
+		t.Fatalf("write timeout=%s, want coverage for longest manager operation", got)
+	}
+}
+
 func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
