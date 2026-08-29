@@ -19,7 +19,7 @@ Use this skill to identify the relevant Aegis product domain and point the user 
 - Agent identity, immutable registration, exact history, and lifecycle: use `aegis-agent-registry` and only its shipped `aegis agents`, `/v1/agents`, and fleet-readiness surfaces.
 - Versioned workflow definitions: Loops through `aegis loops` or `/v1/loops`.
 - Exact Agent and Loop revision composition: Graphs through `aegis graphs` or `/v1/graphs`.
-- Submission, claims, attempts, lifecycle, evidence, and disposition: use `aegis-execution-queue` and only its shipped `aegis queue` or `/v1/queue` surfaces.
+- Submission, claims, attempts, lifecycle, evidence, and disposition: use `aegis-execution-queue` for shipped Queue operations, and `aegis-evidence-disposition` for exact evidence and terminal-disposition reconstruction; use only the shipped `aegis queue` or `/v1/queue` surfaces. Reviewer-authored reevaluation is unavailable in the supported release.
 - Encrypted credential custody, exact bindings, revocation, backup, and the narrow sanitized GitHub broker path: use `aegis-credential-authority` and only its shipped principal-only `aegis secret` administration plus long-lived `aegis serve` broker owner.
 - Charter, stanza, mandate, session, manager, runtime, configuration, and audit questions: explain the matching shipped Aegis command group and consult the repository documentation before proposing input.
 - Exact provisioning-plan review, approval decisions, deterministic apply, recovery, and receipt verification: use `aegis-approval-provisioning` and only the shipped `plan`, `approval`, `provision`, protected receipt API, charter-effective, and audit surfaces it documents.

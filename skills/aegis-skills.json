@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.11",
+    "version": "0.2.12",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:3416595b0642ece39f87719a2250161f49403d8318cd0a669095f4ac08230155",
+    "content_digest": "sha256:41bbd4f0c0c07a90928895c8e8e98b165ca0e7d0453a5a1b0b027ed25287105c",
     "source_revision": "repository"
   },
   "operations": [
@@ -63,6 +63,11 @@
       "operation": "aegis.credential-authority.operate",
       "primary_skill": "aegis-credential-authority",
       "availability": "shipped"
+    },
+    {
+      "operation": "aegis.evidence-disposition.inspect",
+      "primary_skill": "aegis-evidence-disposition",
+      "availability": "shipped"
     }
   ],
   "skills": [
@@ -80,12 +85,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:7c74e49fd54f20e9df6c0f526c65ceec05cae1ca9546ac36491d8b764c5acbeb",
+      "content_digest": "sha256:63e723a1e726a57900fdd0a819846f31c081b6834681baf46fa7bde56c8d0c13",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:f23c15d32f35b50a25e53169f7a9f36031790bcabd893c288a7b7f342d5c4a86",
-          "size": 3959
+          "sha256": "sha256:fabf439603060490dced972883981f1d92e7b2497598d9afcc6318ce1e92e5c9",
+          "size": 4154
         }
       ]
     },
@@ -384,6 +389,41 @@
           "path": "references/credential-fixtures.json",
           "sha256": "sha256:26209418030bf57bca3978e94708864b6f70cd7bad23abf5cfce5a66171d428b",
           "size": 4582
+        }
+      ]
+    },
+    {
+      "slug": "aegis-evidence-disposition",
+      "version": "0.1.0",
+      "path": "skills/aegis-evidence-disposition",
+      "description": "Inspect exact Aegis execution evidence and route authenticated outcome disposition through shipped services without treating process state or model narration as proof.",
+      "dependencies": [
+        "aegis",
+        "aegis-execution-queue",
+        "aegis-graph-authoring",
+        "aegis-loop-authoring",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.evidence-disposition.inspect"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:9edebba0a736fe71d8bd79a24797c1767e42bd86b1d18813a9310ef99a4fc011",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:3de985425e7f2d094f3805a7861c98d1f47bc9f6df5e9e80745eb4df7e61b2aa",
+          "size": 13074
+        },
+        {
+          "path": "references/evidence-fixtures.json",
+          "sha256": "sha256:2639c8055fc055f5146227cc8c55433e3b12928622583b01024dd899c92e4b65",
+          "size": 6770
         }
       ]
     }

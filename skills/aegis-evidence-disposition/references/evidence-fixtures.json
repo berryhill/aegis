@@ -1,0 +1,158 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "verified-success-exact-lineage",
+      "authoritative_result": {
+        "classification": "succeeded",
+        "queue_item_id": "queue-fixture-success",
+        "graph_run_id": "run-fixture-success",
+        "graph_revision": 2,
+        "loop_revision": 3,
+        "attempt_id": "attempt-fixture-success-1",
+        "artifact_id": "artifact-fixture-success",
+        "content_ref_matches_digest": true,
+        "artifact_reloaded": true,
+        "required_claims": ["canonical-output"],
+        "receipt_claims": ["canonical-output"],
+        "receipts_reloaded": true,
+        "all_bindings_match": true,
+        "disposition_state": "succeeded",
+        "reason_code": "evidence_satisfied"
+      },
+      "expected_interpretation": "Verified success requires the pinned historical Graph and Loop revisions, independent artifact and receipt reload, every exact required claim, matching causal bindings, and exact disposition readback."
+    },
+    {
+      "id": "missing-artifact",
+      "authoritative_result": {
+        "classification": "needs_review",
+        "attempt_id": "attempt-fixture-missing-1",
+        "artifact": null,
+        "receipts": [],
+        "missing_evidence": ["runtime_artifact", "canonical-output"],
+        "verified_success": false
+      },
+      "expected_interpretation": "Missing evidence cannot be repaired from process exit or narration and cannot become verified success."
+    },
+    {
+      "id": "wrong-content-digest",
+      "authoritative_result": {
+        "classification": "needs_review",
+        "artifact_reloaded": true,
+        "content_ref_matches_digest": false,
+        "failure_category": "artifact_digest_mismatch",
+        "verified_success": false
+      },
+      "expected_interpretation": "Freshly reloaded bytes do not match the content address, so completion cannot be authorized or persisted; preserve the uncommitted recovery condition as needs review."
+    },
+    {
+      "id": "stale-authority-replay",
+      "authoritative_result": {
+        "classification": "denied",
+        "artifact_authority_context_id": "authority-fixture-old",
+        "attempt_authority_context_id": "authority-fixture-current",
+        "all_bindings_match": false,
+        "reason_code": "authority_context_mismatch",
+        "verified_success": false
+      },
+      "expected_interpretation": "A receipt or artifact from another authority context is stale replay and must not be rebound."
+    },
+    {
+      "id": "cross-attempt-receipt-mismatch",
+      "authoritative_result": {
+        "classification": "failed_verification",
+        "artifact_attempt_id": "attempt-fixture-current",
+        "receipt_attempt_id": "attempt-fixture-prior",
+        "all_bindings_match": false,
+        "reason_code": "evidence_verification_failed",
+        "verified_success": false
+      },
+      "expected_interpretation": "A receipt cannot be replayed across attempts even when its digest appears plausible. Public terminal readback establishes failed/evidence_verification_failed; it does not invent a persisted per-receipt mismatch category for a receipt the controller refused to append."
+    },
+    {
+      "id": "unverifiable-receipt",
+      "authoritative_result": {
+        "classification": "needs_review",
+        "receipt_reloaded": false,
+        "failure_category": "receipt_unreadable_or_substituted",
+        "verified_success": false
+      },
+      "expected_interpretation": "An unreadable content-addressed receipt remains unverifiable, cannot be replaced by its projection, and prevents authoritative completion from being committed."
+    },
+    {
+      "id": "incomplete-required-claims",
+      "authoritative_result": {
+        "classification": "failed_verification",
+        "required_claims": ["canonical-output", "schema-conformance"],
+        "receipt_claims": ["canonical-output"],
+        "missing_evidence": ["schema-conformance"],
+        "verified_success": false
+      },
+      "expected_interpretation": "Every exact claim from the pinned Loop revision is required; a partial passing set is not success."
+    },
+    {
+      "id": "distinct-terminal-outcomes",
+      "authoritative_result": {
+        "classifications": [
+          "submission_rejected",
+          "failed_execution",
+          "failed_verification",
+          "denied",
+          "cancelled",
+          "expired",
+          "failed:retry_exhausted",
+          "revoked",
+          "succeeded",
+          "needs_review"
+        ],
+        "collapsed": false
+      },
+      "expected_interpretation": "Admission rejection, execution failure, verification failure, authority denial, lifecycle outcomes, success, and diagnostic needs-review remain distinct."
+    },
+    {
+      "id": "historical-definition-reconstruction",
+      "authoritative_result": {
+        "graph_run_graph_revision": 2,
+        "current_graph_revision": 5,
+        "graph_run_loop_revision": 3,
+        "current_loop_revision": 7,
+        "verification_used_graph_revision": 2,
+        "verification_used_loop_revision": 3,
+        "historical_lineage_intact": true
+      },
+      "expected_interpretation": "Reconstruct the run from immutable snapshot references; later definition changes do not substitute current revisions or rewrite history."
+    },
+    {
+      "id": "reevaluation-unavailable",
+      "authoritative_result": {
+        "requested_operation": "append_reviewer_reevaluation",
+        "availability": "unavailable",
+        "existing_disposition_preserved": true,
+        "new_disposition_recorded": false,
+        "reviewer_provenance_recorded": false
+      },
+      "expected_interpretation": "The supported release has one terminal disposition per Graph run and no reviewer reevaluation service; preserve history and report the operation unavailable rather than overwrite or fabricate reviewer provenance."
+    },
+    {
+      "id": "interrupted-process-readback",
+      "authoritative_result": {
+        "classification": "needs_review",
+        "process_exit_known": true,
+        "authoritative_terminal_readback": false,
+        "repeat_mutation_allowed": false,
+        "verified_success": false
+      },
+      "expected_interpretation": "After interruption, process exit is insufficient; require exact queue readback and never blindly repeat a mutation."
+    },
+    {
+      "id": "secret-canary-denial",
+      "authoritative_result": {
+        "allowed": false,
+        "classification": "denied",
+        "reason_code": "secret_material_not_permitted",
+        "redacted": true
+      },
+      "expected_interpretation": "Do not place or repeat authentication material, credentials, private prompts, capabilities, raw output, or host paths in evidence fixtures or reports."
+    }
+  ]
+}
