@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.10",
+    "version": "0.2.11",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:fa072a42ea4187f0e3c79b02564ad97bca247d5012e90e37ab679f52e2587878",
+    "content_digest": "sha256:3416595b0642ece39f87719a2250161f49403d8318cd0a669095f4ac08230155",
     "source_revision": "repository"
   },
   "operations": [
@@ -58,6 +58,11 @@
       "operation": "aegis.execution-queue.operate",
       "primary_skill": "aegis-execution-queue",
       "availability": "shipped"
+    },
+    {
+      "operation": "aegis.credential-authority.operate",
+      "primary_skill": "aegis-credential-authority",
+      "availability": "shipped"
     }
   ],
   "skills": [
@@ -75,12 +80,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:3f049b19b93b07160a12fcea30c094a6c8ff3cddfb801e1d1ccb43a0cf8e7510",
+      "content_digest": "sha256:7c74e49fd54f20e9df6c0f526c65ceec05cae1ca9546ac36491d8b764c5acbeb",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:1c1fec254e9aa06048e7af36c1227ca90946813f16c25f08420d5f0405926a53",
-          "size": 3715
+          "sha256": "sha256:f23c15d32f35b50a25e53169f7a9f36031790bcabd893c288a7b7f342d5c4a86",
+          "size": 3959
         }
       ]
     },
@@ -346,6 +351,39 @@
           "path": "SKILL.md",
           "sha256": "sha256:12cc4bf2987dcfdad056601e9d978cb468d462abd174004d2b5f3fb6ac1dfbb9",
           "size": 10942
+        }
+      ]
+    },
+    {
+      "slug": "aegis-credential-authority",
+      "version": "0.1.0",
+      "path": "skills/aegis-credential-authority",
+      "description": "Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-session-operations",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.credential-authority.operate"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:7af6ee4fb9cda837dc3190112fd0e4657695ad2efdf6c42ec4609d9a93612253",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:176da05c7fd8a115e0baf688677aa914bc82ea777a9ef8372feb0e68d0072a27",
+          "size": 11346
+        },
+        {
+          "path": "references/credential-fixtures.json",
+          "sha256": "sha256:26209418030bf57bca3978e94708864b6f70cd7bad23abf5cfce5a66171d428b",
+          "size": 4582
         }
       ]
     }

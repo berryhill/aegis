@@ -37,8 +37,8 @@ credentials:
   authority:
     database: /var/lib/aegis/credentials.db
     deployment_id: local-production
-    custody: systemd-credential
-    kek_credential: /run/credentials/aegis.service/aegis-credential-kek
+    custody: systemd
+    kek_credential: aegis-credential-kek
     broker:
       socket: /run/aegis/credential-broker.sock
       allowed_uid: 991

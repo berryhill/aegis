@@ -970,6 +970,142 @@ func TestExecutionQueueSkill(t *testing.T) {
 	}
 }
 
+func TestCredentialAuthoritySkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	const (
+		slug      = "aegis-credential-authority"
+		operation = "aegis.credential-authority.operate"
+	)
+	var owner *OperationOwner
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+			break
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operation owner = %#v, want shipped %q owner", owner, slug)
+	}
+
+	var skill *Skill
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+			break
+		}
+	}
+	if skill == nil {
+		t.Fatalf("manifest does not declare %q", slug)
+	}
+	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
+		t.Fatalf("skill authority boundary = %#v", skill)
+	}
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-session-operations,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"aegis secret initialize",
+		"aegis secret put REFERENCE",
+		"aegis secret metadata RECORD_ID",
+		"aegis secret list [QUERY]",
+		"aegis secret rotate RECORD_ID",
+		"aegis secret bind RECORD_ID",
+		"aegis secret revoke RECORD_ID",
+		"aegis secret backup",
+		"aegis secret initialize` supports only host-file custody",
+		"Never union credential scopes or bindings across stanzas",
+		"Deployment is derived from configured authority",
+		"The only shipped model-visible broker operation is `github.get_repository.v1`",
+		"Start broker-capable sessions through the long-lived `aegis serve` process",
+		"This is not a generic proxy",
+		"resume only after protected intake and sanitized-output paths are verified",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing credential-authority contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(skillBytes)), forbidden) {
+			t.Errorf("credential-authority skill contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	var document struct {
+		Fixtures []struct {
+			ID                  string         `json:"id"`
+			AuthoritativeResult map[string]any `json:"authoritative_result"`
+		} `json:"fixtures"`
+	}
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "credential-fixtures.json"))
+	mustDecode(t, fixtureBytes, &document)
+	fixtureByID := make(map[string]map[string]any, len(document.Fixtures))
+	for _, fixture := range document.Fixtures {
+		fixtureByID[fixture.ID] = fixture.AuthoritativeResult
+	}
+	for _, id := range []string{
+		"principal-stores-and-binds-current-version",
+		"malformed-or-ambiguous-binding-denial",
+		"stale-session-capability-denial",
+		"typed-github-read-sanitized-result",
+		"interrupted-revocation-readback",
+		"secret-exposure-incident",
+	} {
+		if fixtureByID[id] == nil {
+			t.Errorf("credential fixtures missing %q", id)
+		}
+	}
+	for _, id := range []string{"malformed-or-ambiguous-binding-denial", "stale-session-capability-denial", "secret-exposure-incident"} {
+		if fixtureByID[id]["allowed"] != false {
+			t.Errorf("fixture %q does not fail closed: %#v", id, fixtureByID[id])
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("credential fixture contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"store-bind-and-broker-exact-credential":    "happy_path",
+		"deny-credential-prompt-authority":          "authority_denial",
+		"deny-malformed-credential-binding":         "malformed_input",
+		"deny-stale-broker-capability-replay":       "stale_replay",
+		"recover-interrupted-credential-revocation": "interruption_recovery",
+		"deny-credential-secret-canary":             "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, ok := caseByID[id]
+		if !ok {
+			t.Errorf("credential-authority evaluations missing %q", id)
+			continue
+		}
+		if evaluation.Class != class {
+			t.Errorf("credential-authority evaluation %q class = %q, want %q", id, evaluation.Class, class)
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("credential-authority happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" {
+			t.Errorf("credential-authority denial %q expected = %q, want deny", id, evaluation.Expected)
+		}
+	}
+}
+
 func TestValidateFailsClosed(t *testing.T) {
 	t.Run("trailing manifest document", func(t *testing.T) {
 		root := copyFixture(t)
