@@ -14,7 +14,7 @@ This document is intentionally narrower than `specs/AEGIS_MANAGER.md`. It does n
 
 The completed feature MUST make this statement true:
 
-> Bare interactive `aegis` starts one Aegis-owned manager session through Hermes and an exact pinned local Ollama model; natural-language turns produce only closed typed proposals; credential values enter only through protected Aegis intake; no cloud fallback exists; and every exit path removes the ephemeral runtime authority and unloads the model.
+> Explicit interactive `aegis manager`, or the `terminal` action selected from a healthy bare invocation, starts one Aegis-owned manager session through Hermes and an exact pinned local Ollama model; natural-language turns produce only closed typed proposals; credential values enter only through protected Aegis intake; no cloud fallback exists; and every exit path removes the ephemeral runtime authority and unloads the model.
 
 ## 2. Authority and conflict resolution
 
@@ -155,7 +155,7 @@ The implementation is incomplete if any invariant below is violated.
 
 ### 5.1 Bare command dispatch
 
-Bare `aegis` MUST start the manager only when stdin and stdout are interactive terminals.
+Bare `aegis` MUST require interactive stdin and stdout for initialization and gateway action selection, but MUST NOT automatically start the manager after gateway activation. Manager startup requires explicit `aegis manager` or selection of the healthy gateway's `terminal` action.
 
 The command MUST preserve the established behavior of:
 

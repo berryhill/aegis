@@ -12,9 +12,11 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/userservice"
 )
 
@@ -102,6 +104,123 @@ type exactGatewayRunner struct {
 	unitPath  string
 	execStart string
 	runs      [][]string
+}
+
+func freshGatewayActivationFixture(t *testing.T) (string, *exactGatewayRunner, *atomic.Int32) {
+	t.Helper()
+	current, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	socketRoot, err := os.MkdirTemp("", "aegis-fresh-gateway-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketRoot) })
+	socketPath := filepath.Join(socketRoot, "a.sock")
+	token := strings.Repeat("d", 64)
+	tokenPath := filepath.Join(root, "api.token")
+	if err = os.WriteFile(tokenPath, []byte(token+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(root, "state")
+	configPath := filepath.Join(root, "aegis.yaml")
+	configDocument := fmt.Sprintf("state_dir: %q\nprincipal:\n  id: principal\n  name: Local operator\n  uid: %q\n  user: %q\n  auth_ttl: 5m\napi:\n  token_file: %q\n  unix_socket: %q\n  console:\n    origin: http://127.0.0.1:18443\naudit:\n  checkpoint_dir: %q\n", statePath, current.Uid, current.Username, tokenPath, socketPath, filepath.Join(root, "checkpoints"))
+	if err = os.WriteFile(configPath, []byte(configDocument), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = authoritybadger.Initialize(context.Background(), filepath.Join(statePath, "persistence", "authority-v1")); err != nil {
+		t.Fatal(err)
+	}
+
+	unexpectedRequests := &atomic.Int32{}
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/readyz" || request.Header.Get("Authorization") != "Bearer "+token {
+			unexpectedRequests.Add(1)
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"status":"ready","audit":{"state":"current","current":true,"verifiable":true}}`))
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = listener.Close()
+	})
+
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg-config"))
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := userservice.Preview(executable, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return configPath, &exactGatewayRunner{
+		unitPath:  plan.UnitPath,
+		execStart: fmt.Sprintf("{ path=%s ; argv[]=%s serve --config %s ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }", plan.Executable, plan.Executable, plan.ConfigPath),
+	}, unexpectedRequests
+}
+
+func TestFreshBareGatewayActivationReturnsAfterPresentingConsole(t *testing.T) {
+	configPath, runner, unexpectedRequests := freshGatewayActivationFixture(t)
+	var output bytes.Buffer
+	var opened string
+	command := NewRoot(Dependencies{
+		In:          strings.NewReader("yes\nthis must not become manager input\n"),
+		Out:         &output,
+		Err:         io.Discard,
+		Version:     "test",
+		Profile:     ProductionProfile,
+		UserService: runner,
+		OpenBrowser: func(_ context.Context, target string) error { opened = target; return nil },
+		IsTerminal:  func(io.Reader, io.Writer) bool { return true },
+	})
+	command.SetArgs([]string{"--config", configPath})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(opened, "/console") || !strings.Contains(output.String(), `"browser_opened": true`) {
+		t.Fatalf("opened=%q output=%s", opened, output.String())
+	}
+	if got := unexpectedRequests.Load(); got != 0 {
+		t.Fatalf("fresh activation entered the manager API: unexpected_requests=%d output=%s", got, output.String())
+	}
+	for _, forbidden := range []string{"AEGIS / manager", "manager_model_absent", "Conversational local inference unavailable"} {
+		if strings.Contains(output.String(), forbidden) {
+			t.Fatalf("fresh activation entered manager surface %q: %s", forbidden, output.String())
+		}
+	}
+}
+
+func TestFreshBareGatewayActivationReturnsBrowserFailureWithoutManagerFallback(t *testing.T) {
+	configPath, runner, unexpectedRequests := freshGatewayActivationFixture(t)
+	var output bytes.Buffer
+	command := NewRoot(Dependencies{
+		In:          strings.NewReader("yes\nthis must not become manager input\n"),
+		Out:         &output,
+		Err:         io.Discard,
+		Version:     "test",
+		Profile:     ProductionProfile,
+		UserService: runner,
+		OpenBrowser: func(context.Context, string) error { return errors.New("synthetic opener failure") },
+		IsTerminal:  func(io.Reader, io.Writer) bool { return true },
+	})
+	command.SetArgs([]string{"--config", configPath})
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "browser launch failed") || !strings.Contains(output.String(), `"manual_url"`) {
+		t.Fatalf("err=%v output=%s", err, output.String())
+	}
+	if got := unexpectedRequests.Load(); got != 0 {
+		t.Fatalf("browser failure fell through to manager API: unexpected_requests=%d output=%s", got, output.String())
+	}
 }
 
 func (r *exactGatewayRunner) Run(_ context.Context, args ...string) error {

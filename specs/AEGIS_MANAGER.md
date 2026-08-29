@@ -4,7 +4,7 @@
 
 **Status:** Normative implementation specification
 
-**Target:** The principal-facing built-in Aegis manager started by the bare `aegis` command
+**Target:** The principal-facing built-in Aegis manager started by explicit `aegis manager` or the healthy-gateway `terminal` action
 
 **Canonical command name:** `aegis`
 
@@ -43,6 +43,13 @@ $ aegis
 
 Aegis authenticates the configured principal
   -> initializes the installation if it is not initialized
+  -> ensures the exact approved gateway is authentically ready
+  -> presents the password-gated browser console
+  -> returns without creating a manager session
+
+$ aegis manager
+
+Aegis authenticates the configured principal
   -> resolves the built-in manager security context
   -> verifies Hermes and an exact local Ollama model artifact
   -> starts an Aegis-owned terminal conversation
@@ -75,7 +82,7 @@ The bare command MUST behave as follows:
 
 | Invocation | TTY state | Required behavior |
 |---|---|---|
-| development-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then start the built-in manager. |
+| development-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready and open the configured browser console at its password gate without issuing a session. |
 | production-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready and open the configured browser console at its password gate without issuing a session. |
 | `aegis` | stdin or stdout is not an interactive terminal | Fail with a stable usage error explaining that interactive manager mode requires a terminal and naming deterministic subcommands. It MUST NOT read arbitrary piped content as chat or secret intake. |
 | `aegis --help` | any | Render normal Cobra help; MUST NOT initialize or start a runtime. |
@@ -1117,7 +1124,7 @@ Deliverables:
 
 Completion gate: all unsafe/unknown/missing combinations fail closed; no process or network action is required.
 
-### P1 — Deterministic bare-command manager
+### P1 — Deterministic root dispatch and explicit manager
 
 Deliverables:
 
@@ -1162,7 +1169,7 @@ Deliverables:
 - exact route/receipt capture;
 - fixture Hermes tests for malformed, injected, oversized, timeout, and process-death cases.
 
-Completion gate: bare `aegis` runs an attached Aegis-owned conversation through a fake and then certified real local model without direct TTY pass-through.
+Completion gate: explicit `aegis manager` and the healthy-gateway `terminal` action run an attached Aegis-owned conversation through a fake and then certified real local model without direct TTY pass-through; fresh bare activation presents the console and returns.
 
 ### P4 — Model certification and supported default
 
@@ -1287,7 +1294,8 @@ The feature is complete only when all of the following are true:
 
 ### Command and UX
 
-- Bare interactive `aegis` initializes or starts the manager.
+- Bare interactive `aegis` initializes or admits the gateway, presents the browser console after fresh activation, and returns without starting the manager.
+- Explicit `aegis manager` and the healthy-gateway `terminal` action start the manager.
 - Bare non-TTY use fails safely.
 - Existing subcommands and JSON behavior remain compatible.
 - The principal can complete every required credential workflow.
