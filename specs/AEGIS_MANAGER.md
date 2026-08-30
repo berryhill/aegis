@@ -285,6 +285,8 @@ Aegis MUST supply a deterministic manager instruction that states at least:
 
 The instruction and schema MUST be versioned and included in the model-conformance identity. Changing either invalidates prior certification.
 
+The authenticated Aegis inference proxy MUST own construction of this instruction at the final provider boundary. It MUST discard transport-supplied system messages and prepend exactly one canonical manager instruction before local inference; it MUST NOT depend on Hermes preserving session seed history, environment-projected prompts, message order, or byte identity. Validated user and assistant history remains ordered and bounded, and no runtime-supplied system text may become authority or provider-visible instruction.
+
 ### 6.4 Multi-turn protocol
 
 The manager gateway MUST support repeated turns in one Hermes session:

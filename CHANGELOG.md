@@ -40,6 +40,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Fixed manager certification against supported Hermes gateways that ignore session seed messages or prepend a runtime-owned system prompt. The process-authorized Aegis proxy now discards every transport-supplied system message and constructs exactly one digest-bound canonical manager instruction at the final local-inference boundary while preserving validated user/assistant history and the 256-message limit.
+
 - Fixed ordinary manager requests for local Hermes profile visibility and default-profile registration from reaching an incapable model: Aegis now intercepts the closed intents, returns a typed authoritative owner-verified sanitized profile inventory, and reports the exact non-authorizing registration prerequisites without exposing profile contents or claiming mutation.
 
 - Fixed manager-session expiry recovery when authoritative audit delivery is pending: interactive bare startup now uses the existing exact-unit-validated bounded readiness loop to deliver and verify pending audit evidence before offering a fresh manager session; non-interactive startup names `aegis gateway start` as the exact remediation.

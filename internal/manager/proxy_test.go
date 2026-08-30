@@ -54,6 +54,102 @@ func TestManagerSystemInstructionMustBeExactAndUnique(t *testing.T) {
 	}
 }
 
+func TestCanonicalManagerMessagesReservesBoundedInstructionSlot(t *testing.T) {
+	messages := make([]openAIMessage, 256)
+	for index := range messages {
+		messages[index] = openAIMessage{Role: "user", Content: "bounded"}
+	}
+	if _, ok := canonicalManagerMessages(messages); ok {
+		t.Fatal("canonical manager instruction exceeded the 256-message boundary")
+	}
+	messages = messages[:255]
+	canonical, ok := canonicalManagerMessages(messages)
+	if !ok || len(canonical) != 256 || !hasManagerSystemInstruction(canonical) {
+		t.Fatalf("bounded canonical messages ok=%v count=%d", ok, len(canonical))
+	}
+}
+
+func TestProxyOwnsCanonicalManagerSystemInstruction(t *testing.T) {
+	tests := []struct {
+		name     string
+		messages []openAIMessage
+	}{
+		{
+			name: "Hermes ignores session seed",
+			messages: []openAIMessage{
+				{Role: "user", Content: "return the strict envelope"},
+			},
+		},
+		{
+			name: "Hermes supplies its own system prompt",
+			messages: []openAIMessage{
+				{Role: "system", Content: "Hermes runtime prompt that is not authority"},
+				{Role: "user", Content: "return the strict envelope"},
+			},
+		},
+		{
+			name: "Hermes preserves duplicate seed history",
+			messages: []openAIMessage{
+				{Role: "system", Content: "Hermes runtime prompt that is not authority"},
+				{Role: "system", Content: ManagerSystemInstruction()},
+				{Role: "user", Content: "prior turn"},
+				{Role: "assistant", Content: "prior answer"},
+				{Role: "user", Content: "return the strict envelope"},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var upstreamRequest openAIChatRequest
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&upstreamRequest); err != nil {
+					t.Fatal(err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"id":"x","model":"exact:1","choices":[{"index":0,"message":{"role":"assistant","content":"safe"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+			}))
+			defer upstream.Close()
+			guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+			proxy, err := StartProxy(context.Background(), ProxyConfig{Target: upstream.URL, Model: "exact:1", RouteDigest: "sha256:route", MaximumRequestBytes: 1 << 20, MaximumResponseBytes: 1 << 20, Timeout: time.Second, Guard: guard, SessionActive: func() bool { return true }, ProcessAuthorizer: testProcessAuthorizer(t), RequireSystemInstruction: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer proxy.Close(context.Background())
+			body, err := json.Marshal(openAIChatRequest{Model: "exact:1", Messages: test.messages})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, _ := http.NewRequest(http.MethodPost, proxy.Endpoint()+"/v1/chat/completions", strings.NewReader(string(body)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+HermesCompatibilityAPIKey)
+			response, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Fatalf("status=%d diagnostic=%s", response.StatusCode, proxy.LastSafeDiagnostic())
+			}
+			if !hasManagerSystemInstruction(upstreamRequest.Messages) {
+				t.Fatalf("upstream instruction is not canonical: %+v", upstreamRequest.Messages)
+			}
+			position := 1
+			for _, message := range test.messages {
+				if message.Role == "system" {
+					continue
+				}
+				if position >= len(upstreamRequest.Messages) || upstreamRequest.Messages[position].Role != message.Role || upstreamRequest.Messages[position].Content != message.Content {
+					t.Fatalf("upstream history changed at position %d: %+v", position, upstreamRequest.Messages)
+				}
+				position++
+			}
+			if position != len(upstreamRequest.Messages) {
+				t.Fatalf("upstream history has extra messages: %+v", upstreamRequest.Messages)
+			}
+		})
+	}
+}
+
 func TestProtectedIntakeCertificationFormatAllowsOnlyExactCreateProposal(t *testing.T) {
 	var test ConformanceCase
 	for _, candidate := range ConformanceCorpus() {
