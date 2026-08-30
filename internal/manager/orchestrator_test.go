@@ -125,7 +125,7 @@ func TestSessionLifecycleAndRandomCanaryBoundary(t *testing.T) {
 	canary := "sk-live-" + hex.EncodeToString(canaryBytes)
 	gateway := &fakeGateway{outputs: [][]byte{envelope(SecretProposeCreate, CreateArguments{Reference: "service-token", Kind: "opaque", Disclosure: "protected"}), envelope(SecretProposeRotate, RotateArguments{RecordID: "secret-created"}), envelope(SecretProposeRevoke, RevokeArguments{RecordID: "secret-created", Reason: "operator-request"}), envelope(SessionExit, EmptyArguments{})}}
 	ops := &fakeOperations{}
-	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
+	guard, _ := NewGuard(1<<20, 1<<20, 2, 500*time.Millisecond)
 	var receipt SessionReceipt
 	session, err := NewSession(context.Background(), SessionConfig{SessionID: "session-1", SubjectID: "local-uid:1", PrincipalID: "principal", Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-1", Guard: guard, Operations: ops, Confirm: func(context.Context, string) (bool, error) { return true, nil }, Intake: func(context.Context, string) ([]byte, error) { return []byte(canary), nil }, Receipt: func(_ context.Context, r SessionReceipt) error { receipt = r; return nil }, MaximumResponseBytes: 1 << 20})
 	if err != nil {
@@ -179,50 +179,27 @@ func TestSessionHandlesAegisParsedCreateWithoutGateway(t *testing.T) {
 	}
 }
 
-func TestSessionTrustedLocalCreateBypassesModelAndStoresOriginalValue(t *testing.T) {
-	canaryBytes := make([]byte, 24)
-	if _, err := rand.Read(canaryBytes); err != nil {
-		t.Fatal(err)
-	}
-	canary := "session-only-credential-" + hex.EncodeToString(canaryBytes)
+func TestSessionConversationalCreateWithValueFailsClosed(t *testing.T) {
 	gateway := &sensitiveFakeGateway{fakeGateway: fakeGateway{outputs: [][]byte{messageEnvelope("conversation intact")}}}
 	ops := &fakeOperations{}
 	guard, _ := NewGuard(1<<20, 1<<20, 2, 100*time.Millisecond)
-	confirmationCalls := 0
 	session, err := NewSession(context.Background(), SessionConfig{
-		SessionID: "session-trusted-create", SubjectID: "local-uid:1", PrincipalID: "principal",
-		Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-trusted-create", Guard: guard, Operations: ops,
-		Confirm: func(context.Context, string) (bool, error) {
-			confirmationCalls++
-			return false, errors.New("inline imperative must not prompt")
-		},
-		Intake:  func(context.Context, string) ([]byte, error) { return nil, errors.New("separate intake must not run") },
+		SessionID: "session-value-rejected", SubjectID: "local-uid:1", PrincipalID: "principal",
+		Route: certifiedRoute(t), Gateway: gateway, GatewaySessionID: "gateway-value-rejected", Guard: guard, Operations: ops,
+		Confirm: func(context.Context, string) (bool, error) { return true, nil },
+		Intake:  func(context.Context, string) ([]byte, error) { return []byte("protected"), nil },
 		Receipt: func(context.Context, SessionReceipt) error { return nil }, MaximumResponseBytes: 1 << 20,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := "alright, I want to make a new cred named test with a value of " + canary
-	intent, ok := ParseCreateIntent(text)
-	if !ok {
-		t.Fatal("natural make create intent was not recognized")
-	}
-	defer intent.Wipe()
-	message, err := session.HandleCreateIntentWithValue(context.Background(), text, intent.Arguments, intent.Value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantHash := sha256.Sum256([]byte(canary))
-	if ops.created != 1 || confirmationCalls != 0 || ops.valueHash != hex.EncodeToString(wantHash[:]) || len(gateway.inputs) != 0 || len(gateway.registered) != 0 || !strings.Contains(message, "secret-created") {
-		t.Fatalf("trusted create failed: created=%d confirmations=%d hash=%s inputs=%q registered=%q message=%q", ops.created, confirmationCalls, ops.valueHash, gateway.inputs, gateway.registered, message)
-	}
-	reply, err := session.Handle(context.Background(), "ok awesome")
-	if err != nil || reply != "conversation intact" || len(gateway.inputs) != 1 || gateway.inputs[0] != "ok awesome" {
-		t.Fatalf("direct create contaminated following conversation: reply=%q err=%v inputs=%q", reply, err, gateway.inputs)
+	_, err = session.HandleCreateIntentWithValue(context.Background(), "store a credential with password=synthetic-value", CreateArguments{Reference: "test", Kind: "opaque", Disclosure: "protected"}, []byte("synthetic-value"))
+	if err == nil || err.Error() != ReasonIngressSecret || ops.created != 0 || len(gateway.inputs) != 0 {
+		t.Fatalf("conversational value did not fail closed: err=%v created=%d inputs=%q", err, ops.created, gateway.inputs)
 	}
 }
 
-func TestSessionTrustedLocalCreateCannotBeVetoedOrRedirectedByModel(t *testing.T) {
+func TestSessionConversationalCreateValueCannotReachModelOrAuthority(t *testing.T) {
 	for _, outputs := range [][][]byte{
 		{envelope(SecretProposeCreate, CreateArguments{Reference: "other", Kind: "opaque", Disclosure: "protected"})},
 		{messageEnvelope("I need more details and confirmation")},
@@ -235,9 +212,9 @@ func TestSessionTrustedLocalCreateCannotBeVetoedOrRedirectedByModel(t *testing.T
 		if err != nil {
 			t.Fatal(err)
 		}
-		message, err := session.HandleCreateIntentWithValue(context.Background(), "store a cred named test with a value of canary", CreateArguments{Reference: "test", Kind: "opaque", Disclosure: "protected"}, []byte("canary"))
-		if err != nil || ops.created != 1 || len(gateway.inputs) != 0 || !strings.Contains(message, "secret-created") {
-			t.Fatalf("model vetoed or redirected principal operation: outputs=%q err=%v created=%d message=%q", outputs, err, ops.created, message)
+		_, err = session.HandleCreateIntentWithValue(context.Background(), "store a cred named test with a value of synthetic-canary", CreateArguments{Reference: "test", Kind: "opaque", Disclosure: "protected"}, []byte("synthetic-canary"))
+		if err == nil || err.Error() != ReasonIngressSecret || ops.created != 0 || len(gateway.inputs) != 0 {
+			t.Fatalf("credential material crossed protected boundary: outputs=%q err=%v created=%d inputs=%q", outputs, err, ops.created, gateway.inputs)
 		}
 	}
 }

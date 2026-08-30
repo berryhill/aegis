@@ -99,6 +99,24 @@ func configureSlashFleet(t *testing.T, service *Service) {
 	}
 }
 
+func TestNormalManagerHelpDiscoversDeterministicAgentControls(t *testing.T) {
+	service, registry, manager := serviceFixture(t)
+	result := execute(t, service, registry, manager, "/help")
+	commands, ok := result.Data["commands"].([]map[string]any)
+	if !ok {
+		t.Fatalf("help commands have unexpected type: %#v", result.Data["commands"])
+	}
+	for _, command := range commands {
+		if command["name"] == "/agents" {
+			if command["usage"] == "" || command["available"] != true {
+				t.Fatalf("Agent controls are not truthfully discoverable: %+v", command)
+			}
+			return
+		}
+	}
+	t.Fatalf("normal manager help omitted /agents: %+v", commands)
+}
+
 func TestAgentRegistryManagerReadinessAndDenials(t *testing.T) {
 	service, registry, manager := serviceFixture(t)
 	unavailable := execute(t, service, registry, manager, "/agents readiness")

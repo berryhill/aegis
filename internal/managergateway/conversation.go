@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"errors"
-	"fmt"
+
 	"os"
 	"path/filepath"
-	"strings"
+
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,7 +31,8 @@ func (o gatewayOperations) authority() (*credentials.Authority, error) {
 }
 
 func (o gatewayOperations) Status(context.Context) (map[string]any, error) {
-	return map[string]any{"manager": managerdomain.LogicalAgentID, "context": managerdomain.SecurityContext, "route": "authenticated-unix-gateway"}, nil
+	expertise := managerdomain.PlatformExpertise()
+	return map[string]any{"manager": managerdomain.LogicalAgentID, "context": managerdomain.SecurityContext, "route": "authenticated-unix-gateway", "expertise_version": expertise.Version, "expertise_digest": expertise.Digest}, nil
 }
 func (o gatewayOperations) List(ctx context.Context, q string, n int) ([]credentials.SecretRecord, error) {
 	authority, err := o.authority()
@@ -135,7 +136,7 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	}
 	descriptor, err := service.Hermes.Discover(startupCtx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRuntimeUnsupported, err)
+		return nil, startupFailure(managerdomain.ReasonRuntimeUnsupported, err)
 	}
 	endpoint := cfg.Inference.Endpoint
 	runtimeCtx, cancelRuntime := context.WithDeadline(lifetimeCtx, mandateExpires)
@@ -161,11 +162,11 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	}
 	ollamaVersion, err := runtime.ollama.Version(startupCtx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonOllamaUnavailable, err)
+		return nil, startupFailure(managerdomain.ReasonOllamaUnavailable, err)
 	}
 	if _, err = runtime.ollama.VerifyModel(startupCtx, cfg.Inference.Model, cfg.Inference.ModelDigest); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (!strings.Contains(err.Error(), managerdomain.ReasonModelAbsent) && !strings.Contains(err.Error(), managerdomain.ReasonDigestMismatch)) {
-			return nil, fmt.Errorf("%s: %w", managerdomain.ReasonOllamaUnavailable, err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (err.Error() != managerdomain.ReasonModelAbsent && err.Error() != managerdomain.ReasonDigestMismatch) {
+			return nil, startupFailure(managerdomain.ReasonOllamaUnavailable, err)
 		}
 		return nil, err
 	}
@@ -174,7 +175,7 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 		return nil, err
 	}
 	if err = runtime.ollama.Load(startupCtx, cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive); err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonModelLoadFailed, err)
+		return nil, startupFailure(managerdomain.ReasonModelLoadFailed, err)
 	}
 	now := time.Now().UTC()
 	route := managerdomain.RoutePlan{SchemaVersion: "aegis.manager.route.v1", ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, HermesPath: descriptor.Executable, HermesVersion: descriptor.Version, OllamaMode: cfg.Inference.Mode, OllamaEndpoint: endpoint, OllamaVersion: ollamaVersion, Model: certification.Identity(), ProxyIdentity: "linux-pidfd-process-custody", IssuedAt: now, ExpiresAt: mandateExpires}
@@ -190,9 +191,9 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	armed := &armedGateway{sensitive: sensitive}
 	processAuthorizer := managerdomain.NewProcessAuthorizer()
 	runtime.active.Store(true)
-	runtime.proxy, err = managerdomain.StartProxy(runtime.ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, ProcessAuthorizer: processAuthorizer, CapabilityExpires: mandateExpires, ConsumeCapability: armed.consume, RequireSystemInstruction: true, AllowPlaintextRequests: true, Sensitive: sensitive})
+	runtime.proxy, err = managerdomain.StartProxy(runtime.ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, ProcessAuthorizer: processAuthorizer, CapabilityExpires: mandateExpires, ConsumeCapability: armed.consume, RequireSystemInstruction: true, Sensitive: sensitive})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
+		return nil, startupFailure(managerdomain.ReasonRouteMismatch, err)
 	}
 	python := gatewayManagerPython(descriptor.Installation, descriptor.Executable)
 	if python == "" {
@@ -200,12 +201,12 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	}
 	runtime.hermes, err = managerdomain.StartHermesProcess(startupCtx, managerdomain.HermesProcessConfig{Python: python, Installation: descriptor.Installation, StateRoot: service.Config.StateDir, ProxyEndpoint: runtime.proxy.Endpoint(), Model: cfg.Inference.Model, MaximumMessageBytes: int(cfg.Inference.MaximumResponseBytes), StartTimeout: cfg.Hermes.GatewayStartTimeout, AuthorizeRelease: processAuthorizer.Bind})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
+		return nil, startupFailure(managerdomain.ReasonGatewayProtocol, err)
 	}
 	armed.client = runtime.hermes.Client()
 	gatewaySession, err := armed.client.CreateSession(startupCtx, "aegis-manager")
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonGatewayProtocol, err)
+		return nil, startupFailure(managerdomain.ReasonGatewayProtocol, err)
 	}
 	runtime.session, err = managerdomain.NewSession(runtime.ctx, managerdomain.SessionConfig{
 		SessionID: managerSessionID, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Route: route, Gateway: armed, GatewaySessionID: gatewaySession,
@@ -259,7 +260,7 @@ func bindTurnContext(requestCtx, runtimeCtx context.Context) (context.Context, c
 
 func (r *conversation) Turn(ctx context.Context, input string) (string, error) {
 	if r == nil || r.session == nil || !r.active.Load() {
-		return "", errors.New("conversational_runtime_unavailable")
+		return "", ErrTurnRuntimeUnavailable
 	}
 	r.turnMu.Lock()
 	defer r.turnMu.Unlock()
@@ -268,7 +269,11 @@ func (r *conversation) Turn(ctx context.Context, input string) (string, error) {
 	if err := turnCtx.Err(); err != nil {
 		return "", err
 	}
-	return r.session.Handle(turnCtx, input)
+	message, err := r.session.Handle(turnCtx, input)
+	if err != nil {
+		return "", normalizeTurnFailure(err)
+	}
+	return message, nil
 }
 
 func (r *conversation) Close(ctx context.Context, reason string) error {

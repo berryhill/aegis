@@ -45,6 +45,9 @@ func (service *Service) RegisterFromSource(ctx context.Context, source Source, i
 	if selected == nil {
 		return AgentRegistration{}, AgentRevision{}, false, ErrNotFound
 	}
+	if selected.AgentID == BuiltInAegisAgentID {
+		return AgentRegistration{}, AgentRevision{}, false, ErrBuiltInImmutable
+	}
 	initial, err := SealRevision(AgentRevision{
 		SchemaVersion:          AgentRevisionSchemaVersion,
 		AgentID:                selected.AgentID,
@@ -81,6 +84,9 @@ func (service *Service) RegisterFromSource(ctx context.Context, source Source, i
 // PublishRevision adds one exact next revision. There is deliberately no
 // overwrite, patch, upsert, or publish-latest operation.
 func (service *Service) PublishRevision(ctx context.Context, revision AgentRevision) error {
+	if revision.AgentID == BuiltInAegisAgentID {
+		return ErrBuiltInImmutable
+	}
 	return service.repository.PublishRevision(ctx, revision)
 }
 

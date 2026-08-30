@@ -136,6 +136,9 @@ func requestBinding(values ...any) ([]byte, error) {
 }
 
 func (s *Store) RegisterAgent(ctx context.Context, registration registry.AgentRegistration, initial registry.AgentRevision, fact fleet.AuditFact) (created bool, err error) {
+	if err := registry.ValidateBuiltInAegisRegistration(registration, initial); err != nil {
+		return false, err
+	}
 	registrationWire, err := registry.MarshalAgentRegistration(registration)
 	if err != nil {
 		return false, err
@@ -181,6 +184,9 @@ func (s *Store) RegisterAgent(ctx context.Context, registration registry.AgentRe
 }
 
 func (s *Store) PublishAgentRevision(ctx context.Context, revision registry.AgentRevision, fact fleet.AuditFact) error {
+	if revision.AgentID == registry.BuiltInAegisAgentID {
+		return registry.ErrBuiltInImmutable
+	}
 	wire, err := registry.MarshalAgentRevision(revision)
 	if err != nil {
 		return err

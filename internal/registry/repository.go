@@ -49,6 +49,9 @@ func (repository *MemoryRepository) Register(ctx context.Context, registration A
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	if err := ValidateBuiltInAegisRegistration(registration, initial); err != nil {
+		return false, err
+	}
 	if err := registration.Validate(); err != nil {
 		return false, err
 	}
@@ -83,6 +86,9 @@ func (repository *MemoryRepository) Register(ctx context.Context, registration A
 func (repository *MemoryRepository) PublishRevision(ctx context.Context, revision AgentRevision) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if revision.AgentID == BuiltInAegisAgentID {
+		return ErrBuiltInImmutable
 	}
 	if err := validateSealedRevision(revision); err != nil {
 		return err

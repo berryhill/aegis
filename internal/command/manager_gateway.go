@@ -109,7 +109,7 @@ func (c *gatewayManagerClient) turn(ctx context.Context, input string) (managerg
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return managergateway.TurnResult{}, managerGatewayStatusError("conversational turn", response.StatusCode)
+		return managergateway.TurnResult{}, managerGatewayTurnError(response)
 	}
 	var result managergateway.TurnResult
 	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || strings.TrimSpace(result.Message) == "" || (result.Origin != managergateway.TurnOriginModel && result.Origin != managergateway.TurnOriginAuthoritative) {
@@ -166,8 +166,59 @@ func managerGatewayStatusError(action string, status int) error {
 	}
 }
 
+func managerGatewayTurnError(response *http.Response) error {
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden || response.StatusCode == http.StatusConflict {
+		return managerGatewayStatusError("conversational turn", response.StatusCode)
+	}
+	var failure struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&failure); err != nil {
+		return errors.New("manager conversational turn failed closed; the control plane returned an invalid failure envelope")
+	}
+	type typedFailure struct {
+		status      int
+		remediation string
+	}
+	known := map[string]typedFailure{
+		"manager_runtime_unavailable": {
+			status:      http.StatusServiceUnavailable,
+			remediation: "manager conversation runtime is unavailable; run 'aegis manager model status'; authenticated gateway commands may still be available",
+		},
+		"manager_authority_unavailable": {
+			status:      http.StatusServiceUnavailable,
+			remediation: "manager credential authority is unavailable; restore or unlock the local authority before retrying",
+		},
+		"manager_authority_invalid": {
+			status:      http.StatusServiceUnavailable,
+			remediation: "manager credential authority is invalid; repair the local authority configuration before retrying",
+		},
+		"manager_turn_timeout": {
+			status:      http.StatusGatewayTimeout,
+			remediation: "manager conversational turn timed out; retry the turn or use a shorter request",
+		},
+		"manager_turn_protocol_error": {
+			status:      http.StatusBadGateway,
+			remediation: "manager conversation runtime protocol failed; rerun 'aegis manager' to establish a fresh runtime session",
+		},
+		"manager_turn_internal_error": {
+			status:      http.StatusInternalServerError,
+			remediation: "manager conversational turn failed internally; inspect local gateway logs before retrying",
+		},
+	}
+	typed, ok := known[failure.Code]
+	if !ok || typed.status != response.StatusCode {
+		return errors.New("manager conversational turn failed closed; the control plane returned an unknown or inconsistent failure category")
+	}
+	return errors.New(typed.remediation)
+}
+
 func shouldSubmitGatewayTurn(mode, input string) bool {
 	return mode == "conversational" || managergateway.IsLocalProfileRequest(input)
+}
+
+func gatewayManagerCommandSummary() string {
+	return "Commands: /status, /context, /help, /cancel, /exit\nAgent controls: /agents readiness; /agents list; /agents show <agent-id> [revision]; /agents prepare ...; /agents register ...; exact grammar: /help agents"
 }
 
 func runGatewayManager(cmd *cobra.Command, configPath string) error {
@@ -193,9 +244,9 @@ func runGatewayManager(cmd *cobra.Command, configPath string) error {
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), nil)
 	composer := tui.NewComposer(cmd.InOrStdin(), output, int(cfg.Manager.Ingress.MaximumMessageBytes))
 	if client.mode == "conversational" {
-		fmt.Fprintf(output, "AEGIS / manager — authenticated conversational agent\nHermes Agent: active exact-local session. Gateway owns authority and writable application state.\nPrincipal: authenticated; stanza: secrets-manager; mandate expires %s.\nCommands: /status, /context, /help, /cancel, /exit\n", expires.UTC().Format(time.RFC3339))
+		fmt.Fprintf(output, "AEGIS / manager — authenticated conversational agent\nHermes Agent: active exact-local session. Gateway owns authority and writable application state.\nPrincipal: authenticated; stanza: secrets-manager; mandate expires %s.\n%s\n", expires.UTC().Format(time.RFC3339), gatewayManagerCommandSummary())
 	} else {
-		fmt.Fprintf(output, "AEGIS / manager — degraded deterministic shell\nConversational Hermes Agent: unavailable (%s). No cloud or alternate-model fallback was attempted.\nNext: %s\nModel validation remains explicit; no artifact is downloaded, selected, configured, or certified by entering this shell.\nOptions: 'aegis manager model candidates'; 'aegis manager model discover --endpoint LOOPBACK_URL'; 'aegis manager model configure CANDIDATE_ID --endpoint LOOPBACK_URL'; 'aegis manager certify CANDIDATE_ID'.\nGateway owns authority and writable application state. Session expires %s.\nCommands: /status, /context, /help, /cancel, /exit\n", client.reason, client.nextStep, expires.UTC().Format(time.RFC3339))
+		fmt.Fprintf(output, "AEGIS / manager — degraded deterministic shell\nConversational Hermes Agent: unavailable (%s). No cloud or alternate-model fallback was attempted.\nNext: %s\nModel validation remains explicit; no artifact is downloaded, selected, configured, or certified by entering this shell.\nOptions: 'aegis manager model candidates'; 'aegis manager model discover --endpoint LOOPBACK_URL'; 'aegis manager model configure CANDIDATE_ID --endpoint LOOPBACK_URL'; 'aegis manager certify CANDIDATE_ID'.\nGateway owns authority and writable application state. Session expires %s.\n%s\n", client.reason, client.nextStep, expires.UTC().Format(time.RFC3339), gatewayManagerCommandSummary())
 	}
 	for {
 		input, eof, readErr := composer.Read(cmd.Context(), ">", capabilities)

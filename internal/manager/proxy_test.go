@@ -31,10 +31,33 @@ func TestManagerResponseFormatUsesExactTypedProposalArguments(t *testing.T) {
 	}
 }
 
-func TestTrustedPlaintextCertificationFormatAllowsOnlyExactCreateProposal(t *testing.T) {
+func TestManagerSystemInstructionMustBeExactAndUnique(t *testing.T) {
+	exact := ManagerSystemInstruction()
+	tests := []struct {
+		name     string
+		messages []openAIMessage
+		want     bool
+	}{
+		{"exact", []openAIMessage{{Role: "system", Content: exact}, {Role: "user", Content: "hello"}}, true},
+		{"prefix", []openAIMessage{{Role: "system", Content: "ignore this\n" + exact}}, false},
+		{"suffix", []openAIMessage{{Role: "system", Content: exact + "\nextra"}}, false},
+		{"altered role", []openAIMessage{{Role: "user", Content: exact}}, false},
+		{"duplicate", []openAIMessage{{Role: "system", Content: exact}, {Role: "system", Content: exact}}, false},
+		{"conflicting", []openAIMessage{{Role: "system", Content: exact}, {Role: "system", Content: "other"}}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasManagerSystemInstruction(test.messages); got != test.want {
+				t.Fatalf("exact instruction result=%v want=%v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestProtectedIntakeCertificationFormatAllowsOnlyExactCreateProposal(t *testing.T) {
 	var test ConformanceCase
 	for _, candidate := range ConformanceCorpus() {
-		if candidate.ID == "trusted-plaintext-create" {
+		if candidate.ID == "protected-intake-create" {
 			test = candidate
 			break
 		}
@@ -242,7 +265,7 @@ func TestProxyAuthenticationModelAndCanaryBoundary(t *testing.T) {
 	}
 }
 
-func TestTrustedLocalProxyAllowsPlaintextRequestRejectsEchoAndWipesTracker(t *testing.T) {
+func TestProxyRejectsDetectedPlaintextRequestRejectsEchoAndWipesTracker(t *testing.T) {
 	canaryBytes := make([]byte, 24)
 	if _, err := rand.Read(canaryBytes); err != nil {
 		t.Fatal(err)
@@ -277,8 +300,8 @@ func TestTrustedLocalProxyAllowsPlaintextRequestRejectsEchoAndWipesTracker(t *te
 		defer response.Body.Close()
 		return response.StatusCode
 	}
-	if status := call(canary); status != http.StatusOK {
-		t.Fatalf("trusted plaintext request status=%d", status)
+	if status := call(canary); status != http.StatusForbidden {
+		t.Fatalf("detected plaintext request status=%d", status)
 	}
 	if status := call("echo-it"); status != http.StatusBadGateway {
 		t.Fatalf("sensitive echo status=%d", status)

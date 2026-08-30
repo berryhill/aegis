@@ -41,8 +41,10 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": interactive manager mode requires stdin and stdout terminals"))
 		}
 		inspection := config.Inspect(options.configFile)
+		gatewayState := userservice.GatewayNotInstalled
 		if requiresGateway(profile) && inspection.State == config.StateValid {
 			gateway := observeBareGateway(cmd.Context(), runner, options.configFile)
+			gatewayState = gateway.State
 			if gateway.State == userservice.GatewayHealthy {
 				return runGatewayManager(cmd, options.configFile)
 			}
@@ -61,10 +63,22 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 				return err
 			}
 		}
+		if readyStateNeedsBuiltInRegistrationCheck(snapshot, gatewayState) {
+			registered, err := ensureBuiltInAegisAgentRegistration(cmd, build)
+			if err != nil || !registered {
+				return err
+			}
+		}
 		return runManager(cmd, build)
 	}}
 	command.AddCommand(managerCertifyCmd(build), managerModelCmd(build, options))
 	return command
+}
+
+func readyStateNeedsBuiltInRegistrationCheck(snapshot onboarding.Snapshot, gateway userservice.GatewayState) bool {
+	// A healthy gateway is the sole store owner. Never open or backfill its
+	// repositories from the CLI. Offline ready states are safe to inspect.
+	return snapshot.State == onboarding.Ready && gateway != userservice.GatewayHealthy
 }
 
 func managerNeedsBootstrap(_ onboarding.Snapshot, authorityState authoritybadger.State) bool {
@@ -398,7 +412,7 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		if createRequested {
 			guardedLine = createIntent.SafeInput
 		}
-		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(guardedLine), PlaintextAuthorized: conversation != nil})
+		finding := guard.Inspect(sessionCtx, managerdomain.ContentEnvelope{Source: managerdomain.SourceUser, SubjectID: subject.ID, ManagerID: managerdomain.LogicalAgentID, SecurityContext: managerdomain.SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(guardedLine)})
 		if sessionCtx.Err() != nil {
 			createIntent.Wipe()
 			endReason = managerdomain.EndReasonFromContext(sessionCtx)
@@ -463,14 +477,11 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			composer.Remember(createIntent.SafeInput)
 			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: createIntent.SafeInput})
 			_ = presentation.Emit(tui.Event{Kind: tui.ProposalValidated, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("natural create request mapped locally: reference=%s kind=%s disclosure=protected", createIntent.Arguments.Reference, createIntent.Arguments.Kind)})
-			var message string
-			var createErr error
-			if createIntent.ValueRemoved {
-				message, createErr = conversation.session.HandleCreateIntentWithValue(sessionCtx, line, createIntent.Arguments, createIntent.Value)
-			} else {
-				message, createErr = conversation.session.HandleCreateIntent(sessionCtx, createIntent.Arguments)
-			}
+			// Inline credential material establishes only authoritative create intent.
+			// Wipe it before authorization; the value is collected again exclusively
+			// through protected no-echo intake.
 			createIntent.Wipe()
+			message, createErr := conversation.session.HandleCreateIntent(sessionCtx, createIntent.Arguments)
 			if createErr != nil {
 				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: createErr.Error()})
 				continue

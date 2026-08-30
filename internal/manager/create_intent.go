@@ -2,6 +2,7 @@ package manager
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -123,39 +124,43 @@ func fieldValue(input string, match []int) (string, int, int, bool) {
 }
 
 func redactInlineValues(input string) (string, []byte, bool) {
-	matches := inlineValuePattern.FindAllStringSubmatchIndex(input, -1)
-	if len(matches) == 0 {
-		unquoted := unquotedValuePattern.FindAllStringSubmatchIndex(input, -1)
-		if len(unquoted) == 1 && len(unquoted[0]) == 4 {
-			match := unquoted[0]
-			value := append([]byte(nil), input[match[2]:match[3]]...)
-			return input[:match[2]] + "[protected session value]" + input[match[3]:], value, true
+	type span struct{ start, end int }
+	spans := make([]span, 0)
+	for _, match := range inlineValuePattern.FindAllStringSubmatchIndex(input, -1) {
+		spans = append(spans, span{start: match[8], end: match[9]})
+	}
+	for _, match := range unquotedValuePattern.FindAllStringSubmatchIndex(input, -1) {
+		if len(match) != 4 {
+			continue
 		}
-		if len(unquoted) > 1 {
-			return unquotedValuePattern.ReplaceAllString(input, "value of [protected session value]"), nil, true
+		candidate := span{start: match[2], end: match[3]}
+		overlaps := false
+		for _, existing := range spans {
+			if candidate.start < existing.end && existing.start < candidate.end {
+				overlaps = true
+				break
+			}
 		}
+		if !overlaps {
+			spans = append(spans, candidate)
+		}
+	}
+	if len(spans) == 0 {
 		return input, nil, false
 	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
 	var output strings.Builder
 	start := 0
-	var value []byte
-	for _, match := range matches {
-		valueStart, valueEnd := match[8], match[9]
-		if value == nil {
-			value = append([]byte(nil), input[valueStart:valueEnd]...)
-		}
-		output.WriteString(input[start:valueStart])
+	for _, valueSpan := range spans {
+		output.WriteString(input[start:valueSpan.start])
 		output.WriteString("[protected session value]")
-		start = valueEnd
+		start = valueSpan.end
 	}
 	output.WriteString(input[start:])
-	if len(matches) > 1 {
-		for index := range value {
-			value[index] = 0
-		}
+	if len(spans) != 1 {
 		return output.String(), nil, true
 	}
-	return output.String(), value, true
+	return output.String(), append([]byte(nil), input[spans[0].start:spans[0].end]...), true
 }
 
 func (intent *CreateIntent) Wipe() {

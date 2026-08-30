@@ -3,6 +3,7 @@ package managergateway
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,7 +130,7 @@ func TestDegradedManagerTurnServesAuthoritativeProfileIntentsWithoutModel(t *tes
 		}
 	}
 
-	if _, err := service.Turn(context.Background(), subject, "degraded", token, "hello"); err == nil || !strings.Contains(err.Error(), "conversational local inference unavailable") {
+	if _, err := service.Turn(context.Background(), subject, "degraded", token, "hello"); !errors.Is(err, ErrTurnRuntimeUnavailable) {
 		t.Fatalf("generic degraded turn must remain unavailable, got %v", err)
 	}
 }

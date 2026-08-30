@@ -120,6 +120,24 @@ func TestParseMakeCredentialIntentRedactsInlineValue(t *testing.T) {
 	intent.Wipe()
 }
 
+func TestParseCreateIntentRedactsAllMixedInlineValues(t *testing.T) {
+	input := `create credential named demo with value of 'alpha' and secret of beta`
+	intent, ok := ParseCreateIntent(input)
+	if !ok || !intent.ValueRemoved {
+		t.Fatalf("mixed create intent not recognized and redacted: ok=%t intent=%+v", ok, intent)
+	}
+	defer intent.Wipe()
+	if intent.Value != nil {
+		t.Fatalf("ambiguous mixed values selected for creation: %q", intent.Value)
+	}
+	if strings.Contains(intent.SafeInput, "alpha") || strings.Contains(intent.SafeInput, "beta") {
+		t.Fatalf("mixed credential value survived safe input: %q", intent.SafeInput)
+	}
+	if strings.Count(intent.SafeInput, "[protected session value]") != 2 {
+		t.Fatalf("mixed values were not independently redacted: %q", intent.SafeInput)
+	}
+}
+
 func TestUnrecognizedInlineCredentialSyntaxFailsClosed(t *testing.T) {
 	input := "frobnicate a credential named test with a value of generated-canary"
 	if _, ok := ParseCreateIntent(input); ok {

@@ -225,9 +225,18 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 		MandateState: "active", Lifecycle: lifecycleState(entry.mode), RuntimeState: entry.mode,
 		Route: "authenticated-unix-gateway", PolicyVersion: managerdomain.PolicyVersion,
 		PolicyDigest: managerdomain.PolicyDigest(),
-		Readiness:    map[string]string{"authority": "gateway-owned", "runtime": entry.mode, "reason": entry.reason, "next_step": entry.nextStep},
+		Readiness:    managerReadiness(entry),
 	}
 	return s.commands.Execute(ctx, manager, request)
+}
+
+func managerReadiness(entry session) map[string]string {
+	expertise := managerdomain.PlatformExpertise()
+	return map[string]string{
+		"authority": "gateway-owned", "runtime": entry.mode, "reason": entry.reason, "next_step": entry.nextStep,
+		"expertise_version": expertise.Version, "expertise_digest": expertise.Digest,
+		"agent_registry": "/agents readiness", "credential_creation": "protected intake required",
+	}
 }
 
 func lifecycleState(mode string) slash.LifecycleState {
@@ -256,6 +265,16 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	if detection == slash.LiteralSlash {
 		input = slash.UnescapeLiteral(input)
 	}
+	route := detectAuthoritativeIntent(input)
+	defer route.Wipe()
+	switch route.kind {
+	case intentAgentRegistration:
+		return agentRegistrationGuidance(), nil
+	case intentCredentialCreate:
+		return credentialCreationGuidance(route.credential, route.credentialParsed), nil
+	case intentCredentialIntake:
+		return credentialIntakeGuidance(), nil
+	}
 	if intent := localProfileIntent(input); intent != "" {
 		home, homeErr := s.profileHome(s.app.Config.Principal.User, s.app.Config.Principal.UID)
 		if homeErr != nil {
@@ -275,13 +294,13 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 		return result, nil
 	}
 	if entry.mode != "conversational" || entry.runtime == nil {
-		return TurnResult{}, fmt.Errorf("%s: conversational local inference unavailable; next: %s", entry.reason, entry.nextStep)
+		return TurnResult{}, turnFailureForReason(entry.reason)
 	}
 	turnCtx, cancel := managerTurnContext(ctx, s.app.Config.Manager.Hermes.TurnTimeout)
 	defer cancel()
 	message, err := entry.runtime.Turn(turnCtx, input)
 	if err != nil {
-		return TurnResult{}, err
+		return TurnResult{}, normalizeTurnFailure(err)
 	}
 	return TurnResult{Kind: "message", Origin: TurnOriginModel, Message: message}, nil
 }
@@ -333,8 +352,11 @@ func (s *Service) prune(now time.Time) {
 }
 
 func managerReason(err error) string {
+	if reason, ok := startupFailureReason(err); ok {
+		return reason
+	}
 	for _, reason := range []string{managerdomain.ReasonModelAbsent, managerdomain.ReasonDigestMismatch, managerdomain.ReasonNotCertified, managerdomain.ReasonAuthorityUnavailable, managerdomain.ReasonAuthorityInvalid, managerdomain.ReasonRuntimeUnsupported, managerdomain.ReasonContextUnsupported, managerdomain.ReasonOllamaUnavailable, managerdomain.ReasonModelLoadFailed, managerdomain.ReasonRouteMismatch, managerdomain.ReasonGatewayProtocol} {
-		if strings.Contains(err.Error(), reason) {
+		if err != nil && err.Error() == reason {
 			return reason
 		}
 	}

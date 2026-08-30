@@ -11,12 +11,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/credentials"
 	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/onboarding"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/tui"
 	"github.com/spf13/cobra"
@@ -78,6 +82,10 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 		case onboarding.Ready:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageComplete, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Message: "all manager prerequisites verified"})
 			renderReadiness(cmd, snapshot)
+			registered, err := bootstrapBuiltInAegisAgent(cmd, build, input, bootstrapView)
+			if err != nil || !registered {
+				return false, err
+			}
 			approved, err := bootstrapView.approve(cmd, input, bootstrapDecision{
 				Title:          "Start authenticated manager gateway",
 				Recommendation: "Start only when interactive manager access is intended now; otherwise exit and resume later.",
@@ -119,6 +127,62 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 		}
 	}
 	return false, errors.New("bootstrap did not converge after bounded state transitions")
+}
+
+func ensureBuiltInAegisAgentRegistration(cmd *cobra.Command, build builder) (bool, error) {
+	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
+	return bootstrapBuiltInAegisAgent(cmd, build, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(capabilities))
+}
+
+type builtInAegisAgentService interface {
+	GetFleetAgentAs(context.Context, core.Subject, string, uint64) (app.FleetAgent, error)
+	RegisterBuiltInAegisAgentAs(context.Context, core.Subject) (app.FleetAgent, bool, error)
+}
+
+func bootstrapBuiltInAegisAgent(cmd *cobra.Command, build builder, input *terminalInput, view *bootstrapPresentation) (bool, error) {
+	service, subject, err := authenticatedService(cmd, build)
+	if err != nil {
+		return false, err
+	}
+	return bootstrapBuiltInAegisAgentWithService(cmd, service, subject, input, view)
+}
+
+func bootstrapBuiltInAegisAgentWithService(cmd *cobra.Command, service builtInAegisAgentService, subject core.Subject, input *terminalInput, view *bootstrapPresentation) (bool, error) {
+	wantRegistration, wantRevision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	if err != nil {
+		return false, err
+	}
+	existing, loadErr := service.GetFleetAgentAs(cmd.Context(), subject, registry.BuiltInAegisAgentID, 1)
+	if loadErr == nil {
+		if !registry.CanonicalBuiltInAegisAgentMatches(existing.Registration, existing.Revision, subject.PrincipalID) {
+			return false, fleet.ErrConflict
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Canonical built-in Aegis Agent already registered and exactly verified at %s.\n", existing.Revision.Digest)
+		return true, nil
+	}
+	if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return false, loadErr
+	}
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Register canonical built-in Aegis Agent",
+		Recommendation: "Register the sealed Aegis-owned identity required for fleet control.",
+		Consequence:    "Creates one immutable built-in Agent record after this authenticated approval. It does not create or retain a Hermes profile.",
+		Details:        fmt.Sprintf("agent=%s; source=%s/%s/%s; owner=%s; accountable principal=%s; runtime=Hermes Agent; target=%s; registration revision digest=%s; charter field is a sealed system representation, not user-authored provenance", wantRegistration.AgentID, wantRegistration.Source.Kind, wantRegistration.Source.FleetID, wantRegistration.Source.SourceID, wantRevision.Ownership.OwnerID, wantRevision.Ownership.AccountabilityID, registry.BuiltInAegisRuntimeTarget, wantRevision.Digest),
+		DefaultDecline: true,
+	})
+	if err != nil || !approved {
+		fmt.Fprintln(cmd.OutOrStdout(), "Built-in Aegis Agent registration declined; no Agent record was created.")
+		return false, err
+	}
+	stored, created, err := service.RegisterBuiltInAegisAgentAs(cmd.Context(), subject)
+	if err != nil {
+		return false, err
+	}
+	if !registry.CanonicalBuiltInAegisAgentMatches(stored.Registration, stored.Revision, subject.PrincipalID) {
+		return false, fleet.ErrConflict
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Canonical built-in Aegis Agent registered=%t and exactly verified at %s.\n", created, stored.Revision.Digest)
+	return true, nil
 }
 
 var onboardingStages = []string{

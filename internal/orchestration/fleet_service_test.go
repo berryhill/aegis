@@ -21,6 +21,7 @@ import (
 
 type fleetServiceRepository struct {
 	fleet.Repository
+	registration    registry.AgentRegistration
 	agent           registry.AgentRevision
 	loop            loop.LoopRevision
 	graph           graph.GraphRevision
@@ -127,9 +128,22 @@ func (repository *fleetServiceRepository) CompleteQueueItem(_ context.Context, c
 	repository.completion = completion
 	return nil
 }
-func (repository *fleetServiceRepository) RegisterAgent(_ context.Context, _ registry.AgentRegistration, _ registry.AgentRevision, fact fleet.AuditFact) (bool, error) {
+func (repository *fleetServiceRepository) RegisterAgent(_ context.Context, registration registry.AgentRegistration, revision registry.AgentRevision, fact fleet.AuditFact) (bool, error) {
 	repository.registerFact = fact
+	if repository.registration.AgentID != "" {
+		if repository.registration == registration && repository.agent.Digest == revision.Digest {
+			return false, nil
+		}
+		return false, fleet.ErrConflict
+	}
+	repository.registration, repository.agent = registration, revision
 	return true, nil
+}
+func (repository *fleetServiceRepository) GetAgentRegistration(context.Context, string) (registry.AgentRegistration, error) {
+	if repository.registration.AgentID == "" {
+		return registry.AgentRegistration{}, fleet.ErrNotFound
+	}
+	return repository.registration, repository.loadErr
 }
 func (repository *fleetServiceRepository) LatestAgentRevision(context.Context, string) (registry.AgentRevision, error) {
 	return repository.agent, repository.loadErr
@@ -660,6 +674,18 @@ func TestRegisterFleetAgentUsesAuthenticatedBoundaryAndMetadataOnlyAudit(t *test
 	}
 }
 
+func TestRegisterFleetAgentCannotClaimBuiltInAegisAgentID(t *testing.T) {
+	service, repository, _, subject, _, _ := fleetServiceFixture(t)
+	before := repository.registration
+	source := staticFleetSource{{AgentID: registry.BuiltInAegisAgentID, Source: registry.FleetSource{Kind: registry.CurrentFleetSourceKind, FleetID: "fleet-1", SourceID: "generic-aegis"}, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "local"}, Ownership: registry.Ownership{OwnerID: "owner-1", AccountabilityID: "accountability-1"}, Lifecycle: registry.LifecycleEnabled, Charter: revisionReference(registry.BuiltInAegisAgentID, 1, "a")}}
+	if _, _, _, err := service.RegisterFleetAgent(context.Background(), RegisterFleetAgentRequest{Subject: subject, Source: source, Identity: source[0].Source}); !errors.Is(err, registry.ErrBuiltInImmutable) {
+		t.Fatalf("generic orchestration registration occupied reserved Agent ID: %v", err)
+	}
+	if repository.registration != before {
+		t.Fatalf("denied generic registration mutated repository: before=%+v after=%+v", before, repository.registration)
+	}
+}
+
 func TestSetAgentLifecycleAppendsExactAuthorizedRevisionAndFailsClosed(t *testing.T) {
 	service, repository, _, subject, _, _ := fleetServiceFixture(t)
 	sealed, err := registry.SealRevision(registry.AgentRevision{
@@ -712,6 +738,59 @@ func TestSetAgentLifecycleAppendsExactAuthorizedRevisionAndFailsClosed(t *testin
 	}
 	if repository.agent.Digest != retired.Digest {
 		t.Fatalf("failed reactivation mutated retired revision: %+v", repository.agent)
+	}
+}
+
+func TestRegisterBuiltInAegisAgentIsAuthorizedIdempotentAndExactReadBack(t *testing.T) {
+	service, repository, _, subject, _, _ := fleetServiceFixture(t)
+	repository.registration = registry.AgentRegistration{}
+	repository.agent = registry.AgentRevision{}
+
+	registration, revision, created, err := service.RegisterBuiltInAegisAgent(context.Background(), subject)
+	if err != nil || !created {
+		t.Fatalf("first registration: created=%t registration=%+v revision=%+v err=%v", created, registration, revision, err)
+	}
+	if registration.AgentID != "aegis" || revision.AgentID != "aegis" || revision.Ownership.AccountabilityID != subject.PrincipalID || repository.registerFact.Event.PrincipalID != subject.PrincipalID {
+		t.Fatalf("canonical registration or authenticated audit fact missing: registration=%+v revision=%+v fact=%+v", registration, revision, repository.registerFact)
+	}
+	replayedRegistration, replayedRevision, replayCreated, err := service.RegisterBuiltInAegisAgent(context.Background(), subject)
+	if err != nil || replayCreated || replayedRegistration != registration || replayedRevision.Digest != revision.Digest {
+		t.Fatalf("idempotent replay: created=%t registration=%+v revision=%+v err=%v", replayCreated, replayedRegistration, replayedRevision, err)
+	}
+	corrupt := revision
+	corrupt.Ownership.OwnerID = "tampered-owner"
+	repository.agent = corrupt
+	if _, _, _, err = service.RegisterBuiltInAegisAgent(context.Background(), subject); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("same-digest non-canonical revision readback was accepted: %v", err)
+	}
+	repository.agent = revision
+	conflict := registration
+	conflict.Source.SourceID = "conflict"
+	repository.registration = conflict
+	if _, _, _, err = service.RegisterBuiltInAegisAgent(context.Background(), subject); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("conflicting canonical identity was not denied: %v", err)
+	}
+	unauthorized := subject
+	unauthorized.PrincipalID = "other"
+	if _, _, _, err = service.RegisterBuiltInAegisAgent(context.Background(), unauthorized); !errors.Is(err, ErrDenied) {
+		t.Fatalf("unauthorized registration was not denied: %v", err)
+	}
+}
+
+func TestBuiltInAegisAgentRejectsGenericLifecycleRevision(t *testing.T) {
+	service, repository, _, subject, _, _ := fleetServiceFixture(t)
+	repository.registration = registry.AgentRegistration{}
+	repository.agent = registry.AgentRevision{}
+	_, builtIn, _, err := service.RegisterBuiltInAegisAgent(context.Background(), subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builtInRef := revisionRef(builtIn.AgentID, builtIn.Revision, builtIn.Digest)
+	if _, err = service.SetAgentLifecycle(context.Background(), SetAgentLifecycleRequest{Subject: subject, Agent: builtInRef, Lifecycle: registry.LifecycleDisabled}); !errors.Is(err, registry.ErrBuiltInImmutable) {
+		t.Fatalf("built-in Agent lifecycle mutation was not denied: %v", err)
+	}
+	if repository.agent.Digest != builtIn.Digest {
+		t.Fatalf("denied built-in lifecycle mutation changed repository: %+v", repository.agent)
 	}
 }
 

@@ -220,7 +220,7 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	processAuthorizer := managerdomain.NewProcessAuthorizer()
 	runtime.active.Store(true)
 	stage("opening authenticated inference route")
-	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, ProcessAuthorizer: processAuthorizer, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume, RequireSystemInstruction: true, AllowPlaintextRequests: true, Sensitive: sensitive})
+	runtime.proxy, err = managerdomain.StartProxy(ctx, managerdomain.ProxyConfig{Target: endpoint, Model: cfg.Inference.Model, RouteDigest: routeDigest, MaximumRequestBytes: cfg.Inference.MaximumRequestBytes, MaximumResponseBytes: cfg.Inference.MaximumResponseBytes, Timeout: cfg.Inference.RequestTimeout, Guard: guard, SessionActive: runtime.active.Load, ProcessAuthorizer: processAuthorizer, CapabilityExpires: subject.ExpiresAt, ConsumeCapability: armed.consume, RequireSystemInstruction: true, Sensitive: sensitive})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonRouteMismatch, err)
 	}

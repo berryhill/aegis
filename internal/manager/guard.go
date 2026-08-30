@@ -40,9 +40,9 @@ type ContentEnvelope struct {
 	ProvenanceID    string
 	RouteClass      string
 	Content         []byte
-	// PlaintextAuthorized is set only by the authenticated trusted-local
-	// manager path. It permits credential material to remain in that exact
-	// session while preserving every structural, size, timeout, and route check.
+	// PlaintextAuthorized is retained for source compatibility only. Detected
+	// credential material always fails closed; protected intake does not use the
+	// conversational guard or model route.
 	PlaintextAuthorized bool
 }
 
@@ -119,10 +119,6 @@ func (g *Guard) Inspect(ctx context.Context, envelope ContentEnvelope) (finding 
 			return
 		}
 		if result.found {
-			if envelope.PlaintextAuthorized && (envelope.Source == SourceUser || envelope.Source == SourceOperation) {
-				finding.Decision, finding.DetectorID, finding.Reason = AllowLocal, result.detector, "authorized_trusted_local_plaintext"
-				return
-			}
 			finding.Decision, finding.DetectorID, finding.Reason = BlockSecret, result.detector, ReasonIngressSecret
 			return
 		}
@@ -132,21 +128,22 @@ func (g *Guard) Inspect(ctx context.Context, envelope ContentEnvelope) (finding 
 }
 
 var (
-	privateKeyPattern  = regexp.MustCompile(`(?i)-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----`)
-	knownPrefixPattern = regexp.MustCompile(`(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:live-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|dp\.[a-z]{2}\.[A-Za-z0-9]{32,})`)
-	assignmentPattern  = regexp.MustCompile(`(?i)(?:authorization\s*:\s*(?:bearer|basic)\s+|(?:password|passwd|api[_-]?key|access[_-]?token|client[_-]?secret|connection[_-]?string)\s*[:=]\s*)[^\s"']{8,}`)
-	connectionPattern  = regexp.MustCompile(`(?i)(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s/@:]+:[^\s/@]+@`)
-	jwtPattern         = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
-	candidatePattern   = regexp.MustCompile(`[A-Za-z0-9_+/%=-]{24,512}`)
+	privateKeyPattern      = regexp.MustCompile(`(?i)-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----`)
+	knownPrefixPattern     = regexp.MustCompile(`(?:AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:live-)?[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|dp\.[a-z]{2}\.[A-Za-z0-9]{32,})`)
+	assignmentPattern      = regexp.MustCompile(`(?i)(?:authorization\s*:\s*(?:bearer|basic)\s+|(?:password|passwd|api[_-]?key|access[_-]?token|client[_-]?secret|connection[_-]?string)\s*[:=]\s*)[^\s"']{8,}`)
+	credentialProsePattern = regexp.MustCompile(`(?i)\b(?:my\s+|this\s+)?(?:password|passwd|api[ _-]?key|access[ _-]?token|client[ _-]?secret)\s*(?::|=|\bis\b|\bequals\b)\s*["']?[^\s"']{4,}`)
+	connectionPattern      = regexp.MustCompile(`(?i)(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s/@:]+:[^\s/@]+@`)
+	jwtPattern             = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
+	candidatePattern       = regexp.MustCompile(`[A-Za-z0-9_+/%=-]{24,512}`)
 )
 
 func scanSecret(data []byte, depth int) (string, bool) {
-	text := string(data)
+	text := strings.ReplaceAll(string(data), "[protected session value]", "")
 	checks := []struct {
 		id      string
 		pattern *regexp.Regexp
 	}{
-		{"private_key", privateKeyPattern}, {"known_token_prefix", knownPrefixPattern}, {"credential_assignment", assignmentPattern}, {"connection_string", connectionPattern}, {"jwt", jwtPattern},
+		{"private_key", privateKeyPattern}, {"known_token_prefix", knownPrefixPattern}, {"credential_assignment", assignmentPattern}, {"credential_prose", credentialProsePattern}, {"connection_string", connectionPattern}, {"jwt", jwtPattern},
 	}
 	for _, check := range checks {
 		if check.pattern.FindStringIndex(text) != nil {
@@ -188,6 +185,14 @@ func scanSecret(data []byte, depth int) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ContainsDetectedCredentialMaterial reports only explicit material recognized
+// by the bounded deterministic scanner. It does not claim to identify arbitrary
+// or unknowable secret values.
+func ContainsDetectedCredentialMaterial(input string) bool {
+	_, found := scanSecret([]byte(input), 2)
+	return found
 }
 
 func entropy(value string) float64 {

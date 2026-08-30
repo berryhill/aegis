@@ -371,6 +371,17 @@ func (s *Service) RegisterFleetAgent(ctx context.Context, input RegisterFleetAge
 	return s.RegisterFleetAgentAs(ctx, subject, input)
 }
 
+// RegisterBuiltInAegisAgentAs is the authenticated application boundary for
+// bootstrap's sealed product-owned Agent. It does not accept caller identity,
+// charter, fleet, source, runtime, ownership, or capability input.
+func (s *Service) RegisterBuiltInAegisAgentAs(ctx context.Context, subject core.Subject) (FleetAgent, bool, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return FleetAgent{}, false, err
+	}
+	registration, revision, created, err := s.Fleet.RegisterBuiltInAegisAgent(ctx, subject)
+	return FleetAgent{Registration: registration, Revision: revision}, created, err
+}
+
 func (s *Service) PrepareFleetAgentRegistrationAs(ctx context.Context, subject core.Subject, charterData, fixtureData []byte, fleetID, sourceID string) (AgentRegistrationProposal, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return AgentRegistrationProposal{}, err

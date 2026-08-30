@@ -4,12 +4,44 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/managergateway"
 )
+
+func TestManagerTurnFailuresHaveSafeTypedTaxonomy(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		status  int
+		code    string
+		message string
+	}{
+		{name: "degraded runtime", err: managergateway.ErrTurnRuntimeUnavailable, status: http.StatusServiceUnavailable, code: "manager_runtime_unavailable", message: "manager conversation runtime is unavailable"},
+		{name: "authority unavailable", err: managergateway.ErrTurnAuthorityUnavailable, status: http.StatusServiceUnavailable, code: "manager_authority_unavailable", message: "manager credential authority is unavailable"},
+		{name: "authority invalid", err: managergateway.ErrTurnAuthorityInvalid, status: http.StatusServiceUnavailable, code: "manager_authority_invalid", message: "manager credential authority is invalid"},
+		{name: "timeout", err: context.DeadlineExceeded, status: http.StatusGatewayTimeout, code: "manager_turn_timeout", message: "manager conversational turn timed out"},
+		{name: "protocol", err: managergateway.ErrTurnProtocol, status: http.StatusBadGateway, code: "manager_turn_protocol_error", message: "manager conversation runtime protocol failed"},
+		{name: "internal", err: errors.New("prompt and secret must not escape"), status: http.StatusInternalServerError, code: "manager_turn_internal_error", message: "manager conversational turn failed"},
+		{name: "incidental runtime token", err: errors.New("diagnostic mentions manager_model_absent but is not typed"), status: http.StatusInternalServerError, code: "manager_turn_internal_error", message: "manager conversational turn failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status, code, message := classifyError(mapManagerTurnError(test.err))
+			if status != test.status || code != test.code || message != test.message {
+				t.Fatalf("classification=(%d, %q, %q), want (%d, %q, %q)", status, code, message, test.status, test.code, test.message)
+			}
+			if strings.Contains(message, "sensitive") || strings.Contains(message, "prompt") || strings.Contains(message, "secret") {
+				t.Fatalf("unsafe manager error detail escaped: %q", message)
+			}
+		})
+	}
+}
 
 func TestManagerGatewayWriteTimeoutCoversStartupAndTurns(t *testing.T) {
 	cfg := config.Defaults()
@@ -66,6 +98,13 @@ func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T)
 	}
 	if response.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("degraded turn status=%d, want 503", response.StatusCode)
+	}
+	var turnFailure envelope
+	if err = json.NewDecoder(response.Body).Decode(&turnFailure); err != nil {
+		t.Fatal(err)
+	}
+	if turnFailure.Code != "manager_runtime_unavailable" || turnFailure.Message != "manager conversation runtime is unavailable" {
+		t.Fatalf("degraded turn failure=%+v", turnFailure)
 	}
 	_ = response.Body.Close()
 

@@ -7,9 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/core"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/onboarding"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/registry"
+	"github.com/berryhill/aegis/internal/tui"
 	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 )
@@ -64,6 +69,103 @@ func TestBareStartupResumesEveryIncompleteManagerOnboardingState(t *testing.T) {
 				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.wantManager)
 			}
 		})
+	}
+}
+
+func TestInitCommandOpensFleetForCanonicalBuiltInAgentBootstrap(t *testing.T) {
+	root := &cobra.Command{Use: "aegis"}
+	initCommand := &cobra.Command{Use: "init"}
+	root.AddCommand(initCommand)
+	if !commandNeedsFleet(initCommand) {
+		t.Fatal("init did not request the fleet store needed for built-in Aegis Agent registration")
+	}
+}
+
+func TestBootstrapEntryCommandsOpenFleetForCanonicalBuiltInAgent(t *testing.T) {
+	root := &cobra.Command{Use: "aegis"}
+	manager := &cobra.Command{Use: "manager"}
+	root.AddCommand(manager)
+	if !commandNeedsFleet(root) {
+		t.Fatal("fresh bare root did not request fleet store for built-in Agent bootstrap")
+	}
+	if !commandNeedsFleet(manager) {
+		t.Fatal("aegis manager did not request fleet store for built-in Agent bootstrap")
+	}
+}
+
+func TestReadyStateBuiltInRegistrationCheckPreservesHealthyGatewayStoreOwnership(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		state   onboarding.State
+		gateway userservice.GatewayState
+		want    bool
+	}{
+		{name: "healthy gateway owns stores", state: onboarding.Ready, gateway: userservice.GatewayHealthy, want: false},
+		{name: "ready without gateway", state: onboarding.Ready, gateway: userservice.GatewayNotInstalled, want: true},
+		{name: "ready stopped gateway", state: onboarding.Ready, gateway: userservice.GatewayStopped, want: true},
+		{name: "incomplete onboarding", state: onboarding.ModelPresent, gateway: userservice.GatewayNotInstalled, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := readyStateNeedsBuiltInRegistrationCheck(onboarding.Snapshot{State: test.state}, test.gateway); got != test.want {
+				t.Fatalf("readyStateNeedsBuiltInRegistrationCheck()=%t want=%t", got, test.want)
+			}
+		})
+	}
+}
+
+type builtInRegistrationFixture struct {
+	existing      app.FleetAgent
+	loadErr       error
+	registerCalls int
+}
+
+func (fixture *builtInRegistrationFixture) GetFleetAgentAs(context.Context, core.Subject, string, uint64) (app.FleetAgent, error) {
+	return fixture.existing, fixture.loadErr
+}
+
+func (fixture *builtInRegistrationFixture) RegisterBuiltInAegisAgentAs(_ context.Context, subject core.Subject) (app.FleetAgent, bool, error) {
+	fixture.registerCalls++
+	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	return app.FleetAgent{Registration: registration, Revision: revision}, true, err
+}
+
+func TestReadyStateBuiltInRegistrationDeclineResumeAndExactReplay(t *testing.T) {
+	subject := core.Subject{PrincipalID: "principal"}
+	fixture := &builtInRegistrationFixture{loadErr: fleet.ErrNotFound}
+	run := func(answer string) (bool, error, string) {
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		cmd.SetIn(strings.NewReader(answer))
+		cmd.SetOut(&output)
+		ok, err := bootstrapBuiltInAegisAgentWithService(cmd, fixture, subject, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(tui.Capabilities{Width: 100}))
+		return ok, err, output.String()
+	}
+
+	ok, err, output := run("\n")
+	if err != nil || ok || fixture.registerCalls != 0 || !strings.Contains(output, "registration declined; no Agent record was created") {
+		t.Fatalf("default decline: ok=%t err=%v calls=%d output=%q", ok, err, fixture.registerCalls, output)
+	}
+	ok, err, output = run("yes\n")
+	if err != nil || !ok || fixture.registerCalls != 1 || !strings.Contains(output, "registered=true and exactly verified") {
+		t.Fatalf("resume: ok=%t err=%v calls=%d output=%q", ok, err, fixture.registerCalls, output)
+	}
+
+	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.existing = app.FleetAgent{Registration: registration, Revision: revision}
+	fixture.loadErr = nil
+	ok, err, output = run("")
+	if err != nil || !ok || fixture.registerCalls != 1 || !strings.Contains(output, "already registered and exactly verified") {
+		t.Fatalf("exact replay: ok=%t err=%v calls=%d output=%q", ok, err, fixture.registerCalls, output)
+	}
+
+	fixture.existing.Revision.Ownership.OwnerID = "incompatible-owner"
+	ok, err, _ = run("yes\n")
+	if ok || !errors.Is(err, fleet.ErrConflict) || fixture.registerCalls != 1 {
+		t.Fatalf("incompatible registration did not fail closed: ok=%t err=%v calls=%d", ok, err, fixture.registerCalls)
 	}
 }
 

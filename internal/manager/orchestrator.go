@@ -157,22 +157,14 @@ func (s *Session) HandleCredentialValueRead(ctx context.Context, reference strin
 	return message, err
 }
 
-// HandleCreateIntentWithValue executes a deterministic authenticated create
-// without involving the conversational model. This keeps an already-clear
-// typed operation from poisoning or being vetoed by the Hermes conversation.
+// HandleCreateIntentWithValue rejects conversational credential values. Values
+// are collected only by HandleCreateIntent through the configured protected
+// no-echo intake boundary after authorization and confirmation.
 func (s *Session) HandleCreateIntentWithValue(ctx context.Context, text string, arguments CreateArguments, value []byte) (string, error) {
-	activeCtx, err := s.activeContext(ctx)
-	if err != nil {
+	if _, err := s.activeContext(ctx); err != nil {
 		return "", err
 	}
-	if err = validateCreate(arguments); err != nil || len(value) == 0 || len(value) > 1<<20 {
-		return "", errors.New(ReasonProposalInvalid)
-	}
-	finding := s.config.Guard.Inspect(activeCtx, ContentEnvelope{Source: SourceUser, SubjectID: s.config.SubjectID, SessionID: s.config.SessionID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "trusted-local-credential-turn", RouteClass: "local", Content: []byte(text), PlaintextAuthorized: true})
-	if finding.Decision != AllowLocal {
-		return "", errors.New(finding.Reason)
-	}
-	return s.storeCreateValue(activeCtx, arguments, value)
+	return "", errors.New(ReasonIngressSecret)
 }
 
 // HandleStream releases only the message field of a canonical message-only
@@ -411,7 +403,7 @@ func preview(operation Operation, target string) string {
 	return fmt.Sprintf("%s target=%s", operation, target)
 }
 func createPreview(arguments CreateArguments) string {
-	return fmt.Sprintf("create protected credential\nreference: %s\nkind: %s\ndisclosure: protected\nvalue handling: current authenticated exact-local-model session when supplied conversationally, otherwise protected no-echo intake; encrypted authority persists, plaintext session state is purged on close", arguments.Reference, arguments.Kind)
+	return fmt.Sprintf("create protected credential\nreference: %s\nkind: %s\ndisclosure: protected\nvalue handling: protected no-echo intake is the only credential-value boundary; credential values never enter model prompts or conversational history", arguments.Reference, arguments.Kind)
 }
 func validateCreate(a CreateArguments) error {
 	if !credentials.ValidateIdentifier(a.Reference) || !credentials.ValidateIdentifier(a.Kind) || a.Disclosure != "protected" {

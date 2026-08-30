@@ -56,14 +56,49 @@ type envelope struct {
 	RequestID string `json:"request_id"`
 }
 
+type managerTurnHTTPError struct {
+	status  int
+	code    string
+	message string
+}
+
+func (e *managerTurnHTTPError) Error() string { return e.message }
+
+func mapManagerTurnError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return &managerTurnHTTPError{status: http.StatusGatewayTimeout, code: "manager_turn_timeout", message: "manager conversational turn timed out"}
+	}
+	var failure *managergateway.TurnFailure
+	if !errors.As(err, &failure) {
+		return &managerTurnHTTPError{status: http.StatusInternalServerError, code: "manager_turn_internal_error", message: "manager conversational turn failed"}
+	}
+	switch failure.Kind() {
+	case managergateway.TurnFailureRuntimeUnavailable:
+		return &managerTurnHTTPError{status: http.StatusServiceUnavailable, code: "manager_runtime_unavailable", message: "manager conversation runtime is unavailable"}
+	case managergateway.TurnFailureAuthorityUnavailable:
+		return &managerTurnHTTPError{status: http.StatusServiceUnavailable, code: "manager_authority_unavailable", message: "manager credential authority is unavailable"}
+	case managergateway.TurnFailureAuthorityInvalid:
+		return &managerTurnHTTPError{status: http.StatusServiceUnavailable, code: "manager_authority_invalid", message: "manager credential authority is invalid"}
+	case managergateway.TurnFailureTimeout:
+		return &managerTurnHTTPError{status: http.StatusGatewayTimeout, code: "manager_turn_timeout", message: "manager conversational turn timed out"}
+	case managergateway.TurnFailureProtocol:
+		return &managerTurnHTTPError{status: http.StatusBadGateway, code: "manager_turn_protocol_error", message: "manager conversation runtime protocol failed"}
+	default:
+		return &managerTurnHTTPError{status: http.StatusInternalServerError, code: "manager_turn_internal_error", message: "manager conversational turn failed"}
+	}
+}
+
 func classifyError(err error) (int, string, string) {
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
 	var operationError *consoleQueueOperationError
+	var turnError *managerTurnHTTPError
 	switch {
 	case errors.Is(err, console.ErrCommandUnknown):
 		return http.StatusNotFound, "invalid_request", "console command is not registered"
 	case errors.As(err, &operationError):
 		return operationError.status, operationError.code, operationError.message
+	case errors.As(err, &turnError):
+		return turnError.status, turnError.code, turnError.message
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
 	case errors.Is(err, app.ErrDenied):
@@ -1364,7 +1399,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if errors.Is(err, app.ErrUnauthenticated) || errors.Is(err, app.ErrDenied) || errors.Is(err, app.ErrExpired) {
 				return err
 			}
-			return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
+			return mapManagerTurnError(err)
 		}
 		return c.JSON(http.StatusOK, result)
 	})

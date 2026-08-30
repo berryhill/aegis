@@ -164,6 +164,55 @@ func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	}
 }
 
+func TestStoreReservesAndSealsBuiltInAegisAgent(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(ctx, filepath.Join(t.TempDir(), schemaVersion))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	genericRegistration, genericRevision := agentFixture(t)
+	genericRegistration.AgentID = registry.BuiltInAegisAgentID
+	genericRevision.AgentID = registry.BuiltInAegisAgentID
+	genericRevision.Charter.ID = registry.BuiltInAegisAgentID
+	genericRevision, err = registry.SealRevision(genericRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genericRegistration.InitialRevision.ID = registry.BuiltInAegisAgentID
+	genericRegistration.InitialRevision.Digest = genericRevision.Digest
+	if _, err = store.RegisterAgent(ctx, genericRegistration, genericRevision, audit("agent.registered", genericRevision.AgentID)); !errors.Is(err, registry.ErrBuiltInImmutable) {
+		t.Fatalf("durable generic registration occupied reserved Agent ID: %v", err)
+	}
+
+	registration, initial, err := registry.CanonicalBuiltInAegisAgent("principal-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created, registerErr := store.RegisterAgent(ctx, registration, initial, audit("agent.registered", initial.AgentID)); registerErr != nil || !created {
+		t.Fatalf("register canonical built-in: created=%t err=%v", created, registerErr)
+	}
+	second := initial
+	second.Revision = 2
+	second.Lifecycle = registry.LifecycleDisabled
+	second, err = registry.SealRevision(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.PublishAgentRevision(ctx, second, audit("agent.revision.published", second.AgentID)); !errors.Is(err, registry.ErrBuiltInImmutable) {
+		t.Fatalf("durable store published built-in revision 2: %v", err)
+	}
+	history, err := store.ListAgentRevisions(ctx, registry.BuiltInAegisAgentID)
+	if err != nil || len(history) != 1 || history[0].Digest != initial.Digest {
+		t.Fatalf("built-in durable history changed: history=%+v err=%v", history, err)
+	}
+	events, err := store.AuditEvents(ctx)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("denied built-in mutations changed audit: events=%+v err=%v", events, err)
+	}
+}
+
 func TestLoopLifecycleIsAppendOnlyAndIntentIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(ctx, filepath.Join(t.TempDir(), schemaVersion))

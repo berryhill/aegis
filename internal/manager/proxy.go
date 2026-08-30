@@ -481,15 +481,19 @@ func untrustedMessageContent(messages []openAIMessage) []byte {
 }
 
 func hasManagerSystemInstruction(messages []openAIMessage) bool {
-	for _, message := range messages {
-		if message.Role != "system" {
-			continue
-		}
-		if text, ok := message.Content.(string); ok && strings.Contains(text, SystemInstruction) {
-			return true
+	if len(messages) == 0 || messages[0].Role != "system" {
+		return false
+	}
+	text, ok := messages[0].Content.(string)
+	if !ok || text != ManagerSystemInstruction() {
+		return false
+	}
+	for _, message := range messages[1:] {
+		if message.Role == "system" {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 func managerResponseFormat() any {

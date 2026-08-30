@@ -23,6 +23,8 @@ Application services compose these domains by immutable references. No universal
 
 ## 0a. Contextual readiness and public routes
 
+Fresh or resumed authenticated bootstrap additionally registers one canonical immutable built-in Agent `aegis` after a separate explicit default-decline approval. Revision 1 fixes source kind `aegis-system`, runtime target `manager-disposable`, Aegis product ownership, and authenticated-principal accountability. Full-record readback is mandatory, replay is idempotent, collisions deny, and generic lifecycle mutation is unavailable. The record creates no persistent Hermes profile and grants no credential, stanza, mandate, runtime, queue, or model authority. Existing pre-feature gateways are not silently backfilled while they own the stores.
+
 Readiness is action-specific for registration, revision publication, submission, queue claim, and runtime execution. A typed result distinguishes `ready`, `denied`, `unavailable`, and `degraded`; list readback may report `empty` only after an authoritative successful read. Repair guidance is bounded and never mutates state without the required approval. Missing optional credentials do not make credential-independent actions unready.
 
 The shared service surface is exposed through CLI and HTTP resources for `/v1/agents`, `/v1/loops`, `/v1/graphs`, and `/v1/queue`. Transports do not make identity, validation, admission, readiness, or disposition decisions.

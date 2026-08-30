@@ -87,6 +87,9 @@ func (fixture CurrentFleetFixture) Validate() error {
 	seenSources := make(map[string]struct{}, len(fixture.Agents))
 	seenAgents := make(map[string]struct{}, len(fixture.Agents))
 	for _, agent := range fixture.Agents {
+		if agent.AgentID == BuiltInAegisAgentID {
+			return ErrBuiltInImmutable
+		}
 		if err := validateIdentifier("source id", agent.SourceID); err != nil {
 			return err
 		}

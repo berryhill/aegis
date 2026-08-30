@@ -101,7 +101,7 @@ func (c *GatewayClient) CreateSession(ctx context.Context, source string) (strin
 		// Hermes 0.18.2 does not pass HERMES_EPHEMERAL_SYSTEM_PROMPT into the
 		// TUI gateway's direct AIAgent constructor. session.create seed messages
 		// are its supported per-session protocol boundary for this contract.
-		"messages": []map[string]string{{"role": "system", "content": SystemInstruction}},
+		"messages": []map[string]string{{"role": "system", "content": ManagerSystemInstruction()}},
 	}); err != nil {
 		return "", err
 	}

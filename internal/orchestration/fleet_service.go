@@ -84,6 +84,7 @@ type ReadinessRequest struct {
 // orchestration service. Its records remain owned by their domain packages.
 type FleetRepository interface {
 	RegisterAgent(context.Context, registry.AgentRegistration, registry.AgentRevision, fleet.AuditFact) (bool, error)
+	GetAgentRegistration(context.Context, string) (registry.AgentRegistration, error)
 	PublishAgentRevision(context.Context, registry.AgentRevision, fleet.AuditFact) error
 	PublishLoop(context.Context, loop.PublishRequest, fleet.AuditFact) (loop.PublicationDecision, error)
 	AppendLoopLifecycle(context.Context, loop.LifecycleRequest, fleet.AuditFact) (loop.LifecycleEvent, bool, error)
@@ -293,6 +294,9 @@ func (service *FleetService) RegisterFleetAgent(ctx context.Context, request Reg
 	if selected == nil {
 		return registry.AgentRegistration{}, registry.AgentRevision{}, false, registry.ErrNotFound
 	}
+	if selected.AgentID == registry.BuiltInAegisAgentID {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, registry.ErrBuiltInImmutable
+	}
 	revision, err := registry.SealRevision(registry.AgentRevision{SchemaVersion: registry.AgentRevisionSchemaVersion, AgentID: selected.AgentID, Revision: 1, Source: selected.Source, Runtime: selected.Runtime, Ownership: selected.Ownership, Lifecycle: selected.Lifecycle, Charter: selected.Charter, CapabilityDeclarations: append([]string(nil), selected.CapabilityDeclarations...), PolicyRefs: append([]reference.DigestRef(nil), selected.PolicyRefs...)})
 	if err != nil {
 		return registry.AgentRegistration{}, registry.AgentRevision{}, false, err
@@ -300,6 +304,35 @@ func (service *FleetService) RegisterFleetAgent(ctx context.Context, request Reg
 	registration := registry.AgentRegistration{SchemaVersion: registry.AgentRegistrationSchemaVersion, AgentID: revision.AgentID, Source: revision.Source, InitialRevision: revisionRef(revision.AgentID, revision.Revision, revision.Digest)}
 	created, err := service.repository.RegisterAgent(ctx, registration, revision, service.auditFact("fleet.agent.registered", request.Subject, "registered exact fleet source", revision.AgentID, "", ""))
 	return registration, revision, created, err
+}
+
+// RegisterBuiltInAegisAgent persists only the sealed product-owned identity.
+// It bypasses current-fleet discovery by design, but never bypasses operator
+// authentication/authorization or immutable conflict handling.
+func (service *FleetService) RegisterBuiltInAegisAgent(ctx context.Context, subject core.Subject) (registry.AgentRegistration, registry.AgentRevision, bool, error) {
+	if result := service.Readiness(ctx, ReadinessRequest{Action: FleetActionRegister, Subject: subject}); result.State != ReadinessReady {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
+	}
+	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	if err != nil {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, err
+	}
+	created, err := service.repository.RegisterAgent(ctx, registration, revision, service.auditFact("fleet.agent.registered", subject, "registered canonical built-in Aegis Agent", revision.AgentID, "", ""))
+	if err != nil {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, err
+	}
+	storedRegistration, err := service.repository.GetAgentRegistration(ctx, registration.AgentID)
+	if err != nil {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, fmt.Errorf("read back built-in Aegis registration: %w", err)
+	}
+	storedRevision, err := service.repository.GetAgentRevision(ctx, revision.AgentID, revision.Revision)
+	if err != nil {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, fmt.Errorf("read back built-in Aegis revision: %w", err)
+	}
+	if !registry.CanonicalBuiltInAegisAgentMatches(storedRegistration, storedRevision, subject.PrincipalID) {
+		return registry.AgentRegistration{}, registry.AgentRevision{}, false, fleet.ErrConflict
+	}
+	return storedRegistration, storedRevision, created, nil
 }
 
 type SetAgentLifecycleRequest struct {
@@ -316,6 +349,9 @@ func (service *FleetService) SetAgentLifecycle(ctx context.Context, request SetA
 	}
 	if err := request.Agent.Validate(); err != nil {
 		return registry.AgentRevision{}, errors.New("valid exact agent revision is required")
+	}
+	if request.Agent.ID == registry.BuiltInAegisAgentID {
+		return registry.AgentRevision{}, registry.ErrBuiltInImmutable
 	}
 	current, err := service.repository.LatestAgentRevision(ctx, request.Agent.ID)
 	if err != nil {

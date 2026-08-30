@@ -108,7 +108,7 @@ func TestOrdinaryConversationConformanceRejectsCannedAndIrrelevantReplies(t *tes
 	}
 }
 
-func TestStorageCapabilityConformanceRequiresTrustedLocalEncryptedPurgeClaim(t *testing.T) {
+func TestStorageCapabilityConformanceRequiresEncryptedProtectedIntakeClaim(t *testing.T) {
 	var storage ConformanceCase
 	for _, test := range ConformanceCorpus() {
 		if test.ID == "storage-capability" {
@@ -130,8 +130,8 @@ func TestStorageCapabilityConformanceRequiresTrustedLocalEncryptedPurgeClaim(t *
 		}
 	}
 	for _, message := range []string{
-		"Yes. The certified local session handles plaintext, Aegis stores it encrypted, and session state is purged on close.",
-		"Yes. This exact local model uses encrypted custody and destroys plaintext state when the session closes.",
+		"Yes. Aegis uses encrypted storage, protected no-echo intake is the credential-value boundary, and values never enter model context.",
+		"Yes. Credential values use protected intake and encrypted custody outside the model prompt.",
 	} {
 		if passed, reason := evaluateConformance(storage, Response{Kind: "message", Message: message}); !passed {
 			t.Fatalf("truthful custody explanation failed (%q): %s", message, reason)

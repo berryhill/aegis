@@ -112,6 +112,8 @@ The implementation is incomplete if any invariant below is violated.
 
 ### 4.1 Authority
 
+- Fresh/resumed ready bootstrap MUST separately obtain authenticated default-decline approval before creating the sealed built-in `aegis` Agent revision 1; exact replay is idempotent, collision denies, and complete readback is required.
+- Built-in Agent registration MUST NOT create or inherit a Hermes profile and MUST NOT grant credentials, model authority, a stanza, mandate, or runtime admission.
 - The principal MUST authenticate outside the model.
 - The built-in manager security context MUST be deterministic and immutable for the build/configuration revision.
 - Prompt content MUST NOT select or broaden the security context.
@@ -121,18 +123,18 @@ The implementation is incomplete if any invariant below is violated.
 
 ### 4.2 Trusted-local plaintext and durable non-disclosure
 
-- The authenticated built-in manager MAY admit a user-supplied credential value to only the exact certified local model on the immutable authenticated loopback route.
+- User-supplied credential values MUST remain in Aegis-owned protected or deterministic create handling and MUST NOT enter the certified local model, Hermes input, Ollama requests, or model context/history.
 - Protected-intake values, authority passphrases, KEKs, provider credentials, and values from other sessions MUST NOT enter Hermes input, Ollama requests, or model context/history.
 - Credential values MUST NOT appear in model output, Aegis-rendered retained transcript state, logs, audit, receipts, errors, argv, environment variables, or plaintext temporary files. Operator terminal scrollback is explicitly outside the purge guarantee.
 - Credential metadata returned to the model MUST be allowlisted and prompt-injection-safe.
-- Ordinary credential-bearing messages MUST be blocked unless the current trusted-local session policy authorizes them; clear inline creates are authorized only for that session.
+- Recognized create values MUST remain in deterministic Aegis handling and be stripped before model dispatch; high-confidence ordinary credential-bearing messages MUST be blocked. Arbitrary-text secret detection is defense in depth, not a complete DLP guarantee.
 - The exact serialized inference request MUST receive a second, session-aware guard before forwarding to Ollama.
 - Complete model responses MUST be guarded before release or reuse.
 - Scanner, parser, proxy, or policy failure MUST deny rather than allow.
 
 ### 4.3 Runtime isolation
 
-- Hermes MUST run with a fresh disposable home.
+- Hermes MUST run with a fresh unique disposable home for each manager session; no session may reuse another session's home.
 - Hermes MUST use safe mode and the structured gateway.
 - Hermes MUST NOT use one-shot/YOLO mode.
 - Hermes MUST NOT attach directly to the principal terminal.
@@ -477,26 +479,26 @@ Interactive manager operations and explicit secret subcommands MUST call shared 
 
 ### 12.2 Create
 
-For an inline trusted-local value, the flow MUST be:
+For a recognized inline value form, the flow MUST be:
 
-1. Aegis recognizes clear create intent and captures the original value as session-scoped sensitive state;
-2. the unambiguous imperative acts as the authenticated principal's authorization for that exact parsed create;
-3. Aegis bypasses Hermes/model negotiation for the complete typed request;
-4. Aegis stores the original bytes through the encrypted authority;
-5. Aegis returns metadata only.
+1. Aegis recognizes clear create intent and derives bounded metadata outside the model;
+2. Aegis strips every recognized value from presentation/history, wipes captured bytes, and refuses to select among multiple supplied values;
+3. the authenticated deterministic control authorizes only the exact typed create target;
+4. Aegis bypasses Hermes/model negotiation;
+5. Aegis collects the credential again through protected no-echo intake and stores those protected bytes through encrypted authority;
+6. Aegis returns metadata only.
 
 Authenticated credential count, metadata-list, and exact-reference value questions are direct authority reads. They MUST NOT be routed through the model or request redundant confirmation. Count uses an exact repository count rather than a bounded-list approximation. Value retrieval MUST fail closed for missing/revoked references, audit metadata only, terminal-escape rendered plaintext, and purge retained presentation state at session close; terminal scrollback remains out of scope.
 
-If no inline value is supplied, the alternative flow MUST be:
+For every recognized create, with or without an inline value, the flow MUST be:
 
-1. model proposes non-secret metadata;
-2. Aegis validates the proposal;
-3. Aegis renders a deterministic preview;
-4. the principal confirms outside the model;
-5. Aegis enters no-echo input;
-6. the principal enters and confirms the value;
-7. Aegis stores it through the encrypted authority;
-8. Aegis returns metadata only.
+1. Aegis derives and validates non-secret metadata outside the model;
+2. Aegis strips/wipes any recognized inline value and renders the exact target;
+3. authenticated deterministic authority admits the exact insert;
+4. Aegis enters protected no-echo input;
+5. the principal enters and confirms the value;
+6. Aegis stores it through the encrypted authority; and
+7. Aegis returns metadata only.
 
 ### 12.3 Rotate
 
@@ -527,7 +529,7 @@ For each natural-language turn, Aegis MUST perform this exact logical sequence:
 1. reject if the session is inactive, expired, or cleaning up;
 2. read bounded terminal input;
 3. consume local deterministic slash commands before Hermes;
-4. apply the ingress guard and authorize credential plaintext only for the active trusted-local exact route;
+4. apply the ingress guard; consume recognized credential operations authoritatively before Hermes and reject high-confidence credential material;
 5. submit the accepted turn through Hermes gateway;
 6. authenticate and inspect the serialized proxy request;
 7. call the exact local model;

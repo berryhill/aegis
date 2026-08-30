@@ -431,6 +431,12 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			}
 			bootstrapApproved = true
 		}
+		if readyStateNeedsBuiltInRegistrationCheck(snapshot, gateway.State) {
+			registered, err := ensureBuiltInAegisAgentRegistration(cmd, build)
+			if err != nil || !registered {
+				return err
+			}
+		}
 		if requiresGateway(deps.Profile) {
 			input := newTerminalInput(cmd.InOrStdin())
 			reconciled, err := reconcileServeTransport(cmd, o.configFile, input)
@@ -654,9 +660,14 @@ func environment(name string) (out struct{ Name, Host, Tenant string }) { out.Na
 type builder func(*cobra.Command) (*app.Service, error)
 
 func commandNeedsFleet(command *cobra.Command) bool {
+	// Bare root and the manager entry point both resume bootstrap, whose final
+	// approved stage registers and exactly verifies the built-in Aegis Agent.
+	if command != nil && (command.Name() == "aegis" || command.Name() == "manager") {
+		return true
+	}
 	for current := command; current != nil; current = current.Parent() {
 		switch current.Name() {
-		case "agents", "loops", "graphs", "queue", "serve":
+		case "init", "agents", "loops", "graphs", "queue", "serve":
 			return true
 		case "authority":
 			return current.Parent() != nil && current.Parent().Name() == "session"

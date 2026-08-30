@@ -306,7 +306,7 @@ func (s *Service) help(result Result, manager Context, request Request) Result {
 	}
 	var commands []map[string]any
 	for _, definition := range s.registry.Definitions() {
-		if !definition.Base {
+		if !definition.Base && !definition.Discoverable {
 			continue
 		}
 		available, reason := s.registry.Available(definition, manager.Lifecycle, state)

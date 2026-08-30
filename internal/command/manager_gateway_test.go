@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -54,6 +55,15 @@ func TestRenderGatewayHelpIsHumanReadable(t *testing.T) {
 	got := output.String()
 	if !strings.Contains(got, "Available commands:") || !strings.Contains(got, "/status") || strings.Contains(got, `"schema"`) || strings.Contains(got, "/watch") {
 		t.Fatalf("unexpected human help rendering: %q", got)
+	}
+}
+
+func TestManagerBannerDiscoversDeterministicAgentControls(t *testing.T) {
+	got := gatewayManagerCommandSummary()
+	for _, required := range []string{"/agents readiness", "/agents list", "/agents show", "/agents prepare", "/agents register", "/help agents"} {
+		if !strings.Contains(got, required) {
+			t.Errorf("manager banner command summary missing %q: %q", required, got)
+		}
 	}
 }
 
@@ -181,6 +191,73 @@ func TestGatewayManagerTurnFailsClosedWhenConversationUnavailableOrEmpty(t *test
 			result, err := client.turn(context.Background(), "hello aegis")
 			if err == nil || result.Message != "" {
 				t.Fatalf("turn must fail closed: result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
+func TestGatewayManagerTurnRendersTypedFailureRemediation(t *testing.T) {
+	tests := []struct {
+		name      string
+		status    int
+		code      string
+		want      string
+		notWanted string
+	}{
+		{name: "runtime unavailable", status: http.StatusServiceUnavailable, code: "manager_runtime_unavailable", want: "conversation runtime is unavailable; run 'aegis manager model status'; authenticated gateway commands may still be available", notWanted: "manager gateway unavailable"},
+		{name: "authority unavailable", status: http.StatusServiceUnavailable, code: "manager_authority_unavailable", want: "credential authority is unavailable; restore or unlock the local authority", notWanted: "model status"},
+		{name: "authority invalid", status: http.StatusServiceUnavailable, code: "manager_authority_invalid", want: "credential authority is invalid; repair the local authority configuration", notWanted: "model status"},
+		{name: "turn timeout", status: http.StatusGatewayTimeout, code: "manager_turn_timeout", want: "conversational turn timed out; retry the turn or use a shorter request", notWanted: "manager gateway unavailable"},
+		{name: "protocol failure", status: http.StatusBadGateway, code: "manager_turn_protocol_error", want: "conversation runtime protocol failed; rerun 'aegis manager' to establish a fresh runtime session", notWanted: "manager gateway unavailable"},
+		{name: "internal failure", status: http.StatusInternalServerError, code: "manager_turn_internal_error", want: "conversational turn failed internally; inspect local gateway logs before retrying", notWanted: "manager gateway unavailable"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := &gatewayManagerClient{
+				http: &http.Client{Transport: gatewayRoundTripper(func(*http.Request) (*http.Response, error) {
+					body := fmt.Sprintf(`{"code":%q,"message":"safe","request_id":"request-only"}`, test.code)
+					return &http.Response{StatusCode: test.status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+				})},
+				transport: strings.Repeat("a", 32), sessionID: "mgr-test", token: strings.Repeat("t", 32), mode: "conversational",
+			}
+			_, err := client.turn(context.Background(), "do not reflect this prompt")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("typed remediation missing: %v", err)
+			}
+			if strings.Contains(err.Error(), test.notWanted) || strings.Contains(err.Error(), "do not reflect") || strings.Contains(err.Error(), "request-only") {
+				t.Fatalf("unsafe or misleading turn error: %v", err)
+			}
+		})
+	}
+}
+
+func TestGatewayManagerTurnPreservesAuthorizationStatuses(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict} {
+		response := &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(`{"code":"manager_runtime_unavailable"}`))}
+		err := managerGatewayTurnError(response)
+		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("HTTP %d", status)) {
+			t.Fatalf("status %d was not preserved: %v", status, err)
+		}
+	}
+}
+
+func TestGatewayManagerTurnRejectsUnknownOrMismatchedTypedFailures(t *testing.T) {
+	for name, response := range map[string]struct {
+		status int
+		code   string
+	}{
+		"unknown code":    {status: http.StatusServiceUnavailable, code: "manager_future_failure"},
+		"mismatched pair": {status: http.StatusInternalServerError, code: "manager_runtime_unavailable"},
+		"missing code":    {status: http.StatusServiceUnavailable, code: ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			httpResponse := &http.Response{StatusCode: response.status, Body: io.NopCloser(strings.NewReader(fmt.Sprintf(`{"code":%q,"message":"private diagnostic","request_id":"private-request"}`, response.code)))}
+			err := managerGatewayTurnError(httpResponse)
+			if err == nil || !strings.Contains(err.Error(), "failed closed") {
+				t.Fatalf("invalid pair did not fail conservatively: %v", err)
+			}
+			if strings.Contains(err.Error(), "runtime is unavailable") || strings.Contains(err.Error(), "private") {
+				t.Fatalf("invalid pair was trusted or leaked: %v", err)
 			}
 		})
 	}

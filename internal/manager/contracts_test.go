@@ -40,9 +40,9 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 		`Use kind "proposal" with proposal`,
 		`answer the user's actual message directly and naturally`,
 		`Never substitute a generic acknowledgement`,
-		`trusted plaintext conversational component`,
-		`Accept credential values supplied by the authenticated principal`,
-		`purged with the disposable runtime`,
+		`does not intentionally route credential values`,
+		`protected no-echo intake`,
+		`only supported credential-value boundary`,
 		`secret.propose_create`,
 		`Never include a credential value`,
 		`disclosure "protected"`,
@@ -57,6 +57,11 @@ func TestSystemInstructionDefinesStrictEnvelopeAndOperations(t *testing.T) {
 	}
 	if strings.Contains(SystemInstruction, `disclosure "none"`) {
 		t.Fatal("system instruction conflicts with create validation disclosure")
+	}
+	for _, forbidden := range []string{"may receive and reason over credential values", "Accept credential values supplied", "handles plaintext", "plaintext conversational component"} {
+		if strings.Contains(SystemInstruction, forbidden) {
+			t.Fatalf("system instruction permits model credential plaintext: %q", forbidden)
+		}
 	}
 }
 
@@ -96,8 +101,8 @@ func TestGuardBlocksSecretsAndFailures(t *testing.T) {
 			t.Fatalf("secret allowed %q: %#v", input, finding)
 		}
 		envelope.PlaintextAuthorized = true
-		if finding := guard.Inspect(context.Background(), envelope); finding.Decision != AllowLocal {
-			t.Fatalf("trusted-local plaintext blocked %q: %#v", input, finding)
+		if finding := guard.Inspect(context.Background(), envelope); finding.Decision != BlockSecret {
+			t.Fatalf("plaintext bypass allowed detected credential %q: %#v", input, finding)
 		}
 		envelope.PlaintextAuthorized = false
 	}

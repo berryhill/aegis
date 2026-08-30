@@ -36,7 +36,7 @@ func CorpusDigest() string {
 }
 
 func (c Certification) Validate() error {
-	if c.SchemaVersion != "aegis.manager.certification.v1" || c.CandidateID == "" || c.ArtifactName == "" || len(c.ArtifactDigest) != 71 || c.ArtifactDigest[:7] != "sha256:" || c.ContextLength < 64000 || c.HermesVersion == "" || c.OllamaVersion == "" || c.InstructionDigest != digestString(SystemInstruction) || c.ResponseSchema != ResponseSchemaVersion || c.CorpusDigest != CorpusDigest() || c.CertifiedAt.IsZero() {
+	if c.SchemaVersion != "aegis.manager.certification.v1" || c.CandidateID == "" || c.ArtifactName == "" || len(c.ArtifactDigest) != 71 || c.ArtifactDigest[:7] != "sha256:" || c.ContextLength < 64000 || c.HermesVersion == "" || c.OllamaVersion == "" || c.InstructionDigest != digestString(ManagerSystemInstruction()) || c.ResponseSchema != ResponseSchemaVersion || c.CorpusDigest != CorpusDigest() || c.CertifiedAt.IsZero() {
 		return errors.New("manager certification is incomplete or stale")
 	}
 	if _, err := hex.DecodeString(c.ArtifactDigest[7:]); err != nil {
@@ -94,7 +94,7 @@ func RunCertificationWithOptions(ctx context.Context, executor ConformanceExecut
 	if !known || artifactName != candidate.OllamaName {
 		return Certification{}, errors.New("candidate is not in the traceable registry")
 	}
-	cert := Certification{SchemaVersion: "aegis.manager.certification.v1", CandidateID: candidate.ID, ArtifactName: artifactName, ArtifactDigest: artifactDigest, ContextLength: contextLength, Quantization: quantization, HermesVersion: hermesVersion, OllamaVersion: ollamaVersion, InstructionDigest: digestString(SystemInstruction), ResponseSchema: ResponseSchemaVersion, CorpusDigest: CorpusDigest(), CertifiedAt: now.UTC()}
+	cert := Certification{SchemaVersion: "aegis.manager.certification.v1", CandidateID: candidate.ID, ArtifactName: artifactName, ArtifactDigest: artifactDigest, ContextLength: contextLength, Quantization: quantization, HermesVersion: hermesVersion, OllamaVersion: ollamaVersion, InstructionDigest: digestString(ManagerSystemInstruction()), ResponseSchema: ResponseSchemaVersion, CorpusDigest: CorpusDigest(), CertifiedAt: now.UTC()}
 	var failures []error
 	for _, test := range ConformanceCorpus() {
 		result := ConformanceResult{CaseID: test.ID}

@@ -93,14 +93,26 @@ func TestManagerCredentialPasteIsBlockedBeforeHermesEvenWhenLocalPlaintextIsAuth
 		PlaintextAuthorized: true,
 		Content:             []byte("aws_secret_access_key=synthetic0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\nregion=us-east-1"),
 	})
-	if finding.Decision != managerdomain.AllowLocal || finding.DetectorID == "" {
+	if finding.Decision != managerdomain.BlockSecret || finding.DetectorID == "" {
 		t.Fatalf("finding=%#v", finding)
 	}
 	if !managerCredentialInputBlocked(finding, false) {
 		t.Fatal("credential paste could reach Hermes")
 	}
-	if managerCredentialInputBlocked(finding, true) {
-		t.Fatal("recognized deterministic create was blocked after redaction")
+	intent, ok := managerdomain.ParseCreateIntent("create credential named build-token with token = 'synthetic0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'")
+	if !ok || !intent.ValueRemoved {
+		t.Fatalf("recognized create was not redacted: ok=%t intent=%+v", ok, intent)
+	}
+	defer intent.Wipe()
+	safeFinding := guard.Inspect(context.Background(), managerdomain.ContentEnvelope{
+		Source:          managerdomain.SourceUser,
+		ManagerID:       managerdomain.LogicalAgentID,
+		SecurityContext: managerdomain.SecurityContext,
+		RouteClass:      "local",
+		Content:         []byte(intent.SafeInput),
+	})
+	if safeFinding.Decision != managerdomain.AllowLocal || managerCredentialInputBlocked(safeFinding, true) {
+		t.Fatalf("recognized deterministic create was blocked after redaction: finding=%#v safe=%q", safeFinding, intent.SafeInput)
 	}
 }
 
@@ -115,7 +127,7 @@ func TestManagerDopplerTokenIsBlockedBeforeHermes(t *testing.T) {
 		PlaintextAuthorized: true,
 		Content:             []byte("dp.st.synthetic0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"),
 	})
-	if finding.Decision != managerdomain.AllowLocal || finding.DetectorID != "known_token_prefix" || !managerCredentialInputBlocked(finding, false) {
+	if finding.Decision != managerdomain.BlockSecret || finding.DetectorID != "known_token_prefix" || !managerCredentialInputBlocked(finding, false) {
 		t.Fatalf("finding=%#v", finding)
 	}
 }
