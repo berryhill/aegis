@@ -355,11 +355,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			gateway := userservice.GatewayObservation{}
 			if requiresGateway(deps.Profile) && inspection.State == config.StateValid {
 				gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
+				nextCommand := "aegis gateway status"
+				if userservice.IsPendingAudit(gateway.Err) {
+					nextCommand = "aegis gateway start"
+				}
 				switch gateway.State {
 				case userservice.GatewayHealthy:
 					return output(cmd, map[string]any{"state": bareStartupGatewayHealthy, "initialized": true, "ready": true, "authority": "gateway_owned", "reason": gateway.Reason, "next_command": "aegis console", "actions": map[string]string{"console": "aegis console", "terminal": "aegis manager", "exit": "exit"}})
 				case userservice.GatewayMismatched, userservice.GatewayUnhealthy:
-					if err := output(cmd, map[string]any{"state": classifyBareStartup(snapshot, authoritybadger.Inspection{}, gateway), "initialized": true, "ready": false, "reason": gateway.Reason, "next_command": "aegis gateway status", "exit_status": 2}); err != nil {
+					if err := output(cmd, map[string]any{"state": classifyBareStartup(snapshot, authoritybadger.Inspection{}, gateway), "initialized": true, "ready": false, "reason": gateway.Reason, "next_command": nextCommand, "exit_status": 2}); err != nil {
 						return err
 					}
 					return usage(fmt.Errorf("%s: %w", gateway.Reason, gateway.Err))
@@ -399,6 +403,12 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		inspection := config.Inspect(o.configFile)
 		if requiresGateway(deps.Profile) && inspection.State == config.StateValid {
 			gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
+			if gateway.State == userservice.GatewayUnhealthy && userservice.IsPendingAudit(gateway.Err) {
+				if err := ensureBareGatewayReady(cmd.Context(), deps.UserService, o.configFile); err != nil {
+					return usage(fmt.Errorf("pending_audit_recovery_failed: %w", err))
+				}
+				gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
+			}
 			switch gateway.State {
 			case userservice.GatewayHealthy:
 				action, err := chooseHealthyGatewayAction(cmd, newTerminalInput(cmd.InOrStdin()))
@@ -543,6 +553,18 @@ func observeBareGateway(ctx context.Context, runner userservice.Runner, configPa
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	return userservice.ObserveExactGateway(probeCtx, runner, plan)
+}
+
+func ensureBareGatewayReady(ctx context.Context, runner userservice.Runner, configPath string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	plan, err := userservice.Preview(executable, configPath)
+	if err != nil {
+		return err
+	}
+	return userservice.EnsureReady(ctx, plan, runner, 20*time.Second)
 }
 
 func credentialBridgeCmd() *cobra.Command {

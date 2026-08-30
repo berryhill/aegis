@@ -578,6 +578,23 @@ func TestApplyFailurePreservesPreExistingExactState(t *testing.T) {
 	}
 }
 
+func TestPendingAuditReadinessClassificationIsNarrow(t *testing.T) {
+	pending := &readinessNotCurrentError{status: http.StatusServiceUnavailable, statusText: "not_ready", auditState: "pending", reason: "audit_delivery_pending", pending: 1, verifiable: true}
+	if !IsPendingAudit(pending) {
+		t.Fatal("verifiable pending audit was not classified as recoverable")
+	}
+	for _, err := range []error{
+		&readinessNotCurrentError{status: http.StatusServiceUnavailable, auditState: "pending", pending: 0, verifiable: true},
+		&readinessNotCurrentError{status: http.StatusServiceUnavailable, auditState: "pending", pending: 1, verifiable: false},
+		&readinessNotCurrentError{status: http.StatusInternalServerError, auditState: "pending", pending: 1, verifiable: true},
+		errors.New("audit_delivery_pending"),
+	} {
+		if IsPendingAudit(err) {
+			t.Fatalf("non-recoverable readiness was classified as pending audit: %v", err)
+		}
+	}
+}
+
 func TestPurgeForResetStopsAndRemovesExactInstalledGateway(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 	executable, configPath := serviceFixture(t)

@@ -94,6 +94,27 @@ type GatewayObservation struct {
 	Err    error        `json:"-"`
 }
 
+type readinessNotCurrentError struct {
+	status     int
+	statusText string
+	auditState string
+	reason     string
+	pending    int
+	verifiable bool
+}
+
+func (e *readinessNotCurrentError) Error() string {
+	return fmt.Sprintf("readiness not audit-current: HTTP %d status=%q audit_state=%q reason=%q", e.status, e.statusText, e.auditState, e.reason)
+}
+
+// IsPendingAudit reports whether authenticated readiness is blocked only on
+// verifiable authoritative audit delivery that the bounded readiness loop can
+// safely progress.
+func IsPendingAudit(err error) bool {
+	var readinessErr *readinessNotCurrentError
+	return errors.As(err, &readinessErr) && readinessErr.status == http.StatusServiceUnavailable && readinessErr.auditState == "pending" && readinessErr.pending > 0 && readinessErr.verifiable
+}
+
 type Runner interface {
 	Run(context.Context, ...string) error
 	Output(context.Context, ...string) ([]byte, error)
@@ -717,6 +738,7 @@ func probeReady(ctx context.Context, cfg config.Config) error {
 		Audit  struct {
 			State      string `json:"state"`
 			Reason     string `json:"reason"`
+			Pending    int    `json:"pending"`
 			Current    bool   `json:"current"`
 			Verifiable bool   `json:"verifiable"`
 		} `json:"audit"`
@@ -730,7 +752,7 @@ func probeReady(ctx context.Context, cfg config.Config) error {
 	if response.StatusCode == http.StatusOK && body.Status == "ready" && body.Audit.Current && body.Audit.Verifiable {
 		return nil
 	}
-	return fmt.Errorf("readiness not audit-current: HTTP %d status=%q audit_state=%q reason=%q", response.StatusCode, body.Status, body.Audit.State, body.Audit.Reason)
+	return &readinessNotCurrentError{status: response.StatusCode, statusText: body.Status, auditState: body.Audit.State, reason: body.Audit.Reason, pending: body.Audit.Pending, verifiable: body.Audit.Verifiable}
 }
 
 func waitReady(ctx context.Context, cfg config.Config) error {
