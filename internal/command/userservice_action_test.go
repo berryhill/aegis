@@ -159,12 +159,23 @@ func TestSecondBareRunAdmitsHealthyExactGatewayBeforeBootstrapAuthorityInspectio
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.Path != "/readyz" || request.Header.Get("Authorization") != "Bearer "+token {
+		if request.Header.Get("Authorization") != "Bearer "+token {
 			writer.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"status":"ready","audit":{"state":"current","current":true,"verifiable":true}}`))
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/readyz":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"status":"ready","audit":{"state":"current","current":true,"verifiable":true}}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/v1/manager/sessions":
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusCreated)
+			_, _ = writer.Write([]byte(`{"id":"mgr-test","token":"session-token","expires":"2099-01-01T00:00:00Z","mode":"degraded","reason":"manager_model_absent","next_step":"aegis manager model candidates"}`))
+		case request.Method == http.MethodDelete && request.URL.Path == "/v1/manager/sessions/mgr-test":
+			writer.WriteHeader(http.StatusNoContent)
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
 	})}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -192,7 +203,7 @@ func TestSecondBareRunAdmitsHealthyExactGatewayBeforeBootstrapAuthorityInspectio
 
 	var output bytes.Buffer
 	command := NewRoot(Dependencies{
-		In:          strings.NewReader("\n"),
+		In:          strings.NewReader("/exit\n"),
 		Out:         &output,
 		Err:         io.Discard,
 		Version:     "test",
@@ -204,8 +215,8 @@ func TestSecondBareRunAdmitsHealthyExactGatewayBeforeBootstrapAuthorityInspectio
 	if err = command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if got := output.String(); !strings.Contains(got, "gateway_healthy") || strings.Contains(got, "AEGIS / bootstrap") || strings.Contains(got, "CLEAN does not authenticate ACTIVE") {
-		t.Fatalf("second bare-run output did not preserve healthy gateway ownership: %s", got)
+	if got := output.String(); !strings.Contains(got, "AEGIS / manager") || strings.Contains(got, "Choose an action") || strings.Contains(got, "Actions:") || strings.Contains(got, "AEGIS / bootstrap") || strings.Contains(got, "CLEAN does not authenticate ACTIVE") {
+		t.Fatalf("second bare run did not enter the Aegis agent directly: %s", got)
 	}
 	if len(runner.runs) != runsAfterActivation {
 		t.Fatalf("second bare run mutated gateway lifecycle: before=%d after=%d calls=%v", runsAfterActivation, len(runner.runs), runner.runs)
