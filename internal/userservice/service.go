@@ -174,6 +174,21 @@ func Installed(plan Plan) (bool, error) {
 	return true, nil
 }
 
+// UnitPresent reports whether the profile-scoped Aegis user unit path exists
+// without loading application configuration or asserting ownership.
+func UnitPresent() (bool, error) {
+	unitDir, err := userUnitDirectory()
+	if err != nil {
+		return false, err
+	}
+	if _, err = os.Lstat(filepath.Join(unitDir, UnitName)); errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func ObserveExactGateway(ctx context.Context, runner Runner, plan Plan) GatewayObservation {
 	installed, err := Installed(plan)
 	if err != nil {
@@ -599,6 +614,9 @@ func PurgeForReset(ctx context.Context, executable, configPath string, runner Ru
 	}
 	if err = inspectUnit(plan.UnitPath, plan.unit); err != nil {
 		return false, err
+	}
+	if err = validateLoadedIdentity(ctx, runner, plan); err != nil {
+		return false, activationFailure("exact_unit_validation", err, nil)
 	}
 	if err = Uninstall(ctx, plan, runner); err != nil {
 		return false, err

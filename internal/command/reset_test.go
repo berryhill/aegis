@@ -516,6 +516,51 @@ func addResetPassphraseAuthority(t *testing.T, fixture resetCommandFixture) []by
 	return passphrase
 }
 
+func TestResetPreparationReleasesGatewayAuthorityBeforeStrictPlan(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	passphrase := addResetPassphraseAuthority(t, fixture)
+	kekPath := filepath.Join(fixture.state, "credentials", "authority.kek")
+	database := filepath.Join(fixture.state, "credentials", "authority.db")
+	custodian, err := credentials.LoadPassphraseCustodian(kekPath, passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := credentialbolt.Open(context.Background(), database, "reset-policy", custodian)
+	if err != nil {
+		custodian.Close()
+		t.Fatal(err)
+	}
+	closed := false
+	prepare := func(*cobra.Command, string) error {
+		closed = true
+		if closeErr := authority.Close(); closeErr != nil {
+			return closeErr
+		}
+		custodian.Close()
+		return nil
+	}
+	t.Cleanup(func() {
+		if !closed {
+			_ = authority.Close()
+			custodian.Close()
+		}
+	})
+	purge := func(context.Context, string) (bool, error) { return false, nil }
+	command := resetCmdWithPreparation(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, DevelopmentProfile, func(*cobra.Command, resetdomain.Plan) error { return nil }, prepare, purge)
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err = command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("strict reset plan ran before gateway authority ownership was released")
+	}
+	if _, err = os.Stat(fixture.config); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reset did not remove configuration after prepared strict plan: %v", err)
+	}
+}
+
 func TestResetThenBareOnboardingAndNonTTYBoundary(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
 	if _, err := executeReset(t, fixture, resetdomain.Confirmation+"\n", true, nil); err != nil {

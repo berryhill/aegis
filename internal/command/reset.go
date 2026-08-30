@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/berryhill/aegis/internal/config"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
@@ -20,6 +21,9 @@ func resetCmd(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer
 
 type resetAuthenticator func(*cobra.Command, resetdomain.Plan) error
 type resetGatewayPurger func(context.Context, string) (bool, error)
+type resetGatewayPreparer func(*cobra.Command, string) error
+
+var errResetPreparationDeclined = errors.New("reset preparation declined")
 
 func resetCmdWithRunner(service *resetdomain.Service, runner userservice.Runner, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile) *cobra.Command {
 	purge := func(ctx context.Context, configPath string) (bool, error) {
@@ -29,7 +33,58 @@ func resetCmdWithRunner(service *resetdomain.Service, runner userservice.Runner,
 		}
 		return userservice.PurgeForReset(ctx, executable, configPath, runner)
 	}
-	return resetCmdWithHooks(service, isTerminal, options, profile, authenticateResetAuthority, purge)
+	prepare := func(cmd *cobra.Command, configPath string) error {
+		inspection := config.Inspect(configPath)
+		if inspection.State != config.StateValid {
+			return nil
+		}
+		present, err := userservice.UnitPresent()
+		if err != nil {
+			return err
+		}
+		if !present {
+			return nil
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		plan, err := userservice.Preview(executable, configPath)
+		if err != nil {
+			return err
+		}
+		installed, err := userservice.Installed(plan)
+		if err != nil {
+			return err
+		}
+		if !installed {
+			return nil
+		}
+		if profile != DevelopmentProfile {
+			return usage(errors.New("gateway_must_be_stopped_for_reset_preview: run 'aegis gateway stop', then rerun 'aegis reset'; no writes were performed"))
+		}
+		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
+			return usage(errors.New(resetdomain.ReasonRequiresTTY + ": reset preparation requires real terminal input and output; no writes were performed"))
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Reset preparation must stop the exact Aegis gateway before credential-authority ownership can be verified.\nUnit: %s\nDigest: %s\nStop this exact gateway and continue to the reset preview? [y/N]: ", plan.UnitPath, plan.UnitDigest)
+		answer, eof, readErr := newTerminalInput(cmd.InOrStdin()).ReadLine(cmd.Context(), 64)
+		if readErr != nil {
+			return fmt.Errorf("%s: reset-preparation confirmation failed; no writes were performed: %w", resetdomain.ReasonDeclined, readErr)
+		}
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		if eof || answer != "y" && answer != resetdomain.Confirmation {
+			if err := output(cmd, map[string]any{"state": "unchanged", "reason": resetdomain.ReasonDeclined, "gateway_stopped": false, "written": false}); err != nil {
+				return err
+			}
+			return errResetPreparationDeclined
+		}
+		result, err := userservice.Action(cmd.Context(), runner, plan, "stop", 20*time.Second)
+		if err != nil {
+			return fmt.Errorf("gateway_stop_for_reset_preview_failed: reset state was preserved: %w", err)
+		}
+		return output(cmd, result)
+	}
+	return resetCmdWithPreparation(service, isTerminal, options, profile, authenticateResetAuthority, prepare, purge)
 }
 
 func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile, authenticate resetAuthenticator) *cobra.Command {
@@ -44,6 +99,10 @@ func resetCmdWithAuthenticator(service *resetdomain.Service, isTerminal func(io.
 }
 
 func resetCmdWithHooks(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile, authenticate resetAuthenticator, purgeGateway resetGatewayPurger) *cobra.Command {
+	return resetCmdWithPreparation(service, isTerminal, options, profile, authenticate, nil, purgeGateway)
+}
+
+func resetCmdWithPreparation(service *resetdomain.Service, isTerminal func(io.Reader, io.Writer) bool, options *rootOptions, profile ExecutionProfile, authenticate resetAuthenticator, prepareGateway resetGatewayPreparer, purgeGateway resetGatewayPurger) *cobra.Command {
 	return &cobra.Command{
 		Use:   "reset",
 		Short: "Return Aegis-owned local onboarding state to uninitialized",
@@ -56,6 +115,14 @@ func resetCmdWithHooks(service *resetdomain.Service, isTerminal func(io.Reader, 
 			}
 			if profile == ProductionProfile && configFlag != nil && !configFlag.Changed {
 				configuredPath = ""
+			}
+			if prepareGateway != nil {
+				if err := prepareGateway(cmd, configuredPath); err != nil {
+					if errors.Is(err, errResetPreparationDeclined) {
+						return nil
+					}
+					return err
+				}
 			}
 			plan, err := service.Plan(cmd.Context(), configuredPath)
 			if err != nil {

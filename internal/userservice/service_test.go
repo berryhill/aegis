@@ -591,7 +591,7 @@ func TestPurgeForResetStopsAndRemovesExactInstalledGateway(t *testing.T) {
 	if err = os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 		t.Fatal(err)
 	}
-	runner := &recordingRunner{}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
 	purged, err := PurgeForReset(context.Background(), executable, configPath, runner)
 	if err != nil {
 		t.Fatal(err)
@@ -600,8 +600,8 @@ func TestPurgeForResetStopsAndRemovesExactInstalledGateway(t *testing.T) {
 		t.Fatal("installed exact gateway was not reported as purged")
 	}
 	want := [][]string{{"disable", "--now", UnitName}, {"daemon-reload"}}
-	if !reflect.DeepEqual(runner.calls, want) {
-		t.Fatalf("gateway purge calls=%v want %v", runner.calls, want)
+	if len(runner.calls) < len(want) || !reflect.DeepEqual(runner.calls[len(runner.calls)-len(want):], want) {
+		t.Fatalf("gateway purge calls=%v want suffix %v", runner.calls, want)
 	}
 	if _, err = os.Lstat(plan.UnitPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("gateway unit survived purge: %v", err)
