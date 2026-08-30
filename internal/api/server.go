@@ -1359,14 +1359,14 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err = decode(c, &input); err != nil {
 			return err
 		}
-		message, err := managerGateway.Turn(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
+		result, err := managerGateway.Turn(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
 		if err != nil {
 			if errors.Is(err, app.ErrUnauthenticated) || errors.Is(err, app.ErrDenied) || errors.Is(err, app.ErrExpired) {
 				return err
 			}
 			return echo.NewHTTPError(http.StatusServiceUnavailable, err.Error())
 		}
-		return c.JSON(http.StatusOK, map[string]string{"message": message})
+		return c.JSON(http.StatusOK, result)
 	})
 	g.DELETE("/manager/sessions/:session", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

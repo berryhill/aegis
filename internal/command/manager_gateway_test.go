@@ -86,15 +86,40 @@ func TestRenderGatewayResultSanitizesAndOrdersUntrustedContent(t *testing.T) {
 	}
 }
 
-func TestRenderGatewayConversationLabelsAndSanitizesModelText(t *testing.T) {
+func TestRenderGatewayTurnLabelsAndSanitizesModelText(t *testing.T) {
 	var output bytes.Buffer
-	renderGatewayConversation(&output, "hello\x1b]2;forged-title\x07 world\u202ereversed")
+	renderGatewayTurn(&output, managergateway.TurnResult{Kind: "message", Origin: managergateway.TurnOriginModel, Message: "hello\x1b]2;forged-title\x07 world\u202ereversed"})
 	got := output.String()
 	if !strings.Contains(got, "Hermes model / untrusted") {
 		t.Fatalf("model origin label missing: %q", got)
 	}
 	if strings.ContainsAny(got, "\x1b\x07") || strings.Contains(got, "\u202e") || strings.Contains(got, "forged-title") {
 		t.Fatalf("unsafe model text escaped sanitizer: %q", got)
+	}
+}
+
+func TestRenderGatewayTurnDistinguishesAuthoritativeAegisResult(t *testing.T) {
+	var output bytes.Buffer
+	renderGatewayTurn(&output, managergateway.TurnResult{Kind: "hermes_profile_inventory", Origin: managergateway.TurnOriginAuthoritative, Message: "default discovered"})
+	got := output.String()
+	if !strings.Contains(got, "AEGIS / authoritative") || strings.Contains(got, "Hermes model / untrusted") {
+		t.Fatalf("authoritative origin not rendered distinctly: %q", got)
+	}
+}
+
+func TestDegradedGatewaySubmitsOnlyClosedAuthoritativeTurnIntents(t *testing.T) {
+	for input, want := range map[string]bool{
+		"show Hermes profiles":                                 true,
+		"register the default Hermes profile on this computer": true,
+		"hello aegis": false,
+		"register it": false,
+	} {
+		if got := shouldSubmitGatewayTurn("degraded", input); got != want {
+			t.Fatalf("input=%q got=%t want=%t", input, got, want)
+		}
+	}
+	if !shouldSubmitGatewayTurn("conversational", "hello aegis") {
+		t.Fatal("conversational turns must reach the authenticated gateway")
 	}
 }
 
@@ -117,7 +142,7 @@ func TestGatewayManagerTurnUsesAuthenticatedConversationEndpoint(t *testing.T) {
 			if body.Input != "hello aegis" {
 				t.Fatalf("ordinary input=%q", body.Input)
 			}
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"message":"authenticated local reply"}`)), Header: make(http.Header)}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"kind":"message","origin":"model_untrusted","message":"authenticated local reply"}`)), Header: make(http.Header)}, nil
 		})},
 		transport: strings.Repeat("a", 32),
 		sessionID: "mgr-test",
@@ -125,12 +150,12 @@ func TestGatewayManagerTurnUsesAuthenticatedConversationEndpoint(t *testing.T) {
 		mode:      "conversational",
 	}
 
-	message, err := client.turn(context.Background(), "hello aegis")
+	result, err := client.turn(context.Background(), "hello aegis")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if message != "authenticated local reply" {
-		t.Fatalf("message=%q", message)
+	if result.Message != "authenticated local reply" || result.Origin != managergateway.TurnOriginModel {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
@@ -140,7 +165,8 @@ func TestGatewayManagerTurnFailsClosedWhenConversationUnavailableOrEmpty(t *test
 		body   string
 	}{
 		"runtime unavailable": {status: http.StatusServiceUnavailable, body: `{"error":"unavailable"}`},
-		"empty model reply":   {status: http.StatusOK, body: `{"message":"   "}`},
+		"empty model reply":   {status: http.StatusOK, body: `{"kind":"message","origin":"model_untrusted","message":"   "}`},
+		"unknown origin":      {status: http.StatusOK, body: `{"kind":"message","origin":"forged","message":"claimed"}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			client := &gatewayManagerClient{
@@ -152,9 +178,9 @@ func TestGatewayManagerTurnFailsClosedWhenConversationUnavailableOrEmpty(t *test
 				token:     strings.Repeat("t", 32),
 				mode:      "conversational",
 			}
-			message, err := client.turn(context.Background(), "hello aegis")
-			if err == nil || message != "" {
-				t.Fatalf("turn must fail closed: message=%q err=%v", message, err)
+			result, err := client.turn(context.Background(), "hello aegis")
+			if err == nil || result.Message != "" {
+				t.Fatalf("turn must fail closed: result=%+v err=%v", result, err)
 			}
 		})
 	}

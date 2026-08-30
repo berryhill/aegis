@@ -97,27 +97,25 @@ func (c *gatewayManagerClient) execute(ctx context.Context, input string) (slash
 	return result, nil
 }
 
-func (c *gatewayManagerClient) turn(ctx context.Context, input string) (string, error) {
+func (c *gatewayManagerClient) turn(ctx context.Context, input string) (managergateway.TurnResult, error) {
 	request, err := c.request(ctx, http.MethodPost, "/v1/manager/sessions/"+c.sessionID+"/turns", map[string]string{"input": input})
 	if err != nil {
-		return "", err
+		return managergateway.TurnResult{}, err
 	}
 	request.Header.Set(managergateway.SessionHeader, c.token)
 	response, err := c.http.Do(request)
 	if err != nil {
-		return "", fmt.Errorf("manager gateway connection interrupted; rerun 'aegis manager' to establish a new authenticated session: %w", err)
+		return managergateway.TurnResult{}, fmt.Errorf("manager gateway connection interrupted; rerun 'aegis manager' to establish a new authenticated session: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", managerGatewayStatusError("conversational turn", response.StatusCode)
+		return managergateway.TurnResult{}, managerGatewayStatusError("conversational turn", response.StatusCode)
 	}
-	var result struct {
-		Message string `json:"message"`
+	var result managergateway.TurnResult
+	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || strings.TrimSpace(result.Message) == "" || (result.Origin != managergateway.TurnOriginModel && result.Origin != managergateway.TurnOriginAuthoritative) {
+		return managergateway.TurnResult{}, errors.New("control plane returned an invalid manager turn")
 	}
-	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || strings.TrimSpace(result.Message) == "" {
-		return "", errors.New("control plane returned an invalid manager turn")
-	}
-	return result.Message, nil
+	return result, nil
 }
 
 func (c *gatewayManagerClient) close(ctx context.Context) error {
@@ -168,6 +166,10 @@ func managerGatewayStatusError(action string, status int) error {
 	}
 }
 
+func shouldSubmitGatewayTurn(mode, input string) bool {
+	return mode == "conversational" || managergateway.IsLocalProfileRequest(input)
+}
+
 func runGatewayManager(cmd *cobra.Command, configPath string) error {
 	cfg, err := config.Load(configPath, nil)
 	if err != nil {
@@ -212,15 +214,15 @@ func runGatewayManager(cmd *cobra.Command, configPath string) error {
 		}
 		detection := slash.Detect(input)
 		if detection != slash.Command {
-			if client.mode != "conversational" {
+			if !shouldSubmitGatewayTurn(client.mode, input) {
 				fmt.Fprintf(output, "Conversational local inference unavailable. Reason: %s\nNext: %s\nNo authority action or fallback was attempted.\n", client.reason, client.nextStep)
 				continue
 			}
-			message, turnErr := client.turn(cmd.Context(), input)
+			result, turnErr := client.turn(cmd.Context(), input)
 			if turnErr != nil {
 				return turnErr
 			}
-			renderGatewayConversation(output, message)
+			renderGatewayTurn(output, result)
 			continue
 		}
 		result, executeErr := client.execute(cmd.Context(), input)
@@ -231,9 +233,13 @@ func runGatewayManager(cmd *cobra.Command, configPath string) error {
 	}
 }
 
-func renderGatewayConversation(output io.Writer, message string) {
-	fmt.Fprintln(output, "Hermes model / untrusted")
-	fmt.Fprintln(output, tui.Sanitize(message, tui.DefaultSanitizeOptions(tui.Prose)))
+func renderGatewayTurn(output io.Writer, result managergateway.TurnResult) {
+	if result.Origin == managergateway.TurnOriginAuthoritative {
+		fmt.Fprintln(output, "AEGIS / authoritative")
+	} else {
+		fmt.Fprintln(output, "Hermes model / untrusted")
+	}
+	fmt.Fprintln(output, tui.Sanitize(result.Message, tui.DefaultSanitizeOptions(tui.Prose)))
 }
 
 func renderGatewayResult(output io.Writer, result slash.Result) {

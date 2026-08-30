@@ -37,6 +37,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Fixed ordinary manager requests for local Hermes profile visibility and default-profile registration from reaching an incapable model: Aegis now intercepts the closed intents, returns a typed authoritative owner-verified sanitized profile inventory, and reports the exact non-authorizing registration prerequisites without exposing profile contents or claiming mutation.
+
 - Fixed manager-session expiry recovery when authoritative audit delivery is pending: interactive bare startup now uses the existing exact-unit-validated bounded readiness loop to deliver and verify pending audit evidence before offering a fresh manager session; non-interactive startup names `aegis gateway start` as the exact remediation.
 - Fixed development-profile `aegis reset` when the exact installed gateway owns the credential-authority database: reset now explicitly previews and confirms an exact-identity gateway stop before strict ownership planning, waits for inactive state, then performs the unchanged destructive preview/confirmation and purge. Production remains fail-closed with an exact stop-first remediation because authority authentication must precede lifecycle mutation.
 - Fixed fresh bare startup so its advertised five-stage setup actually resumes and completes credential authority, runtime verification, exact local-model binding, and certification before gateway activation and conversational TUI entry. Bare startup now reuses the same approval-preserving artifact-derived state machine as `aegis init`; incomplete, declined, or repair-required stages stop before presenting a misleading degraded chat prompt.

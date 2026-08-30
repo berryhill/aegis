@@ -46,6 +46,7 @@ type Service struct {
 	registry       *slash.Registry
 	commands       *slash.Service
 	now            func() time.Time
+	profileHome    func(string, string) (string, error)
 	ctx            context.Context
 	conversationMu sync.Mutex
 	mu             sync.Mutex
@@ -63,7 +64,7 @@ func New(parent context.Context, application *app.Service) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{app: application, registry: registry, commands: slash.NewService(application, registry), now: application.Now, ctx: parent, sessions: make(map[string]session)}, nil
+	return &Service{app: application, registry: registry, commands: slash.NewService(application, registry), now: application.Now, profileHome: localHermesHome, ctx: parent, sessions: make(map[string]session)}, nil
 }
 
 func opaque(size int) (string, error) {
@@ -243,24 +244,46 @@ func managerTurnContext(parent context.Context, timeout time.Duration) (context.
 	return context.WithTimeout(parent, timeout)
 }
 
-func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, input string) (string, error) {
+func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, input string) (TurnResult, error) {
 	entry, err := s.authenticate(subject, id, token)
 	if err != nil {
-		return "", err
+		return TurnResult{}, err
 	}
 	detection := slash.Detect(input)
 	if strings.TrimSpace(input) == "" || detection == slash.Command {
-		return "", errors.New("ordinary manager turn required")
+		return TurnResult{}, errors.New("ordinary manager turn required")
 	}
 	if detection == slash.LiteralSlash {
 		input = slash.UnescapeLiteral(input)
 	}
+	if intent := localProfileIntent(input); intent != "" {
+		home, homeErr := s.profileHome(s.app.Config.Principal.User, s.app.Config.Principal.UID)
+		if homeErr != nil {
+			return TurnResult{}, fmt.Errorf("local Hermes profile discovery denied: %w", homeErr)
+		}
+		profiles, discoverErr := discoverHermesProfiles(home, s.app.Config.Principal.UID)
+		if discoverErr != nil {
+			return TurnResult{}, fmt.Errorf("local Hermes profile discovery denied: %w", discoverErr)
+		}
+		result := TurnResult{Kind: "hermes_profile_inventory", Origin: TurnOriginAuthoritative, Message: renderProfileInventory(profiles), Data: map[string]any{"profiles": profiles, "model_bypassed": true}}
+		if intent == "register_default" {
+			result.Kind = "hermes_profile_registration_prerequisites"
+			result.Message = renderProfileInventory(profiles) + "\n\nSelected runtime source: profile/default. Registration was not performed: a Hermes profile is runtime provenance, not identity or authority. Aegis requires an exact imported charter and fleet/source binding before it can render the immutable registration digest. Use /agents readiness, then the authenticated /agents prepare transaction."
+			result.Data["selected_profile"] = "default"
+			result.Data["registered"] = false
+		}
+		return result, nil
+	}
 	if entry.mode != "conversational" || entry.runtime == nil {
-		return "", fmt.Errorf("%s: conversational local inference unavailable; next: %s", entry.reason, entry.nextStep)
+		return TurnResult{}, fmt.Errorf("%s: conversational local inference unavailable; next: %s", entry.reason, entry.nextStep)
 	}
 	turnCtx, cancel := managerTurnContext(ctx, s.app.Config.Manager.Hermes.TurnTimeout)
 	defer cancel()
-	return entry.runtime.Turn(turnCtx, input)
+	message, err := entry.runtime.Turn(turnCtx, input)
+	if err != nil {
+		return TurnResult{}, err
+	}
+	return TurnResult{Kind: "message", Origin: TurnOriginModel, Message: message}, nil
 }
 
 func (s *Service) Close(ctx context.Context, subject core.Subject, id, token string) error {
