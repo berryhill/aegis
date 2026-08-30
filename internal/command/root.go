@@ -424,11 +424,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if class == bareStartupAuthorityOrphaned || class == bareStartupAuthorityCorrupt {
 			return usage(fmt.Errorf("%s: existing operational authority requires operator repair and will not be replaced: %w", class, authority.Err))
 		}
+		bootstrapApproved := false
 		if bareRootNeedsBootstrap(snapshot, authority.State) {
-			launch, err := runBareBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
+			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
 			if err != nil || !launch {
 				return err
 			}
+			bootstrapApproved = true
 		}
 		if requiresGateway(deps.Profile) {
 			input := newTerminalInput(cmd.InOrStdin())
@@ -452,7 +454,18 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return err
 			}
 			if installed {
-				if err = userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
+				if gateway.State == userservice.GatewayStopped {
+					if !bootstrapApproved {
+						return usage(errors.New("exact gateway is stopped; run 'aegis gateway start', then rerun 'aegis' to choose the terminal client"))
+					}
+					result, actionErr := userservice.Action(cmd.Context(), deps.UserService, plan, "start", 20*time.Second)
+					if actionErr != nil {
+						return actionErr
+					}
+					if err = output(cmd, result); err != nil {
+						return err
+					}
+				} else if err = userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
 					return err
 				}
 			} else {

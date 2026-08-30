@@ -376,6 +376,16 @@ func Action(ctx context.Context, runner Runner, plan Plan, action string, timeou
 	if !installed {
 		return LifecycleResult{}, ErrServiceNotInstalled
 	}
+	current, err := Preview(plan.Executable, plan.ConfigPath)
+	if err != nil {
+		return LifecycleResult{}, err
+	}
+	if !samePlan(current, plan) {
+		return LifecycleResult{}, errors.New("user service plan drifted after preview")
+	}
+	if err = validateLoadedIdentity(ctx, runner, plan); err != nil {
+		return LifecycleResult{}, activationFailure("exact_unit_validation", err, nil)
+	}
 	if err = runner.Run(ctx, action, UnitName); err != nil {
 		return LifecycleResult{}, activationFailure(action, err, nil)
 	}
@@ -384,7 +394,7 @@ func Action(ctx context.Context, runner Runner, plan Plan, action string, timeou
 	}
 	observeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	if err = validateLoadedUnit(observeCtx, runner, plan); err != nil {
+	if err = validateLoadedIdentity(observeCtx, runner, plan); err != nil {
 		return LifecycleResult{}, activationFailure("exact_unit_validation", err, nil)
 	}
 	wantActive := action != "stop"

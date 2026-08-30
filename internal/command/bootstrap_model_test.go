@@ -40,24 +40,28 @@ func TestOnboardingProgressUsesArtifactDerivedStage(t *testing.T) {
 	}
 }
 
-func TestBareStartupLeavesUnfinishedCertificationToDegradedManager(t *testing.T) {
+func TestBareStartupResumesEveryIncompleteManagerOnboardingState(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		snapshot  onboarding.Snapshot
-		authority authoritybadger.State
-		want      bool
+		name        string
+		snapshot    onboarding.Snapshot
+		authority   authoritybadger.State
+		wantBare    bool
+		wantManager bool
 	}{
-		{name: "model present but uncertified", snapshot: onboarding.Snapshot{State: onboarding.ModelPresent}, authority: authoritybadger.StateReady, want: false},
-		{name: "ready artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateReady, want: false},
-		{name: "legacy valid manager artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.PrincipalConfigured}, authority: authoritybadger.StateReady, want: false},
-		{name: "ready artifacts but authority unavailable", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateAbsent, want: true},
+		{name: "principal configured", snapshot: onboarding.Snapshot{State: onboarding.PrincipalConfigured}, authority: authoritybadger.StateReady, wantBare: true, wantManager: false},
+		{name: "credential authority configured", snapshot: onboarding.Snapshot{State: onboarding.AuthorityConfigured}, authority: authoritybadger.StateReady, wantBare: true, wantManager: false},
+		{name: "runtime configured", snapshot: onboarding.Snapshot{State: onboarding.RuntimeConfigured}, authority: authoritybadger.StateReady, wantBare: true, wantManager: false},
+		{name: "model present but uncertified", snapshot: onboarding.Snapshot{State: onboarding.ModelPresent}, authority: authoritybadger.StateReady, wantBare: true, wantManager: false},
+		{name: "repair required", snapshot: onboarding.Snapshot{State: onboarding.RepairRequired}, authority: authoritybadger.StateReady, wantBare: true, wantManager: false},
+		{name: "ready artifacts and authority", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateReady, wantBare: false, wantManager: false},
+		{name: "ready artifacts but authority unavailable", snapshot: onboarding.Snapshot{State: onboarding.Ready}, authority: authoritybadger.StateAbsent, wantBare: true, wantManager: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := bareRootNeedsBootstrap(test.snapshot, test.authority); got != test.want {
-				t.Fatalf("bareRootNeedsBootstrap()=%t want=%t", got, test.want)
+			if got := bareRootNeedsBootstrap(test.snapshot, test.authority); got != test.wantBare {
+				t.Fatalf("bareRootNeedsBootstrap()=%t want=%t", got, test.wantBare)
 			}
-			if got := managerNeedsBootstrap(test.snapshot, test.authority); got != test.want {
-				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.want)
+			if got := managerNeedsBootstrap(test.snapshot, test.authority); got != test.wantManager {
+				t.Fatalf("managerNeedsBootstrap()=%t want=%t", got, test.wantManager)
 			}
 		})
 	}

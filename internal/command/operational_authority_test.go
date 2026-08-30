@@ -77,12 +77,14 @@ func TestInteractiveBareStartupReconcilesMissingOperationalAuthority(t *testing.
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "DECISION / Initialize empty operational authority generation") {
-		t.Fatalf("bare startup skipped compatibility reconciliation: %s", out.String())
+	for _, expected := range []string{"DECISION / Initialize empty operational authority generation", "Setup progress  1/5 verified", "Choose credential authority custody"} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("bare startup did not continue canonical onboarding after reconciliation %q: %s", expected, out.String())
+		}
 	}
-	for _, forbidden := range []string{"Choose credential authority custody", "Bind exact local model", "Run end-to-end certification"} {
+	for _, forbidden := range []string{"Bind exact local model", "Run end-to-end certification", "AEGIS / manager", "Aegis gateway installation preview"} {
 		if strings.Contains(out.String(), forbidden) {
-			t.Fatalf("bare startup entered separately authorized manager onboarding stage %q: %s", forbidden, out.String())
+			t.Fatalf("bare startup advanced after credential-authority onboarding was declined %q: %s", forbidden, out.String())
 		}
 	}
 	inspection := authoritybadger.Inspect(context.Background(), filepath.Join(statePath, "persistence", "authority-v1"))

@@ -257,7 +257,7 @@ func TestActionAllowsOnlyBoundedUserServiceLifecycle(t *testing.T) {
 	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 		t.Fatal(err)
 	}
-	runner := &recordingRunner{fragmentPath: plan.UnitPath}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
 	for _, action := range []string{"start", "stop", "restart"} {
 		if _, err := Action(context.Background(), runner, plan, action, time.Second); err != nil {
 			t.Fatal(err)
@@ -280,7 +280,7 @@ func TestActionStartProgressesOnlyPendingVerifiableAuditAndReturnsTypedResult(t 
 	if err := os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
 		t.Fatal(err)
 	}
-	runner := &recordingRunner{fragmentPath: plan.UnitPath}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
 	result, err := Action(context.Background(), runner, plan, "start", time.Second)
 	if err != nil {
 		t.Fatal(err)
@@ -330,7 +330,7 @@ func TestActionRejectsLoadedForeignFragment(t *testing.T) {
 func TestApplyActivatesInOrderAndRequiresAuditCurrentReadiness(t *testing.T) {
 	plan, stop := readyServicePlan(t, http.StatusOK, `{"status":"ready","audit":{"current":true,"verifiable":true}}`)
 	defer stop()
-	runner := &recordingRunner{fragmentPath: plan.UnitPath}
+	runner := &recordingRunner{fragmentPath: plan.UnitPath, execStart: loadedExecStartFixture(plan.Executable, plan.ConfigPath)}
 	if err := Apply(context.Background(), plan, runner, time.Second); err != nil {
 		t.Fatal(err)
 	}

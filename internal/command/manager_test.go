@@ -297,24 +297,24 @@ func TestVersionProvenanceIsExactAndFailClosed(t *testing.T) {
 	}
 }
 
-func TestBareInteractiveFirstRunEstablishesAuthorityWithoutManagerOnboarding(t *testing.T) {
+func TestBareInteractiveFirstRunContinuesFullManagerOnboarding(t *testing.T) {
 	configPath, statePath := isolatedPaths(t)
 	var out bytes.Buffer
 	provider := &sequencePassphrases{values: [][]byte{[]byte("canary-password-value")}}
-	root := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	root := NewRoot(Dependencies{In: strings.NewReader("yes\nexit\n"), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--state-dir", statePath})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "rerun 'aegis init'", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "DECISION / Create first-run Aegis configuration", "RECOMMENDATION", "CONSEQUENCE", "Initialization completed atomically", "principal authenticated", "manager_model_absent"} {
+	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "DECISION / Create first-run Aegis configuration", "RECOMMENDATION", "CONSEQUENCE", "Initialization completed atomically", "Setup progress  1/5 verified", "now            credential authority", "DECISION / Choose credential authority custody", "passphrase-encrypted local key"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("output missing %q: %s", expected, text)
 		}
 	}
-	for _, forbidden := range []string{"canary-password-value", "Setup progress  1/5 verified", "now            credential authority", "DECISION / Choose credential authority custody", "passphrase-encrypted local key", "Bind exact local model", "Run end-to-end certification"} {
+	for _, forbidden := range []string{"canary-password-value", "AEGIS / manager", "manager_model_absent", "Bind exact local model", "Run end-to-end certification", "Aegis gateway installation preview"} {
 		if strings.Contains(text, forbidden) {
-			t.Fatalf("bare startup exposed a secret or entered separately authorized manager onboarding stage %q: %s", forbidden, text)
+			t.Fatalf("bare startup exposed a secret or advanced after declined credential-authority onboarding %q: %s", forbidden, text)
 		}
 	}
 	if !strings.Contains(text, "artifact SHA-256=") {
@@ -328,7 +328,7 @@ func TestBareInteractiveFirstRunEstablishesAuthorityWithoutManagerOnboarding(t *
 		filepath.Join(statePath, "manager", "certifications"),
 	} {
 		if _, err := os.Lstat(artifact); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("bare startup created separately authorized manager artifact %s: %v", artifact, err)
+			t.Fatalf("declined credential-authority onboarding created later artifact %s: %v", artifact, err)
 		}
 	}
 }

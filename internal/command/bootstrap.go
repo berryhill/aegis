@@ -41,17 +41,6 @@ func inspectOnboarding(ctx context.Context, configPath string, logger *slog.Logg
 // incomplete artifact-derived stage. Its bool result means the operator
 // selected immediate manager launch after a freshly reverified ready state.
 func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
-	return runBootstrapWithScope(cmd, build, initializer, configPath, statePath, logger, true)
-}
-
-// runBareBootstrap establishes only the authority required by the bare-root
-// gateway and console path. Credential custody, model binding, and manager
-// certification remain separately authorized through explicit `aegis init`.
-func runBareBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
-	return runBootstrapWithScope(cmd, build, initializer, configPath, statePath, logger, false)
-}
-
-func runBootstrapWithScope(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger, continueManagerOnboarding bool) (bool, error) {
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
 	bootstrapView := newBootstrapPresentation(capabilities)
 	terminalOutput := tui.NewSynchronizedWriter(cmd.OutOrStdout())
@@ -79,10 +68,6 @@ func runBootstrapWithScope(cmd *cobra.Command, build builder, initializer *initi
 	if err != nil || !continued {
 		return false, err
 	}
-	if !continueManagerOnboarding {
-		return true, nil
-	}
-
 	for attempts := 0; attempts < 12; attempts++ {
 		snapshot := inspectOnboarding(cmd.Context(), configPath, logger, authorityPassphrase)
 		if err := presentation.Emit(tui.Event{Kind: tui.BootstrapInspectionComplete, Origin: tui.AegisAuthoritative, Message: fmt.Sprintf("artifact-derived bootstrap state: %s (%s)", snapshot.State, snapshot.Reason)}); err != nil {

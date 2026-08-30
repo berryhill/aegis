@@ -76,11 +76,11 @@ func managerNeedsBootstrap(_ onboarding.Snapshot, authorityState authoritybadger
 }
 
 func bareRootNeedsBootstrap(snapshot onboarding.Snapshot, authorityState authoritybadger.State) bool {
-	// Production bare startup must reconcile and activate the supervised control
-	// plane before optional manager certification. Keep its admission boundary
-	// identical to explicit manager startup: operational authority is required,
-	// while runManager owns degraded handling for absent or invalid certification.
-	return managerNeedsBootstrap(snapshot, authorityState)
+	// Bare first-run and resume must complete the same artifact-derived manager
+	// onboarding as explicit `aegis init`. Operational authority alone is not
+	// conversational readiness; only a fully verified Ready snapshot may proceed
+	// to gateway activation and terminal manager entry.
+	return authorityState != authoritybadger.StateReady || snapshot.State != onboarding.Ready
 }
 
 type bareStartupClass string
