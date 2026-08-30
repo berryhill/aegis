@@ -76,7 +76,7 @@ The bare command MUST behave as follows:
 | Invocation | TTY state | Required behavior |
 |---|---|---|
 | development-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then start the built-in manager. |
-| production-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready and open the configured browser console at its password gate without issuing a session. |
+| production-profile `aegis` | stdin and stdout are interactive terminals | Initialize if necessary, then ensure the exact approved user service is authentically ready and enter the authenticated Aegis agent terminal directly without launching the browser console. |
 | `aegis` | stdin or stdout is not an interactive terminal | Fail with a stable usage error explaining that interactive manager mode requires a terminal and naming deterministic subcommands. It MUST NOT read arbitrary piped content as chat or secret intake. |
 | `aegis --help` | any | Render normal Cobra help; MUST NOT initialize or start a runtime. |
 | `aegis --version` or existing version command | any | Preserve existing version behavior. |
@@ -84,7 +84,7 @@ The bare command MUST behave as follows:
 | `aegis manager` | interactive terminal | Explicit built-in manager startup. |
 | `aegis init` | interactive terminal | Run or resume deterministic initialization without automatically requiring a model conversation. |
 
-A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. Production browser launch MUST occur only after authenticated service readiness. The platform launcher MUST receive the clean configured `/console` URL as one direct process argument without shell interpretation. Launch MUST NOT issue, exchange, or forward browser authentication material; every new browser session MUST require exact-origin verification of the enrolled principal password. If the platform launcher fails, Aegis MUST report the configured URL and password requirement without claiming a session. It MUST NOT use package-level mutable Cobra commands or global Viper state.
+A no-argument root `RunE` MUST perform the TTY and execution-profile dispatch. After authenticated service readiness, bare development and production startup MUST enter the authenticated Aegis agent terminal directly; it MUST NOT present a console/terminal/exit chooser or launch a browser. Explicit `aegis console` MUST report the clean configured `/console` URL and password requirement without launching a browser or issuing, exchanging, or forwarding authentication material. Every new browser session MUST require exact-origin verification of the enrolled principal password. Root construction MUST NOT use package-level mutable Cobra commands or global Viper state.
 
 ### 3.3 Non-interactive compatibility
 

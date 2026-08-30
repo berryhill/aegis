@@ -38,19 +38,19 @@ import (
 )
 
 type Dependencies struct {
-	In              io.Reader
-	Out, Err        io.Writer
-	Logger          *slog.Logger
-	Version         string
-	SourceRevision  string
-	IsTerminal      func(io.Reader, io.Writer) bool
-	Updater         UpdateService
-	Initializer     *initialize.Service
-	Resetter        *resetdomain.Service
-	Migrator        *migration.Service
-	Passphrases     AuthorityPassphraseProvider
-	UserService     userservice.Runner
-	OpenBrowser     BrowserOpener
+	In             io.Reader
+	Out, Err       io.Writer
+	Logger         *slog.Logger
+	Version        string
+	SourceRevision string
+	IsTerminal     func(io.Reader, io.Writer) bool
+	Updater        UpdateService
+	Initializer    *initialize.Service
+	Resetter       *resetdomain.Service
+	Migrator       *migration.Service
+	Passphrases    AuthorityPassphraseProvider
+	UserService    userservice.Runner
+
 	Profile         ExecutionProfile
 	DevelopmentRoot string
 }
@@ -120,9 +120,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	if deps.UserService == nil {
 		deps.UserService = userservice.Systemctl{}
 	}
-	if deps.OpenBrowser == nil {
-		deps.OpenBrowser = openBrowser
-	}
+
 	profileLayout, profileErr := resolveExecutionProfile(deps.Profile, deps.DevelopmentRoot)
 	o := &rootOptions{}
 	if deps.Profile != "" && profileErr == nil {
@@ -361,7 +359,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				}
 				switch gateway.State {
 				case userservice.GatewayHealthy:
-					return output(cmd, map[string]any{"state": bareStartupGatewayHealthy, "initialized": true, "ready": true, "authority": "gateway_owned", "reason": gateway.Reason, "next_command": "aegis console", "actions": map[string]string{"console": "aegis console", "terminal": "aegis manager", "exit": "exit"}})
+					return output(cmd, map[string]any{"state": bareStartupGatewayHealthy, "initialized": true, "ready": true, "authority": "gateway_owned", "reason": gateway.Reason, "next_command": "aegis manager"})
 				case userservice.GatewayMismatched, userservice.GatewayUnhealthy:
 					if err := output(cmd, map[string]any{"state": classifyBareStartup(snapshot, authoritybadger.Inspection{}, gateway), "initialized": true, "ready": false, "reason": gateway.Reason, "next_command": nextCommand, "exit_status": 2}); err != nil {
 						return err
@@ -411,18 +409,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			}
 			switch gateway.State {
 			case userservice.GatewayHealthy:
-				action, err := chooseHealthyGatewayAction(cmd, newTerminalInput(cmd.InOrStdin()))
-				if err != nil {
-					return usage(err)
-				}
-				switch action {
-				case healthyGatewayConsole:
-					return launchConsole(cmd, o, deps.OpenBrowser)
-				case healthyGatewayTerminal:
+				return enterAegisAgent(func() error {
 					return runGatewayManager(cmd, o.configFile)
-				default:
-					return nil
-				}
+				})
 			case userservice.GatewayMismatched, userservice.GatewayUnhealthy:
 				return usage(fmt.Errorf("%s: exact gateway startup admission denied: %w", gateway.Reason, gateway.Err))
 			}
@@ -463,35 +452,26 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if installed {
-				if gateway.State == userservice.GatewayStopped {
-					if !bootstrapApproved {
-						return usage(errors.New("exact gateway is stopped; run 'aegis gateway start', then rerun 'aegis' to choose the terminal client"))
+			return activateAndEnterAegisAgent(func() error {
+				if installed {
+					if gateway.State == userservice.GatewayStopped {
+						if !bootstrapApproved {
+							return usage(errors.New("exact gateway is stopped; run 'aegis gateway start', then rerun 'aegis' to enter the agent terminal"))
+						}
+						result, actionErr := userservice.Action(cmd.Context(), deps.UserService, plan, "start", 20*time.Second)
+						if actionErr != nil {
+							return actionErr
+						}
+						return output(cmd, result)
 					}
-					result, actionErr := userservice.Action(cmd.Context(), deps.UserService, plan, "start", 20*time.Second)
-					if actionErr != nil {
-						return actionErr
-					}
-					if err = output(cmd, result); err != nil {
-						return err
-					}
-				} else if err = userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
-					return err
+					return userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second)
 				}
-			} else {
 				approved, approveErr := approveServicePlan(cmd, plan, input)
 				if approveErr != nil || !approved {
 					return approveErr
 				}
-				if err = userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second); err != nil {
-					return err
-				}
-			}
-			// A successful first-run gateway activation enters the authenticated
-			// terminal manager in this process after presenting the signed-out
-			// console URL. Browser launch failure is already reported with the
-			// exact manual URL and must not hide the usable gateway manager.
-			return enterPostActivationSurfaces(cmd, o, deps.OpenBrowser, func() error {
+				return userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second)
+			}, func() error {
 				return runGatewayManager(cmd, o.configFile)
 			})
 		}
@@ -524,11 +504,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	return root
 }
 
-func enterPostActivationSurfaces(cmd *cobra.Command, options *rootOptions, opener BrowserOpener, manager func() error) error {
-	if err := launchConsole(cmd, options, opener); err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Aegis: %v; continuing with the authenticated terminal manager\n", err)
-	}
+func enterAegisAgent(manager func() error) error {
 	return manager()
+}
+
+func activateAndEnterAegisAgent(activate, manager func() error) error {
+	if err := activate(); err != nil {
+		return err
+	}
+	return enterAegisAgent(manager)
 }
 
 func requiresGateway(profile ExecutionProfile) bool {

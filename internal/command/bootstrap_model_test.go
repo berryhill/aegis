@@ -94,47 +94,6 @@ func TestClassifyBareStartupCoversGatewayOwnershipAndOfflineAuthorityStates(t *t
 	}
 }
 
-func TestHealthyGatewayLauncherOffersStableActionsAndDefaultsToExit(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		input string
-		want  healthyGatewayAction
-	}{
-		{name: "safe default", input: "\n", want: healthyGatewayExit},
-		{name: "console", input: "console\n", want: healthyGatewayConsole},
-		{name: "terminal", input: "terminal\n", want: healthyGatewayTerminal},
-		{name: "exit", input: "exit\n", want: healthyGatewayExit},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var output bytes.Buffer
-			cmd := &cobra.Command{}
-			cmd.SetContext(context.Background())
-			cmd.SetOut(&output)
-			action, err := chooseHealthyGatewayAction(cmd, newTerminalInput(strings.NewReader(test.input)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if action != test.want {
-				t.Fatalf("action=%q want=%q", action, test.want)
-			}
-			for _, expected := range []string{"gateway_healthy", "console  aegis console", "terminal aegis manager", "exit     exit", "default: exit"} {
-				if !strings.Contains(output.String(), expected) {
-					t.Fatalf("launcher output missing %q: %s", expected, output.String())
-				}
-			}
-		})
-	}
-}
-
-func TestHealthyGatewayLauncherRejectsUnknownActionWithoutMutation(t *testing.T) {
-	cmd := &cobra.Command{}
-	cmd.SetContext(context.Background())
-	cmd.SetOut(&bytes.Buffer{})
-	if _, err := chooseHealthyGatewayAction(cmd, newTerminalInput(strings.NewReader("bootstrap\n"))); err == nil || !strings.Contains(err.Error(), "console, terminal, or exit") {
-		t.Fatalf("unexpected launcher error: %v", err)
-	}
-}
-
 func TestDegradedUncertifiedManagerReportsExactRecertificationCommand(t *testing.T) {
 	readiness := managerReadiness{authority: "ready", model: "configured: qwen3.5:4b", artifact: "installed", certification: "absent, stale, or invalid"}
 	if got, want := readiness.nextStep("qwen3.5:4b"), "aegis manager certify qwen3.5-4b"; got != want {
