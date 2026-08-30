@@ -30,6 +30,17 @@ type gatewayManagerClient struct {
 	nextStep  string
 }
 
+type managerCommandParseError struct {
+	usage string
+}
+
+func (e *managerCommandParseError) Error() string { return e.usage }
+
+func isManagerCommandParseError(err error) bool {
+	var parseError *managerCommandParseError
+	return errors.As(err, &parseError)
+}
+
 func newGatewayManagerClient(cfg config.Config) (*gatewayManagerClient, error) {
 	if cfg.API.UnixSocket == "" || cfg.API.Token == "" {
 		return nil, errors.New("control_plane_unavailable: protected Unix transport is not configured")
@@ -42,10 +53,16 @@ func newGatewayManagerClient(cfg config.Config) (*gatewayManagerClient, error) {
 	if startup > requestTimeout {
 		requestTimeout = startup
 	}
+	if cfg.Manager.CleanupTimeout > requestTimeout {
+		requestTimeout = cfg.Manager.CleanupTimeout
+	}
 	if requestTimeout < 30*time.Second {
 		requestTimeout = 30 * time.Second
 	}
-	return &gatewayManagerClient{http: &http.Client{Transport: transport, Timeout: requestTimeout}, transport: cfg.API.Token}, nil
+	// The server write deadline includes its own five-second response margin.
+	// Keep an additional client-side transport margin so the client cannot
+	// cancel an admitted cleanup at the same instant as the server deadline.
+	return &gatewayManagerClient{http: &http.Client{Transport: transport, Timeout: requestTimeout + 10*time.Second}, transport: cfg.API.Token}, nil
 }
 
 func (c *gatewayManagerClient) open(ctx context.Context) (time.Time, error) {
@@ -88,7 +105,7 @@ func (c *gatewayManagerClient) execute(ctx context.Context, input string) (slash
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return slash.Result{}, managerGatewayStatusError("command authorization", response.StatusCode)
+		return slash.Result{}, managerGatewayCommandError(response)
 	}
 	var result slash.Result
 	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || result.Schema == "" || result.Operation == "" {
@@ -128,7 +145,6 @@ func (c *gatewayManagerClient) close(ctx context.Context) error {
 	}
 	request.Header.Set(managergateway.SessionHeader, c.token)
 	response, err := c.http.Do(request)
-	c.sessionID, c.token = "", ""
 	if err != nil {
 		return err
 	}
@@ -136,7 +152,33 @@ func (c *gatewayManagerClient) close(ctx context.Context) error {
 	if response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusUnauthorized {
 		return managerGatewayStatusError("session close", response.StatusCode)
 	}
+	c.sessionID, c.token = "", ""
 	return nil
+}
+
+func managerGatewayCommandError(response *http.Response) error {
+	if response.StatusCode != http.StatusBadRequest {
+		return managerGatewayStatusError("command authorization", response.StatusCode)
+	}
+	const maximumFailureEnvelopeBytes = 64 << 10
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maximumFailureEnvelopeBytes+1))
+	if err != nil || len(payload) > maximumFailureEnvelopeBytes {
+		return errors.New("manager command failed closed; the control plane returned an oversized failure envelope")
+	}
+	var failure struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	if err := decoder.Decode(&failure); err != nil || failure.Code != "manager_command_parse_error" || strings.TrimSpace(failure.Message) == "" || len(failure.Message) > 2048 {
+		return errors.New("manager command failed closed; the control plane returned an invalid failure envelope")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return errors.New("manager command failed closed; the control plane returned a malformed failure envelope")
+	}
+	usage := tui.Sanitize(failure.Message, tui.DefaultSanitizeOptions(tui.Prose))
+	return &managerCommandParseError{usage: usage}
 }
 
 func (c *gatewayManagerClient) request(ctx context.Context, method, path string, body any) (*http.Request, error) {
@@ -221,7 +263,13 @@ func gatewayManagerCommandSummary() string {
 	return "Commands: /status, /context, /help, /cancel, /exit\nAgent controls: /agents readiness; /agents list; /agents show <agent-id> [revision]; /agents prepare ...; /agents register ...; exact grammar: /help agents"
 }
 
-func runGatewayManager(cmd *cobra.Command, configPath string) error {
+func closeGatewayManager(result error, client *gatewayManagerClient, timeout time.Duration) error {
+	closeCtx, cancel := context.WithTimeout(context.Background(), timeout+5*time.Second)
+	defer cancel()
+	return errors.Join(result, client.close(closeCtx))
+}
+
+func runGatewayManager(cmd *cobra.Command, configPath string) (resultErr error) {
 	cfg, err := config.Load(configPath, nil)
 	if err != nil {
 		return err
@@ -235,9 +283,7 @@ func runGatewayManager(cmd *cobra.Command, configPath string) error {
 		return err
 	}
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = client.close(closeCtx)
+		resultErr = closeGatewayManager(resultErr, client, cfg.Manager.CleanupTimeout)
 	}()
 
 	output := tui.NewSynchronizedWriter(cmd.OutOrStdout())
@@ -278,6 +324,10 @@ func runGatewayManager(cmd *cobra.Command, configPath string) error {
 		}
 		result, executeErr := client.execute(cmd.Context(), input)
 		if executeErr != nil {
+			if isManagerCommandParseError(executeErr) {
+				fmt.Fprintln(output, executeErr)
+				continue
+			}
 			return executeErr
 		}
 		renderGatewayResult(output, result)

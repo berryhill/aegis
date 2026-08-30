@@ -14,7 +14,7 @@ This document is intentionally narrower than `specs/AEGIS_MANAGER.md`. It does n
 
 The completed feature MUST make this statement true:
 
-> Bare interactive `aegis` starts one Aegis-owned manager session through Hermes and an exact pinned local Ollama model; natural-language turns produce only closed typed proposals; credential values enter only through protected Aegis intake; no cloud fallback exists; and every exit path removes the ephemeral runtime authority and unloads the model.
+> Bare interactive `aegis` starts one Aegis-owned manager session through Hermes and an exact pinned local Ollama model; natural-language turns produce only closed typed proposals; credential values enter only through protected Aegis intake; no cloud fallback exists; and every exit path removes ephemeral runtime authority while unloading only an external-local runner whose successful load this session owns.
 
 ## 2. Authority and conflict resolution
 
@@ -113,7 +113,8 @@ The implementation is incomplete if any invariant below is violated.
 ### 4.1 Authority
 
 - Fresh/resumed ready bootstrap MUST separately obtain authenticated default-decline approval before creating the sealed built-in `aegis` Agent revision 1; exact replay is idempotent, collision denies, and complete readback is required.
-- Built-in Agent registration MUST NOT create or inherit a Hermes profile and MUST NOT grant credentials, model authority, a stanza, mandate, or runtime admission.
+- Approval, successful creation, and exact replay MUST state that `agent_id=aegis` is a logical Agent Registry identity and `runtime_target=manager-disposable` is a disposable runtime contract, not a named Hermes profile.
+- Built-in Agent registration MUST NOT create `~/.hermes/profiles/aegis`, inherit a Hermes profile, or grant credentials, model authority, a stanza, mandate, or runtime admission. Supported launch MUST be bare `aegis` or `aegis manager`, never `hermes --profile aegis`.
 - The principal MUST authenticate outside the model.
 - The built-in manager security context MUST be deterministic and immutable for the build/configuration revision.
 - Prompt content MUST NOT select or broaden the security context.
@@ -150,7 +151,7 @@ The implementation is incomplete if any invariant below is violated.
 - Session capabilities MUST be ephemeral and unguessable.
 - Every proxy request MUST be bound to an active, unexpired session and immutable route.
 - Cleanup MUST be bounded and idempotent.
-- Session exit MUST terminate Hermes, close the proxy, unload and verify removal of the exact model, remove disposable state, clear retained composer/presentation state, and invalidate the session capability before a complete receipt is finalized.
+- Session exit MUST terminate Hermes, close the proxy, unload and verify removal of the exact model only when this session owns its external-local load, remove disposable state, clear retained composer/presentation state, and invalidate the session capability before a complete receipt is finalized. Pre-existing/shared and failed-load ownership-unknown runners MUST be preserved.
 - Partial startup failure MUST roll back all resources already created.
 
 ## 5. Entry behavior and prerequisites
@@ -259,7 +260,7 @@ Aegis MUST:
 - reject user information, paths, queries, fragments, redirects, Unix ambiguity, and non-loopback resolution;
 - verify API compatibility;
 - avoid stopping the external daemon on manager exit;
-- still unload the exact manager model on session close when supported.
+- unload the exact manager model on session close only when Aegis recorded it absent before an unambiguously successful session Load.
 
 The documentation MUST state that Aegis cannot independently prove all daemon-start environment settings for an externally managed process.
 
@@ -272,7 +273,7 @@ Aegis MUST:
 - reject uninstalled or uncertified models;
 - permit one request at a time unless a stricter bounded implementation is used;
 - request a five-minute idle residency limit;
-- explicitly unload the model during cleanup;
+- explicitly unload the model during cleanup only when the external-local load is session-owned;
 - never pull, update, or replace a model during ordinary startup;
 - never select an uncertified default.
 
@@ -589,7 +590,7 @@ The cleanup order MUST be:
 4. terminate Hermes gracefully;
 5. force-kill the Hermes process group after a bounded deadline;
 6. close the inference proxy;
-7. request exact-model unload;
+7. request name-based exact-model unload only for a session-owned external-local load after an exact unambiguous inventory check;
 8. stop managed Ollama if Aegis started it;
 9. remove disposable Hermes/runtime state;
 10. invalidate and release capability material;
@@ -872,7 +873,7 @@ The feature is complete only when every locally actionable statement below is tr
 - Hermes reaches Ollama only through the session proxy.
 - The route permits exactly one local pinned model/digest.
 - No cloud fallback or model switching exists.
-- Exit/failure invalidates capabilities, stops Hermes/proxy, unloads the model, stops managed Ollama, and removes disposable state.
+- Exit/failure invalidates capabilities, stops Hermes/proxy, unloads only a session-owned external-local model load, stops managed Ollama, and removes disposable state; pre-existing/shared and failed-load ownership-unknown runners are preserved.
 
 ### 22.5 Protocol
 

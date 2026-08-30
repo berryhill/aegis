@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -146,10 +148,12 @@ func TestReadyStateBuiltInRegistrationDeclineResumeAndExactReplay(t *testing.T) 
 	if err != nil || ok || fixture.registerCalls != 0 || !strings.Contains(output, "registration declined; no Agent record was created") {
 		t.Fatalf("default decline: ok=%t err=%v calls=%d output=%q", ok, err, fixture.registerCalls, output)
 	}
+	assertBuiltInAegisRuntimeContract(t, output, "approval")
 	ok, err, output = run("yes\n")
 	if err != nil || !ok || fixture.registerCalls != 1 || !strings.Contains(output, "registered=true and exactly verified") {
 		t.Fatalf("resume: ok=%t err=%v calls=%d output=%q", ok, err, fixture.registerCalls, output)
 	}
+	assertBuiltInAegisRuntimeContract(t, output, "success")
 
 	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
 	if err != nil {
@@ -161,11 +165,62 @@ func TestReadyStateBuiltInRegistrationDeclineResumeAndExactReplay(t *testing.T) 
 	if err != nil || !ok || fixture.registerCalls != 1 || !strings.Contains(output, "already registered and exactly verified") {
 		t.Fatalf("exact replay: ok=%t err=%v calls=%d output=%q", ok, err, fixture.registerCalls, output)
 	}
+	assertBuiltInAegisRuntimeContract(t, output, "exact replay")
 
 	fixture.existing.Revision.Ownership.OwnerID = "incompatible-owner"
 	ok, err, _ = run("yes\n")
 	if ok || !errors.Is(err, fleet.ErrConflict) || fixture.registerCalls != 1 {
 		t.Fatalf("incompatible registration did not fail closed: ok=%t err=%v calls=%d", ok, err, fixture.registerCalls)
+	}
+}
+
+func TestBuiltInAegisRegistrationDoesNotCreateHermesProfile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	subject := core.Subject{PrincipalID: "principal"}
+	fixture := &builtInRegistrationFixture{loadErr: fleet.ErrNotFound}
+	run := func(answer string) {
+		var output bytes.Buffer
+		cmd := &cobra.Command{}
+		cmd.SetContext(context.Background())
+		cmd.SetIn(strings.NewReader(answer))
+		cmd.SetOut(&output)
+		ok, err := bootstrapBuiltInAegisAgentWithService(cmd, fixture, subject, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(tui.Capabilities{Width: 100}))
+		if err != nil || !ok {
+			t.Fatalf("registration: ok=%t err=%v output=%q", ok, err, output.String())
+		}
+	}
+
+	run("yes\n")
+	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.existing = app.FleetAgent{Registration: registration, Revision: revision}
+	fixture.loadErr = nil
+	run("")
+
+	for _, path := range []string{
+		filepath.Join(home, ".hermes"),
+		filepath.Join(home, ".hermes", "profiles", registry.BuiltInAegisAgentID),
+	} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("logical built-in registration mutated Hermes profile filesystem at %s: %v", path, err)
+		}
+	}
+}
+
+func assertBuiltInAegisRuntimeContract(t *testing.T, output, stage string) {
+	t.Helper()
+	for _, expected := range []string{
+		"agent_id=aegis is a logical Agent Registry identity",
+		"runtime_target=manager-disposable is a disposable runtime contract",
+		"no ~/.hermes/profiles/aegis is created",
+		"supported launch is 'aegis' or 'aegis manager', not 'hermes --profile aegis'",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Errorf("%s output missing %q: %q", stage, expected, output)
+		}
 	}
 }
 

@@ -158,11 +158,13 @@ func bootstrapBuiltInAegisAgentWithService(cmd *cobra.Command, service builtInAe
 			return false, fleet.ErrConflict
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Canonical built-in Aegis Agent already registered and exactly verified at %s.\n", existing.Revision.Digest)
+		renderBuiltInAegisRuntimeContract(cmd)
 		return true, nil
 	}
 	if !errors.Is(loadErr, fleet.ErrNotFound) {
 		return false, loadErr
 	}
+	renderBuiltInAegisRuntimeContract(cmd)
 	approved, err := view.approve(cmd, input, bootstrapDecision{
 		Title:          "Register canonical built-in Aegis Agent",
 		Recommendation: "Register the sealed Aegis-owned identity required for fleet control.",
@@ -182,7 +184,15 @@ func bootstrapBuiltInAegisAgentWithService(cmd *cobra.Command, service builtInAe
 		return false, fleet.ErrConflict
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Canonical built-in Aegis Agent registered=%t and exactly verified at %s.\n", created, stored.Revision.Digest)
+	renderBuiltInAegisRuntimeContract(cmd)
 	return true, nil
+}
+
+func renderBuiltInAegisRuntimeContract(cmd *cobra.Command) {
+	fmt.Fprintln(cmd.OutOrStdout(), "agent_id=aegis is a logical Agent Registry identity")
+	fmt.Fprintln(cmd.OutOrStdout(), "runtime_target=manager-disposable is a disposable runtime contract")
+	fmt.Fprintln(cmd.OutOrStdout(), "no ~/.hermes/profiles/aegis is created")
+	fmt.Fprintln(cmd.OutOrStdout(), "supported launch is 'aegis' or 'aegis manager', not 'hermes --profile aegis'")
 }
 
 var onboardingStages = []string{
@@ -663,7 +673,7 @@ func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalIn
 		Title:          "Run end-to-end certification",
 		Recommendation: "Run now only when this workstation can sustain the exact local model workload.",
 		Consequence:    "May use substantial CPU, GPU, RAM, and time. Declining saves no certification; rerunning 'aegis init' resumes from verified artifacts.",
-		Details:        fmt.Sprintf("candidate=%s; path=Hermes Agent -> authenticated Aegis proxy -> Ollama; every named corpus case must pass; all runtime resources unload afterward", candidate),
+		Details:        fmt.Sprintf("candidate=%s; path=Hermes Agent -> authenticated Aegis proxy -> Ollama; every named corpus case must pass; Aegis-created runtime resources are cleaned up afterward while pre-existing external runners are preserved", candidate),
 	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Certification declined; readiness was not reported.")

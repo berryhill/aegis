@@ -117,10 +117,12 @@ func TestCleanupFailuresExposeOnlyStableStageNames(t *testing.T) {
 
 func TestExternalCleanupInvalidatesProxyAndUnloadsBeforeHermesWait(t *testing.T) {
 	runtime := &conversationalRuntime{
-		proxy:  &managerdomain.Proxy{},
-		ollama: &managerdomain.OllamaClient{},
-		model:  "exact:model",
-		hermes: &managerdomain.HermesProcess{},
+		proxy:        &managerdomain.Proxy{},
+		ollama:       &managerdomain.OllamaClient{},
+		model:        "exact:model",
+		modelDigest:  "sha256:" + strings.Repeat("a", 64),
+		modelCleanup: managerdomain.ModelCleanupAegisOwned,
+		hermes:       &managerdomain.HermesProcess{},
 	}
 	operations := runtime.runtimeCleanupOperations(context.Background())
 	want := []string{
@@ -134,6 +136,20 @@ func TestExternalCleanupInvalidatesProxyAndUnloadsBeforeHermesWait(t *testing.T)
 	for index := range want {
 		if operations[index].stage != want[index] {
 			t.Fatalf("cleanup operation %d=%q want=%q", index, operations[index].stage, want[index])
+		}
+	}
+}
+
+func TestExternalCleanupPreservesSharedOrUnknownRunner(t *testing.T) {
+	for _, ownership := range []managerdomain.ModelCleanupOwnership{managerdomain.ModelCleanupShared, managerdomain.ModelCleanupUnknown} {
+		runtime := &conversationalRuntime{
+			ollama:       &managerdomain.OllamaClient{},
+			model:        "exact:model",
+			modelDigest:  "sha256:" + strings.Repeat("a", 64),
+			modelCleanup: ownership,
+		}
+		if operations := runtime.runtimeCleanupOperations(context.Background()); len(operations) != 0 {
+			t.Fatalf("ownership=%v cleanup operations=%v", ownership, operations)
 		}
 	}
 }

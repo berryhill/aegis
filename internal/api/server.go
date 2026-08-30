@@ -64,6 +64,27 @@ type managerTurnHTTPError struct {
 
 func (e *managerTurnHTTPError) Error() string { return e.message }
 
+type managerCommandHTTPError struct {
+	message string
+}
+
+func (e *managerCommandHTTPError) Error() string { return e.message }
+
+func mapManagerCommandError(err error) error {
+	var parseError *managergateway.CommandParseError
+	if !errors.As(err, &parseError) {
+		return err
+	}
+	message := strings.TrimSpace(parseError.Message)
+	if len(message) > 2048 {
+		message = message[:2048]
+	}
+	if message == "" {
+		message = "invalid manager command"
+	}
+	return &managerCommandHTTPError{message: message}
+}
+
 func mapManagerTurnError(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return &managerTurnHTTPError{status: http.StatusGatewayTimeout, code: "manager_turn_timeout", message: "manager conversational turn timed out"}
@@ -92,6 +113,7 @@ func classifyError(err error) (int, string, string) {
 	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
 	var operationError *consoleQueueOperationError
 	var turnError *managerTurnHTTPError
+	var commandError *managerCommandHTTPError
 	switch {
 	case errors.Is(err, console.ErrCommandUnknown):
 		return http.StatusNotFound, "invalid_request", "console command is not registered"
@@ -99,6 +121,8 @@ func classifyError(err error) (int, string, string) {
 		return operationError.status, operationError.code, operationError.message
 	case errors.As(err, &turnError):
 		return turnError.status, turnError.code, turnError.message
+	case errors.As(err, &commandError):
+		return http.StatusBadRequest, "manager_command_parse_error", commandError.message
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
 	case errors.Is(err, app.ErrDenied):
@@ -232,7 +256,7 @@ func Serve(ctx context.Context, svc *app.Service) error {
 func managerGatewayWriteTimeout(cfg config.Config) time.Duration {
 	writeTimeout := cfg.API.WriteTimeout
 	startup := cfg.Manager.Inference.StartTimeout + 3*cfg.Manager.Inference.RequestTimeout + cfg.Manager.Hermes.GatewayStartTimeout
-	for _, candidate := range []time.Duration{startup, cfg.Manager.Hermes.TurnTimeout} {
+	for _, candidate := range []time.Duration{startup, cfg.Manager.Hermes.TurnTimeout, cfg.Manager.CleanupTimeout} {
 		if candidate > writeTimeout {
 			writeTimeout = candidate
 		}
@@ -1376,10 +1400,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		result, err := managerGateway.Execute(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
 		if err != nil {
-			if !errors.Is(err, app.ErrUnauthenticated) && !errors.Is(err, app.ErrDenied) && !errors.Is(err, app.ErrExpired) {
-				return echo.NewHTTPError(http.StatusBadRequest, "invalid manager command")
-			}
-			return err
+			return mapManagerCommandError(err)
 		}
 		return c.JSON(http.StatusOK, result)
 	})
