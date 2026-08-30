@@ -304,10 +304,19 @@ func (p *Proxy) handle(writer http.ResponseWriter, request *http.Request) {
 		http.Error(writer, "request denied", http.StatusForbidden)
 		return
 	}
-	if p.config.RequireSystemInstruction && !hasManagerSystemInstruction(envelope.Messages) {
-		p.lastSafe.Store("request_system_instruction_missing")
-		http.Error(writer, "request denied", http.StatusForbidden)
-		return
+	if p.config.RequireSystemInstruction {
+		// The authenticated Aegis proxy, not Hermes request serialization, owns
+		// the manager's authority context. Supported Hermes gateways may ignore
+		// session seed messages or prepend their own system prompt. Discard every
+		// transport-supplied system message and construct one exact canonical
+		// instruction at the final boundary before local inference.
+		var canonical bool
+		envelope.Messages, canonical = canonicalManagerMessages(envelope.Messages)
+		if !canonical {
+			p.lastSafe.Store("request_messages_rejected")
+			http.Error(writer, "request denied", http.StatusForbidden)
+			return
+		}
 	}
 	if len(envelope.SessionID) > 256 {
 		p.lastSafe.Store("request_session_id_rejected")
@@ -494,6 +503,20 @@ func hasManagerSystemInstruction(messages []openAIMessage) bool {
 		}
 	}
 	return true
+}
+
+func canonicalManagerMessages(messages []openAIMessage) ([]openAIMessage, bool) {
+	canonical := make([]openAIMessage, 0, len(messages)+1)
+	canonical = append(canonical, openAIMessage{Role: "system", Content: ManagerSystemInstruction()})
+	for _, message := range messages {
+		if message.Role != "system" {
+			canonical = append(canonical, message)
+			if len(canonical) > 256 {
+				return nil, false
+			}
+		}
+	}
+	return canonical, true
 }
 
 func managerResponseFormat() any {
