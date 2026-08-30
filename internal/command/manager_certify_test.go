@@ -2,8 +2,12 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,15 +86,126 @@ func TestLiveConformanceAuthorityExpiryIsExplicitAndFailClosed(t *testing.T) {
 func TestCertificationFailureRunsCleanupInReverseOrder(t *testing.T) {
 	var calls []int
 	cleanup := &certificationCleanup{}
-	cleanup.add(func() { calls = append(calls, 1) })
-	cleanup.add(func() { calls = append(calls, 2) })
+	cleanup.add(func() error { calls = append(calls, 1); return nil })
+	cleanup.add(func() error { calls = append(calls, 2); return nil })
 	func() {
-		defer cleanup.close()
+		defer func() { _ = cleanup.close() }()
 		executor, writer := blockedCertificationExecutor(t, 20*time.Millisecond, nil)
 		defer writer.Close()
 		_, _ = executor.Execute(context.Background(), managerdomain.ConformanceCorpus()[0])
 	}()
 	if len(calls) != 2 || calls[0] != 2 || calls[1] != 1 {
 		t.Fatalf("cleanup order=%v", calls)
+	}
+}
+
+func TestCertificationAmbiguousLoadPreservesPreExistingExactRunner(t *testing.T) {
+	const model = "exact:model"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	running := true
+	var unloads int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/ps":
+			models := []any{}
+			if running {
+				models = append(models, map[string]any{"name": model, "digest": digest})
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"models": models})
+		case "/api/generate":
+			var body map[string]any
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			if body["keep_alive"] == float64(0) {
+				unloads++
+				running = false
+				_ = json.NewEncoder(writer).Encode(map[string]any{"done": true})
+				return
+			}
+			http.Error(writer, "ambiguous load outcome", http.StatusInternalServerError)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, err := managerdomain.NewOllamaClient(server.URL, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup := &certificationCleanup{}
+	err = loadCertificationModel(context.Background(), cleanup, client, model, digest, 65536, time.Minute, time.Second)
+	if err == nil || !strings.Contains(err.Error(), managerdomain.ReasonModelLoadFailed) {
+		t.Fatalf("load error=%v", err)
+	}
+	if cleanupErr := cleanup.close(); cleanupErr != nil {
+		t.Fatalf("cleanup error=%v", cleanupErr)
+	}
+	if unloads != 0 || !running {
+		t.Fatalf("pre-existing exact runner was mutated: unloads=%d running=%v", unloads, running)
+	}
+}
+
+func TestCertificationCleanupUnloadsSuccessfulAegisOwnedRunner(t *testing.T) {
+	const model = "exact:model"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	running := false
+	unloads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/ps":
+			models := []any{}
+			if running {
+				models = append(models, map[string]any{"name": model, "digest": digest})
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"models": models})
+		case "/api/generate":
+			var body map[string]any
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			if body["keep_alive"] == float64(0) {
+				unloads++
+				running = false
+			} else {
+				running = true
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"done": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+	client, err := managerdomain.NewOllamaClient(server.URL, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup := &certificationCleanup{}
+	if err = loadCertificationModel(context.Background(), cleanup, client, model, digest, 65536, time.Minute, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err = cleanup.close(); err != nil {
+		t.Fatal(err)
+	}
+	if unloads != 1 || running {
+		t.Fatalf("owned runner cleanup: unloads=%d running=%v", unloads, running)
+	}
+}
+
+func TestCertificationCleanupJoinsEveryFailure(t *testing.T) {
+	cleanup := &certificationCleanup{}
+	first := errors.New("first cleanup failure")
+	second := errors.New("second cleanup failure")
+	cleanup.add(func() error { return first })
+	cleanup.add(func() error { return second })
+	err := cleanup.close()
+	if !errors.Is(err, first) || !errors.Is(err, second) {
+		t.Fatalf("cleanup error=%v", err)
+	}
+}
+
+func TestCertificationPrimaryFailureRetainsClassificationWhenCleanupFails(t *testing.T) {
+	cleanup := &certificationCleanup{}
+	cleanup.add(func() error { return errors.New("cleanup failed") })
+	primary := errors.New(managerdomain.ReasonModelLoadFailed + ": load failed")
+	result := errors.Join(primary, cleanup.close())
+	if !errors.Is(result, primary) || !strings.Contains(result.Error(), managerdomain.ReasonModelLoadFailed) || !strings.Contains(result.Error(), "cleanup failed") {
+		t.Fatalf("joined result=%v", result)
 	}
 }

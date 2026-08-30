@@ -2,13 +2,33 @@ package managergateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	managerdomain "github.com/berryhill/aegis/internal/manager"
 )
+
+type closeAuditFixture struct {
+	ctxErr error
+	err    error
+}
+
+func (a *closeAuditFixture) AppendAudit(ctx context.Context, _ core.AuditEvent) error {
+	a.ctxErr = ctx.Err()
+	return a.err
+}
+func (*closeAuditFixture) AuditEvents() ([]core.AuditEvent, error) { return nil, nil }
+func (*closeAuditFixture) VerifyAudit() error                      { return nil }
 
 func TestServiceDetectsExistingConversationalSession(t *testing.T) {
 	now := time.Now().UTC()
@@ -82,5 +102,77 @@ func TestBindTurnContextCancelsWithRequest(t *testing.T) {
 	case <-turnCtx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("turn continued after request cancellation")
+	}
+}
+
+func TestServiceCloseUsesOwnedContextAndJoinsCleanupErrors(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Minute)}
+	runtimeErr := errors.New("runtime close failed")
+	auditErr := errors.New("audit close failed")
+	runtime := &conversation{}
+	runtime.closeOnce = sync.Once{}
+	runtime.closeOnce.Do(func() { runtime.closeErr = runtimeErr })
+	audit := &closeAuditFixture{err: auditErr}
+	service := &app.Service{Config: config.Config{Principal: config.Principal{ID: "principal"}, Manager: config.Manager{CleanupTimeout: time.Second}}, Audit: audit}
+	svc := &Service{app: service, now: func() time.Time { return now }, sessions: map[string]session{"mgr": {id: "mgr", token: sha256.Sum256([]byte("capability")), subject: subject, expires: now.Add(time.Minute), runtime: runtime}}}
+	requestCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := svc.Close(requestCtx, subject, "mgr", "capability")
+	if !errors.Is(err, runtimeErr) || !errors.Is(err, auditErr) {
+		t.Fatalf("close errors not joined: %v", err)
+	}
+	if audit.ctxErr != nil {
+		t.Fatalf("audit inherited canceled request: %v", audit.ctxErr)
+	}
+	if _, exists := svc.sessions["mgr"]; exists {
+		t.Fatal("session capability was not revoked")
+	}
+}
+
+func TestConversationCloseUnloadsOnlyAegisOwnedExternalRunner(t *testing.T) {
+	const model = "exact:model"
+	digest := "sha256:" + strings.Repeat("a", 64)
+	for _, test := range []struct {
+		name      string
+		ownership managerdomain.ModelCleanupOwnership
+		want      int
+	}{
+		{name: "owned", ownership: managerdomain.ModelCleanupAegisOwned, want: 1},
+		{name: "shared", ownership: managerdomain.ModelCleanupShared},
+		{name: "unknown", ownership: managerdomain.ModelCleanupUnknown},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			unloads := 0
+			running := true
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				switch request.URL.Path {
+				case "/api/ps":
+					models := []any{}
+					if running {
+						models = append(models, map[string]any{"name": model, "digest": digest})
+					}
+					_ = json.NewEncoder(writer).Encode(map[string]any{"models": models})
+				case "/api/generate":
+					unloads++
+					running = false
+					_ = json.NewEncoder(writer).Encode(map[string]any{"done": true})
+				default:
+					http.NotFound(writer, request)
+				}
+			}))
+			defer server.Close()
+			client, err := managerdomain.NewOllamaClient(server.URL, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime := &conversation{ollama: client, model: model, modelDigest: digest, modelCleanup: test.ownership}
+			if err = runtime.Close(context.Background(), managerdomain.EndUserExit); err != nil {
+				t.Fatal(err)
+			}
+			if unloads != test.want {
+				t.Fatalf("unloads=%d want=%d", unloads, test.want)
+			}
+		})
 	}
 }

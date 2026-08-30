@@ -20,6 +20,16 @@ import (
 
 const SessionHeader = "X-Aegis-Manager-Session"
 
+// CommandParseError preserves safe registry-derived usage information across
+// the managergateway boundary without requiring transport packages to import
+// the slash implementation layer.
+type CommandParseError struct {
+	Reason  string
+	Message string
+}
+
+func (e *CommandParseError) Error() string { return e.Message }
+
 type Opened struct {
 	ID        string    `json:"id"`
 	Token     string    `json:"token"`
@@ -217,6 +227,17 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 	}
 	request, err := s.registry.Parse(input)
 	if err != nil {
+		var parseError *slash.ParseError
+		if errors.As(err, &parseError) {
+			message := "invalid manager slash command; use /help to list available commands"
+			if parseError.Reason == "usage" {
+				// Grammar usage is sourced from the closed command registry. Other
+				// parse messages may contain caller-controlled command names and
+				// must not cross the API or logging boundary.
+				message = parseError.Message
+			}
+			return slash.Result{}, &CommandParseError{Reason: parseError.Reason, Message: message}
+		}
 		return slash.Result{}, err
 	}
 	manager := slash.Context{
@@ -317,14 +338,14 @@ func (s *Service) Close(ctx context.Context, subject core.Subject, id, token str
 	s.mu.Lock()
 	delete(s.sessions, id)
 	s.mu.Unlock()
+	cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+	defer cancel()
+	var result error
 	if entry.runtime != nil {
-		cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
-		defer cancel()
-		if closeErr := entry.runtime.Close(cleanup, managerdomain.EndUserExit); closeErr != nil {
-			return closeErr
-		}
+		result = errors.Join(result, entry.runtime.Close(cleanup, managerdomain.EndUserExit))
 	}
-	return s.app.AuditManagerSession(ctx, entry.subject, "ok", "gateway_client_exit", map[string]string{"route": "authenticated-unix-gateway"})
+	result = errors.Join(result, s.app.AuditManagerSession(cleanup, entry.subject, "ok", "gateway_client_exit", map[string]string{"route": "authenticated-unix-gateway"}))
+	return result
 }
 
 func (s *Service) authenticate(subject core.Subject, id, token string) (session, error) {

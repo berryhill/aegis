@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -13,6 +14,17 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/managergateway"
 )
+
+func TestManagerCommandParseFailuresHaveSafeTypedEnvelope(t *testing.T) {
+	status, code, message := classifyError(mapManagerCommandError(&managergateway.CommandParseError{Message: "usage: /agents readiness"}))
+	if status != http.StatusBadRequest || code != "manager_command_parse_error" || message != "usage: /agents readiness" {
+		t.Fatalf("classification=(%d, %q, %q)", status, code, message)
+	}
+	status, code, message = classifyError(mapManagerCommandError(errors.New("private parser diagnostic")))
+	if status != http.StatusInternalServerError || code != "internal_error" || message != "internal server error" {
+		t.Fatalf("generic error was exposed: (%d, %q, %q)", status, code, message)
+	}
+}
 
 func TestManagerTurnFailuresHaveSafeTypedTaxonomy(t *testing.T) {
 	tests := []struct {
@@ -50,9 +62,10 @@ func TestManagerGatewayWriteTimeoutCoversStartupAndTurns(t *testing.T) {
 	cfg.Manager.Inference.RequestTimeout = 45 * time.Second
 	cfg.Manager.Hermes.GatewayStartTimeout = 20 * time.Second
 	cfg.Manager.Hermes.TurnTimeout = 4 * time.Minute
+	cfg.Manager.CleanupTimeout = 7 * time.Minute
 
 	got := managerGatewayWriteTimeout(cfg)
-	want := 2*time.Minute + 3*45*time.Second + 20*time.Second + 5*time.Second
+	want := cfg.Manager.CleanupTimeout + 5*time.Second
 	if got < want {
 		t.Fatalf("write timeout=%s, want at least %s for sequential manager startup operations", got, want)
 	}
@@ -159,6 +172,67 @@ func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T)
 	}
 }
 
+func TestManagerGatewayParseFailureDoesNotRevokeSession(t *testing.T) {
+	svc := apiService(t)
+	var logs bytes.Buffer
+	svc.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Serve(ctx, svc) }()
+	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	client := unixClient(svc.Config.API.UnixSocket)
+
+	opened := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions", map[string]any{})
+	response, err := client.Do(opened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var session struct{ ID, Token string }
+	if err = json.NewDecoder(response.Body).Decode(&session); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+
+	for _, step := range []struct {
+		input     string
+		status    int
+		code      string
+		prefix    string
+		forbidden string
+	}{
+		{input: "/agents", status: http.StatusBadRequest, code: "manager_command_parse_error", prefix: "usage: /agents "},
+		{input: "/operator-secret-marker", status: http.StatusBadRequest, code: "manager_command_parse_error", prefix: "invalid manager slash command", forbidden: "operator-secret-marker"},
+		{input: "/status", status: http.StatusOK},
+	} {
+		request := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/"+session.ID+"/commands", map[string]string{"input": step.input})
+		request.Header.Set(managergateway.SessionHeader, session.Token)
+		response, err = client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != step.status {
+			t.Fatalf("%s status=%d want=%d", step.input, response.StatusCode, step.status)
+		}
+		if step.code != "" {
+			var failure envelope
+			if err = json.NewDecoder(response.Body).Decode(&failure); err != nil {
+				t.Fatal(err)
+			}
+			if failure.Code != step.code || !strings.HasPrefix(failure.Message, step.prefix) || (step.forbidden != "" && strings.Contains(failure.Message, step.forbidden)) {
+				t.Fatalf("unsafe or untyped parse envelope: %+v", failure)
+			}
+		}
+		_ = response.Body.Close()
+	}
+	if strings.Contains(logs.String(), "operator-secret-marker") {
+		t.Fatalf("caller-controlled command leaked into API logs: %s", logs.String())
+	}
+	cancel()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestManagerGatewayRejectsMissingSessionBeforeCommandExecution(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -166,7 +240,7 @@ func TestManagerGatewayRejectsMissingSessionBeforeCommandExecution(t *testing.T)
 	go func() { done <- Serve(ctx, svc) }()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 
-	request := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/forged/commands", map[string]string{"input": "/status"})
+	request := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/forged/commands", map[string]string{"input": "/agents"})
 	response, err := unixClient(svc.Config.API.UnixSocket).Do(request)
 	if err != nil {
 		t.Fatal(err)

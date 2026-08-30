@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,14 +31,77 @@ func TestGatewayManagerClientTimeoutCoversSequentialStartup(t *testing.T) {
 	cfg.Manager.Inference.RequestTimeout = 45 * time.Second
 	cfg.Manager.Hermes.GatewayStartTimeout = 20 * time.Second
 	cfg.Manager.Hermes.TurnTimeout = 4 * time.Minute
+	cfg.Manager.CleanupTimeout = 7 * time.Minute
 
 	client, err := newGatewayManagerClient(cfg)
 	if err != nil {
 		t.Fatalf("construct manager gateway client: %v", err)
 	}
-	want := 2*time.Minute + 3*45*time.Second + 20*time.Second
-	if client.http.Timeout < want {
-		t.Fatalf("client timeout=%s, want at least %s for sequential manager startup operations", client.http.Timeout, want)
+	serverWriteDeadline := cfg.Manager.CleanupTimeout + 5*time.Second
+	if client.http.Timeout <= serverWriteDeadline {
+		t.Fatalf("client timeout=%s, must exceed server write deadline=%s", client.http.Timeout, serverWriteDeadline)
+	}
+}
+
+func TestGatewayManagerCommandAcceptsOnlyTypedParseFailure(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		status  int
+		body    string
+		recover bool
+	}{
+		{name: "typed parse", status: http.StatusBadRequest, body: `{"code":"manager_command_parse_error","message":"usage: /agents readiness","request_id":"opaque"}`, recover: true},
+		{name: "unknown code", status: http.StatusBadRequest, body: `{"code":"future_parse_error","message":"usage: forged","request_id":"opaque"}`},
+		{name: "malformed", status: http.StatusBadRequest, body: `{"code":`},
+		{name: "generic bad request", status: http.StatusBadRequest, body: `{"code":"invalid_request","message":"Bad Request"}`},
+		{name: "oversized", status: http.StatusBadRequest, body: `{"code":"manager_command_parse_error","message":"usage: /agents readiness"}` + strings.Repeat(" ", (64<<10)+1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			client := &gatewayManagerClient{http: &http.Client{Transport: gatewayRoundTripper(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: test.status, Body: io.NopCloser(strings.NewReader(test.body)), Header: make(http.Header)}, nil
+			})}, transport: "transport", sessionID: "mgr-test", token: "capability"}
+			_, err := client.execute(context.Background(), "/agents")
+			if err == nil || isManagerCommandParseError(err) != test.recover {
+				t.Fatalf("err=%v recover=%t want=%t", err, isManagerCommandParseError(err), test.recover)
+			}
+			if test.recover && (!strings.Contains(err.Error(), "usage: /agents readiness") || strings.Contains(err.Error(), "opaque")) {
+				t.Fatalf("unsafe parse rendering: %v", err)
+			}
+		})
+	}
+}
+
+func TestGatewayManagerClientCloseKeepsCapabilityUntilDefinitiveResponse(t *testing.T) {
+	calls := 0
+	client := &gatewayManagerClient{http: &http.Client{Transport: gatewayRoundTripper(func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return nil, context.DeadlineExceeded
+		}
+		return &http.Response{StatusCode: http.StatusNoContent, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})}, transport: "transport", sessionID: "mgr-test", token: "capability"}
+	if err := client.close(context.Background()); err == nil {
+		t.Fatal("close transport failure was discarded")
+	}
+	if client.sessionID == "" || client.token == "" {
+		t.Fatal("capability cleared before definitive close response")
+	}
+	if err := client.close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if client.sessionID != "" || client.token != "" {
+		t.Fatal("capability retained after definitive close response")
+	}
+}
+
+func TestDeferredGatewayManagerCloseJoinsErrors(t *testing.T) {
+	runErr := errors.New("interactive failure")
+	client := &gatewayManagerClient{http: &http.Client{Transport: gatewayRoundTripper(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusInternalServerError, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
+	})}, transport: "transport", sessionID: "mgr-test", token: "capability"}
+	err := closeGatewayManager(runErr, client, time.Millisecond)
+	if !errors.Is(err, runErr) || !strings.Contains(err.Error(), "session close failed closed") {
+		t.Fatalf("deferred close errors not joined: %v", err)
 	}
 }
 

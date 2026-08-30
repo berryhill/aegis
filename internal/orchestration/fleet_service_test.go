@@ -3,6 +3,9 @@ package orchestration
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -775,6 +778,66 @@ func TestRegisterBuiltInAegisAgentIsAuthorizedIdempotentAndExactReadBack(t *test
 	if _, _, _, err = service.RegisterBuiltInAegisAgent(context.Background(), unauthorized); !errors.Is(err, ErrDenied) {
 		t.Fatalf("unauthorized registration was not denied: %v", err)
 	}
+}
+
+func TestRegisterBuiltInAegisAgentDoesNotCreateOrMutateHermesProfiles(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	profilesRoot := filepath.Join(home, ".hermes", "profiles")
+	sentinel := filepath.Join(profilesRoot, "default", "sentinel")
+	if err := os.MkdirAll(filepath.Dir(sentinel), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sentinel, []byte("preserve this profile inventory\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := testFilesystemInventory(t, profilesRoot)
+
+	service, repository, _, subject, _, _ := fleetServiceFixture(t)
+	repository.registration = registry.AgentRegistration{}
+	repository.agent = registry.AgentRevision{}
+	registration, revision, created, err := service.RegisterBuiltInAegisAgent(context.Background(), subject)
+	if err != nil || !created {
+		t.Fatalf("production orchestration registration: created=%t registration=%+v revision=%+v err=%v", created, registration, revision, err)
+	}
+	if _, _, replayCreated, err := service.RegisterBuiltInAegisAgent(context.Background(), subject); err != nil || replayCreated {
+		t.Fatalf("production orchestration replay: created=%t err=%v", replayCreated, err)
+	}
+	if _, err := os.Lstat(filepath.Join(profilesRoot, registry.BuiltInAegisAgentID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("logical built-in Agent registration created a named Hermes profile: %v", err)
+	}
+	after := testFilesystemInventory(t, profilesRoot)
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("built-in Agent registration changed Hermes profile inventory: before=%v after=%v", before, after)
+	}
+}
+
+func testFilesystemInventory(t *testing.T, root string) map[string]string {
+	t.Helper()
+	inventory := make(map[string]string)
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		name := filepath.ToSlash(relative)
+		if entry.IsDir() {
+			inventory[name] = "directory"
+			return nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		inventory[name] = "file:" + string(contents)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return inventory
 }
 
 func TestBuiltInAegisAgentRejectsGenericLifecycleRevision(t *testing.T) {

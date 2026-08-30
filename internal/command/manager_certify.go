@@ -39,13 +39,15 @@ func (f *conformanceFormat) get() any {
 	return managerdomain.ConformanceResponseFormat(managerdomain.ConformanceCase{})
 }
 
-type certificationCleanup struct{ steps []func() }
+type certificationCleanup struct{ steps []func() error }
 
-func (c *certificationCleanup) add(step func()) { c.steps = append(c.steps, step) }
-func (c *certificationCleanup) close() {
+func (c *certificationCleanup) add(step func() error) { c.steps = append(c.steps, step) }
+func (c *certificationCleanup) close() error {
+	var joined error
 	for index := len(c.steps) - 1; index >= 0; index-- {
-		c.steps[index]()
+		joined = errors.Join(joined, c.steps[index]())
 	}
+	return joined
 }
 
 func (e liveConformanceExecutor) Execute(ctx context.Context, test managerdomain.ConformanceCase) ([]byte, error) {
@@ -186,7 +188,11 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	}()
 	cfg := service.Config.Manager
 	cleanup := &certificationCleanup{}
-	defer cleanup.close()
+	defer func() {
+		if cleanupErr := cleanup.close(); cleanupErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("manager certification cleanup failed: %w", cleanupErr))
+		}
+	}()
 	if cfg.Inference.Model == "" || cfg.Inference.ModelDigest == "" || cfg.Inference.Certification == "" {
 		return usage(errors.New("configure exact manager model, digest, and certification path before live certification"))
 	}
@@ -216,7 +222,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 			return err
 		}
 		endpoint = managed.Endpoint()
-		cleanup.add(func() { closeManagedBounded(managed, cfg.CleanupTimeout) })
+		cleanup.add(func() error { return closeManagedBounded(managed, cfg.CleanupTimeout) })
 	}
 	ollama, err := managerdomain.NewOllamaClient(endpoint, cfg.Inference.RequestTimeout)
 	if err != nil {
@@ -230,10 +236,17 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err != nil {
 		return err
 	}
-	if err = ollama.Load(cmd.Context(), cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive); err != nil {
+	if managed != nil {
+		err = ollama.Load(cmd.Context(), cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive)
+		if err != nil {
+			err = fmt.Errorf("%s: %w", managerdomain.ReasonModelLoadFailed, err)
+		}
+	} else {
+		err = loadCertificationModel(cmd.Context(), cleanup, ollama, cfg.Inference.Model, cfg.Inference.ModelDigest, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive, cfg.CleanupTimeout)
+	}
+	if err != nil {
 		return err
 	}
-	cleanup.add(func() { unloadBounded(ollama, cfg.Inference.Model, cfg.CleanupTimeout) })
 	var active atomic.Bool
 	active.Store(true)
 	defer active.Store(false)
@@ -246,7 +259,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err != nil {
 		return err
 	}
-	cleanup.add(func() { closeProxyBounded(proxy, cfg.CleanupTimeout) })
+	cleanup.add(func() error { return closeProxyBounded(proxy, cfg.CleanupTimeout) })
 	python := managerPython(descriptor.Installation, descriptor.Executable)
 	if python == "" {
 		return errors.New("Hermes gateway Python executable not found")
@@ -255,7 +268,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err != nil {
 		return err
 	}
-	cleanup.add(func() { closeHermesBounded(hermes, cfg.CleanupTimeout) })
+	cleanup.add(func() error { return closeHermesBounded(hermes, cfg.CleanupTimeout) })
 	certificationCtx, cancelCertification := context.WithDeadline(cmd.Context(), subject.ExpiresAt)
 	defer cancelCertification()
 	if err = certificationCtx.Err(); err != nil {
@@ -271,23 +284,34 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	return output(cmd, map[string]any{"status": "certified", "candidate_id": certification.CandidateID, "artifact": certification.ArtifactName, "artifact_digest": certification.ArtifactDigest, "hermes_version": certification.HermesVersion, "ollama_version": certification.OllamaVersion, "context_length": certification.ContextLength, "corpus_digest": certification.CorpusDigest, "certified_at": certification.CertifiedAt, "certification": cfg.Inference.Certification})
 }
 
-func closeManagedBounded(value *managerdomain.ManagedOllama, timeout time.Duration) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	_ = value.Close(ctx)
+func loadCertificationModel(ctx context.Context, cleanup *certificationCleanup, ollama *managerdomain.OllamaClient, model, digest string, contextLength int, keepAlive, cleanupTimeout time.Duration) error {
+	ownership, err := ollama.LoadExternalModel(ctx, model, digest, contextLength, keepAlive)
+	if err != nil {
+		return fmt.Errorf("%s: %w", managerdomain.ReasonModelLoadFailed, err)
+	}
+	if ownership == managerdomain.ModelCleanupAegisOwned {
+		cleanup.add(func() error { return unloadBounded(ollama, model, digest, cleanupTimeout) })
+	}
+	return nil
 }
-func unloadBounded(value *managerdomain.OllamaClient, model string, timeout time.Duration) {
+
+func closeManagedBounded(value *managerdomain.ManagedOllama, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	_ = value.UnloadAndVerify(ctx, model)
+	return value.Close(ctx)
 }
-func closeProxyBounded(value *managerdomain.Proxy, timeout time.Duration) {
+func unloadBounded(value *managerdomain.OllamaClient, model, digest string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	_ = value.Close(ctx)
+	return value.UnloadAndVerify(ctx, model, digest)
 }
-func closeHermesBounded(value *managerdomain.HermesProcess, timeout time.Duration) {
+func closeProxyBounded(value *managerdomain.Proxy, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	_ = value.Close(ctx)
+	return value.Close(ctx)
+}
+func closeHermesBounded(value *managerdomain.HermesProcess, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return value.Close(ctx)
 }

@@ -498,7 +498,7 @@ func TestOllamaFixtureDigestAndLocality(t *testing.T) {
 	if err := client.Load(context.Background(), "exact:1", 65536, time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	if err := client.UnloadAndVerify(context.Background(), "exact:1"); err != nil || generateCalls != 1 {
+	if err := client.UnloadAndVerify(context.Background(), "exact:1", "sha256:"+strings.Repeat("a", 64)); err != nil || generateCalls != 1 {
 		t.Fatalf("unload err=%v calls=%d", err, generateCalls)
 	}
 	if _, err := NewOllamaClient("http://example.com:11434", time.Second); err == nil {
@@ -513,7 +513,7 @@ func TestOllamaUnloadVerificationFailsWhileModelRemainsLoaded(t *testing.T) {
 		case "/api/generate":
 			_, _ = w.Write([]byte(`{"done":true}`))
 		case "/api/ps":
-			_, _ = w.Write([]byte(`{"models":[{"name":"exact:1","model":"exact:1"}]}`))
+			_, _ = w.Write([]byte(`{"models":[{"name":"exact:1","model":"exact:1","digest":"` + strings.Repeat("a", 64) + `"}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -525,7 +525,7 @@ func TestOllamaUnloadVerificationFailsWhileModelRemainsLoaded(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
 	defer cancel()
-	if err = client.UnloadAndVerify(ctx, "exact:1"); err == nil {
+	if err = client.UnloadAndVerify(ctx, "exact:1", "sha256:"+strings.Repeat("a", 64)); err == nil {
 		t.Fatal("loaded model incorrectly passed unload verification")
 	}
 }

@@ -234,10 +234,37 @@ func (c *OllamaClient) Load(ctx context.Context, model string, contextLength int
 	return c.request(ctx, http.MethodPost, "/api/generate", body, nil)
 }
 
-func (c *OllamaClient) Unload(ctx context.Context, model string) error {
-	if model == "" {
-		return errors.New("model is required")
+type ModelCleanupOwnership uint8
+
+const (
+	ModelCleanupUnknown ModelCleanupOwnership = iota
+	ModelCleanupShared
+	ModelCleanupAegisOwned
+)
+
+// LoadExternalModel snapshots exact running-model presence before Load and
+// returns cleanup ownership only after an unambiguous successful response. A
+// failed Load remains ownership-unknown because the shared daemon may have
+// admitted a runner despite the failed response; callers must not unload it.
+func (c *OllamaClient) LoadExternalModel(ctx context.Context, model, digest string, contextLength int, keepAlive time.Duration) (ModelCleanupOwnership, error) {
+	normalizedDigest, err := NormalizeModelDigest(digest)
+	if err != nil {
+		return ModelCleanupUnknown, err
 	}
+	preExisting, err := c.exactModelRunning(ctx, model, normalizedDigest)
+	if err != nil {
+		return ModelCleanupUnknown, err
+	}
+	if err = c.Load(ctx, model, contextLength, keepAlive); err != nil {
+		return ModelCleanupUnknown, err
+	}
+	if preExisting {
+		return ModelCleanupShared, nil
+	}
+	return ModelCleanupAegisOwned, nil
+}
+
+func (c *OllamaClient) unload(ctx context.Context, model string) error {
 	body, _ := json.Marshal(map[string]any{"model": model, "keep_alive": 0})
 	return c.request(ctx, http.MethodPost, "/api/generate", body, nil)
 }
@@ -253,33 +280,33 @@ func (c *OllamaClient) RunningModels(ctx context.Context) ([]OllamaModel, error)
 }
 
 // UnloadAndVerify does not claim memory zeroization. It verifies the strongest
-// state Ollama exposes: the exact model no longer appears in the running-model
-// inventory. Dedicated managed mode additionally terminates the daemon.
-func (c *OllamaClient) UnloadAndVerify(ctx context.Context, model string) error {
-	// A crashed or cancelled turn may already have released the runner. Avoid
-	// submitting another scheduler mutation in that case: on a busy external
-	// daemon even a redundant unload can consume the complete cleanup deadline.
-	loaded, err := c.modelRunning(ctx, model)
+// state Ollama exposes: the configured model name and exact artifact digest no
+// longer appear together in the running-model inventory. Mismatch or ambiguity
+// in the immediate pre-mutation inventory denies. Ollama's unload API mutates by
+// name, not digest, so this is not atomic identity-bound mutation and a shared
+// daemon retains a same-name TOCTOU window after the inventory check.
+func (c *OllamaClient) UnloadAndVerify(ctx context.Context, model, digest string) error {
+	if model == "" {
+		return errors.New("model is required")
+	}
+	normalizedDigest, err := NormalizeModelDigest(digest)
+	if err != nil {
+		return err
+	}
+	loaded, err := c.exactModelRunning(ctx, model, normalizedDigest)
 	if err != nil {
 		return err
 	}
 	if !loaded {
 		return nil
 	}
-	if err := c.Unload(ctx, model); err != nil {
+	if err := c.unload(ctx, model); err != nil {
 		return err
 	}
 	for {
-		models, err := c.RunningModels(ctx)
+		loaded, err = c.exactModelRunning(ctx, model, normalizedDigest)
 		if err != nil {
 			return err
-		}
-		loaded := false
-		for _, item := range models {
-			if item.Name == model || item.Model == model {
-				loaded = true
-				break
-			}
 		}
 		if !loaded {
 			return nil
@@ -292,17 +319,28 @@ func (c *OllamaClient) UnloadAndVerify(ctx context.Context, model string) error 
 	}
 }
 
-func (c *OllamaClient) modelRunning(ctx context.Context, model string) (bool, error) {
+func (c *OllamaClient) exactModelRunning(ctx context.Context, model, digest string) (bool, error) {
 	models, err := c.RunningModels(ctx)
 	if err != nil {
 		return false, err
 	}
+	matches := make([]OllamaModel, 0, 1)
 	for _, item := range models {
 		if item.Name == model || item.Model == model {
-			return true, nil
+			matches = append(matches, item)
 		}
 	}
-	return false, nil
+	if len(matches) == 0 {
+		return false, nil
+	}
+	if len(matches) != 1 {
+		return false, errors.New("Ollama running-model inventory is ambiguous for configured model")
+	}
+	resolved, err := NormalizeModelDigest(matches[0].Digest)
+	if err != nil || resolved != digest {
+		return false, errors.New(ReasonDigestMismatch)
+	}
+	return true, nil
 }
 
 func parseVersion(value string) ([3]int, error) {

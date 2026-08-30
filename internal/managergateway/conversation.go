@@ -108,19 +108,21 @@ func (g *armedGateway) consume() bool                  { return g.budget.Compare
 func (g *armedGateway) RegisterSensitive(value []byte) { g.sensitive.Add(value) }
 
 type conversation struct {
-	session   *managerdomain.Session
-	hermes    *managerdomain.HermesProcess
-	proxy     *managerdomain.Proxy
-	ollama    *managerdomain.OllamaClient
-	managed   *managerdomain.ManagedOllama
-	model     string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	turnMu    sync.Mutex
-	active    atomic.Bool
-	failures  chan error
-	closeOnce sync.Once
-	closeErr  error
+	session      *managerdomain.Session
+	hermes       *managerdomain.HermesProcess
+	proxy        *managerdomain.Proxy
+	ollama       *managerdomain.OllamaClient
+	managed      *managerdomain.ManagedOllama
+	model        string
+	modelDigest  string
+	modelCleanup managerdomain.ModelCleanupOwnership
+	ctx          context.Context
+	cancel       context.CancelFunc
+	turnMu       sync.Mutex
+	active       atomic.Bool
+	failures     chan error
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Service, subject core.Subject, managerSessionID string, mandateExpires time.Time) (runtime *conversation, err error) {
@@ -140,7 +142,7 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	}
 	endpoint := cfg.Inference.Endpoint
 	runtimeCtx, cancelRuntime := context.WithDeadline(lifetimeCtx, mandateExpires)
-	runtime = &conversation{model: cfg.Inference.Model, ctx: runtimeCtx, cancel: cancelRuntime, failures: make(chan error, 1)}
+	runtime = &conversation{model: cfg.Inference.Model, modelDigest: cfg.Inference.ModelDigest, ctx: runtimeCtx, cancel: cancelRuntime, failures: make(chan error, 1)}
 	failed := true
 	defer func() {
 		if failed && runtime != nil {
@@ -174,7 +176,12 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	if err != nil {
 		return nil, err
 	}
-	if err = runtime.ollama.Load(startupCtx, cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive); err != nil {
+	if runtime.managed != nil {
+		err = runtime.ollama.Load(startupCtx, cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive)
+	} else {
+		runtime.modelCleanup, err = runtime.ollama.LoadExternalModel(startupCtx, cfg.Inference.Model, cfg.Inference.ModelDigest, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive)
+	}
+	if err != nil {
 		return nil, startupFailure(managerdomain.ReasonModelLoadFailed, err)
 	}
 	now := time.Now().UTC()
@@ -292,8 +299,8 @@ func (r *conversation) Close(ctx context.Context, reason string) error {
 		if r.proxy != nil {
 			joined = errors.Join(joined, r.proxy.Close(ctx))
 		}
-		if r.managed == nil && r.ollama != nil && r.model != "" {
-			joined = errors.Join(joined, r.ollama.UnloadAndVerify(ctx, r.model))
+		if r.managed == nil && r.modelCleanup == managerdomain.ModelCleanupAegisOwned && r.ollama != nil && r.model != "" && r.modelDigest != "" {
+			joined = errors.Join(joined, r.ollama.UnloadAndVerify(ctx, r.model, r.modelDigest))
 		}
 		if r.hermes != nil {
 			joined = errors.Join(joined, r.hermes.Close(ctx))

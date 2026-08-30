@@ -112,6 +112,8 @@ type conversationalRuntime struct {
 	ollama         *managerdomain.OllamaClient
 	managed        *managerdomain.ManagedOllama
 	model          string
+	modelDigest    string
+	modelCleanup   managerdomain.ModelCleanupOwnership
 	authorityClose func() error
 	active         atomic.Bool
 	failures       chan error
@@ -150,7 +152,7 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 		return nil, errors.New(managerdomain.ReasonContextUnsupported)
 	}
 	endpoint := cfg.Inference.Endpoint
-	runtime = &conversationalRuntime{model: cfg.Inference.Model, failures: make(chan error, 1)}
+	runtime = &conversationalRuntime{model: cfg.Inference.Model, modelDigest: cfg.Inference.ModelDigest, failures: make(chan error, 1)}
 	if presentation != nil {
 		runtime.cleanupEvent = func(stage, status string) {
 			_ = presentation.Emit(tui.Event{Kind: tui.CleanupStage, Origin: tui.AegisAuthoritative, Stage: stage, Message: stage + ": " + status})
@@ -206,7 +208,12 @@ func startConversationalManager(ctx context.Context, service *app.Service, subje
 	if err != nil {
 		return nil, err
 	}
-	if err = runtime.ollama.Load(ctx, cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive); err != nil {
+	if runtime.managed != nil {
+		err = runtime.ollama.Load(ctx, cfg.Inference.Model, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive)
+	} else {
+		runtime.modelCleanup, err = runtime.ollama.LoadExternalModel(ctx, cfg.Inference.Model, cfg.Inference.ModelDigest, cfg.Hermes.ContextLength, cfg.Inference.KeepAlive)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("%s: %w", managerdomain.ReasonModelLoadFailed, err)
 	}
 	now := time.Now().UTC()
@@ -369,8 +376,8 @@ func (r *conversationalRuntime) runtimeCleanupOperations(ctx context.Context) []
 	if r.proxy != nil {
 		operations = append(operations, cleanupOperation{"invalidating inference capability and closing proxy", func() error { return r.proxy.Close(ctx) }})
 	}
-	if r.managed == nil && r.ollama != nil && r.model != "" {
-		operations = append(operations, cleanupOperation{"unloading and verifying exact model removal", func() error { return r.ollama.UnloadAndVerify(ctx, r.model) }})
+	if r.managed == nil && r.modelCleanup == managerdomain.ModelCleanupAegisOwned && r.ollama != nil && r.model != "" && r.modelDigest != "" {
+		operations = append(operations, cleanupOperation{"unloading and verifying exact model removal", func() error { return r.ollama.UnloadAndVerify(ctx, r.model, r.modelDigest) }})
 	}
 	if r.hermes != nil {
 		operations = append(operations, cleanupOperation{"stopping Hermes and removing disposable state", func() error { return r.hermes.Close(ctx) }})
