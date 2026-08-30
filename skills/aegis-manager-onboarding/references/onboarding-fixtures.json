@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "notice": "Hermetic non-secret interpretation examples only; never identity, authority, route, service, or completion evidence.",
+  "cases": [
+    {
+      "id": "absent",
+      "snapshot": {
+        "state": "uninitialized",
+        "reason": "manager_not_initialized",
+        "next_command": "aegis init",
+        "checks": [
+          {"name": "principal", "status": "incomplete", "remedy": "aegis init"}
+        ]
+      },
+      "interpretation": "Run initialization only in a real terminal after explicit operator request."
+    },
+    {
+      "id": "partial-resumable",
+      "snapshot": {
+        "state": "uninitialized",
+        "reason": "configuration_initialization_partial",
+        "next_command": "aegis init",
+        "checks": [
+          {"name": "configuration", "status": "incomplete", "reason": "configuration_initialization_partial", "remedy": "aegis init"}
+        ]
+      },
+      "interpretation": "Rerun artifact-derived initialization; do not infer completion or delete unmatched artifacts."
+    },
+    {
+      "id": "authority-locked",
+      "snapshot": {
+        "state": "principal-configured",
+        "reason": "credential_authority_locked",
+        "next_command": "unlock the credential authority in a real terminal",
+        "checks": [
+          {"name": "principal", "status": "verified"},
+          {"name": "credential-authority", "status": "incomplete", "reason": "custody_invalid", "remedy": "unlock the credential authority in a real terminal"}
+        ]
+      },
+      "interpretation": "Use protected no-echo intake; never place a passphrase in argv, fixtures, or model context."
+    },
+    {
+      "id": "unsupported-hermes",
+      "snapshot": {
+        "state": "authority-configured",
+        "reason": "runtime_incomplete",
+        "next_command": "aegis init",
+        "checks": [
+          {"name": "credential-authority", "status": "verified"},
+          {"name": "Hermes Agent", "status": "incomplete", "reason": "unsupported_or_absent", "remedy": "install Hermes Agent >=0.18.0,<0.19.0 and run aegis init"}
+        ]
+      },
+      "interpretation": "Install or repair Hermes separately with operator authorization; do not hide or substitute the runtime."
+    },
+    {
+      "id": "model-drifted",
+      "snapshot": {
+        "state": "repair-required",
+        "reason": "model_artifact_drift",
+        "next_command": "aegis init",
+        "checks": [
+          {"name": "exact-model", "status": "repair-required", "reason": "manager_model_digest_mismatch", "remedy": "restore the configured exact artifact or run aegis init to select another approved artifact"}
+        ]
+      },
+      "interpretation": "Stop startup and require exact digest-bound remediation; never select a mutable or alternate model."
+    },
+    {
+      "id": "model-uncertified",
+      "snapshot": {
+        "state": "model-present",
+        "reason": "manager_model_not_certified",
+        "next_command": "aegis init",
+        "checks": [
+          {"name": "exact-model", "status": "verified"},
+          {"name": "certification", "status": "incomplete", "reason": "manager_model_not_certified", "remedy": "aegis manager certify approved-local"}
+        ]
+      },
+      "interpretation": "Run live exact certification only after explicit authenticated authorization."
+    },
+    {
+      "id": "gateway-stopped",
+      "snapshot": {
+        "state": "ready",
+        "reason": "ready",
+        "next_command": "aegis"
+      },
+      "gateway": {
+        "state": "stopped",
+        "reason": "exact_gateway_stopped",
+        "ready": false
+      },
+      "interpretation": "Onboarding artifacts are ready but persistent service readiness is separate; inspect the exact gateway plan and status."
+    },
+    {
+      "id": "ready",
+      "snapshot": {
+        "state": "ready",
+        "reason": "ready",
+        "next_command": "aegis",
+        "checks": [
+          {"name": "principal", "status": "verified"},
+          {"name": "credential-authority", "status": "verified"},
+          {"name": "Hermes Agent", "status": "verified"},
+          {"name": "Ollama", "status": "verified"},
+          {"name": "exact-model", "status": "verified"},
+          {"name": "certification", "status": "verified"}
+        ]
+      },
+      "gateway": {
+        "state": "healthy",
+        "reason": "authenticated_exact_gateway_ready",
+        "ready": true,
+        "audit_current": true
+      },
+      "interpretation": "Use current authenticated live readback before claiming the requested manager or gateway is ready."
+    }
+  ]
+}

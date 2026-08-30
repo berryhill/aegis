@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.12",
+    "version": "0.2.13",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:41bbd4f0c0c07a90928895c8e8e98b165ca0e7d0453a5a1b0b027ed25287105c",
+    "content_digest": "sha256:cea937261196e244fc708028120ebe084441ee6b05d03d550050049f824492a5",
     "source_revision": "repository"
   },
   "operations": [
@@ -67,6 +67,11 @@
     {
       "operation": "aegis.evidence-disposition.inspect",
       "primary_skill": "aegis-evidence-disposition",
+      "availability": "shipped"
+    },
+    {
+      "operation": "aegis.manager-onboarding.initialize",
+      "primary_skill": "aegis-manager-onboarding",
       "availability": "shipped"
     }
   ],
@@ -424,6 +429,38 @@
           "path": "references/evidence-fixtures.json",
           "sha256": "sha256:2639c8055fc055f5146227cc8c55433e3b12928622583b01024dd899c92e4b65",
           "size": 6770
+        }
+      ]
+    },
+    {
+      "slug": "aegis-manager-onboarding",
+      "version": "0.1.0",
+      "path": "skills/aegis-manager-onboarding",
+      "description": "Initialize, classify, resume, and verify the authenticated Aegis manager onboarding lifecycle through shipped typed Aegis services without granting bootstrap authority to the model.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.manager-onboarding.initialize"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:eb796f1591cb5f5ea3f48fb736ad83e126ea9d45bbf76298521ab5c66b2cdeae",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:3191964d008a07ab7f679a186c3bac471470b0566378216d4e269f878ab0f3e6",
+          "size": 13897
+        },
+        {
+          "path": "references/onboarding-fixtures.json",
+          "sha256": "sha256:dd19f5644db161351f8068f9a7d5777d7c4aa242df187cbfcb485a43a83065d5",
+          "size": 4579
         }
       ]
     }
