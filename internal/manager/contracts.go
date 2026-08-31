@@ -362,6 +362,7 @@ const (
 	ReasonNotInitialized       = "manager_not_initialized"
 	ReasonAuthenticationFailed = "manager_authentication_failed"
 	ReasonRuntimeUnsupported   = "manager_runtime_unsupported"
+	ReasonRuntimeFailed        = "manager_runtime_failed"
 	ReasonOllamaUnavailable    = "manager_ollama_unavailable"
 	ReasonOllamaNotLocal       = "manager_ollama_not_local"
 	ReasonCloudForbidden       = "manager_ollama_cloud_forbidden"

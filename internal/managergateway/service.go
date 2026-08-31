@@ -61,6 +61,7 @@ type Service struct {
 	conversationMu sync.Mutex
 	mu             sync.Mutex
 	sessions       map[string]session
+	cleanupErr     error
 }
 
 func New(parent context.Context, application *app.Service) (*Service, error) {
@@ -125,7 +126,8 @@ func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error
 		if runtime != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
 			defer cancel()
-			_ = runtime.Close(cleanup, managerdomain.EndSessionExpired)
+			closeErr := runtime.Close(cleanup, managerdomain.EndSessionExpired)
+			s.recordCleanupFailure(closeErr)
 		}
 		return Opened{}, app.ErrExpired
 	}
@@ -145,7 +147,8 @@ func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error
 		if runtime != nil {
 			cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
 			defer cancel()
-			_ = runtime.Close(cleanup, managerdomain.EndStartupFailed)
+			closeErr := runtime.Close(cleanup, managerdomain.EndStartupFailed)
+			s.recordCleanupFailure(closeErr)
 		}
 		return Opened{}, err
 	}
@@ -156,6 +159,9 @@ func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error
 func (s *Service) hasActiveConversation(now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.cleanupErr != nil {
+		return true
+	}
 	for _, entry := range s.sessions {
 		if entry.runtime != nil && now.Before(entry.expires) && now.Before(entry.subject.ExpiresAt) {
 			return true
@@ -180,6 +186,7 @@ func (s *Service) closeExpiredConversations(now time.Time) error {
 		result = errors.Join(result, runtime.Close(cleanup, managerdomain.EndSessionExpired))
 		cancel()
 	}
+	s.recordCleanupFailure(result)
 	return result
 }
 
@@ -187,6 +194,7 @@ func (s *Service) watchSession(entry session) {
 	timer := time.NewTimer(max(time.Until(entry.expires), 0))
 	defer timer.Stop()
 	reason := managerdomain.EndSessionExpired
+	runtimeFailed := false
 	if entry.runtime == nil {
 		select {
 		case <-timer.C:
@@ -200,11 +208,20 @@ func (s *Service) watchSession(entry session) {
 			reason = managerdomain.EndTermination
 		case <-entry.runtime.failures:
 			reason = managerdomain.EndRuntimeFailed
+			runtimeFailed = true
 		}
+	}
+	if runtimeFailed {
+		s.degradeRuntime(entry)
+		return
 	}
 	if entry.runtime != nil {
 		s.conversationMu.Lock()
 		defer s.conversationMu.Unlock()
+		cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
+		defer cancel()
+		closeErr := entry.runtime.Close(cleanup, reason)
+		s.recordCleanupFailure(closeErr)
 	}
 	s.mu.Lock()
 	current, exists := s.sessions[entry.id]
@@ -212,12 +229,37 @@ func (s *Service) watchSession(entry session) {
 		delete(s.sessions, entry.id)
 	}
 	s.mu.Unlock()
+}
+
+func (s *Service) recordCleanupFailure(err error) {
+	if err == nil {
+		return
+	}
+	s.mu.Lock()
+	s.cleanupErr = errors.Join(s.cleanupErr, err)
+	s.mu.Unlock()
+}
+
+func (s *Service) degradeRuntime(entry session) {
+	s.conversationMu.Lock()
+	defer s.conversationMu.Unlock()
+	s.mu.Lock()
+	current, exists := s.sessions[entry.id]
+	if exists && current.token == entry.token {
+		current.mode = "degraded"
+		current.reason = managerdomain.ReasonRuntimeFailed
+		current.nextStep = managerNextStep(current.reason)
+		current.runtime = nil
+		s.sessions[entry.id] = current
+	}
+	s.mu.Unlock()
 	if !exists || current.token != entry.token || entry.runtime == nil {
 		return
 	}
 	cleanup, cancel := context.WithTimeout(context.Background(), s.app.Config.Manager.CleanupTimeout)
 	defer cancel()
-	_ = entry.runtime.Close(cleanup, reason)
+	closeErr := entry.runtime.Close(cleanup, managerdomain.EndRuntimeFailed)
+	s.recordCleanupFailure(closeErr)
 }
 
 func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, input string) (slash.Result, error) {
@@ -246,15 +288,25 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 		MandateState: "active", Lifecycle: lifecycleState(entry.mode), RuntimeState: entry.mode,
 		Route: "authenticated-unix-gateway", PolicyVersion: managerdomain.PolicyVersion,
 		PolicyDigest: managerdomain.PolicyDigest(),
-		Readiness:    managerReadiness(entry),
+		Readiness:    managerReadiness(entry, s.app != nil && s.app.CredentialAuthority != nil),
 	}
 	return s.commands.Execute(ctx, manager, request)
 }
 
-func managerReadiness(entry session) map[string]string {
+func managerReadiness(entry session, authorityOpen bool) map[string]string {
 	expertise := managerdomain.PlatformExpertise()
+	authority := "unavailable"
+	if authorityOpen {
+		authority = "ready"
+	}
+	switch entry.reason {
+	case managerdomain.ReasonAuthorityUnavailable:
+		authority = "unavailable"
+	case managerdomain.ReasonAuthorityInvalid:
+		authority = "invalid"
+	}
 	return map[string]string{
-		"authority": "gateway-owned", "runtime": entry.mode, "reason": entry.reason, "next_step": entry.nextStep,
+		"authority": authority, "runtime": entry.mode, "reason": entry.reason, "next_step": entry.nextStep,
 		"expertise_version": expertise.Version, "expertise_digest": expertise.Digest,
 		"agent_registry": "/agents readiness", "credential_creation": "protected intake required",
 	}
@@ -321,6 +373,7 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	defer cancel()
 	message, err := entry.runtime.Turn(turnCtx, input)
 	if err != nil {
+		s.degradeRuntime(entry)
 		return TurnResult{}, normalizeTurnFailure(err)
 	}
 	return TurnResult{Kind: "message", Origin: TurnOriginModel, Message: message}, nil
@@ -342,7 +395,9 @@ func (s *Service) Close(ctx context.Context, subject core.Subject, id, token str
 	defer cancel()
 	var result error
 	if entry.runtime != nil {
-		result = errors.Join(result, entry.runtime.Close(cleanup, managerdomain.EndUserExit))
+		runtimeErr := entry.runtime.Close(cleanup, managerdomain.EndUserExit)
+		s.recordCleanupFailure(runtimeErr)
+		result = errors.Join(result, runtimeErr)
 	}
 	result = errors.Join(result, s.app.AuditManagerSession(cleanup, entry.subject, "ok", "gateway_client_exit", map[string]string{"route": "authenticated-unix-gateway"}))
 	return result

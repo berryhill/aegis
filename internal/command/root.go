@@ -164,6 +164,27 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	var openedConfig config.Config
 	var openedCredentialRepo *credentialbolt.Store
 	var openedCredentialCustodian *credentials.FileCustodian
+	closeOpened := func() error {
+		var closeErr error
+		if openedFleet != nil {
+			closeErr = openedFleet.Close()
+			openedFleet = nil
+		}
+		if openedCredentialRepo != nil {
+			closeErr = errors.Join(closeErr, openedCredentialRepo.Close())
+			openedCredentialRepo = nil
+		}
+		if openedCredentialCustodian != nil {
+			openedCredentialCustodian.Close()
+			openedCredentialCustodian = nil
+		}
+		if openedAuthority != nil {
+			closeErr = errors.Join(closeErr, openedAuthority.Close())
+			openedAuthority = nil
+		}
+		openedService = nil
+		return closeErr
+	}
 	build := func(cmd *cobra.Command) (*app.Service, error) {
 		cfg, err := config.Load(o.configFile, nil)
 		if err != nil {
@@ -200,19 +221,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if openedService != nil && reflect.DeepEqual(openedConfig, cfg) {
 			return openedService, nil
 		}
-		if openedFleet != nil {
-			if err = openedFleet.Close(); err != nil {
-				return nil, err
-			}
-			openedFleet = nil
+		if err = closeOpened(); err != nil {
+			return nil, err
 		}
-		if openedAuthority != nil {
-			if err = openedAuthority.Close(); err != nil {
-				return nil, err
-			}
-			openedAuthority = nil
-		}
-		openedService = nil
 		authorityPath := filepath.Join(cfg.StateDir, "persistence", "authority-v1")
 		authorityInspection := authoritybadger.Inspect(cmd.Context(), authorityPath)
 		if authorityInspection.State == authoritybadger.StateAbsent {
@@ -232,30 +243,30 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		openedAuthority = authority
 		h := hermes.New(cfg.HermesExecutable, deps.Logger)
 		service := app.New(cfg, st, authority, authority, h, deps.Logger)
-		// Wire the credential authority only for commands that read it. The open
-		// is best-effort: a missing, locked, or otherwise unavailable authority
-		// stays unconfigured and the rest of the fleet vertical continues to
-		// operate. This must not prompt during bootstrap or other non-credential
-		// commands.
+		// A configured credential authority is part of the serve/manager authority
+		// contract. It may not be silently erased when custody or repository open
+		// fails: doing so would publish process readiness while deterministic
+		// manager authority is unavailable.
 		if commandNeedsCredentials(cmd) && cfg.Credentials.Authority.Custody != "" && cfg.Credentials.Authority.Database != "" && cfg.Credentials.Authority.DeploymentID != "" {
 			custodian, custodianErr := loadConfiguredCustodian(cmd, cfg.Credentials.Authority)
-			if custodianErr == nil {
-				repo, repoErr := credentialbolt.Open(cmd.Context(), cfg.Credentials.Authority.Database, cfg.Credentials.Authority.DeploymentID, custodian)
-				if repoErr == nil {
-					service.ConfigureCredentials(repo, custodian)
-					openedCredentialRepo = repo
-					openedCredentialCustodian = custodian
-				} else {
-					custodian.Close()
-				}
+			if custodianErr != nil {
+				openErr := fmt.Errorf("%s: configured credential authority could not be opened: %w", managerdomain.ReasonAuthorityUnavailable, custodianErr)
+				return nil, errors.Join(openErr, closeOpened())
 			}
+			repo, repoErr := credentialbolt.Open(cmd.Context(), cfg.Credentials.Authority.Database, cfg.Credentials.Authority.DeploymentID, custodian)
+			if repoErr != nil {
+				custodian.Close()
+				openErr := fmt.Errorf("%s: configured credential authority could not be opened: %w", managerdomain.ReasonAuthorityUnavailable, repoErr)
+				return nil, errors.Join(openErr, closeOpened())
+			}
+			service.ConfigureCredentials(repo, custodian)
+			openedCredentialRepo = repo
+			openedCredentialCustodian = custodian
 		}
 		if commandNeedsFleet(cmd) {
 			fleetStore, fleetErr := fleetbadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "fleet-v1"))
 			if fleetErr != nil {
-				_ = authority.Close()
-				openedAuthority = nil
-				return nil, fmt.Errorf("open fleet repository: %w", fleetErr)
+				return nil, errors.Join(fmt.Errorf("open fleet repository: %w", fleetErr), closeOpened())
 			}
 			openedFleet = fleetStore
 			fleetService, fleetErr := orchestration.NewFleetService(fleetStore, authority, authority, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
@@ -277,46 +288,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				}
 			}
 			if fleetErr != nil {
-				_ = fleetStore.Close()
-				openedFleet = nil
-				_ = authority.Close()
-				openedAuthority = nil
-				return nil, fmt.Errorf("configure fleet control: %w", fleetErr)
+				return nil, errors.Join(fmt.Errorf("configure fleet control: %w", fleetErr), closeOpened())
 			}
 		}
 		if err = service.RecoverProvisioning(cmd.Context()); err != nil {
-			if openedFleet != nil {
-				_ = openedFleet.Close()
-				openedFleet = nil
-			}
-			_ = authority.Close()
-			openedAuthority = nil
-			return nil, err
+			return nil, errors.Join(err, closeOpened())
 		}
 		openedService = service
 		openedConfig = cfg
 		return service, nil
-	}
-	closeOpened := func() error {
-		var closeErr error
-		if openedFleet != nil {
-			closeErr = openedFleet.Close()
-			openedFleet = nil
-		}
-		if openedCredentialRepo != nil {
-			closeErr = errors.Join(closeErr, openedCredentialRepo.Close())
-			openedCredentialRepo = nil
-		}
-		if openedCredentialCustodian != nil {
-			openedCredentialCustodian.Close()
-			openedCredentialCustodian = nil
-		}
-		if openedAuthority != nil {
-			closeErr = errors.Join(closeErr, openedAuthority.Close())
-			openedAuthority = nil
-		}
-		openedService = nil
-		return closeErr
 	}
 	root.PersistentPostRunE = func(*cobra.Command, []string) error {
 		return closeOpened()
@@ -489,15 +469,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if run := command.RunE; run != nil {
 			command.RunE = func(cmd *cobra.Command, args []string) (runErr error) {
 				defer func() {
-					if openedFleet != nil {
-						runErr = errors.Join(runErr, openedFleet.Close())
-						openedFleet = nil
-					}
-					if openedAuthority != nil {
-						runErr = errors.Join(runErr, openedAuthority.Close())
-						openedAuthority = nil
-					}
-					openedService = nil
+					runErr = errors.Join(runErr, closeOpened())
 				}()
 				return run(cmd, args)
 			}

@@ -2,9 +2,9 @@
 
 Credential-authority setup is a principal operation separate from manager-model onboarding and certification. Aegis does not ask a model to configure or initialize it.
 
-For a bare local installation, onboarding defaults to a passphrase-encrypted KEK at `~/.aegis/state/credentials/authority.kek.enc` and a database at `~/.aegis/state/credentials/authority.db`. After the exact authority plan and separate `[Y/n]` mutation confirmation, it asks for and confirms the authority passphrase through two fresh protected pinentry requests, generates the KEK, stores only an Argon2id plus XChaCha20-Poly1305 envelope, initializes the database, verifies the deployment-bound sentinel, and continues onboarding in the same process. The 12-to-1024-byte policy is byte based. A mismatch or policy failure retries the complete pair at most three times; cancel, timeout, helper/protocol failure, or retry exhaustion mutates nothing and leaves onboarding resumable. Enter accepts the displayed plan defaults. The passphrase is never persisted and must unlock the authority again in a later process.
+For a bare local installation, onboarding defaults to an owner-only host KEK at `~/.aegis/state/credentials/authority.kek` and a database at `~/.aegis/state/credentials/authority.db`. The displayed decision states the trade-off: mode `0600` prevents other host accounts from reading the key, but the configured principal and same-account processes can. This is the built-in custody route qualified for automatic rootless user-service installation because the separately started gateway can reopen it without receiving a secret through argv, environment, or an unprotected pipe.
 
-This local encrypted mode protects a copied credential file against offline disclosure without its passphrase. A compromised logged-in account, root, kernel, terminal, or active Aegis process can still capture the passphrase or plaintext KEK. It is not equivalent to externally delivered systemd service custody, and losing the passphrase makes the authority unavailable without a separately designed recovery mechanism.
+Advanced passphrase custody protects a copied KEK envelope against offline disclosure without its passphrase. After the exact authority plan and separate confirmation, Aegis uses protected pinentry or no-echo terminal fallback, Argon2id, and XChaCha20-Poly1305. The passphrase is never persisted and must unlock authority in each process. Because bootstrap cannot securely transfer that process-local unlock into a separate rootless systemd service, automatic gateway installation denies passphrase custody; run `aegis serve` interactively or provide an externally integrated service-custody design instead.
 
 ## Protected prompt selection and troubleshooting
 
@@ -14,13 +14,13 @@ Pinentry must be usable in the current desktop session (`DISPLAY` or `WAYLAND_DI
 
 Every passphrase-file authority open uses this shared path, including onboarding resumption, principal-only `aegis secret` administration, manager authority startup, and `aegis serve` when its configured broker needs the authority. A wrong passphrase retries in a fresh protected request at most three times. Missing, malformed, insecurely permissioned, unsupported, deployment-drifted, or structurally invalid artifacts do not retry. A successful unlock is process-local and lasts only as long as the existing custodian/authority lifecycle; Aegis adds no daemon, cache file, keyring record, GPG secret, or passphrase verifier.
 
-Pinentry changes the protected input/display route only. It is not a desktop keyring, GPG-agent cache, hardware-backed store, sandbox, or recovery mechanism. Same-account malware, a compromised desktop session or helper executable, root, the kernel, process-memory inspection, and Go/runtime copies remain residual risks. Headless and systemd services should use the systemd custody mode below rather than pretending GUI pinentry is available.
+Pinentry changes the protected input/display route only. It is not a desktop keyring, GPG-agent cache, hardware-backed store, sandbox, or recovery mechanism. Same-account malware, a compromised desktop session or helper executable, root, the kernel, process-memory inspection, and Go/runtime copies remain residual risks. Headless services must use the gateway-ready host-file route or an externally integrated systemd credential unit rather than pretending GUI pinentry is available.
 
-Systemd custody remains available only for an actual service deployment that already supplies `CREDENTIALS_DIRECTORY`. Bare onboarding does not pretend that an ordinary shell can deliver a systemd credential. If an earlier incomplete systemd selection has no database and no delivered credential, the wizard offers a digest-bound switch to passphrase-encrypted local custody and removes the obsolete `kek_credential` setting.
+Systemd custody remains available only for an actual service deployment that supplies `CREDENTIALS_DIRECTORY` and integrates the credential into its own unit. The built-in automatic user-service generator rejects this custody mode because it has no authoritative encrypted-credential source path to bind. Bare onboarding does not pretend that an ordinary shell can deliver a systemd credential.
 
-The explicitly weaker plaintext host-file mode remains available for development. Aegis resolves the local home before filesystem use and never stores a tilde path.
+The owner-only host-file mode is the default gateway-compatible local route. It is weaker against compromise of the configured host account than passphrase or externally delivered systemd custody. Aegis resolves the local home before filesystem use and never stores a tilde path.
 
-## Development host-file path
+## Gateway-compatible host-file path
 
 Choose deployment-specific absolute paths below the configured Aegis state directory. Add this block under `credentials` in the existing mode-`0600` Aegis configuration:
 
@@ -32,7 +32,7 @@ authority:
   kek_file: /ABSOLUTE/AEGIS/STATE/credentials/authority.kek
 ```
 
-The configuration must remain owned by the configured principal with mode `0600`. Parent directories must be owned by that principal and must not be writable by group or others. The database and KEK paths must not be symlinks. The host-file KEK is a weaker development fallback: never store or back it up with `authority.db`.
+The configuration must remain owned by the configured principal with mode `0600`. Parent directories must be owned by that principal and must not be writable by group or others. The database and KEK paths must not be symlinks. The host-file KEK is the gateway-compatible local default but remains weaker against same-account compromise: never store or back it up with `authority.db`.
 
 Validate the complete configuration before any creation:
 

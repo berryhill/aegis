@@ -170,6 +170,9 @@ func Preview(executable, configPath string) (Plan, error) {
 	if cfg.API.Token == "" || cfg.API.TokenFile == "" || cfg.API.UnixSocket == "" {
 		return Plan{}, errors.New("serve-ready protected token_file and unix_socket are required")
 	}
+	if authority := cfg.Credentials.Authority; authority.Database != "" && authority.Custody != "host-file" {
+		return Plan{}, fmt.Errorf("automatic user service requires gateway-compatible host-file credential custody; configured custody %q requires explicit external service integration", authority.Custody)
+	}
 	current, err := user.Current()
 	if err != nil || current.Uid != cfg.Principal.UID || current.Username != cfg.Principal.User {
 		return Plan{}, errors.New("configured principal does not match freshly authenticated host identity")

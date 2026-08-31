@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -18,6 +22,139 @@ import (
 	"github.com/berryhill/aegis/internal/registry"
 	badgerdb "github.com/dgraph-io/badger/v4"
 )
+
+func TestStoreCloseFailsBeforeCleanPublicationWhenDirtyRemovalFails(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fleet-v1")
+	store, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(filepath.Join(root, "DIRTY")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Mkdir(filepath.Join(root, "DIRTY"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "DIRTY", "blocker"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err == nil {
+		t.Fatal("close succeeded despite unremovable DIRTY evidence")
+	}
+	if _, statErr := os.Lstat(filepath.Join(root, "CLEAN")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("CLEAN published after DIRTY removal failure: %v", statErr)
+	}
+}
+
+func TestStoreCloseDoesNotReplaceUnexpectedCleanMarker(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fleet-v1")
+	store, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unexpected := []byte("unexpected\n")
+	if err = os.WriteFile(filepath.Join(root, "CLEAN"), unexpected, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err == nil || !strings.Contains(err.Error(), "unexpected CLEAN marker") {
+		t.Fatalf("unexpected CLEAN marker was replaced: %v", err)
+	}
+	got, readErr := os.ReadFile(filepath.Join(root, "CLEAN"))
+	if readErr != nil || string(got) != string(unexpected) {
+		t.Fatalf("unexpected CLEAN evidence changed: content=%q err=%v", got, readErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(root, "DIRTY")); statErr != nil {
+		t.Fatalf("DIRTY evidence was removed on rejected close: %v", statErr)
+	}
+}
+
+func TestStoreOpenRejectsConflictingLifecycleMarkers(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fleet-v1")
+	store, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "DIRTY"), []byte(schemaVersion+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Open(context.Background(), root); err == nil || !strings.Contains(err.Error(), "conflicting fleet lifecycle markers") {
+		t.Fatalf("conflicting CLEAN/DIRTY markers accepted: %v", err)
+	}
+}
+
+func TestNormalizeStoreModesRejectsFIFOWithoutBlocking(t *testing.T) {
+	root := t.TempDir()
+	if err := syscall.Mkfifo(filepath.Join(root, "unexpected.fifo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- normalizeStoreModes(root) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "unexpected file type") {
+			t.Fatalf("FIFO normalization error=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("FIFO blocked fleet mode normalization")
+	}
+}
+
+func TestStoreCloseNormalizesModesUnderPermissiveUmask(t *testing.T) {
+	if root := os.Getenv("AEGIS_TEST_FLEET_MODE_ROOT"); root != "" {
+		syscall.Umask(0002)
+		store, err := Open(context.Background(), root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = store.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	root := filepath.Join(t.TempDir(), schemaVersion)
+	command := exec.Command(os.Args[0], "-test.run=^TestStoreCloseNormalizesModesUnderPermissiveUmask$")
+	command.Env = append(os.Environ(), "AEGIS_TEST_FLEET_MODE_ROOT="+root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("permissive-umask child failed: %v\n%s", err, output)
+	}
+
+	sstSeen := false
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+			return fmt.Errorf("unexpected fleet-store artifact type at %s: %s", path, info.Mode())
+		}
+		want := os.FileMode(0600)
+		if info.IsDir() {
+			want = 0700
+		}
+		if info.Mode().Perm() != want {
+			return fmt.Errorf("fleet-store artifact %s mode=%#o want=%#o", path, info.Mode().Perm(), want)
+		}
+		if filepath.Ext(path) == ".sst" {
+			sstSeen = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sstSeen {
+		t.Fatal("real fleet-store close did not produce an SST artifact")
+	}
+	if _, err = os.Stat(filepath.Join(root, "CLEAN")); err != nil {
+		t.Fatalf("clean marker missing after normalized close: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(root, "DIRTY")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dirty marker remained after normalized close: %v", err)
+	}
+}
 
 func TestStorePersistsFleetFactsAtomicallyAndDurably(t *testing.T) {
 	ctx := context.Background()

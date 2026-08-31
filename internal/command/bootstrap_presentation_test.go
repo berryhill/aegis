@@ -219,10 +219,10 @@ func TestBootstrapCustodyChoiceUsesSharedPresentationAndPreservesExactAdvancedCh
 		Consequence:    "Declining performs no mutation.",
 		Details:        "systemd is externally delivered; host-file is weaker",
 	})
-	if err != nil || custody != "passphrase-file" {
+	if err != nil || custody != "host-file" {
 		t.Fatalf("custody=%q error=%v", custody, err)
 	}
-	for _, expected := range []string{"RECOMMENDATION", "CONSEQUENCE", "DETAILS / authoritative Aegis evidence", "EXACT CHOICES", "passphrase-encrypted local key", "systemd service credential", "plaintext host file", "exit without mutation"} {
+	for _, expected := range []string{"RECOMMENDATION", "CONSEQUENCE", "DETAILS / authoritative Aegis evidence", "EXACT CHOICES", "owner-only host key", "passphrase-encrypted local key", "systemd service credential", "exit without mutation"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("advanced custody output missing %q: %s", expected, output.String())
 		}

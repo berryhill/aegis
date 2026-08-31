@@ -108,6 +108,22 @@ func serviceFixture(t *testing.T) (string, string) {
 	return executable, configPath
 }
 
+func TestPreviewRejectsCredentialCustodyThatCannotStartNoninteractively(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
+	executable, configPath := serviceFixture(t)
+	document, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document = append(document, []byte("credentials:\n  authority:\n    database: \"/secure/authority.db\"\n    deployment_id: deployment\n    custody: passphrase-file\n    kek_file: \"/secure/authority.kek.enc\"\n")...)
+	if err = os.WriteFile(configPath, document, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Preview(executable, configPath); err == nil || !strings.Contains(err.Error(), "gateway-compatible host-file") {
+		t.Fatalf("incompatible custody preview error=%v", err)
+	}
+}
+
 func TestPreviewIsDeterministicSecretFreeAndRejectsForeignUnit(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 	executable, configPath := serviceFixture(t)

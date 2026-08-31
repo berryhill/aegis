@@ -237,6 +237,30 @@ func isolatedPaths(t *testing.T) (string, string) {
 	return filepath.Join(home, ".aegis", "aegis.yaml"), filepath.Join(root, "state")
 }
 
+func TestServeFailsClosedWhenConfiguredCredentialAuthorityCannotOpen(t *testing.T) {
+	configPath := managerTestConfig(t)
+	rootDir := filepath.Dir(configPath)
+	data := fmt.Sprintf("credentials:\n  authority:\n    database: %s\n    deployment_id: node-1\n    custody: passphrase-file\n    kek_file: %s\n", filepath.Join(rootDir, "authority.db"), filepath.Join(rootDir, "missing-kek.json"))
+	file, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = file.WriteString(data); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err = file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	root := NewRoot(Dependencies{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard, Version: "test", Passphrases: &sequencePassphrases{}, IsTerminal: func(io.Reader, io.Writer) bool { return false }})
+	root.SetArgs([]string{"--config", configPath, "serve"})
+	err = root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "manager_credential_authority_unavailable") {
+		t.Fatalf("serve did not fail closed on configured authority open error: %v", err)
+	}
+}
+
 func TestBareRootNonTTYUninitializedReturnsStructuredAction(t *testing.T) {
 	configPath, _ := isolatedPaths(t)
 	var out, stderr bytes.Buffer
@@ -319,7 +343,7 @@ func TestBareInteractiveFirstRunContinuesFullManagerOnboarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "DECISION / Create first-run Aegis configuration", "RECOMMENDATION", "CONSEQUENCE", "Initialization completed atomically", "Setup progress  1/5 verified", "now            credential authority", "DECISION / Choose credential authority custody", "passphrase-encrypted local key"} {
+	for _, expected := range []string{"AEGIS / bootstrap", "Set up one authenticated, exact-local Aegis manager", "Setup progress  0/5 verified", "now            local identity and configuration", "Aegis first-run initialization", "DECISION / Create first-run Aegis configuration", "RECOMMENDATION", "CONSEQUENCE", "Initialization completed atomically", "Setup progress  1/5 verified", "now            credential authority", "DECISION / Choose credential authority custody", "owner-only host key"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("output missing %q: %s", expected, text)
 		}

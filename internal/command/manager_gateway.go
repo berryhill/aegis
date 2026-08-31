@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
+	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/managergateway"
 	"github.com/berryhill/aegis/internal/slash"
 	"github.com/berryhill/aegis/internal/tui"
@@ -32,6 +33,27 @@ type gatewayManagerClient struct {
 
 type managerCommandParseError struct {
 	usage string
+}
+
+type managerTurnDegradedError struct {
+	code        string
+	remediation string
+}
+
+func (e *managerTurnDegradedError) Error() string { return e.remediation }
+
+func (e *managerTurnDegradedError) apply(client *gatewayManagerClient) {
+	client.mode = "degraded"
+	client.reason = managerdomain.ReasonRuntimeFailed
+	client.nextStep = "run 'aegis manager model status', then start a fresh manager when conversational readiness is restored"
+	if e.code == "manager_authority_unavailable" {
+		client.reason = managerdomain.ReasonAuthorityUnavailable
+		client.nextStep = e.remediation
+	}
+	if e.code == "manager_authority_invalid" {
+		client.reason = managerdomain.ReasonAuthorityInvalid
+		client.nextStep = e.remediation
+	}
 }
 
 func (e *managerCommandParseError) Error() string { return e.usage }
@@ -237,7 +259,7 @@ func managerGatewayTurnError(response *http.Response) error {
 		},
 		"manager_turn_timeout": {
 			status:      http.StatusGatewayTimeout,
-			remediation: "manager conversational turn timed out; retry the turn or use a shorter request",
+			remediation: "manager conversational turn timed out; deterministic controls remain available, but further model turns require a fresh 'aegis manager' session",
 		},
 		"manager_turn_protocol_error": {
 			status:      http.StatusBadGateway,
@@ -245,14 +267,14 @@ func managerGatewayTurnError(response *http.Response) error {
 		},
 		"manager_turn_internal_error": {
 			status:      http.StatusInternalServerError,
-			remediation: "manager conversational turn failed internally; inspect local gateway logs before retrying",
+			remediation: "manager conversational turn failed internally; inspect local gateway logs, then start a fresh 'aegis manager' session for further model turns",
 		},
 	}
 	typed, ok := known[failure.Code]
 	if !ok || typed.status != response.StatusCode {
 		return errors.New("manager conversational turn failed closed; the control plane returned an unknown or inconsistent failure category")
 	}
-	return errors.New(typed.remediation)
+	return &managerTurnDegradedError{code: failure.Code, remediation: typed.remediation}
 }
 
 func shouldSubmitGatewayTurn(mode, input string) bool {
@@ -285,7 +307,10 @@ func runGatewayManager(cmd *cobra.Command, configPath string) (resultErr error) 
 	defer func() {
 		resultErr = closeGatewayManager(resultErr, client, cfg.Manager.CleanupTimeout)
 	}()
+	return runGatewayManagerLoop(cmd, cfg, client, expires)
+}
 
+func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewayManagerClient, expires time.Time) error {
 	output := tui.NewSynchronizedWriter(cmd.OutOrStdout())
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), nil)
 	composer := tui.NewComposer(cmd.InOrStdin(), output, int(cfg.Manager.Ingress.MaximumMessageBytes))
@@ -317,6 +342,12 @@ func runGatewayManager(cmd *cobra.Command, configPath string) (resultErr error) 
 			}
 			result, turnErr := client.turn(cmd.Context(), input)
 			if turnErr != nil {
+				var degraded *managerTurnDegradedError
+				if errors.As(turnErr, &degraded) {
+					degraded.apply(client)
+					fmt.Fprintf(output, "AEGIS / conversational runtime degraded\n%s\nDeterministic controls remain authenticated until the current mandate expires or is revoked.\n", degraded.Error())
+					continue
+				}
 				return turnErr
 			}
 			renderGatewayTurn(output, result)

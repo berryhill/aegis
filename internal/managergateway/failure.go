@@ -120,6 +120,7 @@ func turnFailureForReason(reason string) error {
 		managerdomain.ReasonDigestMismatch,
 		managerdomain.ReasonNotCertified,
 		managerdomain.ReasonRuntimeUnsupported,
+		managerdomain.ReasonRuntimeFailed,
 		managerdomain.ReasonContextUnsupported,
 		managerdomain.ReasonOllamaUnavailable,
 		managerdomain.ReasonModelLoadFailed:
