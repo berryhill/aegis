@@ -82,17 +82,20 @@ func TestGatewayIsCanonicalAndServiceIsOnlyItsCompatibilityAlias(t *testing.T) {
 	}
 }
 
-func TestBareRootRequiresGatewayForDevelopmentAndProductionProfiles(t *testing.T) {
+func TestBareRootUsesLocalManagerForInteractivePassphraseCustody(t *testing.T) {
 	for _, test := range []struct {
 		profile ExecutionProfile
+		custody string
 		want    bool
 	}{
-		{profile: DevelopmentProfile, want: true},
-		{profile: ProductionProfile, want: true},
-		{profile: "", want: false},
+		{profile: DevelopmentProfile, custody: "host-file", want: true},
+		{profile: ProductionProfile, custody: "host-file", want: true},
+		{profile: DevelopmentProfile, custody: "passphrase-file", want: false},
+		{profile: ProductionProfile, custody: "passphrase-file", want: false},
+		{profile: "", custody: "host-file", want: false},
 	} {
-		if got := requiresGateway(test.profile); got != test.want {
-			t.Fatalf("requiresGateway(%q) = %v, want %v", test.profile, got, test.want)
+		if got := requiresGateway(test.profile, test.custody); got != test.want {
+			t.Fatalf("requiresGateway(%q, %q) = %v, want %v", test.profile, test.custody, got, test.want)
 		}
 	}
 }

@@ -42,7 +42,7 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 		}
 		inspection := config.Inspect(options.configFile)
 		gatewayState := userservice.GatewayNotInstalled
-		if requiresGateway(profile) && inspection.State == config.StateValid {
+		if requiresGateway(profile, inspection.Config.Credentials.Authority.Custody) && inspection.State == config.StateValid {
 			gateway := observeBareGateway(cmd.Context(), runner, options.configFile)
 			gatewayState = gateway.State
 			if gateway.State == userservice.GatewayHealthy {

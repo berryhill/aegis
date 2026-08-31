@@ -87,9 +87,9 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 				return false, err
 			}
 			approved, err := bootstrapView.approve(cmd, input, bootstrapDecision{
-				Title:          "Start authenticated manager gateway",
+				Title:          "Start authenticated manager",
 				Recommendation: "Start only when interactive manager access is intended now; otherwise exit and resume later.",
-				Consequence:    "Starts the local authenticated manager surface. The safe default exits without activation.",
+				Consequence:    "Starts the local authenticated manager through the verified custody-compatible route. The safe default exits without activation.",
 				Details:        fmt.Sprintf("principal=%s; runtime=Hermes Agent %s; route=local-only; no fallback=true; exact model=%s @ %s", snapshot.Principal, snapshot.HermesVersion, snapshot.Model, snapshot.ModelDigest),
 				DefaultDecline: true,
 			})
