@@ -15,6 +15,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/managergateway"
 	"github.com/berryhill/aegis/internal/slash"
+	"github.com/spf13/cobra"
 )
 
 type gatewayRoundTripper func(*http.Request) (*http.Response, error)
@@ -68,6 +69,71 @@ func TestGatewayManagerCommandAcceptsOnlyTypedParseFailure(t *testing.T) {
 				t.Fatalf("unsafe parse rendering: %v", err)
 			}
 		})
+	}
+}
+
+func TestGatewayManagerLoopKeepsDeterministicControlsAfterRuntimeFailure(t *testing.T) {
+	client := &gatewayManagerClient{
+		mode: "conversational", transport: "transport", sessionID: "mgr-test", token: "capability",
+		http: &http.Client{Transport: gatewayRoundTripper(func(request *http.Request) (*http.Response, error) {
+			switch request.URL.Path {
+			case "/v1/manager/sessions/mgr-test/turns":
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader(`{"code":"manager_runtime_unavailable","message":"manager conversation runtime is unavailable"}`)), Header: make(http.Header)}, nil
+			case "/v1/manager/sessions/mgr-test/commands":
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"schema":"manager-command-result-v1","operation":"manager.status","state":"completed","reason":"status_snapshot","data":{"runtime":"degraded"}}`)), Header: make(http.Header)}, nil
+			default:
+				t.Fatalf("unexpected manager path %q", request.URL.Path)
+				return nil, errors.New("unexpected manager path")
+			}
+		})},
+	}
+	cfg := config.Defaults()
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(strings.NewReader("hello\n/status\n/exit\n"))
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	if err := runGatewayManagerLoop(cmd, cfg, client, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if client.mode != "degraded" || client.reason != "manager_runtime_failed" {
+		t.Fatalf("client did not retain a degraded authenticated session: mode=%q reason=%q", client.mode, client.reason)
+	}
+	got := output.String()
+	if !strings.Contains(got, "conversational runtime degraded") || !strings.Contains(got, "manager.status: completed") {
+		t.Fatalf("deterministic command was not executed after runtime failure: %q", got)
+	}
+}
+
+func TestGatewayManagerLoopKeepsSessionAfterIncompleteAgentsCommand(t *testing.T) {
+	commands := 0
+	client := &gatewayManagerClient{
+		mode: "degraded", reason: "manager_model_absent", nextStep: "configure a model",
+		transport: "transport", sessionID: "mgr-test", token: "capability",
+		http: &http.Client{Transport: gatewayRoundTripper(func(request *http.Request) (*http.Response, error) {
+			if request.URL.Path != "/v1/manager/sessions/mgr-test/commands" {
+				t.Fatalf("unexpected manager path %q", request.URL.Path)
+			}
+			commands++
+			if commands == 1 {
+				return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(`{"code":"manager_command_parse_error","message":"usage: /agents readiness|list|show|prepare|register","request_id":"opaque"}`)), Header: make(http.Header)}, nil
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"schema":"manager-command-result-v1","operation":"manager.status","state":"completed","reason":"status_snapshot","data":{"runtime":"degraded"}}`)), Header: make(http.Header)}, nil
+		})},
+	}
+	cfg := config.Defaults()
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(strings.NewReader("/agents register\n/status\n/exit\n"))
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	if err := runGatewayManagerLoop(cmd, cfg, client, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if commands != 2 || !strings.Contains(output.String(), "usage: /agents") || !strings.Contains(output.String(), "manager.status: completed") {
+		t.Fatalf("incomplete /agents command did not recover in-session: calls=%d output=%q", commands, output.String())
 	}
 }
 
@@ -271,9 +337,9 @@ func TestGatewayManagerTurnRendersTypedFailureRemediation(t *testing.T) {
 		{name: "runtime unavailable", status: http.StatusServiceUnavailable, code: "manager_runtime_unavailable", want: "conversation runtime is unavailable; run 'aegis manager model status'; authenticated gateway commands may still be available", notWanted: "manager gateway unavailable"},
 		{name: "authority unavailable", status: http.StatusServiceUnavailable, code: "manager_authority_unavailable", want: "credential authority is unavailable; restore or unlock the local authority", notWanted: "model status"},
 		{name: "authority invalid", status: http.StatusServiceUnavailable, code: "manager_authority_invalid", want: "credential authority is invalid; repair the local authority configuration", notWanted: "model status"},
-		{name: "turn timeout", status: http.StatusGatewayTimeout, code: "manager_turn_timeout", want: "conversational turn timed out; retry the turn or use a shorter request", notWanted: "manager gateway unavailable"},
+		{name: "turn timeout", status: http.StatusGatewayTimeout, code: "manager_turn_timeout", want: "conversational turn timed out; deterministic controls remain available, but further model turns require a fresh 'aegis manager' session", notWanted: "manager gateway unavailable"},
 		{name: "protocol failure", status: http.StatusBadGateway, code: "manager_turn_protocol_error", want: "conversation runtime protocol failed; rerun 'aegis manager' to establish a fresh runtime session", notWanted: "manager gateway unavailable"},
-		{name: "internal failure", status: http.StatusInternalServerError, code: "manager_turn_internal_error", want: "conversational turn failed internally; inspect local gateway logs before retrying", notWanted: "manager gateway unavailable"},
+		{name: "internal failure", status: http.StatusInternalServerError, code: "manager_turn_internal_error", want: "conversational turn failed internally; inspect local gateway logs, then start a fresh 'aegis manager' session", notWanted: "manager gateway unavailable"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

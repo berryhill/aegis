@@ -367,9 +367,9 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 	}
 	custody, err := view.chooseCustody(cmd, input, bootstrapDecision{
 		Title:          "Choose credential authority custody",
-		Recommendation: "Use a passphrase-encrypted local key. It works in this terminal and the passphrase is never stored.",
-		Consequence:    "The recommended route creates owner-only encrypted authority artifacts after exact approval. Declining or exiting performs no mutation.",
-		Details:        "passphrase-file keeps the KEK encrypted at rest; systemd requires an externally delivered service credential; host-file is weaker development-only custody",
+		Recommendation: "Use an owner-only host key for the automatically installed rootless gateway. It is reliable and noninteractive, but the same host account can read it.",
+		Consequence:    "The recommended route creates an owner-only 0600 host key and encrypted credential database after exact approval. Choose advanced for passphrase or externally integrated systemd custody; those routes do not qualify for automatic gateway installation.",
+		Details:        "host-file is gateway-ready but same-account readable; passphrase-file keeps the KEK encrypted at rest and requires interactive serve; systemd requires an externally delivered service credential plus unit integration",
 	})
 	if err != nil {
 		return false, err

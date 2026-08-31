@@ -65,6 +65,94 @@ func TestServiceRetiresExpiredConversationBeforeAdmission(t *testing.T) {
 	}
 }
 
+func TestRuntimeFailureDegradesSessionWithoutRevokingDeterministicAuthority(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Minute)}
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	runtime := &conversation{ctx: runtimeCtx, cancel: cancel, failures: make(chan error, 1)}
+	runtime.active.Store(true)
+	entry := session{
+		id: "mgr", token: sha256.Sum256([]byte("capability")), subject: subject,
+		issuedAt: now, expires: now.Add(time.Minute), mode: "conversational", runtime: runtime,
+	}
+	svc := &Service{
+		app:      &app.Service{Config: config.Config{Manager: config.Manager{CleanupTimeout: time.Second}}},
+		now:      func() time.Time { return now },
+		ctx:      context.Background(),
+		sessions: map[string]session{entry.id: entry},
+	}
+	done := make(chan struct{})
+	go func() {
+		svc.watchSession(entry)
+		close(done)
+	}()
+	runtime.failures <- errors.New("hermes exited")
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("runtime failure did not settle manager session")
+	}
+
+	current, err := svc.authenticate(subject, entry.id, "capability")
+	if err != nil {
+		t.Fatalf("runtime failure revoked deterministic manager authority: %v", err)
+	}
+	if current.mode != "degraded" || current.runtime != nil || current.reason != "manager_runtime_failed" {
+		t.Fatalf("session did not become typed degraded state: %+v", current)
+	}
+}
+
+func TestTurnFailureDegradesSessionWithoutRevokingDeterministicAuthority(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Minute)}
+	tokenValue := "turn-failure-session-token-value"
+	token := sha256.Sum256([]byte(tokenValue))
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	runtime := &conversation{ctx: runtimeCtx, cancel: cancel, failures: make(chan error, 1)}
+	runtime.active.Store(true)
+	entry := session{
+		id: "session", token: token, subject: subject,
+		issuedAt: now, expires: subject.ExpiresAt, mode: "conversational", runtime: runtime,
+	}
+	cfg := config.Defaults()
+	cfg.Manager.CleanupTimeout = time.Second
+	svc := &Service{
+		app:      &app.Service{Config: cfg},
+		ctx:      context.Background(),
+		now:      func() time.Time { return now },
+		sessions: map[string]session{entry.id: entry},
+	}
+
+	if _, err := svc.Turn(context.Background(), subject, entry.id, tokenValue, "hello"); !errors.Is(err, ErrTurnRuntimeUnavailable) {
+		t.Fatalf("turn error=%v, want runtime unavailable", err)
+	}
+	current, err := svc.authenticate(subject, entry.id, tokenValue)
+	if err != nil {
+		t.Fatalf("deterministic session authority was revoked: %v", err)
+	}
+	if current.mode != "degraded" || current.runtime != nil || current.reason != managerdomain.ReasonRuntimeFailed {
+		t.Fatalf("turn failure did not degrade session: %+v", current)
+	}
+}
+
+func TestManagerReadinessReflectsCredentialAuthorityState(t *testing.T) {
+	for _, test := range []struct {
+		reason string
+		open   bool
+		want   string
+	}{
+		{reason: "", open: true, want: "ready"},
+		{reason: managerdomain.ReasonRuntimeFailed, open: true, want: "ready"},
+		{reason: managerdomain.ReasonModelAbsent, open: false, want: "unavailable"},
+		{reason: managerdomain.ReasonAuthorityUnavailable, open: false, want: "unavailable"},
+		{reason: managerdomain.ReasonAuthorityInvalid, open: true, want: "invalid"},
+	} {
+		if got := managerReadiness(session{reason: test.reason}, test.open)["authority"]; got != test.want {
+			t.Fatalf("reason=%q authority=%q want=%q", test.reason, got, test.want)
+		}
+	}
+}
+
 func TestManagerTurnContextEnforcesConfiguredDeadline(t *testing.T) {
 	ctx, cancel := managerTurnContext(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -127,6 +215,9 @@ func TestServiceCloseUsesOwnedContextAndJoinsCleanupErrors(t *testing.T) {
 	}
 	if _, exists := svc.sessions["mgr"]; exists {
 		t.Fatal("session capability was not revoked")
+	}
+	if !errors.Is(svc.cleanupErr, runtimeErr) || !svc.hasActiveConversation(now) {
+		t.Fatal("incomplete runtime cleanup did not block replacement conversation admission")
 	}
 }
 

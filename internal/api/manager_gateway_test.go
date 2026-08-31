@@ -201,6 +201,7 @@ func TestManagerGatewayParseFailureDoesNotRevokeSession(t *testing.T) {
 		forbidden string
 	}{
 		{input: "/agents", status: http.StatusBadRequest, code: "manager_command_parse_error", prefix: "usage: /agents "},
+		{input: "/agents register", status: http.StatusBadRequest, code: "manager_command_parse_error", prefix: "usage: /agents "},
 		{input: "/operator-secret-marker", status: http.StatusBadRequest, code: "manager_command_parse_error", prefix: "invalid manager slash command", forbidden: "operator-secret-marker"},
 		{input: "/status", status: http.StatusOK},
 	} {

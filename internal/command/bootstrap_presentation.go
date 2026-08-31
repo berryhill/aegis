@@ -113,7 +113,7 @@ func (presentation *bootstrapPresentation) approve(cmd *cobra.Command, input *te
 func (presentation *bootstrapPresentation) chooseCustody(cmd *cobra.Command, input *terminalInput, decision bootstrapDecision) (string, error) {
 	detailsShown := presentation.renderDecision(cmd, decision)
 	for {
-		prompt := "Choose custody [Y=encrypted/n=exit/advanced]: "
+		prompt := "Choose custody [Y=gateway-ready/n=exit/advanced]: "
 		if presentation.width < 60 {
 			prompt = "Custody [Y/n/details]: "
 		}
@@ -123,8 +123,8 @@ func (presentation *bootstrapPresentation) chooseCustody(cmd *cobra.Command, inp
 			return "", err
 		}
 		switch strings.ToLower(strings.TrimSpace(answer)) {
-		case "", "y", "yes", "passphrase-file":
-			return "passphrase-file", nil
+		case "", "y", "yes", "host-file":
+			return "host-file", nil
 		case "n", "no", "exit", "cancel", "3":
 			return "", nil
 		case "details", "advanced", "a":
@@ -134,19 +134,19 @@ func (presentation *bootstrapPresentation) chooseCustody(cmd *cobra.Command, inp
 				presentation.writeBlock(cmd, "DETAILS / authoritative Aegis evidence", decision.Details)
 				detailsShown = true
 			}
-			presentation.writeBlock(cmd, "EXACT CHOICES", "[1] passphrase-encrypted local key (recommended)\n[2] systemd service credential (must already be delivered by a service unit)\n[3] plaintext host file (development only; weaker)\n[4] exit without mutation")
+			presentation.writeBlock(cmd, "EXACT CHOICES", "[1] owner-only host key (gateway-ready; same-account readable)\n[2] passphrase-encrypted local key (interactive serve only; automatic gateway installation denied)\n[3] systemd service credential (external credential delivery and unit integration required)\n[4] exit without mutation")
 			fmt.Fprint(cmd.OutOrStdout(), "Select exact custody [1/2/3/4]: ")
 			choice, ended, readErr := readBootstrapLine(cmd, input, 32)
 			if readErr != nil || ended {
 				return "", readErr
 			}
 			switch strings.ToLower(strings.TrimSpace(choice)) {
-			case "1", "passphrase-file":
-				return "passphrase-file", nil
-			case "2", "systemd":
-				return "systemd", nil
-			case "3", "host-file":
+			case "1", "host-file":
 				return "host-file", nil
+			case "2", "passphrase-file":
+				return "passphrase-file", nil
+			case "3", "systemd":
+				return "systemd", nil
 			case "4", "exit", "cancel":
 				return "", nil
 			default:
