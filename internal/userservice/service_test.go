@@ -108,7 +108,7 @@ func serviceFixture(t *testing.T) (string, string) {
 	return executable, configPath
 }
 
-func TestPreviewRejectsCredentialCustodyThatCannotStartNoninteractively(t *testing.T) {
+func TestPreviewSupportsInspectionButApplyRejectsCustodyThatCannotStartNoninteractively(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
 	executable, configPath := serviceFixture(t)
 	document, err := os.ReadFile(configPath)
@@ -119,8 +119,28 @@ func TestPreviewRejectsCredentialCustodyThatCannotStartNoninteractively(t *testi
 	if err = os.WriteFile(configPath, document, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = Preview(executable, configPath); err == nil || !strings.Contains(err.Error(), "gateway-compatible host-file") {
-		t.Fatalf("incompatible custody preview error=%v", err)
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		t.Fatalf("inspection preview must remain available for reset and purge: %v", err)
+	}
+	if err = os.MkdirAll(filepath.Dir(plan.UnitPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(plan.UnitPath, plan.unit, 0600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{}
+	if err = Apply(context.Background(), plan, runner, time.Millisecond); err == nil || !strings.Contains(err.Error(), "gateway-compatible host-file") {
+		t.Fatalf("incompatible custody apply error=%v", err)
+	}
+	if err = EnsureReady(context.Background(), plan, runner, time.Millisecond); err == nil || !strings.Contains(err.Error(), "gateway-compatible host-file") {
+		t.Fatalf("incompatible custody ensure-ready error=%v", err)
+	}
+	if _, err = Action(context.Background(), runner, plan, "start", time.Millisecond); err == nil || !strings.Contains(err.Error(), "gateway-compatible host-file") {
+		t.Fatalf("incompatible custody start error=%v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("service manager was touched before custody denial: %v", runner.calls)
 	}
 }
 
