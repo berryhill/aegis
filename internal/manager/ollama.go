@@ -37,7 +37,10 @@ type OllamaModel struct {
 		ContextLength     int      `json:"context_length"`
 		EmbeddingLength   int      `json:"embedding_length"`
 	} `json:"details"`
-	Capabilities []string `json:"capabilities"`
+	Capabilities  []string  `json:"capabilities"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	SizeVRAM      int64     `json:"size_vram"`
+	ContextLength int       `json:"context_length"`
 }
 
 type PullProgress struct {
