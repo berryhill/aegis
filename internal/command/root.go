@@ -331,7 +331,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			inspection := config.Inspect(o.configFile)
 			snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
 			gateway := userservice.GatewayObservation{}
-			if requiresGateway(deps.Profile) && inspection.State == config.StateValid {
+			if requiresGateway(deps.Profile, inspection.Config.Credentials.Authority.Custody) && inspection.State == config.StateValid {
 				gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
 				nextCommand := "aegis gateway status"
 				if userservice.IsPendingAudit(gateway.Err) {
@@ -379,7 +379,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		authority := authoritybadger.Inspection{State: authoritybadger.StateAbsent}
 		gateway := userservice.GatewayObservation{}
 		inspection := config.Inspect(o.configFile)
-		if requiresGateway(deps.Profile) && inspection.State == config.StateValid {
+		if requiresGateway(deps.Profile, inspection.Config.Credentials.Authority.Custody) && inspection.State == config.StateValid {
 			gateway = observeBareGateway(cmd.Context(), deps.UserService, o.configFile)
 			if gateway.State == userservice.GatewayUnhealthy && userservice.IsPendingAudit(gateway.Err) {
 				if err := ensureBareGatewayReady(cmd.Context(), deps.UserService, o.configFile); err != nil {
@@ -417,7 +417,11 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return err
 			}
 		}
-		if requiresGateway(deps.Profile) {
+		gatewayCustody := ""
+		if current := config.Inspect(o.configFile); current.State == config.StateValid {
+			gatewayCustody = current.Config.Credentials.Authority.Custody
+		}
+		if requiresGateway(deps.Profile, gatewayCustody) {
 			input := newTerminalInput(cmd.InOrStdin())
 			reconciled, err := reconcileServeTransport(cmd, o.configFile, input)
 			if err != nil || !reconciled {
@@ -493,7 +497,10 @@ func activateAndEnterAegisAgent(activate, manager func() error) error {
 	return enterAegisAgent(manager)
 }
 
-func requiresGateway(profile ExecutionProfile) bool {
+func requiresGateway(profile ExecutionProfile, custody string) bool {
+	if custody == "passphrase-file" {
+		return false
+	}
 	return profile == DevelopmentProfile || profile == ProductionProfile
 }
 
