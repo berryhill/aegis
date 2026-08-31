@@ -83,6 +83,24 @@ func TestLiveConformanceAuthorityExpiryIsExplicitAndFailClosed(t *testing.T) {
 	}
 }
 
+func TestCertificationCleanupIsIdempotent(t *testing.T) {
+	calls := 0
+	cleanup := &certificationCleanup{}
+	cleanup.add(func() error {
+		calls++
+		return nil
+	})
+	if err := cleanup.close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cleanup.close(); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("cleanup calls=%d, want 1", calls)
+	}
+}
+
 func TestCertificationFailureRunsCleanupInReverseOrder(t *testing.T) {
 	var calls []int
 	cleanup := &certificationCleanup{}

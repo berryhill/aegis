@@ -39,15 +39,24 @@ func (f *conformanceFormat) get() any {
 	return managerdomain.ConformanceResponseFormat(managerdomain.ConformanceCase{})
 }
 
-type certificationCleanup struct{ steps []func() error }
+type certificationCleanup struct {
+	steps  []func() error
+	closed bool
+	err    error
+}
 
 func (c *certificationCleanup) add(step func() error) { c.steps = append(c.steps, step) }
 func (c *certificationCleanup) close() error {
+	if c.closed {
+		return c.err
+	}
+	c.closed = true
 	var joined error
 	for index := len(c.steps) - 1; index >= 0; index-- {
 		joined = errors.Join(joined, c.steps[index]())
 	}
-	return joined
+	c.err = joined
+	return c.err
 }
 
 func (e liveConformanceExecutor) Execute(ctx context.Context, test managerdomain.ConformanceCase) ([]byte, error) {
@@ -189,7 +198,7 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	cfg := service.Config.Manager
 	cleanup := &certificationCleanup{}
 	defer func() {
-		if cleanupErr := cleanup.close(); cleanupErr != nil {
+		if cleanupErr := cleanup.close(); cleanupErr != nil && !errors.Is(resultErr, cleanupErr) {
 			resultErr = errors.Join(resultErr, fmt.Errorf("manager certification cleanup failed: %w", cleanupErr))
 		}
 	}()
@@ -277,6 +286,9 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	certification, err := managerdomain.RunCertificationWithOptions(certificationCtx, liveConformanceExecutor{gateway: hermes.Client(), budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), timeout: cfg.Hermes.TurnTimeout, progress: progress, proxy: proxy, format: format}, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC(), managerdomain.CertificationOptions{ContinueOnError: continueOnError})
 	if err != nil {
 		return err
+	}
+	if err = cleanup.close(); err != nil {
+		return fmt.Errorf("manager certification cleanup failed before publication: %w", err)
 	}
 	if err = managerdomain.SaveCertification(cfg.Inference.Certification, certification); err != nil {
 		return err

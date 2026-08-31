@@ -66,6 +66,28 @@ func TestLoadExternalModelTracksCleanupOwnership(t *testing.T) {
 	}
 }
 
+func TestRunningModelsAcceptsDocumentedProcessMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/ps" {
+			t.Fatalf("unexpected path %q", request.URL.Path)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"models":[{"name":"qwen3.5:4b","model":"qwen3.5:4b","size":3389983735,"digest":"sha256:2a654d98e6fba55d452b7043684e9b57a947e393bbffa62485a7aac05ee4eefd","details":{"parent_model":"","format":"gguf","family":"qwen3.5","families":["qwen3.5"],"parameter_size":"4B","quantization_level":"Q4_K_M"},"expires_at":"2026-08-31T21:30:00Z","size_vram":3389983735,"context_length":65536}]}`))
+	}))
+	defer server.Close()
+	client, err := NewOllamaClient(server.URL, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, err := client.RunningModels(context.Background())
+	if err != nil {
+		t.Fatalf("documented /api/ps metadata was rejected: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "qwen3.5:4b" || models[0].ContextLength != 65536 || models[0].SizeVRAM != 3389983735 {
+		t.Fatalf("running models = %+v", models)
+	}
+}
+
 func TestUnloadAndVerifySkipsRedundantUnloadWhenModelIsAbsent(t *testing.T) {
 	var unloadRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
