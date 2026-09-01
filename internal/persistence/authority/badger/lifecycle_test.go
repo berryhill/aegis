@@ -379,7 +379,10 @@ func TestResetLeaseDeniesGenerationPathSubstitution(t *testing.T) {
 		t.Fatal(err)
 	}
 	probe := filepath.Join(selected, "000001.vlog")
-	if err = os.WriteFile(probe, []byte("replacement"), 0664); err != nil {
+	if err = os.WriteFile(probe, []byte("replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chmod(probe, 0664); err != nil {
 		t.Fatal(err)
 	}
 	if err = lease.Secure(); err == nil || !strings.Contains(err.Error(), "changed before mode normalization") {
