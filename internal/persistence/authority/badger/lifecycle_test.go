@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -289,6 +290,149 @@ func TestRestartAfterProcessCrashFailsClosedBeforeAuthorityRead(t *testing.T) {
 				t.Fatalf("crashed generation was incorrectly certified clean: %v", err)
 			}
 		})
+	}
+}
+
+func TestSecureForResetNormalizesStoppedDirtyGenerationWithoutCertifyingItClean(t *testing.T) {
+	root := authorityRoot(t)
+	generation, err := Initialize(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.db.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store.lease.release()
+	store.closed = true
+
+	vlog := filepath.Join(root, "stores", generation.Directory, "000001.vlog")
+	if err = os.Chmod(vlog, 0664); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := AcquireResetLease(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	if err = lease.Secure(); err != nil {
+		t.Fatal(err)
+	}
+	assertSecureGenerationModes(t, filepath.Join(root, "stores", generation.Directory))
+	if _, err = os.Stat(filepath.Join(root, "DIRTY")); err != nil {
+		t.Fatalf("reset preparation removed crash evidence: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(root, "CLEAN")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reset preparation certified dirty authority clean: %v", err)
+	}
+	if state := Inspect(context.Background(), root); state.State != StateInvalid {
+		t.Fatalf("reset preparation authorized dirty authority: %+v", state)
+	}
+}
+
+func TestSecureForResetDeniesLiveWriter(t *testing.T) {
+	root := authorityRoot(t)
+	if _, err := Initialize(context.Background(), root); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if lease, leaseErr := AcquireResetLease(ctx, root); !errors.Is(leaseErr, context.DeadlineExceeded) {
+		if lease != nil {
+			lease.Close()
+		}
+		t.Fatalf("live authority writer was not denied: %v", leaseErr)
+	}
+	if _, err = os.Stat(filepath.Join(root, "DIRTY")); err != nil {
+		t.Fatalf("live authority evidence changed: %v", err)
+	}
+}
+
+func TestResetLeaseDeniesGenerationPathSubstitution(t *testing.T) {
+	root := authorityRoot(t)
+	generation, err := Initialize(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := AcquireResetLease(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Close()
+	selected := filepath.Join(root, "stores", generation.Directory)
+	moved := selected + ".moved"
+	if err = os.Rename(selected, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Mkdir(selected, 0700); err != nil {
+		t.Fatal(err)
+	}
+	probe := filepath.Join(selected, "000001.vlog")
+	if err = os.WriteFile(probe, []byte("replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chmod(probe, 0664); err != nil {
+		t.Fatal(err)
+	}
+	if err = lease.Secure(); err == nil || !strings.Contains(err.Error(), "changed before mode normalization") {
+		t.Fatalf("generation substitution was not denied: %v", err)
+	}
+	info, err := os.Stat(probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0664 {
+		t.Fatalf("substituted generation was modified: %o", info.Mode().Perm())
+	}
+}
+
+func TestNormalizeGenerationModesRejectsFIFOWithoutBlocking(t *testing.T) {
+	root := t.TempDir()
+	fifo := filepath.Join(root, "unexpected.fifo")
+	if err := syscall.Mkfifo(fifo, 0600); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- normalizeGenerationModes(root) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "unexpected file type") {
+			t.Fatalf("unexpected FIFO result: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("mode normalization blocked on FIFO")
+	}
+}
+
+func TestNormalizeGenerationModesRejectsHardLinkWithoutChangingTarget(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(t.TempDir(), "operator-file")
+	if err := os.WriteFile(target, []byte("preserve"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(target, filepath.Join(root, "linked.vlog")); err != nil {
+		t.Fatal(err)
+	}
+	if err := normalizeGenerationModes(root); err == nil || !strings.Contains(err.Error(), "hard-linked") {
+		t.Fatalf("hard link was not denied: %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0644 {
+		t.Fatalf("external hard-link target mode changed to %o", info.Mode().Perm())
 	}
 }
 

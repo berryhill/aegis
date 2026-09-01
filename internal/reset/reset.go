@@ -81,15 +81,26 @@ type Plan struct {
 }
 
 type Service struct {
-	Current             func() (*user.User, error)
-	LookupID            func(string) (*user.User, error)
-	HomeDir             func() (string, error)
-	BeforeApply         func(Plan)
-	RepositoryResetRoot string
+	Current                        func() (*user.User, error)
+	LookupID                       func(string) (*user.User, error)
+	HomeDir                        func() (string, error)
+	BeforeApply                    func(Plan)
+	RepositoryResetRoot            string
+	allowAuthorityBadgerModeRepair bool
 }
 
 func New() *Service {
 	return &Service{Current: user.Current, LookupID: user.LookupId, HomeDir: os.UserHomeDir}
+}
+
+// PlanDevelopment permits preview of exact owned single-link files in an
+// ACTIVE authority Badger generation whose only defect is umask-derived write
+// bits. Apply remains strict and requires the caller to secure the held reset
+// lease before invoking it.
+func (s *Service) PlanDevelopment(ctx context.Context, configuredPath string) (Plan, error) {
+	copy := *s
+	copy.allowAuthorityBadgerModeRepair = true
+	return copy.Plan(ctx, configuredPath)
 }
 
 func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error) {
@@ -465,7 +476,7 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 		}
 	}
 
-	roots := []inventoryRoot{{path: state, kind: "state", state: state, protected: protected, configuredFiles: configuredFiles}}
+	roots := []inventoryRoot{{path: state, kind: "state", state: state, protected: protected, configuredFiles: configuredFiles, allowAuthorityBadgerModeRepair: s.allowAuthorityBadgerModeRepair}}
 	if checkpoint != state && !within(state, checkpoint) {
 		roots = append(roots, inventoryRoot{path: checkpoint, kind: "checkpoint", state: state, protected: map[string]bool{}, configuredFiles: configuredFiles})
 	}
@@ -483,8 +494,9 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 }
 
 type inventoryRoot struct {
-	path, kind, state          string
-	protected, configuredFiles map[string]bool
+	path, kind, state              string
+	protected, configuredFiles     map[string]bool
+	allowAuthorityBadgerModeRepair bool
 }
 
 func inventory(ctx context.Context, root inventoryRoot) ([]Artifact, error) {
@@ -540,7 +552,8 @@ func inventory(ctx context.Context, root inventoryRoot) ([]Artifact, error) {
 		if !recognized(root, relative, info) {
 			return fmt.Errorf("reset scope contains unknown artifact %s", path)
 		}
-		id, idErr := identity(info, info.IsDir())
+		allowWritable := root.allowAuthorityBadgerModeRepair && authorityBadgerRepairable(root, relative, info)
+		id, idErr := identityWithWritable(info, info.IsDir(), allowWritable)
 		if idErr != nil {
 			return fmt.Errorf("unsafe reset artifact %s: %w", path, idErr)
 		}
@@ -661,6 +674,33 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 		return len(parts) == 2 && parts[1] == "principal-password.json"
 	default:
 		return false
+	}
+}
+
+func authorityBadgerRepairable(root inventoryRoot, relative string, info os.FileInfo) bool {
+	parts := strings.Split(relative, string(filepath.Separator))
+	if root.kind != "state" || len(parts) != 5 || parts[0] != "persistence" || parts[1] != "authority-v1" || parts[2] != "stores" || !badgerGenerationName(parts[3]) || info.IsDir() || !info.Mode().IsRegular() {
+		return false
+	}
+	name := parts[4]
+	if name != "MANIFEST" && name != "KEYREGISTRY" && name != "LOCK" && name != "DISCARD" && !numericBadgerArtifact(name) {
+		return false
+	}
+	for path := filepath.Dir(filepath.Join(root.path, relative)); ; path = filepath.Dir(path) {
+		directory, err := os.Lstat(path)
+		if err != nil || !directory.IsDir() || directory.Mode()&os.ModeSymlink != 0 || directory.Mode().Perm() != 0700 {
+			return false
+		}
+		stat, ok := directory.Sys().(*syscall.Stat_t)
+		if !ok || int(stat.Uid) != os.Geteuid() || int(stat.Gid) != os.Getegid() {
+			return false
+		}
+		if path == root.path {
+			return true
+		}
+		if !within(root.path, path) {
+			return false
+		}
 	}
 }
 
@@ -998,6 +1038,10 @@ func inspectFile(path, kind string) (Artifact, error) {
 }
 
 func identity(info os.FileInfo, directory bool) (Identity, error) {
+	return identityWithWritable(info, directory, false)
+}
+
+func identityWithWritable(info os.FileInfo, directory, allowWritable bool) (Identity, error) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return Identity{}, errors.New("filesystem identity is unavailable")
@@ -1012,7 +1056,7 @@ func identity(info os.FileInfo, directory bool) (Identity, error) {
 	if int(stat.Uid) != os.Geteuid() || int(stat.Gid) != os.Getegid() {
 		return Identity{}, errors.New("ownership does not match the effective operator")
 	}
-	if info.Mode().Perm()&0022 != 0 {
+	if !allowWritable && info.Mode().Perm()&0022 != 0 {
 		return Identity{}, errors.New("artifact is writable by group or others")
 	}
 	if !directory && stat.Nlink != 1 {
