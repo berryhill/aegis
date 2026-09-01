@@ -280,6 +280,87 @@ func Inspect(ctx context.Context, root string) Inspection {
 	return Inspection{State: StateReady, Generation: generation}
 }
 
+// ResetLease proves exclusive ownership of the exact ACTIVE-selected generation
+// across reset preview, confirmation, mode repair, and strict apply.
+type ResetLease struct {
+	lease      *maintenanceLease
+	generation string
+	device     uint64
+	inode      uint64
+}
+
+// AcquireResetLease returns nil when operational authority is absent. Otherwise
+// it holds the exclusive maintenance lease until Close.
+func AcquireResetLease(ctx context.Context, root string) (*ResetLease, error) {
+	root, err := cleanRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = authoritypersistence.ClassifyLegacyAuthority(filepath.Dir(filepath.Dir(root))); err != nil {
+		return nil, err
+	}
+	if _, err = os.Lstat(root); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	coordinator, err := os.Lstat(filepath.Join(root, "MAINTENANCE"))
+	if err != nil || !coordinator.Mode().IsRegular() || coordinator.Mode()&os.ModeSymlink != 0 || coordinator.Mode().Perm() != 0600 || !ownedByCurrentEUID(coordinator) {
+		return nil, fmt.Errorf("%w: reset requires the existing secure maintenance coordinator", ErrMaintenanceUnsafe)
+	}
+	lease, err := acquireMaintenance(ctx, root, true)
+	if err != nil {
+		return nil, err
+	}
+	generation, err := readMarker(filepath.Join(root, "ACTIVE"))
+	if err != nil {
+		lease.release()
+		return nil, fmt.Errorf("secure authority for reset: ACTIVE: %w", err)
+	}
+	if err = validateGeneration(generation); err != nil {
+		lease.release()
+		return nil, err
+	}
+	selected := filepath.Join(root, "stores", generation.Directory)
+	if err = verifyStorePath(selected); err != nil {
+		lease.release()
+		return nil, err
+	}
+	info, err := os.Lstat(selected)
+	if err != nil {
+		lease.release()
+		return nil, err
+	}
+	device, inode, err := fileIdentity(info)
+	if err != nil {
+		lease.release()
+		return nil, err
+	}
+	return &ResetLease{lease: lease, generation: selected, device: device, inode: inode}, nil
+}
+
+// Secure tightens the leased generation without changing lifecycle markers.
+func (l *ResetLease) Secure() error {
+	if l == nil {
+		return nil
+	}
+	if l.lease == nil {
+		return errors.New("authority reset lease is closed")
+	}
+	if err := normalizeGenerationModesIdentity(l.generation, l.device, l.inode); err != nil {
+		return fmt.Errorf("secure authority for reset: %w", err)
+	}
+	return nil
+}
+
+func (l *ResetLease) Close() {
+	if l == nil || l.lease == nil {
+		return
+	}
+	l.lease.release()
+	l.lease = nil
+}
+
 func Open(ctx context.Context, root string) (*Store, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -433,28 +514,119 @@ func acquireInitialization(ctx context.Context, persistenceRoot string) (*mainte
 }
 
 // normalizeGenerationModes makes Badger's umask-dependent files deterministic.
-// The enclosing 0700 tree prevents cross-user access while the store is open;
-// normalization leaves a closed generation safe for reset and offline handling.
+// It traverses from opened directory descriptors so validation and chmod act on
+// the same objects and never follow a substituted symlink.
 func normalizeGenerationModes(root string) error {
-	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	return normalizeGenerationModesIdentity(root, 0, 0)
+}
+
+func normalizeGenerationModesIdentity(root string, device, inode uint64) error {
+	rootFD, err := unix.Open(root, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(rootFD)
+	if device != 0 || inode != 0 {
+		var opened unix.Stat_t
+		if err = unix.Fstat(rootFD, &opened); err != nil || uint64(opened.Dev) != device || opened.Ino != inode {
+			return errors.New("authority generation changed before mode normalization")
 		}
-		info, err := os.Lstat(path)
+	}
+	if err = normalizeGenerationDirectoryModes(rootFD); err != nil {
+		return err
+	}
+	if err = unix.Fchmod(rootFD, 0700); err != nil {
+		return err
+	}
+	return unix.Fsync(rootFD)
+}
+
+func normalizeGenerationDirectoryModes(directoryFD int) error {
+	readFD, err := unix.Dup(directoryFD)
+	if err != nil {
+		return err
+	}
+	directory := os.NewFile(uintptr(readFD), "authority-generation-directory")
+	if directory == nil {
+		_ = unix.Close(readFD)
+		return errors.New("open authority generation directory")
+	}
+	entries, err := directory.ReadDir(-1)
+	closeErr := directory.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == "." || name == ".." || filepath.Base(name) != name {
+			return errors.New("invalid authority generation entry")
+		}
+		var discovered unix.Stat_t
+		if err = unix.Fstatat(directoryFD, name, &discovered, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			return err
+		}
+		switch uint32(discovered.Mode) & unix.S_IFMT {
+		case unix.S_IFDIR:
+			childFD, openErr := unix.Openat(directoryFD, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_DIRECTORY, 0)
+			if openErr != nil {
+				return openErr
+			}
+			if err = verifyGenerationOpenedIdentity(childFD, discovered, unix.S_IFDIR); err == nil {
+				err = normalizeGenerationDirectoryModes(childFD)
+			}
+			if err == nil {
+				err = unix.Fchmod(childFD, 0700)
+			}
+			if err == nil {
+				err = unix.Fsync(childFD)
+			}
+			closeErr = unix.Close(childFD)
+			if err == nil {
+				err = closeErr
+			}
+		case unix.S_IFREG:
+			childFD, openErr := unix.Openat(directoryFD, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+			if openErr != nil {
+				return openErr
+			}
+			if err = verifyGenerationOpenedIdentity(childFD, discovered, unix.S_IFREG); err == nil {
+				err = unix.Fchmod(childFD, 0600)
+			}
+			if err == nil {
+				err = unix.Fsync(childFD)
+			}
+			closeErr = unix.Close(childFD)
+			if err == nil {
+				err = closeErr
+			}
+		default:
+			return errors.New("authority generation contains an unexpected file type")
+		}
 		if err != nil {
 			return err
 		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("authority generation contains a symlink")
-		}
-		mode := os.FileMode(0600)
-		if entry.IsDir() {
-			mode = 0700
-		} else if !info.Mode().IsRegular() {
-			return errors.New("authority generation contains a non-regular file")
-		}
-		return os.Chmod(path, mode)
-	})
+	}
+	return nil
+}
+
+func verifyGenerationOpenedIdentity(fd int, discovered unix.Stat_t, fileType uint32) error {
+	var opened unix.Stat_t
+	if err := unix.Fstat(fd, &opened); err != nil {
+		return err
+	}
+	if uint32(opened.Mode)&unix.S_IFMT != fileType || opened.Dev != discovered.Dev || opened.Ino != discovered.Ino {
+		return errors.New("authority generation entry changed during mode normalization")
+	}
+	if int(opened.Uid) != os.Geteuid() {
+		return errors.New("authority generation entry ownership is unsafe")
+	}
+	if fileType == unix.S_IFREG && opened.Nlink != 1 {
+		return errors.New("authority generation contains a hard-linked file")
+	}
+	return nil
 }
 
 func randomID() (string, error) {
@@ -484,10 +656,17 @@ func validateGeneration(g Generation) error {
 	return nil
 }
 
-func verifyStoreIdentity(path string, generation Generation) error {
+func verifyStorePath(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
 		return fmt.Errorf("%w: selected store path is unsafe", ErrCorruptGeneration)
+	}
+	return nil
+}
+
+func verifyStoreIdentity(path string, generation Generation) error {
+	if err := verifyStorePath(path); err != nil {
+		return err
 	}
 	db, err := badgerdb.Open(options(path).WithReadOnly(true))
 	if err != nil {

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/berryhill/aegis/internal/config"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
 	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
@@ -124,7 +126,26 @@ func resetCmdWithPreparation(service *resetdomain.Service, isTerminal func(io.Re
 					return err
 				}
 			}
-			plan, err := service.Plan(cmd.Context(), configuredPath)
+			var err error
+			var authorityLease *authoritybadger.ResetLease
+			if profile == DevelopmentProfile {
+				inspection := config.Inspect(configuredPath)
+				if inspection.State == config.StateValid {
+					bounded, cancel := context.WithTimeout(cmd.Context(), 2*time.Second)
+					authorityLease, err = authoritybadger.AcquireResetLease(bounded, filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
+					cancel()
+					if err != nil {
+						return fmt.Errorf("authority_reset_preparation_failed: operational authority is active or unsafe: %w", err)
+					}
+					defer authorityLease.Close()
+				}
+			}
+			var plan resetdomain.Plan
+			if profile == DevelopmentProfile {
+				plan, err = service.PlanDevelopment(cmd.Context(), configuredPath)
+			} else {
+				plan, err = service.Plan(cmd.Context(), configuredPath)
+			}
 			if err != nil {
 				return usage(err)
 			}
@@ -182,6 +203,11 @@ func resetCmdWithPreparation(service *resetdomain.Service, isTerminal func(io.Re
 			gatewayPurged, err := purgeGateway(cmd.Context(), plan.ConfigPath)
 			if err != nil {
 				return fmt.Errorf("gateway_stop_and_purge_failed: reset state was preserved: %w", err)
+			}
+			if authorityLease != nil {
+				if err = authorityLease.Secure(); err != nil {
+					return fmt.Errorf("authority_reset_preparation_failed: reset state was preserved: %w", err)
+				}
 			}
 			if err = service.Apply(cmd.Context(), plan); err != nil {
 				return err

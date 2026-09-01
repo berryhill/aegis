@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/credentials"
 	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
 	"github.com/spf13/cobra"
 )
@@ -558,6 +559,47 @@ func TestResetPreparationReleasesGatewayAuthorityBeforeStrictPlan(t *testing.T) 
 	}
 	if _, err = os.Stat(fixture.config); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("reset did not remove configuration after prepared strict plan: %v", err)
+	}
+}
+
+func TestDevelopmentResetSecuresStoppedDirtyOperationalAuthorityBeforeStrictPlan(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	authorityRoot := filepath.Join(fixture.state, "persistence", "authority-v1")
+	generation, err := authoritybadger.Initialize(context.Background(), authorityRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := authoritybadger.Open(context.Background(), authorityRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Remove(filepath.Join(authorityRoot, "CLEAN")); err != nil {
+		t.Fatal(err)
+	}
+	active, err := os.ReadFile(filepath.Join(authorityRoot, "ACTIVE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(authorityRoot, "DIRTY"), active, 0600); err != nil {
+		t.Fatal(err)
+	}
+	vlog := filepath.Join(authorityRoot, "stores", generation.Directory, "000001.vlog")
+	if err = os.Chmod(vlog, 0664); err != nil {
+		t.Fatal(err)
+	}
+	purge := func(context.Context, string) (bool, error) { return false, nil }
+	command := resetCmdWithPreparation(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, DevelopmentProfile, func(*cobra.Command, resetdomain.Plan) error { return nil }, nil, purge)
+	command.SetIn(strings.NewReader("yes\n"))
+	command.SetOut(io.Discard)
+	command.SetErr(io.Discard)
+	if err = command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(fixture.config); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reset did not remove configuration after securing dirty authority: %v", err)
 	}
 }
 
