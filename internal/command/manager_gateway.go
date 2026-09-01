@@ -151,10 +151,20 @@ func (c *gatewayManagerClient) turn(ctx context.Context, input string) (managerg
 		return managergateway.TurnResult{}, managerGatewayTurnError(response)
 	}
 	var result managergateway.TurnResult
-	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || strings.TrimSpace(result.Message) == "" || (result.Origin != managergateway.TurnOriginModel && result.Origin != managergateway.TurnOriginAuthoritative) {
+	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&result); err != nil || !validGatewayTurnResult(result) {
 		return managergateway.TurnResult{}, errors.New("control plane returned an invalid manager turn")
 	}
 	return result, nil
+}
+
+func validGatewayTurnResult(result managergateway.TurnResult) bool {
+	if strings.TrimSpace(result.Message) == "" || (result.Origin != managergateway.TurnOriginModel && result.Origin != managergateway.TurnOriginAuthoritative) {
+		return false
+	}
+	if result.Kind == "credential_value" {
+		return result.Sensitive && result.Origin == managergateway.TurnOriginAuthoritative
+	}
+	return !result.Sensitive
 }
 
 func (c *gatewayManagerClient) close(ctx context.Context) error {
@@ -278,7 +288,7 @@ func managerGatewayTurnError(response *http.Response) error {
 }
 
 func shouldSubmitGatewayTurn(mode, input string) bool {
-	return mode == "conversational" || managergateway.IsLocalProfileRequest(input)
+	return mode == "conversational" || managergateway.IsLocalProfileRequest(input) || managerdomain.IsDeterministicCredentialRead(input)
 }
 
 func gatewayManagerCommandSummary() string {

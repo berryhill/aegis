@@ -251,8 +251,13 @@ func TestDegradedGatewaySubmitsOnlyClosedAuthoritativeTurnIntents(t *testing.T) 
 	for input, want := range map[string]bool{
 		"show Hermes profiles":                                 true,
 		"register the default Hermes profile on this computer": true,
-		"hello aegis": false,
-		"register it": false,
+		"what secrets do I have?":                              true,
+		"how many credentials do I have?":                      true,
+		"find credentials matching build":                      true,
+		"show the value for credential build-token":            true,
+		"what about now?":                                      false,
+		"hello aegis":                                          false,
+		"register it":                                          false,
 	} {
 		if got := shouldSubmitGatewayTurn("degraded", input); got != want {
 			t.Fatalf("input=%q got=%t want=%t", input, got, want)
@@ -299,14 +304,32 @@ func TestGatewayManagerTurnUsesAuthenticatedConversationEndpoint(t *testing.T) {
 	}
 }
 
+func TestGatewayManagerTurnAcceptsOnlyTypedAuthoritativeSensitiveValue(t *testing.T) {
+	client := &gatewayManagerClient{
+		http: &http.Client{Transport: gatewayRoundTripper(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"kind":"credential_value","origin":"aegis_authoritative","message":"Credential value: canary","sensitive":true}`)), Header: make(http.Header)}, nil
+		})},
+		transport: strings.Repeat("a", 32),
+		sessionID: "mgr-test",
+		token:     strings.Repeat("t", 32),
+	}
+	result, err := client.turn(context.Background(), "show the value for credential test")
+	if err != nil || !result.Sensitive || result.Kind != "credential_value" || result.Origin != managergateway.TurnOriginAuthoritative {
+		t.Fatalf("typed sensitive result rejected: result=%+v err=%v", result, err)
+	}
+}
+
 func TestGatewayManagerTurnFailsClosedWhenConversationUnavailableOrEmpty(t *testing.T) {
 	for name, test := range map[string]struct {
 		status int
 		body   string
 	}{
-		"runtime unavailable": {status: http.StatusServiceUnavailable, body: `{"error":"unavailable"}`},
-		"empty model reply":   {status: http.StatusOK, body: `{"kind":"message","origin":"model_untrusted","message":"   "}`},
-		"unknown origin":      {status: http.StatusOK, body: `{"kind":"message","origin":"forged","message":"claimed"}`},
+		"runtime unavailable":  {status: http.StatusServiceUnavailable, body: `{"error":"unavailable"}`},
+		"empty model reply":    {status: http.StatusOK, body: `{"kind":"message","origin":"model_untrusted","message":"   "}`},
+		"unknown origin":       {status: http.StatusOK, body: `{"kind":"message","origin":"forged","message":"claimed"}`},
+		"sensitive model":      {status: http.StatusOK, body: `{"kind":"message","origin":"model_untrusted","message":"claimed","sensitive":true}`},
+		"sensitive wrong kind": {status: http.StatusOK, body: `{"kind":"credential_list","origin":"aegis_authoritative","message":"claimed","sensitive":true}`},
+		"value missing marker": {status: http.StatusOK, body: `{"kind":"credential_value","origin":"aegis_authoritative","message":"claimed"}`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			client := &gatewayManagerClient{

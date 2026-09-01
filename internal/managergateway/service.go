@@ -62,6 +62,7 @@ type Service struct {
 	mu             sync.Mutex
 	sessions       map[string]session
 	cleanupErr     error
+	readOperations func(core.Subject) managerdomain.Operations
 }
 
 func New(parent context.Context, application *app.Service) (*Service, error) {
@@ -75,7 +76,9 @@ func New(parent context.Context, application *app.Service) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{app: application, registry: registry, commands: slash.NewService(application, registry), now: application.Now, profileHome: localHermesHome, ctx: parent, sessions: make(map[string]session)}, nil
+	return &Service{app: application, registry: registry, commands: slash.NewService(application, registry), now: application.Now, profileHome: localHermesHome, ctx: parent, sessions: make(map[string]session), readOperations: func(subject core.Subject) managerdomain.Operations {
+		return gatewayOperations{service: application, subject: subject}
+	}}, nil
 }
 
 func opaque(size int) (string, error) {
@@ -347,6 +350,29 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 		return credentialCreationGuidance(route.credential, route.credentialParsed), nil
 	case intentCredentialIntake:
 		return credentialIntakeGuidance(), nil
+	}
+	if managerdomain.IsDeterministicCredentialRead(input) {
+		operations := managerdomain.Operations(gatewayOperations{service: s.app, subject: entry.subject})
+		if s.readOperations != nil {
+			operations = s.readOperations(entry.subject)
+		}
+		read, handled, readErr := managerdomain.DispatchCredentialRead(ctx, operations, input)
+		if !handled {
+			return TurnResult{}, errors.New(managerdomain.ReasonProposalInvalid)
+		}
+		if readErr != nil {
+			return TurnResult{}, readErr
+		}
+		return TurnResult{
+			Kind:      read.Kind,
+			Origin:    TurnOriginAuthoritative,
+			Message:   read.Message,
+			Sensitive: read.Sensitive,
+			Data: map[string]any{
+				"model_bypassed": true,
+				"operation":      read.Kind,
+			},
+		}, nil
 	}
 	if intent := localProfileIntent(input); intent != "" {
 		home, homeErr := s.profileHome(s.app.Config.Principal.User, s.app.Config.Principal.UID)

@@ -127,6 +127,7 @@ The initial manager MAY perform only these classes of operation:
 - initialize the configured encrypted credential authority;
 - list and search credential metadata;
 - inspect one credential record and immutable version metadata;
+- retrieve one exact active credential value only after the authenticated principal supplies a complete exact-reference request; mark a supervised-gateway result as sensitive on the authenticated local manager transport, render it only to the manager client, and never return it to Hermes;
 - establish an exact deterministic credential-create intent outside model dispatch, strip/wipe any recognized inline value, and collect/store the credential only through protected no-echo intake;
 - request credential creation, including `new cred` and `new cred named NAME`, with deterministic local name/reference collection followed by protected intake in every case; a full named-create phrase entered at the name prompt MUST yield only `NAME` as the reference, and kind/protected-disclosure defaults MUST be application-owned rather than model-negotiated;
 - propose metadata changes supported by the authority;
@@ -147,7 +148,7 @@ The manager model MUST NOT receive:
 - provisioning authority;
 - an audit append credential;
 - a generic `GetSecret` operation;
-- retrieval or reveal of existing credential plaintext without a separately specified capability (not implemented in v1);
+- retrieval or reveal of existing credential plaintext by the model, by an ambiguous/incomplete request, or outside the separately implemented authenticated terminal-only exact-reference capability;
 - authority to approve its own proposals;
 - authority to change the route, model, security context, or session lifetime.
 
@@ -161,7 +162,7 @@ The manager context MUST NOT be unioned with authority from the user's normal He
 
 Every manager session MUST receive the exact digest-bound `aegis.platform.expertise.v2` projection. Its content MUST cover Agent Registry, Loop, Graph, Queue, evidence/disposition, external authority, and credential/capability separation; manager policy and certification identity MUST change when the projection changes. The projection is explanatory model context and MUST NOT grant authority.
 
-Both conversational and degraded terminal headers MUST make `/agents` discoverable and name `/help agents` for exact grammar. Generic and polite Agent-registration and credential-create imperatives MUST be classified before model dispatch. Registration intent MUST return deterministic authoritative `/agents readiness` and prepare/register guidance without claiming mutation. The gateway turn endpoint has no protected no-echo intake and therefore MUST NOT create a credential; it MUST return deterministic no-mutation protected-intake guidance and MUST NOT forward supplied credential-bearing syntax to the model. Runtime unavailable, authority unavailable, authority invalid, timeout, protocol, and internal turn failures MUST remain closed typed categories from producer through HTTP and client remediation; category selection MUST NOT parse arbitrary error/model text.
+Both conversational and degraded terminal headers MUST make `/agents` discoverable and name `/help agents` for exact grammar. Generic and polite Agent-registration and credential-create imperatives MUST be classified before model dispatch. Complete low-ambiguity credential count, list, filtered-search, and exact-reference terminal-only value-read requests MUST use one shared deterministic dispatcher before model dispatch in both in-process and supervised-gateway sessions. Each handled read MUST execute through the authenticated Aegis authority, return an authoritative typed result, and MUST NOT be vetoed, selected, approved, or performed by the model. Educational, quoted, negated, multiline, or incomplete follow-up text MUST NOT manufacture a read operation. Registration intent MUST return deterministic authoritative `/agents readiness` and prepare/register guidance without claiming mutation. The gateway turn endpoint has no protected no-echo intake and therefore MUST NOT create a credential; it MUST return deterministic no-mutation protected-intake guidance and MUST NOT forward supplied credential-bearing syntax to the model. Runtime unavailable, authority unavailable, authority invalid, timeout, protocol, and internal turn failures MUST remain closed typed categories from producer through HTTP and client remediation; category selection MUST NOT parse arbitrary error/model text.
 
 When credential authority is configured for the long-lived `serve` owner, startup MUST open and verify that exact custody and repository in the gateway process. A custody or repository-open failure MUST terminate startup with typed `manager_credential_authority_unavailable`; it MUST NOT silently replace the configured authority with `nil`, publish authenticated process readiness, or let bootstrap's separate CLI-process unlock stand in for gateway ownership. Unconfigured credential authority remains distinct from configured-but-unopenable authority and MUST NOT block credential-independent Registry, Loop, Graph, or Queue actions outside this manager startup contract.
 
@@ -502,6 +503,7 @@ status.show
 secret.list
 secret.search
 secret.metadata
+secret.value.read_principal
 secret.propose_create
 secret.begin_intake
 secret.propose_rotate
@@ -517,7 +519,7 @@ session.exit
 
 ### 9.2 Read operations
 
-Read operations MUST return metadata-only typed results. They MUST not decrypt values. Results MUST be bounded, paginated where necessary, and scanned before model reuse.
+Model-visible read operations MUST return metadata-only typed results and MUST not decrypt values. Results MUST be bounded, paginated where necessary, and scanned before model reuse. The separate `secret.value.read_principal` operation MAY decrypt one exact active record only for a freshly authenticated, complete exact-reference request. In supervised mode, the result MUST be marked sensitive on the principal-authenticated local manager transport and accepted only by the Aegis manager client; it MUST never be reused as model input. This transport does not protect plaintext from the authenticated same-account process, root, kernel, process-memory inspection, or terminal scrollback.
 
 The UI MAY show more metadata directly to the authenticated principal than is sent back to the model. The model should receive the minimum needed to continue the conversation.
 
