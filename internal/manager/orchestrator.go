@@ -123,6 +123,20 @@ func (s *Session) HandleCredentialCount(ctx context.Context) (string, error) {
 	return credentialCountResult(counts, err)
 }
 
+// DispatchCredentialRead applies the shared deterministic read grammar only
+// after this exact manager session still has active authority. Gateway and
+// in-process manager paths call this same boundary.
+func (s *Session) DispatchCredentialRead(ctx context.Context, input string) (CredentialReadResult, bool, error) {
+	if !IsDeterministicCredentialRead(input) {
+		return CredentialReadResult{}, false, nil
+	}
+	activeCtx, err := s.activeContext(ctx)
+	if err != nil {
+		return CredentialReadResult{}, true, err
+	}
+	return DispatchCredentialRead(activeCtx, s.config.Operations, input)
+}
+
 func (s *Session) HandleCredentialList(ctx context.Context) (string, error) {
 	activeCtx, err := s.activeContext(ctx)
 	if err != nil {

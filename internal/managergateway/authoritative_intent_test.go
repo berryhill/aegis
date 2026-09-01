@@ -11,6 +11,8 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
+	managerdomain "github.com/berryhill/aegis/internal/manager"
 )
 
 func degradedRoutingService(now time.Time, subject core.Subject, token string) *Service {
@@ -21,6 +23,79 @@ func degradedRoutingService(now time.Time, subject core.Subject, token string) *
 			id: "degraded", token: sha256.Sum256([]byte(token)), subject: subject,
 			expires: now.Add(time.Hour), mode: "degraded", reason: "manager_model_absent",
 		}},
+	}
+}
+
+type gatewayReadOperations struct {
+	managerdomain.Operations
+	records []credentials.SecretRecord
+	value   []byte
+}
+
+func (o gatewayReadOperations) List(_ context.Context, query string, _ int) ([]credentials.SecretRecord, error) {
+	if query != "" && !strings.Contains(o.records[0].Reference, query) {
+		return nil, nil
+	}
+	return o.records, nil
+}
+
+func (o gatewayReadOperations) Counts(context.Context) (credentials.SecretCounts, error) {
+	return credentials.SecretCounts{Total: len(o.records), Active: len(o.records)}, nil
+}
+
+func (o gatewayReadOperations) ReadValue(_ context.Context, reference string, consume func(credentials.SecretRecord, []byte) error) error {
+	if len(o.records) != 1 || o.records[0].Reference != reference {
+		return credentials.ErrNotFound
+	}
+	return consume(o.records[0], o.value)
+}
+
+func TestCredentialReadsBypassModelThroughAuthorityWhileRuntimeDegraded(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+	canary := []byte("gateway-value-canary")
+	operations := gatewayReadOperations{records: []credentials.SecretRecord{{ID: "secret-one", Reference: "build-token", Kind: "opaque", Status: credentials.StatusActive, CurrentVersion: 1}}, value: canary}
+	service.readOperations = func(got core.Subject) managerdomain.Operations {
+		if got.ID != subject.ID || got.PrincipalID != subject.PrincipalID {
+			t.Fatalf("credential read lost authenticated subject: %+v", got)
+		}
+		return operations
+	}
+
+	for _, test := range []struct {
+		input, kind, contains string
+	}{
+		{input: "how many secrets do I have?", kind: "credential_count", contains: "Credential inventory"},
+		{input: "what secrets do I have?", kind: "credential_list", contains: "Credentials (1)"},
+		{input: "find credentials matching build", kind: "credential_search", contains: `Credentials matching "build" (1)`},
+		{input: "show the value for credential build-token", kind: "credential_value", contains: string(canary)},
+	} {
+		result, err := service.Turn(context.Background(), subject, "degraded", "token", test.input)
+		if err != nil {
+			t.Fatalf("credential read %q: %v", test.input, err)
+		}
+		wantSensitive := test.kind == "credential_value"
+		if result.Kind != test.kind || result.Origin != TurnOriginAuthoritative || result.Sensitive != wantSensitive || result.Data["model_bypassed"] != true || !strings.Contains(result.Message, test.contains) {
+			t.Fatalf("credential read %q returned %+v", test.input, result)
+		}
+		if strings.Contains(fmt.Sprint(result.Data), string(canary)) {
+			t.Fatalf("credential value entered structured turn data: %+v", result.Data)
+		}
+	}
+}
+
+func TestAmbiguousCredentialFollowUpDoesNotRepeatAuthorityRead(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+	service.readOperations = func(core.Subject) managerdomain.Operations {
+		t.Fatal("ambiguous follow-up reached credential authority")
+		return nil
+	}
+	_, err := service.Turn(context.Background(), subject, "degraded", "token", "what about now?")
+	if err == nil {
+		t.Fatal("ambiguous follow-up should require the unavailable conversational runtime")
 	}
 }
 

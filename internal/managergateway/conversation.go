@@ -23,9 +23,12 @@ type gatewayOperations struct {
 	subject core.Subject
 }
 
-func (o gatewayOperations) authority() (*credentials.Authority, error) {
-	if o.service.CredentialAuthority == nil {
+func (o *gatewayOperations) authority() (*credentials.Authority, error) {
+	if o.service == nil || o.service.CredentialAuthority == nil {
 		return nil, errors.New(managerdomain.ReasonAuthorityUnavailable)
+	}
+	if err := o.service.RequirePrincipal(o.subject); err != nil {
+		return nil, err
 	}
 	return o.service.CredentialAuthority, nil
 }

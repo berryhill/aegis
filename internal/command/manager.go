@@ -402,8 +402,6 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			line = slash.UnescapeLiteral(line)
 		}
 		createIntent, createRequested := managerdomain.ParseCreateIntent(line)
-		valueReference, valueReadRequested := managerdomain.ParseCredentialValueReadIntent(line)
-		readIntent := managerdomain.ParseAuthorityReadIntent(line)
 		if !createRequested && managerdomain.ContainsInlineCredentialValue(line) {
 			_ = presentation.Emit(tui.Event{Kind: tui.InputBlocked, Origin: tui.AegisAuthoritative, Reason: "credential-bearing create syntax was not recognized; input was not sent to Hermes or retained"})
 			continue
@@ -428,41 +426,18 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			fmt.Fprintln(cmd.ErrOrStderr(), "Aegis blocked the message:", finding.Reason)
 			continue
 		}
-		if !createRequested && valueReadRequested && conversation != nil {
-			composer.Remember(line)
-			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
-			message, operationErr := conversation.session.HandleCredentialValueRead(sessionCtx, valueReference)
-			if operationErr != nil {
-				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
-				continue
-			}
-			_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
-			continue
-		}
-		if !createRequested && readIntent != managerdomain.AuthorityReadUnknown && conversation != nil {
-			composer.Remember(line)
-			_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
-			var message string
-			var operationErr error
-			switch readIntent {
-			case managerdomain.AuthorityReadCount:
-				message, operationErr = conversation.session.HandleCredentialCount(sessionCtx)
-			case managerdomain.AuthorityReadList:
-				message, operationErr = conversation.session.HandleCredentialList(sessionCtx)
-			case managerdomain.AuthorityReadSearch:
-				query, ok := managerdomain.ParseCredentialSearchIntent(line)
-				if !ok {
-					operationErr = errors.New(managerdomain.ReasonProposalInvalid)
-					break
+		if !createRequested && conversation != nil {
+			readResult, handled, operationErr := conversation.session.DispatchCredentialRead(sessionCtx, line)
+			if handled {
+				composer.Remember(line)
+				_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
+				if operationErr != nil {
+					_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
+					continue
 				}
-				message, operationErr = conversation.session.HandleCredentialSearch(sessionCtx, query)
-			}
-			if operationErr != nil {
-				_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
+				_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: readResult.Message})
 				continue
 			}
-			_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
-			continue
 		}
 		if createRequested && conversation != nil {
 			if createIntent.ReferenceMissing {
