@@ -84,12 +84,15 @@ func TestLocalProfileIntentIsClosedAndDoesNotTreatQuestionsAsMutation(t *testing
 		"import the local Hermes default profile as an Agent":  "register_default",
 		"i want to register an agent":                          "register_default",
 		"Can you register an agent?":                           "register_default",
+		"hey, let's register an agent":                         "register_default",
+		"okay please let's register a new agent":               "register_default",
 		"what is a Hermes profile?":                            "",
 		"register it":                                          "",
 		"show profiles":                                        "",
 		"do not import the local Hermes default profile":       "",
 		"how do I import the local Hermes default profile?":    "",
 		"say 'import the local Hermes default profile'":        "",
+		"hey,\nlet's register an agent":                        "",
 	} {
 		if got := localProfileIntent(input); got != want {
 			t.Fatalf("input=%q got=%q want=%q", input, got, want)
@@ -113,6 +116,26 @@ func TestAgentRegistryIntentIsClosedAndComplete(t *testing.T) {
 	} {
 		if got := parseAgentRegistryIntent(input); got != want {
 			t.Fatalf("input=%q got=%+v want=%+v", input, got, want)
+		}
+	}
+}
+
+func TestPlatformGuidanceIntentRecognizesCompleteSelfExpertiseQuestions(t *testing.T) {
+	for input, want := range map[string]string{
+		"how do I install the Aegis skills in Hermes?":                 "skills_install",
+		"does our registered Hermes agent know how to use Aegis?":      "registered_agent_expertise",
+		"does our registers hermes agent know how to use aegis/":       "registered_agent_expertise",
+		"can you change the name of the default Hermes agent to javi?": "agent_rename",
+		"rename it": "",
+		"say 'install the Aegis skills in Hermes'":                   "",
+		"do not change the name of the default Hermes agent to javi": "",
+		"please quote 'install the Aegis skills in Hermes'":          "",
+		"review this sentence: use Aegis skills in Hermes":           "",
+		"what do you call the agent?":                                "",
+		"why did you rename the agent?":                              "",
+	} {
+		if got := platformGuidanceIntent(input); got != want {
+			t.Fatalf("input=%q got=%q want=%q", input, got, want)
 		}
 	}
 }

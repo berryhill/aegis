@@ -172,7 +172,27 @@ func normalizedIntent(input string) string {
 }
 
 func localProfileIntent(input string) string {
+	if strings.ContainsAny(input, "\r\n") {
+		return ""
+	}
 	normalized := normalizedIntent(input)
+	for _, prefix := range []string{"do not ", "dont ", "never ", "say ", "quote ", "repeat "} {
+		if strings.HasPrefix(normalized, prefix) {
+			return ""
+		}
+	}
+	for {
+		stripped := normalized
+		for _, prefix := range []string{"hey ", "okay ", "ok ", "please "} {
+			stripped = strings.TrimPrefix(stripped, prefix)
+		}
+		if stripped == normalized {
+			break
+		}
+		normalized = stripped
+	}
+	normalized = strings.TrimPrefix(normalized, "lets ")
+	normalized = strings.TrimPrefix(normalized, "let s ")
 	for _, phrase := range []string{
 		"register an agent",
 		"register a new agent",
@@ -199,6 +219,29 @@ func localProfileIntent(input string) string {
 		}
 	}
 	return ""
+}
+
+var (
+	platformSkillsPattern         = regexp.MustCompile(`^(?:how do i |how can i |can you (?:tell me )?how to |please )?(?:install|add|get|use) (?:the )?aegis skills? (?:in|into) hermes$`)
+	platformAgentExpertisePattern = regexp.MustCompile(`^(?:does|do|can) (?:our|the|a|this) (?:register(?:ed|s) )?(?:hermes )?agent (?:know how to use|know|use|have) aegis(?: skills)?$`)
+	platformAgentRenamePattern    = regexp.MustCompile(`^(?:and )?(?:can|could|would) you (?:change the name of|change name of|rename) (?:the )?(?:default )?(?:hermes )?agent(?: we registered)? (?:to|as) [a-z0-9][a-z0-9._-]{0,63}$`)
+)
+
+func platformGuidanceIntent(input string) string {
+	if strings.ContainsAny(input, "\r\n") {
+		return ""
+	}
+	normalized := normalizedIntent(input)
+	switch {
+	case platformSkillsPattern.MatchString(normalized):
+		return "skills_install"
+	case platformAgentExpertisePattern.MatchString(normalized):
+		return "registered_agent_expertise"
+	case platformAgentRenamePattern.MatchString(normalized):
+		return "agent_rename"
+	default:
+		return ""
+	}
 }
 
 type agentRegistryIntent struct {
@@ -258,6 +301,10 @@ func IsAgentRegistryRequest(input string) bool {
 
 func IsLocalProfileRequest(input string) bool {
 	return localProfileIntent(input) != ""
+}
+
+func IsPlatformGuidanceRequest(input string) bool {
+	return platformGuidanceIntent(input) != ""
 }
 
 func renderProfileInventory(profiles []HermesProfileDescriptor) string {

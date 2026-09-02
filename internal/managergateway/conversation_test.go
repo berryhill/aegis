@@ -102,6 +102,32 @@ func TestRuntimeFailureDegradesSessionWithoutRevokingDeterministicAuthority(t *t
 	}
 }
 
+func TestRuntimeFailureAtExpiryUsesSessionExpiryCleanup(t *testing.T) {
+	now := time.Now().UTC()
+	runtimeCtx, cancel := context.WithCancel(context.Background())
+	runtime := &conversation{ctx: runtimeCtx, cancel: cancel, failures: make(chan error, 1)}
+	runtime.active.Store(true)
+	entry := session{
+		id: "expired", token: sha256.Sum256([]byte("capability")),
+		subject: core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(-time.Millisecond)},
+		expires: now.Add(-time.Millisecond), mode: "conversational", runtime: runtime,
+	}
+	cfg := config.Defaults()
+	cfg.Manager.CleanupTimeout = time.Second
+	svc := &Service{
+		app: &app.Service{Config: cfg}, ctx: context.Background(), now: func() time.Time { return now },
+		sessions: map[string]session{entry.id: entry},
+	}
+	runtime.failures <- errors.New("hermes exited at expiry")
+	svc.watchSession(entry)
+	if _, exists := svc.sessions[entry.id]; exists {
+		t.Fatal("expiry/failure race retained a degraded session")
+	}
+	if runtime.ctx.Err() == nil {
+		t.Fatal("expiry/failure race did not close runtime")
+	}
+}
+
 func TestTurnFailureDegradesSessionWithoutRevokingDeterministicAuthority(t *testing.T) {
 	now := time.Now().UTC()
 	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Minute)}

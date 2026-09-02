@@ -1,6 +1,7 @@
 package managergateway
 
 import (
+	"regexp"
 	"strings"
 
 	managerdomain "github.com/berryhill/aegis/internal/manager"
@@ -40,17 +41,20 @@ func detectAuthoritativeIntent(input string) authoritativeRoute {
 		return authoritativeRoute{kind: intentCredentialIntake}
 	}
 
+	if strings.ContainsAny(candidate, "\r\n") {
+		return authoritativeRoute{}
+	}
 	normalized := normalizedIntent(candidate)
 	if normalized == "" || conversationalQuestion(normalized) {
 		return authoritativeRoute{}
 	}
-	words := " " + normalized + " "
-	if (strings.Contains(words, " register ") || strings.Contains(words, " add ")) &&
-		(strings.Contains(words, " agent ") || strings.Contains(words, " agents ")) {
+	if agentRegistrationGuidancePattern.MatchString(normalized) {
 		return authoritativeRoute{kind: intentAgentRegistration}
 	}
 	return authoritativeRoute{}
 }
+
+var agentRegistrationGuidancePattern = regexp.MustCompile(`^(?:please )?(?:register|add) (?:(?:an?|the|our|another|new) )?agents?(?: [a-z0-9][a-z0-9._-]{0,63})?(?: for me)?$`)
 
 func authoritativeIntent(input string) string {
 	route := detectAuthoritativeIntent(input)
@@ -102,13 +106,34 @@ func agentRegistrationGuidance() TurnResult {
 	data := expertiseData()
 	data["registered"] = false
 	data["readiness_command"] = "/agents readiness"
-	data["prepare_command"] = "/agents prepare"
+	data["grammar_command"] = "/help agents"
 	return TurnResult{
 		Kind:   "agent_registration_guidance",
 		Origin: TurnOriginAuthoritative,
 		Message: "Registration was not performed. A Hermes profile, including the default profile, is runtime provenance and not Agent registration, identity, or authority. " +
 			"Inspect authoritative Registry readiness with /agents readiness. Registration requires an exact charter fixture and fleet/source binding through the authenticated /agents prepare transaction, followed by /agents register with the exact prepared revision digest.",
 		Data: data,
+	}
+}
+
+func platformGuidance(kind string) TurnResult {
+	data := map[string]any{
+		"guidance_version": "aegis.platform.guidance.v1",
+		"model_bypassed":   true,
+	}
+	switch kind {
+	case "skills_install":
+		data["scope"] = "selected Hermes profile"
+		data["mutated"] = false
+		return TurnResult{Kind: "aegis_skills_installation_guidance", Origin: TurnOriginAuthoritative, Data: data, Message: "Install the advisory Aegis routing skill into the explicitly selected Hermes profile with:\nhermes skills tap add berryhill/aegis\nhermes skills search aegis\nhermes skills inspect berryhill/aegis/skills/aegis\nhermes skills install berryhill/aegis/skills/aegis --yes\nhermes skills list\nhermes skills audit aegis\nInstall another bundled skill with hermes skills install berryhill/aegis/skills/<skill-slug> --yes. This changes only that selected Hermes profile; it does not register an Agent, grant Aegis authority, or install skills into the manager's disposable runtime."}
+	case "registered_agent_expertise":
+		data["registration_imports_profile_contents"] = false
+		return TurnResult{Kind: "registered_agent_expertise_guidance", Origin: TurnOriginAuthoritative, Data: data, Message: "A registered imported Hermes Agent is an immutable Aegis Registry record with runtime provenance; registration does not import the profile's skills, prompts, memories, plugins, credentials, model binding, or authority. The Aegis manager receives a separate versioned, digest-bound platform expertise projection. Check skills installed in a normal Hermes profile with hermes skills list under that profile's HERMES_HOME."}
+	case "agent_rename":
+		data["renamed"] = false
+		return TurnResult{Kind: "agent_rename_guidance", Origin: TurnOriginAuthoritative, Data: data, Message: "The Agent was not renamed. Its canonical Agent ID is immutable because identity, provenance, authorization, execution history, and audit bind to it. A separate authenticated display-name or alias operation is not shipped yet; principal authentication does not make an unsupported identity mutation safe. Registration and history remain unchanged."}
+	default:
+		return TurnResult{}
 	}
 }
 
