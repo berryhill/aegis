@@ -243,6 +243,12 @@ func validateGrammar(request Request) error {
 		if len(args) == 6 && args[0] == "register" {
 			return nil
 		}
+		if len(args) == 3 && args[0] == "import" && args[1] == "hermes" && args[2] == "default" {
+			return nil
+		}
+		if len(args) == 5 && args[0] == "import" && args[1] == "hermes" && args[2] == "default" && args[3] == "confirm" && strings.HasPrefix(args[4], "sha256:") {
+			return nil
+		}
 		return usage()
 	case "complete":
 		if len(args) != 1 {

@@ -172,11 +172,16 @@ func normalizedIntent(input string) string {
 
 func localProfileIntent(input string) string {
 	normalized := normalizedIntent(input)
+	for _, phrase := range []string{
+		"register the default hermes profile on this computer",
+		"import the local hermes default profile as an agent",
+	} {
+		if normalized == phrase {
+			return "register_default"
+		}
+	}
 	if !strings.Contains(normalized, "hermes") || !strings.Contains(normalized, "profile") {
 		return ""
-	}
-	if strings.Contains(normalized, "register") && strings.Contains(normalized, "default") {
-		return "register_default"
 	}
 	for _, phrase := range []string{"list hermes profiles", "show hermes profiles", "see all the hermes profiles", "see the hermes profiles", "find hermes profiles"} {
 		if strings.Contains(normalized, phrase) {

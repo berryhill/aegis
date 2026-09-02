@@ -48,6 +48,7 @@ type Service struct {
 	Now               func() time.Time
 	Current           func() (*user.User, error)
 	LookupEnv         func(string) (string, bool)
+	LocalHermesHome   func(string, string) (string, error)
 
 	CredentialAuthority *credentials.Authority
 	FleetRepository     fleet.Repository
@@ -75,7 +76,7 @@ type AuditDeliveryAuthority interface {
 }
 
 func New(cfg config.Config, st *store.Store, authority core.AuthorityRepository, authorityCommands core.AuthorityCommandRepository, h *hermes.Adapter, log *slog.Logger) *Service {
-	return &Service{Config: cfg, Store: st, Authority: authority, AuthorityCommands: authorityCommands, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
+	return &Service{Config: cfg, Store: st, Authority: authority, AuthorityCommands: authorityCommands, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, LocalHermesHome: localHermesDefaultHome, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
 }
 
 func (s *Service) resolveProviderCredential(provider string, scopes []string) ([]hermes.Credential, error) {

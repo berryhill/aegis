@@ -341,6 +341,13 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	if detection == slash.LiteralSlash {
 		input = slash.UnescapeLiteral(input)
 	}
+	if localProfileIntent(input) == "register_default" {
+		proposal, prepareErr := s.app.PrepareLocalHermesAgentImportAs(ctx, entry.subject)
+		if prepareErr != nil {
+			return TurnResult{}, fmt.Errorf("local Hermes Agent import denied: %w", prepareErr)
+		}
+		return TurnResult{Kind: "local_hermes_agent_import_prepared", Origin: TurnOriginAuthoritative, Message: "Prepared a non-authorizing import review for the owner-verified local Hermes default profile. Profile provenance is not identity or authority, and registration does not activate execution. Confirm only with the exact command in this proposal.", Data: map[string]any{"proposal": proposal, "selected_profile": "default", "model_bypassed": true, "registered": false, "activation": false}}, nil
+	}
 	route := detectAuthoritativeIntent(input)
 	defer route.Wipe()
 	switch route.kind {
@@ -374,7 +381,7 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 			},
 		}, nil
 	}
-	if intent := localProfileIntent(input); intent != "" {
+	if intent := localProfileIntent(input); intent == "inventory" {
 		home, homeErr := s.profileHome(s.app.Config.Principal.User, s.app.Config.Principal.UID)
 		if homeErr != nil {
 			return TurnResult{}, fmt.Errorf("local Hermes profile discovery denied: %w", homeErr)
@@ -384,12 +391,6 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 			return TurnResult{}, fmt.Errorf("local Hermes profile discovery denied: %w", discoverErr)
 		}
 		result := TurnResult{Kind: "hermes_profile_inventory", Origin: TurnOriginAuthoritative, Message: renderProfileInventory(profiles), Data: map[string]any{"profiles": profiles, "model_bypassed": true}}
-		if intent == "register_default" {
-			result.Kind = "hermes_profile_registration_prerequisites"
-			result.Message = renderProfileInventory(profiles) + "\n\nSelected runtime source: profile/default. Registration was not performed: a Hermes profile is runtime provenance, not identity or authority. Aegis requires an exact imported charter and fleet/source binding before it can render the immutable registration digest. Use /agents readiness, then the authenticated /agents prepare transaction."
-			result.Data["selected_profile"] = "default"
-			result.Data["registered"] = false
-		}
 		return result, nil
 	}
 	if entry.mode != "conversational" || entry.runtime == nil {

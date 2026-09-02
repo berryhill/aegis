@@ -28,6 +28,17 @@ Help, completion, availability, policy/audit operation names, aliases, grammar, 
 
 Every executed base command emits canonical metadata-only `manager_command` audit data (operation, outcome/reason, optional operation ID and scope digest); raw command text, arguments, protected values, evidence, and rendered output are excluded.
 
+## Agent Registry extension
+
+`/agents` is a bounded authenticated extension rather than one of the Core 15 base names. Its closed grammar includes `readiness`, `list`, `show`, `prepare`, `register`, and the deterministic local import transaction:
+
+```text
+/agents import hermes default
+/agents import hermes default confirm REVISION_DIGEST
+```
+
+The first command verifies the configured principal/process account and opens only the canonical default `~/.hermes` directory plus its non-empty regular `config.yaml` marker without following symlinks. Linux uses metadata-only `O_PATH` descriptors; other supported platforms use non-following descriptors that the import path only stats and never reads. It rejects owner or group/world-write mismatches, requires the marker to be at most 1 MiB from metadata, and derives its provenance fingerprint only from stable filesystem metadata—not from `config.yaml` bytes. It returns a deterministic proposal with principal-stable Agent/fleet/source identities, a metadata-bound revision digest, and the exact confirmation command; preparation performs no write. Confirmation recomputes the proposal from fresh evidence, requires exact digest equality, saves the deterministic canonical charter, registers one immutable disabled Agent revision, and requires exact post-write readback. Exact replay is idempotent and any source, Agent, charter, or digest collision denies. Neither command reads, hashes, copies, or persists profile contents; provisions or mutates Hermes; activates the Agent; issues a mandate; launches a runtime; or grants credential/model authority.
+
 ## Truthful unavailable boundary
 
 `/watch` is recognized, authorized, audited, rendered, documented, and completed locally as `watch_source_manager_unavailable`. Aegis does not currently have a production leased event-source manager, so it creates no watch ID, lease, timer, buffer, event, or monitoring claim. No endpoint sensor was installed or contacted by this implementation.
