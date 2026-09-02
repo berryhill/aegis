@@ -112,6 +112,8 @@ func TestAgentRegistryGrammarIsClosedAndExact(t *testing.T) {
 		"/agents readiness", "/agents list", "/agents show agent-alpha", "/agents show agent-alpha 1",
 		"/agents prepare charter.json fixture.json fleet-primary source-alpha",
 		"/agents register charter.json fixture.json fleet-primary source-alpha sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"/agents import hermes default",
+		"/agents import hermes default confirm sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 	}
 	for _, input := range accepted {
 		request, err := registry.Parse(input)
@@ -123,6 +125,7 @@ func TestAgentRegistryGrammarIsClosedAndExact(t *testing.T) {
 		"/agents", "/agents readiness extra", "/agents show", "/agents show alpha 1 extra",
 		"/agents prepare charter.json fixture.json fleet-only",
 		"/agents register charter.json fixture.json fleet-primary source-alpha",
+		"/agents import hermes", "/agents import hermes named", "/agents import hermes default confirm",
 		"/agents delete agent-alpha", "/agents list;id",
 	}
 	for _, input := range denied {

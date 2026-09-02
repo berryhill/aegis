@@ -1,7 +1,7 @@
 ---
 name: aegis-agent-registry
 description: Register, inspect, and govern immutable Aegis Agent Registry revisions through shipped typed services without treating profiles or model content as identity or authority.
-version: 0.1.0
+version: 0.2.0
 metadata:
   hermes:
     tags:
@@ -18,7 +18,7 @@ Use this skill for the shipped credential-independent Agent Registry workflow: r
 ## Boundaries
 
 - A canonical Agent ID is stable Registry identity. A Hermes profile, display metadata, prompt identity, fixture, source ID, model narration, process exit, projection state, deployment reference, or mutable tag is not authentication, authorization, registration, ownership, approval, or completion evidence.
-- A Hermes profile is a runtime/provisioning artifact or projection, never the canonical Agent Registry. Registration does not create, import, provision, launch, or certify a profile or runtime.
+- A Hermes profile is a runtime/provisioning artifact or projection, never the canonical Agent Registry. General fixture registration does not create, import, provision, launch, or certify a profile or runtime. The separate bounded manager-only default-profile import records sanitized provenance as one disabled Agent revision; it never makes the persistent profile an execution home or imports profile authority.
 - The current-fleet fixture is a deterministic proposal only. It grants no authority and must contain no credentials, authentication material, private prompts, runtime-home paths, or secret-shaped values.
 - Never infer owner or accountability identity. Preserve the exact `ownership.owner_id` and `ownership.accountability_id` returned by Aegis.
 - Never rewrite an existing revision, substitute `latest` for an exact reference, combine trust stanzas, or treat capability declarations or policy references as effective runtime grants.
@@ -36,13 +36,16 @@ Check `aegis agents --help` before routing work. The shipped CLI operations are:
 - `aegis agents disable AGENT FILE`
 - `aegis agents retire AGENT FILE`
 
-The corresponding protected HTTP operations are `POST /v1/agents`, `GET /v1/agents`, `GET /v1/agents/:agent?revision=REVISION`, `GET /v1/agents/:agent/revisions`, and `PUT /v1/agents/:agent/lifecycle`. Registry collection readiness is included in `GET /v1/fleet/readiness`; there is no shipped standalone `aegis agents readiness` CLI command. The authenticated manager has a separate bounded `/agents readiness|list|show|prepare|register` surface, but it does not expose lifecycle or history operations.
+The corresponding protected HTTP operations are `POST /v1/agents`, `GET /v1/agents`, `GET /v1/agents/:agent?revision=REVISION`, `GET /v1/agents/:agent/revisions`, and `PUT /v1/agents/:agent/lifecycle`. Registry collection readiness is included in `GET /v1/fleet/readiness`; there is no shipped standalone `aegis agents readiness` CLI command. The authenticated manager has a separate bounded `/agents readiness|list|show|import hermes default|prepare|register` surface, but it does not expose lifecycle or history operations. Its exact default-profile transaction is:
 
-If an operation is absent from installed help, label it unavailable. There is no shipped Agent update, delete, unretire, deployment-management, profile-discovery, or arbitrary source-scanning operation.
+- `/agents import hermes default` — prepare a deterministic, non-authorizing proposal without mutation;
+- `/agents import hermes default confirm REVISION_DIGEST` — recompute fresh evidence and register only when the exact displayed digest is repeated.
+
+If an operation is absent from installed help, label it unavailable. There is no shipped Agent update, delete, unretire, deployment-management, named-profile import, arbitrary profile path, recursive profile discovery, or arbitrary source-scanning operation. The manager may expose sanitized read-only local profile inventory and the one exact default-profile import above; neither surface authorizes general scanning or execution.
 
 ## Register one existing participant
 
-1. Require a canonical charter to have already been imported. Registration does not import it.
+1. For the general CLI/HTTP fixture path, require a canonical charter to have already been imported. That path does not import it. The manager-only default-profile confirmation described below is the narrow exception: it saves one deterministic canonical charter as part of its exact two-phase transaction.
 2. Prepare one strict JSON request file with exactly `fixture` and `identity`. `fixture` is an embedded `aegis.current-fleet.fixture.v1` object. `identity` contains exact `fleet_id`, `kind: "current-fleet"`, and `source_id`. Do not add caller identity or authority fields.
 3. In the selected fixture candidate, preserve:
    - canonical `agent_id`;
@@ -56,6 +59,17 @@ If an operation is absent from installed help, label it unavailable. There is no
 5. Require authoritative response readback. Preserve `created`, `registration.agent_id`, `registration.source`, `registration.initial_revision`, and every field of `revision`, including its exact digest.
 
 An identical retry is idempotent and returns the existing canonical record with `created: false`. The same Agent ID or fleet-source identity with different content is a conflict, not an update. Missing, malformed, ambiguous, or non-canonical candidates deny; do not repair fields in the model.
+
+## Import the local Hermes default profile in the manager
+
+1. Use only the authenticated manager's exact `/agents import hermes default` command. Named profiles, arbitrary paths, and recursive scanning are unavailable.
+2. Treat preparation as non-authorizing and non-mutating. Aegis requires fresh configured Unix-peer principal authentication and verifies the process-owned canonical `~/.hermes` root plus a non-empty, owner-safe regular `config.yaml` no larger than 1 MiB without following symlinks.
+3. Aegis never reads, hashes, copies, or persists profile bytes. The proposal uses only bounded filesystem metadata as provenance, with principal-stable Agent/fleet/source identities and a metadata-bound revision digest.
+4. Review the returned disabled lifecycle, `aegis-owned-ephemeral` runtime target, empty capability/policy declarations, exact digest, and generated confirmation command.
+5. Confirm only by repeating the exact `/agents import hermes default confirm REVISION_DIGEST` command. Confirmation reauthenticates, recomputes fresh evidence, requires exact digest equality, saves the deterministic canonical charter, registers one immutable disabled Agent revision, and verifies exact post-write readback.
+6. Exact replay is idempotent. Changed evidence, wrong or stale digest, unsafe marker, source/Agent/charter collision, or ambiguous discovery denies. An interrupted charter-first write may leave only the exact immutable charter, which a later exact retry safely reuses.
+
+This transaction does not import prompts, toolsets, plugins, MCP servers, credentials, memories, sessions, capabilities, policies, model bindings, or runtime grants. It does not modify or launch Hermes, activate the Agent, issue a mandate, or make the persistent profile an admitted runtime home.
 
 ## Inspect and reconstruct history
 

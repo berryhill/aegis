@@ -25,7 +25,7 @@ func (s *Service) agents(ctx context.Context, result Result, manager Context, re
 		if request.Arguments[0] == "readiness" {
 			return completed(result, "agent_registry_ready", map[string]any{
 				"ready": true, "agent_count": len(agents), "empty_registry_valid": true,
-				"operations": []string{"readiness", "list", "show", "prepare", "register"},
+				"operations": []string{"readiness", "list", "show", "import hermes default", "prepare", "register"},
 			}), nil
 		}
 		return completed(result, "agent_registry_list", map[string]any{"agents": agents, "count": len(agents), "empty_registry_valid": true}), nil
@@ -43,6 +43,19 @@ func (s *Service) agents(ctx context.Context, result Result, manager Context, re
 			return agentFailure(result, err)
 		}
 		return completed(result, "agent_registry_exact_readback", map[string]any{"agent": agent}), nil
+	case "import":
+		if len(request.Arguments) == 3 {
+			proposal, err := s.app.PrepareLocalHermesAgentImportAs(ctx, manager.Subject)
+			if err != nil {
+				return agentFailure(result, err)
+			}
+			return completed(result, "local_hermes_agent_import_prepared", map[string]any{"proposal": proposal, "authorizing": false, "registered": false, "activation": false}), nil
+		}
+		agent, created, err := s.app.ConfirmLocalHermesAgentImportAs(ctx, manager.Subject, request.Arguments[4])
+		if err != nil {
+			return agentFailure(result, err)
+		}
+		return completed(result, "local_hermes_agent_import_confirmed", map[string]any{"agent": agent, "created": created, "exact_readback_verified": true, "activation": false}), nil
 	case "prepare", "register":
 		charter, err := readBoundedAgentInput(request.Arguments[1])
 		if err != nil {

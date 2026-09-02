@@ -81,9 +81,13 @@ func TestLocalProfileIntentIsClosedAndDoesNotTreatQuestionsAsMutation(t *testing
 		"can you see all the hermes profiles on this computer?": "inventory",
 		"show Hermes profiles":                                 "inventory",
 		"register the default Hermes profile on this computer": "register_default",
+		"import the local Hermes default profile as an Agent":  "register_default",
 		"what is a Hermes profile?":                            "",
 		"register it":                                          "",
 		"show profiles":                                        "",
+		"do not import the local Hermes default profile":       "",
+		"how do I import the local Hermes default profile?":    "",
+		"say 'import the local Hermes default profile'":        "",
 	} {
 		if got := localProfileIntent(input); got != want {
 			t.Fatalf("input=%q got=%q want=%q", input, got, want)
@@ -104,11 +108,19 @@ func TestDegradedManagerTurnServesAuthoritativeProfileIntentsWithoutModel(t *tes
 	if err := os.MkdirAll(filepath.Join(root, "profiles", "alpha"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
-	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	uid := strconv.Itoa(os.Geteuid())
+	subject := core.Subject{ID: "local-uid:" + uid, PrincipalID: "principal", Issuer: "linux-so-peercred", Method: "local-os", AuthenticatedAt: now, ExpiresAt: now.Add(time.Hour), Claims: map[string]string{"uid": uid}}
 	token := "test-token"
 	service := &Service{
-		app:         &app.Service{Config: config.Config{Principal: config.Principal{User: "ignored", UID: strconv.Itoa(os.Geteuid())}}},
+		app: &app.Service{
+			Config:          config.Config{Principal: config.Principal{ID: "principal", User: "ignored", UID: uid, AuthTTL: time.Hour}},
+			Now:             func() time.Time { return now },
+			LocalHermesHome: func(string, string) (string, error) { return root, nil },
+		},
 		now:         func() time.Time { return now },
 		profileHome: func(string, string) (string, error) { return root, nil },
 		sessions: map[string]session{"degraded": {
@@ -119,7 +131,7 @@ func TestDegradedManagerTurnServesAuthoritativeProfileIntentsWithoutModel(t *tes
 
 	for input, wantKind := range map[string]string{
 		"show Hermes profiles":                                 "hermes_profile_inventory",
-		"register the default Hermes profile on this computer": "hermes_profile_registration_prerequisites",
+		"register the default Hermes profile on this computer": "local_hermes_agent_import_prepared",
 	} {
 		result, err := service.Turn(context.Background(), subject, "degraded", token, input)
 		if err != nil {

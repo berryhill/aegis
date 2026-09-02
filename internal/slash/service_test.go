@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -54,7 +55,7 @@ func serviceFixture(t *testing.T) (*Service, *Registry, Context) {
 	registry := testRegistry(t)
 	service := NewService(application, registry)
 	now := time.Now().UTC()
-	subject := core.Subject{ID: "local-uid:4242", Kind: "human", PrincipalID: "principal", Issuer: "local-os", Method: "local-os", AuthenticatedAt: now, ExpiresAt: now.Add(5 * time.Minute)}
+	subject := core.Subject{ID: "local-uid:4242", Kind: "human", PrincipalID: "principal", Issuer: "linux-so-peercred", Method: "local-os", AuthenticatedAt: now, ExpiresAt: now.Add(5 * time.Minute), Claims: map[string]string{"uid": "4242"}}
 	manager := Context{Subject: subject, StanzaID: managerdomain.SecurityContext, MandateID: subject.ID, MandateIssued: now, MandateExpiry: subject.ExpiresAt, MandateState: "active", Lifecycle: Degraded, RuntimeState: "degraded", Route: "local-only", PolicyVersion: managerdomain.PolicyVersion, PolicyDigest: managerdomain.PolicyDigest(), Readiness: map[string]string{"authority": "absent", "model": "absent", "artifact": "absent", "certification": "absent", "hermes": "healthy", "inference": "degraded"}}
 	return service, registry, manager
 }
@@ -144,6 +145,61 @@ func TestAgentRegistryManagerReadinessAndDenials(t *testing.T) {
 	badInput := execute(t, service, registry, manager, "/agents register missing-charter missing-fixture fleet-primary source-alpha sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	if badInput.State != "failed" || badInput.Reason != "invalid_charter_input" {
 		t.Fatalf("missing registration inputs did not fail before mutation: %+v", badInput)
+	}
+}
+
+func TestLocalHermesDefaultImportRequiresExactConfirmationAndIsIdempotent(t *testing.T) {
+	service, registry, manager := serviceFixture(t)
+	configureSlashFleet(t, service)
+	root := filepath.Join(t.TempDir(), ".hermes")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "config.yaml")
+	if err := os.WriteFile(marker, []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.app.Config.Principal.UID = strconv.Itoa(os.Geteuid())
+	service.app.LocalHermesHome = func(string, string) (string, error) { return root, nil }
+	manager.Subject.ID = "local-uid:" + service.app.Config.Principal.UID
+	manager.Subject.Claims = map[string]string{"uid": service.app.Config.Principal.UID}
+
+	nonPeer := manager
+	nonPeer.Subject.Issuer = "local-os"
+	denied := execute(t, service, registry, nonPeer, "/agents import hermes default")
+	if denied.State != "denied" || denied.Reason != "agent_registry_authority_denied" {
+		t.Fatalf("non-peer transport subject prepared import: %+v", denied)
+	}
+	deniedConfirmation := execute(t, service, registry, nonPeer, "/agents import hermes default confirm sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if deniedConfirmation.State != "denied" || deniedConfirmation.Reason != "agent_registry_authority_denied" {
+		t.Fatalf("non-peer transport subject confirmed import: %+v", deniedConfirmation)
+	}
+
+	prepared := execute(t, service, registry, manager, "/agents import hermes default")
+	proposal, ok := prepared.Data["proposal"].(app.LocalHermesAgentImportProposal)
+	if prepared.State != "completed" || prepared.Reason != "local_hermes_agent_import_prepared" || !ok || proposal.AgentID == "" || proposal.RevisionDigest == "" || prepared.Data["registered"] != false || prepared.Data["activation"] != false {
+		t.Fatalf("import preview = %+v", prepared)
+	}
+	wrong := execute(t, service, registry, manager, "/agents import hermes default confirm sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	if wrong.State != "denied" || wrong.Reason != "agent_registration_conflict" {
+		t.Fatalf("wrong digest did not fail closed: %+v", wrong)
+	}
+
+	confirmed := execute(t, service, registry, manager, proposal.Confirmation)
+	agent, ok := confirmed.Data["agent"].(app.FleetAgent)
+	if confirmed.State != "completed" || confirmed.Reason != "local_hermes_agent_import_confirmed" || !ok || confirmed.Data["created"] != true || confirmed.Data["activation"] != false || agent.Registration.AgentID != proposal.AgentID || agent.Revision.Digest != proposal.RevisionDigest {
+		t.Fatalf("confirmed import = %+v", confirmed)
+	}
+	again := execute(t, service, registry, manager, proposal.Confirmation)
+	if again.State != "completed" || again.Data["created"] != false {
+		t.Fatalf("idempotent confirmation = %+v", again)
+	}
+	readback := execute(t, service, registry, manager, "/agents show "+proposal.AgentID+" 1")
+	if readback.State != "completed" || readback.Reason != "agent_registry_exact_readback" {
+		t.Fatalf("exact Agent readback = %+v", readback)
+	}
+	if data, err := os.ReadFile(marker); err != nil || string(data) != "version: 1\n" {
+		t.Fatalf("Hermes profile mutated: data=%q err=%v", data, err)
 	}
 }
 
