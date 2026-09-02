@@ -346,7 +346,31 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 		if prepareErr != nil {
 			return TurnResult{}, fmt.Errorf("local Hermes Agent import denied: %w", prepareErr)
 		}
-		return TurnResult{Kind: "local_hermes_agent_import_prepared", Origin: TurnOriginAuthoritative, Message: "Prepared a non-authorizing import review for the owner-verified local Hermes default profile. Profile provenance is not identity or authority, and registration does not activate execution. Confirm only with the exact command in this proposal.", Data: map[string]any{"proposal": proposal, "selected_profile": "default", "model_bypassed": true, "registered": false, "activation": false}}, nil
+		message := fmt.Sprintf("Prepared a non-authorizing import review for the owner-verified local Hermes default profile. The Agent remains disabled, registration does not activate execution, and profile provenance is not identity or authority. Review digest %s, then confirm only with the exact command:\n%s", proposal.RevisionDigest, proposal.Confirmation)
+		return TurnResult{Kind: "local_hermes_agent_import_prepared", Origin: TurnOriginAuthoritative, Message: message, Data: map[string]any{"proposal": proposal, "confirmation": proposal.Confirmation, "selected_profile": "default", "model_bypassed": true, "registered": false, "activation": false}}, nil
+	}
+	if intent := parseAgentRegistryIntent(input); intent.kind != "" {
+		switch intent.kind {
+		case "count", "list":
+			agents, listErr := s.app.ListFleetAgentsAs(ctx, entry.subject)
+			if listErr != nil {
+				return TurnResult{}, fmt.Errorf("Agent Registry read denied: %w", listErr)
+			}
+			ids := make([]string, 0, len(agents))
+			for _, agent := range agents {
+				ids = append(ids, agent.Registration.AgentID)
+			}
+			if intent.kind == "count" {
+				return TurnResult{Kind: "agent_registry_count", Origin: TurnOriginAuthoritative, Message: fmt.Sprintf("The authenticated Aegis Agent Registry contains %d registered agent(s).", len(agents)), Data: map[string]any{"count": len(agents), "empty_registry_valid": true, "model_bypassed": true}}, nil
+			}
+			return TurnResult{Kind: "agent_registry_list", Origin: TurnOriginAuthoritative, Message: fmt.Sprintf("Registered agents (%d): %s", len(ids), strings.Join(ids, ", ")), Data: map[string]any{"agents": agents, "count": len(agents), "empty_registry_valid": true, "model_bypassed": true}}, nil
+		case "show":
+			agent, showErr := s.app.GetFleetAgentAs(ctx, entry.subject, intent.agentID, intent.revision)
+			if showErr != nil {
+				return TurnResult{}, fmt.Errorf("Agent Registry exact readback denied: %w", showErr)
+			}
+			return TurnResult{Kind: "agent_registry_exact_readback", Origin: TurnOriginAuthoritative, Message: fmt.Sprintf("Agent %s revision %d is registered with lifecycle %s.", agent.Registration.AgentID, agent.Revision.Revision, agent.Revision.Lifecycle), Data: map[string]any{"agent": agent, "requested_revision": intent.revision, "latest_requested": !intent.hasRevision, "model_bypassed": true}}, nil
+		}
 	}
 	route := detectAuthoritativeIntent(input)
 	defer route.Wipe()

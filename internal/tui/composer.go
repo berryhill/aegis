@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -121,52 +122,53 @@ func (composer *Composer) Read(ctx context.Context, prompt string, capabilities 
 			_, _ = io.WriteString(composer.output, "\r\n")
 			return "", true, nil
 		}
-		if value == 0x03 || value == 0x1b {
-			if value == 0x1b {
-				sequence := readEscapeSequence(ctx, file)
-				if sequence == "" {
-					if len(buffer) > 0 {
-						wipe(buffer)
-						buffer = buffer[:0]
-						_, _ = io.WriteString(composer.output, "\r\n[AEGIS / authoritative] input cleared\r\n")
-						continue
-					}
-					return "", false, ErrInterrupted
+		if value == 0x03 {
+			wipe(buffer)
+			return "", false, ErrInterrupted
+		}
+		if value == 0x1b {
+			sequence := readEscapeSequence(ctx, file)
+			if sequence == "" {
+				if len(buffer) > 0 {
+					wipe(buffer)
+					buffer = buffer[:0]
+					_, _ = io.WriteString(composer.output, "\r\n[AEGIS / authoritative] input cleared\r\n")
 				}
-				if sequence == "[200~" {
-					paste = true
-					pasteStart = len(buffer)
-					pasteLastCR = false
-					continue
-				}
-				if sequence == "[13;2u" {
-					buffer = append(buffer, '\n')
-					_, _ = io.WriteString(composer.output, "\r\n")
-					continue
-				}
-				if sequence == "[A" && len(composer.history) > 0 {
+				continue
+			}
+			if sequence == "[200~" {
+				paste = true
+				pasteStart = len(buffer)
+				pasteLastCR = false
+				continue
+			}
+			if sequence == "[13;2u" {
+				buffer = append(buffer, '\n')
+				_, _ = io.WriteString(composer.output, "\r\n")
+				continue
+			}
+			if sequence == "[A" {
+				if len(composer.history) > 0 {
 					historyIndex = max(historyIndex-1, 0)
 					buffer = append(buffer[:0], composer.history[historyIndex]...)
 					redrawComposer(composer.output, prompt, buffer)
-					continue
 				}
-				if sequence == "[B" && historyIndex < len(composer.history) {
+				continue
+			}
+			if sequence == "[B" {
+				if historyIndex < len(composer.history) {
 					historyIndex++
 					buffer = buffer[:0]
 					if historyIndex < len(composer.history) {
 						buffer = append(buffer, composer.history[historyIndex]...)
 					}
 					redrawComposer(composer.output, prompt, buffer)
-					continue
 				}
-			}
-			if len(buffer) > 0 {
-				wipe(buffer)
-				buffer = buffer[:0]
-				_, _ = io.WriteString(composer.output, "\r\n[AEGIS / authoritative] input cleared\r\n")
 				continue
 			}
-			return "", false, ErrInterrupted
+			// Complete unsupported navigation/editing sequences are consumed as
+			// no-ops. They must never erase a draft or terminate the manager.
+			continue
 		}
 		if value == '\r' && !paste {
 			_, _ = io.WriteString(composer.output, "\r\n")
@@ -186,10 +188,13 @@ func (composer *Composer) Read(ctx context.Context, prompt string, capabilities 
 		}
 		if value == 0x7f || value == 0x08 {
 			if len(buffer) > 0 {
-				buffer = buffer[:len(buffer)-1]
-				if !paste {
-					_, _ = io.WriteString(composer.output, "\b \b")
+				_, size := utf8.DecodeLastRune(buffer)
+				if size <= 0 || size > len(buffer) {
+					size = 1
 				}
+				wipe(buffer[len(buffer)-size:])
+				buffer = buffer[:len(buffer)-size]
+				redrawComposer(composer.output, prompt, buffer)
 			}
 			continue
 		}

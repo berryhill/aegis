@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -173,6 +174,15 @@ func normalizedIntent(input string) string {
 func localProfileIntent(input string) string {
 	normalized := normalizedIntent(input)
 	for _, phrase := range []string{
+		"register an agent",
+		"register a new agent",
+		"i want to register an agent",
+		"i want to register a new agent",
+		"please register an agent",
+		"please register a new agent",
+		"can you register an agent",
+		"could you register an agent",
+		"would you register an agent",
 		"register the default hermes profile on this computer",
 		"import the local hermes default profile as an agent",
 	} {
@@ -189,6 +199,61 @@ func localProfileIntent(input string) string {
 		}
 	}
 	return ""
+}
+
+type agentRegistryIntent struct {
+	kind        string
+	agentID     string
+	revision    uint64
+	hasRevision bool
+}
+
+var showAgentPattern = regexp.MustCompile(`(?i)^\s*(?:please\s+)?(?:show|show me|show details for)\s+(?:registered\s+)?agent\s+([a-z0-9][a-z0-9._-]{0,127})(?:\s+revision\s+([1-9][0-9]*))?\s*[?.!]?\s*$`)
+
+func parseAgentRegistryIntent(input string) agentRegistryIntent {
+	if strings.ContainsAny(input, "\r\n") {
+		return agentRegistryIntent{}
+	}
+	normalized := normalizedIntent(input)
+	for _, phrase := range []string{
+		"how many agents have we registered",
+		"how many agents are registered",
+		"what is the number of registered agents",
+		"tell me how many agents are registered",
+	} {
+		if normalized == phrase {
+			return agentRegistryIntent{kind: "count"}
+		}
+	}
+	for _, phrase := range []string{
+		"list registered agents",
+		"list agents",
+		"show me all registered agents",
+		"what agents have we registered",
+		"which agents are registered",
+	} {
+		if normalized == phrase {
+			return agentRegistryIntent{kind: "list"}
+		}
+	}
+	matches := showAgentPattern.FindStringSubmatch(input)
+	if len(matches) == 0 {
+		return agentRegistryIntent{}
+	}
+	intent := agentRegistryIntent{kind: "show", agentID: strings.ToLower(matches[1])}
+	if matches[2] != "" {
+		revision, err := strconv.ParseUint(matches[2], 10, 64)
+		if err != nil || revision == 0 {
+			return agentRegistryIntent{}
+		}
+		intent.revision = revision
+		intent.hasRevision = true
+	}
+	return intent
+}
+
+func IsAgentRegistryRequest(input string) bool {
+	return parseAgentRegistryIntent(input).kind != ""
 }
 
 func IsLocalProfileRequest(input string) bool {

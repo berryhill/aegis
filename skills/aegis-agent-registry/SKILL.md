@@ -1,7 +1,7 @@
 ---
 name: aegis-agent-registry
 description: Register, inspect, and govern immutable Aegis Agent Registry revisions through shipped typed services without treating profiles or model content as identity or authority.
-version: 0.2.0
+version: 0.2.1
 metadata:
   hermes:
     tags:
@@ -62,7 +62,7 @@ An identical retry is idempotent and returns the existing canonical record with 
 
 ## Import the local Hermes default profile in the manager
 
-1. Use only the authenticated manager's exact `/agents import hermes default` command. Named profiles, arbitrary paths, and recursive scanning are unavailable.
+1. Use either the authenticated manager's exact `/agents import hermes default` command or a closed low-ambiguity preparation request such as `I want to register an agent`. Natural language may prepare only; named profiles, arbitrary paths, recursive scanning, and conversational confirmation are unavailable. Complete conversational count/list/show requests may perform authenticated Registry reads without model dispatch.
 2. Treat preparation as non-authorizing and non-mutating. Aegis requires fresh configured Unix-peer principal authentication and verifies the process-owned canonical `~/.hermes` root plus a non-empty, owner-safe regular `config.yaml` no larger than 1 MiB without following symlinks.
 3. Aegis never reads, hashes, copies, or persists profile bytes. The proposal uses only bounded filesystem metadata as provenance, with principal-stable Agent/fleet/source identities and a metadata-bound revision digest.
 4. Review the returned disabled lifecycle, `aegis-owned-ephemeral` runtime target, empty capability/policy declarations, exact digest, and generated confirmation command.

@@ -288,11 +288,11 @@ func managerGatewayTurnError(response *http.Response) error {
 }
 
 func shouldSubmitGatewayTurn(mode, input string) bool {
-	return mode == "conversational" || managergateway.IsLocalProfileRequest(input) || managerdomain.IsDeterministicCredentialRead(input)
+	return mode == "conversational" || managergateway.IsLocalProfileRequest(input) || managergateway.IsAgentRegistryRequest(input) || managerdomain.IsDeterministicCredentialRead(input)
 }
 
 func gatewayManagerCommandSummary() string {
-	return "Commands: /status, /context, /help, /cancel, /exit\nAgent controls: /agents readiness; /agents list; /agents show <agent-id> [revision]; /agents prepare ...; /agents register ...; exact grammar: /help agents"
+	return "Commands: /status, /context, /help, /cancel, /exit\nAgent controls: conversational prepare/count/list/show; /agents readiness; /agents list; /agents show <agent-id> [revision]; /agents import hermes default; /agents prepare ...; /agents register ...; exact grammar: /help agents"
 }
 
 func closeGatewayManager(result error, client *gatewayManagerClient, timeout time.Duration) error {

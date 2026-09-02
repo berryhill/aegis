@@ -48,6 +48,66 @@ func TestRichComposerEnablesBracketedPasteAndSubmitsMultilineOnce(t *testing.T) 
 	readComposerPTYUntil(t, master, bracketedPasteDisable, 2*time.Second)
 }
 
+func TestRichComposerNavigationAtBoundariesDoesNotExit(t *testing.T) {
+	for _, sequence := range []string{"\x1b[A", "\x1b[B", "\x1b[C", "\x1b[D", "\x1b[3~"} {
+		t.Run(fmt.Sprintf("%q", sequence), func(t *testing.T) {
+			master, slave := openComposerPTY(t)
+			defer master.Close()
+			defer slave.Close()
+			composer := NewComposer(slave, slave, 4096)
+			result := make(chan composerResult, 1)
+			go func() {
+				line, eof, err := composer.Read(context.Background(), "> ", Capabilities{Profile: RichInteractive})
+				result <- composerResult{line: line, eof: eof, err: err}
+			}()
+			readComposerPTYUntil(t, master, bracketedPasteEnable, 2*time.Second)
+			if _, err := master.Write([]byte(sequence)); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case got := <-result:
+				t.Fatalf("navigation exited composer: %+v", got)
+			case <-time.After(75 * time.Millisecond):
+			}
+			if _, err := master.Write([]byte("ok\r")); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case got := <-result:
+				if got.err != nil || got.eof || got.line != "ok" {
+					t.Fatalf("line=%q eof=%v err=%v", got.line, got.eof, got.err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("composer did not submit after navigation")
+			}
+		})
+	}
+}
+
+func TestRichComposerBackspaceDeletesLastUTF8Rune(t *testing.T) {
+	master, slave := openComposerPTY(t)
+	defer master.Close()
+	defer slave.Close()
+	composer := NewComposer(slave, slave, 4096)
+	result := make(chan composerResult, 1)
+	go func() {
+		line, eof, err := composer.Read(context.Background(), "> ", Capabilities{Profile: RichInteractive})
+		result <- composerResult{line: line, eof: eof, err: err}
+	}()
+	readComposerPTYUntil(t, master, bracketedPasteEnable, 2*time.Second)
+	if _, err := master.Write([]byte("é\x7fx\r")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-result:
+		if got.err != nil || got.eof || got.line != "x" {
+			t.Fatalf("line=%q eof=%v err=%v", got.line, got.eof, got.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("UTF-8 backspace did not submit")
+	}
+}
+
 func openComposerPTY(t *testing.T) (*os.File, *os.File) {
 	t.Helper()
 	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)

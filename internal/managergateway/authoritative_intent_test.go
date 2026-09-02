@@ -99,30 +99,17 @@ func TestAmbiguousCredentialFollowUpDoesNotRepeatAuthorityRead(t *testing.T) {
 	}
 }
 
-func TestGenericAgentRegistrationIntentBypassesModelAuthoritatively(t *testing.T) {
+func TestQualifiedAgentRegistrationIntentReturnsGuidanceWithoutModel(t *testing.T) {
 	now := time.Now().UTC()
 	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
 	service := degradedRoutingService(now, subject, "token")
 
-	for _, input := range []string{
-		"register an agent",
-		"I want to register a new Agent",
-		"Can you register an agent?",
-		"Could you register an agent?",
-		"Would you register an agent?",
-	} {
-		result, err := service.Turn(context.Background(), subject, "degraded", "token", input)
-		if err != nil {
-			t.Fatalf("registration intent reached unavailable model for %q: %v", input, err)
-		}
-		if result.Kind != "agent_registration_guidance" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["registered"] != false {
-			t.Fatalf("unexpected registration routing: %+v", result)
-		}
-		for _, required := range []string{"Registration was not performed", "/agents readiness", "/agents prepare", "Hermes profile", "not Agent registration"} {
-			if !strings.Contains(result.Message, required) {
-				t.Errorf("registration guidance missing %q: %q", required, result.Message)
-			}
-		}
+	result, err := service.Turn(context.Background(), subject, "degraded", "token", "register agent alpha")
+	if err != nil {
+		t.Fatalf("qualified registration intent reached unavailable model: %v", err)
+	}
+	if result.Kind != "agent_registration_guidance" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["registered"] != false {
+		t.Fatalf("unexpected registration routing: %+v", result)
 	}
 }
 
