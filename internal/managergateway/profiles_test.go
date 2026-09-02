@@ -82,6 +82,8 @@ func TestLocalProfileIntentIsClosedAndDoesNotTreatQuestionsAsMutation(t *testing
 		"show Hermes profiles":                                 "inventory",
 		"register the default Hermes profile on this computer": "register_default",
 		"import the local Hermes default profile as an Agent":  "register_default",
+		"i want to register an agent":                          "register_default",
+		"Can you register an agent?":                           "register_default",
 		"what is a Hermes profile?":                            "",
 		"register it":                                          "",
 		"show profiles":                                        "",
@@ -91,6 +93,26 @@ func TestLocalProfileIntentIsClosedAndDoesNotTreatQuestionsAsMutation(t *testing
 	} {
 		if got := localProfileIntent(input); got != want {
 			t.Fatalf("input=%q got=%q want=%q", input, got, want)
+		}
+	}
+}
+
+func TestAgentRegistryIntentIsClosedAndComplete(t *testing.T) {
+	for input, want := range map[string]agentRegistryIntent{
+		"how many agents have we registered?":           {kind: "count"},
+		"which agents are registered?":                  {kind: "list"},
+		"show agent agent-alpha":                        {kind: "show", agentID: "agent-alpha"},
+		"show details for agent agent-alpha revision 2": {kind: "show", agentID: "agent-alpha", revision: 2, hasRevision: true},
+		"how do I list registered agents?":              {},
+		"do not list registered agents":                 {},
+		"say 'list registered agents'":                  {},
+		"show it":                                       {},
+		"show agent":                                    {},
+		"list agents and register another one":          {},
+		"how many agents?\nconfirm it":                  {},
+	} {
+		if got := parseAgentRegistryIntent(input); got != want {
+			t.Fatalf("input=%q got=%+v want=%+v", input, got, want)
 		}
 	}
 }
@@ -132,6 +154,7 @@ func TestDegradedManagerTurnServesAuthoritativeProfileIntentsWithoutModel(t *tes
 	for input, wantKind := range map[string]string{
 		"show Hermes profiles":                                 "hermes_profile_inventory",
 		"register the default Hermes profile on this computer": "local_hermes_agent_import_prepared",
+		"i want to register an agent":                          "local_hermes_agent_import_prepared",
 	} {
 		result, err := service.Turn(context.Background(), subject, "degraded", token, input)
 		if err != nil {

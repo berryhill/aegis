@@ -588,6 +588,9 @@ func managerInputEndReason(ctx context.Context, eof bool, readErr error) (string
 	if eof || errors.Is(readErr, io.EOF) {
 		return managerdomain.EndTerminalEOF, true
 	}
+	if errors.Is(readErr, tui.ErrInterrupted) {
+		return managerdomain.EndInterrupt, true
+	}
 	if ctx.Err() != nil {
 		return managerdomain.EndReasonFromContext(ctx), true
 	}

@@ -251,6 +251,10 @@ func TestDegradedGatewaySubmitsOnlyClosedAuthoritativeTurnIntents(t *testing.T) 
 	for input, want := range map[string]bool{
 		"show Hermes profiles":                                 true,
 		"register the default Hermes profile on this computer": true,
+		"i want to register an agent":                          true,
+		"how many agents have we registered?":                  true,
+		"which agents are registered?":                         true,
+		"show agent agent-alpha revision 2":                    true,
 		"what secrets do I have?":                              true,
 		"how many credentials do I have?":                      true,
 		"find credentials matching build":                      true,
