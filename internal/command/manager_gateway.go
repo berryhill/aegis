@@ -40,6 +40,32 @@ type managerTurnDegradedError struct {
 	remediation string
 }
 
+type managerAuthorizationError struct {
+	action string
+	status int
+}
+
+func (e *managerAuthorizationError) Error() string {
+	return fmt.Sprintf("manager gateway %s denied (HTTP %d); authentication or mandate is invalid, expired, or revoked; rerun 'aegis manager'", e.action, e.status)
+}
+
+type managerSessionExpiredError struct{ expires time.Time }
+
+func (e *managerSessionExpiredError) Error() string {
+	return fmt.Sprintf("manager session expired normally at %s; rerun 'aegis manager' to authenticate and start a clean runtime session", e.expires.UTC().Format(time.RFC3339))
+}
+
+func classifyManagerSessionError(err error, expires, now time.Time) error {
+	if !now.Before(expires) && errors.Is(err, context.DeadlineExceeded) {
+		return &managerSessionExpiredError{expires: expires}
+	}
+	var denied *managerAuthorizationError
+	if errors.As(err, &denied) && !now.Before(expires) {
+		return &managerSessionExpiredError{expires: expires}
+	}
+	return err
+}
+
 func (e *managerTurnDegradedError) Error() string { return e.remediation }
 
 func (e *managerTurnDegradedError) apply(client *gatewayManagerClient) {
@@ -232,7 +258,7 @@ func (c *gatewayManagerClient) request(ctx context.Context, method, path string,
 func managerGatewayStatusError(action string, status int) error {
 	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict:
-		return fmt.Errorf("manager gateway %s denied (HTTP %d); authentication or mandate is invalid, expired, or revoked; rerun 'aegis manager'", action, status)
+		return &managerAuthorizationError{action: action, status: status}
 	case http.StatusServiceUnavailable:
 		return fmt.Errorf("manager gateway unavailable (HTTP %d); verify 'aegis gateway status'", status)
 	default:
@@ -288,7 +314,7 @@ func managerGatewayTurnError(response *http.Response) error {
 }
 
 func shouldSubmitGatewayTurn(mode, input string) bool {
-	return mode == "conversational" || managergateway.IsLocalProfileRequest(input) || managergateway.IsAgentRegistryRequest(input) || managerdomain.IsDeterministicCredentialRead(input)
+	return mode == "conversational" || managergateway.IsLocalProfileRequest(input) || managergateway.IsAgentRegistryRequest(input) || managergateway.IsPlatformGuidanceRequest(input) || managerdomain.IsDeterministicCredentialRead(input)
 }
 
 func gatewayManagerCommandSummary() string {
@@ -321,6 +347,8 @@ func runGatewayManager(cmd *cobra.Command, configPath string) (resultErr error) 
 }
 
 func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewayManagerClient, expires time.Time) error {
+	sessionCtx, cancelSession := context.WithDeadline(cmd.Context(), expires)
+	defer cancelSession()
 	output := tui.NewSynchronizedWriter(cmd.OutOrStdout())
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), nil)
 	composer := tui.NewComposer(cmd.InOrStdin(), output, int(cfg.Manager.Ingress.MaximumMessageBytes))
@@ -330,8 +358,16 @@ func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewa
 		fmt.Fprintf(output, "AEGIS / manager — degraded deterministic shell\nConversational Hermes Agent: unavailable (%s). No cloud or alternate-model fallback was attempted.\nNext: %s\nModel validation remains explicit; no artifact is downloaded, selected, configured, or certified by entering this shell.\nOptions: 'aegis manager model candidates'; 'aegis manager model discover --endpoint LOOPBACK_URL'; 'aegis manager model configure CANDIDATE_ID --endpoint LOOPBACK_URL'; 'aegis manager certify CANDIDATE_ID'.\nGateway owns authority and writable application state. Session expires %s.\n%s\n", client.reason, client.nextStep, expires.UTC().Format(time.RFC3339), gatewayManagerCommandSummary())
 	}
 	for {
-		input, eof, readErr := composer.Read(cmd.Context(), ">", capabilities)
+		if !time.Now().Before(expires) {
+			fmt.Fprintln(output, (&managerSessionExpiredError{expires: expires}).Error())
+			return nil
+		}
+		input, eof, readErr := composer.Read(sessionCtx, ">", capabilities)
 		if readErr != nil {
+			if errors.Is(readErr, context.DeadlineExceeded) && !time.Now().Before(expires) {
+				fmt.Fprintln(output, (&managerSessionExpiredError{expires: expires}).Error())
+				return nil
+			}
 			if errors.Is(readErr, tui.ErrInterrupted) || errors.Is(readErr, context.Canceled) {
 				return nil
 			}
@@ -350,8 +386,14 @@ func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewa
 				fmt.Fprintf(output, "Conversational local inference unavailable. Reason: %s\nNext: %s\nNo authority action or fallback was attempted.\n", client.reason, client.nextStep)
 				continue
 			}
-			result, turnErr := client.turn(cmd.Context(), input)
+			result, turnErr := client.turn(sessionCtx, input)
 			if turnErr != nil {
+				turnErr = classifyManagerSessionError(turnErr, expires, time.Now())
+				var expired *managerSessionExpiredError
+				if errors.As(turnErr, &expired) {
+					fmt.Fprintln(output, expired.Error())
+					return nil
+				}
 				var degraded *managerTurnDegradedError
 				if errors.As(turnErr, &degraded) {
 					degraded.apply(client)
@@ -363,8 +405,14 @@ func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewa
 			renderGatewayTurn(output, result)
 			continue
 		}
-		result, executeErr := client.execute(cmd.Context(), input)
+		result, executeErr := client.execute(sessionCtx, input)
 		if executeErr != nil {
+			executeErr = classifyManagerSessionError(executeErr, expires, time.Now())
+			var expired *managerSessionExpiredError
+			if errors.As(executeErr, &expired) {
+				fmt.Fprintln(output, expired.Error())
+				return nil
+			}
 			if isManagerCommandParseError(executeErr) {
 				fmt.Fprintln(output, executeErr)
 				continue

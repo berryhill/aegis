@@ -89,6 +89,14 @@ func opaque(size int) (string, error) {
 	return hex.EncodeToString(material), nil
 }
 
+func managerSessionExpiry(_ time.Time, subject core.Subject) time.Time {
+	return subject.ExpiresAt
+}
+
+func managerSessionContext(parent context.Context, expires time.Time) (context.Context, context.CancelFunc) {
+	return context.WithDeadline(parent, expires)
+}
+
 func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error) {
 	if err := s.app.RequirePrincipal(subject); err != nil {
 		return Opened{}, err
@@ -111,10 +119,7 @@ func (s *Service) Open(ctx context.Context, subject core.Subject) (Opened, error
 		return Opened{}, fmt.Errorf("generate manager session token: %w", err)
 	}
 	now := s.now()
-	expires := now.Add(s.app.Config.API.Console.SessionTTL)
-	if subject.ExpiresAt.Before(expires) {
-		expires = subject.ExpiresAt
-	}
+	expires := managerSessionExpiry(now, subject)
 	if !now.Before(expires) {
 		return Opened{}, app.ErrExpired
 	}
@@ -210,8 +215,17 @@ func (s *Service) watchSession(entry session) {
 		case <-s.ctx.Done():
 			reason = managerdomain.EndTermination
 		case <-entry.runtime.failures:
-			reason = managerdomain.EndRuntimeFailed
-			runtimeFailed = true
+			select {
+			case <-timer.C:
+				reason = managerdomain.EndSessionExpired
+			default:
+				if !time.Now().Before(entry.expires) {
+					reason = managerdomain.EndSessionExpired
+				} else {
+					reason = managerdomain.EndRuntimeFailed
+					runtimeFailed = true
+				}
+			}
 		}
 	}
 	if runtimeFailed {
@@ -270,6 +284,8 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 	if err != nil {
 		return slash.Result{}, err
 	}
+	ctx, cancel := managerSessionContext(ctx, entry.expires)
+	defer cancel()
 	request, err := s.registry.Parse(input)
 	if err != nil {
 		var parseError *slash.ParseError
@@ -334,6 +350,8 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	if err != nil {
 		return TurnResult{}, err
 	}
+	ctx, cancel := managerSessionContext(ctx, entry.expires)
+	defer cancel()
 	detection := slash.Detect(input)
 	if strings.TrimSpace(input) == "" || detection == slash.Command {
 		return TurnResult{}, errors.New("ordinary manager turn required")
@@ -371,6 +389,9 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 			}
 			return TurnResult{Kind: "agent_registry_exact_readback", Origin: TurnOriginAuthoritative, Message: fmt.Sprintf("Agent %s revision %d is registered with lifecycle %s.", agent.Registration.AgentID, agent.Revision.Revision, agent.Revision.Lifecycle), Data: map[string]any{"agent": agent, "requested_revision": intent.revision, "latest_requested": !intent.hasRevision, "model_bypassed": true}}, nil
 		}
+	}
+	if guidance := platformGuidanceIntent(input); guidance != "" {
+		return platformGuidance(guidance), nil
 	}
 	route := detectAuthoritativeIntent(input)
 	defer route.Wipe()
@@ -424,6 +445,9 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	defer cancel()
 	message, err := entry.runtime.Turn(turnCtx, input)
 	if err != nil {
+		if !s.now().Before(entry.expires) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return TurnResult{}, app.ErrExpired
+		}
 		s.degradeRuntime(entry)
 		return TurnResult{}, normalizeTurnFailure(err)
 	}

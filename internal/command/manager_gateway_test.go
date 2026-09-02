@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -249,19 +250,24 @@ func TestRenderGatewayTurnDistinguishesAuthoritativeAegisResult(t *testing.T) {
 
 func TestDegradedGatewaySubmitsOnlyClosedAuthoritativeTurnIntents(t *testing.T) {
 	for input, want := range map[string]bool{
-		"show Hermes profiles":                                 true,
-		"register the default Hermes profile on this computer": true,
-		"i want to register an agent":                          true,
-		"how many agents have we registered?":                  true,
-		"which agents are registered?":                         true,
-		"show agent agent-alpha revision 2":                    true,
-		"what secrets do I have?":                              true,
-		"how many credentials do I have?":                      true,
-		"find credentials matching build":                      true,
-		"show the value for credential build-token":            true,
-		"what about now?":                                      false,
-		"hello aegis":                                          false,
-		"register it":                                          false,
+		"show Hermes profiles":                                         true,
+		"register the default Hermes profile on this computer":         true,
+		"i want to register an agent":                                  true,
+		"hey, let's register an agent":                                 true,
+		"how do I install the Aegis skills in Hermes?":                 true,
+		"does our registered Hermes agent know how to use Aegis?":      true,
+		"does our registers hermes agent know how to use aegis/":       true,
+		"can you change the name of the default Hermes agent to javi?": true,
+		"how many agents have we registered?":                          true,
+		"which agents are registered?":                                 true,
+		"show agent agent-alpha revision 2":                            true,
+		"what secrets do I have?":                                      true,
+		"how many credentials do I have?":                              true,
+		"find credentials matching build":                              true,
+		"show the value for credential build-token":                    true,
+		"what about now?":                                              false,
+		"hello aegis":                                                  false,
+		"register it":                                                  false,
 	} {
 		if got := shouldSubmitGatewayTurn("degraded", input); got != want {
 			t.Fatalf("input=%q got=%t want=%t", input, got, want)
@@ -269,6 +275,54 @@ func TestDegradedGatewaySubmitsOnlyClosedAuthoritativeTurnIntents(t *testing.T) 
 	}
 	if !shouldSubmitGatewayTurn("conversational", "hello aegis") {
 		t.Fatal("conversational turns must reach the authenticated gateway")
+	}
+}
+
+func TestKnownManagerDeadlineClassifiesOnlyLateAuthorizationFailureAsExpiry(t *testing.T) {
+	expires := time.Date(2026, 9, 2, 17, 5, 0, 0, time.UTC)
+	authErr := &managerAuthorizationError{action: "conversational turn", status: http.StatusUnauthorized}
+
+	late := classifyManagerSessionError(authErr, expires, expires)
+	var expired *managerSessionExpiredError
+	if !errors.As(late, &expired) || !strings.Contains(late.Error(), "expired normally") {
+		t.Fatalf("late authorization failure was not typed as expiry: %v", late)
+	}
+	early := classifyManagerSessionError(authErr, expires, expires.Add(-time.Second))
+	if errors.As(early, &expired) || early != authErr {
+		t.Fatalf("early authorization failure was mislabeled as expiry: %v", early)
+	}
+	wrappedDeadline := fmt.Errorf("manager gateway connection interrupted: %w", context.DeadlineExceeded)
+	lateDeadline := classifyManagerSessionError(wrappedDeadline, expires, expires)
+	if !errors.As(lateDeadline, &expired) {
+		t.Fatalf("in-flight deadline was not classified as normal expiry: %v", lateDeadline)
+	}
+	earlyDeadline := classifyManagerSessionError(wrappedDeadline, expires, expires.Add(-time.Second))
+	if errors.As(earlyDeadline, &expired) {
+		t.Fatalf("early request timeout was mislabeled as session expiry: %v", earlyDeadline)
+	}
+}
+
+func TestGatewayManagerLoopWakesIdlePromptAtExpiry(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	client := &gatewayManagerClient{mode: "conversational"}
+	cfg := config.Defaults()
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(reader)
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	expires := time.Now().Add(30 * time.Millisecond)
+	if err := runGatewayManagerLoop(cmd, cfg, client, expires); err != nil {
+		t.Fatalf("normal idle expiry returned error: %v", err)
+	}
+	if !strings.Contains(output.String(), "manager session expired normally") {
+		t.Fatalf("normal idle expiry was not rendered: %q", output.String())
 	}
 }
 

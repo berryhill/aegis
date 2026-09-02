@@ -3,6 +3,7 @@ package managergateway
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -110,6 +111,77 @@ func TestQualifiedAgentRegistrationIntentReturnsGuidanceWithoutModel(t *testing.
 	}
 	if result.Kind != "agent_registration_guidance" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["registered"] != false {
 		t.Fatalf("unexpected registration routing: %+v", result)
+	}
+}
+
+func TestAgentRegistrationGuidanceRejectsCompoundQuotedAndNegatedTextEndToEnd(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+	for _, input := range []string{
+		"hey,\nlet's register an agent",
+		"do not register an agent",
+		"review this sentence: add an agent",
+		"say 'register agent alpha'",
+	} {
+		result, err := service.Turn(context.Background(), subject, "degraded", "token", input)
+		if err == nil || result.Kind == "agent_registration_guidance" {
+			t.Fatalf("unsafe registration text reached authoritative route: input=%q result=%+v err=%v", input, result, err)
+		}
+	}
+}
+
+func TestAegisSelfExpertiseQuestionsBypassModelAuthoritatively(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+
+	for _, test := range []struct {
+		input, kind string
+		required    []string
+		falseField  string
+	}{
+		{input: "how do I install the Aegis skills in Hermes?", kind: "aegis_skills_installation_guidance", required: []string{"hermes skills tap add berryhill/aegis", "hermes skills install berryhill/aegis/skills/aegis --yes", "does not register an Agent"}, falseField: "mutated"},
+		{input: "does our registers hermes agent know how to use aegis/", kind: "registered_agent_expertise_guidance", required: []string{"Registry record", "does not import", "skills, prompts, memories", "manager receives"}, falseField: "registration_imports_profile_contents"},
+		{input: "can you change the name of the default Hermes agent we registered to javi?", kind: "agent_rename_guidance", required: []string{"canonical Agent ID is immutable", "not renamed", "display-name or alias operation is not shipped"}, falseField: "renamed"},
+	} {
+		result, err := service.Turn(context.Background(), subject, "degraded", "token", test.input)
+		if err != nil {
+			t.Fatalf("self-expertise question %q reached unavailable model: %v", test.input, err)
+		}
+		if result.Kind != test.kind || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true {
+			t.Fatalf("unexpected self-expertise routing for %q: %+v", test.input, result)
+		}
+		if value, present := result.Data[test.falseField]; !present || value != false {
+			t.Fatalf("self-expertise route %q did not prove %s=false: %+v", test.input, test.falseField, result.Data)
+		}
+		for _, required := range test.required {
+			if !strings.Contains(result.Message, required) {
+				t.Errorf("%q response missing %q: %q", test.input, required, result.Message)
+			}
+		}
+	}
+}
+
+func TestManagerSessionExpiryUsesPrincipalBoundaryNotBrowserConsoleTTL(t *testing.T) {
+	now := time.Date(2026, 9, 2, 17, 0, 0, 0, time.UTC)
+	subject := core.Subject{ExpiresAt: now.Add(15 * time.Minute)}
+	if got := managerSessionExpiry(now, subject); !got.Equal(subject.ExpiresAt) {
+		t.Fatalf("manager expiry=%s want principal expiry=%s", got, subject.ExpiresAt)
+	}
+}
+
+func TestManagerSessionContextEndsAtMandateBoundary(t *testing.T) {
+	expires := time.Now().Add(20 * time.Millisecond)
+	ctx, cancel := managerSessionContext(context.Background(), expires)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("session context ended with %v", ctx.Err())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("session context outlived mandate boundary")
 	}
 }
 
