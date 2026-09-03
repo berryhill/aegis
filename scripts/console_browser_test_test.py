@@ -69,7 +69,6 @@ class PageWebsocketTest(unittest.TestCase):
         first_connection.close.assert_called_once_with()
         second_connection.close.assert_called_once_with()
 
-
 class NativeKeyTest(unittest.TestCase):
     def test_escape_uses_trusted_native_key_codes(self):
         devtools = mock.MagicMock()
@@ -98,6 +97,26 @@ class NativeKeyTest(unittest.TestCase):
     def test_unknown_key_fails_closed(self):
         with self.assertRaisesRegex(RuntimeError, "does not define a native key code"):
             console_browser_test.key(mock.MagicMock(), "Enter")
+
+
+class NavigateTest(unittest.TestCase):
+    def test_explicitly_navigates_selected_target(self):
+        devtools = mock.MagicMock()
+        devtools.command.return_value = {"frameId": "proof-frame"}
+
+        console_browser_test.navigate(devtools, "http://127.0.0.1:8080/console")
+
+        devtools.command.assert_called_once_with(
+            "Page.navigate",
+            {"url": "http://127.0.0.1:8080/console"},
+        )
+
+    def test_denies_navigation_error(self):
+        devtools = mock.MagicMock()
+        devtools.command.return_value = {"errorText": "net::ERR_CONNECTION_REFUSED"}
+
+        with self.assertRaisesRegex(RuntimeError, "browser navigation failed"):
+            console_browser_test.navigate(devtools, "http://127.0.0.1:8080/console")
 
 
 class NativeFormInputTest(unittest.TestCase):

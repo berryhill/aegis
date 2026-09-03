@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "notice": "Hermetic non-secret interpretation examples only; never live host, identity, authority, provenance, service, rollback, or completion evidence.",
+  "cases": [
+    {
+      "id": "published-checksummed-release",
+      "evidence": {
+        "repository": "berryhill/aegis",
+        "release_state": "published_stable",
+        "version": "0.2.14",
+        "source_revision_embedded": true,
+        "platform_asset_matched": true,
+        "checksum_entry_matched": true,
+        "archive_digest_verified": true,
+        "apply_result": "archive_and_checksum_verified"
+      },
+      "classification": "verified_direct_update_candidate",
+      "next_step": "treat this as apply-time evidence only; update --check does not inspect the archive or checksum"
+    },
+    {
+      "id": "interrupted-update-before-replacement",
+      "evidence": {
+        "download_complete": false,
+        "checksum_verified": false,
+        "replacement_committed": false,
+        "current_version_readback": "0.2.13"
+      },
+      "classification": "current_executable_unchanged_update_incomplete",
+      "next_step": "rerun version provenance and update check; do not infer or perform rollback"
+    },
+    {
+      "id": "stale-mutable-remote",
+      "evidence": {
+        "reference_kind": "mutable_tag",
+        "embedded_source_revision": false,
+        "checksum_entry_matched": false
+      },
+      "classification": "unverified_remote_denied",
+      "rollback_available": false,
+      "next_step": "require a published stable release and matching checksum through the typed updater"
+    },
+    {
+      "id": "package-manager-owned-executable",
+      "evidence": {
+        "installation_method_source": "operator_supplied",
+        "installation_owner": "package_manager",
+        "published_release_available": true
+      },
+      "classification": "direct_update_unavailable",
+      "next_step": "use the original package-manager installation method without changing permissions"
+    },
+    {
+      "id": "wrong-profile-path",
+      "evidence": {
+        "binary_profile": "production",
+        "configuration_profile": "development",
+        "opposing_root_detected": true
+      },
+      "classification": "profile_boundary_denied",
+      "next_step": "use the executable that owns the intended profile; never combine roots"
+    },
+    {
+      "id": "canonical-and-legacy-ambiguous",
+      "evidence": {
+        "canonical_meaningful": true,
+        "legacy_sources": 1
+      },
+      "classification": "canonical_and_legacy_layout_ambiguous",
+      "next_step": "stop automatic initialization, migration, reset, or merge and preserve exact inspection evidence"
+    },
+    {
+      "id": "gateway-status-active-readiness-unproven",
+      "evidence": {
+        "unit_installed": true,
+        "unit_digest_matches": true,
+        "active": true,
+        "protected_transport_readiness": "not_collected_by_gateway_status",
+        "authenticated_readiness": "not_collected_by_gateway_status",
+        "audit_currency": "not_collected_by_gateway_status"
+      },
+      "classification": "service_activity_only",
+      "next_step": "obtain a separate shipped authenticated readiness result; process activity alone is not readiness"
+    },
+    {
+      "id": "migration-path-escape",
+      "evidence": {
+        "source_kind": "legacy_only",
+        "unknown_artifact": true,
+        "symlink_or_escape": true,
+        "external_resources_preserved": true
+      },
+      "classification": "unsafe_migration_denied",
+      "next_step": "preserve the exact artifact for manual review; do not follow, copy, delete, or chmod it"
+    },
+    {
+      "id": "reset-preserves-external-resources",
+      "evidence": {
+        "profile_inventory_verified": true,
+        "external_hermes_preserved": true,
+        "operator_ollama_preserved": true,
+        "external_credentials_preserved": true,
+        "system_resources_preserved": true,
+        "managed_models_preserved": true,
+        "post_state": "uninitialized"
+      },
+      "classification": "verified_bounded_reset",
+      "next_step": "report the exact postcondition and retained resources without claiming generic deletion"
+    },
+    {
+      "id": "rollback-without-verified-artifact",
+      "evidence": {
+        "mutable_tag_only": true,
+        "verified_previous_artifact": false,
+        "typed_rollback_surface": false
+      },
+      "classification": "rollback_unavailable",
+      "rollback_available": false,
+      "next_step": "preserve the current verified executable and use the original installation method"
+    }
+  ]
+}

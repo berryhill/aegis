@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.13",
+    "version": "0.2.14",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:ca99f3426c0d7a8d40adb0863753fdbfad2c2adeb98cc379cca569cd5f0ecaf6",
+    "content_digest": "sha256:d610047ee2d97e218557bffa518667bd3f8de31dcb761813c5d203dc6bbc98c5",
     "source_revision": "repository"
   },
   "operations": [
@@ -73,6 +73,11 @@
       "operation": "aegis.manager-onboarding.initialize",
       "primary_skill": "aegis-manager-onboarding",
       "availability": "shipped"
+    },
+    {
+      "operation": "aegis.operator-lifecycle.diagnose",
+      "primary_skill": "aegis-operator-lifecycle-diagnostics",
+      "availability": "shipped"
     }
   ],
   "skills": [
@@ -90,12 +95,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:63e723a1e726a57900fdd0a819846f31c081b6834681baf46fa7bde56c8d0c13",
+      "content_digest": "sha256:e1f1c5c66c7861e9aa27121bb70f2da5bfd54fdd2a9e676402670fe4ea844d6f",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:fabf439603060490dced972883981f1d92e7b2497598d9afcc6318ce1e92e5c9",
-          "size": 4154
+          "sha256": "sha256:ab8019c04bcf7886ced1e5b0c74116ae559ef25793efe94223b1a185e76d3409",
+          "size": 4470
         }
       ]
     },
@@ -461,6 +466,38 @@
           "path": "references/onboarding-fixtures.json",
           "sha256": "sha256:dd19f5644db161351f8068f9a7d5777d7c4aa242df187cbfcb485a43a83065d5",
           "size": 4579
+        }
+      ]
+    },
+    {
+      "slug": "aegis-operator-lifecycle-diagnostics",
+      "version": "0.1.0",
+      "path": "skills/aegis-operator-lifecycle-diagnostics",
+      "description": "Diagnose Aegis installation, gateway, update, migration, reset, and recovery lifecycle through shipped typed readbacks and explicitly authorized bounded mutations.",
+      "dependencies": [
+        "aegis",
+        "aegis-trust-context-inspection",
+        "aegis-audit-verification"
+      ],
+      "authority_class": "advisory",
+      "required_operations": [
+        "aegis.operator-lifecycle.diagnose"
+      ],
+      "required_toolsets": [],
+      "sensitivity": [],
+      "network": "none",
+      "filesystem": "none",
+      "content_digest": "sha256:7046719a18ae7575af39313a22e9e039c5722716ec58632e3cbeec4df96e0ecc",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "sha256": "sha256:38760b4396fe30125f2f49524938bd986f6ff10cbc31e5808d608b6b48ffccbb",
+          "size": 16610
+        },
+        {
+          "path": "references/lifecycle-fixtures.json",
+          "sha256": "sha256:4a016d22b0d2a21e2f5ca6e0a7f14a627d8478515164b70e390e71fc43b3ad9a",
+          "size": 4602
         }
       ]
     }
