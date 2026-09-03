@@ -24,6 +24,7 @@ Use this skill to identify the relevant Aegis product domain and point the user 
 - Charter, stanza, mandate, session, manager, runtime, configuration, and audit questions: explain the matching shipped Aegis command group and consult the repository documentation before proposing input.
 - Exact provisioning-plan review, approval decisions, deterministic apply, recovery, and receipt verification: use `aegis-approval-provisioning` and only the shipped `plan`, `approval`, `provision`, protected receipt API, charter-effective, and audit surfaces it documents.
 - Installation provenance, profile/path diagnosis, gateway health, verified stable updates, legacy migration, bounded reset, and recovery: use `aegis-operator-lifecycle-diagnostics` and only the shipped `version`, `runtime`, `config`, `gateway`, `update`, `migrate-layout`, `reset`, and audit surfaces it documents.
+- Selective signed per-deployment projection review, generation comparison, reconciliation, drift, revocation, and monotonic rollback semantics: use `aegis-deployment-projection`. The supported release has no typed deployment projection command or API, so authoritative compilation, signing, publication, activation, acknowledgment, and rollback remain unavailable rather than simulated.
 
 If a requested operation is not present in the installed Aegis help or documented API, state that it is unavailable. Do not invent a command, helper, policy result, or completion receipt.
 
