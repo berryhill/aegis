@@ -1,7 +1,7 @@
 ---
 name: aegis-agent-registry
 description: Register, inspect, and govern immutable Aegis Agent Registry revisions through shipped typed services without treating profiles or model content as identity or authority.
-version: 0.2.1
+version: 0.2.2
 metadata:
   hermes:
     tags:
@@ -62,7 +62,7 @@ An identical retry is idempotent and returns the existing canonical record with 
 
 ## Import the local Hermes default profile in the manager
 
-1. Use either the authenticated manager's exact `/agents import hermes default` command or a closed low-ambiguity preparation request such as `I want to register an agent`. Natural language may prepare only; named profiles, arbitrary paths, recursive scanning, and conversational confirmation are unavailable. Complete conversational count/list/show requests may perform authenticated Registry reads without model dispatch.
+1. Use the authenticated manager's exact `/agents import hermes default` command or an equally explicit natural-language request naming the local Hermes default profile. An unqualified request such as `I want to register an agent` returns no-mutation guidance for `/agents readiness`, `/agents prepare`, and exact-digest `/agents register`; it does not select or prepare the default profile. Natural language may prepare only an explicitly selected supported source; named profiles, arbitrary paths, recursive scanning, and conversational confirmation are unavailable. Complete conversational count/list/show requests may perform authenticated Registry reads without model dispatch.
 2. Treat preparation as non-authorizing and non-mutating. Aegis requires fresh configured Unix-peer principal authentication and verifies the process-owned canonical `~/.hermes` root plus a non-empty, owner-safe regular `config.yaml` no larger than 1 MiB without following symlinks.
 3. Aegis never reads, hashes, copies, or persists profile bytes. The proposal uses only bounded filesystem metadata as provenance, with principal-stable Agent/fleet/source identities and a metadata-bound revision digest.
 4. Review the returned disabled lifecycle, `aegis-owned-ephemeral` runtime target, empty capability/policy declarations, exact digest, and generated confirmation command.

@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.15",
+    "version": "0.2.16",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:9ae42705e49633e2d0fe159ae973002e3a6078eaf9855d6f9207c1a89725eb5f",
+    "content_digest": "sha256:2e4b4d98a8b67dbfd375f8a4e69ad05a0c80d330ad14814e77077ea85e98206e",
     "source_revision": "repository"
   },
   "operations": [
@@ -230,7 +230,7 @@
     },
     {
       "slug": "aegis-agent-registry",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "path": "skills/aegis-agent-registry",
       "description": "Register, inspect, and govern immutable Aegis Agent Registry revisions through shipped typed services without treating profiles or model content as identity or authority.",
       "dependencies": [
@@ -245,12 +245,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:9802560ce1549aa4876d7929c2c698138ec163357796cd7587fa66de216bb15c",
+      "content_digest": "sha256:7db038329a0140ba096b09982a2bfc1d578d69c88dc58e1a334025e8ad138c67",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:211582b33b016bc45272d6c421fa9287efd69177f432bd3ac9a50efa31c159a0",
-          "size": 11794
+          "sha256": "sha256:ed1fd21ecb2d2db8f565cd504d835ffc706e1ac14bdc2174f0d1f93e29b22ecb",
+          "size": 12053
         },
         {
           "path": "references/registry-fixtures.json",

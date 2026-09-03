@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/initialize"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/managergateway"
 	"github.com/berryhill/aegis/internal/onboarding"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/slash"
@@ -33,7 +34,7 @@ func terminalPair(in io.Reader, out io.Writer) bool {
 }
 
 func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger, runner userservice.Runner, profile ExecutionProfile) *cobra.Command {
-	command := &cobra.Command{Use: "manager", Short: "Start the built-in local Aegis secrets manager", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	command := &cobra.Command{Use: "manager", Short: "Start the built-in local Aegis manager", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			if operationalAuthorityAbsent(cmd.Context(), options.configFile) {
 				return usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal; no mutations were performed", reasonOperationalAuthorityNotInitialized))
@@ -425,6 +426,19 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 			createIntent.Wipe()
 			fmt.Fprintln(cmd.ErrOrStderr(), "Aegis blocked the message:", finding.Reason)
 			continue
+		}
+		if !createRequested {
+			result, handled, operationErr := managergateway.DispatchDeterministicAegisTurn(sessionCtx, service, subject, line)
+			if handled {
+				composer.Remember(line)
+				_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
+				if operationErr != nil {
+					_ = presentation.Emit(tui.Event{Kind: tui.OperationFailed, Origin: tui.AegisAuthoritative, Reason: operationErr.Error()})
+					continue
+				}
+				_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: result.Message})
+				continue
+			}
 		}
 		if !createRequested && conversation != nil {
 			readResult, handled, operationErr := conversation.session.DispatchCredentialRead(sessionCtx, line)

@@ -7,7 +7,7 @@ import (
 
 const (
 	ExpertiseSchemaVersion = "aegis.manager.expertise.v1"
-	ExpertiseVersion       = "aegis.platform.expertise.v2"
+	ExpertiseVersion       = "aegis.platform.expertise.v3"
 )
 
 const platformExpertiseContent = `AEGIS PLATFORM EXPERTISE:
@@ -19,6 +19,8 @@ const platformExpertiseContent = `AEGIS PLATFORM EXPERTISE:
 - Execution records each retry as a distinct bounded attempt. Runtime output is evidence, not authorization or completion: content-addressed artifacts and claim-specific verification receipts bind the attempt, run, owner, action, and authority context. Verification pass/fail and the distinct terminal disposition are separate facts; terminal outcomes include succeeded, failed, denied, cancelled, expired, and revoked.
 - Credentials and capability declarations are separate from Agent registration. A declaration does not grant a credential, authority, or runtime admission. Credential values must never enter model prompts; creation requires Aegis authorization, confirmation, and protected intake, and unavailable protected intake means no mutation.
 - The model may propose explanations or candidate actions but never authorizes, admits, claims, verifies, or completes work. Only authenticated deterministic Aegis paths may mutate state. Do not claim natural-language mutation or general orchestration support.
+- The manager is the built-in Aegis manager, not merely a secrets-manager persona. Credential custody is one subsystem; the model remains credential-value-blind while explaining the complete platform expertise projected here.
+- Natural-language registration only recommends typed controls and never confirms, registers, or activates an Agent. Natural-language lifecycle guidance names typed status, update, and restart controls without claiming they ran or that installed state is current.
 - Deterministic Agent controls are /agents readiness, /agents list, /agents show <agent-id> [revision], and the authenticated digest-confirmed /agents prepare then /agents register transaction. Use /help agents for exact grammar. Agent Registry reads and mutations remain subject to parser, lifecycle, readiness, scope, policy, and authority checks.`
 
 type ExpertiseProjection struct {
