@@ -1265,14 +1265,151 @@ func TestEvidenceDispositionSkill(t *testing.T) {
 	}
 }
 
+func TestOperatorLifecycleDiagnosticsSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	const slug, operation = "aegis-operator-lifecycle-diagnostics", "aegis.operator-lifecycle.diagnose"
+	var skill *Skill
+	var owner *OperationOwner
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+		}
+	}
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("operator lifecycle operation owner = %#v", owner)
+	}
+	if skill == nil || skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 || strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("operator lifecycle skill contract = %#v", skill)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"Read-only diagnosis is the default",
+		"Every mutation follows its shipped command-specific boundary",
+		"does not authenticate the principal or present a separate apply preview/confirmation",
+		"Never reboot the workstation",
+		"aegis version --provenance",
+		"aegis runtime",
+		"aegis config",
+		"aegis gateway preview",
+		"aegis gateway status",
+		"aegis update --check",
+		"aegis migrate-layout",
+		"aegis reset",
+		"There is no shipped update rollback command",
+		"Aegis does not detect package-manager ownership",
+		"Production reset currently denies before planning whenever the exact Aegis gateway unit remains installed",
+		"stopping alone makes reset eligible",
+		"Offer rollback only when a shipped typed command identifies one exact previously verified artifact or generation",
+		"Never retry a mutation blindly",
+		"Fixtures never prove live host state",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing operator lifecycle contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(skillBytes)), forbidden) {
+			t.Errorf("operator lifecycle skill contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	fixtureBytes := mustRead(t, filepath.Join(root, skill.Path, "references", "lifecycle-fixtures.json"))
+	var document struct {
+		Notice string `json:"notice"`
+		Cases  []struct {
+			ID                string         `json:"id"`
+			Evidence          map[string]any `json:"evidence"`
+			Classification    string         `json:"classification"`
+			RollbackAvailable *bool          `json:"rollback_available"`
+		} `json:"cases"`
+	}
+	mustDecode(t, fixtureBytes, &document)
+	if !strings.Contains(document.Notice, "never live host, identity, authority") {
+		t.Errorf("operator lifecycle fixture notice no longer denies live authority evidence: %q", document.Notice)
+	}
+	for _, forbidden := range []string{"/home/", "runtime_home", "private_key", "access_token"} {
+		if strings.Contains(strings.ToLower(string(fixtureBytes)), forbidden) {
+			t.Errorf("operator lifecycle fixture contains forbidden secret/path material %q", forbidden)
+		}
+	}
+	byID := make(map[string]struct {
+		Evidence          map[string]any
+		Classification    string
+		RollbackAvailable *bool
+	}, len(document.Cases))
+	for _, fixture := range document.Cases {
+		byID[fixture.ID] = struct {
+			Evidence          map[string]any
+			Classification    string
+			RollbackAvailable *bool
+		}{fixture.Evidence, fixture.Classification, fixture.RollbackAvailable}
+	}
+	for _, id := range []string{"published-checksummed-release", "interrupted-update-before-replacement", "stale-mutable-remote", "package-manager-owned-executable", "wrong-profile-path", "canonical-and-legacy-ambiguous", "gateway-status-active-readiness-unproven", "migration-path-escape", "reset-preserves-external-resources", "rollback-without-verified-artifact"} {
+		if byID[id].Classification == "" || byID[id].Evidence == nil {
+			t.Errorf("operator lifecycle fixtures missing %q", id)
+		}
+	}
+	if byID["gateway-status-active-readiness-unproven"].Classification != "service_activity_only" || byID["gateway-status-active-readiness-unproven"].Evidence["active"] != true || byID["gateway-status-active-readiness-unproven"].Evidence["authenticated_readiness"] != "not_collected_by_gateway_status" {
+		t.Errorf("gateway fixture collapses process activity into readiness: %#v", byID["gateway-status-active-readiness-unproven"])
+	}
+	if rollback := byID["rollback-without-verified-artifact"].RollbackAvailable; rollback == nil || *rollback {
+		t.Errorf("unverified rollback fixture offers rollback: %#v", byID["rollback-without-verified-artifact"])
+	}
+	for _, field := range []string{"external_hermes_preserved", "operator_ollama_preserved", "external_credentials_preserved", "system_resources_preserved"} {
+		if byID["reset-preserves-external-resources"].Evidence[field] != true {
+			t.Errorf("bounded reset fixture does not preserve %q", field)
+		}
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"diagnose-and-operate-aegis-lifecycle":    "happy_path",
+		"deny-lifecycle-prompt-authority":         "authority_denial",
+		"deny-malformed-lifecycle-profile":        "malformed_input",
+		"deny-stale-lifecycle-release-replay":     "stale_replay",
+		"recover-interrupted-lifecycle-operation": "interruption_recovery",
+		"deny-lifecycle-secret-canary":            "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, ok := caseByID[id]
+		if !ok || evaluation.Class != class {
+			t.Errorf("operator lifecycle evaluation %q = %#v, want class %q", id, evaluation, class)
+			continue
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("operator lifecycle happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" || evaluation.Operation != "" {
+			t.Errorf("operator lifecycle denial %q is not a non-routing deny: %#v", id, evaluation)
+		}
+	}
+}
+
 func TestManagerOnboardingSkill(t *testing.T) {
 	root := repositoryRoot(t)
 	manifest, err := Validate(root)
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if len(manifest.Skills) != 13 {
-		t.Fatalf("manifest skills = %d, want preserved twelve plus manager onboarding", len(manifest.Skills))
+	if len(manifest.Skills) != 14 {
+		t.Fatalf("manifest skills = %d, want fourteen-skill bundle", len(manifest.Skills))
 	}
 	preserved := map[string]bool{}
 	for _, declared := range manifest.Skills {

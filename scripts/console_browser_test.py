@@ -180,6 +180,11 @@ def require_authenticated_console(devtools: DevTools, description: str) -> None:
     )
 
 
+def navigate(devtools: DevTools, url: str) -> None:
+    result = devtools.command("Page.navigate", {"url": url})
+    require(not result.get("errorText"), f"browser navigation failed: {result.get('errorText')}")
+
+
 def wait_for(
     devtools: DevTools,
     expression: str,
@@ -331,6 +336,7 @@ def main() -> int:
         [
             "/usr/bin/google-chrome",
             "--headless=new",
+            "--incognito",
             "--disable-gpu",
             "--no-first-run",
             "--no-default-browser-check",
@@ -361,6 +367,7 @@ def main() -> int:
         for domain in ("Page", "Runtime", "Log", "Network", "Audits"):
             devtools.command(domain + ".enable")
 
+        navigate(devtools, origin + "/console")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
         insert_text(devtools, "#password", initial_password)
         click(devtools, "#session-form button[type=submit]")
@@ -370,7 +377,7 @@ def main() -> int:
         if registration_only:
             charter_json = pathlib.Path(sys.argv[5]).read_text(encoding="utf-8")
             fixture_json = pathlib.Path(sys.argv[6]).read_text(encoding="utf-8")
-            devtools.command("Page.navigate", {"url": origin + "/console/agents/charter-import"})
+            navigate(devtools, origin + "/console/agents/charter-import")
             wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#agent-registration-prepare')", "authenticated Agent registration form")
             insert_text(devtools, "#charter", charter_json)
             insert_text(devtools, "#fixture", fixture_json)
