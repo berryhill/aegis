@@ -1402,14 +1402,95 @@ func TestOperatorLifecycleDiagnosticsSkill(t *testing.T) {
 	}
 }
 
+func TestDeploymentProjectionSkill(t *testing.T) {
+	root := repositoryRoot(t)
+	manifest, err := Validate(root)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	const slug, operation = "aegis-deployment-projection", "aegis.deployment-projection.reconcile"
+	var skill *Skill
+	var owner *OperationOwner
+	for i := range manifest.Skills {
+		if manifest.Skills[i].Slug == slug {
+			skill = &manifest.Skills[i]
+		}
+	}
+	for i := range manifest.Operations {
+		if manifest.Operations[i].Operation == operation {
+			owner = &manifest.Operations[i]
+		}
+	}
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
+		t.Fatalf("deployment projection operation owner = %#v", owner)
+	}
+	if skill == nil || skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 || strings.Join(skill.Dependencies, ",") != "aegis,aegis-agent-registry,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+		t.Fatalf("deployment projection skill contract = %#v", skill)
+	}
+
+	skillBytes := mustRead(t, filepath.Join(root, skill.Path, "SKILL.md"))
+	skillText := string(skillBytes)
+	for _, required := range []string{
+		"does not ship deployment enrollment, deployment binding, projection preview, compile, publish, pull, stage, activate, acknowledge, revoke, inspect, or rollback CLI commands",
+		"aegis agents show AGENT REVISION",
+		"aegis charter show AGENT REVISION",
+		"aegis audit verify",
+		"Deployment-visible stanzas are a maximum resident set, not one runtime authority context",
+		"Never union permissions",
+		"Partial activation is forbidden",
+		"Reapplying the exact same immutable generation is idempotent",
+		"Generation remains monotonic even when content is reverted",
+		"Never infer erasure from desired-state convergence",
+		"For the supported release, conclude that projection compilation and reconciliation are unavailable",
+	} {
+		if !strings.Contains(skillText, required) {
+			t.Errorf("SKILL.md missing deployment projection contract %q", required)
+		}
+	}
+	for _, forbidden := range []string{"/home/", "private_key", "access_token", "runtime_home"} {
+		if strings.Contains(strings.ToLower(string(skillBytes)), forbidden) {
+			t.Errorf("deployment projection skill contains forbidden secret/path material %q", forbidden)
+		}
+	}
+
+	var suite EvaluationSuite
+	mustDecode(t, mustRead(t, filepath.Join(root, EvaluationsName)), &suite)
+	caseByID := make(map[string]EvaluationCase, len(suite.Cases))
+	for _, evaluation := range suite.Cases {
+		caseByID[evaluation.ID] = evaluation
+	}
+	wantCases := map[string]string{
+		"review-selective-deployment-projection":    "happy_path",
+		"deny-projection-prompt-authority":          "authority_denial",
+		"deny-malformed-deployment-binding":         "malformed_input",
+		"deny-projection-generation-replay":         "stale_replay",
+		"recover-interrupted-projection-activation": "interruption_recovery",
+		"deny-deployment-projection-secret-canary":  "secret_canary",
+	}
+	for id, class := range wantCases {
+		evaluation, ok := caseByID[id]
+		if !ok || evaluation.Class != class {
+			t.Errorf("deployment projection evaluation %q = %#v, want class %q", id, evaluation, class)
+			continue
+		}
+		if class == "happy_path" {
+			if evaluation.Expected != "route" || evaluation.Operation != operation {
+				t.Errorf("deployment projection happy path does not route to %q: %#v", operation, evaluation)
+			}
+		} else if evaluation.Expected != "deny" || evaluation.Operation != "" {
+			t.Errorf("deployment projection denial %q is not a non-routing deny: %#v", id, evaluation)
+		}
+	}
+}
+
 func TestManagerOnboardingSkill(t *testing.T) {
 	root := repositoryRoot(t)
 	manifest, err := Validate(root)
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
-	if len(manifest.Skills) != 14 {
-		t.Fatalf("manifest skills = %d, want fourteen-skill bundle", len(manifest.Skills))
+	if len(manifest.Skills) != 15 {
+		t.Fatalf("manifest skills = %d, want fifteen-skill bundle", len(manifest.Skills))
 	}
 	preserved := map[string]bool{}
 	for _, declared := range manifest.Skills {
