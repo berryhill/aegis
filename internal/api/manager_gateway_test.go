@@ -73,6 +73,7 @@ func TestManagerGatewayWriteTimeoutCoversStartupAndTurns(t *testing.T) {
 
 func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T) {
 	svc := apiService(t)
+	configureAPIFleet(t, svc)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- Serve(ctx, svc) }()
@@ -101,6 +102,39 @@ func TestManagerGatewaySessionExecutesThroughSoleServiceAndRevokes(t *testing.T)
 	_ = response.Body.Close()
 	if session.ID == "" || session.Token == "" || session.Expires == "" || session.Mode != "degraded" || session.Reason != "manager_model_absent" || session.Next == "" {
 		t.Fatalf("incomplete session metadata: %+v", session)
+	}
+
+	for _, step := range []struct {
+		input string
+		kind  string
+	}{
+		{input: "can we register an agent?", kind: "agent_registration_guidance"},
+		{input: "how many agents are resistered?", kind: "agent_registry_count"},
+		{input: "can you ensure our aegis gateway and dashboard are up to date?", kind: "manager_lifecycle_guidance"},
+	} {
+		turn := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/"+session.ID+"/turns", map[string]string{"input": step.input})
+		turn.Header.Set(managergateway.SessionHeader, session.Token)
+		response, err = client.Do(turn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("authoritative turn %q status=%d", step.input, response.StatusCode)
+		}
+		var result managergateway.TurnResult
+		if err = json.NewDecoder(response.Body).Decode(&result); err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if result.Kind != step.kind || result.Origin != managergateway.TurnOriginAuthoritative || result.Data["model_bypassed"] != true {
+			t.Fatalf("authoritative turn %q returned %+v", step.input, result)
+		}
+		if step.kind == "agent_registration_guidance" && (result.Data["registered"] != false || result.Data["prepared"] != false || result.Data["activated"] != false) {
+			t.Fatalf("registration guidance reported an effect: %+v", result.Data)
+		}
+		if step.kind == "manager_lifecycle_guidance" && (result.Data["mutated"] != false || result.Data["checked"] != false || result.Data["updated"] != false || result.Data["restarted"] != false) {
+			t.Fatalf("lifecycle guidance reported an effect: %+v", result.Data)
+		}
 	}
 
 	turn := managerGatewayRequest(t, svc, http.MethodPost, "/v1/manager/sessions/"+session.ID+"/turns", map[string]string{"input": "hello"})

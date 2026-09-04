@@ -14,6 +14,9 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/credentials"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/orchestration"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/registry"
 )
 
 func degradedRoutingService(now time.Time, subject core.Subject, token string) *Service {
@@ -31,6 +34,12 @@ type gatewayReadOperations struct {
 	managerdomain.Operations
 	records []credentials.SecretRecord
 	value   []byte
+}
+
+type emptyAgentRegistry struct{ fleet.Repository }
+
+func (emptyAgentRegistry) ListAgentRegistrations(context.Context) ([]registry.AgentRegistration, error) {
+	return nil, nil
 }
 
 func (o gatewayReadOperations) List(_ context.Context, query string, _ int) ([]credentials.SecretRecord, error) {
@@ -86,6 +95,57 @@ func TestCredentialReadsBypassModelThroughAuthorityWhileRuntimeDegraded(t *testi
 	}
 }
 
+func TestObservedAgentCountTypoReadsRegistryWithoutModel(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+	service.app.Config.Principal.ID = subject.PrincipalID
+	service.app.Now = func() time.Time { return now }
+	service.app.FleetRepository = emptyAgentRegistry{}
+	service.app.Fleet = &orchestration.FleetService{}
+	service.app.QueueWorker = &orchestration.QueueWorker{}
+
+	result, err := service.Turn(context.Background(), subject, "degraded", "token", "how many agents are resistered?")
+	if err != nil {
+		t.Fatalf("observed count typo reached unavailable model: %v", err)
+	}
+	if result.Kind != "agent_registry_count" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["count"] != 0 {
+		t.Fatalf("observed count typo returned %+v", result)
+	}
+}
+
+func TestExactOperatorTranscriptsBypassConversationalRuntime(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+	service.sessions["degraded"] = session{
+		id: "degraded", token: sha256.Sum256([]byte("token")), subject: subject,
+		expires: now.Add(time.Hour), mode: "conversational",
+	}
+	service.app.Config.Principal.ID = subject.PrincipalID
+	service.app.Now = func() time.Time { return now }
+	service.app.FleetRepository = emptyAgentRegistry{}
+	service.app.Fleet = &orchestration.FleetService{}
+	service.app.QueueWorker = &orchestration.QueueWorker{}
+
+	for _, test := range []struct {
+		input string
+		kind  string
+	}{
+		{input: "can we register an agent?", kind: "agent_registration_guidance"},
+		{input: "how many agents are resistered?", kind: "agent_registry_count"},
+		{input: "can you ensure our aegis gateway and dashboard are up to date?", kind: "manager_lifecycle_guidance"},
+	} {
+		result, err := service.Turn(context.Background(), subject, "degraded", "token", test.input)
+		if err != nil {
+			t.Fatalf("conversational transcript %q reached nil runtime: %v", test.input, err)
+		}
+		if result.Kind != test.kind || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true {
+			t.Fatalf("conversational transcript %q returned %+v", test.input, result)
+		}
+	}
+}
+
 func TestAmbiguousCredentialFollowUpDoesNotRepeatAuthorityRead(t *testing.T) {
 	now := time.Now().UTC()
 	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
@@ -111,6 +171,101 @@ func TestQualifiedAgentRegistrationIntentReturnsGuidanceWithoutModel(t *testing.
 	}
 	if result.Kind != "agent_registration_guidance" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["registered"] != false {
 		t.Fatalf("unexpected registration routing: %+v", result)
+	}
+}
+
+func TestRealWorldRegistrationTranscriptsRecommendTypedControlsWithoutMutation(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+
+	for _, input := range []string{
+		"I want to register an agent",
+		"hey, let's register an agent",
+		"can we register an agent?",
+		"I'd like to register a new agent.",
+		"I’d like to register a new agent.",
+		"Can you register agent alpha?",
+	} {
+		result, err := service.Turn(context.Background(), subject, "degraded", "token", input)
+		if err != nil {
+			t.Fatalf("registration transcript %q reached unavailable model: %v", input, err)
+		}
+		if result.Kind != "agent_registration_guidance" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["registered"] != false || result.Data["prepared"] != false || result.Data["activated"] != false {
+			t.Fatalf("registration transcript %q returned %+v", input, result)
+		}
+		for _, forbidden := range []string{"Prepared a non-authorizing import review", "registered successfully", "activated"} {
+			if strings.Contains(result.Message, forbidden) {
+				t.Fatalf("registration transcript %q made a mutation claim: %q", input, result.Message)
+			}
+		}
+		for _, required := range []string{"/agents readiness", "/agents prepare", "/agents register"} {
+			if !strings.Contains(result.Message, required) {
+				t.Errorf("registration transcript %q missing %q: %q", input, required, result.Message)
+			}
+		}
+	}
+}
+
+func TestManagerLifecycleRequestsReturnNoMutationTypedGuidance(t *testing.T) {
+	now := time.Now().UTC()
+	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
+	service := degradedRoutingService(now, subject, "token")
+
+	for _, input := range []string{
+		"can you ensure our aegis gateway and dashboard are up to date?",
+		"Please ensure the Aegis manager is running and up to date.",
+		"Please update and restart the Aegis manager.",
+	} {
+		result, err := service.Turn(context.Background(), subject, "degraded", "token", input)
+		if err != nil {
+			t.Fatalf("lifecycle transcript %q reached unavailable model: %v", input, err)
+		}
+		if result.Kind != "manager_lifecycle_guidance" || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true || result.Data["mutated"] != false || result.Data["checked"] != false || result.Data["restarted"] != false || result.Data["updated"] != false {
+			t.Fatalf("lifecycle transcript %q returned %+v", input, result)
+		}
+		for _, required := range []string{"aegis version --provenance", "aegis update --check", "aegis gateway status", "aegis console", "aegis update", "aegis gateway restart", "No status check, update, or restart was performed"} {
+			if !strings.Contains(result.Message, required) {
+				t.Errorf("lifecycle transcript %q missing %q: %q", input, required, result.Message)
+			}
+		}
+		for _, forbidden := range []string{"is running", "is current", "is up to date", "was restarted", "successfully updated"} {
+			if strings.Contains(strings.ToLower(result.Message), forbidden) {
+				t.Errorf("lifecycle transcript %q contains false claim %q: %q", input, forbidden, result.Message)
+			}
+		}
+	}
+}
+
+func TestRealWorldAuthoritativeRoutingRejectsOvermatch(t *testing.T) {
+	for _, input := range []string{
+		"Do not ensure the Aegis manager is running and up to date.",
+		"Say 'Please update and restart the Aegis manager.'",
+		"Please update the Aegis manager and delete its state.",
+		"Please ensure the Aegis manager is running\nand up to date.",
+		"can you \nensure our aegis gateway and dashboard are up to date?",
+		"can we \nregister an agent?",
+		"\"can you ensure our aegis gateway and dashboard are up to date?\"",
+		"\"how many agents are resistered?\"",
+		"“can you ensure our aegis gateway and dashboard are up to date?”",
+		"“how many agents are resistered?”",
+		"“register the default Hermes profile on this computer”",
+		"\"register the default Hermes profile on this computer\".",
+		"“Please update and restart the Aegis manager”.",
+		"“how many agents are resistered?”.",
+		"“how many agents are resistered?\"",
+		"Please update and restart the Aegis manager\",",
+		"(“Please update and restart the Aegis manager.”)",
+		"(\"how many agents are resistered?\").",
+		"„Please update and restart the Aegis manager.‟",
+		"「register the default Hermes profile on this computer」",
+		"`how many agents are resistered?`",
+		"〝can we register an agent?〞",
+		"Please ensure the Aegis managers are running and up to date.",
+	} {
+		if IsDeterministicRequest(input) {
+			t.Fatalf("unsafe near-match routed authoritatively: %q", input)
+		}
 	}
 }
 

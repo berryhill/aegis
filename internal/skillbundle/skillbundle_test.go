@@ -634,7 +634,7 @@ func TestAgentRegistrySkill(t *testing.T) {
 		t.Fatalf("Agent Registry skill contract = %#v", skill)
 	}
 	text := string(mustRead(t, filepath.Join(root, skill.Path, "SKILL.md")))
-	for _, required := range []string{"aegis agents register FILE", "aegis agents list", "aegis agents show AGENT [REVISION]", "aegis agents history AGENT", "aegis agents enable AGENT FILE", "aegis agents disable AGENT FILE", "aegis agents retire AGENT FILE", "there is no shipped standalone `aegis agents readiness` CLI command", "A Hermes profile is a runtime/provisioning artifact or projection, never the canonical Agent Registry", "An identical retry is idempotent", "A retired Agent cannot be re-enabled or disabled"} {
+	for _, required := range []string{"aegis agents register FILE", "aegis agents list", "aegis agents show AGENT [REVISION]", "aegis agents history AGENT", "aegis agents enable AGENT FILE", "aegis agents disable AGENT FILE", "aegis agents retire AGENT FILE", "there is no shipped standalone `aegis agents readiness` CLI command", "A Hermes profile is a runtime/provisioning artifact or projection, never the canonical Agent Registry", "An identical retry is idempotent", "An unqualified request such as `I want to register an agent` returns no-mutation guidance", "it does not select or prepare the default profile", "A retired Agent cannot be re-enabled or disabled"} {
 		if !strings.Contains(text, required) {
 			t.Errorf("SKILL.md missing Agent Registry contract %q", required)
 		}

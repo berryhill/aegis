@@ -314,7 +314,7 @@ func managerGatewayTurnError(response *http.Response) error {
 }
 
 func shouldSubmitGatewayTurn(mode, input string) bool {
-	return mode == "conversational" || managergateway.IsLocalProfileRequest(input) || managergateway.IsAgentRegistryRequest(input) || managergateway.IsPlatformGuidanceRequest(input) || managerdomain.IsDeterministicCredentialRead(input)
+	return mode == "conversational" || managergateway.IsDeterministicRequest(input)
 }
 
 func gatewayManagerCommandSummary() string {

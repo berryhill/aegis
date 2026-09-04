@@ -82,10 +82,10 @@ func TestLocalProfileIntentIsClosedAndDoesNotTreatQuestionsAsMutation(t *testing
 		"show Hermes profiles":                                 "inventory",
 		"register the default Hermes profile on this computer": "register_default",
 		"import the local Hermes default profile as an Agent":  "register_default",
-		"i want to register an agent":                          "register_default",
-		"Can you register an agent?":                           "register_default",
-		"hey, let's register an agent":                         "register_default",
-		"okay please let's register a new agent":               "register_default",
+		"i want to register an agent":                          "",
+		"Can you register an agent?":                           "",
+		"hey, let's register an agent":                         "",
+		"okay please let's register a new agent":               "",
 		"what is a Hermes profile?":                            "",
 		"register it":                                          "",
 		"show profiles":                                        "",
@@ -104,6 +104,7 @@ func TestAgentRegistryIntentIsClosedAndComplete(t *testing.T) {
 	for input, want := range map[string]agentRegistryIntent{
 		"how many agents have we registered?":           {kind: "count"},
 		"which agents are registered?":                  {kind: "list"},
+		"how many agents are resistered?":               {kind: "count"},
 		"show agent agent-alpha":                        {kind: "show", agentID: "agent-alpha"},
 		"show details for agent agent-alpha revision 2": {kind: "show", agentID: "agent-alpha", revision: 2, hasRevision: true},
 		"how do I list registered agents?":              {},
@@ -177,7 +178,7 @@ func TestDegradedManagerTurnServesAuthoritativeProfileIntentsWithoutModel(t *tes
 	for input, wantKind := range map[string]string{
 		"show Hermes profiles":                                 "hermes_profile_inventory",
 		"register the default Hermes profile on this computer": "local_hermes_agent_import_prepared",
-		"i want to register an agent":                          "local_hermes_agent_import_prepared",
+		"i want to register an agent":                          "agent_registration_guidance",
 	} {
 		result, err := service.Turn(context.Background(), subject, "degraded", token, input)
 		if err != nil {

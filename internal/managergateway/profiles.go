@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unicode"
 
 	"golang.org/x/sys/unix"
 )
@@ -171,8 +172,27 @@ func normalizedIntent(input string) string {
 	}), " ")
 }
 
+func containsQuotedIntentSyntax(input string) bool {
+	runes := []rune(input)
+	for index, value := range runes {
+		if value == '\'' || value == '’' {
+			// Preserve ordinary contractions such as "I'd", "I’d", and
+			// "let's" while rejecting single-quoted examples anywhere in
+			// the request, including inside punctuation or delimiters.
+			if index > 0 && index+1 < len(runes) && unicode.IsLetter(runes[index-1]) && unicode.IsLetter(runes[index+1]) {
+				continue
+			}
+			return true
+		}
+		if value == '`' || unicode.Is(unicode.Quotation_Mark, value) || unicode.Is(unicode.Ps, value) || unicode.Is(unicode.Pe, value) {
+			return true
+		}
+	}
+	return false
+}
+
 func localProfileIntent(input string) string {
-	if strings.ContainsAny(input, "\r\n") {
+	if strings.ContainsAny(input, "\r\n") || containsQuotedIntentSyntax(input) {
 		return ""
 	}
 	normalized := normalizedIntent(input)
@@ -194,15 +214,6 @@ func localProfileIntent(input string) string {
 	normalized = strings.TrimPrefix(normalized, "lets ")
 	normalized = strings.TrimPrefix(normalized, "let s ")
 	for _, phrase := range []string{
-		"register an agent",
-		"register a new agent",
-		"i want to register an agent",
-		"i want to register a new agent",
-		"please register an agent",
-		"please register a new agent",
-		"can you register an agent",
-		"could you register an agent",
-		"would you register an agent",
 		"register the default hermes profile on this computer",
 		"import the local hermes default profile as an agent",
 	} {
@@ -228,7 +239,7 @@ var (
 )
 
 func platformGuidanceIntent(input string) string {
-	if strings.ContainsAny(input, "\r\n") {
+	if strings.ContainsAny(input, "\r\n") || containsQuotedIntentSyntax(input) {
 		return ""
 	}
 	normalized := normalizedIntent(input)
@@ -254,13 +265,14 @@ type agentRegistryIntent struct {
 var showAgentPattern = regexp.MustCompile(`(?i)^\s*(?:please\s+)?(?:show|show me|show details for)\s+(?:registered\s+)?agent\s+([a-z0-9][a-z0-9._-]{0,127})(?:\s+revision\s+([1-9][0-9]*))?\s*[?.!]?\s*$`)
 
 func parseAgentRegistryIntent(input string) agentRegistryIntent {
-	if strings.ContainsAny(input, "\r\n") {
+	if strings.ContainsAny(input, "\r\n") || containsQuotedIntentSyntax(input) {
 		return agentRegistryIntent{}
 	}
 	normalized := normalizedIntent(input)
 	for _, phrase := range []string{
 		"how many agents have we registered",
 		"how many agents are registered",
+		"how many agents are resistered",
 		"what is the number of registered agents",
 		"tell me how many agents are registered",
 	} {

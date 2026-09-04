@@ -205,6 +205,33 @@ func TestManagerMakeCredentialInputNeverFallsThroughToHermes(t *testing.T) {
 	}
 }
 
+func TestInProcessManagerRoutesExactOperatorTranscriptsWithoutModel(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  string
+	}{
+		{input: "can we register an agent?", want: "Registration was not performed"},
+		{input: "how many agents are resistered?", want: "authenticated Aegis Agent Registry contains"},
+		{input: "can you ensure our aegis gateway and dashboard are up to date?", want: "No status check, update, or restart was performed"},
+	} {
+		t.Run(test.input, func(t *testing.T) {
+			var output bytes.Buffer
+			root := NewRoot(Dependencies{In: strings.NewReader(test.input + "\nexit\n"), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+			root.SetArgs([]string{"--config", managerTestConfig(t), "manager"})
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			text := output.String()
+			if !strings.Contains(text, test.want) {
+				t.Fatalf("exact transcript did not reach authoritative in-process route: %s", text)
+			}
+			if strings.Contains(text, "The local Aegis management model is unavailable") {
+				t.Fatalf("exact transcript fell through to unavailable model: %s", text)
+			}
+		})
+	}
+}
+
 func managerTestConfig(t *testing.T) string {
 	t.Helper()
 	current, err := user.Current()

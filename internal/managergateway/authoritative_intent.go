@@ -11,6 +11,7 @@ const (
 	intentAgentRegistration = "agent_registration"
 	intentCredentialCreate  = "credential_creation"
 	intentCredentialIntake  = "credential_intake"
+	intentManagerLifecycle  = "manager_lifecycle"
 )
 
 type authoritativeRoute struct {
@@ -41,7 +42,7 @@ func detectAuthoritativeIntent(input string) authoritativeRoute {
 		return authoritativeRoute{kind: intentCredentialIntake}
 	}
 
-	if strings.ContainsAny(candidate, "\r\n") {
+	if strings.ContainsAny(input, "\r\n") || containsQuotedIntentSyntax(input) {
 		return authoritativeRoute{}
 	}
 	normalized := normalizedIntent(candidate)
@@ -51,10 +52,16 @@ func detectAuthoritativeIntent(input string) authoritativeRoute {
 	if agentRegistrationGuidancePattern.MatchString(normalized) {
 		return authoritativeRoute{kind: intentAgentRegistration}
 	}
+	if managerLifecycleGuidancePattern.MatchString(normalized) {
+		return authoritativeRoute{kind: intentManagerLifecycle}
+	}
 	return authoritativeRoute{}
 }
 
-var agentRegistrationGuidancePattern = regexp.MustCompile(`^(?:please )?(?:register|add) (?:(?:an?|the|our|another|new) )?agents?(?: [a-z0-9][a-z0-9._-]{0,63})?(?: for me)?$`)
+var (
+	agentRegistrationGuidancePattern = regexp.MustCompile(`^(?:please )?(?:(?:i want to|i d like to|hey let s|hey lets) )?(?:register|add) (?:(?:a new|an?|the|our|another|new) )?agents?(?: [a-z0-9][a-z0-9._-]{0,63})?(?: for me)?$`)
+	managerLifecycleGuidancePattern  = regexp.MustCompile(`^(?:please )?(?:ensure our aegis gateway and dashboard are up to date|ensure the aegis manager is running and up to date|update and restart the aegis manager)$`)
+)
 
 func authoritativeIntent(input string) string {
 	route := detectAuthoritativeIntent(input)
@@ -64,7 +71,7 @@ func authoritativeIntent(input string) string {
 
 func politeRequestBody(input string) (string, bool) {
 	trimmed := strings.TrimSpace(input)
-	for _, prefix := range []string{"can you ", "could you ", "would you "} {
+	for _, prefix := range []string{"can you ", "can we ", "could you ", "would you "} {
 		if len(trimmed) >= len(prefix) && strings.EqualFold(trimmed[:len(prefix)], prefix) {
 			return strings.TrimSpace(trimmed[len(prefix):]), true
 		}
@@ -74,7 +81,7 @@ func politeRequestBody(input string) (string, bool) {
 
 func authoritativeRequestAction(input string) bool {
 	trimmed := strings.TrimSpace(input)
-	for _, action := range []string{"register", "add", "create", "make", "store", "save", "stash", "remember", "keep"} {
+	for _, action := range []string{"register", "add", "create", "make", "store", "save", "stash", "remember", "keep", "ensure", "update", "restart"} {
 		if len(trimmed) == len(action) && strings.EqualFold(trimmed, action) ||
 			len(trimmed) > len(action) && strings.EqualFold(trimmed[:len(action)], action) && (trimmed[len(action)] == ' ' || trimmed[len(action)] == '\t') {
 			return true
@@ -105,6 +112,8 @@ func expertiseData() map[string]any {
 func agentRegistrationGuidance() TurnResult {
 	data := expertiseData()
 	data["registered"] = false
+	data["prepared"] = false
+	data["activated"] = false
 	data["readiness_command"] = "/agents readiness"
 	data["grammar_command"] = "/help agents"
 	return TurnResult{
@@ -114,6 +123,34 @@ func agentRegistrationGuidance() TurnResult {
 			"Inspect authoritative Registry readiness with /agents readiness. Registration requires an exact charter fixture and fleet/source binding through the authenticated /agents prepare transaction, followed by /agents register with the exact prepared revision digest.",
 		Data: data,
 	}
+}
+
+func managerLifecycleGuidance() TurnResult {
+	return TurnResult{
+		Kind:    "manager_lifecycle_guidance",
+		Origin:  TurnOriginAuthoritative,
+		Message: "No status check, update, or restart was performed. The dashboard is the browser-console surface served by the gateway, not a separately updated component. Use the typed controls in order: `aegis version --provenance`, `aegis update --check`, `aegis gateway status`, and `aegis console`. For a direct Aegis installation, run the separate typed `aegis update` command only after an available update is reported; package-manager installations must use their original installer. Run `aegis gateway restart` only when an exact restart is intended. Re-run gateway status and authenticated readiness checks for authoritative post-action evidence.",
+		Data: map[string]any{
+			"guidance_version": "aegis.manager.lifecycle-guidance.v1",
+			"model_bypassed":   true,
+			"mutated":          false,
+			"checked":          false,
+			"updated":          false,
+			"restarted":        false,
+		},
+	}
+}
+
+// IsDeterministicRequest reports whether a complete manager turn belongs to a
+// closed authenticated Aegis route. It is shared with degraded terminal
+// admission so an admitted request cannot depend on model availability.
+func IsDeterministicRequest(input string) bool {
+	if IsLocalProfileRequest(input) || IsAgentRegistryRequest(input) || IsPlatformGuidanceRequest(input) || managerdomain.IsDeterministicCredentialRead(input) {
+		return true
+	}
+	route := detectAuthoritativeIntent(input)
+	defer route.Wipe()
+	return route.kind != ""
 }
 
 func platformGuidance(kind string) TurnResult {
