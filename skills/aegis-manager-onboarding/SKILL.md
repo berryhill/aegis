@@ -1,7 +1,7 @@
 ---
 name: aegis-manager-onboarding
 description: Initialize, classify, resume, and verify the authenticated Aegis manager onboarding lifecycle through shipped typed Aegis services without granting bootstrap authority to the model.
-version: 0.1.0
+version: 0.1.1
 metadata:
   hermes:
     tags:
@@ -72,8 +72,9 @@ Use `references/onboarding-fixtures.json` only to interpret representative non-s
 4. For runtime/model remediation, verify Hermes compatibility, inspect candidates, select one exact loopback Ollama route, discover an already-installed approved candidate, review its source/license provenance, then configure only that exact candidate and digest. No candidate visible means stop; do not download or switch routes.
 5. Run exact certification only after explicit authorization. Certification must exercise Hermes Agent through the authenticated Aegis proxy to the selected exact Ollama route, validate the runtime/model tuple and bounded behavior, and clean temporary Hermes home, gateway, proxy, and managed runtime resources on pass, failure, cancellation, or timeout. External operator-owned Ollama is not stopped by Aegis.
 6. Read back with `aegis manager model status` and the onboarding snapshot. Certification output alone does not prove current artifact integrity.
-7. If a persistent gateway is requested, use `aegis gateway preview`, review exact unit path/digest/executable/configuration/origin, then use the explicitly authorized lifecycle command and verify with `aegis gateway status`. Do not enable lingering or widen transport implicitly.
-8. Use `aegis console` only after gateway readiness is established, or start the authenticated terminal manager with `aegis manager`. Require Aegis's live principal, trust-context, Hermes, proxy, Ollama, and manager readiness evidence; model narration cannot declare readiness.
+7. After built-in `aegis` registration, let fresh/resumed offline bootstrap verify any exact existing default-profile import or inspect the configured principal's canonical default profile through the typed metadata-only boundary. Review and registration are separate default-decline decisions. Review writes nothing; confirmation creates only the exact disabled digest-bound Agent and must return full Registry readback. A missing profile is non-gating. Unsafe evidence or collisions stop; no profile content or ambient authority is imported.
+8. If a persistent gateway is requested, use `aegis gateway preview`, review exact unit path/digest/executable/configuration/origin, then use the explicitly authorized lifecycle command and verify with `aegis gateway status`. Do not enable lingering or widen transport implicitly.
+9. Use `aegis console` only after gateway readiness is established, or start the authenticated terminal manager with `aegis manager`. Require Aegis's live principal, trust-context, Hermes, proxy, Ollama, and manager readiness evidence; model narration cannot declare readiness.
 
 ## Denial, interruption, and recovery
 

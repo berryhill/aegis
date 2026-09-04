@@ -412,7 +412,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			bootstrapApproved = true
 		}
 		if readyStateNeedsBuiltInRegistrationCheck(snapshot, gateway.State) {
-			registered, err := ensureBuiltInAegisAgentRegistration(cmd, build)
+			registered, err := ensureReadyAgentRegistrations(cmd, build)
 			if err != nil || !registered {
 				return err
 			}

@@ -82,7 +82,7 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 		case onboarding.Ready:
 			_ = presentation.Emit(tui.Event{Kind: tui.BootstrapStageComplete, Origin: tui.AegisAuthoritative, Stage: "bootstrap", Message: "all manager prerequisites verified"})
 			renderReadiness(cmd, snapshot)
-			registered, err := bootstrapBuiltInAegisAgent(cmd, build, input, bootstrapView)
+			registered, err := bootstrapReadyAgentRegistrations(cmd, build, input, bootstrapView)
 			if err != nil || !registered {
 				return false, err
 			}
@@ -132,6 +132,42 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 func ensureBuiltInAegisAgentRegistration(cmd *cobra.Command, build builder) (bool, error) {
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
 	return bootstrapBuiltInAegisAgent(cmd, build, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(capabilities))
+}
+
+func ensureReadyAgentRegistrations(cmd *cobra.Command, build builder) (bool, error) {
+	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
+	return bootstrapReadyAgentRegistrations(cmd, build, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(capabilities))
+}
+
+type localHermesBootstrapService interface {
+	VerifyLocalHermesAgentImportForBootstrapAs(context.Context, core.Subject) (app.FleetAgent, error)
+	ListFleetAgentsAs(context.Context, core.Subject) ([]app.FleetAgent, error)
+	PrepareLocalHermesAgentImportForBootstrapAs(context.Context, core.Subject) (app.LocalHermesAgentImportProposal, error)
+	ConfirmLocalHermesAgentImportForBootstrapAs(context.Context, core.Subject, string) (app.FleetAgent, bool, error)
+}
+
+type readyAgentBootstrapService interface {
+	builtInAegisAgentService
+	localHermesBootstrapService
+}
+
+func bootstrapReadyAgentRegistrations(cmd *cobra.Command, build builder, input *terminalInput, view *bootstrapPresentation) (bool, error) {
+	service, subject, err := authenticatedService(cmd, build)
+	if err != nil {
+		return false, err
+	}
+	return bootstrapReadyAgentRegistrationsWithService(cmd, service, subject, input, view)
+}
+
+func bootstrapReadyAgentRegistrationsWithService(cmd *cobra.Command, service readyAgentBootstrapService, subject core.Subject, input *terminalInput, view *bootstrapPresentation) (bool, error) {
+	registered, err := bootstrapBuiltInAegisAgentWithService(cmd, service, subject, input, view)
+	if err != nil || !registered {
+		return false, err
+	}
+	if err = bootstrapLocalHermesDefaultAgentWithService(cmd, service, subject, input, view); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type builtInAegisAgentService interface {
@@ -193,6 +229,109 @@ func renderBuiltInAegisRuntimeContract(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), "runtime_target=manager-disposable is a disposable runtime contract")
 	fmt.Fprintln(cmd.OutOrStdout(), "no ~/.hermes/profiles/aegis is created")
 	fmt.Fprintln(cmd.OutOrStdout(), "supported launch is 'aegis' or 'aegis manager', not 'hermes --profile aegis'")
+}
+
+func bootstrapLocalHermesDefaultAgentWithService(cmd *cobra.Command, service localHermesBootstrapService, subject core.Subject, input *terminalInput, view *bootstrapPresentation) error {
+	existing, loadErr := service.VerifyLocalHermesAgentImportForBootstrapAs(cmd.Context(), subject)
+	if loadErr == nil {
+		fmt.Fprintf(cmd.OutOrStdout(), "Default Hermes profile Agent already registered and exactly verified at %s; current lifecycle=%s.\n", existing.Revision.Digest, existing.Revision.Lifecycle)
+		return nil
+	}
+	if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return loadErr
+	}
+
+	proposal, err := service.PrepareLocalHermesAgentImportForBootstrapAs(cmd.Context(), subject)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			fmt.Fprintln(cmd.OutOrStdout(), "No eligible default Hermes profile was found; no import was offered and manager startup remains available.")
+			return nil
+		}
+		return err
+	}
+
+	details := fmt.Sprintf("profile=%s; profile fingerprint=%s; agent=%s; fleet/source=%s/%s; owner=%s; accountable principal=%s; runtime=%s; lifecycle=%s; capabilities=%s; policies=%s; proposed revision digest=%s", proposal.SelectedProfile, proposal.ProfileFingerprint, proposal.AgentID, proposal.FleetID, proposal.SourceID, proposal.Owner, proposal.Accountability, proposal.Runtime, proposal.Lifecycle, proposal.Capabilities, proposal.Policies, proposal.RevisionDigest)
+	reviewed, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Review discovered Hermes default profile import",
+		Recommendation: "Review the safe metadata-only candidate before deciding whether to register it as a disabled Aegis Agent.",
+		Consequence:    "This review is read-only. It does not register, activate, copy, execute, or inherit the default Hermes profile or any of its authority.",
+		Details:        details,
+		DefaultDecline: true,
+	})
+	if err != nil || !reviewed {
+		fmt.Fprintln(cmd.OutOrStdout(), "Default Hermes profile import review declined; no Agent record was created.")
+		return err
+	}
+
+	approved, err := view.approve(cmd, input, bootstrapDecision{
+		Title:          "Register discovered Hermes default profile as a disabled Agent",
+		Recommendation: "Register only the exact reviewed provenance candidate when it should become an explicit, disabled fleet participant.",
+		Consequence:    "Creates one immutable disabled Agent after exact proposal regeneration and digest verification. It does not modify the Hermes profile, activate execution, or import credentials, capabilities, skills, memories, plugins, MCP configuration, or authority.",
+		Details:        details,
+		DefaultDecline: true,
+	})
+	if err != nil || !approved {
+		fmt.Fprintln(cmd.OutOrStdout(), "Default Hermes profile Agent registration declined; no Agent record was created.")
+		return err
+	}
+
+	stored, created, err := service.ConfirmLocalHermesAgentImportForBootstrapAs(cmd.Context(), subject, proposal.RevisionDigest)
+	if err != nil {
+		return err
+	}
+	if !localHermesImportMatchesProposal(stored, proposal) {
+		return errors.New("local Hermes bootstrap import exact readback mismatch")
+	}
+	verified, err := service.VerifyLocalHermesAgentImportForBootstrapAs(cmd.Context(), subject)
+	if err != nil || verified.Revision.Digest != stored.Revision.Digest {
+		return errors.New("local Hermes bootstrap import durable verification mismatch")
+	}
+	if err := verifyBootstrapAgentList(cmd.Context(), service, subject, verified); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Default Hermes profile Agent registered=%t and exactly verified at %s; lifecycle=disabled; activation=false; authoritative Agent Registry contains built-in aegis plus the imported profile.\n", created, stored.Revision.Digest)
+	return nil
+}
+
+func verifyBootstrapAgentList(ctx context.Context, service localHermesBootstrapService, subject core.Subject, imported app.FleetAgent) error {
+	agents, err := service.ListFleetAgentsAs(ctx, subject)
+	if err != nil {
+		return err
+	}
+	var builtInFound, importedFound bool
+	for _, agent := range agents {
+		switch agent.Registration.AgentID {
+		case registry.BuiltInAegisAgentID:
+			builtInFound = registry.CanonicalBuiltInAegisAgentMatches(agent.Registration, agent.Revision, subject.PrincipalID)
+		case imported.Registration.AgentID:
+			importedFound = agent.Registration == imported.Registration && agent.Revision.Digest == imported.Revision.Digest && agent.Revision.Revision == imported.Revision.Revision
+		}
+	}
+	if !builtInFound || !importedFound {
+		return errors.New("bootstrap Agent Registry list readback mismatch")
+	}
+	return nil
+}
+
+func localHermesImportMatchesProposal(agent app.FleetAgent, proposal app.LocalHermesAgentImportProposal) bool {
+	return agent.Registration.AgentID == proposal.AgentID &&
+		agent.Registration.Source.FleetID == proposal.FleetID &&
+		agent.Registration.Source.Kind == registry.CurrentFleetSourceKind &&
+		agent.Registration.Source.SourceID == proposal.SourceID &&
+		agent.Registration.InitialRevision.ID == proposal.AgentID &&
+		agent.Registration.InitialRevision.Revision == proposal.Revision &&
+		agent.Registration.InitialRevision.Digest == proposal.RevisionDigest &&
+		agent.Revision.AgentID == proposal.AgentID &&
+		agent.Revision.Revision == proposal.Revision &&
+		agent.Revision.Digest == proposal.RevisionDigest &&
+		agent.Revision.Source == agent.Registration.Source &&
+		agent.Revision.Runtime.Adapter == "hermes" &&
+		agent.Revision.Runtime.Runtime == "hermes-agent" &&
+		agent.Revision.Runtime.Target == "aegis-owned-ephemeral" &&
+		agent.Revision.Ownership.OwnerID == proposal.Owner &&
+		agent.Revision.Ownership.AccountabilityID == proposal.Accountability &&
+		agent.Revision.Lifecycle == registry.LifecycleDisabled &&
+		len(agent.Revision.CapabilityDeclarations) == 0 && len(agent.Revision.PolicyRefs) == 0
 }
 
 var onboardingStages = []string{

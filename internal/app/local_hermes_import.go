@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,6 +32,62 @@ type LocalHermesAgentImportProposal struct {
 	SelectedProfile    string `json:"selected_profile"`
 	ProfileFingerprint string `json:"profile_fingerprint"`
 	Confirmation       string `json:"confirmation"`
+}
+
+func localHermesDefaultImportIdentity(principalID string) (string, string) {
+	principalHash := sha256.Sum256([]byte(principalID))
+	suffix := hex.EncodeToString(principalHash[:6])
+	return "hermes-default-" + suffix, "local-principal-" + suffix
+}
+
+// LocalHermesDefaultAgentID returns the stable logical Agent identity used by
+// the default-profile import transaction. It does not inspect or authorize the
+// profile and grants no authority.
+func LocalHermesDefaultAgentID(principalID string) string {
+	agentID, _ := localHermesDefaultImportIdentity(principalID)
+	return agentID
+}
+
+// LocalHermesDefaultFleetID returns the stable local provenance namespace used
+// by the default-profile import transaction.
+func LocalHermesDefaultFleetID(principalID string) string {
+	_, fleetID := localHermesDefaultImportIdentity(principalID)
+	return fleetID
+}
+
+func canonicalLocalHermesImportCharter(agentID, principalID, fingerprint string) (core.CanonicalCharter, error) {
+	return core.Canonicalize(core.Charter{SchemaVersion: core.SchemaVersion, AgentID: agentID, Name: "Imported local Hermes default profile (" + fingerprint + ")", Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: core.HermesVersionConstraint, Target: "aegis-owned-ephemeral"}, Stanzas: []core.TrustStanza{{ID: "principal", Name: "Authenticated principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{PrincipalIDs: []string{principalID}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 300}, Session: core.SessionPolicy{MaximumLifetimeSec: 300, IdleTimeoutSec: 60, RequireReauth: true}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 60, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "none", Provider: "none"}}}, CreatedBy: principalID, CreatedAt: time.Unix(1, 0).UTC()})
+}
+
+func localHermesImportFingerprint(name string) (string, bool) {
+	const prefix = "Imported local Hermes default profile ("
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ")") {
+		return "", false
+	}
+	fingerprint := strings.TrimSuffix(strings.TrimPrefix(name, prefix), ")")
+	if len(fingerprint) != len("sha256:")+sha256.Size*2 || !strings.HasPrefix(fingerprint, "sha256:") {
+		return "", false
+	}
+	_, err := hex.DecodeString(strings.TrimPrefix(fingerprint, "sha256:"))
+	return fingerprint, err == nil
+}
+
+func localHermesDefaultAgentRevisionMatches(agent FleetAgent, principalID, charterDigest string, initial bool) bool {
+	agentID, fleetID := localHermesDefaultImportIdentity(principalID)
+	source := registry.FleetSource{FleetID: fleetID, Kind: registry.CurrentFleetSourceKind, SourceID: "hermes-default-profile"}
+	if agent.Registration.AgentID != agentID || agent.Registration.Source != source ||
+		agent.Registration.InitialRevision.ID != agentID || agent.Registration.InitialRevision.Revision != 1 || agent.Registration.InitialRevision.Digest == "" ||
+		agent.Revision.AgentID != agentID || agent.Revision.Source != source ||
+		agent.Revision.Runtime.Adapter != "hermes" || agent.Revision.Runtime.Runtime != "hermes-agent" || agent.Revision.Runtime.Target != "aegis-owned-ephemeral" ||
+		agent.Revision.Ownership.OwnerID != principalID || agent.Revision.Ownership.AccountabilityID != principalID ||
+		agent.Revision.Charter.ID != agentID || agent.Revision.Charter.Revision != 1 || agent.Revision.Charter.Digest != charterDigest ||
+		len(agent.Revision.CapabilityDeclarations) != 0 || len(agent.Revision.PolicyRefs) != 0 {
+		return false
+	}
+	if initial {
+		return agent.Revision.Revision == 1 && agent.Revision.Digest == agent.Registration.InitialRevision.Digest && agent.Revision.Lifecycle == registry.LifecycleDisabled
+	}
+	return agent.Revision.Revision >= 1
 }
 
 func localHermesDefaultHome(principalUser, principalUID string) (string, error) {
@@ -103,15 +160,34 @@ func verifyLocalHermesFile(file *os.File, expectedUID uint32, directory bool) er
 	return nil
 }
 
-func (s *Service) requireLocalHermesImportPrincipal(subject core.Subject) error {
+type localHermesImportAuthentication string
+
+const (
+	localHermesImportUnixPeer     localHermesImportAuthentication = "unix-peer"
+	localHermesImportBootstrapCLI localHermesImportAuthentication = "bootstrap-cli"
+)
+
+func (s *Service) requireLocalHermesImportPrincipal(subject core.Subject, authentication localHermesImportAuthentication) error {
 	now := s.Now()
 	expectedUID := s.Config.Principal.UID
 	if subject.PrincipalID != s.Config.Principal.ID || subject.PrincipalID == "" ||
-		subject.Issuer != "linux-so-peercred" || subject.Method != "local-os" ||
+		subject.Method != "local-os" ||
 		subject.ID != "local-uid:"+expectedUID || subject.Claims["uid"] != expectedUID ||
 		subject.AuthenticatedAt.IsZero() || subject.AuthenticatedAt.After(now) ||
 		now.Sub(subject.AuthenticatedAt) > s.Config.Principal.AuthTTL || !now.Before(subject.ExpiresAt) {
-		return fmt.Errorf("%w: local Hermes import requires fresh configured Unix-peer principal authentication", ErrDenied)
+		return fmt.Errorf("%w: local Hermes import requires fresh configured local principal authentication", ErrDenied)
+	}
+	switch authentication {
+	case localHermesImportUnixPeer:
+		if subject.Issuer != "linux-so-peercred" {
+			return fmt.Errorf("%w: local Hermes import requires fresh configured Unix-peer principal authentication", ErrDenied)
+		}
+	case localHermesImportBootstrapCLI:
+		if subject.Issuer != "local-os" || subject.Claims["user"] != s.Config.Principal.User || subject.Claims["user"] == "" {
+			return fmt.Errorf("%w: bootstrap local Hermes import requires the configured local process principal", ErrDenied)
+		}
+	default:
+		return fmt.Errorf("%w: local Hermes import authentication route is invalid", ErrDenied)
 	}
 	return nil
 }
@@ -126,8 +202,8 @@ func requireSingleLocalHermesImportCandidate(candidates []registry.Candidate, di
 	return candidates[0], nil
 }
 
-func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.Subject) (LocalHermesAgentImportProposal, core.CanonicalCharter, []byte, error) {
-	if err := s.requireLocalHermesImportPrincipal(subject); err != nil {
+func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.Subject, authentication localHermesImportAuthentication) (LocalHermesAgentImportProposal, core.CanonicalCharter, []byte, error) {
+	if err := s.requireLocalHermesImportPrincipal(subject, authentication); err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
 	home, err := s.LocalHermesHome(s.Config.Principal.User, s.Config.Principal.UID)
@@ -138,13 +214,11 @@ func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.S
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
-	principalHash := sha256.Sum256([]byte(subject.PrincipalID))
-	agentID := "hermes-default-" + hex.EncodeToString(principalHash[:6])
-	charter, err := core.Canonicalize(core.Charter{SchemaVersion: core.SchemaVersion, AgentID: agentID, Name: "Imported local Hermes default profile (" + evidence.Fingerprint + ")", Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: core.HermesVersionConstraint, Target: "aegis-owned-ephemeral"}, Stanzas: []core.TrustStanza{{ID: "principal", Name: "Authenticated principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 300}, Session: core.SessionPolicy{MaximumLifetimeSec: 300, IdleTimeoutSec: 60, RequireReauth: true}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 60, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "none", Provider: "none"}}}, CreatedBy: subject.PrincipalID, CreatedAt: time.Unix(1, 0).UTC()})
+	agentID, fleetID := localHermesDefaultImportIdentity(subject.PrincipalID)
+	charter, err := canonicalLocalHermesImportCharter(agentID, subject.PrincipalID, evidence.Fingerprint)
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
-	fleetID := "local-principal-" + hex.EncodeToString(principalHash[:6])
 	sourceID := "hermes-default-profile"
 	fixture := registry.CurrentFleetFixture{SchemaVersion: registry.CurrentFleetFixtureSchemaVersion, FleetID: fleetID, Agents: []registry.CurrentFleetAgent{{SourceID: sourceID, AgentID: agentID, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"}, Ownership: registry.Ownership{OwnerID: subject.PrincipalID, AccountabilityID: subject.PrincipalID}, Lifecycle: registry.LifecycleDisabled, Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agentID, Revision: 1, Digest: charter.Digest}}}}
 	fixtureData, err := json.Marshal(fixture)
@@ -169,19 +243,77 @@ func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.S
 	return proposal, charter, fixtureData, nil
 }
 
+// VerifyLocalHermesAgentImportForBootstrapAs verifies a durable prior import
+// without reopening mutable Hermes profile evidence. Both the immutable initial
+// revision and the current revision must retain the canonical import charter,
+// provenance, runtime, ownership, and no-capability/no-policy contract.
+func (s *Service) VerifyLocalHermesAgentImportForBootstrapAs(ctx context.Context, subject core.Subject) (FleetAgent, error) {
+	if err := s.requireLocalHermesImportPrincipal(subject, localHermesImportBootstrapCLI); err != nil {
+		return FleetAgent{}, err
+	}
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return FleetAgent{}, err
+	}
+	agentID := LocalHermesDefaultAgentID(subject.PrincipalID)
+	initial, err := s.GetFleetAgentAs(ctx, subject, agentID, 1)
+	if err != nil {
+		return FleetAgent{}, err
+	}
+	storedCharter, err := s.Store.GetCharter(agentID, 1)
+	if err != nil {
+		return FleetAgent{}, fmt.Errorf("verify stored local Hermes import charter: %w", ErrConflict)
+	}
+	fingerprint, ok := localHermesImportFingerprint(storedCharter.Charter.Name)
+	if !ok {
+		return FleetAgent{}, ErrConflict
+	}
+	expectedCharter, err := canonicalLocalHermesImportCharter(agentID, subject.PrincipalID, fingerprint)
+	if err != nil || storedCharter.Digest != expectedCharter.Digest || !localHermesDefaultAgentRevisionMatches(initial, subject.PrincipalID, expectedCharter.Digest, true) {
+		return FleetAgent{}, ErrConflict
+	}
+	latest, err := s.GetFleetAgentAs(ctx, subject, agentID, 0)
+	if err != nil || !localHermesDefaultAgentRevisionMatches(latest, subject.PrincipalID, expectedCharter.Digest, false) {
+		if err != nil {
+			return FleetAgent{}, err
+		}
+		return FleetAgent{}, ErrConflict
+	}
+	return latest, nil
+}
+
 func (s *Service) PrepareLocalHermesAgentImportAs(ctx context.Context, subject core.Subject) (LocalHermesAgentImportProposal, error) {
-	proposal, _, _, err := s.localHermesImportArtifacts(ctx, subject)
+	proposal, _, _, err := s.localHermesImportArtifacts(ctx, subject, localHermesImportUnixPeer)
+	return proposal, err
+}
+
+// PrepareLocalHermesAgentImportForBootstrapAs preserves the direct, kernel-backed
+// local-process identity used by the bootstrap CLI. It is intentionally separate
+// from the Unix-peer manager route so neither transport can spoof the other's
+// authentication provenance.
+func (s *Service) PrepareLocalHermesAgentImportForBootstrapAs(ctx context.Context, subject core.Subject) (LocalHermesAgentImportProposal, error) {
+	proposal, _, _, err := s.localHermesImportArtifacts(ctx, subject, localHermesImportBootstrapCLI)
 	return proposal, err
 }
 
 func (s *Service) ConfirmLocalHermesAgentImportAs(ctx context.Context, subject core.Subject, expectedDigest string) (FleetAgent, bool, error) {
-	if err := s.requireLocalHermesImportPrincipal(subject); err != nil {
+	return s.confirmLocalHermesAgentImportAs(ctx, subject, expectedDigest, localHermesImportUnixPeer)
+}
+
+// ConfirmLocalHermesAgentImportForBootstrapAs executes the same exact import
+// transaction under the bootstrap CLI's separately admitted local-process
+// authentication route.
+func (s *Service) ConfirmLocalHermesAgentImportForBootstrapAs(ctx context.Context, subject core.Subject, expectedDigest string) (FleetAgent, bool, error) {
+	return s.confirmLocalHermesAgentImportAs(ctx, subject, expectedDigest, localHermesImportBootstrapCLI)
+}
+
+func (s *Service) confirmLocalHermesAgentImportAs(ctx context.Context, subject core.Subject, expectedDigest string, authentication localHermesImportAuthentication) (FleetAgent, bool, error) {
+	if err := s.requireLocalHermesImportPrincipal(subject, authentication); err != nil {
 		return FleetAgent{}, false, err
 	}
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return FleetAgent{}, false, err
 	}
-	proposal, charter, fixture, err := s.localHermesImportArtifacts(ctx, subject)
+	proposal, charter, fixture, err := s.localHermesImportArtifacts(ctx, subject, authentication)
 	if err != nil {
 		return FleetAgent{}, false, err
 	}
