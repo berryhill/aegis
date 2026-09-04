@@ -15,6 +15,7 @@ import (
 	"github.com/berryhill/aegis/internal/onboarding"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/tui"
 	"github.com/berryhill/aegis/internal/userservice"
@@ -207,6 +208,192 @@ func TestBuiltInAegisRegistrationDoesNotCreateHermesProfile(t *testing.T) {
 		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("logical built-in registration mutated Hermes profile filesystem at %s: %v", path, err)
 		}
+	}
+}
+
+type bootstrapLocalHermesImportFixture struct {
+	proposal      app.LocalHermesAgentImportProposal
+	prepareErr    error
+	prepareCalls  int
+	existing      app.FleetAgent
+	loadErr       error
+	confirmed     app.FleetAgent
+	confirmCalls  int
+	confirmDigest string
+	listErr       error
+	omitBuiltIn   bool
+}
+
+func (fixture *bootstrapLocalHermesImportFixture) PrepareLocalHermesAgentImportForBootstrapAs(context.Context, core.Subject) (app.LocalHermesAgentImportProposal, error) {
+	fixture.prepareCalls++
+	return fixture.proposal, fixture.prepareErr
+}
+
+func (fixture *bootstrapLocalHermesImportFixture) ConfirmLocalHermesAgentImportForBootstrapAs(_ context.Context, _ core.Subject, digest string) (app.FleetAgent, bool, error) {
+	fixture.confirmCalls++
+	fixture.confirmDigest = digest
+	fixture.existing = fixture.confirmed
+	fixture.loadErr = nil
+	return fixture.confirmed, true, nil
+}
+
+func (fixture *bootstrapLocalHermesImportFixture) VerifyLocalHermesAgentImportForBootstrapAs(context.Context, core.Subject) (app.FleetAgent, error) {
+	return fixture.existing, fixture.loadErr
+}
+
+func (fixture *bootstrapLocalHermesImportFixture) ListFleetAgentsAs(_ context.Context, subject core.Subject) ([]app.FleetAgent, error) {
+	if fixture.listErr != nil {
+		return nil, fixture.listErr
+	}
+	if fixture.omitBuiltIn {
+		return []app.FleetAgent{fixture.existing}, nil
+	}
+	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	if err != nil {
+		return nil, err
+	}
+	return []app.FleetAgent{{Registration: registration, Revision: revision}, fixture.existing}, nil
+}
+
+func localHermesBootstrapProposal() (app.LocalHermesAgentImportProposal, app.FleetAgent) {
+	digest := "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	proposal := app.LocalHermesAgentImportProposal{
+		AgentRegistrationProposal: app.AgentRegistrationProposal{
+			AgentID: app.LocalHermesDefaultAgentID("principal"), CharterDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			RevisionDigest: digest, Revision: 1, FleetID: app.LocalHermesDefaultFleetID("principal"), SourceID: "hermes-default-profile",
+			Runtime: "hermes / hermes-agent / aegis-owned-ephemeral", Owner: "principal", Accountability: "principal",
+			Capabilities: "None declared", Policies: "None declared", Lifecycle: string(registry.LifecycleDisabled),
+		},
+		SelectedProfile: "profile/default", ProfileFingerprint: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+	source := registry.FleetSource{FleetID: proposal.FleetID, Kind: registry.CurrentFleetSourceKind, SourceID: proposal.SourceID}
+	agent := app.FleetAgent{
+		Registration: registry.AgentRegistration{AgentID: proposal.AgentID, Source: source, InitialRevision: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: proposal.AgentID, Revision: 1, Digest: digest}},
+		Revision:     registry.AgentRevision{SchemaVersion: registry.AgentRevisionSchemaVersion, AgentID: proposal.AgentID, Revision: 1, Source: source, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"}, Ownership: registry.Ownership{OwnerID: "principal", AccountabilityID: "principal"}, Lifecycle: registry.LifecycleDisabled, Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: proposal.AgentID, Revision: 1, Digest: proposal.CharterDigest}, Digest: digest},
+	}
+	return proposal, agent
+}
+
+func runBootstrapLocalHermesImportFixture(t *testing.T, fixture *bootstrapLocalHermesImportFixture, answers string) (string, error) {
+	t.Helper()
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(strings.NewReader(answers))
+	cmd.SetOut(&output)
+	err := bootstrapLocalHermesDefaultAgentWithService(cmd, fixture, core.Subject{PrincipalID: "principal"}, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(tui.Capabilities{Width: 100}))
+	return output.String(), err
+}
+
+func TestBootstrapDefaultHermesImportRequiresSeparateReviewAndMutationApprovals(t *testing.T) {
+	proposal, agent := localHermesBootstrapProposal()
+	for _, test := range []struct {
+		name, answers string
+		wantCalls     int
+	}{
+		{name: "review declined", answers: "\n", wantCalls: 0},
+		{name: "review accepted mutation declined", answers: "yes\n\n", wantCalls: 0},
+		{name: "both approved", answers: "yes\nyes\n", wantCalls: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := &bootstrapLocalHermesImportFixture{proposal: proposal, loadErr: fleet.ErrNotFound, confirmed: agent}
+			output, err := runBootstrapLocalHermesImportFixture(t, fixture, test.answers)
+			if err != nil || fixture.confirmCalls != test.wantCalls {
+				t.Fatalf("err=%v confirmation calls=%d output=%q", err, fixture.confirmCalls, output)
+			}
+			if !strings.Contains(output, "DECISION / Review discovered Hermes default profile import") || !strings.Contains(output, "This review is read-only") {
+				t.Fatalf("missing bounded review: %q", output)
+			}
+			if fixture.confirmCalls == 1 {
+				if fixture.confirmDigest != proposal.RevisionDigest || !strings.Contains(output, "registered=true and exactly verified") || !strings.Contains(output, "activation=false") || !strings.Contains(output, "authoritative Agent Registry contains built-in aegis plus the imported profile") {
+					t.Fatalf("confirmation/readback mismatch: digest=%q output=%q", fixture.confirmDigest, output)
+				}
+			}
+		})
+	}
+}
+
+func TestBootstrapDefaultHermesImportRequiresCompleteFinalAgentListReadback(t *testing.T) {
+	proposal, agent := localHermesBootstrapProposal()
+	fixture := &bootstrapLocalHermesImportFixture{proposal: proposal, loadErr: fleet.ErrNotFound, confirmed: agent, omitBuiltIn: true}
+	output, err := runBootstrapLocalHermesImportFixture(t, fixture, "yes\nyes\n")
+	if err == nil || !strings.Contains(err.Error(), "Registry list readback mismatch") || strings.Contains(output, "registered=true and exactly verified") {
+		t.Fatalf("incomplete final list was accepted: err=%v output=%q", err, output)
+	}
+}
+
+func TestBootstrapDefaultHermesImportAbsentIsNonGatingAndExactReplayDoesNotPrompt(t *testing.T) {
+	output, err := runBootstrapLocalHermesImportFixture(t, &bootstrapLocalHermesImportFixture{prepareErr: os.ErrNotExist, loadErr: fleet.ErrNotFound}, "")
+	if err != nil || !strings.Contains(output, "No eligible default Hermes profile was found") {
+		t.Fatalf("absent profile: err=%v output=%q", err, output)
+	}
+	proposal, agent := localHermesBootstrapProposal()
+	fixture := &bootstrapLocalHermesImportFixture{proposal: proposal, existing: agent}
+	output, err = runBootstrapLocalHermesImportFixture(t, fixture, "")
+	if err != nil || fixture.prepareCalls != 0 || fixture.confirmCalls != 0 || !strings.Contains(output, "already registered and exactly verified") || strings.Contains(output, "Approve?") {
+		t.Fatalf("exact replay: err=%v prepare=%d confirm=%d output=%q", err, fixture.prepareCalls, fixture.confirmCalls, output)
+	}
+	agent.Revision.Revision = 2
+	agent.Revision.Lifecycle = registry.LifecycleEnabled
+	agent.Revision.Digest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	fixture = &bootstrapLocalHermesImportFixture{existing: agent}
+	output, err = runBootstrapLocalHermesImportFixture(t, fixture, "")
+	if err != nil || fixture.prepareCalls != 0 || !strings.Contains(output, "current lifecycle=enabled") || strings.Contains(output, "lifecycle=disabled") {
+		t.Fatalf("current lifecycle replay: err=%v prepare=%d output=%q", err, fixture.prepareCalls, output)
+	}
+}
+
+type readyAgentBootstrapFixture struct {
+	*bootstrapLocalHermesImportFixture
+	builtInExisting app.FleetAgent
+	builtInLoadErr  error
+	builtInCalls    int
+}
+
+func (fixture *readyAgentBootstrapFixture) GetFleetAgentAs(ctx context.Context, subject core.Subject, agentID string, revision uint64) (app.FleetAgent, error) {
+	if agentID == registry.BuiltInAegisAgentID {
+		return fixture.builtInExisting, fixture.builtInLoadErr
+	}
+	return app.FleetAgent{}, fleet.ErrNotFound
+}
+
+func (fixture *readyAgentBootstrapFixture) RegisterBuiltInAegisAgentAs(_ context.Context, subject core.Subject) (app.FleetAgent, bool, error) {
+	fixture.builtInCalls++
+	registration, revision, err := registry.CanonicalBuiltInAegisAgent(subject.PrincipalID)
+	return app.FleetAgent{Registration: registration, Revision: revision}, true, err
+}
+
+func TestReadyAgentBootstrapOrdersBuiltInBeforeOptionalDefaultProfileImport(t *testing.T) {
+	proposal, imported := localHermesBootstrapProposal()
+	fixture := &readyAgentBootstrapFixture{
+		bootstrapLocalHermesImportFixture: &bootstrapLocalHermesImportFixture{proposal: proposal, loadErr: fleet.ErrNotFound, confirmed: imported},
+		builtInLoadErr:                    fleet.ErrNotFound,
+	}
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	cmd.SetIn(strings.NewReader("yes\nyes\nyes\n"))
+	cmd.SetOut(&output)
+	ok, err := bootstrapReadyAgentRegistrationsWithService(cmd, fixture, core.Subject{PrincipalID: "principal"}, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(tui.Capabilities{Width: 100}))
+	if err != nil || !ok || fixture.builtInCalls != 1 || fixture.prepareCalls != 1 || fixture.confirmCalls != 1 {
+		t.Fatalf("ready Agent bootstrap failed: ok=%t err=%v built-in=%d prepare=%d confirm=%d output=%q", ok, err, fixture.builtInCalls, fixture.prepareCalls, fixture.confirmCalls, output.String())
+	}
+	builtInIndex := strings.Index(output.String(), "Canonical built-in Aegis Agent registered=true and exactly verified")
+	profileIndex := strings.Index(output.String(), "DECISION / Review discovered Hermes default profile import")
+	if builtInIndex < 0 || profileIndex <= builtInIndex {
+		t.Fatalf("bootstrap decision order is wrong: %q", output.String())
+	}
+
+	declined := &readyAgentBootstrapFixture{
+		bootstrapLocalHermesImportFixture: &bootstrapLocalHermesImportFixture{proposal: proposal, loadErr: fleet.ErrNotFound, confirmed: imported},
+		builtInLoadErr:                    fleet.ErrNotFound,
+	}
+	output.Reset()
+	cmd.SetIn(strings.NewReader("\n"))
+	cmd.SetOut(&output)
+	ok, err = bootstrapReadyAgentRegistrationsWithService(cmd, declined, core.Subject{PrincipalID: "principal"}, newTerminalInput(cmd.InOrStdin()), newBootstrapPresentation(tui.Capabilities{Width: 100}))
+	if err != nil || ok || declined.prepareCalls != 0 || declined.confirmCalls != 0 {
+		t.Fatalf("built-in decline reached optional import: ok=%t err=%v prepare=%d confirm=%d output=%q", ok, err, declined.prepareCalls, declined.confirmCalls, output.String())
 	}
 }
 

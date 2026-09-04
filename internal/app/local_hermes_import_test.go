@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,6 +34,11 @@ func (repository *failOnceAgentRegistrationRepository) RegisterAgent(ctx context
 func localImportPrincipal(service *Service) core.Subject {
 	now := service.Now()
 	return core.Subject{ID: "local-uid:" + service.Config.Principal.UID, Kind: "human", PrincipalID: service.Config.Principal.ID, Issuer: "linux-so-peercred", Method: "local-os", AuthenticatedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Minute), Claims: map[string]string{"uid": service.Config.Principal.UID}}
+}
+
+func localBootstrapImportPrincipal(service *Service) core.Subject {
+	now := service.Now()
+	return core.Subject{ID: "local-uid:" + service.Config.Principal.UID, Kind: "human", PrincipalID: service.Config.Principal.ID, Issuer: "local-os", Method: "local-os", AuthenticatedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Minute), Claims: map[string]string{"uid": service.Config.Principal.UID, "user": service.Config.Principal.User}}
 }
 
 func configureLocalImportFleet(t *testing.T, service *Service, repository fleet.Repository) {
@@ -215,6 +221,45 @@ func TestPrepareLocalHermesAgentImportRejectsUnsafeProfileEvidence(t *testing.T)
 	}
 }
 
+func TestLocalHermesAgentImportBootstrapAcceptsFreshConfiguredLocalProcessWithoutWeakeningPeerRoute(t *testing.T) {
+	service := testService(t)
+	root := filepath.Join(t.TempDir(), ".hermes")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.Config.Principal.UID = strconv.Itoa(os.Geteuid())
+	service.LocalHermesHome = func(string, string) (string, error) { return root, nil }
+	now := service.Now()
+	subject := core.Subject{
+		ID: "local-uid:" + service.Config.Principal.UID, Kind: "human", PrincipalID: service.Config.Principal.ID,
+		Issuer: "local-os", Method: "local-os", AuthenticatedAt: now.Add(-time.Second), ExpiresAt: now.Add(time.Minute),
+		Claims: map[string]string{"uid": service.Config.Principal.UID, "user": service.Config.Principal.User},
+	}
+	if _, err := service.PrepareLocalHermesAgentImportAs(context.Background(), subject); !errors.Is(err, ErrDenied) {
+		t.Fatalf("peer-only route accepted direct local process: %v", err)
+	}
+	proposal, err := service.PrepareLocalHermesAgentImportForBootstrapAs(context.Background(), subject)
+	if err != nil || proposal.SelectedProfile != "profile/default" || proposal.RevisionDigest == "" {
+		t.Fatalf("bootstrap local-process route failed: proposal=%+v err=%v", proposal, err)
+	}
+	for _, mutate := range []func(*core.Subject){
+		func(candidate *core.Subject) { candidate.Issuer = "prompt" },
+		func(candidate *core.Subject) { delete(candidate.Claims, "user") },
+		func(candidate *core.Subject) { candidate.Claims["user"] = "other" },
+		func(candidate *core.Subject) { candidate.ExpiresAt = now },
+	} {
+		candidate := subject
+		candidate.Claims = map[string]string{"uid": subject.Claims["uid"], "user": subject.Claims["user"]}
+		mutate(&candidate)
+		if _, err := service.PrepareLocalHermesAgentImportForBootstrapAs(context.Background(), candidate); !errors.Is(err, ErrDenied) {
+			t.Fatalf("invalid bootstrap subject accepted: %+v err=%v", candidate, err)
+		}
+	}
+}
+
 func TestLocalHermesAgentImportRequiresFreshConfiguredUnixPeer(t *testing.T) {
 	service := testService(t)
 	root := filepath.Join(t.TempDir(), ".hermes")
@@ -293,6 +338,126 @@ func TestRequireSingleLocalHermesImportCandidateFailsClosed(t *testing.T) {
 	}
 }
 
+func TestBootstrapLocalHermesImportRegistersSecondDisabledAgentWithExactReplayAndNoProfileMutation(t *testing.T) {
+	service := testService(t)
+	root := filepath.Join(t.TempDir(), ".hermes")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "config.yaml")
+	markerContents := []byte("version: 1\nsecret: never-read\n")
+	if err := os.WriteFile(marker, markerContents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.Config.Principal.UID = strconv.Itoa(os.Geteuid())
+	service.LocalHermesHome = func(string, string) (string, error) { return root, nil }
+	repository, err := fleetbadger.Open(context.Background(), filepath.Join(t.TempDir(), "fleet-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	configureLocalImportFleet(t, service, repository)
+	subject := localBootstrapImportPrincipal(service)
+
+	if _, created, err := service.RegisterBuiltInAegisAgentAs(context.Background(), subject); err != nil || !created {
+		t.Fatalf("built-in registration: created=%t err=%v", created, err)
+	}
+	proposal, err := service.PrepareLocalHermesAgentImportForBootstrapAs(context.Background(), subject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported, created, err := service.ConfirmLocalHermesAgentImportForBootstrapAs(context.Background(), subject, proposal.RevisionDigest)
+	if err != nil || !created || imported.Revision.Lifecycle != registry.LifecycleDisabled || len(imported.Revision.CapabilityDeclarations) != 0 || len(imported.Revision.PolicyRefs) != 0 {
+		t.Fatalf("bootstrap import: created=%t imported=%+v err=%v", created, imported, err)
+	}
+	verified, err := service.VerifyLocalHermesAgentImportForBootstrapAs(context.Background(), subject)
+	if err != nil || verified.Revision.Digest != imported.Revision.Digest {
+		t.Fatalf("durable bootstrap import verification: agent=%+v err=%v", verified, err)
+	}
+	agents, err := service.ListFleetAgentsAs(context.Background(), subject)
+	if err != nil || len(agents) != 2 {
+		t.Fatalf("agents after import: count=%d err=%v agents=%+v", len(agents), err, agents)
+	}
+	again, created, err := service.ConfirmLocalHermesAgentImportForBootstrapAs(context.Background(), subject, proposal.RevisionDigest)
+	if err != nil || created || again.Revision.Digest != imported.Revision.Digest {
+		t.Fatalf("bootstrap import replay: created=%t agent=%+v err=%v", created, again, err)
+	}
+	after, err := os.Stat(marker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(marker)
+	if err != nil || string(contents) != string(markerContents) || !os.SameFile(before, after) || before.Mode() != after.Mode() || before.Size() != after.Size() {
+		t.Fatalf("profile marker mutated: contents_match=%t same_file=%t before=%+v after=%+v err=%v", string(contents) == string(markerContents), os.SameFile(before, after), before, after, err)
+	}
+	lifecycleInput, err := NewSetAgentLifecycleInput(imported.Revision.AgentID, imported.Revision.Revision, imported.Revision.Digest, string(registry.LifecycleEnabled))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled, err := service.SetAgentLifecycleAs(context.Background(), subject, imported.Revision.AgentID, lifecycleInput)
+	if err != nil || enabled.Revision.Revision != 2 || enabled.Revision.Lifecycle != registry.LifecycleEnabled {
+		t.Fatalf("enable imported Agent: agent=%+v err=%v", enabled, err)
+	}
+	verified, err = service.VerifyLocalHermesAgentImportForBootstrapAs(context.Background(), subject)
+	if err != nil || verified.Revision.Revision != 2 || verified.Revision.Lifecycle != registry.LifecycleEnabled || verified.Revision.Digest != enabled.Revision.Digest {
+		t.Fatalf("durable import verification did not report current lifecycle: agent=%+v err=%v", verified, err)
+	}
+}
+
+func TestBootstrapLocalHermesImportRejectsLookalikeRegistrationWithoutCanonicalCharter(t *testing.T) {
+	service := testService(t)
+	root := filepath.Join(t.TempDir(), ".hermes")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("version: 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.Config.Principal.UID = strconv.Itoa(os.Geteuid())
+	service.LocalHermesHome = func(string, string) (string, error) { return root, nil }
+	repository, err := fleetbadger.Open(context.Background(), filepath.Join(t.TempDir(), "fleet-v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	configureLocalImportFleet(t, service, repository)
+	subject := localBootstrapImportPrincipal(service)
+
+	proposal, charter, fixtureData, err := service.localHermesImportArtifacts(context.Background(), subject, localHermesImportBootstrapCLI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookalike := charter.Charter
+	lookalike.Name = "structurally similar but not a canonical local profile import"
+	lookalikeCharter, err := core.Canonicalize(lookalike)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Store.SaveCharter(lookalikeCharter); err != nil {
+		t.Fatal(err)
+	}
+	var fixture registry.CurrentFleetFixture
+	if err := json.Unmarshal(fixtureData, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Agents[0].Charter.Digest = lookalikeCharter.Digest
+	lookalikeFixture, err := json.Marshal(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered, created, err := service.RegisterFleetAgentAs(context.Background(), subject, NewRegisterFleetAgentInput(lookalikeFixture, proposal.FleetID, proposal.SourceID))
+	if err != nil || !created || registered.Revision.Charter.Digest != lookalikeCharter.Digest {
+		t.Fatalf("register lookalike: created=%t agent=%+v err=%v", created, registered, err)
+	}
+	if _, err := service.VerifyLocalHermesAgentImportForBootstrapAs(context.Background(), subject); !errors.Is(err, ErrConflict) {
+		t.Fatalf("lookalike verification error=%v, want ErrConflict", err)
+	}
+}
+
 func TestLocalHermesAgentImportRejectsConflictingOrphanCharter(t *testing.T) {
 	service := testService(t)
 	root := filepath.Join(t.TempDir(), ".hermes")
@@ -305,7 +470,7 @@ func TestLocalHermesAgentImportRejectsConflictingOrphanCharter(t *testing.T) {
 	service.Config.Principal.UID = strconv.Itoa(os.Geteuid())
 	service.LocalHermesHome = func(string, string) (string, error) { return root, nil }
 	subject := localImportPrincipal(service)
-	proposal, charter, _, err := service.localHermesImportArtifacts(context.Background(), subject)
+	proposal, charter, _, err := service.localHermesImportArtifacts(context.Background(), subject, localHermesImportUnixPeer)
 	if err != nil {
 		t.Fatal(err)
 	}

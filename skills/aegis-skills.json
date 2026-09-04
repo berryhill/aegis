@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.16",
+    "version": "0.2.17",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:2e4b4d98a8b67dbfd375f8a4e69ad05a0c80d330ad14814e77077ea85e98206e",
+    "content_digest": "sha256:95e08db335e9adb42f0255de0f4d5bf08856fcb9b0824d4543d5f01f18a1165c",
     "source_revision": "repository"
   },
   "operations": [
@@ -444,7 +444,7 @@
     },
     {
       "slug": "aegis-manager-onboarding",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "path": "skills/aegis-manager-onboarding",
       "description": "Initialize, classify, resume, and verify the authenticated Aegis manager onboarding lifecycle through shipped typed Aegis services without granting bootstrap authority to the model.",
       "dependencies": [
@@ -460,12 +460,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:2e3299969ed6d20f4e07481ae51edc570fe4851f92d2fb60d070a861d68b9a50",
+      "content_digest": "sha256:f28f89de95bf54e6dcd086cbbfc41163bdbcbe202cf616e66d7bf53df8bba96d",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:0eb5b4b9f27a2a121ac75a09c6f7aa053ac6ee7687fe3ede89a7e14902df75b1",
-          "size": 14261
+          "sha256": "sha256:1aa609c7c05bb2dc007e0b3a40cb4aa255abdd9f292fcf87625c1fc6926c1b3f",
+          "size": 14805
         },
         {
           "path": "references/onboarding-fixtures.json",

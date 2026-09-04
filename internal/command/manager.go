@@ -65,7 +65,7 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 			}
 		}
 		if readyStateNeedsBuiltInRegistrationCheck(snapshot, gatewayState) {
-			registered, err := ensureBuiltInAegisAgentRegistration(cmd, build)
+			registered, err := ensureReadyAgentRegistrations(cmd, build)
 			if err != nil || !registered {
 				return err
 			}
