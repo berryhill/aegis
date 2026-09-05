@@ -202,11 +202,16 @@ An explicit request such as `what is the value for credential: "demo"` or `I nee
 Without `credentials.design_provider` and its source credential, this must not be presented as a successful model turn. The command may reach Hermes and report its authentic provider-configuration failure. It uses disposable state and does not modify the normal Hermes profile.
 
 Clean up this repository-local example with `rm -f aegis .aegis.yaml .office-charter.json && rm -rf .aegis`. `aegis reset` deliberately rejects repository paths and is not a replacement for that explicit example cleanup.
+## Registered-Agent workspace behavior
+
+After an Agent has an exact latest enabled Registry revision, a freshly authenticated principal can delegate its fixed self-service workspace through the shared application service. No provisioning receipt, credential setup, or running session is required to author that Agent's own Loop/Graph definitions or submit a Graph in which that exact revision participates. Definitions are fleet-wide readable and reusable; only their stable owner may publish later revisions or change lifecycle. Workspace-submitted work remains `awaiting-runtime` until Aegis binds fresh controller runtime authority. It does not execute automatically, and only the controller may administer or apply credentials. Use installed command/API help rather than inventing a native agent transport or autonomous worker command.
+
 ## Manual Execution Queue lifecycle
 
 The queue lifecycle surface is controller-authenticated and JSON-file driven. Use `aegis queue show ITEM` to read the immutable item, projection, GraphRun, LoopExecution, attempts, claims, transitions, retries, cancellations, evidence, and disposition. The mutation commands are:
 
 ```sh
+aegis queue bind-runtime bind-runtime.json
 aegis queue retry retry.json
 aegis queue cancel terminal.json
 aegis queue expire terminal.json
@@ -214,6 +219,6 @@ aegis queue exhaust terminal.json
 aegis queue revoke terminal.json
 ```
 
-`retry.json` supplies the exact queue `authority`, `queue_item_id`, fresh `retry_id` and `transition_id`, nanosecond `backoff`, whether this is an expired-lease `reclaimed` operation, and the matching stable `reason_code` (`lease_reclaimed` for reclaim). Reclaim is denied before lease expiry; lease duration is bounded to 1 second through 1 hour, backoff to 24 hours, and the pinned attempt budget cannot be raised. `terminal.json` supplies the exact authority, queue item, fresh cancellation/transition IDs, and the command's stable reason (`operator_cancelled`, `execution_expired`, `retry_exhausted`, or `authority_revoked`). Every operation repeats fresh authority admission and denies substitutions or terminal replay.
+`bind-runtime.json` supplies the workspace owner `agent_id`, the independently admitted runtime `authority`, the awaiting `queue_item_id`, and fresh binding/transition IDs. Binding succeeds only when workspace ownership and runtime authority resolve to the same exact enabled Agent; it is the explicit handoff from `awaiting-runtime` to claimable `queued`. `retry.json` supplies the exact queue `authority`, `queue_item_id`, fresh `retry_id` and `transition_id`, nanosecond `backoff`, whether this is an expired-lease `reclaimed` operation, and the matching stable `reason_code` (`lease_reclaimed` for reclaim). Reclaim is denied before lease expiry; lease duration is bounded to 1 second through 1 hour, backoff to 24 hours, and the pinned attempt budget cannot be raised. `terminal.json` supplies the exact authority, queue item, fresh cancellation/transition IDs, and the command's stable reason (`operator_cancelled`, `execution_expired`, `retry_exhausted`, or `authority_revoked`). Every operation repeats fresh authority admission and denies substitutions or terminal replay.
 
 The `/console/queue#/queue` page provides lifecycle filters, provenance, dependency state, a complete ordered timeline, and eligibility/denial explanations. Its closed process/reclaim/terminal forms submit authenticated controller requests, but browser fields do not supply identity, authority, reasons, or operation IDs. Session, origin, CSRF, exact-item reload, fresh authority admission, and legal-transition checks remain server-side, and stale or ineligible submissions deny. This MVI does not run an automated retry/expiry scheduler or distributed queue coordinator.

@@ -35,23 +35,79 @@ type QueueDisposition = disposition.Record
 // claim. Reclaimed distinguishes an expired lease from an acknowledged stopped
 // runtime. Caller prose never controls durable lifecycle vocabulary.
 type QueueRetryRequest struct {
-	Subject      core.Subject         `json:"-"`
-	Authority    reference.DigestRef  `json:"authority"`
-	QueueItemID  string               `json:"queue_item_id"`
-	RetryID      string               `json:"retry_id"`
-	TransitionID string               `json:"transition_id"`
-	Backoff      time.Duration        `json:"backoff"`
-	Reclaimed    bool                 `json:"reclaimed"`
-	ReasonCode   QueueLifecycleReason `json:"reason_code"`
+	Subject          core.Subject         `json:"-"`
+	Authority        reference.DigestRef  `json:"authority"`
+	QueueItemID      string               `json:"queue_item_id"`
+	RetryID          string               `json:"retry_id"`
+	TransitionID     string               `json:"transition_id"`
+	Backoff          time.Duration        `json:"backoff"`
+	Reclaimed        bool                 `json:"reclaimed"`
+	ReasonCode       QueueLifecycleReason `json:"reason_code"`
+	WorkspaceAgentID string               `json:"agent_id,omitempty"`
+	Workspace        *WorkspaceAuthority  `json:"workspace,omitempty"`
 }
 
 type QueueTerminalRequest struct {
-	Subject        core.Subject         `json:"-"`
-	Authority      reference.DigestRef  `json:"authority"`
-	QueueItemID    string               `json:"queue_item_id"`
-	CancellationID string               `json:"cancellation_id"`
-	TransitionID   string               `json:"transition_id"`
-	ReasonCode     QueueLifecycleReason `json:"reason_code"`
+	Subject          core.Subject         `json:"-"`
+	Authority        reference.DigestRef  `json:"authority"`
+	QueueItemID      string               `json:"queue_item_id"`
+	CancellationID   string               `json:"cancellation_id"`
+	TransitionID     string               `json:"transition_id"`
+	ReasonCode       QueueLifecycleReason `json:"reason_code"`
+	WorkspaceAgentID string               `json:"agent_id,omitempty"`
+	Workspace        *WorkspaceAuthority  `json:"workspace,omitempty"`
+}
+
+type BindQueueRuntimeRequest struct {
+	Subject      core.Subject
+	Workspace    *WorkspaceAuthority
+	Authority    reference.DigestRef
+	QueueItemID  string
+	BindingID    string
+	TransitionID string
+}
+
+// BindRuntime performs the explicit fail-closed handoff. The workspace owner
+// authorizes the bind, while an independently admitted runtime authority must
+// resolve to that exact Agent.
+func (worker *QueueWorker) BindRuntime(ctx context.Context, request BindQueueRuntimeRequest) (queue.RuntimeBinding, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	if request.Workspace == nil {
+		return queue.RuntimeBinding{}, false, fmt.Errorf("%w: workspace owner required", ErrWorkerDenied)
+	}
+	workspace, _, err := worker.service.resolveWorkspace(ctx, request.Subject, request.Workspace.Ref(), request.Workspace, WorkspaceManageOwnQueue)
+	if err != nil {
+		return queue.RuntimeBinding{}, false, fmt.Errorf("%w: workspace owner denied", ErrWorkerDenied)
+	}
+	item, err := worker.repository.GetQueueItem(ctx, request.QueueItemID)
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	submission, err := worker.repository.GetSubmission(ctx, item.Submission.ID)
+	if err != nil || submission.Digest != item.Submission.Digest || submission.AuthorityKind != "registered-agent-workspace" || submission.Authority != workspace.Ref() || submission.OwnerAgentID != workspace.Agent.ID || submission.OwnerID != workspace.OwnerID {
+		return queue.RuntimeBinding{}, false, fmt.Errorf("%w: cross-Agent queue binding denied", ErrWorkerDenied)
+	}
+	authority, mandate, ready := worker.service.resolveAuthority(ctx, request.Subject, request.Authority)
+	if ready.State != ReadinessReady || authority.AgentID != workspace.Agent.ID {
+		return queue.RuntimeBinding{}, false, fmt.Errorf("%w: exact same-Agent runtime authority required", ErrWorkerDenied)
+	}
+	participant, err := worker.repository.GetAgentRevision(ctx, workspace.Agent.ID, workspace.Agent.Revision)
+	if err != nil || participant.Digest != workspace.Agent.Digest || !agentMatchesAuthority(participant, authority, mandate) {
+		return queue.RuntimeBinding{}, false, fmt.Errorf("%w: runtime authority does not bind workspace Agent", ErrWorkerDenied)
+	}
+	now := worker.now()
+	binding, err := queue.NewRuntimeBinding(queue.RuntimeBinding{BindingID: request.BindingID, QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: item.ItemID, Digest: item.Digest}, Submission: item.Submission, OwnerAgent: workspace.Agent, Authority: request.Authority, MandateID: mandate.ID, Runtime: runtimeID(authority.Runtime), BoundAt: now})
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.TransitionID, QueueItemID: item.ItemID, From: queue.StateAwaitingRuntime, To: queue.StateQueued, Reason: "exact runtime authority bound", OccurredAt: now})
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	created, err := worker.repository.BindQueueRuntime(context.WithoutCancel(ctx), binding, transition, worker.service.auditFact("fleet.queue.runtime-bound", request.Subject, "exact same-Agent runtime authority bound", workspace.Agent.ID, authority.Authority.StanzaID, mandate.ID))
+	return binding, created, err
 }
 
 func (worker *QueueWorker) Retry(ctx context.Context, request QueueRetryRequest) (queue.Retry, error) {
@@ -65,7 +121,15 @@ func (worker *QueueWorker) Retry(ctx context.Context, request QueueRetryRequest)
 	if request.Reclaimed {
 		action = FleetActionReclaim
 	}
-	item, projection, claim, err := worker.activeClaim(ctx, action, request.Subject, request.Authority, request.QueueItemID)
+	var item queue.Item
+	var projection queue.Projection
+	var claim queue.Claim
+	var err error
+	if request.Workspace != nil {
+		item, projection, claim, err = worker.activeWorkspaceClaim(ctx, request.Subject, request.Authority, request.QueueItemID, request.Workspace)
+	} else {
+		item, projection, claim, err = worker.activeClaim(ctx, action, request.Subject, request.Authority, request.QueueItemID)
+	}
 	if err != nil {
 		return queue.Retry{}, err
 	}
@@ -140,7 +204,16 @@ func (worker *QueueWorker) terminalize(ctx context.Context, request QueueTermina
 	if request.ReasonCode != "" && request.ReasonCode != requiredReason {
 		return queue.Cancellation{}, fmt.Errorf("%w: invalid terminal reason", ErrWorkerDenied)
 	}
-	if err = worker.lifecycleAdmission(ctx, FleetActionQueueLifecycle, request.Subject, item); err != nil {
+	if request.Workspace != nil {
+		workspace, _, workspaceErr := worker.service.resolveWorkspace(ctx, request.Subject, request.Authority, request.Workspace, WorkspaceManageOwnQueue)
+		if workspaceErr != nil {
+			return queue.Cancellation{}, fmt.Errorf("%w: workspace authority denied", ErrWorkerDenied)
+		}
+		submission, loadErr := worker.repository.GetSubmission(ctx, item.Submission.ID)
+		if loadErr != nil || submission.Digest != item.Submission.Digest || submission.Authority != item.Authority || submission.AuthorityKind != "registered-agent-workspace" || submission.OwnerAgentID != workspace.Agent.ID || submission.OwnerID != workspace.OwnerID {
+			return queue.Cancellation{}, fmt.Errorf("%w: cross-Agent queue mutation denied", ErrWorkerDenied)
+		}
+	} else if err = worker.lifecycleAdmission(ctx, FleetActionQueueLifecycle, request.Subject, item); err != nil {
 		return queue.Cancellation{}, err
 	}
 	commitCtx := context.WithoutCancel(ctx)
@@ -148,7 +221,8 @@ func (worker *QueueWorker) terminalize(ctx context.Context, request QueueTermina
 	if err != nil {
 		return queue.Cancellation{}, err
 	}
-	if projection.State != queue.StateQueued && projection.State != queue.StateClaimed {
+	awaitingWorkspaceTerminal := request.Workspace != nil && projection.State == queue.StateAwaitingRuntime && (target == queue.StateCancelled || target == queue.StateRevoked)
+	if projection.State != queue.StateQueued && projection.State != queue.StateClaimed && !awaitingWorkspaceTerminal {
 		return queue.Cancellation{}, fmt.Errorf("%w: terminal queue item cannot transition", ErrWorkerDenied)
 	}
 	if target == queue.StateFailed && projection.Attempts < item.MaxAttempts {
@@ -206,6 +280,33 @@ func (worker *QueueWorker) terminalize(ctx context.Context, request QueueTermina
 		return queue.Cancellation{}, err
 	}
 	return cancellation, nil
+}
+
+func (worker *QueueWorker) activeWorkspaceClaim(ctx context.Context, subject core.Subject, authority reference.DigestRef, itemID string, supplied *WorkspaceAuthority) (queue.Item, queue.Projection, queue.Claim, error) {
+	item, err := worker.repository.GetQueueItem(ctx, itemID)
+	if err != nil {
+		return queue.Item{}, queue.Projection{}, queue.Claim{}, err
+	}
+	if item.Authority != authority {
+		return queue.Item{}, queue.Projection{}, queue.Claim{}, fmt.Errorf("%w: exact queue authority required", ErrWorkerDenied)
+	}
+	workspace, _, err := worker.service.resolveWorkspace(ctx, subject, authority, supplied, WorkspaceManageOwnQueue)
+	if err != nil {
+		return queue.Item{}, queue.Projection{}, queue.Claim{}, fmt.Errorf("%w: workspace authority denied", ErrWorkerDenied)
+	}
+	submission, err := worker.repository.GetSubmission(ctx, item.Submission.ID)
+	if err != nil || submission.Digest != item.Submission.Digest || submission.Authority != item.Authority || submission.AuthorityKind != "registered-agent-workspace" || submission.OwnerAgentID != workspace.Agent.ID || submission.OwnerID != workspace.OwnerID {
+		return queue.Item{}, queue.Projection{}, queue.Claim{}, fmt.Errorf("%w: cross-Agent queue mutation denied", ErrWorkerDenied)
+	}
+	projection, err := worker.repository.GetQueueProjection(ctx, itemID)
+	if err != nil {
+		return queue.Item{}, queue.Projection{}, queue.Claim{}, err
+	}
+	if projection.State != queue.StateClaimed || projection.ActiveClaimID == "" {
+		return queue.Item{}, queue.Projection{}, queue.Claim{}, fmt.Errorf("%w: queue item has no active claim", ErrWorkerDenied)
+	}
+	claim, err := worker.repository.GetClaim(ctx, projection.ActiveClaimID)
+	return item, projection, claim, err
 }
 
 func (worker *QueueWorker) activeClaim(ctx context.Context, action FleetAction, subject core.Subject, authority reference.DigestRef, itemID string) (queue.Item, queue.Projection, queue.Claim, error) {

@@ -1,7 +1,7 @@
 ---
 name: aegis-loop-authoring
 description: Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.
-version: 0.1.0
+version: 0.2.0
 metadata:
   hermes:
     tags:
@@ -20,10 +20,11 @@ Use this skill to draft, validate, publish, inspect, activate, or retire an immu
 
 - A Loop is a reusable typed control-flow definition. It carries no session, mandate, runtime, credential, or execution authority.
 - Prompt text, display identity, requested publisher or stanza, model narration, process exit, mutable labels, and a locally computed digest never authenticate a caller, authorize publication, establish lifecycle, or prove completion.
-- Publication and lifecycle mutation require authentication outside the model, exactly one current authorized stanza and authority context, and one exact enabled publisher Agent revision whose charter and runtime match that authority. Zero, multiple, stale, expired, revoked, disabled, retired, substituted, or drifted matches deny.
+- Publication and lifecycle mutation require either the existing freshly admitted runtime-authority path or a controller-derived registered-Agent workspace for one exact latest enabled publisher Agent. Workspace authoring needs no provisioning receipt or running session, but the principal, Agent revision/digest, and stable owner must still match. Zero, multiple, stale, expired, revoked, disabled, retired, substituted, or drifted matches deny. Differently owned matches also deny.
 - Never union stanza grants. Never copy authority, publisher, charter, runtime, mandate, or lifecycle bindings from another stanza or session.
 - Published revisions, validations, and publication provenance are immutable. Activation and retirement are append-only lifecycle events; they never rewrite a revision.
 - Discussion, drafting, validation guidance, or inspection is not authorization to publish, activate, or retire.
+- Loop definitions are fleet-wide readable/referenceable/usable. Only the stable owner may publish another revision or append lifecycle mutation. Workspace authority grants no runtime effect, Queue claim, provisioning, or credential right.
 
 ## Confirm the shipped surface
 

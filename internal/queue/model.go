@@ -9,30 +9,32 @@ import (
 )
 
 const (
-	SubmissionSchemaVersion   = "aegis.queue.submission.v1"
-	RejectionSchemaVersion    = "aegis.queue.rejection.v1"
-	ItemSchemaVersion         = "aegis.queue.item.v1"
-	ClaimSchemaVersion        = "aegis.queue.claim.v1"
-	TransitionSchemaVersion   = "aegis.queue.transition.v1"
-	RetrySchemaVersion        = "aegis.queue.retry.v1"
-	CancellationSchemaVersion = "aegis.queue.cancellation.v1"
-	ProjectionSchemaVersion   = "aegis.queue.projection.v1"
-	MaxReasonBytes            = 1024
-	MaxAttempts               = 100
-	MaxDependencies           = 100
+	SubmissionSchemaVersion     = "aegis.queue.submission.v1"
+	RejectionSchemaVersion      = "aegis.queue.rejection.v1"
+	ItemSchemaVersion           = "aegis.queue.item.v1"
+	ClaimSchemaVersion          = "aegis.queue.claim.v1"
+	TransitionSchemaVersion     = "aegis.queue.transition.v1"
+	RetrySchemaVersion          = "aegis.queue.retry.v1"
+	CancellationSchemaVersion   = "aegis.queue.cancellation.v1"
+	ProjectionSchemaVersion     = "aegis.queue.projection.v1"
+	RuntimeBindingSchemaVersion = "aegis.queue.runtime-binding.v1"
+	MaxReasonBytes              = 1024
+	MaxAttempts                 = 100
+	MaxDependencies             = 100
 )
 
 type State string
 
 const (
-	StateQueued    State = "queued"
-	StateClaimed   State = "claimed"
-	StateSucceeded State = "succeeded"
-	StateFailed    State = "failed"
-	StateDenied    State = "denied"
-	StateCancelled State = "cancelled"
-	StateExpired   State = "expired"
-	StateRevoked   State = "revoked"
+	StateAwaitingRuntime State = "awaiting-runtime"
+	StateQueued          State = "queued"
+	StateClaimed         State = "claimed"
+	StateSucceeded       State = "succeeded"
+	StateFailed          State = "failed"
+	StateDenied          State = "denied"
+	StateCancelled       State = "cancelled"
+	StateExpired         State = "expired"
+	StateRevoked         State = "revoked"
 )
 
 // Submission is the immutable admitted request. Authority is an exact context
@@ -45,6 +47,9 @@ type Submission struct {
 	Authority      reference.DigestRef `json:"authority"`
 	MandateID      string              `json:"mandate_id"`
 	Runtime        string              `json:"runtime"`
+	AuthorityKind  string              `json:"authority_kind,omitempty"`
+	OwnerAgentID   string              `json:"owner_agent_id,omitempty"`
+	OwnerID        string              `json:"owner_id,omitempty"`
 	SubmittedAt    time.Time           `json:"submitted_at"`
 	Digest         string              `json:"digest"`
 }
@@ -143,4 +148,19 @@ type Projection struct {
 	LastTransitionID string    `json:"last_transition_id"`
 	UpdatedAt        time.Time `json:"updated_at"`
 	Digest           string    `json:"digest"`
+}
+
+// RuntimeBinding is the immutable, owner-authorized handoff from workspace
+// submission provenance to one freshly admitted runtime authority.
+type RuntimeBinding struct {
+	SchemaVersion string                `json:"schema_version"`
+	BindingID     string                `json:"binding_id"`
+	QueueItem     reference.DigestRef   `json:"queue_item"`
+	Submission    reference.DigestRef   `json:"submission"`
+	OwnerAgent    reference.RevisionRef `json:"owner_agent"`
+	Authority     reference.DigestRef   `json:"authority"`
+	MandateID     string                `json:"mandate_id"`
+	Runtime       string                `json:"runtime"`
+	BoundAt       time.Time             `json:"bound_at"`
+	Digest        string                `json:"digest"`
 }

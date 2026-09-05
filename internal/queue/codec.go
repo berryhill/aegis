@@ -56,6 +56,10 @@ func NewProjection(value Projection) (Projection, error) {
 	value.SchemaVersion, value.Digest = ProjectionSchemaVersion, ""
 	return seal(value, validateProjection)
 }
+func NewRuntimeBinding(value RuntimeBinding) (RuntimeBinding, error) {
+	value.SchemaVersion, value.Digest = RuntimeBindingSchemaVersion, ""
+	return seal(value, validateRuntimeBinding)
+}
 
 func MarshalSubmission(v Submission) ([]byte, error)      { return marshal(v, validateSubmission) }
 func MarshalRejection(v Rejection) ([]byte, error)        { return marshal(v, validateRejection) }
@@ -65,6 +69,9 @@ func MarshalTransition(v QueueTransition) ([]byte, error) { return marshal(v, va
 func MarshalRetry(v Retry) ([]byte, error)                { return marshal(v, validateRetry) }
 func MarshalCancellation(v Cancellation) ([]byte, error)  { return marshal(v, validateCancellation) }
 func MarshalProjection(v Projection) ([]byte, error)      { return marshal(v, validateProjection) }
+func MarshalRuntimeBinding(v RuntimeBinding) ([]byte, error) {
+	return marshal(v, validateRuntimeBinding)
+}
 func UnmarshalSubmission(b []byte) (Submission, error) {
 	return decode[Submission](b, validateSubmission)
 }
@@ -80,6 +87,9 @@ func UnmarshalCancellation(b []byte) (Cancellation, error) {
 }
 func UnmarshalProjection(b []byte) (Projection, error) {
 	return decode[Projection](b, validateProjection)
+}
+func UnmarshalRuntimeBinding(b []byte) (RuntimeBinding, error) {
+	return decode[RuntimeBinding](b, validateRuntimeBinding)
 }
 
 func validateSubmission(v Submission) error {
@@ -117,7 +127,9 @@ func validateClaim(v Claim) error {
 	return validateDigest(v, v.Digest)
 }
 func validateTransition(v QueueTransition) error {
-	legal := (v.From == "" && v.To == StateQueued && v.ClaimID == "") ||
+	legal := (v.From == "" && (v.To == StateQueued || v.To == StateAwaitingRuntime) && v.ClaimID == "") ||
+		(v.From == StateAwaitingRuntime && v.To == StateQueued && v.ClaimID == "") ||
+		(v.From == StateAwaitingRuntime && terminalState(v.To) && v.ClaimID == "") ||
 		(v.From == StateQueued && v.To == StateClaimed && validID(v.ClaimID)) ||
 		(v.From == StateClaimed && v.To == StateQueued && validID(v.ClaimID)) ||
 		(v.From == StateQueued && v.To == StateCancelled && v.ClaimID == "") ||
@@ -144,9 +156,15 @@ func validateCancellation(v Cancellation) error {
 }
 func validateProjection(v Projection) error {
 	activeOK := (v.State == StateClaimed && validID(v.ActiveClaimID)) || (v.State != StateClaimed && v.ActiveClaimID == "")
-	stateOK := v.State == StateQueued || v.State == StateClaimed || terminalState(v.State)
+	stateOK := v.State == StateAwaitingRuntime || v.State == StateQueued || v.State == StateClaimed || terminalState(v.State)
 	if v.SchemaVersion != ProjectionSchemaVersion || !validID(v.QueueItemID) || !validID(v.LastTransitionID) || !activeOK || !stateOK || v.Attempts > MaxAttempts || v.AvailableAt.IsZero() || v.UpdatedAt.IsZero() {
 		return errors.New("invalid queue projection")
+	}
+	return validateDigest(v, v.Digest)
+}
+func validateRuntimeBinding(v RuntimeBinding) error {
+	if v.SchemaVersion != RuntimeBindingSchemaVersion || !validID(v.BindingID) || v.QueueItem.Validate() != nil || v.Submission.Validate() != nil || v.OwnerAgent.Validate() != nil || v.Authority.Validate() != nil || !validID(v.MandateID) || !validID(v.Runtime) || v.BoundAt.IsZero() {
+		return errors.New("invalid queue runtime binding")
 	}
 	return validateDigest(v, v.Digest)
 }

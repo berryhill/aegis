@@ -649,6 +649,49 @@ func TestClaimRejectsProjectedDependencySuccessWithoutCanonicalDispositionAtomic
 	assertClaimDeniedAtomically(t, ctx, store, claim, attempt, transition)
 }
 
+func TestAwaitingRuntimeRevocationIsDistinctAndDurable(t *testing.T) {
+	ctx := context.Background()
+	root := filepath.Join(t.TempDir(), schemaVersion)
+	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-awaiting-revoked")
+	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
+		t.Fatal(err)
+	}
+	awaiting := mustQueueTransition(t, queue.QueueTransition{TransitionID: accepted.InitialTransition.TransitionID, QueueItemID: accepted.QueueItem.ItemID, To: queue.StateAwaitingRuntime, Reason: "registered-Agent workspace accepted", OccurredAt: accepted.InitialTransition.OccurredAt})
+	projection, err := queue.NewProjection(queue.Projection{QueueItemID: accepted.QueueItem.ItemID, State: queue.StateAwaitingRuntime, AvailableAt: accepted.QueueItem.AvailableAt, LastTransitionID: awaiting.TransitionID, UpdatedAt: awaiting.OccurredAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitingWire, err := queue.MarshalTransition(awaiting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectionWire, err := queue.MarshalProjection(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.update(ctx, func(txn *badgerdb.Txn) error {
+		if err := txn.Set(key(familyQueueTransition, accepted.QueueItem.ItemID, awaiting.TransitionID), awaitingWire); err != nil {
+			return err
+		}
+		return txn.Set(key(familyQueueProjection, accepted.QueueItem.ItemID), projectionWire)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	at := accepted.Submission.SubmittedAt.Add(time.Second)
+	cancellation := mustQueueCancellation(t, queue.Cancellation{CancellationID: "awaiting-revoke-1", QueueItem: lifecycleDigestRef(accepted.QueueItem.ItemID, accepted.QueueItem.Digest), Reason: "authority_revoked", OccurredAt: at})
+	transition := mustQueueTransition(t, queue.QueueTransition{TransitionID: "transition-awaiting-revoked-1", QueueItemID: accepted.QueueItem.ItemID, From: queue.StateAwaitingRuntime, To: queue.StateRevoked, Reason: cancellation.Reason, OccurredAt: at})
+	record, err := disposition.New(disposition.Record{DispositionID: "awaiting-revoke-1/disposition", GraphRunID: accepted.GraphRun.GraphRunID, QueueItem: cancellation.QueueItem, Authority: accepted.QueueItem.Authority, State: execution.StateRevoked, ReasonCode: "authority_revoked", OccurredAt: at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.CancelQueueItem(ctx, fleet.CancellationMutation{Cancellation: cancellation, Transition: transition, Disposition: record}, audit("queue.revoked", cancellation.CancellationID)); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := store.GetQueueProjection(ctx, accepted.QueueItem.ItemID); err != nil || got.State != queue.StateRevoked {
+		t.Fatalf("durable awaiting-runtime revocation: got=%+v err=%v", got, err)
+	}
+}
+
 func TestQueuedRevocationIsDistinctAndDurable(t *testing.T) {
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), schemaVersion)

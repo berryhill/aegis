@@ -1,7 +1,7 @@
 ---
 name: aegis-execution-queue
 description: Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.
-version: 0.1.0
+version: 0.2.0
 metadata:
   hermes:
     tags:
@@ -22,6 +22,8 @@ Use this skill to inspect durable Queue history or route one explicitly authoriz
 - The model must not invent or repair authority, Queue, Graph, Loop, participant, claim, attempt, runtime, evidence, receipt, disposition, transition, or lifecycle identifiers.
 - A claim is a bounded single-winner lease, not runtime admission. Aegis repeats fresh admission before claim, runtime effect, evidence verification, and terminal disposition.
 - Browser state and request fields do not grant authority. The authenticated console derives authority and operation identities server-side; CLI and HTTP files carry strict typed references consumed by the same application service.
+- A registered-Agent workspace may submit and manage only Queue work carrying its matching owner provenance and only when that exact Agent revision participates in the Graph. Such work begins `awaiting-runtime`; workspace authority cannot claim or process it.
+- The Aegis controller must commit a fresh `RuntimeBinding` and repeat normal admission before transition to claimable `queued` state and before every effect. No native agent transport, automatic binder, polling loop, or automatic execution is implied.
 
 ## Confirm the shipped surface
 
@@ -44,7 +46,7 @@ Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, an
 
 Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` for exact historical readback. Keep these records distinct:
 
-- The immutable Queue item binds one accepted submission, normalized Graph snapshot, Graph run, authority context, enqueue time, dependency IDs, and fixed maximum-attempt budget. It is not rewritten by lifecycle changes.
+- The immutable Queue item binds one accepted submission, normalized Graph snapshot, Graph run, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. Workspace-originated authority is control-plane ownership, not runtime authority: read `awaiting-runtime` and its later immutable runtime binding separately, and never infer one from the other. The item is not rewritten by lifecycle changes.
 - The Queue projection is rebuildable current state derived from canonical lifecycle records. It reports state, attempt count, availability, active claim, and transition head, but cannot grant authority.
 - The Graph run is the stable parent execution identity for the accepted snapshot. A Loop execution is the stable child identity for one exact Graph node, Loop revision, and participant revision across retries.
 - Each attempt is one numbered bounded try under that same Graph run and Loop execution. A retry creates a new attempt only when work is claimed again; it never creates a new Queue item or substitutes immutable definitions.

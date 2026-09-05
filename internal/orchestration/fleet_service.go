@@ -92,6 +92,7 @@ type FleetRepository interface {
 	GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error)
 	LatestAgentRevision(context.Context, string) (registry.AgentRevision, error)
 	GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error)
+	GetLoopPublicationProvenance(context.Context, string, uint64) (loop.PublicationProvenance, error)
 	ListLoopLifecycleEvents(context.Context) ([]loop.LifecycleEvent, error)
 	GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error)
 	GetGraphLifecycle(context.Context, string) (graph.Lifecycle, error)
@@ -264,6 +265,20 @@ func (service *FleetService) resolveAuthority(ctx context.Context, subject core.
 	return authority, mandate, readiness(FleetActionSubmission, ReadinessReady, "ready")
 }
 
+func (service *FleetService) resolveWorkspace(ctx context.Context, subject core.Subject, ref reference.DigestRef, supplied *WorkspaceAuthority, capability WorkspaceCapability) (WorkspaceAuthority, registry.AgentRevision, error) {
+	if supplied == nil || ValidateWorkspaceAuthority(*supplied) != nil || supplied.Ref() != ref || !supplied.Allows(capability) {
+		return WorkspaceAuthority{}, registry.AgentRevision{}, fmt.Errorf("%w: invalid registered-Agent workspace authority", ErrDenied)
+	}
+	if subject.ID == "" || subject.PrincipalID == "" || subject.PrincipalID != supplied.PrincipalID || service.now().Before(subject.AuthenticatedAt) || !service.now().Before(subject.ExpiresAt) {
+		return WorkspaceAuthority{}, registry.AgentRevision{}, fmt.Errorf("%w: fresh authenticated principal required", ErrDenied)
+	}
+	agent, err := service.repository.LatestAgentRevision(ctx, supplied.Agent.ID)
+	if err != nil || agent.AgentID != supplied.Agent.ID || agent.Revision != supplied.Agent.Revision || agent.Digest != supplied.Agent.Digest || agent.Lifecycle != registry.LifecycleEnabled || agent.Ownership.OwnerID != supplied.OwnerID {
+		return WorkspaceAuthority{}, registry.AgentRevision{}, fmt.Errorf("%w: exact latest enabled workspace Agent required", ErrDenied)
+	}
+	return *supplied, agent, nil
+}
+
 type RegisterFleetAgentRequest struct {
 	Subject  core.Subject         `json:"-"`
 	Source   registry.Source      `json:"-"`
@@ -387,11 +402,38 @@ type PublishLoopRequest struct {
 	Authority   reference.DigestRef   `json:"authority"`
 	Publisher   reference.RevisionRef `json:"publisher"`
 	Publication loop.PublishRequest   `json:"publication"`
+	Workspace   *WorkspaceAuthority   `json:"workspace,omitempty"`
 }
 
 func (service *FleetService) PublishLoop(ctx context.Context, request PublishLoopRequest) (loop.PublicationDecision, error) {
 	if err := service.authorize(ctx, FleetActionLoopPublish, request.Subject); err != nil {
 		return loop.PublicationDecision{}, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
+	}
+	if request.Workspace != nil {
+		workspace, publisher, err := service.resolveWorkspace(ctx, request.Subject, request.Authority, request.Workspace, WorkspaceDefineLoops)
+		if err != nil {
+			return loop.PublicationDecision{}, err
+		}
+		if request.Publisher != workspace.Agent {
+			return loop.PublicationDecision{}, fmt.Errorf("%w: exact workspace Agent revision required", ErrDenied)
+		}
+		if request.Publication.Revision.Revision > 1 {
+			owner, loadErr := service.repository.GetLoopPublicationProvenance(ctx, request.Publication.Revision.LoopID, 1)
+			if loadErr != nil || owner.AuthorityKind != "registered-agent-workspace" || owner.PublisherAgent.ID != workspace.Agent.ID || owner.OwnerID != workspace.OwnerID {
+				return loop.PublicationDecision{}, fmt.Errorf("%w: Loop owner takeover denied", ErrDenied)
+			}
+		}
+		provenance, buildErr := loop.NewPublicationProvenance(loop.PublicationProvenance{
+			Loop:           loop.NewProvenanceRevision(request.Publication.Revision.LoopID, request.Publication.Revision.Revision, request.Publication.Revision.Digest),
+			PublisherAgent: provenanceRevision(workspace.Agent), Authority: provenanceDigest(request.Authority), MandateID: workspace.ID,
+			StanzaID: "workspace-control", Runtime: loop.ProvenanceRuntime{Runtime: publisher.Runtime.Runtime}, Charter: provenanceRevision(publisher.Charter),
+			ValidationDigest: request.Publication.Validation.Digest, AuthorityKind: "registered-agent-workspace", OwnerID: workspace.OwnerID, PrincipalID: workspace.PrincipalID,
+		})
+		if buildErr != nil {
+			return loop.PublicationDecision{}, buildErr
+		}
+		request.Publication.Provenance = provenance
+		return service.repository.PublishLoop(ctx, request.Publication, service.auditFact("fleet.loop.published", request.Subject, "published under registered-Agent workspace authority", workspace.Agent.ID, "workspace-control", workspace.ID))
 	}
 	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
 	if result.State != ReadinessReady {
@@ -406,6 +448,12 @@ func (service *FleetService) PublishLoop(ctx context.Context, request PublishLoo
 	}
 	if !agentMatchesAuthority(publisher, authority, mandate) {
 		return loop.PublicationDecision{}, fmt.Errorf("%w: publisher Agent charter or runtime does not match authority", ErrDenied)
+	}
+	if request.Publication.Revision.Revision > 1 {
+		owner, loadErr := service.repository.GetLoopPublicationProvenance(ctx, request.Publication.Revision.LoopID, 1)
+		if loadErr != nil || owner.AuthorityKind == "registered-agent-workspace" || owner.PublisherAgent.ID != publisher.AgentID {
+			return loop.PublicationDecision{}, fmt.Errorf("%w: Loop owner takeover denied", ErrDenied)
+		}
 	}
 	provenance, err := loop.NewPublicationProvenance(loop.PublicationProvenance{
 		Loop:           loop.NewProvenanceRevision(request.Publication.Revision.LoopID, request.Publication.Revision.Revision, request.Publication.Revision.Digest),
@@ -428,22 +476,41 @@ type SetLoopLifecycleRequest struct {
 	State                  loop.LifecycleState
 	EventID                string
 	ExpectedPreviousDigest string
+	Workspace              *WorkspaceAuthority
 }
 
 func (service *FleetService) SetLoopLifecycle(ctx context.Context, request SetLoopLifecycleRequest) (loop.LifecycleEvent, bool, error) {
 	if err := service.authorize(ctx, FleetActionLoopLifecycle, request.Subject); err != nil {
 		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
 	}
-	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
-	if result.State != ReadinessReady {
-		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
-	}
-	if request.Publisher.Validate() != nil || request.Publisher.ID != authority.AgentID {
-		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact authority Agent revision required", ErrDenied)
-	}
-	publisher, err := service.repository.GetAgentRevision(ctx, request.Publisher.ID, request.Publisher.Revision)
-	if err != nil || publisher.Digest != request.Publisher.Digest || publisher.Lifecycle != registry.LifecycleEnabled || !agentMatchesAuthority(publisher, authority, mandate) {
-		return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact enabled publisher Agent revision required", ErrDenied)
+	mandateID, stanzaID, actorAgentID := "", "", ""
+	if request.Workspace != nil {
+		workspace, _, err := service.resolveWorkspace(ctx, request.Subject, request.Authority, request.Workspace, WorkspaceManageLoops)
+		if err != nil || request.Publisher != workspace.Agent {
+			return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact Loop workspace owner required", ErrDenied)
+		}
+		owner, loadErr := service.repository.GetLoopPublicationProvenance(ctx, request.Loop.ID, 1)
+		if loadErr != nil || owner.AuthorityKind != "registered-agent-workspace" || owner.PublisherAgent.ID != workspace.Agent.ID || owner.OwnerID != workspace.OwnerID {
+			return loop.LifecycleEvent{}, false, fmt.Errorf("%w: Loop owner takeover denied", ErrDenied)
+		}
+		mandateID, stanzaID, actorAgentID = workspace.ID, "workspace-control", workspace.Agent.ID
+	} else {
+		authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
+		if result.State != ReadinessReady {
+			return loop.LifecycleEvent{}, false, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
+		}
+		if request.Publisher.Validate() != nil || request.Publisher.ID != authority.AgentID {
+			return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact authority Agent revision required", ErrDenied)
+		}
+		publisher, err := service.repository.GetAgentRevision(ctx, request.Publisher.ID, request.Publisher.Revision)
+		if err != nil || publisher.Digest != request.Publisher.Digest || publisher.Lifecycle != registry.LifecycleEnabled || !agentMatchesAuthority(publisher, authority, mandate) {
+			return loop.LifecycleEvent{}, false, fmt.Errorf("%w: exact enabled publisher Agent revision required", ErrDenied)
+		}
+		owner, loadErr := service.repository.GetLoopPublicationProvenance(ctx, request.Loop.ID, 1)
+		if loadErr != nil || owner.AuthorityKind == "registered-agent-workspace" || owner.PublisherAgent.ID != publisher.AgentID {
+			return loop.LifecycleEvent{}, false, fmt.Errorf("%w: Loop owner takeover denied", ErrDenied)
+		}
+		mandateID, stanzaID, actorAgentID = authority.MandateID, authority.Authority.StanzaID, authority.AgentID
 	}
 	if request.Loop.Validate() != nil {
 		return loop.LifecycleEvent{}, false, errors.New("exact Loop revision is required")
@@ -461,12 +528,12 @@ func (service *FleetService) SetLoopLifecycle(ctx context.Context, request SetLo
 	event, err := loop.NewLifecycleEvent(loop.LifecycleEvent{
 		EventID: request.EventID, LoopID: request.Loop.ID, State: request.State, Revision: eventRevision,
 		PreviousDigest: request.ExpectedPreviousDigest, PublisherAgent: provenanceRevision(request.Publisher), Authority: provenanceDigest(request.Authority),
-		MandateID: authority.MandateID, StanzaID: authority.Authority.StanzaID, OccurredAt: service.now(),
+		MandateID: mandateID, StanzaID: stanzaID, OccurredAt: service.now(),
 	})
 	if err != nil {
 		return loop.LifecycleEvent{}, false, err
 	}
-	resultEvent, idempotent, err := service.repository.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: event, ExpectedPreviousDigest: request.ExpectedPreviousDigest}, service.auditFact("fleet.loop.lifecycle.changed", request.Subject, "appended Loop lifecycle event", authority.AgentID, authority.Authority.StanzaID, authority.MandateID))
+	resultEvent, idempotent, err := service.repository.AppendLoopLifecycle(ctx, loop.LifecycleRequest{Event: event, ExpectedPreviousDigest: request.ExpectedPreviousDigest}, service.auditFact("fleet.loop.lifecycle.changed", request.Subject, "appended Loop lifecycle event", actorAgentID, stanzaID, mandateID))
 	return resultEvent, idempotent, err
 }
 
@@ -474,15 +541,47 @@ type PublishGraphRequest struct {
 	Subject     core.Subject         `json:"-"`
 	Authority   reference.DigestRef  `json:"authority"`
 	Publication graph.PublishRequest `json:"publication"`
+	Workspace   *WorkspaceAuthority  `json:"workspace,omitempty"`
 }
 
 func (service *FleetService) PublishGraph(ctx context.Context, request PublishGraphRequest) (graph.PublicationDecision, error) {
 	if err := service.authorize(ctx, FleetActionGraphPublish, request.Subject); err != nil {
 		return graph.PublicationDecision{}, fmt.Errorf("%w: subject_not_authorized", ErrDenied)
 	}
-	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
-	if result.State != ReadinessReady {
-		return graph.PublicationDecision{}, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
+	ownerAgentID := ""
+	var authority core.AuthorityContext
+	var mandate core.Mandate
+	if request.Workspace != nil {
+		workspace, _, err := service.resolveWorkspace(ctx, request.Subject, request.Authority, request.Workspace, WorkspaceDefineGraphs)
+		if err != nil {
+			return graph.PublicationDecision{}, err
+		}
+		ownerAgentID = workspace.Agent.ID
+		if request.Publication.Revision.OwnerAgent == nil || *request.Publication.Revision.OwnerAgent != workspace.Agent || request.Publication.Revision.PublicationAuthority == nil || *request.Publication.Revision.PublicationAuthority != request.Authority || request.Publication.Revision.PublishedByPrincipal != workspace.PrincipalID {
+			return graph.PublicationDecision{}, fmt.Errorf("%w: exact Graph workspace provenance required", ErrDenied)
+		}
+		if request.Publication.Revision.Revision > 1 {
+			first, loadErr := service.repository.GetGraphRevision(ctx, request.Publication.Revision.GraphID, 1)
+			if loadErr != nil || first.OwnerAgent == nil || first.OwnerAgent.ID != workspace.Agent.ID {
+				return graph.PublicationDecision{}, fmt.Errorf("%w: Graph owner takeover denied", ErrDenied)
+			}
+		}
+	} else {
+		var result Readiness
+		authority, mandate, result = service.resolveAuthority(ctx, request.Subject, request.Authority)
+		if result.State != ReadinessReady {
+			return graph.PublicationDecision{}, fmt.Errorf("%w: %s", ErrDenied, result.ReasonCode)
+		}
+		ownerAgentID = authority.AgentID
+		if request.Publication.Revision.Revision > 1 {
+			first, loadErr := service.repository.GetGraphRevision(ctx, request.Publication.Revision.GraphID, 1)
+			if loadErr != nil {
+				return graph.PublicationDecision{}, fmt.Errorf("%w: Graph owner provenance unavailable", ErrDenied)
+			}
+			if first.OwnerAgent != nil {
+				return graph.PublicationDecision{}, fmt.Errorf("%w: Graph owner takeover denied", ErrDenied)
+			}
+		}
 	}
 	ownsNode := false
 	for _, node := range request.Publication.Revision.Nodes {
@@ -501,8 +600,8 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 		if err != nil || loopLifecycle.State != loop.LifecycleActive || loopLifecycle.ActiveRevision != node.Loop.Revision || loopLifecycle.ActiveDigest != node.Loop.Digest {
 			return graph.PublicationDecision{}, fmt.Errorf("%w: exact active Loop revision required", ErrDenied)
 		}
-		if node.Participant.ID == authority.AgentID {
-			if !agentMatchesAuthority(participant, authority, mandate) {
+		if node.Participant.ID == ownerAgentID {
+			if request.Workspace == nil && !agentMatchesAuthority(participant, authority, mandate) {
 				return graph.PublicationDecision{}, fmt.Errorf("%w: participant charter or runtime does not match authority", ErrDenied)
 			}
 			ownsNode = true
@@ -514,22 +613,27 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 	if !policiesDeclaredByParticipants(request.Publication.Revision, service.repository, ctx) {
 		return graph.PublicationDecision{}, fmt.Errorf("%w: Graph policy is not declared by an exact participant", ErrDenied)
 	}
+	if request.Workspace != nil {
+		return service.repository.PublishGraph(ctx, request.Publication, service.auditFact("fleet.graph.published", request.Subject, "published under registered-Agent workspace authority", ownerAgentID, "workspace-control", request.Workspace.ID))
+	}
 	return service.repository.PublishGraph(ctx, request.Publication, service.auditFact("fleet.graph.published", request.Subject, "published exact validated Graph revision", authority.AgentID, authority.Authority.StanzaID, authority.MandateID))
 }
 
 type SubmitGraphRequest struct {
-	Subject        core.Subject            `json:"-"`
-	Authority      reference.DigestRef     `json:"authority"`
-	Graph          reference.RevisionRef   `json:"graph"`
-	Inputs         []graph.NormalizedInput `json:"inputs"`
-	SubmissionID   string                  `json:"submission_id"`
-	IdempotencyKey string                  `json:"idempotency_key"`
-	SnapshotID     string                  `json:"snapshot_id"`
-	QueueItemID    string                  `json:"queue_item_id"`
-	GraphRunID     string                  `json:"graph_run_id"`
-	TransitionID   string                  `json:"transition_id"`
-	RejectionID    string                  `json:"rejection_id"`
-	MaxAttempts    uint32                  `json:"max_attempts"`
+	Subject          core.Subject            `json:"-"`
+	Authority        reference.DigestRef     `json:"authority"`
+	Graph            reference.RevisionRef   `json:"graph"`
+	Inputs           []graph.NormalizedInput `json:"inputs"`
+	SubmissionID     string                  `json:"submission_id"`
+	IdempotencyKey   string                  `json:"idempotency_key"`
+	SnapshotID       string                  `json:"snapshot_id"`
+	QueueItemID      string                  `json:"queue_item_id"`
+	GraphRunID       string                  `json:"graph_run_id"`
+	TransitionID     string                  `json:"transition_id"`
+	RejectionID      string                  `json:"rejection_id"`
+	MaxAttempts      uint32                  `json:"max_attempts"`
+	WorkspaceAgentID string                  `json:"agent_id,omitempty"`
+	Workspace        *WorkspaceAuthority     `json:"workspace,omitempty"`
 }
 
 type SubmissionDecision struct {
@@ -547,20 +651,37 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 		created, err := service.repository.RejectSubmission(ctx, rejection, service.auditFact("fleet.submission.rejected", request.Subject, reason, "", "", ""))
 		return SubmissionDecision{Rejection: &rejection, Created: created}, err
 	}
-	result := service.Readiness(ctx, ReadinessRequest{Action: FleetActionSubmission, Subject: request.Subject, Authority: request.Authority, Graph: request.Graph})
-	if result.State != ReadinessReady {
-		return deny("readiness_denied", "submission readiness denied")
-	}
-	authority, mandate, result := service.resolveAuthority(ctx, request.Subject, request.Authority)
-	if result.State != ReadinessReady {
-		return deny("authority_denied", "exact authority context denied")
+	actorAgentID, mandateID, submissionRuntime := "", "", ""
+	var runtimeAuthority core.AuthorityContext
+	var runtimeMandate core.Mandate
+	if request.Workspace != nil {
+		workspace, _, workspaceErr := service.resolveWorkspace(ctx, request.Subject, request.Authority, request.Workspace, WorkspaceSubmitGraphs)
+		if workspaceErr != nil {
+			return deny("workspace_denied", "registered-Agent workspace authority denied")
+		}
+		actorAgentID, mandateID, submissionRuntime = workspace.Agent.ID, workspace.ID, "control-plane-only"
+	} else {
+		result := service.Readiness(ctx, ReadinessRequest{Action: FleetActionSubmission, Subject: request.Subject, Authority: request.Authority, Graph: request.Graph})
+		if result.State != ReadinessReady {
+			return deny("readiness_denied", "submission readiness denied")
+		}
+		var resultAuthority Readiness
+		runtimeAuthority, runtimeMandate, resultAuthority = service.resolveAuthority(ctx, request.Subject, request.Authority)
+		if resultAuthority.State != ReadinessReady {
+			return deny("authority_denied", "exact authority context denied")
+		}
+		actorAgentID, mandateID, submissionRuntime = runtimeAuthority.AgentID, runtimeMandate.ID, runtimeID(runtimeAuthority.Runtime)
 	}
 	revision, err := service.repository.GetGraphRevision(ctx, request.Graph.ID, request.Graph.Revision)
 	if err != nil || revision.Digest != request.Graph.Digest {
 		return deny("graph_mismatch", "exact Graph revision unavailable")
 	}
-	if !graphContainsAgent(revision, authority.AgentID) {
-		return deny("participant_rebinding", "authority Agent is not bound by the Graph")
+	graphLifecycle, lifecycleErr := service.repository.GetGraphLifecycle(ctx, request.Graph.ID)
+	if lifecycleErr != nil || graphLifecycle.State != graph.LifecycleActive || graphLifecycle.ActiveRevision != request.Graph.Revision || graphLifecycle.ActiveDigest != request.Graph.Digest {
+		return deny("graph_inactive", "exact Graph revision is not active")
+	}
+	if !graphContainsAgent(revision, actorAgentID) {
+		return deny("participant_rebinding", "workspace Agent is not bound by the Graph")
 	}
 	snapshot, err := graph.NewRunSnapshot(request.SnapshotID, revision, request.Inputs)
 	if err != nil {
@@ -581,7 +702,7 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 		if loadErr != nil || value.Digest != participant.Digest || value.Lifecycle != registry.LifecycleEnabled {
 			return deny("participant_unavailable", "exact enabled participant is unavailable")
 		}
-		if participant.ID == authority.AgentID && !agentMatchesAuthority(value, authority, mandate) {
+		if request.Workspace == nil && participant.ID == runtimeAuthority.AgentID && !agentMatchesAuthority(value, runtimeAuthority, runtimeMandate) {
 			return deny("authority_participant_mismatch", "authority charter or runtime does not match the exact participant")
 		}
 	}
@@ -592,8 +713,12 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 		}
 	}
 	now := service.now()
-	authorityRef := digestRef(authority.ID, authority.Digest)
-	submission, err := queue.NewSubmission(queue.Submission{SubmissionID: request.SubmissionID, IdempotencyKey: request.IdempotencyKey, Snapshot: digestRef(snapshot.SnapshotID, snapshot.Digest), Authority: authorityRef, MandateID: mandate.ID, Runtime: runtimeID(authority.Runtime), SubmittedAt: now})
+	authorityRef := request.Authority
+	authorityKind, ownerID := "runtime-session", ""
+	if request.Workspace != nil {
+		authorityKind, ownerID = "registered-agent-workspace", request.Workspace.OwnerID
+	}
+	submission, err := queue.NewSubmission(queue.Submission{SubmissionID: request.SubmissionID, IdempotencyKey: request.IdempotencyKey, Snapshot: digestRef(snapshot.SnapshotID, snapshot.Digest), Authority: authorityRef, MandateID: mandateID, Runtime: submissionRuntime, AuthorityKind: authorityKind, OwnerAgentID: actorAgentID, OwnerID: ownerID, SubmittedAt: now})
 	if err != nil {
 		return deny("invalid_submission", "submission envelope is invalid")
 	}
@@ -605,12 +730,22 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 	if err != nil {
 		return SubmissionDecision{}, err
 	}
-	transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.TransitionID, QueueItemID: item.ItemID, To: queue.StateQueued, Reason: "submission accepted", OccurredAt: now})
+	initialState, initialReason := queue.StateQueued, "submission accepted"
+	if request.Workspace != nil {
+		initialState, initialReason = queue.StateAwaitingRuntime, "submission accepted; awaiting exact runtime authority binding"
+	}
+	transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.TransitionID, QueueItemID: item.ItemID, To: initialState, Reason: initialReason, OccurredAt: now})
 	if err != nil {
 		return SubmissionDecision{}, err
 	}
 	accepted := fleet.AcceptedSubmission{Snapshot: snapshot, Submission: submission, QueueItem: item, GraphRun: run, InitialTransition: transition}
-	created, err := service.repository.AcceptSubmission(ctx, accepted, service.auditFact("fleet.submission.admitted", request.Subject, "submission admitted under exact authority", authority.AgentID, authority.Authority.StanzaID, authority.MandateID))
+	stanzaID := ""
+	if request.Workspace != nil {
+		stanzaID = "workspace-control"
+	} else {
+		stanzaID = runtimeAuthority.Authority.StanzaID
+	}
+	created, err := service.repository.AcceptSubmission(ctx, accepted, service.auditFact("fleet.submission.admitted", request.Subject, "submission admitted under exact authority", actorAgentID, stanzaID, mandateID))
 	if err != nil {
 		return SubmissionDecision{}, err
 	}

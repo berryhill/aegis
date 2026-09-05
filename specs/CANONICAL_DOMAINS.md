@@ -24,6 +24,8 @@ A mandate is not a session authority snapshot. `AuthorityContext` must bind the 
 
 Revocation never rewrites a mandate or authority context. Authority is effective only inside the half-open interval `[issued_at, expires_at)` and only when no applicable revocation fact has become effective.
 
+`WorkspaceAuthority` (`aegis.workspace-authority.v1`) is a separate orchestration record: controller-issued, digest-sealed delegation from a fresh authenticated principal to one exact latest enabled registered Agent and stable owner. It carries only the fixed definition/submission/own-Queue/shared-read capabilities. It is not a mandate, authority context, session, provisioning receipt, runtime admission, claim, or credential grant.
+
 ## Agent Registry (`internal/registry`)
 
 Registry owns stable executable-participant identity. `AgentRegistration` records existing-fleet provenance, runtime-adapter binding, accountability, and enabled/disabled/retired lifecycle. Immutable `AgentRevision` records reference one exact canonical charter revision and digest; display metadata and operational health are not identity or admission authority.
@@ -36,17 +38,23 @@ Loop owns reusable internal control-flow definitions. A stable Loop ID has immut
 
 Publication is create-only. Admission references one exact Loop ID, revision, digest, and validation digest; it never falls back to a mutable current revision.
 
+Workspace-authored publication records owner Agent, stable owner ID, principal, and workspace-authority provenance. All workspaces may read/reference/use a Loop; only the stable owner may publish a later revision or append lifecycle mutation.
+
 ## Graphs (`internal/graph`)
 
 Graph owns versioned coordination. An immutable `GraphRevision` binds each participant node to one exact Agent revision/digest and each control-flow node or edge to one exact Loop revision/digest. Typed dependencies and input/output mappings are validated against the pinned revisions. Graph structure, participant binding, and admission constraints cannot be changed by prompt or runtime output.
 
 A Graph does not own authority, queue status, artifacts, or disposition. A `GraphRunSnapshot` is a create-only composition record containing normalized typed inputs and the exact immutable references resolved at submission; it preserves historical truth but cannot authorize an effect by itself.
 
+Workspace-authored Graph revisions seal owner Agent, publishing principal, and workspace-authority provenance. Definitions are fleet-shared for reads and exact references, while mutation is stable-owner-only. A workspace may submit only when its exact Agent revision is one of the Graph's pinned participants.
+
 ## Execution Queue (`internal/queue`)
 
 Queue owns the authoritative operational lifecycle of submitted work. Canonical records include submission or durable rejection, idempotency/admission key, queue item, append-only transition facts, claim/lease, attempt identity, retry budget, cancellation/expiry, and terminal reason. Queue items reference an exact GraphRunSnapshot and authority context by ID and digest.
 
 Only one qualified atomic writer protocol may win a claim or terminal transition. Retries create new attempts under the same logical Graph and Loop executions. Queue projections and counts are rebuildable read models; they cannot admit work. Missing, stale, duplicate, revoked, expired, or ambiguous control state denies rather than guessing or merging.
+
+A workspace submission records `authority_kind=registered-agent-workspace` and owner provenance and begins `awaiting-runtime`. A `RuntimeBinding` is the immutable owner-authorized handoff to one fresh mandate/runtime authority. Only after that binding and normal fresh admission may Aegis transition work to claimable `queued` state. Workspace authority alone never authorizes processing.
 
 ## Execution (`internal/execution`)
 

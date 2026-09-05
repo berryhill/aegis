@@ -36,7 +36,7 @@ func (s *Store) AcceptSubmission(ctx context.Context, accepted fleet.AcceptedSub
 	if err != nil {
 		return false, err
 	}
-	projection, err := queue.NewProjection(queue.Projection{QueueItemID: accepted.QueueItem.ItemID, State: queue.StateQueued, AvailableAt: accepted.QueueItem.AvailableAt, LastTransitionID: accepted.InitialTransition.TransitionID, UpdatedAt: accepted.InitialTransition.OccurredAt})
+	projection, err := queue.NewProjection(queue.Projection{QueueItemID: accepted.QueueItem.ItemID, State: accepted.InitialTransition.To, AvailableAt: accepted.QueueItem.AvailableAt, LastTransitionID: accepted.InitialTransition.TransitionID, UpdatedAt: accepted.InitialTransition.OccurredAt})
 	if err != nil {
 		return false, err
 	}
@@ -66,7 +66,8 @@ func (s *Store) AcceptSubmission(ctx context.Context, accepted fleet.AcceptedSub
 			accepted.QueueItem.Snapshot != accepted.Submission.Snapshot || accepted.QueueItem.Authority != accepted.Submission.Authority ||
 			accepted.QueueItem.GraphRunID != accepted.GraphRun.GraphRunID || accepted.GraphRun.QueueItem != digestRef(accepted.QueueItem.ItemID, accepted.QueueItem.Digest) ||
 			accepted.GraphRun.Snapshot != accepted.Submission.Snapshot || accepted.GraphRun.Authority != accepted.Submission.Authority ||
-			accepted.InitialTransition.QueueItemID != accepted.QueueItem.ItemID || accepted.InitialTransition.From != "" || accepted.InitialTransition.To != queue.StateQueued {
+			accepted.InitialTransition.QueueItemID != accepted.QueueItem.ItemID || accepted.InitialTransition.From != "" || (accepted.InitialTransition.To != queue.StateQueued && accepted.InitialTransition.To != queue.StateAwaitingRuntime) ||
+			(accepted.Submission.AuthorityKind == "registered-agent-workspace") != (accepted.InitialTransition.To == queue.StateAwaitingRuntime) {
 			return fleet.ErrConflict
 		}
 		entries := []struct{ k, v []byte }{
@@ -211,8 +212,18 @@ func (s *Store) ClaimQueueItem(ctx context.Context, claim queue.Claim, attempt e
 		if e != nil {
 			return e
 		}
-		if claim.QueueItem != digestRef(item.ItemID, item.Digest) || claim.Authority != item.Authority {
+		if claim.QueueItem != digestRef(item.ItemID, item.Digest) {
 			return fleet.ErrConflict
+		}
+		if claim.Authority != item.Authority {
+			bindingWire, found, bindErr := optional(txn, key(familyQueueRuntimeBinding, item.ItemID))
+			if bindErr != nil || !found {
+				return fleet.ErrConflict
+			}
+			binding, bindErr := queue.UnmarshalRuntimeBinding(bindingWire)
+			if bindErr != nil || binding.Authority != claim.Authority || binding.QueueItem != claim.QueueItem {
+				return fleet.ErrConflict
+			}
 		}
 		projection, e := loadQueueProjection(txn, item.ItemID)
 		if e != nil || validateClaimProjectionEligibility(txn, item, projection) != nil || projection.State != queue.StateQueued || projection.ActiveClaimID != "" || claim.ClaimedAt.Before(projection.AvailableAt) || projection.Attempts >= item.MaxAttempts {
@@ -331,7 +342,8 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 			return fleet.ErrConflict
 		}
 		projection, e := loadQueueProjection(txn, item.ItemID)
-		if e != nil || validateProjectionBasis(txn, projection) != nil || (projection.State != queue.StateQueued && projection.State != queue.StateClaimed) {
+		allowedState := projection.State == queue.StateQueued || projection.State == queue.StateClaimed || projection.State == queue.StateAwaitingRuntime
+		if e != nil || validateProjectionBasis(txn, projection) != nil || !allowedState {
 			return fleet.ErrConflict
 		}
 		terminal := mutation.Transition.To == queue.StateCancelled || (mutation.Transition.To == queue.StateExpired && projection.State == queue.StateClaimed) || mutation.Transition.To == queue.StateRevoked || (mutation.Transition.To == queue.StateFailed && projection.State == queue.StateClaimed && projection.Attempts >= item.MaxAttempts)
@@ -627,6 +639,70 @@ func (s *Store) ListRejections(ctx context.Context) (out []queue.Rejection, err 
 }
 func (s *Store) GetQueueItem(ctx context.Context, id string) (queue.Item, error) {
 	return readRecord(s, ctx, familyQueueItem, id, queue.UnmarshalItem, func(v queue.Item) string { return v.ItemID })
+}
+func (s *Store) GetQueueRuntimeBinding(ctx context.Context, itemID string) (queue.RuntimeBinding, error) {
+	return readRecord(s, ctx, familyQueueRuntimeBinding, itemID, queue.UnmarshalRuntimeBinding, func(v queue.RuntimeBinding) string { return v.QueueItem.ID })
+}
+
+func (s *Store) BindQueueRuntime(ctx context.Context, binding queue.RuntimeBinding, transition queue.QueueTransition, fact fleet.AuditFact) (created bool, err error) {
+	bindingWire, err := queue.MarshalRuntimeBinding(binding)
+	if err != nil {
+		return false, err
+	}
+	transitionWire, err := queue.MarshalTransition(transition)
+	if err != nil {
+		return false, err
+	}
+	err = s.update(ctx, func(txn *badgerdb.Txn) error {
+		recordKey := key(familyQueueRuntimeBinding, binding.QueueItem.ID)
+		if prior, found, loadErr := optional(txn, recordKey); loadErr != nil {
+			return loadErr
+		} else if found {
+			if bytes.Equal(prior, bindingWire) {
+				return nil
+			}
+			return fleet.ErrConflict
+		}
+		item, loadErr := loadQueueItem(txn, binding.QueueItem.ID)
+		if loadErr != nil || binding.QueueItem != digestRef(item.ItemID, item.Digest) || binding.Submission != item.Submission {
+			return fleet.ErrConflict
+		}
+		submissionWire, loadErr := get(txn, key(familySubmission, item.Submission.ID))
+		if loadErr != nil {
+			return loadErr
+		}
+		submission, loadErr := queue.UnmarshalSubmission(submissionWire)
+		if loadErr != nil || submission.Digest != item.Submission.Digest || submission.AuthorityKind != "registered-agent-workspace" || submission.OwnerAgentID != binding.OwnerAgent.ID {
+			return fleet.ErrConflict
+		}
+		projection, loadErr := loadQueueProjection(txn, item.ItemID)
+		if loadErr != nil || projection.State != queue.StateAwaitingRuntime || transition.QueueItemID != item.ItemID || transition.From != queue.StateAwaitingRuntime || transition.To != queue.StateQueued || transition.OccurredAt != binding.BoundAt {
+			return fleet.ErrConflict
+		}
+		next, loadErr := queue.NewProjection(queue.Projection{QueueItemID: item.ItemID, State: queue.StateQueued, Attempts: projection.Attempts, AvailableAt: binding.BoundAt, LastTransitionID: transition.TransitionID, UpdatedAt: binding.BoundAt})
+		if loadErr != nil {
+			return loadErr
+		}
+		projectionWire, loadErr := queue.MarshalProjection(next)
+		if loadErr != nil {
+			return loadErr
+		}
+		if loadErr = create(txn, recordKey, bindingWire); loadErr != nil {
+			return loadErr
+		}
+		if loadErr = create(txn, key(familyQueueTransition, item.ItemID, transition.TransitionID), transitionWire); loadErr != nil {
+			return loadErr
+		}
+		if loadErr = txn.Set(key(familyQueueProjection, item.ItemID), projectionWire); loadErr != nil {
+			return loadErr
+		}
+		if loadErr = appendAudit(txn, fact); loadErr != nil {
+			return loadErr
+		}
+		created = true
+		return nil
+	})
+	return created, err
 }
 func (s *Store) ListQueueItems(ctx context.Context) (out []queue.Item, err error) {
 	out = []queue.Item{}

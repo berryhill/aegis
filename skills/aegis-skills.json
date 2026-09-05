@@ -2,10 +2,10 @@
   "schema_version": 1,
   "bundle": {
     "name": "aegis-hermes-skills",
-    "version": "0.2.17",
+    "version": "0.2.18",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:95e08db335e9adb42f0255de0f4d5bf08856fcb9b0824d4543d5f01f18a1165c",
+    "content_digest": "sha256:ae4f7e8c939c14772e0337a96400f9209ff9400b91c1fd2d47609985e045470a",
     "source_revision": "repository"
   },
   "operations": [
@@ -293,7 +293,7 @@
     },
     {
       "slug": "aegis-loop-authoring",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "path": "skills/aegis-loop-authoring",
       "description": "Author, publish, activate, inspect, and retire immutable Aegis Loop revisions through shipped typed services without moving identity or authority into the model.",
       "dependencies": [
@@ -309,18 +309,18 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:249efa2baf806acc5269c525d5a6052a56c97e20e78ceb38d754a9f5ffeb786a",
+      "content_digest": "sha256:c0fb308217f0a583c31406379a38b950ce7bc5257ff03073eaa924b579bd4641",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:1c9985d93f13e4da79f01fe9306afb5c40b096bd40824ab7b92bff5a88fc5246",
-          "size": 9231
+          "sha256": "sha256:54baa655585c38b6df7b8a82cb94314ff41ef203bec3670d6252b173117272d9",
+          "size": 9622
         }
       ]
     },
     {
       "slug": "aegis-graph-authoring",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "path": "skills/aegis-graph-authoring",
       "description": "Compose, publish, inspect, and submit immutable typed Aegis Graph revisions through shipped services without moving identity, authority, or queue admission into the model.",
       "dependencies": [
@@ -338,18 +338,18 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:9f364e125adb7609a40e24608b7b32550e3837d219ec4314a1e374bdc88418e1",
+      "content_digest": "sha256:6fb17120ce0fa3d3f5f0d79f370c7721ac3e00ce64449bf62b2c7a9959c30a9d",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:e1f1dc7cac063c03cd625c4767d5ed0c2a42215a56397e9a55ff6c5dc24fad32",
-          "size": 12689
+          "sha256": "sha256:716d73ec33ad241b309b022c5772122552f3384949b03ae36adc26c88050a34b",
+          "size": 13236
         }
       ]
     },
     {
       "slug": "aegis-execution-queue",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "path": "skills/aegis-execution-queue",
       "description": "Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.",
       "dependencies": [
@@ -365,18 +365,18 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:8e51dbab49c2dbc6b7826e16a940bfaa42aaaed0c3058b65bb7006138a57866e",
+      "content_digest": "sha256:56b9efa8d61bbb816c949587af19508b0732b44ce1955c67b7ad46e20b8f9149",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:12cc4bf2987dcfdad056601e9d978cb468d462abd174004d2b5f3fb6ac1dfbb9",
-          "size": 10942
+          "sha256": "sha256:a293db14662d1aae963f6f9860ed939d11543f937f4b38f1ccb9c1e94e0a78e8",
+          "size": 11657
         }
       ]
     },
     {
       "slug": "aegis-credential-authority",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "path": "skills/aegis-credential-authority",
       "description": "Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.",
       "dependencies": [
@@ -393,12 +393,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:7af6ee4fb9cda837dc3190112fd0e4657695ad2efdf6c42ec4609d9a93612253",
+      "content_digest": "sha256:ac8b10692cd30cf6b41acaec9af4bda1fd5cd4219ec44a22b1c3fe4678ed970e",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:176da05c7fd8a115e0baf688677aa914bc82ea777a9ef8372feb0e68d0072a27",
-          "size": 11346
+          "sha256": "sha256:3220ecc471edf59cef6171cfab8701b121fb41dd8de6902725356e42bc5f44de",
+          "size": 11722
         },
         {
           "path": "references/credential-fixtures.json",

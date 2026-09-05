@@ -70,6 +70,9 @@ type PublicationProvenance struct {
 	Runtime          ProvenanceRuntime  `json:"runtime"`
 	Charter          ProvenanceRevision `json:"charter"`
 	ValidationDigest string             `json:"validation_digest"`
+	AuthorityKind    string             `json:"authority_kind,omitempty"`
+	OwnerID          string             `json:"owner_id,omitempty"`
+	PrincipalID      string             `json:"principal_id,omitempty"`
 	Digest           string             `json:"digest"`
 }
 

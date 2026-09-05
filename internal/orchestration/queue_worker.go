@@ -131,8 +131,20 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil || projection.State != queue.StateQueued || projection.Attempts >= item.MaxAttempts || worker.now().Before(projection.AvailableAt) {
 		return WorkResult{}, fmt.Errorf("%w: queue item is not claimable", ErrWorkerDenied)
 	}
-	if item.Authority != request.Authority || request.WorkerID == "" || request.LeaseDuration < MinLeaseDuration || request.LeaseDuration > MaxLeaseDuration {
+	if request.WorkerID == "" || request.LeaseDuration < MinLeaseDuration || request.LeaseDuration > MaxLeaseDuration {
 		return WorkResult{}, fmt.Errorf("%w: exact queue and worker binding required", ErrWorkerDenied)
+	}
+	submission, err := worker.repository.GetSubmission(ctx, item.Submission.ID)
+	if err != nil || submission.Digest != item.Submission.Digest {
+		return WorkResult{}, fmt.Errorf("%w: exact submission unavailable", ErrWorkerDenied)
+	}
+	if submission.AuthorityKind == "registered-agent-workspace" {
+		binding, bindErr := worker.repository.GetQueueRuntimeBinding(ctx, item.ItemID)
+		if bindErr != nil || binding.QueueItem != digestRef(item.ItemID, item.Digest) || binding.Submission != item.Submission || binding.Authority != request.Authority || binding.OwnerAgent.ID != submission.OwnerAgentID {
+			return WorkResult{}, fmt.Errorf("%w: exact runtime authority binding required", ErrWorkerDenied)
+		}
+	} else if item.Authority != request.Authority {
+		return WorkResult{}, fmt.Errorf("%w: exact queue authority required", ErrWorkerDenied)
 	}
 	snapshot, err := worker.repository.GetGraphRunSnapshot(ctx, item.Snapshot.ID)
 	if err != nil || snapshot.Digest != item.Snapshot.Digest {
