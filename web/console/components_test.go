@@ -302,7 +302,7 @@ func TestLoopDetailReplacesCollectionAndKeepsRelatedRecordsNative(t *testing.T) 
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{"loop-detail-page", "Back to Loops", "Control flow", "Run from a Graph", "Definition details", "loop-flow-svg", "loop-arrow", "approved", `href="#step-contract-review"`, "Required inputs", "Evidence and outcomes", "Step contracts", "Related exact records", `href="/console/agents?record_key=agent-reviewer#/agents"`, `href="/console/graphs?record_key=graph-review%3A4#/graphs"`} {
+	for _, required := range []string{"loop-detail-page", `id="inspector-title"`, `class="record-list related-records"`, "Back to Loops", "Control flow", "Run from a Graph", "Definition details", "loop-flow-svg", "loop-arrow", "approved", `href="#step-contract-review"`, "Required inputs", "Evidence and outcomes", "Step contracts", "Related exact records", `href="/console/agents?record_key=agent-reviewer#/agents"`, `href="/console/graphs?record_key=graph-review%3A4#/graphs"`} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("dedicated Loop detail missing %q: %s", required, html)
 		}

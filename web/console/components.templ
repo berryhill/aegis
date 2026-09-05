@@ -495,11 +495,11 @@ templ LoopInspector(surface SurfaceModel, record *RecordModel) {
 }
 
 templ LoopDetailPage(surface SurfaceModel, record *RecordModel) {
-	<section class="surface active loop-detail-page" id="loop-detail" aria-labelledby="loop-detail-title">
+	<section class="surface active loop-detail-page" id="loop-detail" aria-labelledby="inspector-title">
 		<nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ consoleRoute(DomainLoops, "") }>← Back to Loops</a></nav>
 		<header class="loop-record-head">
 			<div class="loop-record-main">
-				<div class="loop-title-row"><h1 id="loop-detail-title">{ record.Label }</h1><span class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span><span class={ "validation-chip " + loopValidationClass(record.Loop.Validation) }>Validation · { loopValidationOutcome(record.Loop.Validation) }</span></div>
+				<div class="loop-title-row"><h1 id="inspector-title">{ record.Label }</h1><span class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span><span class={ "validation-chip " + loopValidationClass(record.Loop.Validation) }>Validation · { loopValidationOutcome(record.Loop.Validation) }</span></div>
 				<p class="loop-revision">{ record.Label } · { record.Revision }</p>
 				<p class="loop-readiness">{ record.Readiness }</p>
 				<dl class="loop-summary" aria-label="Loop revision summary"><div><dt>Control-flow steps</dt><dd>{ fmt.Sprintf("%d", len(record.Loop.Steps)) }</dd></div><div><dt>Declared inputs</dt><dd>{ fmt.Sprintf("%d", len(record.Loop.Inputs)) }</dd></div><div><dt>Evidence contract</dt><dd>{ fmt.Sprintf("%d", loopEvidenceCount(record.Loop)) }</dd></div><div><dt>Traversal bounds</dt><dd>{ loopTraversalBoundCount(record.Loop.Transitions) }</dd></div></dl>
@@ -507,6 +507,11 @@ templ LoopDetailPage(surface SurfaceModel, record *RecordModel) {
 			<div class="loop-record-actions"><a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a><details class="definition-disclosure"><summary class="secondary">Definition details</summary><div class="definition-drawer"><div class="drawer-head"><strong>Definition details</strong><span>Exact immutable revision</span></div><dl class="spec"><dt>Loop ID</dt><dd>{ record.Label }</dd><dt>Revision</dt><dd>{ record.Revision }</dd><dt>Revision digest</dt><dd>{ record.Loop.Digest }</dd><dt>Previous digest</dt><dd>{ record.Loop.PreviousDigest }</dd><dt>Entry step</dt><dd>{ record.Loop.EntryStepID }</dd><dt>Lifecycle</dt><dd>{ record.Lifecycle }</dd><dt>Validation</dt><dd>{ record.Loop.Validation }</dd><dt>Validation digest</dt><dd>{ record.Loop.ValidationDigest }</dd></dl>@FieldList(record.Loop.ValidationIssues, "No validation issues recorded")<h3>Exact references</h3>@RelatedRecords(record.Links)</div></details></div>
 			<div class="loop-record-foot"><strong>Graph-child execution only</strong><span>This Loop can run only through a Graph that binds this exact revision and digest. Viewing the definition or its evidence contract grants no runtime authority.</span></div>
 		</header>
+		if len(record.Links) > 0 {
+			<nav class="loop-related-records" aria-label="Related exact records">
+				@RelatedRecords(record.Links)
+			</nav>
+		}
 		<section class="loop-canvas-panel" aria-labelledby="loop-control-flow">
 			<div class="canvas-bar"><div><span class="eyebrow">Read-only definition topology</span><h2 class="canvas-title" id="loop-control-flow">Control flow · { record.Label } { record.Revision }</h2></div><span class="canvas-hint">Scroll to inspect · select a node for its contract</span></div>
 			if len(record.Loop.Steps) == 0 {
