@@ -123,8 +123,13 @@ type GraphRevision struct {
 	Dependencies   []Dependency    `json:"dependencies"`
 	OutputMappings []OutputMapping `json:"output_mappings"`
 	AdmissionRules []AdmissionRule `json:"admission_rules"`
-	Validator      ValidatorSpec   `json:"validator"`
-	Digest         string          `json:"digest"`
+	// Workspace publication fields are pointers so legacy v1 canonical JSON and
+	// digests remain byte-for-byte compatible when provenance is absent.
+	OwnerAgent           *reference.RevisionRef `json:"owner_agent,omitempty"`
+	PublicationAuthority *reference.DigestRef   `json:"publication_authority,omitempty"`
+	PublishedByPrincipal string                 `json:"published_by_principal,omitempty"`
+	Validator            ValidatorSpec          `json:"validator"`
+	Digest               string                 `json:"digest"`
 }
 
 type ValidationIssue struct {

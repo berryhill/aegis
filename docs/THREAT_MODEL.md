@@ -2,7 +2,7 @@
 
 ## Scope and assets
 
-The MVP protects principal identity, canonical charters, immutable registered-Agent provenance and revisions, immutable Loop and Graph definitions and validation records, exact Graph participant/Loop bindings and run snapshots, durable submission outcomes, queue/claim/run causality, content-addressed runtime output, verification receipts, terminal dispositions, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.
+The MVP protects principal identity, canonical charters, immutable registered-Agent provenance and revisions, bounded workspace delegations and stable ownership, immutable Loop and Graph definitions and validation records, exact Graph participant/Loop bindings and run snapshots, durable submission outcomes and runtime bindings, queue/claim/run causality, content-addressed runtime output, verification receipts, terminal dispositions, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.
 
 ## Actors
 
@@ -68,6 +68,8 @@ flowchart LR
   BuiltIn -. no credential, stanza, mandate, or model authority .-> Aegis
   Registry -->|create-only application path| RegistryMemory[(In-memory Registry repository)]
   Registry -->|internal durable facts| FleetStore[(Badger fleet-v1 + atomic audit)]
+  Principal -->|fresh exact delegation| Workspace[Credential-free registered-Agent workspace]
+  Workspace -->|owner mutation + shared reads + participant submission| FleetStore
   Submission[Accepted submission or durable rejection] -->|one atomic outcome + audit| FleetStore
   FleetStore --> QueueItem[Immutable queue item + Graph run]
   QueueItem -->|single-winner initial lease transaction| Claim[Claim + attempt + claimed transition]
@@ -170,7 +172,7 @@ The CLI/API transport boundary authenticates callers outside the model. Charter 
 
 ## Non-goals
 
-The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a generic credential bridge, a fleet projection system, or protection from a fully compromised kernel/operator account. The model-visible broker bridge supports only typed GitHub repository metadata.
+The MVP does not provide host sandboxing, network confinement, multi-tenant isolation, formal information-flow tracking, hardware attestation, multi-party approval, externally anchored transparency, guaranteed plaintext zeroization/physical erasure, a generic credential bridge, a fleet projection system, native agent transport, autonomous scheduling, automatic execution, or protection from a fully compromised kernel/operator account. The model-visible broker bridge supports only typed GitHub repository metadata.
 
 ## Deployment requirements
 
@@ -186,3 +188,13 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 | Cancellation or expiry disappears with caller cancellation | Authenticate and admit first, then detach only the bounded atomic terminal commit | Host/process loss still relies on qualified store durability |
 | Revocation, exhaustion, denial, failure, or success collapse together | Persist distinct terminal state/reason, transition, audit, and disposition facts | No automated lifecycle scheduler |
 | Historical facts become future authority | Read models and browser timelines are projections only; every new effect repeats admission | Audit is not externally anchored |
+
+## Registered-Agent workspace threats
+
+| Threat | Control | Residual limit |
+|---|---|---|
+| Prompt or stale record impersonates an Agent workspace | Controller derives a sealed workspace only after fresh principal authentication and exact latest-enabled Agent/owner readback | A compromised authenticated principal can delegate within that principal's policy |
+| Shared definition visibility becomes mutation authority | Fleet-wide reads/references are separate from stable-owner-only publication and lifecycle checks | Shared definitions can reveal non-secret fleet structure |
+| Workspace submits as an unrelated participant or manages another owner's Queue item | Exact Agent revision must be a pinned Graph participant; submission and Queue records carry owner provenance checked on mutation | This is application authorization, not tenant isolation from the host account |
+| Workspace submission executes without runtime authority | It starts `awaiting-runtime`; only an immutable fresh controller runtime binding plus normal admission can make it claimable | No automatic binder or scheduler is provided |
+| Registered Agent reaches credentials | Workspace capability set contains no credential rights; credential administration/application remains controller-only | Root, kernel, or compromised controller remains outside this boundary |

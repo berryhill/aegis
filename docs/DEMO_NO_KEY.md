@@ -1,5 +1,7 @@
 # No-Key Demonstration
 
+This demonstration does not cover registered-Agent workspace delegation, stable-owner Loop/Graph self-service, shared-definition use, participant submission, runtime-authority binding, Queue processing, credential access, native agent transport, or automatic execution. Those claims require typed service readback and focused tests; a provisioning receipt or session is not a prerequisite for the definition-management contract.
+
 Run from a clean checkout with Go 1.26.6+ and supported Hermes installed:
 
 ```sh

@@ -24,30 +24,35 @@ import (
 
 type fleetServiceRepository struct {
 	fleet.Repository
-	registration    registry.AgentRegistration
-	agent           registry.AgentRevision
-	loop            loop.LoopRevision
-	graph           graph.GraphRevision
-	loopLifecycle   loop.Lifecycle
-	graphLifecycle  graph.Lifecycle
-	loadErr         error
-	accepted        *fleet.AcceptedSubmission
-	rejected        *queue.Rejection
-	registerFact    fleet.AuditFact
-	revisionFact    fleet.AuditFact
-	loopPublished   bool
-	loopPublication loop.PublishRequest
-	lifecycleEvent  loop.LifecycleEvent
-	lifecycleCalls  int
-	graphPublished  bool
-	loopExecution   execution.LoopExecution
-	claim           queue.Claim
-	attempt         execution.Attempt
-	completion      fleet.Completion
-	projection      queue.Projection
-	retryMutation   fleet.RetryMutation
-	cancelMutation  fleet.CancellationMutation
-	terminalCtxErr  error
+	registration     registry.AgentRegistration
+	agent            registry.AgentRevision
+	agents           map[string]registry.AgentRevision
+	loop             loop.LoopRevision
+	graph            graph.GraphRevision
+	loopLifecycle    loop.Lifecycle
+	graphLifecycle   graph.Lifecycle
+	loadErr          error
+	accepted         *fleet.AcceptedSubmission
+	rejected         *queue.Rejection
+	registerFact     fleet.AuditFact
+	revisionFact     fleet.AuditFact
+	loopPublished    bool
+	loopPublication  loop.PublishRequest
+	loopProvenance   map[string]loop.PublicationProvenance
+	lifecycleEvent   loop.LifecycleEvent
+	lifecycleCalls   int
+	graphPublished   bool
+	graphPublication graph.PublishRequest
+	loopExecution    execution.LoopExecution
+	claim            queue.Claim
+	attempt          execution.Attempt
+	completion       fleet.Completion
+	projection       queue.Projection
+	retryMutation    fleet.RetryMutation
+	cancelMutation   fleet.CancellationMutation
+	terminalCtxErr   error
+	runtimeBinding   queue.RuntimeBinding
+	runtimeBound     bool
 }
 
 type staticFleetSource []registry.Candidate
@@ -56,7 +61,13 @@ func (source staticFleetSource) Discover(context.Context) ([]registry.Candidate,
 	return append([]registry.Candidate(nil), source...), nil
 }
 
-func (repository *fleetServiceRepository) GetAgentRevision(context.Context, string, uint64) (registry.AgentRevision, error) {
+func (repository *fleetServiceRepository) GetAgentRevision(_ context.Context, id string, _ uint64) (registry.AgentRevision, error) {
+	if repository.agents != nil {
+		if agent, ok := repository.agents[id]; ok {
+			return agent, repository.loadErr
+		}
+		return registry.AgentRevision{}, fleet.ErrNotFound
+	}
 	return repository.agent, repository.loadErr
 }
 func (repository *fleetServiceRepository) GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error) {
@@ -100,6 +111,9 @@ func (repository *fleetServiceRepository) GetQueueProjection(context.Context, st
 }
 func (repository *fleetServiceRepository) GetClaim(context.Context, string) (queue.Claim, error) {
 	return repository.claim, nil
+}
+func (repository *fleetServiceRepository) GetAttempt(context.Context, string) (execution.Attempt, error) {
+	return repository.attempt, nil
 }
 func (repository *fleetServiceRepository) RetryQueueItem(_ context.Context, mutation fleet.RetryMutation, _ fleet.AuditFact) error {
 	repository.retryMutation = mutation
@@ -148,7 +162,13 @@ func (repository *fleetServiceRepository) GetAgentRegistration(context.Context, 
 	}
 	return repository.registration, repository.loadErr
 }
-func (repository *fleetServiceRepository) LatestAgentRevision(context.Context, string) (registry.AgentRevision, error) {
+func (repository *fleetServiceRepository) LatestAgentRevision(_ context.Context, id string) (registry.AgentRevision, error) {
+	if repository.agents != nil {
+		if agent, ok := repository.agents[id]; ok {
+			return agent, repository.loadErr
+		}
+		return registry.AgentRevision{}, fleet.ErrNotFound
+	}
 	return repository.agent, repository.loadErr
 }
 func (repository *fleetServiceRepository) PublishAgentRevision(_ context.Context, revision registry.AgentRevision, fact fleet.AuditFact) error {
@@ -159,15 +179,48 @@ func (repository *fleetServiceRepository) PublishAgentRevision(_ context.Context
 func (repository *fleetServiceRepository) PublishLoop(_ context.Context, request loop.PublishRequest, _ fleet.AuditFact) (loop.PublicationDecision, error) {
 	repository.loopPublished = true
 	repository.loopPublication = request
+	if repository.loopProvenance == nil {
+		repository.loopProvenance = map[string]loop.PublicationProvenance{}
+	}
+	repository.loopProvenance[request.Revision.LoopID] = request.Provenance
 	return loop.PublicationDecision{}, nil
+}
+func (repository *fleetServiceRepository) GetLoopPublicationProvenance(_ context.Context, id string, _ uint64) (loop.PublicationProvenance, error) {
+	value, ok := repository.loopProvenance[id]
+	if !ok {
+		return loop.PublicationProvenance{}, fleet.ErrNotFound
+	}
+	return value, nil
+}
+func (repository *fleetServiceRepository) GetSubmission(_ context.Context, id string) (queue.Submission, error) {
+	if repository.accepted == nil || repository.accepted.Submission.SubmissionID != id {
+		return queue.Submission{}, fleet.ErrNotFound
+	}
+	return repository.accepted.Submission, nil
+}
+func (repository *fleetServiceRepository) GetQueueRuntimeBinding(context.Context, string) (queue.RuntimeBinding, error) {
+	if !repository.runtimeBound {
+		return queue.RuntimeBinding{}, fleet.ErrNotFound
+	}
+	return repository.runtimeBinding, nil
+}
+func (repository *fleetServiceRepository) BindQueueRuntime(_ context.Context, binding queue.RuntimeBinding, transition queue.QueueTransition, _ fleet.AuditFact) (bool, error) {
+	if repository.runtimeBound {
+		return repository.runtimeBinding.Digest == binding.Digest, nil
+	}
+	repository.runtimeBinding = binding
+	repository.runtimeBound = true
+	repository.projection = queue.Projection{QueueItemID: transition.QueueItemID, State: transition.To, AvailableAt: repository.accepted.QueueItem.AvailableAt}
+	return true, nil
 }
 func (repository *fleetServiceRepository) AppendLoopLifecycle(_ context.Context, request loop.LifecycleRequest, _ fleet.AuditFact) (loop.LifecycleEvent, bool, error) {
 	repository.lifecycleEvent = request.Event
 	repository.lifecycleCalls++
 	return request.Event, false, nil
 }
-func (repository *fleetServiceRepository) PublishGraph(context.Context, graph.PublishRequest, fleet.AuditFact) (graph.PublicationDecision, error) {
+func (repository *fleetServiceRepository) PublishGraph(_ context.Context, request graph.PublishRequest, _ fleet.AuditFact) (graph.PublicationDecision, error) {
 	repository.graphPublished = true
+	repository.graphPublication = request
 	return graph.PublicationDecision{}, nil
 }
 
@@ -877,7 +930,16 @@ func fleetServiceFixture(t *testing.T) (*FleetService, *fleetServiceRepository, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := &fleetServiceRepository{agent: agent, loop: loopRevision, graph: graphRevision}
+	provenance, err := loop.NewPublicationProvenance(loop.PublicationProvenance{
+		Loop:           loop.NewProvenanceRevision(loopRevision.LoopID, loopRevision.Revision, loopRevision.Digest),
+		PublisherAgent: provenanceRevision(agentRef), Authority: provenanceDigest(digestRef(authority.ID, authority.Digest)),
+		MandateID: mandate.ID, StanzaID: authority.Authority.StanzaID, Runtime: provenanceRuntime(authority.Runtime),
+		Charter: provenanceRevision(agent.Charter), ValidationDigest: loopValidation.Digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &fleetServiceRepository{agent: agent, loop: loopRevision, graph: graphRevision, loopProvenance: map[string]loop.PublicationProvenance{"loop-1": provenance}}
 	authorityRepository := fleetAuthorityRepository{mandate: mandate, authority: authority}
 	commands := fleetAuthorityCommands{authority: authority, admitted: true}
 	service, err := NewFleetService(repository, authorityRepository, commands, func(_ context.Context, _ FleetAction, candidate core.Subject) error {

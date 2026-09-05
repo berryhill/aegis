@@ -12,7 +12,7 @@ Aegis keeps these classes distinct:
 
 1. **Canonical authority facts** — mandates, authority contexts, and immutable transition facts. These are controller-authored security facts; derived transition roots are not independent authority.
 2. **Credential custody** — credential metadata, encrypted versions, exact bindings, and revocation metadata. Reusable plaintext and key-encryption keys are not ordinary persistence facts.
-3. **Canonical operational documents** — charters, exact approvals, provisioning plans/receipts, sessions, and canonical audit events. The current create-only/digest-chain filesystem implementation remains authoritative for these records, but it is not thereby qualified as a general transactional database.
+3. **Canonical operational documents** — charters, exact approvals, provisioning plans/receipts, sessions, workspace-authority delegations, and canonical audit events. The current create-only/digest-chain filesystem implementation remains authoritative for these records, but it is not thereby qualified as a general transactional database.
 4. **Rebuildable projections** — authority roots, audit outbox/projection state, indexes, and status summaries. A projection MUST be reconstructable from verified canonical facts and MUST NOT authorize an effect by itself.
 5. **Content-addressed blobs** — runtime artifacts whose digest is verified on read. A filename or caller-provided digest is not authority.
 6. **Operational metadata** — lifecycle markers, lock state, process identity, delivery retries, and maintenance state. It may deny readiness but cannot grant authority.
@@ -23,6 +23,8 @@ Aegis keeps these classes distinct:
 No transaction may silently span these classes or engines. Cross-store operations use explicit ordering, durable intent/recovery where implemented, and deny readiness while an authoritative write and required projection are inconsistent.
 
 The fleet planes are qualified as one shared Badger store because Graph submission must atomically publish its immutable run snapshot and durable rejection or queue item. The internal adapter implements this accepted-or-rejected outcome transaction; dependency-gated, attempt-bounded claims that transactionally validate projected attempt count, retry availability, and dependency success against canonical facts; expired-lease retry/reclaim with bounded backoff; queued-or-claimed cancellation; rebuildable queue projections; and terminal evidence/disposition transactions. A projection divergence denies claim admission atomically. This does not complete authenticated public application admission, dirty-store recovery, automated lifecycle scheduling, multi-node execution, or installed end-to-end acceptance. Existing Badger session-authority qualification does not implicitly qualify fleet-control records, and fleet qualification does not permit records in the session-authority store.
+
+Registered-Agent workspace provenance is persisted with owned Loop/Graph revisions and submissions in that same fleet transaction. Definitions remain fleet-wide shared read/reference data; stable owner provenance gates publication and lifecycle mutation. Workspace submissions persist as `awaiting-runtime` until an immutable `RuntimeBinding` attaches fresh controller-issued runtime authority. Recovery MUST NOT promote an unbound item to `queued`, infer a binding from a workspace record, or treat a provisioning receipt/session as a prerequisite for definition management.
 
 ## Qualification matrix
 
@@ -47,7 +49,7 @@ Badger may be imported directly only by its session-authority and fleet adapters
 
 A session effect requires one verified snapshot relationship: mandate, authority context ID/digest, transition state, revocation/expiry state, parent dispatch, and fresh admission decision. Missing, malformed, dirty, substituted, cross-family, partially activated, or ambiguous authority state denies. A derived root alone cannot admit work.
 
-Credential use independently reauthorizes the session/mandate/context, exact binding, version policy, destination, deadline, request identity, and revocation state. Plaintext exists only inside the bounded custody callback and MUST NOT be serialized into authority facts, audit, projections, runtime configuration, argv, environment, or model-visible results.
+Credential use independently reauthorizes the session/mandate/context, exact binding, version policy, destination, deadline, request identity, and revocation state. An ordinary registered-Agent workspace has no credential rights; only Aegis controller authority may administer or apply credentials. Plaintext exists only inside the bounded custody callback and MUST NOT be serialized into workspace authority, fleet facts, audit, projections, runtime configuration, argv, environment, or model-visible results.
 
 A fleet-control effect additionally requires the exact immutable Agent, Graph, Loop, submission/run-snapshot, queue-item, claim, and attempt references required for that boundary. Claim and runtime launch each perform fresh authority admission. Missing optional credential state cannot deny a credential-independent operation, but an operation that declares an exact credential grant fails closed when that grant cannot be authorized.
 

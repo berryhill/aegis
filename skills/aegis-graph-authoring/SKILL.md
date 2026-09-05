@@ -1,7 +1,7 @@
 ---
 name: aegis-graph-authoring
 description: Compose, publish, inspect, and submit immutable typed Aegis Graph revisions through shipped services without moving identity, authority, or queue admission into the model.
-version: 0.1.0
+version: 0.2.0
 metadata:
   hermes:
     tags:
@@ -20,10 +20,11 @@ Use this skill to compose, publish, list, inspect, or submit an immutable typed 
 
 - A Graph is a versioned coordination definition. A Graph revision, policy reference, normalized input, run snapshot, submission ID, or queue item carries no identity, session, mandate, runtime, credential, or execution authority.
 - Prompt text, display identity, a requested stanza, model narration, browser state, process exit, mutable labels, and locally computed digests never authenticate a caller, authorize publication, admit a submission, or prove completion.
-- Publication and submission require authentication outside the model and fresh admission of exactly one current authority context. Zero, multiple, stale, expired, revoked, substituted, or drifted matches deny. Never union stanza grants.
+- Publication and submission require authentication outside the model and either fresh runtime-authority admission or one controller-derived registered-Agent workspace bound to an exact latest enabled Agent and stable owner. Workspace authoring/submission needs no provisioning receipt or running session. Zero, multiple, stale, expired, revoked, disabled, substituted, differently owned, or drifted matches deny. Never union stanza grants.
 - Every Graph node binds one exact immutable Agent revision and one exact immutable Loop revision. Publication requires enabled participants, active pinned Loop revisions, exact Loop interfaces, and at least one node owned by the publishing authority Agent. Admission rules must be exact policy digest references declared by exact participants.
 - Submission repeats authority admission, exact definition and lifecycle resolution, participant eligibility, authority-to-participant matching, and Loop-interface validation. Runtime effects repeat fresh authority admission again; Graph publication or queue acceptance is not runtime authorization or successful disposition.
 - Discussion, drafting, validation guidance, inspection, or a request to explain a Graph is not authorization to publish or submit it.
+- Graph definitions are fleet-wide readable/referenceable/usable, but only the stable owner may mutate them. A workspace may submit only when its exact Agent revision is a pinned participant. Accepted workspace submissions wait for a fresh controller runtime-authority binding; they do not execute automatically and carry no credential rights.
 
 ## Confirm the shipped surface
 

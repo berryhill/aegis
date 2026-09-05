@@ -106,6 +106,8 @@ type Repository interface {
 	ListSubmissions(context.Context) ([]queue.Submission, error)
 	ListRejections(context.Context) ([]queue.Rejection, error)
 	GetQueueItem(context.Context, string) (queue.Item, error)
+	BindQueueRuntime(context.Context, queue.RuntimeBinding, queue.QueueTransition, AuditFact) (bool, error)
+	GetQueueRuntimeBinding(context.Context, string) (queue.RuntimeBinding, error)
 	ListQueueItems(context.Context) ([]queue.Item, error)
 	GetGraphRun(context.Context, string) (execution.GraphRun, error)
 	ListGraphRuns(context.Context) ([]execution.GraphRun, error)

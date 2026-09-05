@@ -48,6 +48,13 @@ type SubmitGraphInput = orchestration.SubmitGraphRequest
 type ProcessQueueItemInput = orchestration.WorkRequest
 type RetryQueueItemInput = orchestration.QueueRetryRequest
 type TerminalQueueItemInput = orchestration.QueueTerminalRequest
+type BindQueueRuntimeInput struct {
+	AgentID      string              `json:"agent_id"`
+	Authority    reference.DigestRef `json:"authority"`
+	QueueItemID  string              `json:"queue_item_id"`
+	BindingID    string              `json:"binding_id"`
+	TransitionID string              `json:"transition_id"`
+}
 
 const QueueReasonLeaseReclaimed = orchestration.ReasonLeaseReclaimed
 
@@ -107,6 +114,9 @@ func NewSetAgentLifecycleInput(id string, revision uint64, digest, lifecycle str
 }
 
 type PublishLoopInput struct {
+	// AgentID selects one exact latest enabled registered Agent for a
+	// controller-issued workspace delegation. Empty preserves legacy authority.
+	AgentID                string                `json:"agent_id,omitempty"`
 	Authority              reference.DigestRef   `json:"authority"`
 	Publisher              reference.RevisionRef `json:"publisher"`
 	Revision               loop.LoopRevision     `json:"revision"`
@@ -121,6 +131,7 @@ type PublishedLoop struct {
 }
 
 type SetLoopLifecycleInput struct {
+	AgentID                string                `json:"agent_id,omitempty"`
 	Authority              reference.DigestRef   `json:"authority"`
 	Publisher              reference.RevisionRef `json:"publisher"`
 	Loop                   reference.RevisionRef `json:"loop"`
@@ -201,6 +212,7 @@ func (s *Service) FleetCommandAuthorityAs(ctx context.Context, subject core.Subj
 }
 
 type PublishGraphInput struct {
+	AgentID                string              `json:"agent_id,omitempty"`
 	Authority              reference.DigestRef `json:"authority"`
 	Revision               graph.GraphRevision `json:"revision"`
 	ExpectedPreviousDigest string              `json:"expected_previous_digest,omitempty"`
@@ -325,6 +337,35 @@ func (s *Service) requireFleetPrincipal(subject core.Subject) error {
 		return ErrFleetUnavailable
 	}
 	return nil
+}
+
+// RegisteredAgentWorkspaceAs delegates bounded control-plane authority through
+// the freshly authenticated configured principal to one exact latest enabled
+// Agent. It is not a provisioning receipt, mandate, or runtime session.
+func (s *Service) RegisteredAgentWorkspaceAs(ctx context.Context, subject core.Subject, agentID string) (orchestration.WorkspaceAuthority, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return orchestration.WorkspaceAuthority{}, err
+	}
+	if agentID == "" {
+		return orchestration.WorkspaceAuthority{}, ErrDenied
+	}
+	agent, err := s.FleetRepository.LatestAgentRevision(ctx, agentID)
+	if err != nil {
+		return orchestration.WorkspaceAuthority{}, err
+	}
+	if agent.AgentID != agentID || agent.Lifecycle != registry.LifecycleEnabled {
+		return orchestration.WorkspaceAuthority{}, ErrDenied
+	}
+	ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.AgentID, Revision: agent.Revision, Digest: agent.Digest}
+	return orchestration.NewRegisteredAgentWorkspaceAuthority(subject.PrincipalID, ref, agent.Ownership.OwnerID)
+}
+
+func (s *Service) RegisteredAgentWorkspace(ctx context.Context, agentID string) (orchestration.WorkspaceAuthority, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return orchestration.WorkspaceAuthority{}, err
+	}
+	return s.RegisteredAgentWorkspaceAs(ctx, subject, agentID)
 }
 
 // FleetAuthorityForSession returns the exact immutable reference needed by
@@ -551,7 +592,15 @@ func (s *Service) PublishLoopAs(ctx context.Context, subject core.Subject, input
 		return PublishedLoop{Revision: revision, Validation: validation}, err
 	}
 	request := loop.PublishRequest{Revision: revision, Validation: validation, ExpectedPreviousDigest: input.ExpectedPreviousDigest, IdempotencyKey: input.IdempotencyKey}
-	decision, err := s.Fleet.PublishLoop(ctx, orchestration.PublishLoopRequest{Subject: subject, Authority: input.Authority, Publisher: input.Publisher, Publication: request})
+	operation := orchestration.PublishLoopRequest{Subject: subject, Authority: input.Authority, Publisher: input.Publisher, Publication: request}
+	if input.AgentID != "" {
+		workspace, workspaceErr := s.RegisteredAgentWorkspaceAs(ctx, subject, input.AgentID)
+		if workspaceErr != nil {
+			return PublishedLoop{Revision: revision, Validation: validation}, workspaceErr
+		}
+		operation.Workspace, operation.Authority, operation.Publisher = &workspace, workspace.Ref(), workspace.Agent
+	}
+	decision, err := s.Fleet.PublishLoop(ctx, operation)
 	return PublishedLoop{Revision: revision, Validation: validation, Decision: decision}, err
 }
 
@@ -570,10 +619,18 @@ func (s *Service) SetLoopLifecycleAs(ctx context.Context, subject core.Subject, 
 	if input.Loop.ID != id {
 		return LoopLifecycleResult{}, fleet.ErrConflict
 	}
-	event, idempotent, err := s.Fleet.SetLoopLifecycle(ctx, orchestration.SetLoopLifecycleRequest{
+	request := orchestration.SetLoopLifecycleRequest{
 		Subject: subject, Authority: input.Authority, Publisher: input.Publisher, Loop: input.Loop,
 		State: input.State, EventID: input.EventID, ExpectedPreviousDigest: input.ExpectedPreviousDigest,
-	})
+	}
+	if input.AgentID != "" {
+		workspace, workspaceErr := s.RegisteredAgentWorkspaceAs(ctx, subject, input.AgentID)
+		if workspaceErr != nil {
+			return LoopLifecycleResult{}, workspaceErr
+		}
+		request.Workspace, request.Authority, request.Publisher = &workspace, workspace.Ref(), workspace.Agent
+	}
+	event, idempotent, err := s.Fleet.SetLoopLifecycle(ctx, request)
 	return LoopLifecycleResult{Event: event, Idempotent: idempotent}, err
 }
 
@@ -705,12 +762,26 @@ func (s *Service) PublishGraphAs(ctx context.Context, subject core.Subject, inpu
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return PublishedGraph{}, err
 	}
+	var workspace *orchestration.WorkspaceAuthority
+	if input.AgentID != "" {
+		resolved, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.AgentID)
+		if err != nil {
+			return PublishedGraph{}, err
+		}
+		workspace = &resolved
+		input.Authority = resolved.Ref()
+		input.Revision.OwnerAgent = &resolved.Agent
+		workspaceRef := resolved.Ref()
+		input.Revision.PublicationAuthority = &workspaceRef
+		input.Revision.PublishedByPrincipal = resolved.PrincipalID
+	}
 	revision, validation, err := graph.NewRevision(input.Revision)
 	if err != nil {
 		return PublishedGraph{Revision: revision, Validation: validation}, err
 	}
 	request := graph.PublishRequest{Revision: revision, Validation: validation, ExpectedPreviousDigest: input.ExpectedPreviousDigest, IdempotencyKey: input.IdempotencyKey}
-	decision, err := s.Fleet.PublishGraph(ctx, orchestration.PublishGraphRequest{Subject: subject, Authority: input.Authority, Publication: request})
+	operation := orchestration.PublishGraphRequest{Subject: subject, Authority: input.Authority, Publication: request, Workspace: workspace}
+	decision, err := s.Fleet.PublishGraph(ctx, operation)
 	return PublishedGraph{Revision: revision, Validation: validation, Decision: decision}, err
 }
 
@@ -855,6 +926,13 @@ func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, reque
 		return orchestration.SubmissionDecision{}, err
 	}
 	request.Subject = subject
+	if request.WorkspaceAgentID != "" {
+		workspace, workspaceErr := s.RegisteredAgentWorkspaceAs(ctx, subject, request.WorkspaceAgentID)
+		if workspaceErr != nil {
+			return orchestration.SubmissionDecision{}, workspaceErr
+		}
+		request.Workspace, request.Authority = &workspace, workspace.Ref()
+	}
 	return s.Fleet.PrepareGraphRun(ctx, request)
 }
 
@@ -1025,11 +1103,43 @@ func (s *Service) ListQueue(ctx context.Context) ([]QueueExecutionView, error) {
 	return s.ListQueueAs(ctx, subject)
 }
 
+// BindQueueRuntimeAs performs the explicit workspace-to-runtime handoff for an
+// awaiting-runtime item. Workspace ownership and runtime authority must resolve
+// to the same exact enabled registered Agent.
+func (s *Service) BindQueueRuntimeAs(ctx context.Context, subject core.Subject, input BindQueueRuntimeInput) (queue.RuntimeBinding, bool, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.AgentID)
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	return s.QueueWorker.BindRuntime(ctx, orchestration.BindQueueRuntimeRequest{
+		Subject: subject, Workspace: &workspace, Authority: input.Authority,
+		QueueItemID: input.QueueItemID, BindingID: input.BindingID, TransitionID: input.TransitionID,
+	})
+}
+
+func (s *Service) BindQueueRuntime(ctx context.Context, input BindQueueRuntimeInput) (queue.RuntimeBinding, bool, error) {
+	subject, err := s.Authenticate(ctx)
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	return s.BindQueueRuntimeAs(ctx, subject, input)
+}
+
 func (s *Service) RetryQueueItemAs(ctx context.Context, subject core.Subject, input RetryQueueItemInput) (queue.Retry, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return queue.Retry{}, err
 	}
 	input.Subject = subject
+	if input.WorkspaceAgentID != "" {
+		workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.WorkspaceAgentID)
+		if err != nil {
+			return queue.Retry{}, err
+		}
+		input.Workspace, input.Authority = &workspace, workspace.Ref()
+	}
 	return s.QueueWorker.Retry(ctx, input)
 }
 func (s *Service) RetryQueueItem(ctx context.Context, input RetryQueueItemInput) (queue.Retry, error) {
@@ -1045,6 +1155,13 @@ func (s *Service) CancelQueueItemAs(ctx context.Context, subject core.Subject, i
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
+	if input.WorkspaceAgentID != "" {
+		workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.WorkspaceAgentID)
+		if err != nil {
+			return queue.Cancellation{}, err
+		}
+		input.Workspace, input.Authority = &workspace, workspace.Ref()
+	}
 	return s.QueueWorker.Cancel(ctx, input)
 }
 func (s *Service) CancelQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
@@ -1060,6 +1177,13 @@ func (s *Service) ExpireQueueItemAs(ctx context.Context, subject core.Subject, i
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
+	if input.WorkspaceAgentID != "" {
+		workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.WorkspaceAgentID)
+		if err != nil {
+			return queue.Cancellation{}, err
+		}
+		input.Workspace, input.Authority = &workspace, workspace.Ref()
+	}
 	return s.QueueWorker.Expire(ctx, input)
 }
 func (s *Service) ExpireQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
@@ -1075,6 +1199,13 @@ func (s *Service) ExhaustQueueItemAs(ctx context.Context, subject core.Subject, 
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
+	if input.WorkspaceAgentID != "" {
+		workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.WorkspaceAgentID)
+		if err != nil {
+			return queue.Cancellation{}, err
+		}
+		input.Workspace, input.Authority = &workspace, workspace.Ref()
+	}
 	return s.QueueWorker.Exhaust(ctx, input)
 }
 func (s *Service) ExhaustQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {
@@ -1090,6 +1221,13 @@ func (s *Service) RevokeQueueItemAs(ctx context.Context, subject core.Subject, i
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
+	if input.WorkspaceAgentID != "" {
+		workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, input.WorkspaceAgentID)
+		if err != nil {
+			return queue.Cancellation{}, err
+		}
+		input.Workspace, input.Authority = &workspace, workspace.Ref()
+	}
 	return s.QueueWorker.Revoke(ctx, input)
 }
 func (s *Service) RevokeQueueItem(ctx context.Context, input TerminalQueueItemInput) (queue.Cancellation, error) {

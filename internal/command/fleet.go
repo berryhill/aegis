@@ -267,6 +267,24 @@ func fleetQueueCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
+	bindRuntime := &cobra.Command{Use: "bind-runtime FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		var input app.BindQueueRuntimeInput
+		if err := decodeJSONFile(args[0], &input); err != nil {
+			return usage(err)
+		}
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		binding, created, err := service.BindQueueRuntime(cmd.Context(), input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, struct {
+			Binding queue.RuntimeBinding `json:"binding"`
+			Created bool                 `json:"created"`
+		}{Binding: binding, Created: created})
+	}}
 	process := &cobra.Command{Use: "process FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.ProcessQueueItemInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
@@ -326,7 +344,7 @@ func fleetQueueCmd(build builder) *cobra.Command {
 	revoke := terminalCommand("revoke", func(service *app.Service, ctx context.Context, input app.TerminalQueueItemInput) (queue.Cancellation, error) {
 		return service.RevokeQueueItem(ctx, input)
 	})
-	command.AddCommand(list, show, process, retry, cancel, expire, exhaust, revoke)
+	command.AddCommand(list, show, bindRuntime, process, retry, cancel, expire, exhaust, revoke)
 	return command
 }
 

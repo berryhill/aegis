@@ -125,6 +125,15 @@ Prove one narrow fleet-control loop across four bounded product domains—Agent 
 
 Charters, deterministic stanza selection, mandates, clean Hermes sessions, provisioning, audit, evidence, and optional credential custody are supporting controls. Credentials and the typed GitHub broker are not release-defining fleet-control gates and MUST NOT block credential-independent Registry, Loop, Graph, or Queue actions.
 
+### Registered-Agent workspace self-service
+
+- A freshly authenticated principal may delegate the fixed workspace capability set to one exact latest enabled registered Agent revision. The delegated identity is sealed to the principal, Agent revision/digest, and stable Registry owner.
+- Workspace authority permits defining and managing that Agent's own Loops and Graphs, submitting a Graph only when that exact Agent is a participant, managing its own resulting Queue work, and reading/referencing/using fleet-wide shared definitions.
+- Immutable definitions are fleet-shared; ownership controls mutation, not visibility. Only the stable owner may publish a later revision or mutate lifecycle for an owned Loop or Graph.
+- Workspace delegation needs no provisioning receipt or runtime session. It grants no provisioning, claim, runtime-effect, session, mandate, or credential authority.
+- Queue processing and every runtime effect still require a fresh controller-issued runtime-authority binding and admission. An ordinary registered-Agent workspace has zero credential rights; only the Aegis controller administers and applies credentials.
+- Do not describe this as native agent transport, autonomous scheduling, or automatic execution.
+
 ## Authoritative project reports
 
 - `docs/product/BIG_IDEA.md` — product thesis, conceptual model, and long-term direction.
