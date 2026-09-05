@@ -286,9 +286,13 @@ func TestAgentRegistryRendersOperatorContractWithoutClaimingBrowserAuthority(t *
 	}
 }
 
-func TestDefinitionFiltersPaginationAndRelatedRecordsAreNativeLinks(t *testing.T) {
+func TestLoopDetailReplacesCollectionAndKeepsRelatedRecordsNative(t *testing.T) {
 	var output bytes.Buffer
-	record := RecordModel{Key: "loop-review:2", Label: "loop-review", Lifecycle: "active", Loop: &LoopDetailModel{}, Links: []LinkModel{{Label: "Publisher Agent", Detail: "agent-reviewer r7 @ sha256:agent", URL: "/console/agents?record_key=agent-reviewer#/agents"}}}
+	record := RecordModel{Key: "loop-review:2", Label: "loop-review", Revision: "r2", Lifecycle: "active", Loop: &LoopDetailModel{
+		CanvasWidth: 860, CanvasHeight: 360, EntryStepID: "review", Validation: "valid · validator v1",
+		Steps:       []LoopStepModel{{ID: "review", Kind: "action", Entry: true, MaxAttempts: 2, X: 42, Y: 62}, {ID: "done", Kind: "terminal", TerminalOutcome: "succeeded", MaxAttempts: 1, X: 346, Y: 62}},
+		Transitions: []LoopTransitionModel{{ID: "complete", FromStepID: "review", ToStepID: "done", Condition: "approved", MaxTraversals: 1, Path: "M 254 113 C 300 113, 300 113, 346 113", LabelX: 300, LabelY: 105}},
+	}, Links: []LinkModel{{Label: "Publisher Agent", Detail: "agent-reviewer r7 @ sha256:agent", URL: "/console/agents?record_key=agent-reviewer#/agents"}, {Label: "Bound Graph · review", Detail: "graph-review r4 @ sha256:graph", URL: "/console/graphs?record_key=graph-review%3A4#/graphs"}}}
 	model := PageModel{Authenticated: true, Surface: SurfaceModel{
 		Domain: DomainLoops, Title: "Loops", State: "ready", Authoritative: true, Query: "review", Lifecycle: "active",
 		Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true,
@@ -298,14 +302,14 @@ func TestDefinitionFiltersPaginationAndRelatedRecordsAreNativeLinks(t *testing.T
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{`action="/console/loops"`, `name="q"`, `value="review"`, `name="lifecycle"`, `value="active" selected`, `href="/console/loops?q=review#/loops"`, `href="/console/loops?page=3&amp;q=review#/loops"`, "Related exact records", `href="/console/agents?record_key=agent-reviewer#/agents"`} {
+	for _, required := range []string{"loop-detail-page", `id="inspector-title"`, `class="record-list related-records"`, "Back to Loops", "Control flow", "Run from a Graph", "Definition details", "loop-flow-svg", "loop-arrow", "approved", `href="#step-contract-review"`, "Required inputs", "Evidence and outcomes", "Step contracts", "Related exact records", `href="/console/agents?record_key=agent-reviewer#/agents"`, `href="/console/graphs?record_key=graph-review%3A4#/graphs"`} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("coherent collection control missing %q: %s", required, html)
+			t.Fatalf("dedicated Loop detail missing %q: %s", required, html)
 		}
 	}
-	for _, forbidden := range []string{`disabled title="Filtering is delivered`, `>Current bounded result<`} {
+	for _, forbidden := range []string{`action="/console/loops"`, `name="q"`, `name="lifecycle"`, `href="/console/loops?q=review#/loops"`, `href="/console/loops?page=3&amp;q=review#/loops"`, `>Current bounded result<`} {
 		if strings.Contains(html, forbidden) {
-			t.Fatalf("dead collection control remained %q: %s", forbidden, html)
+			t.Fatalf("collection chrome remained behind dedicated Loop detail %q: %s", forbidden, html)
 		}
 	}
 }
@@ -407,6 +411,30 @@ func TestLoopLifecycleAndConfirmationRemainDigestBound(t *testing.T) {
 	}
 	if strings.Contains(html, `name="target_id"`) || strings.Contains(html, `name="authority_id"`) {
 		t.Fatalf("confirmation allowed browser mutation of a retained target or authority: %s", html)
+	}
+}
+
+func TestLoopGraphHandoffDistinguishesZeroOneAndManyGraphs(t *testing.T) {
+	one := LinkModel{Label: "Bound Graph", URL: "/console/graphs?record_key=one"}
+	duplicate := LinkModel{Label: "Bound Graph · second node", URL: one.URL}
+	two := LinkModel{Label: "Bound Graph", URL: "/console/graphs?record_key=two"}
+	for _, test := range []struct {
+		name, label, url string
+		links            []LinkModel
+	}{
+		{name: "none", label: "Find a Graph", url: "/console/graphs#/graphs"},
+		{name: "one exact Graph despite duplicate node bindings", label: "Run from a Graph", url: one.URL, links: []LinkModel{one, duplicate}},
+		{name: "multiple exact Graphs", label: "Choose a Graph", url: "/console/graphs#/graphs", links: []LinkModel{one, two}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			record := &RecordModel{Links: test.links}
+			if got := loopRunGraphLabel(test.links); got != test.label {
+				t.Fatalf("handoff label = %q, want %q", got, test.label)
+			}
+			if got := loopRunGraphURL(record); got != test.url {
+				t.Fatalf("handoff URL = %q, want %q", got, test.url)
+			}
+		})
 	}
 }
 

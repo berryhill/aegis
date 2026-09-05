@@ -18,6 +18,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
+
 	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/starfederation/datastar-go/datastar"
@@ -537,36 +538,6 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 
 func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
-	steps := make([]string, 0, len(revision.Steps))
-	maxAttempts := uint16(0)
-	claimCount := 0
-	for _, step := range revision.Steps {
-		steps = append(steps, fmt.Sprintf("%s · %s · max %d attempt(s)", step.ID, step.Kind, step.Retry.MaxAttempts))
-		if step.Retry.MaxAttempts > maxAttempts {
-			maxAttempts = step.Retry.MaxAttempts
-		}
-		claimCount += len(step.EvidenceClaims)
-	}
-	transitions := make([]string, 0, len(revision.Transitions))
-	for _, transition := range revision.Transitions {
-		transitions = append(transitions, fmt.Sprintf("%s: %s → %s", transition.ID, transition.FromStepID, transition.ToStepID))
-	}
-	inputs := make([]string, 0, len(revision.Inputs))
-	for _, input := range revision.Inputs {
-		inputs = append(inputs, fmt.Sprintf("%s · %s · required=%t", input.ID, input.Type, input.Required))
-	}
-	outputs := make([]string, 0, len(revision.Outputs))
-	for _, output := range revision.Outputs {
-		outputs = append(outputs, fmt.Sprintf("%s · %s · required=%t", output.ID, output.Type, output.Required))
-	}
-	requirements := make([]string, 0, len(revision.RequiredEvidence))
-	for _, requirement := range revision.RequiredEvidence {
-		requirements = append(requirements, fmt.Sprintf("%s · producer %s", requirement.Claim, requirement.ProducerStepID))
-	}
-	validation := "missing"
-	if len(view.Validations) > 0 {
-		validation = fmt.Sprintf("%s · %s %s", view.Validations[0].Outcome, view.Validations[0].Validator.ID, view.Validations[0].Validator.Version)
-	}
 	lifecycle := string(view.Lifecycle.State)
 	readiness := "Draft; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
@@ -579,45 +550,219 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	} else if view.Lifecycle.State == "retired" {
 		readiness = "Retired; terminal lifecycle"
 	}
-	control := &consoleweb.LoopDetailModel{
+
+	detail := &consoleweb.LoopDetailModel{
 		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
+		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
-		CanRetire: view.Lifecycle.State != "retired",
-	}
-	if len(view.History) > 0 {
-		control.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
-	}
-	record := consoleweb.RecordModel{
-		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.LoopID,
-		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
-		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
-		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: control,
-		Links: []consoleweb.LinkModel{{Label: "Publisher Agent", Detail: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest), URL: consoleAgentRevisionURL(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision)}},
-		Fields: []consoleweb.FieldModel{
-			{Label: "Executable steps", Value: strings.Join(steps, "\n")},
-			{Label: "Transitions", Value: strings.Join(transitions, "\n")},
-			{Label: "Inputs", Value: fallback(strings.Join(inputs, "\n"), "None")},
-			{Label: "Outputs", Value: fallback(strings.Join(outputs, "\n"), "None")},
-			{Label: "Retry bound", Value: fmt.Sprintf("maximum %d attempts on any step", maxAttempts)},
-			{Label: "Evidence contract", Value: fmt.Sprintf("%d step claims\n%s", claimCount, fallback(strings.Join(requirements, "\n"), "No Loop-level requirements"))},
-			{Label: "Validation", Value: validation},
-			{Label: "Lifecycle history", Value: fmt.Sprintf("%d immutable event(s)", len(view.History))},
-			{Label: "Publisher Agent", Value: fmt.Sprintf("%s revision %d @ %s", view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest)},
-			{Label: "Authority provenance", Value: fmt.Sprintf("%s · mandate %s · stanza %s", view.Provenance.Authority.ID, view.Provenance.MandateID, view.Provenance.StanzaID)},
-			{Label: "Immutable revision", Value: fmt.Sprintf("%s revision %d @ %s", revision.LoopID, revision.Revision, revision.Digest)},
+		CanRetire:  view.Lifecycle.State != "retired",
+		Validation: "Unavailable", ValidationDigest: "Unavailable",
+		Provenance: []consoleweb.FieldModel{
+			{Label: "Publisher Agent", Value: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest)},
+			{Label: "Authority context", Value: view.Provenance.Authority.ID + " @ " + view.Provenance.Authority.Digest},
+			{Label: "Mandate", Value: view.Provenance.MandateID},
+			{Label: "Trust stanza", Value: view.Provenance.StanzaID},
+			{Label: "Runtime", Value: fallback(view.Provenance.Runtime.Runtime, "Unavailable")},
+			{Label: "Charter", Value: exactRevisionLabel(view.Provenance.Charter.ID, view.Provenance.Charter.Revision, view.Provenance.Charter.Digest)},
+			{Label: "Validation binding", Value: view.Provenance.ValidationDigest},
+			{Label: "Publication provenance digest", Value: view.Provenance.Digest},
 		},
 	}
+	if view.Provenance.AuthorityKind != "" {
+		detail.Provenance = append(detail.Provenance, consoleweb.FieldModel{Label: "Authority kind", Value: view.Provenance.AuthorityKind})
+	}
+	if view.Provenance.OwnerID != "" {
+		detail.Provenance = append(detail.Provenance, consoleweb.FieldModel{Label: "Owner", Value: view.Provenance.OwnerID})
+	}
+	if view.Provenance.PrincipalID != "" {
+		detail.Provenance = append(detail.Provenance, consoleweb.FieldModel{Label: "Principal", Value: view.Provenance.PrincipalID})
+	}
+	if len(view.Validations) > 0 {
+		validation := view.Validations[0]
+		detail.Validation = fmt.Sprintf("%s · %s %s", validation.Outcome, validation.Validator.ID, validation.Validator.Version)
+		detail.ValidationDigest = validation.Digest
+		for _, issue := range validation.Issues {
+			detail.ValidationIssues = append(detail.ValidationIssues, consoleweb.FieldModel{Label: issue.Code + " · " + issue.Path, Value: issue.Message})
+		}
+	}
+	for _, port := range revision.Inputs {
+		detail.Inputs = append(detail.Inputs, consoleweb.LoopPortModel{ID: port.ID, Type: string(port.Type), Required: port.Required})
+	}
+	for _, port := range revision.Outputs {
+		detail.Outputs = append(detail.Outputs, consoleweb.LoopPortModel{ID: port.ID, Type: string(port.Type), Required: port.Required})
+	}
+	for _, step := range revision.Steps {
+		projected := consoleweb.LoopStepModel{ID: step.ID, Kind: string(step.Kind), MaxAttempts: step.Retry.MaxAttempts, Entry: step.ID == revision.EntryStepID}
+		if step.Gate != nil {
+			projected.GateMode = step.Gate.Mode
+		}
+		if step.Terminal != nil {
+			projected.TerminalOutcome = string(step.Terminal.Outcome)
+			for _, mapping := range step.Terminal.OutputMappings {
+				projected.TerminalMappings = append(projected.TerminalMappings, consoleweb.LoopPortMappingModel{SourcePort: mapping.SourcePort, TargetPort: mapping.TargetPort})
+			}
+		}
+		for _, port := range step.InputPorts {
+			projected.Inputs = append(projected.Inputs, consoleweb.LoopPortModel{ID: port.ID, Type: string(port.Type), Required: port.Required})
+		}
+		for _, port := range step.OutputPorts {
+			projected.Outputs = append(projected.Outputs, consoleweb.LoopPortModel{ID: port.ID, Type: string(port.Type), Required: port.Required})
+		}
+		for _, claim := range step.EvidenceClaims {
+			projected.EvidenceClaims = append(projected.EvidenceClaims, consoleweb.LoopEvidenceClaimModel{Claim: claim.Claim, MediaType: claim.MediaType, ExpectedDigest: claim.ExpectedDigest, VerifierID: claim.VerifierID, PolicyVersion: claim.PolicyVersion})
+		}
+		detail.Steps = append(detail.Steps, projected)
+	}
+	for _, transition := range revision.Transitions {
+		projected := consoleweb.LoopTransitionModel{ID: transition.ID, FromStepID: transition.FromStepID, ToStepID: transition.ToStepID, Condition: transition.Condition, MaxTraversals: transition.MaxTraversals}
+		for _, mapping := range transition.Mappings {
+			projected.Mappings = append(projected.Mappings, consoleweb.LoopPortMappingModel{SourcePort: mapping.SourcePort, TargetPort: mapping.TargetPort})
+		}
+		detail.Transitions = append(detail.Transitions, projected)
+	}
+	layoutLoopDetail(detail)
+	for _, requirement := range revision.RequiredEvidence {
+		detail.RequiredEvidence = append(detail.RequiredEvidence, consoleweb.LoopEvidenceRequirementModel{Claim: requirement.Claim, ProducerStepID: requirement.ProducerStepID})
+	}
+	for _, event := range view.History {
+		revisionLabel := "No revision selected"
+		if event.Revision.ID != "" {
+			revisionLabel = exactRevisionLabel(event.Revision.ID, event.Revision.Revision, event.Revision.Digest)
+		}
+		detail.LifecycleHistory = append(detail.LifecycleHistory, consoleweb.LoopLifecycleEventModel{
+			EventID: event.EventID, State: string(event.State), Revision: revisionLabel,
+			PreviousDigest: fallback(event.PreviousDigest, "Genesis lifecycle event"),
+			Publisher:      exactRevisionLabel(event.PublisherAgent.ID, event.PublisherAgent.Revision, event.PublisherAgent.Digest),
+			Authority:      event.Authority.ID + " @ " + event.Authority.Digest, MandateID: event.MandateID, StanzaID: event.StanzaID,
+			OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339), Digest: event.Digest,
+		})
+	}
+	if len(view.History) > 0 {
+		detail.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
+	}
+
+	record := consoleweb.RecordModel{
+		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
+		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
+		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
+		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,
+		Links: []consoleweb.LinkModel{{Label: "Publisher Agent", Detail: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest), URL: consoleAgentRevisionURL(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision)}},
+	}
+	boundGraphs := make(map[string]struct{})
 	for _, graphs := range graphSets {
 		for _, graphView := range graphs {
 			for _, node := range graphView.Revision.Nodes {
 				if node.Loop.ID == revision.LoopID && node.Loop.Revision == revision.Revision && node.Loop.Digest == revision.Digest {
 					graphRevision := graphView.Revision
-					record.Links = append(record.Links, consoleweb.LinkModel{Label: "Bound Graph · " + node.ID, Detail: exactRevisionLabel(graphRevision.GraphID, graphRevision.Revision, graphRevision.Digest), URL: consoleRecordURL(consoleGraphs, graphRevision.GraphID+":"+strconv.FormatUint(graphRevision.Revision, 10))})
+					key := exactRevisionLabel(graphRevision.GraphID, graphRevision.Revision, graphRevision.Digest)
+					if _, exists := boundGraphs[key]; !exists {
+						boundGraphs[key] = struct{}{}
+						record.Links = append(record.Links, consoleweb.LinkModel{Label: "Bound Graph", Detail: key, URL: consoleRecordURL(consoleGraphs, graphRevision.GraphID+":"+strconv.FormatUint(graphRevision.Revision, 10))})
+					}
+					break
 				}
 			}
 		}
 	}
 	return record
+}
+
+func layoutLoopDetail(detail *consoleweb.LoopDetailModel) {
+	const nodeWidth, columnGap, rowGap = 212, 92, 138
+	levels := make(map[string]int, len(detail.Steps))
+	for _, step := range detail.Steps {
+		levels[step.ID] = -1
+	}
+	if _, ok := levels[detail.EntryStepID]; ok {
+		levels[detail.EntryStepID] = 0
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, edge := range detail.Transitions {
+			from, fromOK := levels[edge.FromStepID]
+			to, toOK := levels[edge.ToStepID]
+			if fromOK && toOK && from >= 0 && to < 0 {
+				levels[edge.ToStepID] = from + 1
+				changed = true
+			}
+		}
+	}
+	maxLevel := 0
+	for _, level := range levels {
+		if level > maxLevel {
+			maxLevel = level
+		}
+	}
+	rows := map[int]int{}
+	positions := make(map[string][2]int, len(detail.Steps))
+	for index := range detail.Steps {
+		level := levels[detail.Steps[index].ID]
+		if level < 0 {
+			maxLevel++
+			level = maxLevel
+		}
+		row := rows[level]
+		rows[level]++
+		x, y := 42+level*(nodeWidth+columnGap), 62+row*rowGap
+		detail.Steps[index].X, detail.Steps[index].Y = x, y
+		positions[detail.Steps[index].ID] = [2]int{x, y}
+	}
+	maxRows := 1
+	for _, count := range rows {
+		if count > maxRows {
+			maxRows = count
+		}
+	}
+	detail.CanvasWidth = 84 + (maxLevel+1)*(nodeWidth+columnGap)
+	if detail.CanvasWidth < 860 {
+		detail.CanvasWidth = 860
+	}
+	detail.CanvasHeight = 100 + maxRows*rowGap
+	if detail.CanvasHeight < 360 {
+		detail.CanvasHeight = 360
+	}
+	adjacency := make(map[string][]string, len(detail.Steps))
+	for _, transition := range detail.Transitions {
+		adjacency[transition.FromStepID] = append(adjacency[transition.FromStepID], transition.ToStepID)
+	}
+	for index := range detail.Transitions {
+		from, fromOK := positions[detail.Transitions[index].FromStepID]
+		to, toOK := positions[detail.Transitions[index].ToStepID]
+		if !fromOK || !toOK {
+			continue
+		}
+		x1, y1 := from[0]+nodeWidth, from[1]+51
+		x2, y2 := to[0], to[1]+51
+		backwardEdge := x2 <= x1
+		detail.Transitions[index].Return = loopPathExists(adjacency, detail.Transitions[index].ToStepID, detail.Transitions[index].FromStepID)
+		if backwardEdge {
+			bend := y1 + 72
+			detail.Transitions[index].Path = fmt.Sprintf("M %d %d C %d %d, %d %d, %d %d", x1, y1, x1+56, bend, x2-56, bend, x2, y2)
+			detail.Transitions[index].LabelX, detail.Transitions[index].LabelY = (x1+x2)/2, bend+14
+		} else {
+			mid := (x1 + x2) / 2
+			detail.Transitions[index].Path = fmt.Sprintf("M %d %d C %d %d, %d %d, %d %d", x1, y1, mid, y1, mid, y2, x2, y2)
+			detail.Transitions[index].LabelX, detail.Transitions[index].LabelY = mid, (y1+y2)/2-8
+		}
+	}
+}
+
+func loopPathExists(adjacency map[string][]string, start, target string) bool {
+	stack := []string{start}
+	seen := make(map[string]struct{}, len(adjacency))
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if current == target {
+			return true
+		}
+		if _, exists := seen[current]; exists {
+			continue
+		}
+		seen[current] = struct{}{}
+		stack = append(stack, adjacency[current]...)
+	}
+	return false
 }
 
 func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw string) consoleweb.RecordModel {
