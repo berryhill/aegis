@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -417,11 +418,13 @@ func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *test
 	digest := "sha256:" + strings.Repeat("a", 64)
 	revision, validation, err := loop.NewRevision(loop.LoopRevision{
 		LoopID: "loop.review", Revision: 3, PreviousDigest: digest, EntryStepID: "review",
+		Inputs:  []loop.Port{{ID: "request", Type: loop.TypeString, Required: true}},
+		Outputs: []loop.Port{{ID: "result", Type: loop.TypeArtifact, Required: true}},
 		Steps: []loop.Step{
-			{ID: "review", Kind: loop.StepAction, Retry: loop.RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "review-receipt", MediaType: "application/json", ExpectedDigest: digest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1}}},
-			{ID: "done", Kind: loop.StepTerminal, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded}},
+			{ID: "review", Kind: loop.StepAction, InputPorts: []loop.Port{{ID: "request", Type: loop.TypeString, Required: true}}, OutputPorts: []loop.Port{{ID: "result", Type: loop.TypeArtifact, Required: true}}, Retry: loop.RetryPolicy{MaxAttempts: 2}, EvidenceClaims: []loop.EvidenceClaim{{Claim: "review-receipt", MediaType: "application/json", ExpectedDigest: digest, VerifierID: evidence.ArtifactVerifierID, PolicyVersion: evidence.VerifierPolicyV1}}},
+			{ID: "done", Kind: loop.StepTerminal, InputPorts: []loop.Port{{ID: "result", Type: loop.TypeArtifact, Required: true}}, OutputPorts: []loop.Port{{ID: "result", Type: loop.TypeArtifact, Required: true}}, Retry: loop.RetryPolicy{MaxAttempts: 1}, Terminal: &loop.TerminalDefinition{Outcome: loop.OutcomeSucceeded, OutputMappings: []loop.PortMapping{{SourcePort: "result", TargetPort: "result"}}}},
 		},
-		Transitions:      []loop.Transition{{ID: "complete", FromStepID: "review", ToStepID: "done"}},
+		Transitions:      []loop.Transition{{ID: "complete", FromStepID: "review", ToStepID: "done", Condition: "approved", MaxTraversals: 3, Mappings: []loop.PortMapping{{SourcePort: "result", TargetPort: "result"}}}},
 		RequiredEvidence: []loop.EvidenceRequirement{{Claim: "review-receipt", ProducerStepID: "review"}},
 	})
 	if err != nil {
@@ -452,19 +455,46 @@ func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *test
 	if len(record.Links) != 1 || record.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=7#/agents" {
 		t.Fatalf("Loop publisher link lost exact Agent revision: %+v", record.Links)
 	}
-	values := make(map[string]string, len(record.Fields))
-	for _, field := range record.Fields {
-		values[field.Label] = field.Value
+	if record.Loop == nil || record.Digest != revision.Digest || record.Loop.Digest != revision.Digest || record.Loop.PreviousDigest != digest || record.Loop.EntryStepID != "review" {
+		t.Fatalf("Loop exact revision projection lost identity: %+v", record)
 	}
-	for label, fragment := range map[string]string{
-		"Executable steps": "review · action · max 2 attempt(s)", "Transitions": "review → done",
-		"Evidence contract": "review-receipt", "Validation": string(loop.ValidationValid),
-		"Lifecycle history": "1 immutable event(s)", "Publisher Agent": "agent-reviewer revision 7",
-		"Authority provenance": "mandate mandate-review · stanza operator", "Immutable revision": revision.Digest,
-	} {
-		if !strings.Contains(values[label], fragment) {
-			t.Fatalf("Loop field %q=%q, want fragment %q", label, values[label], fragment)
-		}
+	if len(record.Fields) != 0 {
+		t.Fatalf("Loop retained generic flattened inspector fields: %+v", record.Fields)
+	}
+	wantValidation := fmt.Sprintf("%s · %s %s", validation.Outcome, validation.Validator.ID, validation.Validator.Version)
+	if record.Loop.Validation != wantValidation || record.Loop.ValidationDigest != validation.Digest {
+		t.Fatalf("Loop validation projection lost exact result: %+v", record.Loop)
+	}
+	if len(record.Loop.Inputs) != 1 || record.Loop.Inputs[0].ID != "request" || !record.Loop.Inputs[0].Required || len(record.Loop.Outputs) != 1 || record.Loop.Outputs[0].Type != "artifact" {
+		t.Fatalf("Loop interface projection lost typed ports: %+v", record.Loop)
+	}
+	steps := make(map[string]consoleweb.LoopStepModel, len(record.Loop.Steps))
+	for _, step := range record.Loop.Steps {
+		steps[step.ID] = step
+	}
+	reviewStep, reviewOK := steps["review"]
+	doneStep, doneOK := steps["done"]
+	if len(record.Loop.Steps) != 2 || !reviewOK || !doneOK || !reviewStep.Entry || reviewStep.MaxAttempts != 2 || len(reviewStep.EvidenceClaims) != 1 || reviewStep.EvidenceClaims[0].VerifierID != evidence.ArtifactVerifierID || doneStep.TerminalOutcome != "succeeded" || len(doneStep.TerminalMappings) != 1 {
+		t.Fatalf("Loop step projection lost retries, claims, or terminal definition: %+v", record.Loop.Steps)
+	}
+	if len(record.Loop.Transitions) != 1 || record.Loop.Transitions[0].FromStepID != "review" || record.Loop.Transitions[0].ToStepID != "done" || record.Loop.Transitions[0].Condition != "approved" || record.Loop.Transitions[0].MaxTraversals != 3 || len(record.Loop.Transitions[0].Mappings) != 1 {
+		t.Fatalf("Loop transition projection lost exact bounded control flow: %+v", record.Loop.Transitions)
+	}
+	if record.Loop.CanvasWidth < 860 || record.Loop.CanvasHeight < 360 || record.Loop.Transitions[0].Path == "" {
+		t.Fatalf("Loop topology projection did not produce a bounded renderable canvas: %+v", record.Loop)
+	}
+	if reviewStep.X >= doneStep.X || reviewStep.Y < 0 || doneStep.Y < 0 {
+		t.Fatalf("Loop topology projection did not place the entry before its successor: review=%+v done=%+v", reviewStep, doneStep)
+	}
+	if len(record.Loop.RequiredEvidence) != 1 || record.Loop.RequiredEvidence[0].Claim != "review-receipt" || len(record.Loop.LifecycleHistory) != 1 || record.Loop.LifecycleHistory[0].Digest != event.Digest || record.Loop.LifecycleHistory[0].MandateID != "mandate-review" {
+		t.Fatalf("Loop evidence or lifecycle projection lost authoritative records: %+v", record.Loop)
+	}
+	provenanceFields := make(map[string]string, len(record.Loop.Provenance))
+	for _, field := range record.Loop.Provenance {
+		provenanceFields[field.Label] = field.Value
+	}
+	if !strings.Contains(provenanceFields["Publisher Agent"], "agent-reviewer r7 @ "+digest) || provenanceFields["Authority context"] != "authority-review @ "+digest || provenanceFields["Mandate"] != "mandate-review" || provenanceFields["Trust stanza"] != "operator" || provenanceFields["Validation binding"] != validation.Digest {
+		t.Fatalf("Loop provenance projection lost exact bindings: %+v", record.Loop.Provenance)
 	}
 	view.Lifecycle.ActiveRevision = revision.Revision - 1
 	view.Lifecycle.ActiveDigest = digest
@@ -472,6 +502,35 @@ func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *test
 	activeLabel := exactRevisionLabel(revision.LoopID, revision.Revision-1, digest)
 	if historical.Lifecycle != "inactive" || strings.Contains(historical.Readiness, "Active exact revision") || !strings.Contains(historical.Readiness, activeLabel) {
 		t.Fatalf("historical Loop revision was mislabeled: %+v", historical)
+	}
+}
+
+func TestLoopLayoutMarksGraphCyclesNotMerelyBackwardDrawingEdges(t *testing.T) {
+	acyclic := &consoleweb.LoopDetailModel{
+		EntryStepID: "a",
+		Steps:       []consoleweb.LoopStepModel{{ID: "a"}, {ID: "b"}, {ID: "c"}},
+		Transitions: []consoleweb.LoopTransitionModel{{ID: "a-b", FromStepID: "a", ToStepID: "b"}, {ID: "a-c", FromStepID: "a", ToStepID: "c"}, {ID: "c-b", FromStepID: "c", ToStepID: "b"}},
+	}
+	layoutLoopDetail(acyclic)
+	for _, edge := range acyclic.Transitions {
+		if edge.Return {
+			t.Fatalf("acyclic convergence edge %s was misclassified as a cycle edge", edge.ID)
+		}
+		if edge.Path == "" {
+			t.Fatalf("acyclic edge %s did not receive a render path", edge.ID)
+		}
+	}
+
+	cyclic := &consoleweb.LoopDetailModel{
+		EntryStepID: "a",
+		Steps:       []consoleweb.LoopStepModel{{ID: "a"}, {ID: "b"}},
+		Transitions: []consoleweb.LoopTransitionModel{{ID: "a-b", FromStepID: "a", ToStepID: "b"}, {ID: "b-a", FromStepID: "b", ToStepID: "a"}},
+	}
+	layoutLoopDetail(cyclic)
+	for _, edge := range cyclic.Transitions {
+		if !edge.Return {
+			t.Fatalf("cycle edge %s was not classified as part of a cycle", edge.ID)
+		}
 	}
 }
 

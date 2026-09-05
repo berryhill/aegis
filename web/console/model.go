@@ -133,9 +133,59 @@ type RecordModel struct {
 // Its stable record URL never carries identity or authority input.
 type LinkModel struct{ Label, Detail, URL string }
 
+// LoopDetailModel is a presentation-only projection of one authoritative,
+// immutable Loop revision. Definition data is deliberately separate from
+// execution records: this model never carries a run, attempt, artifact,
+// receipt, or disposition.
 type LoopDetailModel struct {
-	TargetID, Digest, PublisherID, ExpectedLifecycleDigest string
-	CanActivate, CanRetire                                 bool
+	TargetID, Digest, PreviousDigest, PublisherID, ExpectedLifecycleDigest string
+	EntryStepID, Validation, ValidationDigest                              string
+	CanActivate, CanRetire                                                 bool
+	CanvasWidth, CanvasHeight                                              int
+	Inputs, Outputs                                                        []LoopPortModel
+	Steps                                                                  []LoopStepModel
+	Transitions                                                            []LoopTransitionModel
+	RequiredEvidence                                                       []LoopEvidenceRequirementModel
+	ValidationIssues                                                       []FieldModel
+	Provenance                                                             []FieldModel
+	LifecycleHistory                                                       []LoopLifecycleEventModel
+}
+
+type LoopPortModel struct {
+	ID, Type string
+	Required bool
+}
+
+type LoopStepModel struct {
+	ID, Kind, GateMode, TerminalOutcome string
+	MaxAttempts                         uint16
+	Entry                               bool
+	X, Y                                int
+	Inputs, Outputs                     []LoopPortModel
+	EvidenceClaims                      []LoopEvidenceClaimModel
+	TerminalMappings                    []LoopPortMappingModel
+}
+
+type LoopEvidenceClaimModel struct {
+	Claim, MediaType, ExpectedDigest, VerifierID, PolicyVersion string
+}
+
+type LoopEvidenceRequirementModel struct{ Claim, ProducerStepID string }
+
+type LoopPortMappingModel struct{ SourcePort, TargetPort string }
+
+type LoopTransitionModel struct {
+	ID, FromStepID, ToStepID, Condition string
+	MaxTraversals                       uint16
+	Path                                string
+	LabelX, LabelY                      int
+	Return                              bool
+	Mappings                            []LoopPortMappingModel
+}
+
+type LoopLifecycleEventModel struct {
+	EventID, State, Revision, PreviousDigest, Publisher, Authority string
+	MandateID, StanzaID, OccurredAt, Digest                        string
 }
 
 // QueueDetailModel is a presentation-only projection of authoritative queue

@@ -151,7 +151,10 @@ templ PasswordRotation(csrf string) {
 }
 
 templ Workspace(surface SurfaceModel) {
-	<section class="surface active" id={ "surface-" + surface.Domain } aria-labelledby="surface-title">
+	if surface.Domain == DomainLoops && surface.InspectorOpen && surface.Inspector != nil && surface.Inspector.Loop != nil {
+		@LoopDetailPage(surface, surface.Inspector)
+	} else {
+		<section class="surface active" id={ "surface-" + surface.Domain } aria-labelledby="surface-title">
 		<div class="page-head">
 			<div class="surface-header">
 				<span class="eyebrow">{ surface.Eyebrow }</span>
@@ -197,7 +200,8 @@ templ Workspace(surface SurfaceModel) {
 			}
 			@Inspector(surface, surface.Inspector, surface.InspectorOpen)
 		}
-	</section>
+		</section>
+	}
 }
 
 templ CharterImportPage(csrf string, proposal CharterImportProposal, operation *AgentOperationModel) {
@@ -487,23 +491,222 @@ templ AgentLifecycleForm(surface SurfaceModel, record *RecordModel, lifecycle, l
 }
 
 templ LoopInspector(surface SurfaceModel, record *RecordModel) {
-	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a id="close-inspector" class="secondary" href="/console/loops">Back to Loops</a></div>
-	<div class="panel-body"><div class="section-label">Readiness</div><div class="inline-notice">{ record.Readiness }. Browser controls request a command only; execute-time admission resolves the exact publisher and authority again.</div>
-		@RelatedRecords(record.Links)
-		<div class="button-row">
-			if record.Loop.CanActivate {
-				@LoopLifecycleForm(surface.CSRF, record.Loop, "active", "Preview activation", false)
+	@LoopDetailPage(surface, record)
+}
+
+templ LoopDetailPage(surface SurfaceModel, record *RecordModel) {
+	<section class="surface active loop-detail-page" id="loop-detail" aria-labelledby="loop-detail-title">
+		<nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ consoleRoute(DomainLoops, "") }>← Back to Loops</a></nav>
+		<header class="loop-record-head">
+			<div class="loop-record-main">
+				<div class="loop-title-row"><h1 id="loop-detail-title">{ record.Label }</h1><span class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span><span class={ "validation-chip " + loopValidationClass(record.Loop.Validation) }>Validation · { loopValidationOutcome(record.Loop.Validation) }</span></div>
+				<p class="loop-revision">{ record.Label } · { record.Revision }</p>
+				<p class="loop-readiness">{ record.Readiness }</p>
+				<dl class="loop-summary" aria-label="Loop revision summary"><div><dt>Control-flow steps</dt><dd>{ fmt.Sprintf("%d", len(record.Loop.Steps)) }</dd></div><div><dt>Declared inputs</dt><dd>{ fmt.Sprintf("%d", len(record.Loop.Inputs)) }</dd></div><div><dt>Evidence contract</dt><dd>{ fmt.Sprintf("%d", loopEvidenceCount(record.Loop)) }</dd></div><div><dt>Traversal bounds</dt><dd>{ loopTraversalBoundCount(record.Loop.Transitions) }</dd></div></dl>
+			</div>
+			<div class="loop-record-actions"><a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a><details class="definition-disclosure"><summary class="secondary">Definition details</summary><div class="definition-drawer"><div class="drawer-head"><strong>Definition details</strong><span>Exact immutable revision</span></div><dl class="spec"><dt>Loop ID</dt><dd>{ record.Label }</dd><dt>Revision</dt><dd>{ record.Revision }</dd><dt>Revision digest</dt><dd>{ record.Loop.Digest }</dd><dt>Previous digest</dt><dd>{ record.Loop.PreviousDigest }</dd><dt>Entry step</dt><dd>{ record.Loop.EntryStepID }</dd><dt>Lifecycle</dt><dd>{ record.Lifecycle }</dd><dt>Validation</dt><dd>{ record.Loop.Validation }</dd><dt>Validation digest</dt><dd>{ record.Loop.ValidationDigest }</dd></dl>@FieldList(record.Loop.ValidationIssues, "No validation issues recorded")<h3>Exact references</h3>@RelatedRecords(record.Links)</div></details></div>
+			<div class="loop-record-foot"><strong>Graph-child execution only</strong><span>This Loop can run only through a Graph that binds this exact revision and digest. Viewing the definition or its evidence contract grants no runtime authority.</span></div>
+		</header>
+		<section class="loop-canvas-panel" aria-labelledby="loop-control-flow">
+			<div class="canvas-bar"><div><span class="eyebrow">Read-only definition topology</span><h2 class="canvas-title" id="loop-control-flow">Control flow · { record.Label } { record.Revision }</h2></div><span class="canvas-hint">Scroll to inspect · select a node for its contract</span></div>
+			if len(record.Loop.Steps) == 0 {
+				<p class="empty-note">No steps are declared.</p>
 			}
-			if record.Loop.CanRetire {
-				@LoopLifecycleForm(surface.CSRF, record.Loop, "retired", "Preview retirement", true)
+			if len(record.Loop.Steps) > 0 {
+				<div class="loop-canvas-viewport" tabindex="0" role="region" aria-label={ "Scrollable control-flow graph for " + record.Label }>
+					<svg class="loop-flow-svg" viewBox={ fmt.Sprintf("0 0 %d %d", record.Loop.CanvasWidth, record.Loop.CanvasHeight) } width={ fmt.Sprintf("%d", record.Loop.CanvasWidth) } height={ fmt.Sprintf("%d", record.Loop.CanvasHeight) } role="img" aria-labelledby="loop-flow-title loop-flow-desc">
+						<title id="loop-flow-title">{ record.Label } control flow</title><desc id="loop-flow-desc">{ fmt.Sprintf("%d steps and %d directed transitions. Select a step to inspect its exact contract below.", len(record.Loop.Steps), len(record.Loop.Transitions)) }</desc>
+						<defs><marker id="loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
+						<g class="loop-edges">
+							for _, transition := range record.Loop.Transitions {
+								if transition.Path != "" {
+									<path class={ templ.KV("return", transition.Return) } d={ transition.Path } marker-end="url(#loop-arrow)"><title>{ transition.FromStepID } to { transition.ToStepID }: { loopOptionalLabel(transition.Condition) }</title></path><text x={ fmt.Sprintf("%d", transition.LabelX) } y={ fmt.Sprintf("%d", transition.LabelY) } text-anchor="middle">{ loopEdgeLabel(transition) }</text>
+								}
+							}
+						</g>
+						<g class="loop-nodes">
+							for _, step := range record.Loop.Steps {
+								<a href={ "#step-contract-" + step.ID } aria-label={ "Inspect step " + step.ID }><g class={ "loop-svg-node " + step.Kind } transform={ fmt.Sprintf("translate(%d %d)", step.X, step.Y) }><rect width="212" height="102" rx="8"></rect><line x1="1.5" y1="8" x2="1.5" y2="94"></line><text class="node-title" x="16" y="28">{ step.ID }</text><text class="node-kind-text" x="16" y="50">{ step.Kind }</text><text class="node-meta" x="16" y="77">{ fmt.Sprintf("%d in · %d out · max %d", len(step.Inputs), len(step.Outputs), step.MaxAttempts) }</text>
+									if step.Entry {
+										<text class="node-state" x="196" y="27" text-anchor="end">ENTRY</text>
+									}
+									if step.TerminalOutcome != "" {
+										<text class="node-state" x="196" y="51" text-anchor="end">{ strings.ToUpper(step.TerminalOutcome) }</text>
+									}
+								</g></a>
+							}
+						</g>
+					</svg>
+				</div>
 			}
+			<details class="transition-contract"><summary>Transition contract · { fmt.Sprintf("%d", len(record.Loop.Transitions)) } edges</summary>
+				if len(record.Loop.Transitions) == 0 {
+					<p class="empty-note">No transitions are declared. Terminal-only definitions remain explicit.</p>
+				}
+				if len(record.Loop.Transitions) > 0 {
+					<ol class="loop-transitions" aria-label="Control-flow transitions">
+						for _, transition := range record.Loop.Transitions {
+							<li><strong>{ transition.ID }</strong><span class="transition-path"><span class="sr-only">From </span>{ transition.FromStepID } <span aria-hidden="true">→</span><span class="sr-only"> to </span> { transition.ToStepID }</span><dl class="compact-facts"><div><dt>Condition</dt><dd>{ loopOptionalLabel(transition.Condition) }</dd></div><div><dt>Traversal bound</dt><dd>{ loopTraversalLabel(transition.MaxTraversals) }</dd></div></dl>@LoopMappings(transition.Mappings, "No port mappings")</li>
+						}
+					</ol>
+				}
+			</details>
+		</section>
+		<nav class="loop-tabs" aria-label="Loop supporting definition sections"><a href="#loop-interface">Required inputs</a><a href="#loop-evidence-outcomes">Evidence and outcomes</a><a href="#loop-step-contracts">Step contracts</a></nav>
+		<div class="loop-support-grid">
+			<section class="loop-section" id="loop-interface" aria-labelledby="loop-interface-title"><div class="loop-section-head"><div><span class="eyebrow">Typed interface</span><h2 id="loop-interface-title">Required inputs and declared outputs</h2></div></div><div class="loop-contract-grid"><div><h3>Loop inputs</h3>@LoopPorts(record.Loop.Inputs, "No Loop inputs")</div><div><h3>Loop outputs</h3>@LoopPorts(record.Loop.Outputs, "No Loop outputs")</div></div></section>
+			<section class="loop-section" id="loop-evidence-outcomes" aria-labelledby="loop-evidence-title"><div class="loop-section-head"><div><span class="eyebrow">Completion contract</span><h2 id="loop-evidence-title">Evidence and outcomes</h2></div></div>
+				if len(record.Loop.RequiredEvidence) == 0 {
+					<p class="empty-note">No Loop-level evidence requirements are declared.</p>
+				}
+				if len(record.Loop.RequiredEvidence) > 0 {
+					<dl class="spec">
+						for _, requirement := range record.Loop.RequiredEvidence {
+							<dt>{ requirement.Claim }</dt><dd>Producer step · { requirement.ProducerStepID }</dd>
+						}
+					</dl>
+				}
+				<p class="inline-notice">Requirements are definition truth only. They do not assert that an artifact, verifier receipt, or terminal disposition exists.</p>
+			</section>
 		</div>
-		<div class="section-label">Provenance and contract</div><dl id="inspector-fields" class="spec">
-			for _, field := range record.Fields {
-				<dt>{ field.Label }</dt><dd>{ field.Value }</dd>
+		<section class="loop-section" id="loop-step-contracts" aria-labelledby="loop-step-contracts-title"><div class="loop-section-head"><div><span class="eyebrow">Selectable node details</span><h2 id="loop-step-contracts-title">Step contracts</h2></div></div><div class="loop-step-contracts">
+			for _, step := range record.Loop.Steps {
+				<article id={ "step-contract-" + step.ID } tabindex="-1" aria-labelledby={ "step-contract-title-" + step.ID }><header><div><span class="node-kind">{ step.Kind }</span><h3 id={ "step-contract-title-" + step.ID }>{ step.ID }</h3></div><span>{ fmt.Sprintf("Maximum %d attempt(s)", step.MaxAttempts) }</span></header><div class="loop-contract-grid"><div><h4>Input ports</h4>@LoopPorts(step.Inputs, "No step inputs")</div><div><h4>Output ports</h4>@LoopPorts(step.Outputs, "No step outputs")</div></div><h4>Evidence claims</h4>
+					if len(step.EvidenceClaims) == 0 {
+						<p class="empty-note">No evidence claims declared for this step.</p>
+					}
+					if len(step.EvidenceClaims) > 0 {
+						<div class="loop-evidence-list">
+							for _, claim := range step.EvidenceClaims {
+								<dl><dt>{ claim.Claim }</dt><dd><span>{ claim.MediaType }</span><span>Expected digest · { loopOptionalLabel(claim.ExpectedDigest) }</span><span>Verifier · { claim.VerifierID } / { claim.PolicyVersion }</span></dd></dl>
+							}
+						</div>
+					}
+					if step.TerminalOutcome != "" {
+						<h4>Terminal definition · { step.TerminalOutcome }</h4>@LoopMappings(step.TerminalMappings, "No terminal output mappings")
+					}
+				</article>
+			}
+		</div></section>
+		<details class="loop-deep-details"><summary>Provenance, lifecycle history, and lifecycle controls</summary>
+			<div class="loop-support-grid">
+				<section class="loop-section" aria-labelledby="loop-controls"><h2 id="loop-controls">Lifecycle controls</h2><p class="inline-notice">These controls create a reviewed, digest-bound preview only; execute-time admission resolves the exact publisher and authority again.</p><div class="button-row">
+					if record.Loop.CanActivate {
+						@LoopLifecycleForm(surface.CSRF, record.Loop, "active", "Preview activation", false)
+					}
+					if record.Loop.CanRetire {
+						@LoopLifecycleForm(surface.CSRF, record.Loop, "retired", "Preview retirement", true)
+					}
+				</div></section>
+				<section class="loop-section" aria-labelledby="loop-provenance"><h2 id="loop-provenance">Publication provenance</h2>@FieldList(record.Loop.Provenance, "Publication provenance unavailable")</section>
+			</div>
+			<section class="loop-section" aria-labelledby="loop-lifecycle-history"><h2 id="loop-lifecycle-history">Immutable lifecycle history</h2>
+				if len(record.Loop.LifecycleHistory) == 0 {
+					<p class="empty-note">No lifecycle events are recorded for this revision.</p>
+				}
+				if len(record.Loop.LifecycleHistory) > 0 {
+					<ol class="loop-history">
+						for _, event := range record.Loop.LifecycleHistory {
+							<li><header><strong>{ event.EventID }</strong><span class={ "lifecycle " + event.State }>{ event.State }</span><time datetime={ event.OccurredAt }>{ event.OccurredAt }</time></header><dl class="spec"><dt>Selected revision</dt><dd>{ event.Revision }</dd><dt>Event digest</dt><dd>{ event.Digest }</dd><dt>Previous event digest</dt><dd>{ event.PreviousDigest }</dd><dt>Publisher Agent</dt><dd>{ event.Publisher }</dd><dt>Authority</dt><dd>{ event.Authority }</dd><dt>Mandate / stanza</dt><dd>{ event.MandateID } / { event.StanzaID }</dd></dl></li>
+						}
+					</ol>
+				}
+			</section>
+		</details>
+	</section>
+}
+
+func loopEvidenceCount(detail *LoopDetailModel) int {
+	count := len(detail.RequiredEvidence)
+	for _, step := range detail.Steps { count += len(step.EvidenceClaims) }
+	return count
+}
+
+func loopTraversalBoundCount(transitions []LoopTransitionModel) string {
+	count := 0
+	for _, transition := range transitions { if transition.MaxTraversals > 0 { count++ } }
+	return fmt.Sprintf("%d declared", count)
+}
+
+func loopValidationOutcome(value string) string {
+	if value == "" { return "Unavailable" }
+	if index := strings.Index(value, " · "); index >= 0 { return value[:index] }
+	return value
+}
+
+func loopValidationClass(value string) string {
+	outcome := strings.ToLower(loopValidationOutcome(value))
+	if outcome == "valid" { return "valid" }
+	if outcome == "unavailable" { return "unavailable" }
+	return "invalid"
+}
+
+func loopRunGraphURL(record *RecordModel) string {
+	seen := map[string]struct{}{}
+	exact := ""
+	for _, link := range record.Links {
+		if !strings.HasPrefix(link.Label, "Bound Graph") { continue }
+		if _, exists := seen[link.URL]; exists { continue }
+		seen[link.URL] = struct{}{}
+		exact = link.URL
+	}
+	if len(seen) == 1 { return exact }
+	return "/console/graphs#/graphs"
+}
+
+func loopRunGraphLabel(links []LinkModel) string {
+	seen := map[string]struct{}{}
+	for _, link := range links {
+		if strings.HasPrefix(link.Label, "Bound Graph") { seen[link.URL] = struct{}{} }
+	}
+	if len(seen) == 0 { return "Find a Graph" }
+	if len(seen) == 1 { return "Run from a Graph" }
+	return "Choose a Graph"
+}
+
+func loopEdgeLabel(transition LoopTransitionModel) string {
+	if transition.Condition != "" { return transition.Condition }
+	return transition.ID
+}
+templ LoopPorts(ports []LoopPortModel, empty string) {
+	if len(ports) == 0 {
+		<p class="empty-note">{ empty }</p>
+	}
+	if len(ports) > 0 {
+		<dl class="loop-port-list">
+			for _, port := range ports {
+				<div><dt>{ port.ID }</dt><dd>{ port.Type }</dd><dd>{ loopRequiredLabel(port.Required) }</dd></div>
 			}
 		</dl>
-	</div>
+	}
+}
+
+templ LoopMappings(mappings []LoopPortMappingModel, empty string) {
+	if len(mappings) == 0 {
+		<p class="empty-note">{ empty }</p>
+	}
+	if len(mappings) > 0 {
+		<ul class="mapping-list">
+			for _, mapping := range mappings {
+				<li><code>{ mapping.SourcePort }</code><span aria-hidden="true">→</span><code>{ mapping.TargetPort }</code></li>
+			}
+		</ul>
+	}
+}
+
+func loopRequiredLabel(required bool) string {
+	if required { return "Required" }
+	return "Optional"
+}
+
+func loopTraversalLabel(bound uint16) string {
+	if bound == 0 { return "No traversal bound declared" }
+	return fmt.Sprintf("Maximum %d", bound)
+}
+
+func loopOptionalLabel(value string) string {
+	if value == "" { return "Not declared" }
+	return value
 }
 
 templ LoopLifecycleForm(csrf string, detail *LoopDetailModel, state, label string, dangerous bool) {
