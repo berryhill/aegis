@@ -282,13 +282,22 @@ def replace_text(devtools: DevTools, selector: str, text: str) -> None:
 
 def tap(devtools: DevTools, selector: str) -> None:
     """Send real browser touch events for controls under mobile emulation."""
+    set_touch_emulation(devtools, True)
+    present = devtools.evaluate(
+        "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
+        "if (!node) return false; node.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); return true; })()"
+    )
+    require(present is True, f"browser control missing: {selector}")
+    # Apply the responsive scroll before measuring. Otherwise touch coordinates
+    # can describe the pre-scroll layout even though the hit test has moved.
+    time.sleep(0.05)
     point = devtools.evaluate(
         "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
-        "if (!node) return null; node.scrollIntoView({block: 'center', inline: 'center'}); const box = node.getBoundingClientRect();"
+        "if (!node) return null; const box = node.getBoundingClientRect();"
         "const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);"
         "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, target: hit === node || node.contains(hit)}; })()"
     )
-    require(isinstance(point, dict), f"browser control missing: {selector}")
+    require(isinstance(point, dict), f"browser control missing after scroll: {selector}")
     require(point["width"] > 0 and point["height"] > 0, f"browser control is not visible: {selector}; state={point}")
     require(bool(point["target"]), f"browser control is obscured: {selector}; state={point}")
     devtools.command("Input.dispatchTouchEvent", {
@@ -296,6 +305,14 @@ def tap(devtools: DevTools, selector: str) -> None:
         "touchPoints": [{"x": point["x"], "y": point["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
     })
     devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+
+def set_touch_emulation(devtools: DevTools, enabled: bool) -> None:
+    """Make CDP touch dispatch produce the native browser gesture lifecycle."""
+    params: dict[str, Any] = {"enabled": enabled}
+    if enabled:
+        params["maxTouchPoints"] = 1
+    devtools.command("Emulation.setTouchEmulationEnabled", params)
 
 
 def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
@@ -497,6 +514,7 @@ def main() -> int:
         tap(devtools, "#record-proof-agent")
         wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.activeElement?.id === 'agent-inline-detail' && document.documentElement.scrollWidth <= innerWidth", "narrow reduced-motion touch Agent detail")
         time.sleep(1.0)
+        set_touch_emulation(devtools, False)
         devtools.command("Emulation.clearDeviceMetricsOverride")
         devtools.command("Emulation.setEmulatedMedia", {"features": []})
 

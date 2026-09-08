@@ -109,6 +109,50 @@ class NativeKeyTest(unittest.TestCase):
             console_browser_test.key(mock.MagicMock(), "Space")
 
 
+class NativeTouchTest(unittest.TestCase):
+    def test_tap_enables_emulation_before_dispatching_native_touch(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            True,
+            {"x": 12, "y": 24, "width": 100, "height": 44, "target": True},
+        ]
+
+        with mock.patch.object(console_browser_test.time, "sleep"):
+            console_browser_test.tap(devtools, "#record-proof-agent")
+
+        self.assertEqual(
+            devtools.command.call_args_list,
+            [
+                mock.call("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1}),
+                mock.call("Input.dispatchTouchEvent", {
+                    "type": "touchStart",
+                    "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
+                }),
+                mock.call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}),
+            ],
+        )
+
+    def test_touch_emulation_is_explicitly_enabled_for_native_gestures(self):
+        devtools = mock.MagicMock()
+
+        console_browser_test.set_touch_emulation(devtools, True)
+
+        devtools.command.assert_called_once_with(
+            "Emulation.setTouchEmulationEnabled",
+            {"enabled": True, "maxTouchPoints": 1},
+        )
+
+    def test_touch_emulation_can_be_disabled_after_navigation(self):
+        devtools = mock.MagicMock()
+
+        console_browser_test.set_touch_emulation(devtools, False)
+
+        devtools.command.assert_called_once_with(
+            "Emulation.setTouchEmulationEnabled",
+            {"enabled": False},
+        )
+
+
 class NavigateTest(unittest.TestCase):
     def test_explicitly_navigates_selected_target(self):
         devtools = mock.MagicMock()
