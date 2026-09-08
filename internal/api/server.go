@@ -13,7 +13,6 @@ import (
 	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -234,7 +233,7 @@ func consoleQueueOperationHandler(svc *app.Service, manager *console.Manager, op
 		if err = operateConsoleQueueItem(c.Request().Context(), operator, subject, c.Param("item"), operation, newID); err != nil {
 			return err
 		}
-		return c.Redirect(http.StatusSeeOther, "/console/queue?record_key="+url.QueryEscape(c.Param("item"))+"#/queue")
+		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleQueue, c.Param("item")))
 	}
 }
 
@@ -539,6 +538,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{}, consoleError(err)
 		}
 		model.CSRF = csrf
+		if model.CollectionURL == "" {
+			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
+		}
 		return consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: model}, nil
 	}
 	consolePage := func(c *echo.Context) error {
@@ -793,7 +795,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			operation.Status = "Exact Agent registration already existed; authoritative readback matched."
 		}
 		operation.Revision, operation.RevisionDigest = strconv.FormatUint(agent.Revision.Revision, 10), agent.Revision.Digest
-		operation.ResultURL = "/console/agents?record_key=" + url.QueryEscape(agent.Revision.AgentID) + "#/agents"
+		operation.ResultURL = consoleRecordURL(consoleAgents, agent.Revision.AgentID)
 		return renderAgentOperation(c, http.StatusOK, subject, operation)
 	})
 	e.POST("/console/agents/:agent/lifecycle", func(c *echo.Context) error {
@@ -820,7 +822,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
-		return c.Redirect(http.StatusSeeOther, "/console/agents?record_key="+url.QueryEscape(agentID)+"#/agents")
+		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleAgents, agentID))
 	})
 	e.GET("/console/loops/compose", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
@@ -1034,6 +1036,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleError(err)
 		}
 		return c.Blob(http.StatusOK, "text/css; charset=utf-8", console.Styles())
+	})
+	e.GET("/console/assets/navigation.js", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.NavigationJS())
 	})
 	e.GET("/console/assets/datastar-v1.0.2.js", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {

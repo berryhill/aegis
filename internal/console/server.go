@@ -534,5 +534,6 @@ func (m *Manager) prune(now time.Time) {
 	}
 }
 
-func Styles() []byte   { return append([]byte(nil), consoleweb.CSS...) }
-func Datastar() []byte { return append([]byte(nil), consoleweb.Datastar...) }
+func Styles() []byte       { return append([]byte(nil), consoleweb.CSS...) }
+func NavigationJS() []byte { return append([]byte(nil), consoleweb.NavigationJS...) }
+func Datastar() []byte     { return append([]byte(nil), consoleweb.Datastar...) }

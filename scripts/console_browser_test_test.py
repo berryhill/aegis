@@ -94,9 +94,19 @@ class NativeKeyTest(unittest.TestCase):
             self.assertEqual(params["modifiers"], 8)
             self.assertEqual(params["windowsVirtualKeyCode"], 9)
 
+    def test_enter_uses_trusted_native_key_code(self):
+        devtools = mock.MagicMock()
+
+        console_browser_test.key(devtools, "Enter")
+
+        for call in devtools.command.call_args_list:
+            params = call.args[1]
+            self.assertEqual(params["windowsVirtualKeyCode"], 13)
+            self.assertEqual(params["nativeVirtualKeyCode"], 13)
+
     def test_unknown_key_fails_closed(self):
         with self.assertRaisesRegex(RuntimeError, "does not define a native key code"):
-            console_browser_test.key(mock.MagicMock(), "Enter")
+            console_browser_test.key(mock.MagicMock(), "Space")
 
 
 class NavigateTest(unittest.TestCase):

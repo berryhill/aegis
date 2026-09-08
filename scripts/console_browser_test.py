@@ -301,7 +301,7 @@ def tap(devtools: DevTools, selector: str) -> None:
 def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
     """Send real browser key events instead of calling DOM handlers directly."""
     modifiers = 8 if shift else 0
-    virtual_key = {"Tab": 9, "Escape": 27}.get(key_name)
+    virtual_key = {"Tab": 9, "Enter": 13, "Escape": 27}.get(key_name)
     require(virtual_key is not None, f"browser proof does not define a native key code for {key_name}")
     for event_type in ("rawKeyDown", "keyUp"):
         devtools.command("Input.dispatchKeyEvent", {
@@ -434,22 +434,32 @@ def main() -> int:
         click(devtools, "#charter-import-back")
         wait_for(devtools, "location.pathname === '/console/agents' && document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')", "native back link to Agent Registry")
         time.sleep(0.5)
-        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents"})
-        wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('proof-agent') && location.search.includes('revision=1')", "exact Agent Registry revision detail")
+        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents/proof-agent"})
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.querySelector('#agent-inline-detail')?.dataset.composition === 'agent-inline' && document.querySelector('#surface-list') && document.querySelector('#agent-inline-detail')?.textContent.includes('proof-agent') && location.search.includes('revision=1')", "exact inline Agent Registry revision detail")
 
         # Traverse the installed immutable fleet-control chain only through the
         # product's rendered related-record links.
         click(devtools, '.related-records a[href^="/console/loops?record_key=proof-loop%3A1"]')
-        wait_for(devtools, "location.pathname === '/console/loops' && location.search.includes('record_key=proof-loop%3A1') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "Agent to exact Loop related record")
+        wait_for(devtools, "location.pathname === '/console/loops' && location.hash === '#/loops/proof-loop:1' && location.search.includes('record_key=proof-loop%3A1') && document.querySelector('#loop-detail')?.dataset.composition === 'loop-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "Agent to exact replacement-page Loop related record")
         time.sleep(0.5)
         devtools.command("Page.reload", {"ignoreCache": True})
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "reloaded exact Loop canonical URL")
         time.sleep(0.5)
         click(devtools, '.related-records a[href^="/console/graphs?record_key=proof-graph%3A1"]')
-        wait_for(devtools, "location.pathname === '/console/graphs' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact Graph related record")
+        wait_for(devtools, "location.pathname === '/console/graphs' && location.hash === '#/graphs/proof-graph:1' && document.querySelector('#graph-detail-page')?.dataset.composition === 'graph-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact replacement-page Graph related record")
         time.sleep(0.5)
         click(devtools, '.related-records a[href^="/console/queue?record_key=queue-accepted"]')
-        wait_for(devtools, "location.pathname === '/console/queue' && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to Queue evidence, receipt, and disposition chain")
+        wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
+        desktop_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
+        require(desktop_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(desktop_detail_png) > 1024, "desktop detail screenshot was not a bounded PNG")
+        devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        narrow_detail = devtools.evaluate("(() => ({overflow: document.documentElement.scrollWidth > innerWidth, composition: document.querySelector('#queue-detail')?.dataset.composition, focused: document.activeElement?.id}))()")
+        require(narrow_detail == {"overflow": False, "composition": "queue-replacement", "focused": "queue-detail"}, f"narrow reduced-motion Queue detail lost DOM/focus fidelity: {narrow_detail}")
+        narrow_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
+        require(narrow_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(narrow_detail_png) > 1024 and narrow_detail_png != desktop_detail_png, "narrow detail screenshot did not prove viewport-specific rendering")
+        devtools.command("Emulation.clearDeviceMetricsOverride")
+        devtools.command("Emulation.setEmulatedMedia", {"features": []})
         time.sleep(0.5)
 
         devtools.evaluate("history.back()")
@@ -466,13 +476,67 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && location.search.includes('page=2') && location.search.includes('q=loop') && location.search.includes('lifecycle=draft') && document.querySelectorAll('#surface-list a').length === 1", "bounded pagination preserving Loop filters")
         time.sleep(0.5)
 
-        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents"})
-        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#inspector-fields')?.textContent.includes('1 @ sha256:')", "canonical direct load of exact Agent revision")
-        time.sleep(0.5)
-        devtools.command("Page.reload", {"ignoreCache": True})
-        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-agent'", "reloaded exact Agent revision")
+        # A keyboard selection and the rendered Back link must restore the
+        # collection's exact selected record, focus, filters, page, and viewport.
+        navigate(devtools, origin + "/console/agents#/agents")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent[data-detail-link][data-record-key=\"proof-agent\"]')", "focus-restoration Agent collection fixture")
+        time.sleep(1.0)
+        collection_state = devtools.evaluate("(() => { const node = document.querySelector('#record-proof-agent'); node.focus(); scrollTo(0, 0); return {path: location.pathname + location.search + location.hash, x: scrollX, y: scrollY, focused: document.activeElement.id}; })()")
+        require(collection_state == {"path": "/console/agents#/agents", "x": 0, "y": 0, "focused": "record-proof-agent"}, f"Agent collection fixture was not deterministic: {collection_state}")
+        key(devtools, "Enter")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && !!document.querySelector('#agent-inline-detail')", "keyboard-opened Agent detail")
+        time.sleep(1.0)
         click(devtools, "#close-inspector")
-        wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed Agent Registry detail")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents' && document.activeElement?.id === 'record-proof-agent' && scrollX === 0 && scrollY === 0", "Back link restored selected Agent focus and viewport")
+        time.sleep(1.0)
+
+        # The same native detail route remains operable by touch at a narrow
+        # viewport; reduced motion does not change route or focus semantics.
+        devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        tap(devtools, "#record-proof-agent")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.activeElement?.id === 'agent-inline-detail' && document.documentElement.scrollWidth <= innerWidth", "narrow reduced-motion touch Agent detail")
+        time.sleep(1.0)
+        devtools.command("Emulation.clearDeviceMetricsOverride")
+        devtools.command("Emulation.setEmulatedMedia", {"features": []})
+
+        # A missing requested identity must fail closed instead of selecting a
+        # nearby record or presenting prototype state as authoritative.
+        missing_record_event_start = len(devtools.events)
+        navigate(devtools, origin + "/console/agents?record_key=missing-agent#/agents/missing-agent")
+        wait_for(devtools, "document.readyState === 'complete' && document.body.innerText.includes('\\\"code\\\":\\\"invalid_request\\\"') && document.body.innerText.includes('\\\"message\\\":\\\"Bad Request\\\"') && !document.querySelector('#agent-inline-detail') && !document.body.innerText.includes('proof-agent')", "missing Agent detail denial")
+        time.sleep(1.0)
+        missing_record_event_end = len(devtools.events)
+
+        # Block the only executable page enhancement and prove the server-rendered
+        # canonical link still opens exact detail. Restore the resource policy
+        # before the remaining native dialog checks; no-script is a supported
+        # fallback, not a second route.
+        no_script_start = len(devtools.events)
+        devtools.command("Network.setBlockedURLs", {"urls": [origin + "/console/assets/navigation.js"]})
+        navigate(devtools, origin + "/console/agents#/agents")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')", "no-script Agent collection")
+        time.sleep(1.0)
+        click(devtools, "#record-proof-agent")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && !!document.querySelector('#agent-inline-detail') && !!document.querySelector('#close-inspector[href$=\"#/agents\"]')", "no-script exact Agent detail")
+        time.sleep(1.0)
+        blocked_navigation_assets = sum(
+            1 for event in devtools.events[no_script_start:]
+            if event.get("method") == "Network.loadingFailed"
+            and event.get("params", {}).get("blockedReason") == "inspector"
+        )
+        require(blocked_navigation_assets >= 1, "no-script fixture did not block the presentation enhancement")
+        devtools.command("Network.setBlockedURLs", {"urls": []})
+
+        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents/proof-agent"})
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && location.search.includes('revision=1') && document.querySelector('#agent-inline-detail')?.textContent.includes('r1 @ sha256:')", "canonical direct load of exact Agent revision")
+        time.sleep(1.0)
+        devtools.command("Page.reload", {"ignoreCache": True})
+        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#agent-detail-title')?.textContent.trim() === 'proof-agent'", "reloaded exact Agent revision")
+        time.sleep(1.0)
+        click(devtools, "#close-inspector")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents' && !document.querySelector('#agent-inline-detail') && !!document.querySelector('#record-proof-agent')", "closed Agent Registry detail into retained collection")
+        time.sleep(1.0)
 
         # Exercise native declarative modal commands through real Chrome input.
         # This fixture has no credential, authority selector, mutation endpoint,
@@ -611,7 +675,7 @@ def main() -> int:
         )
 
         failures: list[str] = []
-        for event in devtools.events:
+        for event_index, event in enumerate(devtools.events):
             method = event.get("method", "")
             params = event.get("params", {})
             if method == "Runtime.exceptionThrown":
@@ -619,9 +683,13 @@ def main() -> int:
             elif method == "Log.entryAdded":
                 entry = params.get("entry", {})
                 text = str(entry.get("text", ""))
+                if missing_record_event_start <= event_index < missing_record_event_end and text == "Failed to load resource: the server responded with a status of 400 (Bad Request)":
+                    continue
                 if entry.get("level") == "error" or "Content Security Policy" in text or "Refused to" in text:
                     failures.append("console/CSP error: " + text[:160])
             elif method == "Network.loadingFailed" and not params.get("canceled", False):
+                if params.get("blockedReason") == "inspector" or params.get("errorText") == "net::ERR_BLOCKED_BY_CLIENT":
+                    continue
                 failures.append("request failure")
             elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) >= 500:
                 response = params.get("response", {})

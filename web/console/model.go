@@ -54,28 +54,32 @@ type AuthenticationModel struct {
 }
 
 type SurfaceModel struct {
-	Domain                string
-	CSRF                  string
-	Title                 string
-	Eyebrow               string
-	Description           string
-	State                 string
-	Status                string
-	Source                string
-	ReasonCode            string
-	Authoritative         bool
-	TotalCount            int
-	Query                 string
-	Lifecycle             string
-	QueueState            string
-	TotalRecords          int
-	Actions               []ActionModel
-	Records               []RecordModel
-	ActiveRecords         []RecordModel
-	FailedRecords         []RecordModel
-	QueueStates           []string
-	Inspector             *RecordModel
-	InspectorOpen         bool
+	Domain        string
+	CSRF          string
+	Title         string
+	Eyebrow       string
+	Description   string
+	State         string
+	Status        string
+	Source        string
+	ReasonCode    string
+	Authoritative bool
+	TotalCount    int
+	Query         string
+	Lifecycle     string
+	QueueState    string
+	TotalRecords  int
+	Actions       []ActionModel
+	Records       []RecordModel
+	ActiveRecords []RecordModel
+	FailedRecords []RecordModel
+	QueueStates   []string
+	Inspector     *RecordModel
+	InspectorOpen bool
+	// CollectionURL is the server-rendered return location for the current
+	// bounded collection context. It contains presentation-only filters and
+	// pagination, never identity or authority inputs.
+	CollectionURL         string
 	Pagination            PaginationModel
 	CharterImportProposal CharterImportProposal
 }
@@ -127,6 +131,19 @@ type RecordModel struct {
 	Queue        *QueueDetailModel
 	Credential   *CredentialDetailModel
 	Loop         *LoopDetailModel
+	Agent        *AgentDetailModel
+}
+
+// AgentDetailModel is a structured, display-only projection of one exact
+// immutable Registry revision. DeclaredAuthority is not an effective stanza,
+// mandate, or permission grant.
+type AgentDetailModel struct {
+	StableID, FleetID, SourceKind, SourceID, OwnerID, AccountabilityID string
+	RuntimeAdapter, Runtime, RuntimeTarget                             string
+	CharterID, CharterDigest, RevisionDigest                           string
+	CharterRevision, Revision                                          uint64
+	Capabilities, Policies                                             []string
+	DeclaredAuthority, EffectiveAuthority, ProvisioningEvidence        string
 }
 
 // LinkModel is a presentation-only transition to an exact related record.

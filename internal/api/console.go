@@ -484,8 +484,10 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 		readiness = "Terminal; no later revisions permitted"
 	}
 	capabilities := strings.Join(revision.CapabilityDeclarations, ", ")
+	capabilityLabels := append([]string(nil), revision.CapabilityDeclarations...)
 	if capabilities == "" {
 		capabilities = "None declared"
+		capabilityLabels = []string{"None declared"}
 	}
 	policies := make([]string, 0, len(revision.PolicyRefs))
 	for _, policy := range revision.PolicyRefs {
@@ -501,6 +503,17 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 		Source: revision.Source.FleetID + " / " + revision.Source.Kind + " / " + revision.Source.SourceID, Owner: revision.Ownership.OwnerID,
 		Authority:    fmt.Sprintf("%d capabilities · %d policies declared", len(revision.CapabilityDeclarations), len(revision.PolicyRefs)),
 		Provisioning: "Not asserted by Registry record",
+		Agent: &consoleweb.AgentDetailModel{
+			StableID: revision.AgentID, FleetID: revision.Source.FleetID, SourceKind: revision.Source.Kind, SourceID: revision.Source.SourceID,
+			OwnerID: revision.Ownership.OwnerID, AccountabilityID: revision.Ownership.AccountabilityID,
+			RuntimeAdapter: revision.Runtime.Adapter, Runtime: revision.Runtime.Runtime, RuntimeTarget: revision.Runtime.Target,
+			CharterID: revision.Charter.ID, CharterRevision: revision.Charter.Revision, CharterDigest: revision.Charter.Digest,
+			Revision: revision.Revision, RevisionDigest: revision.Digest,
+			Capabilities: capabilityLabels, Policies: append([]string(nil), policies...),
+			DeclaredAuthority:    fmt.Sprintf("%d capabilities · %d policies declared", len(revision.CapabilityDeclarations), len(revision.PolicyRefs)),
+			EffectiveAuthority:   "Not evaluated by this Registry read; execution requires fresh stanza and mandate admission",
+			ProvisioningEvidence: "Not present on the Agent Registry revision",
+		},
 		Fields: []consoleweb.FieldModel{
 			{Label: "Stable Agent ID", Value: revision.AgentID},
 			{Label: "Fleet provenance", Value: revision.Source.FleetID + " / " + revision.Source.Kind + " / " + revision.Source.SourceID},
@@ -1403,15 +1416,38 @@ func exactRevisionLabel(id string, revision uint64, digest string) string {
 }
 
 func consoleRecordURL(domain consoleDomain, key string) string {
-	fragment := "#/" + string(domain)
-	if domain == consoleQueue {
-		fragment += "/" + url.PathEscape(key)
-	}
+	fragment := "#/" + string(domain) + "/" + url.PathEscape(key)
 	return "/console/" + string(domain) + "?record_key=" + url.QueryEscape(key) + fragment
 }
 
 func consoleAgentRevisionURL(id string, revision uint64) string {
-	return "/console/agents?record_key=" + url.QueryEscape(id) + "&revision=" + strconv.FormatUint(revision, 10) + "#/agents"
+	return "/console/agents?record_key=" + url.QueryEscape(id) + "&revision=" + strconv.FormatUint(revision, 10) + "#/agents/" + url.PathEscape(id)
+}
+
+func consoleCollectionURL(domain consoleDomain, query url.Values) string {
+	values := url.Values{}
+	allowed := map[string]bool{"page": true, "limit": true}
+	switch domain {
+	case consoleAgents, consoleGraphs, consoleLoops:
+		allowed["q"], allowed["lifecycle"] = true, true
+	case consoleQueue:
+		allowed["state"] = true
+	case consoleCredentials:
+		allowed["q"], allowed["status"] = true, true
+	}
+	for key, entries := range query {
+		if !allowed[key] {
+			continue
+		}
+		for _, entry := range entries {
+			values.Add(key, entry)
+		}
+	}
+	path := "/console/" + string(domain)
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	return path + "#/" + string(domain)
 }
 
 // filterConsoleAgents filters the Agent Registry surface by stable ID substring
@@ -1528,6 +1564,7 @@ func paginateConsoleCollection(model *consoleweb.SurfaceModel, rawPage, recordKe
 			}
 		}
 		values.Del("record_key")
+		values.Del("revision")
 		if target > 1 {
 			values.Set("page", strconv.Itoa(target))
 		} else {
@@ -1539,6 +1576,7 @@ func paginateConsoleCollection(model *consoleweb.SurfaceModel, rawPage, recordKe
 		}
 		return path + "#/" + model.Domain
 	}
+	model.CollectionURL = pageURL(page)
 	pages := 1
 	if total > 0 {
 		pages = (total + limit - 1) / limit
@@ -1621,6 +1659,7 @@ func paginateConsoleCredentials(model *consoleweb.SurfaceModel, rawPage string, 
 			}
 		}
 		values.Del("record_key")
+		values.Del("revision")
 		if target > 1 {
 			values.Set("page", strconv.Itoa(target))
 		} else {
@@ -1632,6 +1671,7 @@ func paginateConsoleCredentials(model *consoleweb.SurfaceModel, rawPage string, 
 		}
 		return path + "#/credentials"
 	}
+	model.CollectionURL = pageURL(page)
 	pages := 1
 	if total > 0 {
 		pages = (total + limit - 1) / limit
@@ -1667,6 +1707,7 @@ func applyCredentialPage(model *consoleweb.SurfaceModel, page app.CredentialColl
 			}
 		}
 		values.Del("record_key")
+		values.Del("revision")
 		if target > 1 {
 			values.Set("page", strconv.Itoa(target))
 		} else {
@@ -1678,6 +1719,7 @@ func applyCredentialPage(model *consoleweb.SurfaceModel, page app.CredentialColl
 		}
 		return path + "#/credentials"
 	}
+	model.CollectionURL = pageURL(page.Page)
 	pages := 1
 	if page.Total > 0 {
 		pages = (page.Total + page.Limit - 1) / page.Limit

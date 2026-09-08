@@ -65,6 +65,8 @@ func TestAuthenticatedDocumentUsesNativeNavigationInspectionAndLogout(t *testing
 		`href="/console/agents#/agents"`, `href="/console/graphs#/graphs"`,
 		`href="/console/loops#/loops"`, `href="/console/queue#/queue"`,
 		`href="/console/credentials#/credentials"`, `record_key=0`, `id="close-inspector"`,
+		`src="/console/assets/navigation.js" defer`, `data-detail-open="true"`,
+		`data-detail-link`, `data-record-key="0"`,
 	} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("native interaction missing %q: %s", required, html)
@@ -466,7 +468,7 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 		}
 		position = next
 	}
-	for _, required := range []string{"queue-130", "#/queue/queue-130", "/console/queue?state=failed#/queue", "/console/queue?state=claimable#/queue", "graph-run-130", "loop-exec-130", "attempt-130", "claim-130", "artifact-130", "receipt-130", "runtime_exit_nonzero", "Only this authoritative disposition can support terminal success", "has not been upgraded"} {
+	for _, required := range []string{"queue-130", "#/queue/queue-130", "/console/queue?state=failed#/queue", "graph-run-130", "loop-exec-130", "attempt-130", "claim-130", "artifact-130", "receipt-130", "runtime_exit_nonzero", "Only this authoritative disposition can support terminal success", "has not been upgraded"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("execution detail missing %q", required)
 		}
@@ -481,6 +483,80 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 	}
 	if strings.Contains(html, "Succeeded execution") || strings.Contains(html, "execution succeeded") {
 		t.Fatalf("passing receipt or Graph run upgraded failed queue truth: %s", html)
+	}
+}
+
+func TestDetailCompositionsAreExplicitAndPreserveCollectionContext(t *testing.T) {
+	tests := []struct {
+		name, domain, composition, detailID string
+		record                              RecordModel
+		keepsCollection                     bool
+	}{
+		{name: "Agent inline", domain: DomainAgents, composition: `data-composition="agent-inline"`, detailID: `id="agent-inline-detail"`, keepsCollection: true, record: RecordModel{Key: "agent/a", Label: "agent/a", Agent: &AgentDetailModel{StableID: "agent/a"}}},
+		{name: "Graph replacement", domain: DomainGraphs, composition: `data-composition="graph-replacement"`, detailID: `id="graph-detail-page"`, record: RecordModel{Key: "graph/a:2", Label: "graph/a", Graph: &GraphDetailModel{}}},
+		{name: "Loop replacement", domain: DomainLoops, composition: `data-composition="loop-replacement"`, detailID: `id="loop-detail"`, record: RecordModel{Key: "loop/a:3", Label: "loop/a", Loop: &LoopDetailModel{}}},
+		{name: "Queue replacement", domain: DomainQueue, composition: `data-composition="queue-replacement"`, detailID: `id="queue-detail"`, record: RecordModel{Key: "queue/a", Label: "queue/a", Queue: &QueueDetailModel{}}},
+		{name: "Credential master detail", domain: DomainCredentials, composition: `data-composition="credential-master-detail"`, detailID: `aria-label="Selected credential"`, keepsCollection: true, record: RecordModel{Key: "credential/a", Label: "credential/a", Credential: &CredentialDetailModel{ID: "credential/a", Reference: "credential/a"}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.record.Revision = "r2"
+			surface := SurfaceModel{Domain: tc.domain, Title: tc.domain, State: "ready", Authoritative: true, Query: "needle", Lifecycle: "active", Records: []RecordModel{tc.record}, Inspector: &tc.record, InspectorOpen: true, CollectionURL: "/console/" + tc.domain + "?lifecycle=active&page=2&q=needle#/" + tc.domain}
+			html := renderFoundation(t, Workspace(surface))
+			for _, required := range []string{tc.composition, tc.detailID, `href="/console/` + tc.domain + `?lifecycle=active&amp;page=2&amp;q=needle#/` + tc.domain + `"`} {
+				if !strings.Contains(html, required) {
+					t.Fatalf("explicit %s composition missing %q: %s", tc.domain, required, html)
+				}
+			}
+			if got := strings.Contains(html, `id="surface-list"`); got != tc.keepsCollection {
+				t.Fatalf("%s collection retention=%t, want %t", tc.domain, got, tc.keepsCollection)
+			}
+		})
+	}
+}
+
+func TestNavigationEnhancementRestoresOnlyPresentationContext(t *testing.T) {
+	script := string(NavigationJS)
+	for _, required := range []string{
+		"sessionStorage.setItem", "requestAnimationFrame", "scrollTo(x, y)",
+		"selected.focus({preventScroll: true})", "data-detail-link", "data-record-key",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("navigation enhancement missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"principal", "stanza", "mandate", "authority", "credential", "outcome",
+		"fetch(", "XMLHttpRequest", "document.cookie", "localStorage",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("presentation-only navigation enhancement contains %q", forbidden)
+		}
+	}
+}
+
+func TestCanonicalDetailRoutesCarryOnlyPresentationLookupAndFragmentIdentity(t *testing.T) {
+	for _, tc := range []struct{ domain, key, want string }{
+		{DomainAgents, "agent/a", "/console/agents?record_key=agent%2Fa#/agents/agent%2Fa"},
+		{DomainGraphs, "graph/a:2", "/console/graphs?record_key=graph%2Fa%3A2#/graphs/graph%2Fa:2"},
+		{DomainLoops, "loop/a:3", "/console/loops?record_key=loop%2Fa%3A3#/loops/loop%2Fa:3"},
+		{DomainQueue, "queue/a", "/console/queue?record_key=queue%2Fa#/queue/queue%2Fa"},
+		{DomainCredentials, "credential/a", "/console/credentials?record_key=credential%2Fa#/credentials/credential%2Fa"},
+	} {
+		if got := consoleRoute(tc.domain, tc.key); got != tc.want {
+			t.Fatalf("%s route=%q, want %q", tc.domain, got, tc.want)
+		}
+		for _, forbidden := range []string{"principal=", "stanza=", "mandate=", "authority=", "outcome=", "secret="} {
+			if strings.Contains(tc.want, forbidden) {
+				t.Fatalf("route contains authority-bearing input %q: %s", forbidden, tc.want)
+			}
+		}
+	}
+
+	surface := SurfaceModel{Domain: DomainGraphs, CollectionURL: "/console/graphs?lifecycle=active&page=4&q=review#/graphs"}
+	want := "/console/graphs?lifecycle=active&page=4&q=review&record_key=graph-review%3A7#/graphs/graph-review:7"
+	if got := detailRoute(surface, "graph-review:7"); got != want {
+		t.Fatalf("detail route lost collection context: got %q want %q", got, want)
 	}
 }
 
@@ -579,8 +655,11 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 			t.Fatalf("credential surface missing %q: %s", required, html)
 		}
 	}
+	if strings.Count(html, "<script") != 1 || !strings.Contains(html, `<script src="/console/assets/navigation.js" defer></script>`) {
+		t.Fatalf("credential surface did not use exactly the bounded same-origin navigation enhancement: %s", html)
+	}
 	for _, forbidden := range []string{
-		"<script", "data-on:", "data-bind:", "localStorage", "sessionStorage",
+		"data-on:", "data-bind:", "localStorage", "sessionStorage",
 		`name="principal"`, `name="stanza"`, `name="mandate"`, `name="authority"`,
 		"Ciphertext\":", "WrappedDEK\":", "RecordNonce\":", "WrapNonce\":",
 		"source_env", "target_env",
