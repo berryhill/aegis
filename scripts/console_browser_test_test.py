@@ -1,3 +1,6 @@
+import pathlib
+import subprocess
+import tempfile
 import time
 import unittest
 from unittest import mock
@@ -110,11 +113,15 @@ class NativeKeyTest(unittest.TestCase):
 
 
 class NativeTouchTest(unittest.TestCase):
-    def test_tap_enables_emulation_before_dispatching_native_touch(self):
+    def test_tap_enables_emulation_before_synthesizing_complete_touch_gesture(self):
         devtools = mock.MagicMock()
         devtools.evaluate.side_effect = [
             True,
             {"x": 12, "y": 24, "width": 100, "height": 44, "target": True},
+            True,
+            True,
+            {"x": 13, "y": 25, "navigated": False, "target": True},
+            True,
         ]
 
         with mock.patch.object(console_browser_test.time, "sleep"):
@@ -123,14 +130,96 @@ class NativeTouchTest(unittest.TestCase):
         self.assertEqual(
             devtools.command.call_args_list,
             [
-                mock.call("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1}),
+                mock.call("Emulation.setTouchEmulationEnabled", {
+                    "enabled": True, "maxTouchPoints": 1, "configuration": "mobile",
+                }),
+                mock.call("Input.synthesizeTapGesture", {
+                    "x": 12,
+                    "y": 24,
+                    "duration": 50,
+                    "tapCount": 1,
+                    "gestureSourceType": "touch",
+                }),
                 mock.call("Input.dispatchTouchEvent", {
                     "type": "touchStart",
-                    "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
+                    "touchPoints": [{"x": 13, "y": 25, "radiusX": 1, "radiusY": 1, "force": 1}],
                 }),
                 mock.call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}),
             ],
         )
+
+    def test_real_chrome_touch_gesture_activates_anchor_navigation(self):
+        with tempfile.TemporaryDirectory(prefix="aegis-touch-browser-") as temporary:
+            fixture_root = pathlib.Path(temporary)
+            chrome_home = fixture_root / "chrome"
+            fixture = fixture_root / "touch.html"
+            fixture.write_text(
+                '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+                '<a id="record-proof-agent" href="#/agents/proof-agent" '
+                'style="display:block;width:180px;height:48px;margin-top:1200px">Open Agent</a>',
+                encoding="utf-8",
+            )
+            process = subprocess.Popen(
+                [
+                    "/usr/bin/google-chrome",
+                    "--headless=new",
+                    "--incognito",
+                    "--disable-gpu",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--remote-debugging-port=0",
+                    "--remote-allow-origins=http://localhost",
+                    f"--user-data-dir={chrome_home}",
+                    fixture.as_uri(),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            devtools = None
+            try:
+                active_port = chrome_home / "DevToolsActivePort"
+                deadline = time.monotonic() + console_browser_test.CHROME_START_TIMEOUT
+                while time.monotonic() < deadline and not active_port.exists():
+                    self.assertIsNone(process.poll(), "Chrome exited before DevTools readiness")
+                    time.sleep(0.05)
+                self.assertTrue(active_port.exists(), "Chrome did not become ready")
+                port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
+                websocket = console_browser_test.page_websocket(
+                    port, time.monotonic() + console_browser_test.PAGE_TARGET_TIMEOUT, process
+                )
+                devtools = console_browser_test.DevTools(websocket)
+                for domain in ("Page", "Runtime"):
+                    devtools.command(domain + ".enable")
+                console_browser_test.wait_for(
+                    devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')",
+                    "focused touch fixture load", timeout=5,
+                )
+                devtools.command("Emulation.setDeviceMetricsOverride", {
+                    "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True,
+                })
+
+                console_browser_test.tap(devtools, "#record-proof-agent")
+                console_browser_test.wait_for(
+                    devtools,
+                    "location.hash === '#/agents/proof-agent'",
+                    "focused real-browser touch navigation fixture",
+                    timeout=5,
+                )
+                proof = console_browser_test.touch_proof(devtools)
+                self.assertEqual(proof["selector"], "#record-proof-agent")
+                event_types = {event["type"] for event in proof["events"]}
+                self.assertTrue({"touchstart", "touchend", "click"}.issubset(event_types))
+                self.assertTrue(all(event["trusted"] for event in proof["events"]))
+            finally:
+                if devtools is not None:
+                    devtools.close()
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
 
     def test_touch_emulation_is_explicitly_enabled_for_native_gestures(self):
         devtools = mock.MagicMock()
@@ -139,7 +228,7 @@ class NativeTouchTest(unittest.TestCase):
 
         devtools.command.assert_called_once_with(
             "Emulation.setTouchEmulationEnabled",
-            {"enabled": True, "maxTouchPoints": 1},
+            {"enabled": True, "maxTouchPoints": 1, "configuration": "mobile"},
         )
 
     def test_touch_emulation_can_be_disabled_after_navigation(self):

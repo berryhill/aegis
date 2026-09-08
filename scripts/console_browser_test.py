@@ -23,6 +23,7 @@ class ProcessState(Protocol):
 
 CHROME_START_TIMEOUT = 15
 PAGE_TARGET_TIMEOUT = 8
+TOUCH_PROOF_STORAGE_KEY = "aegis-browser-touch-proof"
 
 
 def require(condition: bool, message: str) -> None:
@@ -204,7 +205,17 @@ def wait_for(
         time.sleep(0.05)
     state: Any = None
     try:
-        state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 1200) || ''})")
+        state = devtools.evaluate(
+            "({path: location.pathname + location.search + location.hash, ready: document.readyState, "
+            "title: document.querySelector('#surface-title')?.textContent || '', "
+            "auth: document.querySelector('#authentication-status')?.textContent.trim() || '', "
+            "active: document.activeElement?.id || document.activeElement?.tagName || '', "
+            "modal: document.querySelector(':modal')?.id || '', "
+            "viewport: {innerWidth, innerHeight, devicePixelRatio, scale: visualViewport?.scale || 1, "
+            "offsetLeft: visualViewport?.offsetLeft || 0, offsetTop: visualViewport?.offsetTop || 0}, "
+            "touchProof: sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ") || '', "
+            "body: document.body?.innerText.slice(0, 1200) || ''})"
+        )
     except (OSError, RuntimeError):
         state = "unavailable"
     requests = console_auth_requests(devtools.events[diagnostic_event_start:])
@@ -281,11 +292,12 @@ def replace_text(devtools: DevTools, selector: str, text: str) -> None:
 
 
 def tap(devtools: DevTools, selector: str) -> None:
-    """Send real browser touch events for controls under mobile emulation."""
+    """Send one complete browser-synthesized touch gesture under mobile emulation."""
     set_touch_emulation(devtools, True)
     present = devtools.evaluate(
         "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
-        "if (!node) return false; node.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); return true; })()"
+        "if (!node) return false; node.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); "
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", null); return true; })()"
     )
     require(present is True, f"browser control missing: {selector}")
     # Apply the responsive scroll before measuring. Otherwise touch coordinates
@@ -295,16 +307,98 @@ def tap(devtools: DevTools, selector: str) -> None:
         "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
         "if (!node) return null; const box = node.getBoundingClientRect();"
         "const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);"
-        "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, target: hit === node || node.contains(hit)}; })()"
+        "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, "
+        "hit: hit?.id || hit?.tagName || '', target: hit === node || node.contains(hit), devicePixelRatio, "
+        "visualScale: visualViewport?.scale || 1, visualOffsetX: visualViewport?.offsetLeft || 0, "
+        "visualOffsetY: visualViewport?.offsetTop || 0}; })()"
     )
     require(isinstance(point, dict), f"browser control missing after scroll: {selector}")
     require(point["width"] > 0 and point["height"] > 0, f"browser control is not visible: {selector}; state={point}")
     require(bool(point["target"]), f"browser control is obscured: {selector}; state={point}")
+    arm_observation = devtools.evaluate(
+        "(() => { sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) +
+        ", JSON.stringify({selector: " + json.dumps(selector) + ", initialURL: location.href, events: [], "
+        "scrolls: 0, observations: []})); const node = document.querySelector(" + json.dumps(selector) + ");"
+        "if (!node) return false; for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', "
+        "'click', 'mousedown', 'mouseup']) { node.addEventListener(type, event => { const proof = JSON.parse("
+        "sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); proof.events.push({type, "
+        "trusted: event.isTrusted, defaultPrevented: event.defaultPrevented, "
+        "target: event.target?.id || event.target?.tagName || '', "
+        "currentTarget: event.currentTarget?.id || event.currentTarget?.tagName || ''});"
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", JSON.stringify(proof)); }, "
+        "{once: true}); } new MutationObserver(mutations => { const proof = JSON.parse("
+        "sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); proof.scrolls += 1;"
+        "for (const mutation of mutations.slice(0, 4)) { proof.observations.push({type: mutation.type, "
+        "target: mutation.target?.id || mutation.target?.tagName || '', added: mutation.addedNodes?.length || 0,"
+        " removed: mutation.removedNodes?.length || 0, attr: mutation.attributeName || ''}); } "
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", JSON.stringify(proof)); "
+        "}).observe(document.documentElement, {childList: true, subtree: true, attributes: true}); return true; })()"
+    )
+    require(arm_observation is True, f"browser control missing for touch observation: {selector}")
+    # CDP gesture coordinates are viewport device-independent pixels. Chrome's
+    # gesture synthesizer owns the full touch/pointer/click lifecycle; a raw
+    # touchStart/touchEnd pair is accepted by CDP but is not guaranteed to
+    # synthesize anchor activation in headless mobile emulation.
+    devtools.command("Input.synthesizeTapGesture", {
+        "x": point["x"],
+        "y": point["y"],
+        "duration": 50,
+        "tapCount": 1,
+        "gestureSourceType": "touch",
+    })
+    wait_for(
+        devtools,
+        "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+        "return value ? JSON.parse(value).events.some(event => event.type === 'touchend') : false; })()",
+        f"settled native touch gesture for {selector}",
+        timeout=3,
+    )
+    # Headless Chrome reports the synthesized touch and pointer lifecycle as
+    # trusted but does not emit the compatibility click which a physical tap
+    # produces. Wait for touchend before completing that native browser input
+    # sequence through CDP; dispatching the mouse compatibility events while
+    # Chrome still owns the asynchronous touch gesture suppresses activation.
+    # Re-measure after the gesture because mobile visual-viewport scrolling can
+    # move the target while the gesture is in flight.
+    settled = devtools.evaluate(
+        "(() => { const proof = JSON.parse(sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ") || 'null');"
+        "if (proof?.initialURL !== location.href) return {navigated: true};"
+        "const node = document.querySelector(" + json.dumps(selector) + "); if (!node) return null;"
+        "const box = node.getBoundingClientRect(); const x = box.left + box.width / 2; const y = box.top + box.height / 2;"
+        "const hit = document.elementFromPoint(x, y); return {x, y, navigated: false, "
+        "target: hit === node || node.contains(hit)}; })()"
+    )
+    require(isinstance(settled, dict), f"browser control missing after native touch gesture: {selector}")
+    if settled.get("navigated") is True:
+        return
+    require(bool(settled.get("target")), f"browser control moved or became obscured after native touch gesture: {selector}; state={settled}")
+    # In the installed headless Chrome, synthesizeTapGesture proves trusted
+    # touch/pointer delivery but can stop before the compatibility click. A
+    # second complete raw touch sequence at the settled coordinates lets Chrome
+    # finish its native compatibility-event path and activate the anchor. This
+    # remains browser input: the harness never calls an element handler or
+    # mutates the route directly.
     devtools.command("Input.dispatchTouchEvent", {
         "type": "touchStart",
-        "touchPoints": [{"x": point["x"], "y": point["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
+        "touchPoints": [{"x": settled["x"], "y": settled["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
     })
     devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    wait_for(
+        devtools,
+        "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+        "if (!value) return false; const proof = JSON.parse(value);"
+        "return proof.events.some(event => event.type === 'click'); })()",
+        f"trusted click activation for {selector}",
+        timeout=5,
+    )
+
+
+def touch_proof(devtools: DevTools) -> dict[str, Any] | None:
+    """Read sanitized event-delivery evidence retained across same-origin navigation."""
+    return devtools.evaluate(
+        "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+        "return value ? JSON.parse(value) : null; })()"
+    )
 
 
 def set_touch_emulation(devtools: DevTools, enabled: bool) -> None:
@@ -312,6 +406,7 @@ def set_touch_emulation(devtools: DevTools, enabled: bool) -> None:
     params: dict[str, Any] = {"enabled": enabled}
     if enabled:
         params["maxTouchPoints"] = 1
+        params["configuration"] = "mobile"
     devtools.command("Emulation.setTouchEmulationEnabled", params)
 
 
@@ -513,6 +608,16 @@ def main() -> int:
         devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
         tap(devtools, "#record-proof-agent")
         wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.activeElement?.id === 'agent-inline-detail' && document.documentElement.scrollWidth <= innerWidth", "narrow reduced-motion touch Agent detail")
+        delivered_touch = touch_proof(devtools)
+        require(
+            isinstance(delivered_touch, dict)
+            and delivered_touch.get("selector") == "#record-proof-agent"
+            and all(event.get("trusted") is True for event in delivered_touch.get("events", []))
+            and {"touchstart", "touchend", "click"}.issubset(
+                {event.get("type") for event in delivered_touch.get("events", [])}
+            ),
+            f"narrow Agent gesture did not deliver a trusted touch activation lifecycle: {delivered_touch}",
+        )
         time.sleep(1.0)
         set_touch_emulation(devtools, False)
         devtools.command("Emulation.clearDeviceMetricsOverride")
