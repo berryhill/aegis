@@ -112,6 +112,39 @@ class NativeKeyTest(unittest.TestCase):
             console_browser_test.key(mock.MagicMock(), "Space")
 
 
+class ChromeShutdownTest(unittest.TestCase):
+    def test_orderly_shutdown_waits_before_closing_devtools(self):
+        calls = mock.MagicMock()
+        process, devtools = calls.process, calls.devtools
+        process.poll.return_value = None
+        console_browser_test.stop_chrome(process, devtools)
+        self.assertEqual(calls.mock_calls, [
+            mock.call.process.poll(), mock.call.devtools.command("Browser.close"),
+            mock.call.process.wait(timeout=5), mock.call.devtools.close(),
+        ])
+
+    def test_disconnected_browser_still_waits_for_exit(self):
+        process, devtools = mock.MagicMock(), mock.MagicMock()
+        process.poll.return_value = None
+        devtools.command.side_effect = OSError("connection closed")
+        console_browser_test.stop_chrome(process, devtools)
+        process.wait.assert_called_once_with(timeout=5)
+        process.terminate.assert_not_called()
+        devtools.close.assert_called_once_with()
+
+    def test_unresponsive_browser_has_bounded_terminate_kill_wait(self):
+        calls = mock.MagicMock()
+        process = calls.process
+        process.wait.side_effect = [subprocess.TimeoutExpired("chrome", 5),
+                                    subprocess.TimeoutExpired("chrome", 5), 0]
+        console_browser_test.stop_chrome(process, None)
+        self.assertEqual(calls.mock_calls, [
+            mock.call.process.wait(timeout=5), mock.call.process.terminate(),
+            mock.call.process.wait(timeout=5), mock.call.process.kill(),
+            mock.call.process.wait(timeout=5),
+        ])
+
+
 class NativeTouchTest(unittest.TestCase):
     def test_tap_enables_emulation_before_synthesizing_complete_touch_gesture(self):
         devtools = mock.MagicMock()
@@ -148,7 +181,27 @@ class NativeTouchTest(unittest.TestCase):
             ],
         )
 
+    def test_tap_maps_visual_pan_without_rescaling_css_pixels(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            True,
+            {"x": 42, "y": 176, "width": 100, "height": 44, "target": True,
+             "visualOffsetX": 30, "visualOffsetY": 152, "visualScale": 2, "devicePixelRatio": 3},
+            True, True, {"navigated": True},
+        ]
+        with mock.patch.object(console_browser_test.time, "sleep"):
+            console_browser_test.tap(devtools, "#record-proof-agent")
+        devtools.command.assert_called_with("Input.synthesizeTapGesture", {
+            "x": 12, "y": 24, "duration": 50, "tapCount": 1, "gestureSourceType": "touch",
+        })
+
     def test_real_chrome_touch_gesture_activates_anchor_navigation(self):
+        self._assert_real_chrome_touch_navigation(page_scale=1)
+
+    def test_real_chrome_touch_with_panned_visual_viewport(self):
+        self._assert_real_chrome_touch_navigation(page_scale=2)
+
+    def _assert_real_chrome_touch_navigation(self, page_scale):
         with tempfile.TemporaryDirectory(prefix="aegis-touch-browser-") as temporary:
             fixture_root = pathlib.Path(temporary)
             chrome_home = fixture_root / "chrome"
@@ -199,6 +252,14 @@ class NativeTouchTest(unittest.TestCase):
                     "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True,
                 })
 
+                # Reproduce a panned visual viewport, not just document scroll.
+                # The installed console reaches this state after responsive focus
+                # restoration; zoom makes the coordinate distinction deterministic.
+                devtools.command("Emulation.setPageScaleFactor", {"pageScaleFactor": page_scale})
+                if page_scale > 1:
+                    devtools.evaluate("document.querySelector('#record-proof-agent').scrollIntoView({block: 'center', inline: 'center'})")
+                    console_browser_test.wait_for(devtools, "visualViewport.offsetTop > 0 && visualViewport.offsetLeft > 0", "panned visual viewport", timeout=5)
+                    self.assertGreater(devtools.evaluate("visualViewport.offsetTop"), 0)
                 console_browser_test.tap(devtools, "#record-proof-agent")
                 console_browser_test.wait_for(
                     devtools,
@@ -212,14 +273,7 @@ class NativeTouchTest(unittest.TestCase):
                 self.assertTrue({"touchstart", "touchend", "click"}.issubset(event_types))
                 self.assertTrue(all(event["trusted"] for event in proof["events"]))
             finally:
-                if devtools is not None:
-                    devtools.close()
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+                console_browser_test.stop_chrome(process, devtools)
 
     def test_touch_emulation_is_explicitly_enabled_for_native_gestures(self):
         devtools = mock.MagicMock()

@@ -291,6 +291,31 @@ def replace_text(devtools: DevTools, selector: str, text: str) -> None:
     require(retained is True, f"browser control did not replace text: {selector}")
 
 
+def stop_chrome(process: subprocess.Popen, devtools: DevTools | None) -> None:
+    """Wait for Chrome's orderly child/profile shutdown before deleting its home."""
+    try:
+        if devtools is not None and process.poll() is None:
+            try:
+                # SIGTERM only waits for the browser PID; its children can still
+                # recreate Default files while TemporaryDirectory removes them.
+                devtools.command("Browser.close")
+            except (OSError, RuntimeError):
+                # Chrome can close the connection before acknowledging shutdown.
+                pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+    finally:
+        if devtools is not None:
+            devtools.close()
+
+
 def tap(devtools: DevTools, selector: str) -> None:
     """Send one complete browser-synthesized touch gesture under mobile emulation."""
     set_touch_emulation(devtools, True)
@@ -335,13 +360,14 @@ def tap(devtools: DevTools, selector: str) -> None:
         "}).observe(document.documentElement, {childList: true, subtree: true, attributes: true}); return true; })()"
     )
     require(arm_observation is True, f"browser control missing for touch observation: {selector}")
-    # CDP gesture coordinates are viewport device-independent pixels. Chrome's
-    # gesture synthesizer owns the full touch/pointer/click lifecycle; a raw
-    # touchStart/touchEnd pair is accepted by CDP but is not guaranteed to
-    # synthesize anchor activation in headless mobile emulation.
+    # Both CDP touch APIs consume visual-viewport CSS coordinates. DOM rects
+    # and elementFromPoint use layout-viewport CSS coordinates: subtract the
+    # visual viewport pan, but do not multiply by page scale or device DPR.
+    # Otherwise the hit test succeeds while native input misses the element.
+    # The synthesizer delivers the complete touch/pointer lifecycle.
     devtools.command("Input.synthesizeTapGesture", {
-        "x": point["x"],
-        "y": point["y"],
+        "x": point["x"] - point.get("visualOffsetX", 0),
+        "y": point["y"] - point.get("visualOffsetY", 0),
         "duration": 50,
         "tapCount": 1,
         "gestureSourceType": "touch",
@@ -365,7 +391,8 @@ def tap(devtools: DevTools, selector: str) -> None:
         "if (proof?.initialURL !== location.href) return {navigated: true};"
         "const node = document.querySelector(" + json.dumps(selector) + "); if (!node) return null;"
         "const box = node.getBoundingClientRect(); const x = box.left + box.width / 2; const y = box.top + box.height / 2;"
-        "const hit = document.elementFromPoint(x, y); return {x, y, navigated: false, "
+        "const hit = document.elementFromPoint(x, y); return {x: x - (visualViewport?.offsetLeft || 0), "
+        "y: y - (visualViewport?.offsetTop || 0), navigated: false, "
         "target: hit === node || node.contains(hit)}; })()"
     )
     require(isinstance(settled, dict), f"browser control missing after native touch gesture: {selector}")
@@ -845,14 +872,7 @@ def main() -> int:
         }, sort_keys=True))
         return 0
     finally:
-        if devtools is not None:
-            devtools.close()
-        process.terminate()
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=3)
+        stop_chrome(process, devtools)
         chrome_stderr.close()
 
 

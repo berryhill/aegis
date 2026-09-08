@@ -52,6 +52,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Corrected the installed-console proof's native touch coordinates for a panned visual viewport, preserving trusted touch/click delivery and authenticated server-rendered navigation. Chrome proof teardown now requests orderly browser shutdown and waits before closing DevTools or removing the profile; focused regressions cover visual viewport offsets, zoom, and bounded shutdown fallback.
+
 - Replaced the Loops collection's generic fixed inspector with a dedicated exact-revision detail composition. The authenticated console now renders a deterministic, horizontally scrollable SVG control-flow graph with directed and cycle edges, selectable keyboard-focusable nodes, compact authoritative metrics, progressive exact-definition/provenance/lifecycle disclosure, typed interface and evidence sections, and exact bound-Graph handoff without offering standalone Loop execution or treating displayed records as runtime authority.
 
 - Fixed real-world manager routing so authenticated registration and manager lifecycle requests are classified before model inference in conversational and degraded terminals. Unqualified registration now only recommends the typed `/agents` transaction, lifecycle wording names typed status/update/restart controls without claiming they ran, one observed read-only typo is supported only as an exact phrase, and the model persona is the credential-value-blind conversational component of the built-in Aegis manager rather than the credential subsystem itself.
