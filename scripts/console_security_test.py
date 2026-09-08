@@ -8,7 +8,7 @@ import pathlib
 import sys
 
 HARNESS_NAME = "aegis-console-security"
-HARNESS_VERSION = "2.2.0"
+HARNESS_VERSION = "2.3.0"
 MINIMUM_PYTHON = (3, 11)
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -24,6 +24,7 @@ def main() -> int:
     model = (ROOT / "web/console/model.go").read_text(encoding="utf-8")
     css = (ROOT / "web/console/app.css").read_text(encoding="utf-8")
     embed = (ROOT / "web/console/embed.go").read_text(encoding="utf-8")
+    navigation = (ROOT / "web/console/navigation.js").read_text(encoding="utf-8")
     console = (ROOT / "internal/console/server.go").read_text(encoding="utf-8")
     handlers = (ROOT / "internal/api/console.go").read_text(encoding="utf-8")
     api = (ROOT / "internal/api/server.go").read_text(encoding="utf-8")
@@ -43,7 +44,32 @@ def main() -> int:
     ):
         require(forbidden not in first_party_active_source, f"unsafe active-content primitive present: {forbidden}")
     require("https://" not in component and "http://" not in component, "external URL present in console template")
-    require("<script" not in component and "data-on:" not in component and "data-bind:" not in component, "console template still requires CSP-blocked script execution")
+    navigation_tag = '<script src="/console/assets/navigation.js" defer></script>'
+    require(component.count("<script") == 1 and component.count(navigation_tag) == 1,
+            "console template must load exactly the bounded same-origin navigation asset")
+    require(
+        'if model.Authenticated {\n\t\t\t\t' + navigation_tag in component,
+        "navigation enhancement must be emitted only for an authenticated console",
+    )
+    require("data-on:" not in component and "data-bind:" not in component,
+            "console template still requires inline script execution")
+
+    for forbidden in (
+        "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "localStorage",
+        "document.cookie", "location.hash", "location.search", "URLSearchParams", "innerHTML",
+        "outerHTML", "document.write", "eval(", "new Function", "window.open", "form.submit",
+    ):
+        require(forbidden not in navigation, f"navigation asset exceeds presentation-only authority: {forbidden}")
+    for required in (
+        "sessionStorage.setItem(storageKey", "sessionStorage.getItem(storageKey)",
+        'body.dataset.detailOpen === "true"', "context.recordKey.length > 1024",
+        'link.dataset.recordKey === context.recordKey', "selected.focus({preventScroll: true})",
+    ):
+        require(required in navigation, f"bounded navigation restoration control missing: {required}")
+    require(
+        "Number.isFinite(value) && value >= 0 && value <= 10000000" in navigation,
+        "navigation viewport restoration is not bounded",
+    )
     for native_control in (
         'method="post" action="/console/login"',
         'method="post" action="/console/password"',
@@ -61,9 +87,12 @@ def main() -> int:
     for route in (
         '"/console"', '"/console/login"', '"/console/password"', '"/console/session"', '"/console/api/state"',
         '"/console/fragments/surface"', '"/console/fragments/inspect"',
-        '"/console/assets/datastar-v1.0.2.js"', '"/v1"',
+        '"/console/assets/datastar-v1.0.2.js"', '"/console/assets/navigation.js"', '"/v1"',
     ):
         require(route in api, f"console route missing: {route}")
+    require("script-src 'self'" in console, "CSP does not authorize the same-origin navigation asset")
+    for weakening in ("'unsafe-inline'", "'unsafe-eval'", "script-src *", "script-src http:", "script-src https:"):
+        require(weakening not in console, f"CSP script policy was weakened: {weakening}")
     require("Authorization" not in component and "Authorization" not in model, "reusable API bearer reached browser source")
     require(not (ROOT / "web/console/app.js").exists(), "imperative console controller remains")
     require(not (ROOT / "web/console/index.html").exists(), "static console document remains")
@@ -76,7 +105,8 @@ def main() -> int:
             "typed_templ_landmarks_and_states": "pass",
             "unsafe_active_content_denied": "pass",
             "native_interactions_need_no_script_execution": "pass",
-            "browser_storage_denied": "pass",
+            "same_origin_navigation_asset_exactly_scoped": "pass",
+            "presentation_storage_bounded_non_authoritative": "pass",
             "strict_bounded_signal_and_sse_contract": "pass",
             "security_header_and_cookie_source_contract": "pass",
             "responsive_and_reduced_motion": "pass",

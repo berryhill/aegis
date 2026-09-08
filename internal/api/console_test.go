@@ -316,7 +316,7 @@ func TestConsoleCollectionPaginationPreservesFiltersAndDeepLinks(t *testing.T) {
 }
 
 func TestConsoleRecordURLBindsStableRecordAndNeverAuthority(t *testing.T) {
-	if got := consoleRecordURL(consoleGraphs, "graph/a:2"); got != "/console/graphs?record_key=graph%2Fa%3A2#/graphs" {
+	if got := consoleRecordURL(consoleGraphs, "graph/a:2"); got != "/console/graphs?record_key=graph%2Fa%3A2#/graphs/graph%2Fa:2" {
 		t.Fatalf("graph cross-link=%q", got)
 	}
 	if got := consoleRecordURL(consoleQueue, "queue/a"); got != "/console/queue?record_key=queue%2Fa#/queue/queue%2Fa" {
@@ -333,7 +333,7 @@ func TestConsoleAgentRelatedRecordsRequireExactImmutableRevision(t *testing.T) {
 		{Revision: loop.LoopRevision{LoopID: "loop-stale", Revision: 1, Digest: digest("c")}, Provenance: loop.PublicationProvenance{PublisherAgent: loop.ProvenanceRevision{ID: "agent-reviewer", Revision: 1, Digest: digest("d")}}},
 	}}
 	record := consoleAgentRecord(agent, surface)
-	if len(record.Links) != 1 || record.Links[0].URL != "/console/loops?record_key=loop-exact%3A1#/loops" {
+	if len(record.Links) != 1 || record.Links[0].URL != "/console/loops?record_key=loop-exact%3A1#/loops/loop-exact:1" {
 		t.Fatalf("Agent related records crossed immutable revisions: %+v", record.Links)
 	}
 }
@@ -452,7 +452,7 @@ func TestLoopConsoleRecordShowsValidationLifecycleAndAuthorityProvenance(t *test
 	if record.Key != "loop.review:3" || record.Lifecycle != "active" || record.Runtime != "hermes-agent" || record.Source != "agent-reviewer" || record.Authority != "authority-review" {
 		t.Fatalf("Loop summary lost exact bindings: %+v", record)
 	}
-	if len(record.Links) != 1 || record.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=7#/agents" {
+	if len(record.Links) != 1 || record.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=7#/agents/agent-reviewer" {
 		t.Fatalf("Loop publisher link lost exact Agent revision: %+v", record.Links)
 	}
 	if record.Loop == nil || record.Digest != revision.Digest || record.Loop.Digest != revision.Digest || record.Loop.PreviousDigest != digest || record.Loop.EntryStepID != "review" {
@@ -557,7 +557,7 @@ func TestConsoleGraphRecordPreservesExactTopologyLifecycleAndSubmissionTruth(t *
 	if record.Graph.Nodes[0].Loop != exactRevisionLabel("loop-review", 7, digest("d")) || record.Graph.Nodes[0].Inputs != "brief:string required=true" || record.Graph.Edges[0].Mappings != "draft → draft" {
 		t.Fatalf("exact Loop binding or interface lost: %+v", record.Graph)
 	}
-	if record.Graph.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents" {
+	if record.Graph.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents/agent-reviewer" {
 		t.Fatalf("Graph participant link lost exact Agent revision: %+v", record.Graph.Links)
 	}
 	if len(record.Graph.AcceptedRuns) != 1 || record.Graph.AcceptedRuns[0].Snapshot != "snapshot-1 @ "+digest("2") || record.Graph.AcceptedRuns[0].Authority != "authority-1 @ "+digest("4") || !strings.Contains(record.Graph.AcceptedRuns[0].Inputs, `brief (string) = "inspect"`) {
@@ -599,7 +599,7 @@ func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *te
 	if len(record.Queue.Loops) != 1 || record.Queue.Loops[0].Binding != wantBinding {
 		t.Fatalf("exact Loop/participant provenance lost: %+v", record.Queue.Loops)
 	}
-	if len(record.Queue.Links) < 2 || record.Queue.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents" {
+	if len(record.Queue.Links) < 2 || record.Queue.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents/agent-reviewer" {
 		t.Fatalf("Queue participant link lost exact Agent revision: %+v", record.Queue.Links)
 	}
 	if len(record.Queue.Attempts) != 1 || record.Queue.Attempts[0].ClaimID != "claim-130" || len(record.Queue.Receipts) != 1 || record.Queue.Receipts[0].Outcome != "passed" {

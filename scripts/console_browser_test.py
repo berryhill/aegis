@@ -23,6 +23,7 @@ class ProcessState(Protocol):
 
 CHROME_START_TIMEOUT = 15
 PAGE_TARGET_TIMEOUT = 8
+TOUCH_PROOF_STORAGE_KEY = "aegis-browser-touch-proof"
 
 
 def require(condition: bool, message: str) -> None:
@@ -204,7 +205,17 @@ def wait_for(
         time.sleep(0.05)
     state: Any = None
     try:
-        state = devtools.evaluate("({path: location.pathname + location.search, ready: document.readyState, title: document.querySelector('#surface-title')?.textContent || '', auth: document.querySelector('#authentication-status')?.textContent.trim() || '', active: document.activeElement?.id || document.activeElement?.tagName || '', modal: document.querySelector(':modal')?.id || '', body: document.body?.innerText.slice(0, 1200) || ''})")
+        state = devtools.evaluate(
+            "({path: location.pathname + location.search + location.hash, ready: document.readyState, "
+            "title: document.querySelector('#surface-title')?.textContent || '', "
+            "auth: document.querySelector('#authentication-status')?.textContent.trim() || '', "
+            "active: document.activeElement?.id || document.activeElement?.tagName || '', "
+            "modal: document.querySelector(':modal')?.id || '', "
+            "viewport: {innerWidth, innerHeight, devicePixelRatio, scale: visualViewport?.scale || 1, "
+            "offsetLeft: visualViewport?.offsetLeft || 0, offsetTop: visualViewport?.offsetTop || 0}, "
+            "touchProof: sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ") || '', "
+            "body: document.body?.innerText.slice(0, 1200) || ''})"
+        )
     except (OSError, RuntimeError):
         state = "unavailable"
     requests = console_auth_requests(devtools.events[diagnostic_event_start:])
@@ -280,28 +291,156 @@ def replace_text(devtools: DevTools, selector: str, text: str) -> None:
     require(retained is True, f"browser control did not replace text: {selector}")
 
 
+def stop_chrome(process: subprocess.Popen, devtools: DevTools | None) -> None:
+    """Wait for Chrome's orderly child/profile shutdown before deleting its home."""
+    try:
+        if devtools is not None and process.poll() is None:
+            try:
+                # SIGTERM only waits for the browser PID; its children can still
+                # recreate Default files while TemporaryDirectory removes them.
+                devtools.command("Browser.close")
+            except (OSError, RuntimeError):
+                # Chrome can close the connection before acknowledging shutdown.
+                pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+    finally:
+        if devtools is not None:
+            devtools.close()
+
+
 def tap(devtools: DevTools, selector: str) -> None:
-    """Send real browser touch events for controls under mobile emulation."""
+    """Send one complete browser-synthesized touch gesture under mobile emulation."""
+    set_touch_emulation(devtools, True)
+    present = devtools.evaluate(
+        "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
+        "if (!node) return false; node.scrollIntoView({behavior: 'instant', block: 'center', inline: 'center'}); "
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", null); return true; })()"
+    )
+    require(present is True, f"browser control missing: {selector}")
+    # Apply the responsive scroll before measuring. Otherwise touch coordinates
+    # can describe the pre-scroll layout even though the hit test has moved.
+    time.sleep(0.05)
     point = devtools.evaluate(
         "(() => { const node = document.querySelector(" + json.dumps(selector) + ");"
-        "if (!node) return null; node.scrollIntoView({block: 'center', inline: 'center'}); const box = node.getBoundingClientRect();"
+        "if (!node) return null; const box = node.getBoundingClientRect();"
         "const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);"
-        "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, target: hit === node || node.contains(hit)}; })()"
+        "return {x: box.left + box.width / 2, y: box.top + box.height / 2, width: box.width, height: box.height, "
+        "hit: hit?.id || hit?.tagName || '', target: hit === node || node.contains(hit), devicePixelRatio, "
+        "visualScale: visualViewport?.scale || 1, visualOffsetX: visualViewport?.offsetLeft || 0, "
+        "visualOffsetY: visualViewport?.offsetTop || 0}; })()"
     )
-    require(isinstance(point, dict), f"browser control missing: {selector}")
+    require(isinstance(point, dict), f"browser control missing after scroll: {selector}")
     require(point["width"] > 0 and point["height"] > 0, f"browser control is not visible: {selector}; state={point}")
     require(bool(point["target"]), f"browser control is obscured: {selector}; state={point}")
+    arm_observation = devtools.evaluate(
+        "(() => { sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) +
+        ", JSON.stringify({selector: " + json.dumps(selector) + ", initialURL: location.href, events: [], "
+        "scrolls: 0, observations: []})); const node = document.querySelector(" + json.dumps(selector) + ");"
+        "if (!node) return false; for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', "
+        "'click', 'mousedown', 'mouseup']) { node.addEventListener(type, event => { const proof = JSON.parse("
+        "sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); proof.events.push({type, "
+        "trusted: event.isTrusted, defaultPrevented: event.defaultPrevented, "
+        "target: event.target?.id || event.target?.tagName || '', "
+        "currentTarget: event.currentTarget?.id || event.currentTarget?.tagName || ''});"
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", JSON.stringify(proof)); }, "
+        "{once: true}); } new MutationObserver(mutations => { const proof = JSON.parse("
+        "sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); proof.scrolls += 1;"
+        "for (const mutation of mutations.slice(0, 4)) { proof.observations.push({type: mutation.type, "
+        "target: mutation.target?.id || mutation.target?.tagName || '', added: mutation.addedNodes?.length || 0,"
+        " removed: mutation.removedNodes?.length || 0, attr: mutation.attributeName || ''}); } "
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", JSON.stringify(proof)); "
+        "}).observe(document.documentElement, {childList: true, subtree: true, attributes: true}); return true; })()"
+    )
+    require(arm_observation is True, f"browser control missing for touch observation: {selector}")
+    # Both CDP touch APIs consume visual-viewport CSS coordinates. DOM rects
+    # and elementFromPoint use layout-viewport CSS coordinates: subtract the
+    # visual viewport pan, but do not multiply by page scale or device DPR.
+    # Otherwise the hit test succeeds while native input misses the element.
+    # The synthesizer delivers the complete touch/pointer lifecycle.
+    devtools.command("Input.synthesizeTapGesture", {
+        "x": point["x"] - point.get("visualOffsetX", 0),
+        "y": point["y"] - point.get("visualOffsetY", 0),
+        "duration": 50,
+        "tapCount": 1,
+        "gestureSourceType": "touch",
+    })
+    wait_for(
+        devtools,
+        "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+        "return value ? JSON.parse(value).events.some(event => event.type === 'touchend') : false; })()",
+        f"settled native touch gesture for {selector}",
+        timeout=3,
+    )
+    # Headless Chrome reports the synthesized touch and pointer lifecycle as
+    # trusted but does not emit the compatibility click which a physical tap
+    # produces. Wait for touchend before completing that native browser input
+    # sequence through CDP; dispatching the mouse compatibility events while
+    # Chrome still owns the asynchronous touch gesture suppresses activation.
+    # Re-measure after the gesture because mobile visual-viewport scrolling can
+    # move the target while the gesture is in flight.
+    settled = devtools.evaluate(
+        "(() => { const proof = JSON.parse(sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ") || 'null');"
+        "if (proof?.initialURL !== location.href) return {navigated: true};"
+        "const node = document.querySelector(" + json.dumps(selector) + "); if (!node) return null;"
+        "const box = node.getBoundingClientRect(); const x = box.left + box.width / 2; const y = box.top + box.height / 2;"
+        "const hit = document.elementFromPoint(x, y); return {x: x - (visualViewport?.offsetLeft || 0), "
+        "y: y - (visualViewport?.offsetTop || 0), navigated: false, "
+        "target: hit === node || node.contains(hit)}; })()"
+    )
+    require(isinstance(settled, dict), f"browser control missing after native touch gesture: {selector}")
+    if settled.get("navigated") is True:
+        return
+    require(bool(settled.get("target")), f"browser control moved or became obscured after native touch gesture: {selector}; state={settled}")
+    # In the installed headless Chrome, synthesizeTapGesture proves trusted
+    # touch/pointer delivery but can stop before the compatibility click. A
+    # second complete raw touch sequence at the settled coordinates lets Chrome
+    # finish its native compatibility-event path and activate the anchor. This
+    # remains browser input: the harness never calls an element handler or
+    # mutates the route directly.
     devtools.command("Input.dispatchTouchEvent", {
         "type": "touchStart",
-        "touchPoints": [{"x": point["x"], "y": point["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
+        "touchPoints": [{"x": settled["x"], "y": settled["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
     })
     devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    wait_for(
+        devtools,
+        "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+        "if (!value) return false; const proof = JSON.parse(value);"
+        "return proof.events.some(event => event.type === 'click'); })()",
+        f"trusted click activation for {selector}",
+        timeout=5,
+    )
+
+
+def touch_proof(devtools: DevTools) -> dict[str, Any] | None:
+    """Read sanitized event-delivery evidence retained across same-origin navigation."""
+    return devtools.evaluate(
+        "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+        "return value ? JSON.parse(value) : null; })()"
+    )
+
+
+def set_touch_emulation(devtools: DevTools, enabled: bool) -> None:
+    """Make CDP touch dispatch produce the native browser gesture lifecycle."""
+    params: dict[str, Any] = {"enabled": enabled}
+    if enabled:
+        params["maxTouchPoints"] = 1
+        params["configuration"] = "mobile"
+    devtools.command("Emulation.setTouchEmulationEnabled", params)
 
 
 def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
     """Send real browser key events instead of calling DOM handlers directly."""
     modifiers = 8 if shift else 0
-    virtual_key = {"Tab": 9, "Escape": 27}.get(key_name)
+    virtual_key = {"Tab": 9, "Enter": 13, "Escape": 27}.get(key_name)
     require(virtual_key is not None, f"browser proof does not define a native key code for {key_name}")
     for event_type in ("rawKeyDown", "keyUp"):
         devtools.command("Input.dispatchKeyEvent", {
@@ -434,22 +573,32 @@ def main() -> int:
         click(devtools, "#charter-import-back")
         wait_for(devtools, "location.pathname === '/console/agents' && document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')", "native back link to Agent Registry")
         time.sleep(0.5)
-        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents"})
-        wait_for(devtools, "document.readyState === 'complete' && !document.querySelector('#inspector').hidden && document.querySelector('#inspector-fields').textContent.includes('proof-agent') && location.search.includes('revision=1')", "exact Agent Registry revision detail")
+        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents/proof-agent"})
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.querySelector('#agent-inline-detail')?.dataset.composition === 'agent-inline' && document.querySelector('#surface-list') && document.querySelector('#agent-inline-detail')?.textContent.includes('proof-agent') && location.search.includes('revision=1')", "exact inline Agent Registry revision detail")
 
         # Traverse the installed immutable fleet-control chain only through the
         # product's rendered related-record links.
         click(devtools, '.related-records a[href^="/console/loops?record_key=proof-loop%3A1"]')
-        wait_for(devtools, "location.pathname === '/console/loops' && location.search.includes('record_key=proof-loop%3A1') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "Agent to exact Loop related record")
+        wait_for(devtools, "location.pathname === '/console/loops' && location.hash === '#/loops/proof-loop:1' && location.search.includes('record_key=proof-loop%3A1') && document.querySelector('#loop-detail')?.dataset.composition === 'loop-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "Agent to exact replacement-page Loop related record")
         time.sleep(0.5)
         devtools.command("Page.reload", {"ignoreCache": True})
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "reloaded exact Loop canonical URL")
         time.sleep(0.5)
         click(devtools, '.related-records a[href^="/console/graphs?record_key=proof-graph%3A1"]')
-        wait_for(devtools, "location.pathname === '/console/graphs' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact Graph related record")
+        wait_for(devtools, "location.pathname === '/console/graphs' && location.hash === '#/graphs/proof-graph:1' && document.querySelector('#graph-detail-page')?.dataset.composition === 'graph-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact replacement-page Graph related record")
         time.sleep(0.5)
         click(devtools, '.related-records a[href^="/console/queue?record_key=queue-accepted"]')
-        wait_for(devtools, "location.pathname === '/console/queue' && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to Queue evidence, receipt, and disposition chain")
+        wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
+        desktop_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
+        require(desktop_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(desktop_detail_png) > 1024, "desktop detail screenshot was not a bounded PNG")
+        devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        narrow_detail = devtools.evaluate("(() => ({overflow: document.documentElement.scrollWidth > innerWidth, composition: document.querySelector('#queue-detail')?.dataset.composition, focused: document.activeElement?.id}))()")
+        require(narrow_detail == {"overflow": False, "composition": "queue-replacement", "focused": "queue-detail"}, f"narrow reduced-motion Queue detail lost DOM/focus fidelity: {narrow_detail}")
+        narrow_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
+        require(narrow_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(narrow_detail_png) > 1024 and narrow_detail_png != desktop_detail_png, "narrow detail screenshot did not prove viewport-specific rendering")
+        devtools.command("Emulation.clearDeviceMetricsOverride")
+        devtools.command("Emulation.setEmulatedMedia", {"features": []})
         time.sleep(0.5)
 
         devtools.evaluate("history.back()")
@@ -466,13 +615,78 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && location.search.includes('page=2') && location.search.includes('q=loop') && location.search.includes('lifecycle=draft') && document.querySelectorAll('#surface-list a').length === 1", "bounded pagination preserving Loop filters")
         time.sleep(0.5)
 
-        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents"})
-        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#inspector-fields')?.textContent.includes('1 @ sha256:')", "canonical direct load of exact Agent revision")
-        time.sleep(0.5)
-        devtools.command("Page.reload", {"ignoreCache": True})
-        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-agent'", "reloaded exact Agent revision")
+        # A keyboard selection and the rendered Back link must restore the
+        # collection's exact selected record, focus, filters, page, and viewport.
+        navigate(devtools, origin + "/console/agents#/agents")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent[data-detail-link][data-record-key=\"proof-agent\"]')", "focus-restoration Agent collection fixture")
+        time.sleep(1.0)
+        collection_state = devtools.evaluate("(() => { const node = document.querySelector('#record-proof-agent'); node.focus(); scrollTo(0, 0); return {path: location.pathname + location.search + location.hash, x: scrollX, y: scrollY, focused: document.activeElement.id}; })()")
+        require(collection_state == {"path": "/console/agents#/agents", "x": 0, "y": 0, "focused": "record-proof-agent"}, f"Agent collection fixture was not deterministic: {collection_state}")
+        key(devtools, "Enter")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && !!document.querySelector('#agent-inline-detail')", "keyboard-opened Agent detail")
+        time.sleep(1.0)
         click(devtools, "#close-inspector")
-        wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector').hidden", "closed Agent Registry detail")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents' && document.activeElement?.id === 'record-proof-agent' && scrollX === 0 && scrollY === 0", "Back link restored selected Agent focus and viewport")
+        time.sleep(1.0)
+
+        # The same native detail route remains operable by touch at a narrow
+        # viewport; reduced motion does not change route or focus semantics.
+        devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+        devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+        tap(devtools, "#record-proof-agent")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.activeElement?.id === 'agent-inline-detail' && document.documentElement.scrollWidth <= innerWidth", "narrow reduced-motion touch Agent detail")
+        delivered_touch = touch_proof(devtools)
+        require(
+            isinstance(delivered_touch, dict)
+            and delivered_touch.get("selector") == "#record-proof-agent"
+            and all(event.get("trusted") is True for event in delivered_touch.get("events", []))
+            and {"touchstart", "touchend", "click"}.issubset(
+                {event.get("type") for event in delivered_touch.get("events", [])}
+            ),
+            f"narrow Agent gesture did not deliver a trusted touch activation lifecycle: {delivered_touch}",
+        )
+        time.sleep(1.0)
+        set_touch_emulation(devtools, False)
+        devtools.command("Emulation.clearDeviceMetricsOverride")
+        devtools.command("Emulation.setEmulatedMedia", {"features": []})
+
+        # A missing requested identity must fail closed instead of selecting a
+        # nearby record or presenting prototype state as authoritative.
+        missing_record_event_start = len(devtools.events)
+        navigate(devtools, origin + "/console/agents?record_key=missing-agent#/agents/missing-agent")
+        wait_for(devtools, "document.readyState === 'complete' && document.body.innerText.includes('\\\"code\\\":\\\"invalid_request\\\"') && document.body.innerText.includes('\\\"message\\\":\\\"Bad Request\\\"') && !document.querySelector('#agent-inline-detail') && !document.body.innerText.includes('proof-agent')", "missing Agent detail denial")
+        time.sleep(1.0)
+        missing_record_event_end = len(devtools.events)
+
+        # Block the only executable page enhancement and prove the server-rendered
+        # canonical link still opens exact detail. Restore the resource policy
+        # before the remaining native dialog checks; no-script is a supported
+        # fallback, not a second route.
+        no_script_start = len(devtools.events)
+        devtools.command("Network.setBlockedURLs", {"urls": [origin + "/console/assets/navigation.js"]})
+        navigate(devtools, origin + "/console/agents#/agents")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')", "no-script Agent collection")
+        time.sleep(1.0)
+        click(devtools, "#record-proof-agent")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && !!document.querySelector('#agent-inline-detail') && !!document.querySelector('#close-inspector[href$=\"#/agents\"]')", "no-script exact Agent detail")
+        time.sleep(1.0)
+        blocked_navigation_assets = sum(
+            1 for event in devtools.events[no_script_start:]
+            if event.get("method") == "Network.loadingFailed"
+            and event.get("params", {}).get("blockedReason") == "inspector"
+        )
+        require(blocked_navigation_assets >= 1, "no-script fixture did not block the presentation enhancement")
+        devtools.command("Network.setBlockedURLs", {"urls": []})
+
+        devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents/proof-agent"})
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && location.search.includes('revision=1') && document.querySelector('#agent-inline-detail')?.textContent.includes('r1 @ sha256:')", "canonical direct load of exact Agent revision")
+        time.sleep(1.0)
+        devtools.command("Page.reload", {"ignoreCache": True})
+        wait_for(devtools, "document.readyState === 'complete' && location.search.includes('revision=1') && document.querySelector('#agent-detail-title')?.textContent.trim() === 'proof-agent'", "reloaded exact Agent revision")
+        time.sleep(1.0)
+        click(devtools, "#close-inspector")
+        wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents' && !document.querySelector('#agent-inline-detail') && !!document.querySelector('#record-proof-agent')", "closed Agent Registry detail into retained collection")
+        time.sleep(1.0)
 
         # Exercise native declarative modal commands through real Chrome input.
         # This fixture has no credential, authority selector, mutation endpoint,
@@ -611,7 +825,7 @@ def main() -> int:
         )
 
         failures: list[str] = []
-        for event in devtools.events:
+        for event_index, event in enumerate(devtools.events):
             method = event.get("method", "")
             params = event.get("params", {})
             if method == "Runtime.exceptionThrown":
@@ -619,9 +833,13 @@ def main() -> int:
             elif method == "Log.entryAdded":
                 entry = params.get("entry", {})
                 text = str(entry.get("text", ""))
+                if missing_record_event_start <= event_index < missing_record_event_end and text == "Failed to load resource: the server responded with a status of 400 (Bad Request)":
+                    continue
                 if entry.get("level") == "error" or "Content Security Policy" in text or "Refused to" in text:
                     failures.append("console/CSP error: " + text[:160])
             elif method == "Network.loadingFailed" and not params.get("canceled", False):
+                if params.get("blockedReason") == "inspector" or params.get("errorText") == "net::ERR_BLOCKED_BY_CLIENT":
+                    continue
                 failures.append("request failure")
             elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) >= 500:
                 response = params.get("response", {})
@@ -654,14 +872,7 @@ def main() -> int:
         }, sort_keys=True))
         return 0
     finally:
-        if devtools is not None:
-            devtools.close()
-        process.terminate()
-        try:
-            process.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=3)
+        stop_chrome(process, devtools)
         chrome_stderr.close()
 
 

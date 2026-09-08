@@ -201,7 +201,7 @@ func TestConsoleQueueOperationRouteWiresAllClosedOperationsWithServerBindings(t 
 		t.Run(operation, func(t *testing.T) {
 			operator := &recordingConsoleQueueOperator{view: view}
 			response := serveConsoleQueueOperation(t, svc, manager, cookie, csrf, operation, operator)
-			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/console/queue?record_key=queue-authoritative#/queue" {
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/console/queue?record_key=queue-authoritative#/queue/queue-authoritative" {
 				t.Fatalf("operation=%s status=%d location=%q body=%s", operation, response.Code, response.Header().Get("Location"), response.Body.String())
 			}
 			if operator.gotItem != "queue-authoritative" || operator.gotSubject.PrincipalID != svc.Config.Principal.ID || operator.operation != operation {
@@ -748,8 +748,8 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 					t.Fatalf("credentials domain must report unconfigured authority when no bbolt is wired: %s", body)
 				}
 			}
-			if bytes.Contains(body, []byte("<script")) || bytes.Contains(body, []byte("data-on:")) {
-				t.Fatalf("route %s contained CSP-incompatible browser behavior: %s", route.domain, body)
+			if bytes.Count(body, []byte("<script")) != 1 || !bytes.Contains(body, []byte(`<script src="/console/assets/navigation.js" defer></script>`)) || bytes.Contains(body, []byte("data-on:")) {
+				t.Fatalf("route %s did not contain exactly the bounded same-origin navigation enhancement: %s", route.domain, body)
 			}
 		})
 	}
@@ -1097,6 +1097,15 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	_ = shell.Body.Close()
 	if shell.StatusCode != http.StatusOK || !strings.Contains(string(shellBody), "Authentication required") || strings.Contains(string(shellBody), "Authenticated control plane") || strings.Contains(string(shellBody), "<script") || strings.Contains(string(shellBody), "data-on:") || !strings.Contains(shell.Header.Get("Content-Security-Policy"), "default-src 'none'") || shell.Header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("unsafe console shell status=%d headers=%v", shell.StatusCode, shell.Header)
+	}
+	navigationAsset, err := client.Get("http://" + address + "/console/assets/navigation.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	navigationBody, _ := io.ReadAll(navigationAsset.Body)
+	_ = navigationAsset.Body.Close()
+	if navigationAsset.StatusCode != http.StatusOK || !strings.HasPrefix(navigationAsset.Header.Get("Content-Type"), "text/javascript") || !bytes.Contains(navigationBody, []byte("selected.focus({preventScroll: true})")) || bytes.Contains(navigationBody, []byte("fetch(")) {
+		t.Fatalf("bounded navigation asset status=%d type=%q bytes=%d", navigationAsset.StatusCode, navigationAsset.Header.Get("Content-Type"), len(navigationBody))
 	}
 	asset, err := client.Get("http://" + address + "/console/assets/datastar-v1.0.2.js")
 	if err != nil {
