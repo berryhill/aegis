@@ -56,10 +56,21 @@ def main() -> int:
 
     for forbidden in (
         "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "localStorage",
-        "document.cookie", "location.hash", "location.search", "URLSearchParams", "innerHTML",
+        "document.cookie", "location.search", "URLSearchParams", "innerHTML",
         "outerHTML", "document.write", "eval(", "new Function", "window.open", "form.submit",
     ):
         require(forbidden not in navigation, f"navigation asset exceeds presentation-only authority: {forbidden}")
+    # Fragments may select only an Agent identifier; authentication and exact
+    # revision resolution remain server-side. Dynamic cases live alongside this
+    # source contract in scripts/agent_navigation_test.cjs.
+    for required in (
+        'location.hash.match(/^#\\/agents\\/([^/?#]+)$/)',
+        '/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id)',
+        'target.pathname = "/console/agents"',
+        'target.searchParams.set("record_key", id)',
+        'if (current !== id) target.searchParams.delete("revision")',
+    ):
+        require(required in navigation, f"bounded Agent fragment control missing: {required}")
     for required in (
         "sessionStorage.setItem(storageKey", "sessionStorage.getItem(storageKey)",
         'body.dataset.detailOpen === "true"', "context.recordKey.length > 1024",

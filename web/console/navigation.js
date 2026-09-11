@@ -6,6 +6,25 @@
   const body = document.body;
   if (!body) return;
 
+  // A fragment identifies a record only. Exact lookup stays on the
+  // authenticated server path; ignore all other fragment input.
+  const resolveAgentFragment = () => {
+    const route = location.hash.match(/^#\/agents\/([^/?#]+)$/);
+    if (!route) return;
+    let id;
+    try { id = decodeURIComponent(route[1]); } catch (_) { return; }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id)) return;
+    const target = new URL(location.href);
+    if (target.searchParams.get("record_key") === id && target.pathname === "/console/agents") return;
+    const current = target.searchParams.get("record_key");
+    target.pathname = "/console/agents";
+    target.searchParams.set("record_key", id);
+    if (current !== id) target.searchParams.delete("revision");
+    location.replace(target.href);
+  };
+  resolveAgentFragment();
+  addEventListener("hashchange", resolveAgentFragment);
+
   const collectionURL = body.dataset.collectionUrl || "";
   if (!collectionURL) return;
 

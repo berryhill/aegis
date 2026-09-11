@@ -138,12 +138,26 @@ type RecordModel struct {
 // immutable Registry revision. DeclaredAuthority is not an effective stanza,
 // mandate, or permission grant.
 type AgentDetailModel struct {
-	StableID, FleetID, SourceKind, SourceID, OwnerID, AccountabilityID string
-	RuntimeAdapter, Runtime, RuntimeTarget                             string
-	CharterID, CharterDigest, RevisionDigest                           string
-	CharterRevision, Revision                                          uint64
-	Capabilities, Policies                                             []string
-	DeclaredAuthority, EffectiveAuthority, ProvisioningEvidence        string
+	StableID, FleetID, SourceKind, SourceID, OwnerID, AccountabilityID              string
+	RuntimeAdapter, Runtime, RuntimeTarget                                          string
+	CharterID, CharterDigest, RevisionDigest                                        string
+	CharterRevision, Revision                                                       uint64
+	Capabilities, Policies                                                          []string
+	DeclaredAuthority, EffectiveAuthority, ProvisioningEvidence                     string
+	AuthorityState, EvaluatedFor, CharterEvidence, HistoryEvidence, SessionEvidence string
+	Historical, LifecycleEligible                                                   bool
+	AuthorityFields, ReceiptFields, SessionFields                                   []FieldModel
+	CharterHistoryEvidence                                                          string
+	CharterHistory                                                                  []FieldModel
+	History, Executions                                                             []LinkModel
+	Stanzas                                                                         []AgentStanzaModel
+}
+
+// AgentStanzaModel contains declarations only, never an authorization grant.
+type AgentStanzaModel struct {
+	ID, Name string
+	Enabled  bool
+	Fields   []FieldModel
 }
 
 // LinkModel is a presentation-only transition to an exact related record.

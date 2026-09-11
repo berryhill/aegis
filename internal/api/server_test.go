@@ -812,8 +812,23 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 }
 
 func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *testing.T) {
+	t.Run("denied-operator-stanza", func(t *testing.T) {
+		testConsoleAgentRegistrationAndLifecycle(t, false)
+	})
+	t.Run("principal-selector-does-not-override-authentication-method", func(t *testing.T) {
+		testConsoleAgentRegistrationAndLifecycle(t, true)
+	})
+}
+
+// Both cases use the production password-authenticated HTTP routes. Matching
+// principal selectors must not override the independently authenticated method:
+// current charters permit local-os only. Reads must never issue runtime authority.
+func testConsoleAgentRegistrationAndLifecycle(t *testing.T, principalSelector bool) {
+	t.Helper()
 	svc := apiService(t)
 	fleetStore := configureAPIFleet(t, svc)
+	historyProbe := &agentHistoryReadProbe{Repository: fleetStore}
+	svc.FleetRepository = historyProbe
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -859,6 +874,12 @@ func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *te
 			Grant:          core.Grant{Capabilities: []string{"chat"}, Tools: []string{"no_mcp"}}, Scopes: core.Scopes{Memory: []string{"agent-alpha"}, Credentials: []string{"provider:test"}}, Session: core.SessionPolicy{MaximumLifetimeSec: 60, RequireReauth: true}, Approval: core.ApprovalPolicy{RequiredOperations: []string{"provision"}, MaximumLifetimeSec: 60, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Toolsets: []string{"no_mcp"}, Model: "fixture-model", Provider: "test"},
 		}},
 		CreatedBy: "principal-1", CreatedAt: time.Now().UTC().Truncate(time.Second),
+	}
+	if principalSelector {
+		charter.Stanzas[0].Authentication.Selectors = []core.IdentitySelector{{
+			PrincipalIDs: []string{svc.Config.Principal.ID},
+			Issuers:      []string{"aegis-principal-auth"}, Environments: []string{"local"},
+		}}
 	}
 	canonical, err := core.Canonicalize(charter)
 	if err != nil {
@@ -1024,6 +1045,148 @@ func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *te
 		t.Fatalf("initial authoritative revision=%+v err=%v", initial, err)
 	}
 
+	// Historical provisioning evidence must be joined by exact charter digest,
+	// never by Agent name, status, or a near-miss receipt. These synthetic stored
+	// receipts exercise rendering only; they do not certify provisioning.
+	for _, receipt := range []core.Receipt{
+		{ID: "receipt-exact-registry", CharterDigest: canonical.Digest, PlanID: "plan-exact-registry", PlanDigest: "sha256:" + strings.Repeat("a", 64), Status: "succeeded"},
+		{ID: "receipt-near-miss-registry", CharterDigest: "sha256:" + strings.Repeat("b", 64), PlanID: "plan-near-miss-registry", Status: "succeeded"},
+	} {
+		if err := svc.Store.Save("receipts", receipt.ID, receipt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Session history is evidence, not a runtime admission. Store one exact
+	// binding and independent near misses without issuing any live mandate.
+	exactSession := core.Session{ID: "session-exact-registry", Status: "ended", Mandate: core.Mandate{
+		ID: "mandate-history-registry", AgentID: charter.AgentID, CharterRevision: charter.Revision,
+		CharterDigest: canonical.Digest, Target: charter.Runtime.Target,
+		Runtime: core.RuntimeDescriptor{Runtime: charter.Runtime.Runtime}, StanzaID: "principal",
+	}}
+	storedSessions := []core.Session{exactSession}
+	for _, field := range []string{"agent", "revision", "digest", "target", "runtime"} {
+		near := exactSession
+		near.ID = "session-near-" + field
+		switch field {
+		case "agent":
+			near.Mandate.AgentID = "other-agent"
+		case "revision":
+			near.Mandate.CharterRevision++
+		case "digest":
+			near.Mandate.CharterDigest = "sha256:" + strings.Repeat("c", 64)
+		case "target":
+			near.Mandate.Target = "profile/other"
+		case "runtime":
+			near.Mandate.Runtime.Runtime = "other-runtime"
+		}
+		storedSessions = append(storedSessions, near)
+	}
+	for _, session := range storedSessions {
+		if err := svc.Store.Save("sessions", session.ID, session); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	acceptedHistory := storeAgentExecutionHistory(t, svc, fleetStore, initial)
+
+	// Exercise the production authenticated selection path, not just the
+	// evidence projection helper. All three render entry points must enrich.
+	assertDetail := func(path string, historical bool) {
+		t.Helper()
+		beforeRead := agentReadOnlyState(t, svc)
+		defer func() {
+			if agentReadOnlyState(t, svc) != beforeRead {
+				t.Errorf("%s mutated authority or execution evidence during a Registry read", path)
+			}
+		}()
+		res, getErr := client.Get("http://" + address + path)
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		content, _ := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("detail status=%d", res.StatusCode)
+		}
+		for _, text := range []string{"Exact stored charter revision and digest verified", "Provisioning receipt recorded for the exact charter digest", "Historical evidence is not current readiness or runtime admission", "receipt-exact-registry", "plan-exact-registry", "Recorded sessions for the exact charter, runtime and target binding", "session-exact-registry", "recorded session, not fresh admission", "Authentication and identity selectors", initial.Digest} {
+			if !bytes.Contains(content, []byte(text)) {
+				t.Errorf("%s missing authenticated evidence %q", path, text)
+			}
+		}
+		if !bytes.Contains(content, []byte("href=\""+consoleRecordURL(consoleQueue, acceptedHistory.QueueItem.ItemID)+"\"")) || !bytes.Contains(content, []byte("Execution · ")) {
+			t.Errorf("%s omitted exact persisted execution link", path)
+		}
+		if bytes.Contains(content, []byte("receipt-near-miss-registry")) || bytes.Contains(content, []byte("plan-near-miss-registry")) {
+			t.Errorf("%s rendered provisioning evidence for a different charter digest", path)
+		}
+		matched := bytes.Contains(content, []byte("Exactly one stanza matches the authenticated operator"))
+		denied := bytes.Contains(content, []byte("No effective permissions are asserted"))
+		if matched || !denied {
+			t.Errorf("%s password identity inherited local-os authority: matched=%v denied=%v", path, matched, denied)
+		}
+		if bytes.Contains(content, []byte("session-near-")) {
+			t.Errorf("%s rendered a near-miss session binding", path)
+		}
+		if sessions, sessionErr := svc.ListSessions(); sessionErr != nil || len(sessions) != len(storedSessions) {
+			t.Fatalf("read-only HTTP detail changed session count: err=%v", sessionErr)
+		}
+		lifecycleForm := []byte("action=\"/console/agents/agent-alpha/lifecycle\"")
+		if historical {
+			if bytes.Contains(content, lifecycleForm) {
+				t.Error("historical detail exposed latest-only lifecycle controls")
+			}
+			parts := bytes.SplitN(content, []byte("id=\"agent-inline-detail\""), 2)
+			if len(parts) != 2 || !bytes.Contains(parts[0], []byte("disabled")) || !bytes.Contains(parts[1], []byte("r1 @ "+initial.Digest)) {
+				t.Error("historical detail replaced the latest roster or lost the exact revision")
+			}
+			if !bytes.Contains(content, []byte("lifecycle=disabled&amp;q=alpha&amp;record_key=agent-alpha&amp;revision=2")) {
+				t.Error("history link lost the current collection filters")
+			}
+		} else if !bytes.Contains(content, lifecycleForm) {
+			t.Error("latest detail lost eligible lifecycle controls")
+		}
+	}
+	for _, path := range []string{"/console/agents?", "/console/fragments/inspect?domain=agents&", "/console/fragments/surface?domain=agents&"} {
+		assertDetail(path+"record_key=agent-alpha&revision=1", false)
+	}
+
+	// Mutate one read-boundary binding at a time, never the durable facts.
+	// Exercise the full authenticated handlers; a partial/unavailable projection
+	// is acceptable on corrupt evidence, attaching the execution is not.
+	for _, field := range []string{"participant-id", "participant-revision", "participant-digest", "no-participant", "item-id", "snapshot-id", "snapshot-digest"} {
+		for _, path := range []string{"/console/agents?", "/console/fragments/inspect?domain=agents&", "/console/fragments/surface?domain=agents&"} {
+			time.Sleep(time.Second) // respect the production source rate limiter
+			beforeRead := agentReadOnlyState(t, svc)
+			res, content := func() (*http.Response, []byte) {
+				historyProbe.mutation.Store(field)
+				defer historyProbe.mutation.Store("")
+				res, readErr := client.Get("http://" + address + path + "record_key=agent-alpha&revision=1")
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				defer res.Body.Close()
+				content, readErr := io.ReadAll(res.Body)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				return res, content
+			}()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("%s %s status=%d: did not exercise authenticated detail", field, path, res.StatusCode)
+			}
+			if !bytes.Contains(content, []byte("id=\"agent-inline-detail\"")) || !bytes.Contains(content, []byte("No effective permissions are asserted")) {
+				t.Errorf("%s %s did not render authenticated password-denied Agent detail", field, path)
+			}
+			if bytes.Contains(content, []byte("Execution · ")) || bytes.Contains(content, []byte("href=\""+consoleRecordURL(consoleQueue, acceptedHistory.QueueItem.ItemID)+"\"")) {
+				t.Errorf("%s %s attached near-miss execution", field, path)
+			}
+			if agentReadOnlyState(t, svc) != beforeRead {
+				t.Errorf("%s %s mutated canonical state", field, path)
+			}
+		}
+	}
+
 	lifecycle := url.Values{"csrf": {state.CSRF}, "revision": {"1"}, "digest": {initial.Digest}, "lifecycle": {"disabled"}}
 	response, body = post("/console/agents/"+charter.AgentID+"/lifecycle", lifecycle, "http://"+address)
 	if response.StatusCode != http.StatusOK || response.Request.URL.Path != "/console/agents" {
@@ -1033,6 +1196,46 @@ func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *te
 	if err != nil || disabled.Revision != 2 || disabled.Lifecycle != registry.LifecycleDisabled || disabled.Digest == initial.Digest {
 		t.Fatalf("disabled authoritative revision=%+v err=%v", disabled, err)
 	}
+	for _, path := range []string{"/console/agents?", "/console/fragments/inspect?domain=agents&", "/console/fragments/surface?domain=agents&"} {
+		assertDetail(path+"record_key=agent-alpha&revision=1&q=alpha&lifecycle=disabled", true)
+		time.Sleep(time.Second)
+		beforeRead := agentReadOnlyState(t, svc)
+		res, readErr := client.Get("http://" + address + path + "record_key=agent-alpha&revision=2")
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		content, readErr := io.ReadAll(res.Body)
+		_ = res.Body.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if res.StatusCode != http.StatusOK || !bytes.Contains(content, []byte("r2 @ "+disabled.Digest)) || bytes.Contains(content, []byte("Execution · ")) {
+			t.Errorf("%s latest revision inherited historical execution or failed exact selection", path)
+		}
+		if agentReadOnlyState(t, svc) != beforeRead {
+			t.Errorf("%s latest selection mutated canonical state", path)
+		}
+	}
+	// Invalid and filtered-out selections must never fall back to an
+	// unfiltered or latest inspector through any production render route.
+	time.Sleep(time.Second)
+	for _, path := range []string{"/console/agents?", "/console/fragments/inspect?domain=agents&", "/console/fragments/surface?domain=agents&"} {
+		for _, selection := range []string{"record_key=missing", "record_key=agent-alpha&q=not-present", "record_key=agent-alpha&revision=0"} {
+			// Respect the production authentication source rate limit.
+			time.Sleep(time.Second)
+			res, getErr := client.Get("http://" + address + path + selection)
+			if getErr != nil {
+				t.Fatal(getErr)
+			}
+			content, _ := io.ReadAll(res.Body)
+			_ = res.Body.Close()
+			if res.StatusCode != http.StatusBadRequest || bytes.Contains(content, []byte("id=\"agent-inline-detail\"")) {
+				t.Errorf("invalid selection %s%s: status=%d", path, selection, res.StatusCode)
+			}
+		}
+	}
+	// These extra authenticated readbacks consume the same source bucket.
+	time.Sleep(time.Second)
 	response, _ = post("/console/agents/"+charter.AgentID+"/lifecycle", lifecycle, "http://"+address)
 	if response.StatusCode != http.StatusConflict {
 		t.Fatalf("stale lifecycle revision status=%d", response.StatusCode)
