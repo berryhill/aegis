@@ -576,6 +576,28 @@ def main() -> int:
         devtools.command("Page.navigate", {"url": origin + "/console/agents?record_key=proof-agent&revision=1#/agents/proof-agent"})
         wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents/proof-agent' && document.querySelector('#agent-inline-detail')?.dataset.composition === 'agent-inline' && document.querySelector('#surface-list') && document.querySelector('#agent-inline-detail')?.textContent.includes('proof-agent') && location.search.includes('revision=1')", "exact inline Agent Registry revision detail")
 
+        # Contract: declaration/history disclosure is read-only presentation,
+        # never authority selection. Exercise native summaries at both target
+        # widths before leaving the Registry for related definitions.
+        for width, height in ((1440, 900), (390, 844)):
+            devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
+            for label in ("Charter revision history", "All trust stanza declarations"):
+                summary_selector = devtools.evaluate("(() => { const summaries = [...document.querySelectorAll('#agent-inline-detail details > summary')]; const node = summaries.find(n => n.textContent.startsWith(" + json.dumps(label) + ")); if (!node) return null; const parent = node.parentElement; return '#agent-inline-detail details:nth-of-type(' + ([...parent.parentElement.children].filter(n => n.tagName === 'DETAILS').indexOf(parent) + 1) + ') > summary'; })()")
+                require(bool(summary_selector), "Registry disclosure missing: " + label)
+                click(devtools, summary_selector)
+                wait_for(devtools, "document.querySelector(" + json.dumps(summary_selector) + ")?.parentElement.open === true", "expanded " + label)
+                overflow = devtools.evaluate("(() => ({width: innerWidth, scrollWidth: document.documentElement.scrollWidth, nodes: [...document.querySelectorAll('#agent-inline-detail *')].filter(n => n.getBoundingClientRect().right > innerWidth).slice(0, 12).map(n => ({tag: n.tagName, class: n.className, right: Math.round(n.getBoundingClientRect().right)}))}))()")
+                require(overflow["scrollWidth"] <= overflow["width"], "expanded Registry disclosure overflow: " + json.dumps(overflow))
+                click(devtools, summary_selector)
+                wait_for(devtools, "document.querySelector(" + json.dumps(summary_selector) + ")?.parentElement.open === false", "collapsed " + label)
+        devtools.command("Emulation.clearDeviceMetricsOverride")
+
+        # Registry definition links are deliberately disclosed separately from
+        # current execution evidence. Open the native disclosure as an operator
+        # would; scrolling a descendant of closed <details> cannot expose it.
+        provenance = '#agent-inline-detail details:has(.related-records a[href^="/console/loops?record_key=proof-loop%3A1"])'
+        click(devtools, provenance + ' > summary')
+        wait_for(devtools, 'document.querySelector(' + json.dumps(provenance) + ')?.open === true', 'expanded Registry provenance and related definitions')
         # Traverse the installed immutable fleet-control chain only through the
         # product's rendered related-record links.
         click(devtools, '.related-records a[href^="/console/loops?record_key=proof-loop%3A1"]')
