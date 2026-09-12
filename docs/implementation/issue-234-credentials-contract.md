@@ -18,6 +18,16 @@ Implementation-step readback:
 - `go generate ./web/console` succeeded with the repository-pinned templ generator. `go test ./web/console ./internal/api` and `git diff --check` passed after implementation. The Go executable required adding `/home/silas/go/bin` to PATH.
 - Generated renderer, structure/metadata regression tests and navigation assertions are updated. No external mutation, credential operation, provisioning, activation, publication or merge was performed.
 
+## Attempt 8 source-repair contract
+
+Previous-error identity: `tflp_a767f8d240c84c5b`, SHA-256 `0ae38d2d97740310d8900b74b4b879bb959ba400426d0ff3b331b143bdef84ff`; canonical FlowStore readback matches active attempt 8, original task/session, branch and candidate `ee5f31c437b0555582892420df766beabf5d4fa0`.
+
+Domain obligation: responsive disclosure changes metadata presentation only, never credential authority. Revoked-detail and reset-decline copy must describe actual visible metadata and irreversible preparatory effects without expanding capability.
+
+Acceptance design: compare accessible headers and visible row cells, not mere DOM presence. Digest-verified offline Chrome inspection confirms the accepted inventory uses inline-size containers: Version hides at container width <=540px or viewport <=760px; Kind hides at container width <=420px. Pane switching remains <=900px. Test browse and selected desktop inventory, narrow list, resize restoration, and preservation of all version-history columns. Fix revoked text to promise record metadata/version history only. Clarify that declining destructive reset does not undo a separately approved preparatory gateway stop.
+
+Non-goals: no backend, authentication, custody, provider configuration, release policy or unrelated layout change. Synthetic browser regressions are not populated authenticated extracted-binary acceptance. Exact committed-candidate installation, no-key demonstration, independent security/launch acceptance and publication remain subsequent flow gates; all carried denial findings remain open until independently reconciled.
+
 ## Attempt 5 source-repair contract
 
 Previous-error identity: `tflp_5a02ad8b75fc45e7`, SHA-256 `0f4002439e7991fd642e295146267d858797998b8853aeaf10813f4cf8a37366`; matched against the active profile-scoped FlowStore attempt 5 before edits.

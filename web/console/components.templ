@@ -969,7 +969,7 @@ templ CredentialInspector(surface SurfaceModel, record *RecordModel) {
 		</div>
 		<div class="panel-body">
 			if record.Lifecycle == "revoked" {
-				<div class={ "execution-alert revoked" }><strong>Revoked credential</strong><span>This credential record is terminal. Secret value reads are denied; only the immutable version history and KEK metadata remain inspectable.</span></div>
+				<div class={ "execution-alert revoked" }><strong>Revoked credential</strong><span>This credential record is terminal. Secret value reads are denied; record metadata and immutable version history remain inspectable here.</span></div>
 			}
 			<div class="section-label">Metadata</div>
 			<dl class="spec">

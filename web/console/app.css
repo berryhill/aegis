@@ -50,6 +50,10 @@ form.list-bar[action="/console/agents"]{padding:9px 13px;border:1px solid var(--
 .credential-workspace{grid-template-columns:minmax(0,42fr) minmax(0,58fr);gap:0;height:clamp(360px,65vh,900px);border:1px solid var(--border-subtle);border-radius:12px;overflow:hidden}
 .credential-workspace>.inventory,.credential-workspace>.detail{overflow:auto;min-height:0;overscroll-behavior:contain}
 .credential-workspace>.detail{border-left:1px solid var(--border-subtle)}
+.credential-workspace>.inventory{container:credential-inventory / inline-size}
+@container credential-inventory (max-width:540px){.credential-table th:nth-child(4),.credential-table td:nth-child(4){display:none}}
+@container credential-inventory (max-width:420px){.credential-table th:nth-child(2),.credential-table td:nth-child(2){display:none}}
+@media(max-width:760px){.credential-workspace>.inventory .credential-table th:nth-child(4),.credential-workspace>.inventory .credential-table td:nth-child(4){display:none}}
 .credential-workspace .pane-head{padding:14px}
 .credential-workspace .filter-row{flex-wrap:wrap}
 .credential-workspace .count{flex-basis:100%}

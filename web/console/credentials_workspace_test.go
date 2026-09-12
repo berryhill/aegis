@@ -91,6 +91,11 @@ func TestCredentialWorkspaceDenialAndEmptyStates(t *testing.T) {
 			if !strings.Contains(out.String(), tc.want) || strings.Contains(out.String(), tc.forbidden) {
 				t.Fatalf("incorrect %s presentation", tc.name)
 			}
+			if tc.name == "revoked" {
+				if !strings.Contains(out.String(), "record metadata and immutable version history remain inspectable here.") || strings.Contains(out.String(), "KEK metadata remain inspectable") {
+					t.Fatal("revoked notice must describe the rendered metadata, not promise absent KEK inspection")
+				}
+			}
 			if strings.Count(out.String(), `id="close-inspector"`) > 1 {
 				t.Fatal("duplicate close control")
 			}
