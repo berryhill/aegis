@@ -2,6 +2,7 @@
 /.tools/
 go.tar.gz
 govulncheck
+/.browser-proof-runtime/
 
 # Task-local verification artifacts (never release source)
 /.scratch/
@@ -9,6 +10,7 @@ govulncheck
 # Go build and test outputs
 /aegis
 /aegis-*
+/.aegis-*
 /bin/
 /dist/
 *.exe
@@ -24,6 +26,13 @@ govulncheck
 coverage.out
 __pycache__/
 *.pyc
+
+# Local transient verification logs (kept in tree but excluded from publication)
+/.diagnose-go-test.log
+/.launch-review-go-test.log
+/.launch-review-race.log
+/.recovery-architecture-focused.log
+/.test-behavior-go.log
 
 # Local runtime state and configuration
 .env

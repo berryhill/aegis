@@ -445,7 +445,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Graph record")
 			}
-			record = consoleGraphRecord(graphView, surface.Submissions, string(data))
+			record = consoleGraphRecord(graphView, surface.Submissions, string(data), surface.Graphs)
 		} else if domain == consoleQueue {
 			queueView, ok := value.(app.QueueExecutionView)
 			if !ok {
@@ -778,7 +778,7 @@ func loopPathExists(adjacency map[string][]string, start, target string) bool {
 	return false
 }
 
-func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw string) consoleweb.RecordModel {
+func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw string, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
 	detail := &consoleweb.GraphDetailModel{
 		Digest: revision.Digest, PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"),
@@ -858,6 +858,7 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 	} else if view.Lifecycle.State == "retired" {
 		readiness = "Retired; terminal lifecycle"
 	}
+	enrichGraphWorkspace(detail, view, graphSets...)
 	return consoleweb.RecordModel{
 		Key: revision.GraphID + ":" + strconv.FormatUint(revision.Revision, 10), Label: revision.GraphID,
 		Summary: fmt.Sprintf("revision %d · %d nodes · %d dependencies", revision.Revision, len(revision.Nodes), len(revision.Dependencies)),

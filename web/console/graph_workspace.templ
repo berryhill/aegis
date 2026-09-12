@@ -1,0 +1,80 @@
+package consoleweb
+
+import "fmt"
+
+templ GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTopology) {
+ <div data-graph-workspace>
+  <nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Graphs</a></nav>
+  <div class="record-head graph-record-head">
+   <div><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Graph.GraphID } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span><span>Stored validation · { record.Graph.Validation }</span></div>
+    <dl class="meta-strip"><div><dt>Nodes</dt><dd>{ fmt.Sprint(len(record.Graph.Nodes)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Graph.Edges)) }</dd></div><div><dt>Loops referenced</dt><dd>{ fmt.Sprint(topology.LoopCount) }</dd></div><div><dt>Latest version</dt><dd>{ record.Graph.LatestVersion }</dd></div></dl>
+   </div>
+   <div class="graph-record-actions"><a class="primary" href={ graphRunURL(record) }>Prepare execution request</a><button class="secondary" type="button" data-graph-definition aria-controls="graph-context" aria-expanded="true">Definition details</button></div>
+  </div>
+  <section class="graph-admission" aria-label="Validation and submittability">
+   <p>{ record.Readiness }</p><p>Preparation is not submission. Fresh authority admission, exact references and typed inputs are checked again before any consequential submission.</p>
+   <p>Current structural validation · { record.Graph.CurrentValidation }. This does not establish current runtime or referenced-record eligibility.</p>
+   @GraphIssues(record.Graph.ValidationIssues)
+   @GraphIssues(record.Graph.SubmissionIssues)
+   @GraphIssues(topology.Issues)
+  </section>
+  <div class="detail-split graph-workspace">
+   <section class="gw-pane gw-canvas" aria-labelledby="graph-canvas-title">
+    <div class="canvas-bar"><h3 class="canvas-title" id="graph-canvas-title">Graph canvas · Topology</h3><div class="canvas-tools" role="group" aria-label="Topology controls"><button type="button" class="ghost" data-graph-zoom="out" aria-label="Zoom out">−</button><button type="button" class="ghost" data-graph-fit>Fit</button><button type="button" class="ghost" data-graph-zoom="in" aria-label="Zoom in">+</button><output data-graph-scale aria-live="polite">100%</output></div></div>
+    <p class="canvas-hint" id="graph-canvas-help">Read-only. Select a node to inspect. Scroll or drag to pan; use arrow keys on the canvas. Tab to nodes, Enter to select. Textual equivalent below.</p>
+    <div class="graph-viewport" data-graph-viewport tabindex="0" role="region" aria-label="Directed Graph topology" aria-describedby="graph-canvas-help">
+     <div class="graph-stage" data-graph-stage="true" data-columns={ fmt.Sprint(topology.Columns) } data-rows={ fmt.Sprint(topology.Rows) }>
+      <svg class="graph-edge-layer" viewBox={ fmt.Sprintf("0 0 %d %d", topology.Columns*244+32, topology.Rows*134+32) } preserveAspectRatio="none" aria-hidden="true"><defs><marker id="graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
+       for _, edge := range topology.Edges {
+        <path class="graph-edge-path" d={ edge.Path } marker-end="url(#graph-arrow)"><title>{ record.Graph.Edges[edge.Index].ID }</title></path>
+       }
+      </svg>
+      for _, node := range topology.Nodes {
+       <button type="button" class="graph-node" data-graph-node={ fmt.Sprint(node.Index) } data-grid-column={ fmt.Sprint(node.GridColumn) } data-grid-row={ fmt.Sprint(node.GridRow) } aria-controls="graph-context" aria-pressed="false"><strong>{ node.Node.ID }</strong><span class="graph-node-loop">Loop · { node.Node.Loop }</span><span>Agent · { node.Node.Participant }</span><small>{ fmt.Sprint(len(node.Incoming)) } in · { fmt.Sprint(len(node.Outgoing)) } out</small></button>
+      }
+     </div>
+    </div>
+   </section>
+   <aside class="gw-pane gw-inspector" id="graph-context" aria-labelledby="graph-context-title"><div class="gw-head"><h3 class="gw-title" id="graph-context-title" tabindex="-1">Inspector</h3><button type="button" class="ghost" data-graph-close aria-label="Close inspector">×</button></div><div class="gw-body">
+    <div data-graph-definition-panel>@GraphDefinitionDetails(record)</div>
+    for _, node := range topology.Nodes {
+     <section data-graph-node-panel={ fmt.Sprint(node.Index) } hidden><button type="button" class="ghost" data-graph-definition>← Back to graph</button>@GraphNodeDetails(node)</section>
+    }
+   </div></aside>
+  </div>
+  <details class="graph-textual"><summary>Accessible textual equivalent · all declared nodes and edges</summary><p>Stored definitions, not an execution schedule. Invalid edges remain listed even when no safe geometry can be drawn.</p>
+   for _, node := range topology.Nodes {
+    <details><summary>{ node.Node.ID } · node { fmt.Sprint(node.Index+1) }</summary>@GraphNodeDetails(node)</details>
+   }
+   <h3>All declared edges</h3>@GraphEdges(record.Graph.Edges)
+  </details>
+ </div>
+}
+
+templ GraphIssues(issues []GraphIssueModel) {
+ if len(issues) > 0 {
+  <ul class="graph-issues">
+   for _, issue := range issues {
+    <li data-reason-code={ issue.Code } data-issue-path={ issue.Path }><code>{ issue.Code }</code> · { issue.Path } · { issue.Message }</li>
+   }
+  </ul>
+ }
+}
+
+templ GraphNodeDetails(node GraphPosition) {
+ <h4>{ node.Node.ID }</h4><dl class="spec"><dt>Exact Agent revision</dt><dd>{ node.Node.Participant }</dd><dt>Exact Loop revision</dt><dd>{ node.Node.Loop }</dd><dt>Input ports</dt><dd>{ node.Node.Inputs }</dd><dt>Output ports</dt><dd>{ node.Node.Outputs }</dd></dl>
+ @RelatedRecords(node.Node.Links)
+ <h4>Input mappings</h4>@FieldList(node.Node.InputMappings, "No Graph input mappings")
+ <h4>Output mappings</h4>@FieldList(node.Node.OutputMappings, "No Graph output mappings")
+ <h4>Incoming edges</h4>@GraphEdges(node.Incoming)
+ <h4>Outgoing edges</h4>@GraphEdges(node.Outgoing)
+}
+
+templ GraphEdges(edges []GraphEdgeModel) {
+ if len(edges) == 0 {
+  <p class="empty-note">None declared.</p>
+ }
+ for _, edge := range edges {
+  <div class="graph-edge-text"><strong>{ edge.ID }</strong><span>{ edge.From } → { edge.To }</span><small>{ edge.Mappings }</small></div>
+ }
+}
