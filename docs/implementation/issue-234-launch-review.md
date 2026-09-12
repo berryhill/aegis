@@ -1,5 +1,106 @@
 # Issue 234 — launch-asset review
 
+## Attempt 9 / execution 101 — successor local candidate preparation
+
+The canonical session readback confirms the original task, active cursor 4,
+attempt 9 and packet `tflp_3901042140074c95` with the injected hash. Canonical
+`may_commit_code` and `may_mutate_code` are true. Effective Git identity is now
+Xander / xander@agents.tarxan.io; execution-99 contamination is historical,
+not a remaining local commit blocker. Publication denial remains unchanged.
+
+The existing reset repair, generated-material harness and Credentials-only
+390px header spacing repair are preserved. The installed harness additionally
+requires the authenticated sign-out control to be visible and wholly inside
+the viewport in collection mode, rather than accepting clipping as a fix.
+Fresh source Chrome coverage passed at 1440/900/390, including column thresholds,
+restoration and native fallback. Focused API/console/reset tests and three Python
+guard tests passed. These results are not extracted-candidate acceptance.
+
+Two preliminary harness invocations did not reach the browser: the first lacked
+Go on PATH, and the second used the historical execution-100 development binary,
+which correctly denied its execution-profile home/repository mismatch. Neither
+failure is runtime qualification or a new Credentials UI regression. No guard
+was weakened. Exact successor archive proof must use a clean source and a
+version-bound extracted binary, not that development executable.
+
+No supported-Hermes demonstration was retried and no runtime/provider/model,
+operator state, Git identity configuration, external PR or publication was
+changed. Independent visual acceptance, final supported-runtime qualification,
+owner reporting decisions and historical uncertainty remain outstanding.
+
+
+## Attempt 9 / execution 99 — implementation progress, acceptance denied
+
+Domain/control contract: replace synthetic-only evidence with a generated-material,
+principal-password-authenticated Credentials journey through the extracted binary;
+keep server admission authoritative and preserve the existing reset effect-scope
+repair. No operator runtime, provider/model configuration, normal credential state,
+shared Git identity, publication gate, or task topology may change.
+
+Input packet remains `tflp_3901042140074c95`, hash
+`35dd48f69432ce73a1f493f33128cf06cf53d2bd9b5f556249a3ccdd9020928b`.
+HEAD/branch still match `5d639c07aeb0834c6ed708bf11940e58cecef67c` /
+`task-t_0ab23a2-234`. The exposed tools do not include canonical flow/memory or
+subagent calls; no new canonical store readback or independent-agent review is claimed.
+
+Added `scripts/verify-installed-credentials.py`, a fresh-directory custody helper,
+and three harness guard tests. The harness does not invoke or fabricate Hermes.
+It starts only the supplied candidate in isolated proof state, authenticates a
+generated principal password, creates thirty records through review/execute,
+rotates one selected record twenty-five times, and revokes a separate record.
+Review non-mutation, generated-value non-disclosure in operation responses,
+unauthenticated/missing-CSRF/cross-origin/replayed-receipt denials, semantic visible
+columns/cells, desktop pane proportions and independent scrolling, history,
+filter/scroll/focus restoration, narrow single-pane behavior, unknown-record
+denial, and no-script/denied-storage native links are exercised. This is not yet
+exhaustive binding/backup/cross-session/expiry/adversarial installed acceptance.
+
+Direct checksummed archive extraction and `go version -m` bind the exercised
+binary to clean attempt-8 HEAD, not the new dirty source. Binary SHA-256:
+`73a68dd057ebc66e8b6587161d35b9dec17afba2f0842700e05f4398375d73e3`.
+All five entries in the retained `dist-corrected/SHA256SUMS` verified. The accepted
+artifact independently matches 755716 bytes and the supplied SHA-256; offline
+Chrome loaded `#/credentials` with network blocked at 1440/900/390. Paired
+screenshots are captured, not independently image-reviewed visual approval.
+Evidence: `.scratch/credentials-ex99-q/result.json`, `geometry-*.json`,
+`credentials-*.png`, `accepted-*.png`.
+
+The new installed proof correctly exits 1: at 390px the authenticated header's
+sign-out form extends the document to 428px. This was absent from the prior
+synthetic acceptance assertions. A Credentials-only <=420px spacing correction
+preserves status, rotation and sign-out controls. The strengthened current-source
+Chrome regression reproduced overflow (including an insufficient first spacing
+repair at 396px) and now passes at 1440/900/390 with all existing routing, scrolling,
+column-threshold, resize and fallback checks. No CSS overlay or altered archive
+is presented as installed proof. Successor clean-candidate archive verification
+and authenticated comparison must rerun after the source can be committed.
+
+Other current checks: three Python harness guard tests passed; uncached console,
+API and credential package suites passed; focused reset tests passed with the
+pre-existing uncommitted decline/EOF/cancellation repair preserved. No broad
+release fixture suite was run under the contaminated shared Git identity.
+
+Incremental launch impact review: CHANGELOG and CONTRIBUTING now describe the
+harness and qualification limits. README, LICENSE, SECURITY, CODE_OF_CONDUCT,
+threat-model and architecture boundaries/diagram, QUICKSTART, no-key docs,
+recording docs and retained capture/timing, release workflow/checksums, and local
+contributor backlog were inspected for this change and require no further edits.
+The existing reset/quickstart modifications remain intact. This is impact review,
+not exhaustive launch-command execution or confirmation of every historical claim.
+No-key demonstration was not retried, no runtime was installed or replaced, and
+no external issue/release/PR action occurred.
+
+Remaining gates are explicit: shared Git identity still reads `Release Test` /
+`release-test@example.invalid`; controller restoration is required before commit.
+New-source exact-candidate installed acceptance and independent design/security
+review remain outstanding. Supported-Hermes no-key qualification is still an
+unresolved final gate, not a reason to suppress independent local engineering.
+Owner reporting decisions and historical diagnostic uncertainty remain unchanged.
+Publication remains denied. Confirmed judgment: a populated authenticated harness
+finds a real shell overflow that fixture-only checks missed. Generated plaintext
+fixture input, transport tokens and KEKs from this execution were removed after
+process shutdown; encrypted fixture state is retained only as private task evidence.
+
 ## Attempt 8 implementation impact (not launch acceptance)
 
 The current implementation step consumes packet `tflp_a767f8d240c84c5b` / `0ae38d2d97740310d8900b74b4b879bb959ba400426d0ff3b331b143bdef84ff`. Canonical readback matched active attempt 8 and the original task/session/branch. Historical review sections below remain attributed to their original candidates.

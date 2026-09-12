@@ -43,6 +43,8 @@ with sync_playwright() as p:
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(base + "/console/credentials?q=provider&status=active#/credentials")
         inventory = page.locator("#credential-inventory")
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.evaluate("({width:innerWidth, scroll:document.documentElement.scrollWidth, gap:getComputedStyle(document.querySelector('.topbar')).gap, right:document.querySelector('#logout').getBoundingClientRect().right})")
+        assert page.locator('#logout').evaluate('e=>e.getBoundingClientRect().right<=innerWidth')
         assert_inventory_columns(page)
         link = page.locator('#record-secret-20')
         link.scroll_into_view_if_needed()
