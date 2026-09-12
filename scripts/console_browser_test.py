@@ -581,6 +581,10 @@ def main() -> int:
         # widths before leaving the Registry for related definitions.
         for width, height in ((1440, 900), (390, 844)):
             devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
+            geometry = devtools.evaluate("(() => { const search = document.querySelector('form[action=\"/console/agents\"] .search input'); const facts = document.querySelector('.registry-card .rc-facts'); const notice = document.querySelector('#agent-inline-detail .inline-notice'); return {width: innerWidth, scrollWidth: document.documentElement.scrollWidth, searchWidth: search.getBoundingClientRect().width, columns: getComputedStyle(facts).gridTemplateColumns.split(' ').length, noticeMaxWidth: getComputedStyle(notice).maxWidth}; })()")
+            require(geometry["width"] == width and geometry["scrollWidth"] <= width, "Registry must render at the requested CSS viewport, not a scaled overflow viewport: " + json.dumps(geometry))
+            require(geometry["searchWidth"] >= 260 and geometry["columns"] == 3, "Registry search/card geometry regressed: " + json.dumps(geometry))
+            require(geometry["noticeMaxWidth"] == "1000px", "Registry readiness must use the accepted detail-body width: " + json.dumps(geometry))
             for label in ("Charter revision history", "All trust stanza declarations"):
                 summary_selector = devtools.evaluate("(() => { const summaries = [...document.querySelectorAll('#agent-inline-detail details > summary')]; const node = summaries.find(n => n.textContent.startsWith(" + json.dumps(label) + ")); if (!node) return null; const parent = node.parentElement; return '#agent-inline-detail details:nth-of-type(' + ([...parent.parentElement.children].filter(n => n.tagName === 'DETAILS').indexOf(parent) + 1) + ') > summary'; })()")
                 require(bool(summary_selector), "Registry disclosure missing: " + label)

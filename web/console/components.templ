@@ -413,7 +413,7 @@ templ AgentCard(surface SurfaceModel, record RecordModel) {
 				<span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span>
 			}
 		</span>
-		<span class="rc-chain">{ record.Source } <span aria-hidden="true">→</span> { record.Owner }</span>
+		<span class="rc-chain"><span>{ record.Source }</span><i aria-hidden="true">→</i><span>{ record.Owner }</span></span>
 		<dl class="rc-facts"><div><dt>Execution readiness</dt><dd>{ record.Readiness }</dd></div><div><dt>Authority</dt><dd>{ record.Authority }</dd></div><div><dt>Provisioning</dt><dd>{ record.Provisioning }</dd></div></dl>
 	</a>
 }
@@ -452,14 +452,14 @@ templ RecordCard(domain string, record RecordModel) {
 
 templ AgentInlineDetail(surface SurfaceModel, record *RecordModel) {
 	<aside id="agent-inline-detail" class="inspector agent-inline-detail" aria-labelledby="agent-detail-title" tabindex="-1" autofocus data-composition="agent-inline">
-		<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Agent revision</span><h2 id="agent-detail-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a class="secondary" href={ agentRevisionRoute(surface, record) }>Refresh authority evidence</a><a id="close-inspector" class="secondary" href={ collectionRoute(surface) }>Back to Registry</a></div>
+		<div class="detail-head"><div class="detail-title"><h2 id="agent-detail-title">{ record.Label }</h2><p><span class="sr-only">Exact Agent revision </span>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><div class="detail-actions"><a class="secondary" href={ agentRevisionRoute(surface, record) }>Refresh authority evidence</a><a id="close-inspector" class="secondary" href={ collectionRoute(surface) }>Back to Registry</a></div></div>
 		if record.Agent != nil {
 			<div class="panel-body">
 				<div class="section-label">Readiness</div>
 				<div class="inline-notice">{ record.Readiness }</div>
 				<div class="section-label">Charter revision</div>
-				<p>{ record.Agent.CharterEvidence }</p>
 				<dl class="spec"><dt>Agent ID</dt><dd>{ record.Agent.StableID }</dd><dt>Charter revision</dt><dd>{ fmt.Sprintf("%s r%d", record.Agent.CharterID, record.Agent.CharterRevision) }</dd><dt>Charter digest</dt><dd>{ record.Agent.CharterDigest }</dd><dt>Runtime target</dt><dd>{ record.Agent.RuntimeAdapter + " / " + record.Agent.Runtime + " / " + record.Agent.RuntimeTarget }</dd><dt>Registry revision</dt><dd>{ fmt.Sprintf("r%d @ %s", record.Agent.Revision, record.Agent.RevisionDigest) }</dd></dl>
+				<p class="charter-evidence-note">{ record.Agent.CharterEvidence }</p>
 				<div class="section-label">Provisioning evidence</div>
 				<p>{ record.Agent.ProvisioningEvidence }</p>
 				@FieldList(record.Agent.ReceiptFields, "No exact-bound receipt evidence available")
