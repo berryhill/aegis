@@ -587,6 +587,11 @@ def main() -> int:
         click(devtools, '.related-records a[href^="/console/graphs?record_key=proof-graph%3A1"]')
         wait_for(devtools, "location.pathname === '/console/graphs' && location.hash === '#/graphs/proof-graph:1' && document.querySelector('#graph-detail-page')?.dataset.composition === 'graph-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact replacement-page Graph related record")
         time.sleep(0.5)
+        # Graphs enter canvas-first; related records belong to the inspector.
+        # Open it through the real product control, never by changing the DOM.
+        wait_for(devtools, "document.querySelector('#graph-context')?.hidden === true && document.querySelector('[data-graph-definition]')?.getAttribute('aria-expanded') === 'false'", "canvas-first Graph with collapsed definition inspector")
+        click(devtools, '[data-graph-definition]')
+        wait_for(devtools, "document.querySelector('[data-graph-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#graph-context')?.checkVisibility() && document.querySelector('[data-graph-definition-panel]')?.checkVisibility() && document.querySelector('#graph-context .related-records a[href^=\"/console/queue?record_key=queue-accepted\"]')?.checkVisibility()", "Definition details opened visible Graph inspector and Queue related link")
         click(devtools, '.related-records a[href^="/console/queue?record_key=queue-accepted"]')
         wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
         desktop_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
