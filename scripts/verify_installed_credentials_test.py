@@ -16,6 +16,17 @@ spec.loader.exec_module(proof)
 
 
 class InstalledCredentialsGuards(unittest.TestCase):
+    def test_socket_namespace_is_exclusively_allocated(self):
+        with patch.object(proof.tempfile, 'mkdtemp', return_value='/short/ac-unique') as reserve:
+            self.assertEqual(proof.allocate_socket_path(Path('/short')), Path('/short/ac-unique/s'))
+            reserve.assert_called_once_with(prefix='ac-', dir=Path('/short'))
+
+    def test_long_socket_base_is_denied_before_allocation(self):
+        with patch.object(proof.tempfile, 'mkdtemp') as reserve:
+            with self.assertRaisesRegex(proof.ProofError, 'durable short'):
+                proof.allocate_socket_path(Path('/' + 'x' * 104))
+            reserve.assert_not_called()
+
     def test_existing_workspace_is_denied_without_writes(self):
         with patch.object(sys, 'argv', ['proof', '/usr/bin/true', str(REPO), '/nonexistent-design']):
             with self.assertRaisesRegex(proof.ProofError, 'fresh repository-local'):

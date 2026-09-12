@@ -16,6 +16,7 @@ import re
 import secrets
 import socket
 import subprocess
+import tempfile
 import time
 import traceback
 import urllib.request
@@ -39,6 +40,14 @@ def private_json(path, value):
     with path.open('x', encoding='utf-8') as stream:
         os.chmod(path, 0o600)
         json.dump(value, stream)
+
+
+def allocate_socket_path(base):
+    # Reserve an owner-only namespace, not an unreserved port-derived name in
+    # a shared directory. Cleanup must never unlink a pre-existing object.
+    require(len(str(base / ('ac-' + 'x' * 8) / 's').encode()) < 104, 'use existing durable short AEGIS_PROOF_SOCKET_DIR')
+    directory = Path(tempfile.mkdtemp(prefix='ac-', dir=base))
+    return directory / 's'
 
 
 def main():
@@ -86,8 +95,7 @@ def main():
         port = probe.getsockname()[1]
     origin = f'http://127.0.0.1:{port}'
     socket_dir = Path(os.environ.get('AEGIS_PROOF_SOCKET_DIR', str(repo))).resolve(strict=True)
-    socket_path = socket_dir / f'.credentials-proof-{port}.sock'
-    require(len(str(socket_path).encode()) < 104, 'use existing durable short AEGIS_PROOF_SOCKET_DIR')
+    socket_path = allocate_socket_path(socket_dir)
     token = root / 'api.token'
     with token.open('x') as stream:
         os.chmod(token, 0o600)
@@ -272,6 +280,8 @@ def main():
         token.unlink(missing_ok=True)
         (state / 'credentials/authority.kek').unlink(missing_ok=True)
         socket_path.unlink(missing_ok=True)
+        socket_path.with_name('s.lock').unlink(missing_ok=True)
+        socket_path.parent.rmdir()
 
 
 if __name__ == '__main__':

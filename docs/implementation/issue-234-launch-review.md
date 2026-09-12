@@ -1,5 +1,33 @@
 # Issue 234 — launch-asset review
 
+## Attempt 9 / execution 101 — source-review follow-up
+
+A bounded independent same-provider/model read-only reviewer found no production
+CSS/reset regression, but correctly identified that harness cleanup could unlink
+an unreserved shared socket path. The harness now allocates an exclusive 0700
+short child directory, keeps socket/lock cleanup inside it, and rejects excessive
+path length before allocation. Two regression guards cover namespace allocation
+and pre-allocation length denial. CONTRIBUTING explicitly distinguishes the Go
+initializers' inherited build/cache environment from the isolated candidate
+server environment. No system or runtime configuration was changed.
+
+The reviewer also identified missing independent version-revocation readback.
+This remains an evidence limitation. A proposed active-inventory exclusion check
+failed because the HTTP operation revokes an exact version, not the record; it
+was removed rather than changing production semantics or claiming record revoke.
+The retained harness proves the reviewed revoke response, not complete immutable
+version-revocation readback. This is separate from responsive navigation proof.
+
+Candidate `01f367631cf2904dca44ea67cd7b5baca4eaff96` was built from a clean
+isolated proof clone and extracted from a validated native archive. Its populated
+principal-authenticated Credentials journey passed at 1440/900/390, including
+visible sign-out, no horizontal overflow, navigation, denial and native fallback.
+This is historical to the following harness-only safety correction; successor
+proof must be rebound. The initial archive was correctly rejected for file mode;
+normalizing the staged executable to the required 0755 produced a valid archive.
+No release guard was weakened. Independent visual and runtime acceptance remain
+unresolved; no publication is authorized.
+
 ## Attempt 9 / execution 101 — successor local candidate preparation
 
 The canonical session readback confirms the original task, active cursor 4,
