@@ -251,6 +251,11 @@ type QueueReceiptModel struct {
 }
 
 type GraphDetailModel struct {
+	GraphID             string
+	LatestVersion       string
+	CurrentValidation   string
+	ValidationIssues    []GraphIssueModel
+	SubmissionIssues    []GraphIssueModel
 	Digest              string
 	PreviousDigest      string
 	Validation          string
@@ -264,12 +269,18 @@ type GraphDetailModel struct {
 	Links               []LinkModel
 }
 
+type GraphIssueModel struct {
+	Code, Path, Message string
+}
+
 type GraphNodeModel struct {
-	ID          string
-	Participant string
-	Loop        string
-	Inputs      string
-	Outputs     string
+	Links                         []LinkModel
+	InputMappings, OutputMappings []FieldModel
+	ID                            string
+	Participant                   string
+	Loop                          string
+	Inputs                        string
+	Outputs                       string
 }
 
 type GraphEdgeModel struct {

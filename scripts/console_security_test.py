@@ -56,10 +56,19 @@ def main() -> int:
 
     for forbidden in (
         "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "localStorage",
-        "document.cookie", "location.hash", "location.search", "URLSearchParams", "innerHTML",
+        "document.cookie", "location.search", "URLSearchParams", "innerHTML",
         "outerHTML", "document.write", "eval(", "new Function", "window.open", "form.submit",
     ):
         require(forbidden not in navigation, f"navigation asset exceeds presentation-only authority: {forbidden}")
+    # Fragment lookup is permitted only as a bounded same-origin Graph GET.
+    # The executable navigation regression covers redirects and malformed keys.
+    for required in (
+        'location.pathname !== "/console/graphs"', 'const prefix = "#/graphs/"',
+        'key.length > 1024', 'new URL(location.href)',
+        'target.searchParams.get("record_key") === key',
+        'target.searchParams.set("record_key", key)', 'location.replace(target.href)',
+    ):
+        require(required in navigation, f"bounded Graph bookmark control missing: {required}")
     for required in (
         "sessionStorage.setItem(storageKey", "sessionStorage.getItem(storageKey)",
         'body.dataset.detailOpen === "true"', "context.recordKey.length > 1024",

@@ -1,0 +1,48 @@
+/* Read-only Graph workspace. Geometry and labels are server projections. */
+.graph-detail-page [data-graph-workspace]{display:grid;gap:16px;min-width:0}
+.graph-detail-page .graph-record-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:start}
+.graph-record-head h2{font-size:24px;margin:0 0 6px}.graph-record-head p{color:var(--muted);overflow-wrap:anywhere}
+.graph-record-actions{display:flex;gap:8px;flex-wrap:wrap}.record-head-tags{display:flex;gap:10px;flex-wrap:wrap;overflow-wrap:anywhere}
+.graph-record-head .meta-strip{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0 0}.meta-strip dt{font-size:11px;color:var(--muted)}.meta-strip dd{margin:4px 0;font-size:13px}
+.graph-admission{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.graph-admission p{margin:4px 0}.graph-issues{padding-left:20px}.graph-issues code{color:var(--st-denied)}
+.graph-detail-page .graph-workspace{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+.graph-detail-page .graph-workspace.solo{grid-template-columns:minmax(0,1fr)}
+.graph-workspace .gw-pane{min-width:0;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+.graph-workspace .gw-canvas{height:min(56vh,480px);min-height:280px;background:var(--bg)}
+.graph-workspace .gw-inspector{max-height:min(74vh,680px)}.graph-workspace .gw-body{padding:14px;overflow:auto;min-height:0;overflow-wrap:anywhere}
+.graph-workspace .gw-head,.graph-workspace .canvas-bar{display:flex;gap:8px;align-items:center;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2);flex:none;flex-wrap:wrap}
+.graph-workspace .gw-title,.graph-workspace .canvas-title{margin:0;font-size:13px}.graph-workspace .gw-head button{margin-left:auto}
+.graph-workspace .canvas-tools{display:flex;gap:4px;align-items:center;margin-left:auto}.graph-workspace button{min-height:32px}.graph-workspace .canvas-tools output{font-size:11px;min-width:38px}
+.graph-workspace .canvas-hint{font-size:12px;line-height:18px;padding:7px 13px;margin:0;border-bottom:1px solid var(--border);color:var(--muted)}
+/* CSS-grid layout: rank columns, stack rows. No inline styles needed, so the
+   console's strict Content-Security-Policy (style-src 'self') does not block
+   the canvas. The grid template is fully derived from server-side
+   data-columns/data-rows attributes and never relies on user-supplied input. */
+.graph-viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;background-image:radial-gradient(circle at 1px 1px,var(--border) 1px,transparent 0);background-size:24px 24px;cursor:grab}
+.graph-stage{position:relative;display:grid;grid-auto-rows:102px;row-gap:32px;column-gap:32px;padding:32px;width:max-content;transform-origin:0 0;transition:none}
+.graph-stage[data-columns="1"]{grid-template-columns:212px}
+.graph-stage[data-columns="2"]{grid-template-columns:212px 212px}
+.graph-stage[data-columns="3"]{grid-template-columns:212px 212px 212px}
+.graph-stage[data-columns="4"]{grid-template-columns:212px 212px 212px 212px}
+.graph-stage[data-columns="5"]{grid-template-columns:212px 212px 212px 212px 212px}
+.graph-stage[data-columns="6"]{grid-template-columns:212px 212px 212px 212px 212px 212px}
+.graph-stage[data-columns="7"]{grid-template-columns:212px 212px 212px 212px 212px 212px 212px}
+.graph-stage[data-columns="8"]{grid-template-columns:212px 212px 212px 212px 212px 212px 212px 212px}
+.graph-edge-layer{position:absolute;inset:0;pointer-events:none;width:100%;height:100%}
+.graph-edge-path{stroke:var(--muted);stroke-width:1.5;fill:none}#graph-arrow path{fill:var(--muted)}
+.graph-workspace .graph-node{width:212px;min-height:102px;display:block;padding:9px 11px;text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;justify-self:start}
+.graph-workspace .graph-node[data-grid-column="1"]{grid-column:1}
+.graph-workspace .graph-node[data-grid-column="2"]{grid-column:2}
+.graph-workspace .graph-node[data-grid-column="3"]{grid-column:3}
+.graph-workspace .graph-node[data-grid-column="4"]{grid-column:4}
+.graph-workspace .graph-node[data-grid-column="5"]{grid-column:5}
+.graph-workspace .graph-node[data-grid-column="6"]{grid-column:6}
+.graph-workspace .graph-node[data-grid-column="7"]{grid-column:7}
+.graph-workspace .graph-node[data-grid-column="8"]{grid-column:8}
+.graph-node strong,.graph-node span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;line-height:17px}.graph-node strong{font-size:12.5px}.graph-node .graph-node-loop{color:var(--accent)}.graph-node small{color:var(--muted);font-size:11px}
+.graph-node[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.graph-workspace :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.graph-record-json{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px}.graph-definition-details{display:grid;gap:18px}.graph-definition-details .graph-grid{display:block}.graph-definition-details h3{font-size:13px;margin:0 0 8px}.graph-definition-details .related-records a{flex-wrap:wrap}.graph-definition-details .spec{display:block}.graph-definition-details .spec dd{margin:0 0 10px}
+.graph-edge-text{display:grid;gap:4px;padding:9px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere;font-size:12px}.graph-textual{overflow-wrap:anywhere}.graph-textual details{padding:10px;border-bottom:1px solid var(--border)}.graph-textual summary{cursor:pointer}
+.graph-workspace [hidden]{display:none!important}
+@media(max-width:1080px){.graph-detail-page .graph-workspace{grid-template-columns:minmax(0,1fr)}.graph-workspace .gw-canvas{height:min(46vh,340px)}.graph-workspace .gw-inspector{max-height:none}.graph-workspace .gw-body{overflow:visible}.graph-detail-page .graph-record-head{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.graph-record-actions{flex-direction:column;align-items:stretch}.graph-workspace .canvas-tools button{min-width:40px;min-height:40px}.graph-record-head .meta-strip{gap:16px}}
