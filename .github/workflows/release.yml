@@ -32,6 +32,7 @@ jobs:
           printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           python3 scripts/verify-console-vendor.py
           python3 scripts/console_security_test.py
+          python3 scripts/build_source_test.py
           go generate ./web/console
           git diff --exit-code -- web/console go.mod go.sum
           go run ./internal/skillbundle/cmd validate .

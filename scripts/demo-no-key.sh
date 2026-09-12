@@ -15,7 +15,7 @@ esac
 aegis() { HOME=$profile_home "$binary" "$@"; }
 
 cd "$repo"
-go build -o "$binary" ./cmd/aegis
+"$repo/scripts/build-source.sh" "$binary"
 cp examples/aegis.yaml "$work/aegis.yaml"
 cp examples/office-charter.json "$work/office-charter.json"
 chmod 0600 "$work/aegis.yaml" "$work/office-charter.json"

@@ -74,9 +74,8 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   name="aegis_v${version}_${os}_${arch}"
   stage=$proof/$name
   mkdir "$stage"
-  CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
-    -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=$expected_revision" \
-    -o "$stage/aegis" ./cmd/aegis
+  CGO_ENABLED=0 GOOS=$os GOARCH=$arch "$repo/scripts/build-source.sh" "$stage/aegis" -trimpath \
+    -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=$expected_revision"
   build_revision=$(go version -m "$stage/aegis" 2>/dev/null | sed -n 's/^[[:space:]]*build[[:space:]]*vcs.revision=//p')
   [ -n "$build_revision" ] || deny_provenance "built $os/$arch binary omitted Go VCS revision metadata"
   [ "$build_revision" = "$expected_revision" ] || deny_provenance "built $os/$arch binary revision mismatch: expected $expected_revision actual $build_revision"

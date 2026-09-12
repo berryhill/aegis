@@ -42,6 +42,7 @@ __pycache__/
 /.aegis-no-key-*/
 /aegis-no-key-demo-*
 /.aegis-installed-mvi-*/
+/.aegis-build-*/
 /.aegis-authority-denial-*/
 /.aegis-release-candidate-*/
 # Retain until any pre-rename development state has been migrated explicitly.

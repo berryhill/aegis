@@ -551,7 +551,7 @@ func TestNavigationEnhancementRestoresOnlyPresentationContext(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"principal", "stanza", "mandate", "authority", "credential", "outcome",
+		"principal", "stanza", "mandate", "outcome", "secretValue", "ciphertext",
 		"fetch(", "XMLHttpRequest", "document.cookie", "localStorage",
 	} {
 		if strings.Contains(script, forbidden) {
@@ -672,9 +672,9 @@ func TestCredentialsRendersActiveAndRevokedWithoutCiphertextLeakage(t *testing.T
 	for _, required := range []string{
 		"Encrypted credential authority", "Authoritative encrypted credential", "github/api", "github/legacy",
 		"active", "revoked", "v2", "v1", "Revoked at", "Revocation reason", "rotation",
-		"Vault summary", "Version history (encrypted, metadata-only)", "Prepare credential (review only)",
-		"Prepare vault backup (review only)", "aegis secret put github/legacy", "aegis secret backup",
-		"Browser state cannot authorize credential mutation",
+		"Metadata", "Version history (encrypted, metadata-only)", "selection never grants authority",
+		`<table id="surface-list" class="credential-table">`, `data-pane="detail"`,
+		`<th scope="col">Reference</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Version</th>`,
 	} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("credential surface missing %q: %s", required, html)

@@ -907,8 +907,8 @@ templ CredentialWorkspace(surface SurfaceModel) {
 	if !surface.Authoritative {
 		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head"><span class="count">Count unavailable</span></div><div class="panel"><p class="empty-note">The credential authority is unavailable; no count is asserted. { surface.ReasonCode }</p></div></div></section>
 	} else {
-		<section class="workspace" aria-label="Credential workspace">
-			<div class="inventory">
+		<section class="workspace credential-workspace" aria-label="Credential workspace" data-pane={ credentialPane(surface) }>
+			<div class="inventory" id="credential-inventory" tabindex="-1" aria-label="Credential inventory">
 				<div class="pane-head">
 					<form class="filter-row" method="get" action="/console/credentials" aria-label="Filter Credentials">
 						<span class="filter-label">Status</span>
@@ -927,11 +927,15 @@ templ CredentialWorkspace(surface SurfaceModel) {
 				} else if len(surface.Records) == 0 {
 					<div class="panel"><div class="empty-state"><strong>No credentials</strong><span>The encrypted authority is empty. Run <code>aegis secret put</code> to create the first record.</span></div></div>
 				} else {
-					<div class="panel"><div class="panel-body compact"><ul id="surface-list" class="record-list" aria-label="Encrypted credential records">
+					<div class="panel credential-table-wrap"><table id="surface-list" class="credential-table">
+						<caption class="sr-only">Encrypted credential records</caption>
+						<thead><tr><th scope="col">Reference</th><th scope="col">Kind</th><th scope="col">Status</th><th scope="col">Version</th></tr></thead>
+						<tbody>
 						for _, record := range surface.Records {
-							<li><a id={ "record-" + record.Key } href={ detailRoute(surface, record.Key) } data-detail-link data-record-key={ record.Key }><span class="rc-top"><span class="rc-mark" aria-hidden="true">{ credentialMark(record.Label) }</span><strong>{ record.Label }</strong></span><span>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span> · { record.Summary }</span></a></li>
+							<tr data-selected={ fmt.Sprintf("%t", surface.Inspector != nil && surface.Inspector.Key == record.Key) }><th scope="row"><a id={ "record-" + record.Key } href={ detailRoute(surface, record.Key) } data-detail-link data-record-key={ record.Key } aria-current={ credentialCurrent(surface, record.Key) }><strong>{ credentialReference(record) }</strong><small>{ record.Key }</small></a></th><td>{ credentialKind(record) }</td><td><span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></td><td>{ record.Revision }</td></tr>
 						}
-					</ul></div></div>
+						</tbody>
+					</table></div>
 					if surface.Pagination.Label != "" {
 						@Pagination(surface.Pagination)
 					}
@@ -940,9 +944,12 @@ templ CredentialWorkspace(surface SurfaceModel) {
 			<aside class="detail credential-detail" aria-label="Selected credential" tabindex="-1" autofocus?={ surface.Inspector != nil } data-composition="credential-master-detail">
 				if surface.Inspector != nil && surface.Inspector.Credential != nil {
 					@CredentialInspector(surface, surface.Inspector)
+				} else if surface.InspectorOpen {
+					<nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Credentials</a></nav>
+					<h2 id="inspector-title">Credential unavailable</h2><p>The requested record was not returned by the authority. No credential metadata is asserted.</p>
 				} else {
 					<strong>Select an encrypted credential</strong>
-					<p>Inspect authoritative metadata: status, current version, full version history, custody mode, KEK metadata (id and version only), binding count, and review-only CLI previews. Secret values, ciphertext, wrapped DEKs, and KEK bytes are never rendered.</p>
+					<p>Inspect metadata and immutable version history. A stored value is never read, entered or shown here.</p>
 				}
 			</aside>
 		</section>
@@ -955,14 +962,16 @@ templ CredentialInspector(surface SurfaceModel, record *RecordModel) {
 		<h2 id="inspector-title">Credential inspector</h2>
 		<p>No encrypted credential selected.</p>
 	} else {
-		<div class="detail-head"><div class="detail-title"><span class="eyebrow">Authoritative encrypted credential</span><h2 id="inspector-title">{ record.Credential.Reference }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><a class="secondary" href={ collectionRoute(surface) }>Back to Credentials</a></div>
+		<div class="detail-head"><div class="detail-title"><h2 id="inspector-title">{ record.Credential.Reference }</h2><p>{ record.Key } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div>
+			if record.Lifecycle == "active" {
+				<div class="button-row"><a class="secondary" href={ credentialOperationURL("rotate", record.Credential.ID) }>Prepare rotation</a><a class="secondary" href={ credentialOperationURL("revoke", record.Credential.ID) }>Prepare revoke</a><a class="secondary" href={ credentialOperationURL("bind", record.Credential.ID) }>Prepare exact binding</a></div>
+			}
+		</div>
 		<div class="panel-body">
 			if record.Lifecycle == "revoked" {
 				<div class={ "execution-alert revoked" }><strong>Revoked credential</strong><span>This credential record is terminal. Secret value reads are denied; only the immutable version history and KEK metadata remain inspectable.</span></div>
 			}
-			<div class="section-label">Readiness</div>
-			<div class="inline-notice">{ record.Readiness }. This view never authorizes credential mutation; browser state cannot bind or rotate encrypted secrets.</div>
-			<div class="section-label">Provenance</div>
+			<div class="section-label">Metadata</div>
 			<dl class="spec">
 				<dt>Stable record ID</dt><dd>{ credFallback(record.Credential.ID, record.Key) }</dd>
 				<dt>Reference</dt><dd>{ record.Credential.Reference }</dd>
@@ -977,58 +986,45 @@ templ CredentialInspector(surface SurfaceModel, record *RecordModel) {
 					<dt>Revocation reason</dt><dd>{ record.Credential.Revocation }</dd>
 				}
 			</dl>
-			<div class="section-label">Vault summary</div>
-			<dl class="spec">
-				<dt>Vault state</dt><dd>{ record.Credential.Vault.State }</dd>
-				<dt>Reason code</dt><dd>{ record.Credential.Vault.ReasonCode }</dd>
-				<dt>Deployment</dt><dd>{ record.Credential.Vault.DeploymentID }</dd>
-				<dt>Store</dt><dd>{ record.Credential.Vault.StoreID }</dd>
-				<dt>Custody</dt><dd>{ credFallback(record.Credential.Vault.Custody, "Unavailable") }</dd>
-				<dt>Schema version</dt><dd>{ record.Credential.Vault.SchemaVersion }</dd>
-				<dt>KEK</dt><dd>{ fmt.Sprintf("id %s · version %d", record.Credential.Vault.KEKID, record.Credential.Vault.KEKVersion) }</dd>
-				<dt>Last clean shutdown</dt><dd>{ fmt.Sprintf("%t", record.Credential.Vault.LastCleanShutdown) }</dd>
-				<dt>Initialized at</dt><dd>{ record.Credential.Vault.InitializedAt }</dd>
-			</dl>
+
 			<div class="section-label">Version history (encrypted, metadata-only)</div>
 			if len(record.Credential.Versions) == 0 {
 				<p class="empty-note">No encrypted versions on record.</p>
 			} else {
-				<ol class="timeline">
+				<div class="credential-table-wrap"><table class="credential-table credential-versions"><caption class="sr-only">Immutable versions of { record.Credential.Reference }</caption><thead><tr><th scope="col">Version</th><th scope="col">Created</th><th scope="col">Stored value</th></tr></thead><tbody>
 					for _, version := range record.Credential.Versions {
-						<li data-state={ fmt.Sprintf("%d", version.Version) }>
-							<strong>{ fmt.Sprintf("v%d", version.Version) } · { version.Algorithm } · KEK v{ fmt.Sprintf("%d", version.KEKVersion) }</strong>
-							<time>{ version.CreatedAt }</time>
-							<span>digest { credFallback(version.CiphertextHash, "Unavailable") }</span>
-						</li>
+						<tr><th scope="row">{ fmt.Sprintf("v%d", version.Version) }
+							if version.Version == record.Credential.CurrentVersion {
+								<span class="lifecycle">current</span>
+							}
+						</th><td><time>{ version.CreatedAt }</time></td><td>Concealed · { credFallback(version.CiphertextHash, "Content address unavailable") }</td></tr>
 					}
-				</ol>
+				</tbody></table></div>
+				<p class="inline-notice">Rotation appends a new encrypted version; existing versions are never rewritten. The stored-value column is a content address over encrypted bytes, not credential material.</p>
 			}
-			<div class="section-label">Backup status</div>
-			<dl class="spec">
-				<dt>Backup available</dt><dd>{ fmt.Sprintf("%t", record.Credential.Backup.Available) }</dd>
-				if record.Credential.Backup.Available {
-					<dt>Last backup path</dt><dd>{ record.Credential.Backup.TargetPath }</dd>
-				}
-				<dt>Note</dt><dd>{ record.Credential.Backup.Note }</dd>
-			</dl>
-			<div class="section-label">Reviewed operations</div>
-			<div class="button-row">
-				if record.Lifecycle == "active" {
-					<a class="secondary" href={ credentialOperationURL("rotate", record.Credential.ID) }>Rotate</a><a class="secondary" href={ credentialOperationURL("revoke", record.Credential.ID) }>Revoke</a><a class="secondary" href={ credentialOperationURL("bind", record.Credential.ID) }>Bind exact tuple</a>
-				}
-				<a class="secondary" href="/console/credentials/operation?operation=backup">Create ciphertext backup</a>
-			</div>
-			<p class="inline-notice">Initialize, unlock, reveal, restore, arbitrary-path backup, and KEK operations remain CLI-only. Browser requests cannot select custody or a host path.</p>
-			<div class="section-label">Prepare credential (review only)</div>
-			<p class="inline-notice">{ record.Credential.Proposal.Notice }</p>
-			<pre class="cli-preview" id="credential-proposal-put">{ record.Credential.Proposal.PutCommand }</pre>
-			<div class="section-label">Prepare vault backup (review only)</div>
-			<pre class="cli-preview" id="credential-proposal-backup">{ record.Credential.Proposal.BackupCommand }</pre>
-			<div class="section-label">Authoritative JSON projection</div>
-			<p class="inline-notice">JSON is the metadata-only envelope; secret-bearing fields are not serialized.</p>
-			<pre id="inspector-record">{ record.JSON }</pre>
+			<p class="inline-notice">Secret values, ciphertext, wrapped DEKs, nonces and KEK bytes are never shown here. Prepare actions open a separate authenticated review; selection never grants authority. Initialize, unlock, reveal, restore, arbitrary-path backup and custody selection remain outside this workspace.</p>
 		</div>
 	}
+}
+
+func credentialPane(surface SurfaceModel) string {
+	if surface.InspectorOpen || surface.Inspector != nil { return "detail" }
+	return "list"
+}
+
+func credentialCurrent(surface SurfaceModel, key string) string {
+	if surface.Inspector != nil && surface.Inspector.Key == key { return "true" }
+	return "false"
+}
+
+func credentialReference(record RecordModel) string {
+	if record.Credential != nil { return credFallback(record.Credential.Reference, record.Key) }
+	return record.Key
+}
+
+func credentialKind(record RecordModel) string {
+	if record.Credential != nil { return record.Credential.Kind }
+	return "Unavailable"
 }
 
 func credentialMatchingCount(surface SurfaceModel) int {
