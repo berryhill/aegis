@@ -343,7 +343,21 @@ def tap(devtools: DevTools, selector: str) -> None:
     arm_observation = devtools.evaluate(
         "(() => { sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) +
         ", JSON.stringify({selector: " + json.dumps(selector) + ", initialURL: location.href, events: [], "
-        "scrolls: 0, observations: []})); const node = document.querySelector(" + json.dumps(selector) + ");"
+        "scrolls: 0, observations: [], measuredPoint: " + json.dumps(point) + ", documentEvents: []})); "
+        "const node = document.querySelector(" + json.dumps(selector) + ");"
+        # Capture off-target starts/cancellations as well as target delivery. A
+        # target-only pointerup cannot distinguish retargeting from missing input.
+        # Replace the prior diagnostic listeners; never change event defaults.
+        "window.__aegisTouchDiagnostic?.abort(); window.__aegisTouchDiagnostic = new AbortController();"
+        "for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchend', 'touchcancel', 'click']) {"
+        "document.addEventListener(type, event => { const proof = JSON.parse(sessionStorage.getItem(" +
+        json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); if (!proof || proof.documentEvents.length >= 32) return;"
+        "const point = event.changedTouches?.[0] || event; proof.documentEvents.push({type, trusted: event.isTrusted,"
+        "target: event.target?.id || event.target?.tagName || '', x: point.clientX, y: point.clientY,"
+        "pointerType: event.pointerType || '', width: innerWidth, height: innerHeight,"
+        "scale: visualViewport?.scale, offsetX: visualViewport?.offsetLeft, offsetY: visualViewport?.offsetTop});"
+        "sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", JSON.stringify(proof));"
+        "}, {capture: true, passive: true, signal: window.__aegisTouchDiagnostic.signal}); }"
         "if (!node) return false; for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', "
         "'click', 'mousedown', 'mouseup']) { node.addEventListener(type, event => { const proof = JSON.parse("
         "sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); proof.events.push({type, "
@@ -364,14 +378,19 @@ def tap(devtools: DevTools, selector: str) -> None:
     # and elementFromPoint use layout-viewport CSS coordinates: subtract the
     # visual viewport pan, but do not multiply by page scale or device DPR.
     # Otherwise the hit test succeeds while native input misses the element.
-    # The synthesizer delivers the complete touch/pointer lifecycle.
-    devtools.command("Input.synthesizeTapGesture", {
-        "x": point["x"] - point.get("visualOffsetX", 0),
-        "y": point["y"] - point.get("visualOffsetY", 0),
-        "duration": 50,
-        "tapCount": 1,
-        "gestureSourceType": "touch",
+    # Send a paired native sequence, not a synthesizer gesture followed by a
+    # second tap. Under the installed desktop/mobile transition the synthesizer
+    # can deliver only pointerup (including at document capture), with no touch
+    # start/end. Explicit touch input must still prove the entire lifecycle.
+    devtools.command("Input.dispatchTouchEvent", {
+        "type": "touchStart",
+        "touchPoints": [{
+            "x": point["x"] - point.get("visualOffsetX", 0),
+            "y": point["y"] - point.get("visualOffsetY", 0),
+            "radiusX": 1, "radiusY": 1, "force": 1,
+        }],
     })
+    devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     wait_for(
         devtools,
         "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
@@ -379,42 +398,12 @@ def tap(devtools: DevTools, selector: str) -> None:
         f"settled native touch gesture for {selector}",
         timeout=3,
     )
-    # Headless Chrome reports the synthesized touch and pointer lifecycle as
-    # trusted but does not emit the compatibility click which a physical tap
-    # produces. Wait for touchend before completing that native browser input
-    # sequence through CDP; dispatching the mouse compatibility events while
-    # Chrome still owns the asynchronous touch gesture suppresses activation.
-    # Re-measure after the gesture because mobile visual-viewport scrolling can
-    # move the target while the gesture is in flight.
-    settled = devtools.evaluate(
-        "(() => { const proof = JSON.parse(sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ") || 'null');"
-        "if (proof?.initialURL !== location.href) return {navigated: true};"
-        "const node = document.querySelector(" + json.dumps(selector) + "); if (!node) return null;"
-        "const box = node.getBoundingClientRect(); const x = box.left + box.width / 2; const y = box.top + box.height / 2;"
-        "const hit = document.elementFromPoint(x, y); return {x: x - (visualViewport?.offsetLeft || 0), "
-        "y: y - (visualViewport?.offsetTop || 0), navigated: false, "
-        "target: hit === node || node.contains(hit)}; })()"
-    )
-    require(isinstance(settled, dict), f"browser control missing after native touch gesture: {selector}")
-    if settled.get("navigated") is True:
-        return
-    require(bool(settled.get("target")), f"browser control moved or became obscured after native touch gesture: {selector}; state={settled}")
-    # In the installed headless Chrome, synthesizeTapGesture proves trusted
-    # touch/pointer delivery but can stop before the compatibility click. A
-    # second complete raw touch sequence at the settled coordinates lets Chrome
-    # finish its native compatibility-event path and activate the anchor. This
-    # remains browser input: the harness never calls an element handler or
-    # mutates the route directly.
-    devtools.command("Input.dispatchTouchEvent", {
-        "type": "touchStart",
-        "touchPoints": [{"x": settled["x"], "y": settled["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
-    })
-    devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     wait_for(
         devtools,
         "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
         "if (!value) return false; const proof = JSON.parse(value);"
-        "return proof.events.some(event => event.type === 'click'); })()",
+        "return ['touchstart', 'touchend', 'click'].every(type => proof.events.some(event => "
+        "event.type === type && event.trusted === true)); })()",
         f"trusted click activation for {selector}",
         timeout=5,
     )

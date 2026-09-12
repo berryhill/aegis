@@ -54,6 +54,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Changed the installed-console harness to one paired native CDP touch sequence instead of a synthesized gesture followed by a second tap. Trusted touchstart/touchend/click remain required, with bounded document-level lifecycle/viewport diagnostics and a desktop-to-mobile drawer regression. This is a proof-harness correction, not a change to product authority or a claim of full installed release acceptance.
 - Corrected the installed-console proof's native touch coordinates for a panned visual viewport, preserving trusted touch/click delivery and authenticated server-rendered navigation. Chrome proof teardown now requests orderly browser shutdown and waits before closing DevTools or removing the profile; focused regressions cover visual viewport offsets, zoom, and bounded shutdown fallback.
 
 - Replaced the Loops collection's generic fixed inspector with a dedicated exact-revision detail composition. The authenticated console now renders a deterministic, horizontally scrollable SVG control-flow graph with directed and cycle edges, selectable keyboard-focusable nodes, compact authoritative metrics, progressive exact-definition/provenance/lifecycle disclosure, typed interface and evidence sections, and exact bound-Graph handoff without offering standalone Loop execution or treating displayed records as runtime authority.

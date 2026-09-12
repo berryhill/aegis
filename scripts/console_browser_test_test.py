@@ -146,40 +146,25 @@ class ChromeShutdownTest(unittest.TestCase):
 
 
 class NativeTouchTest(unittest.TestCase):
-    def test_tap_enables_emulation_before_synthesizing_complete_touch_gesture(self):
+    def test_tap_enables_emulation_before_one_paired_native_touch(self):
         devtools = mock.MagicMock()
         devtools.evaluate.side_effect = [
             True,
             {"x": 12, "y": 24, "width": 100, "height": 44, "target": True},
-            True,
-            True,
-            {"x": 13, "y": 25, "navigated": False, "target": True},
-            True,
+            True, True, True,
         ]
-
         with mock.patch.object(console_browser_test.time, "sleep"):
             console_browser_test.tap(devtools, "#record-proof-agent")
-
-        self.assertEqual(
-            devtools.command.call_args_list,
-            [
-                mock.call("Emulation.setTouchEmulationEnabled", {
-                    "enabled": True, "maxTouchPoints": 1, "configuration": "mobile",
-                }),
-                mock.call("Input.synthesizeTapGesture", {
-                    "x": 12,
-                    "y": 24,
-                    "duration": 50,
-                    "tapCount": 1,
-                    "gestureSourceType": "touch",
-                }),
-                mock.call("Input.dispatchTouchEvent", {
-                    "type": "touchStart",
-                    "touchPoints": [{"x": 13, "y": 25, "radiusX": 1, "radiusY": 1, "force": 1}],
-                }),
-                mock.call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}),
-            ],
-        )
+        self.assertEqual(devtools.command.call_args_list, [
+            mock.call("Emulation.setTouchEmulationEnabled", {
+                "enabled": True, "maxTouchPoints": 1, "configuration": "mobile",
+            }),
+            mock.call("Input.dispatchTouchEvent", {
+                "type": "touchStart",
+                "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
+            }),
+            mock.call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}),
+        ])
 
     def test_tap_maps_visual_pan_without_rescaling_css_pixels(self):
         devtools = mock.MagicMock()
@@ -187,13 +172,29 @@ class NativeTouchTest(unittest.TestCase):
             True,
             {"x": 42, "y": 176, "width": 100, "height": 44, "target": True,
              "visualOffsetX": 30, "visualOffsetY": 152, "visualScale": 2, "devicePixelRatio": 3},
-            True, True, {"navigated": True},
+            True, True, True,
         ]
         with mock.patch.object(console_browser_test.time, "sleep"):
             console_browser_test.tap(devtools, "#record-proof-agent")
-        devtools.command.assert_called_with("Input.synthesizeTapGesture", {
-            "x": 12, "y": 24, "duration": 50, "tapCount": 1, "gestureSourceType": "touch",
-        })
+        self.assertEqual(devtools.command.call_args_list[1], mock.call("Input.dispatchTouchEvent", {
+            "type": "touchStart",
+            "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
+        }))
+
+    def test_missing_touchend_fails_without_fallback_or_second_gesture(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            True, {"x": 12, "y": 24, "width": 100, "height": 44, "target": True}, True,
+        ]
+        with (mock.patch.object(console_browser_test.time, "sleep"),
+              mock.patch.object(console_browser_test, "wait_for", side_effect=RuntimeError("missing touchend")) as wait):
+            with self.assertRaisesRegex(RuntimeError, "missing touchend"):
+                console_browser_test.tap(devtools, "#record-proof-agent")
+        self.assertEqual(wait.call_args.kwargs["timeout"], 3)
+        self.assertIn("touchend", wait.call_args.args[1])
+        self.assertEqual(devtools.command.call_count, 3)
+        self.assertEqual([call.args[0] for call in devtools.command.call_args_list],
+                         ["Emulation.setTouchEmulationEnabled", "Input.dispatchTouchEvent", "Input.dispatchTouchEvent"])
 
     def test_real_chrome_touch_gesture_activates_anchor_navigation(self):
         self._assert_real_chrome_touch_navigation(page_scale=1)
@@ -201,7 +202,10 @@ class NativeTouchTest(unittest.TestCase):
     def test_real_chrome_touch_with_panned_visual_viewport(self):
         self._assert_real_chrome_touch_navigation(page_scale=2)
 
-    def _assert_real_chrome_touch_navigation(self, page_scale):
+    def test_real_chrome_touch_opens_drawer_after_desktop_mobile_transition(self):
+        self._assert_real_chrome_touch_navigation(page_scale=1, drawer=True)
+
+    def _assert_real_chrome_touch_navigation(self, page_scale, drawer=False):
         with tempfile.TemporaryDirectory(prefix="aegis-touch-browser-") as temporary:
             fixture_root = pathlib.Path(temporary)
             chrome_home = fixture_root / "chrome"
@@ -212,6 +216,15 @@ class NativeTouchTest(unittest.TestCase):
                 'style="display:block;width:180px;height:48px;margin-top:1200px">Open Agent</a>',
                 encoding="utf-8",
             )
+            if drawer:
+                fixture.write_text(
+                    '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+                    '<button id="desktop-dialog" commandfor="dialog" command="show-modal">Dialog</button>'
+                    '<button id="record-proof-agent" commandfor="drawer" command="show-modal">Drawer</button>'
+                    '<dialog id="dialog"><button autofocus>Close with Escape</button></dialog>'
+                    '<dialog id="drawer"><button autofocus>Drawer focus</button></dialog>',
+                    encoding="utf-8",
+                )
             process = subprocess.Popen(
                 [
                     "/usr/bin/google-chrome",
@@ -248,8 +261,17 @@ class NativeTouchTest(unittest.TestCase):
                     devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent')",
                     "focused touch fixture load", timeout=5,
                 )
+                if drawer:
+                    console_browser_test.click(devtools, "#desktop-dialog")
+                    console_browser_test.wait_for(devtools, "document.querySelector('#dialog').matches(':modal')",
+                                                  "desktop dialog open", timeout=3)
+                    console_browser_test.key(devtools, "Tab")
+                    console_browser_test.key(devtools, "Escape")
+                    console_browser_test.wait_for(devtools, "!document.querySelector('#dialog').open && document.activeElement.id === 'desktop-dialog'",
+                                                  "desktop dialog focus restoration", timeout=3)
                 devtools.command("Emulation.setDeviceMetricsOverride", {
-                    "width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True,
+                    "width": 446 if drawer else 390, "height": 964 if drawer else 844,
+                    "deviceScaleFactor": 1, "mobile": True,
                 })
 
                 # Reproduce a panned visual viewport, not just document scroll.
@@ -263,7 +285,7 @@ class NativeTouchTest(unittest.TestCase):
                 console_browser_test.tap(devtools, "#record-proof-agent")
                 console_browser_test.wait_for(
                     devtools,
-                    "location.hash === '#/agents/proof-agent'",
+                    "document.querySelector('#drawer').matches(':modal')" if drawer else "location.hash === '#/agents/proof-agent'",
                     "focused real-browser touch navigation fixture",
                     timeout=5,
                 )
@@ -272,6 +294,14 @@ class NativeTouchTest(unittest.TestCase):
                 event_types = {event["type"] for event in proof["events"]}
                 self.assertTrue({"touchstart", "touchend", "click"}.issubset(event_types))
                 self.assertTrue(all(event["trusted"] for event in proof["events"]))
+                self.assertTrue(proof["measuredPoint"]["target"])
+                document_events = proof["documentEvents"]
+                self.assertTrue({"touchstart", "touchend", "click"}.issubset(
+                    {event["type"] for event in document_events}))
+                self.assertTrue(all(event["trusted"] for event in document_events))
+                self.assertTrue(all(event["width"] > 0 and event["height"] > 0
+                                    for event in document_events))
+                self.assertLessEqual(len(document_events), 32)
             finally:
                 console_browser_test.stop_chrome(process, devtools)
 
