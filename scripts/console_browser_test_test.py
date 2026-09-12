@@ -92,18 +92,28 @@ class NativeKeyTest(unittest.TestCase):
 
         console_browser_test.key(devtools, "Tab", shift=True)
 
-        for call in devtools.command.call_args_list:
-            params = call.args[1]
+        self.assertEqual(devtools.command.call_count, 2)
+        for call, event_type in zip(devtools.command.call_args_list, ("rawKeyDown", "keyUp")):
+            method, params = call.args
+            self.assertEqual(method, "Input.dispatchKeyEvent")
+            self.assertEqual(params["type"], event_type)
+            self.assertEqual(params["key"], "Tab")
             self.assertEqual(params["modifiers"], 8)
             self.assertEqual(params["windowsVirtualKeyCode"], 9)
+            self.assertEqual(params["nativeVirtualKeyCode"], 9)
 
     def test_enter_uses_trusted_native_key_code(self):
         devtools = mock.MagicMock()
 
         console_browser_test.key(devtools, "Enter")
 
-        for call in devtools.command.call_args_list:
-            params = call.args[1]
+        self.assertEqual(devtools.command.call_count, 2)
+        for call, event_type in zip(devtools.command.call_args_list, ("rawKeyDown", "keyUp")):
+            method, params = call.args
+            self.assertEqual(method, "Input.dispatchKeyEvent")
+            self.assertEqual(params["type"], event_type)
+            self.assertEqual(params["key"], "Enter")
+            self.assertEqual(params["modifiers"], 0)
             self.assertEqual(params["windowsVirtualKeyCode"], 13)
             self.assertEqual(params["nativeVirtualKeyCode"], 13)
 
@@ -146,15 +156,33 @@ class ChromeShutdownTest(unittest.TestCase):
 
 
 class NativeTouchTest(unittest.TestCase):
+    def test_missing_trusted_start_cancels_without_completing_or_retrying(self):
+        devtools = mock.MagicMock()
+        devtools.evaluate.side_effect = [
+            True, {"x": 12, "y": 24, "width": 100, "height": 44, "target": True}, True,
+        ]
+        def failed_observation(*args, **kwargs):
+            devtools.command.assert_called_with("Input.dispatchTouchEvent", {
+                "type": "touchStart",
+                "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
+            })
+            self.assertIn("event.trusted", args[1])
+            raise RuntimeError("missing trusted start")
+        with mock.patch.object(console_browser_test.time, "sleep"), mock.patch.object(
+            console_browser_test, "wait_for", side_effect=failed_observation,
+        ) as observed:
+            with self.assertRaisesRegex(RuntimeError, "missing trusted start"):
+                console_browser_test.tap(devtools, "#record-proof-agent")
+        observed.assert_called_once()
+        devtools.command.assert_called_with("Input.dispatchTouchEvent", {"type": "touchCancel", "touchPoints": []})
+        self.assertNotIn(mock.call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}), devtools.command.call_args_list)
+
     def test_tap_enables_emulation_before_synthesizing_complete_touch_gesture(self):
         devtools = mock.MagicMock()
         devtools.evaluate.side_effect = [
             True,
             {"x": 12, "y": 24, "width": 100, "height": 44, "target": True},
-            True,
-            True,
-            {"x": 13, "y": 25, "navigated": False, "target": True},
-            True,
+            True, True, True, True,
         ]
 
         with mock.patch.object(console_browser_test.time, "sleep"):
@@ -166,16 +194,9 @@ class NativeTouchTest(unittest.TestCase):
                 mock.call("Emulation.setTouchEmulationEnabled", {
                     "enabled": True, "maxTouchPoints": 1, "configuration": "mobile",
                 }),
-                mock.call("Input.synthesizeTapGesture", {
-                    "x": 12,
-                    "y": 24,
-                    "duration": 50,
-                    "tapCount": 1,
-                    "gestureSourceType": "touch",
-                }),
                 mock.call("Input.dispatchTouchEvent", {
                     "type": "touchStart",
-                    "touchPoints": [{"x": 13, "y": 25, "radiusX": 1, "radiusY": 1, "force": 1}],
+                    "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
                 }),
                 mock.call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []}),
             ],
@@ -187,12 +208,13 @@ class NativeTouchTest(unittest.TestCase):
             True,
             {"x": 42, "y": 176, "width": 100, "height": 44, "target": True,
              "visualOffsetX": 30, "visualOffsetY": 152, "visualScale": 2, "devicePixelRatio": 3},
-            True, True, {"navigated": True},
+            True, True, True, True,
         ]
         with mock.patch.object(console_browser_test.time, "sleep"):
             console_browser_test.tap(devtools, "#record-proof-agent")
-        devtools.command.assert_called_with("Input.synthesizeTapGesture", {
-            "x": 12, "y": 24, "duration": 50, "tapCount": 1, "gestureSourceType": "touch",
+        devtools.command.assert_any_call("Input.dispatchTouchEvent", {
+            "type": "touchStart",
+            "touchPoints": [{"x": 12, "y": 24, "radiusX": 1, "radiusY": 1, "force": 1}],
         })
 
     def test_real_chrome_touch_gesture_activates_anchor_navigation(self):
@@ -268,10 +290,21 @@ class NativeTouchTest(unittest.TestCase):
                     timeout=5,
                 )
                 proof = console_browser_test.touch_proof(devtools)
+                assert proof is not None, "native touch proof missing"
                 self.assertEqual(proof["selector"], "#record-proof-agent")
                 event_types = {event["type"] for event in proof["events"]}
                 self.assertTrue({"touchstart", "touchend", "click"}.issubset(event_types))
                 self.assertTrue(all(event["trusted"] for event in proof["events"]))
+                # Target-only evidence cannot distinguish listener loss from a
+                # missing native gesture. Require independent document capture
+                # before treating navigation as a complete touch proof.
+                document_events = proof["documentEvents"]
+                self.assertTrue(
+                    {"pointerdown", "touchstart", "pointerup", "touchend"}.issubset(
+                        {event["type"] for event in document_events}
+                    )
+                )
+                self.assertTrue(all(event["trusted"] for event in document_events))
             finally:
                 console_browser_test.stop_chrome(process, devtools)
 

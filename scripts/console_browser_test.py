@@ -343,7 +343,15 @@ def tap(devtools: DevTools, selector: str) -> None:
     arm_observation = devtools.evaluate(
         "(() => { sessionStorage.setItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) +
         ", JSON.stringify({selector: " + json.dumps(selector) + ", initialURL: location.href, events: [], "
-        "scrolls: 0, observations: []})); const node = document.querySelector(" + json.dumps(selector) + ");"
+        "scrolls: 0, observations: [], documentEvents: []})); "
+        "for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', 'touchcancel']) { "
+        "document.addEventListener(type, event => { const proof = JSON.parse(sessionStorage.getItem(" +
+        json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); if (!proof) return; "
+        "const point = event.changedTouches?.[0] || event; proof.documentEvents.push({type, "
+        "trusted: event.isTrusted, target: event.target?.id || event.target?.tagName || '', "
+        "x: point.clientX, y: point.clientY}); sessionStorage.setItem(" +
+        json.dumps(TOUCH_PROOF_STORAGE_KEY) + ", JSON.stringify(proof)); }, {once: true, capture: true}); } "
+        "const node = document.querySelector(" + json.dumps(selector) + ");"
         "if (!node) return false; for (const type of ['pointerdown', 'touchstart', 'pointerup', 'touchend', "
         "'click', 'mousedown', 'mouseup']) { node.addEventListener(type, event => { const proof = JSON.parse("
         "sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ")); proof.events.push({type, "
@@ -364,14 +372,31 @@ def tap(devtools: DevTools, selector: str) -> None:
     # and elementFromPoint use layout-viewport CSS coordinates: subtract the
     # visual viewport pan, but do not multiply by page scale or device DPR.
     # Otherwise the hit test succeeds while native input misses the element.
-    # The synthesizer delivers the complete touch/pointer lifecycle.
-    devtools.command("Input.synthesizeTapGesture", {
-        "x": point["x"] - point.get("visualOffsetX", 0),
-        "y": point["y"] - point.get("visualOffsetY", 0),
-        "duration": 50,
-        "tapCount": 1,
-        "gestureSourceType": "touch",
+    # Use one explicit native touch sequence. Mixing the asynchronous gesture
+    # synthesizer with a second raw sequence can leave Chromium's input state
+    # mid-gesture; a command acknowledgement is not DOM delivery evidence.
+    devtools.command("Input.dispatchTouchEvent", {
+        "type": "touchStart",
+        "touchPoints": [{"x": point["x"] - point.get("visualOffsetX", 0),
+                         "y": point["y"] - point.get("visualOffsetY", 0),
+                         "radiusX": 1, "radiusY": 1, "force": 1}],
     })
+    try:
+        wait_for(
+            devtools,
+            "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
+            "return value ? JSON.parse(value).events.some(event => event.type === 'touchstart' && event.trusted) : false; })()",
+            f"native touch start for {selector}",
+            timeout=3,
+        )
+    except Exception:
+        # Release the native input state but preserve the failed observation.
+        try:
+            devtools.command("Input.dispatchTouchEvent", {"type": "touchCancel", "touchPoints": []})
+        except (OSError, RuntimeError):
+            pass
+        raise
+    devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
     wait_for(
         devtools,
         "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
@@ -379,42 +404,14 @@ def tap(devtools: DevTools, selector: str) -> None:
         f"settled native touch gesture for {selector}",
         timeout=3,
     )
-    # Headless Chrome reports the synthesized touch and pointer lifecycle as
-    # trusted but does not emit the compatibility click which a physical tap
-    # produces. Wait for touchend before completing that native browser input
-    # sequence through CDP; dispatching the mouse compatibility events while
-    # Chrome still owns the asynchronous touch gesture suppresses activation.
-    # Re-measure after the gesture because mobile visual-viewport scrolling can
-    # move the target while the gesture is in flight.
-    settled = devtools.evaluate(
-        "(() => { const proof = JSON.parse(sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ") || 'null');"
-        "if (proof?.initialURL !== location.href) return {navigated: true};"
-        "const node = document.querySelector(" + json.dumps(selector) + "); if (!node) return null;"
-        "const box = node.getBoundingClientRect(); const x = box.left + box.width / 2; const y = box.top + box.height / 2;"
-        "const hit = document.elementFromPoint(x, y); return {x: x - (visualViewport?.offsetLeft || 0), "
-        "y: y - (visualViewport?.offsetTop || 0), navigated: false, "
-        "target: hit === node || node.contains(hit)}; })()"
-    )
-    require(isinstance(settled, dict), f"browser control missing after native touch gesture: {selector}")
-    if settled.get("navigated") is True:
-        return
-    require(bool(settled.get("target")), f"browser control moved or became obscured after native touch gesture: {selector}; state={settled}")
-    # In the installed headless Chrome, synthesizeTapGesture proves trusted
-    # touch/pointer delivery but can stop before the compatibility click. A
-    # second complete raw touch sequence at the settled coordinates lets Chrome
-    # finish its native compatibility-event path and activate the anchor. This
-    # remains browser input: the harness never calls an element handler or
-    # mutates the route directly.
-    devtools.command("Input.dispatchTouchEvent", {
-        "type": "touchStart",
-        "touchPoints": [{"x": settled["x"], "y": settled["y"], "radiusX": 1, "radiusY": 1, "force": 1}],
-    })
-    devtools.command("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+    # Require Chromium's own compatibility click. Never dispatch a second tap
+    # or invoke a handler to turn incomplete native delivery into a pass.
     wait_for(
         devtools,
         "(() => { const value = sessionStorage.getItem(" + json.dumps(TOUCH_PROOF_STORAGE_KEY) + ");"
         "if (!value) return false; const proof = JSON.parse(value);"
-        "return proof.events.some(event => event.type === 'click'); })()",
+        "return ['touchstart', 'touchend', 'click'].every(type => proof.events.some(event => event.type === type && event.trusted)) && "
+        "['pointerdown', 'touchstart', 'pointerup', 'touchend'].every(type => proof.documentEvents.some(event => event.type === type && event.trusted)); })()",
         f"trusted click activation for {selector}",
         timeout=5,
     )
@@ -583,7 +580,13 @@ def main() -> int:
             devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
             geometry = devtools.evaluate("(() => { const search = document.querySelector('form[action=\"/console/agents\"] .search input'); const facts = document.querySelector('.registry-card .rc-facts'); const notice = document.querySelector('#agent-inline-detail .inline-notice'); return {width: innerWidth, scrollWidth: document.documentElement.scrollWidth, searchWidth: search.getBoundingClientRect().width, columns: getComputedStyle(facts).gridTemplateColumns.split(' ').length, noticeMaxWidth: getComputedStyle(notice).maxWidth}; })()")
             require(geometry["width"] == width and geometry["scrollWidth"] <= width, "Registry must render at the requested CSS viewport, not a scaled overflow viewport: " + json.dumps(geometry))
-            require(geometry["searchWidth"] >= 260 and geometry["columns"] == 3, "Registry search/card geometry regressed: " + json.dumps(geometry))
+            # Long readiness evidence remains complete; on narrow screens it
+            # occupies its own row rather than colliding with authority text.
+            expected_columns = 2 if width <= 600 else 3
+            require(geometry["searchWidth"] >= 260 and geometry["columns"] == expected_columns, "Registry search/card geometry regressed: " + json.dumps(geometry))
+            if width <= 600:
+                readiness_row = devtools.evaluate("(() => { const cards = [...document.querySelectorAll('.registry-card .rc-facts')]; return cards.length > 0 && cards.every(card => { const facts = [...card.children]; return facts.length === 3 && facts[2].getBoundingClientRect().top >= Math.max(facts[0].getBoundingClientRect().bottom, facts[1].getBoundingClientRect().bottom); }); })()")
+                require(readiness_row is True, "Mobile readiness must occupy a separate nonoverlapping row")
             require(geometry["noticeMaxWidth"] == "1000px", "Registry readiness must use the accepted detail-body width: " + json.dumps(geometry))
             label_overflow = devtools.evaluate("[...document.querySelectorAll('#agent-inline-detail .spec dt')].filter(n => n.getClientRects().length && n.scrollWidth > n.clientWidth + 1).map(n => ({label:n.textContent, width:n.clientWidth, scrollWidth:n.scrollWidth}))")
             require(not label_overflow, "Registry evidence labels overlap their value column: " + json.dumps(label_overflow))

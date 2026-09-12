@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Refined Registry native filter/lifecycle controls and compact evidence disclosures, restored authority-section spacing, and placed long readiness evidence on a separate mobile summary row without hiding identity or keyboard focus. Browser verification now requires a single trusted touch lifecycle and Chromium-generated click rather than mixing synthesized and raw tap sequences.
+
 ### Added
 
 - Added registered-Agent workspace self-service. A freshly authenticated principal can delegate a fixed credential-free workspace to one exact latest enabled Agent revision, allowing stable-owner mutation of its own Loop/Graph definitions, submission and Queue management only as an exact Graph participant, and fleet-wide shared definition read/reference/use without a provisioning receipt or runtime session. Runtime processing still requires a fresh controller-issued authority binding and admission; only Aegis manages credentials, and the feature does not claim native agent transport or automatic execution.
@@ -54,6 +56,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Made interactive onboarding a lower-resistance guided journey: bootstrap identifies a concise `basic` presentation as the default, shows one recommendation and consequence at a time, and accepts `details` or `advanced` before consequential approvals to reveal exact Aegis evidence. Operators can return to `basic` without changing progress. Bare `aegis` and explicit `aegis init` share the complete five-stage artifact-derived manager-onboarding journey. The same presentation modes, approvals, revalidation, and fail-closed decline/resume behavior apply within each authorized scope, and terminal events carry color-independent `STATE`, `ACTIVE`, `QUEUED`, `ERROR`, or `ACTION` roles without replacing explicit authoritative/runtime origins.
 
 ### Fixed
+
+- Reject legacy overlapping authenticated stanza matches before applying a requested stanza constraint. Empty, matching, and unknown requested names cannot mask ambiguity or select authority; regressions require denial with no selected stanza. Reconciled launch documentation with expertise v3, default host-file custody, and the exact development `.aegis` reset exception.
 
 - Corrected the installed-console proof's native touch coordinates for a panned visual viewport, preserving trusted touch/click delivery and authenticated server-rendered navigation. Chrome proof teardown now requests orderly browser shutdown and waits before closing DevTools or removing the profile; focused regressions cover visual viewport offsets, zoom, and bounded shutdown fallback.
 
