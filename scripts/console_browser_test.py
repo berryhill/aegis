@@ -585,6 +585,8 @@ def main() -> int:
             require(geometry["width"] == width and geometry["scrollWidth"] <= width, "Registry must render at the requested CSS viewport, not a scaled overflow viewport: " + json.dumps(geometry))
             require(geometry["searchWidth"] >= 260 and geometry["columns"] == 3, "Registry search/card geometry regressed: " + json.dumps(geometry))
             require(geometry["noticeMaxWidth"] == "1000px", "Registry readiness must use the accepted detail-body width: " + json.dumps(geometry))
+            label_overflow = devtools.evaluate("[...document.querySelectorAll('#agent-inline-detail .spec dt')].filter(n => n.getClientRects().length && n.scrollWidth > n.clientWidth + 1).map(n => ({label:n.textContent, width:n.clientWidth, scrollWidth:n.scrollWidth}))")
+            require(not label_overflow, "Registry evidence labels overlap their value column: " + json.dumps(label_overflow))
             for label in ("Charter revision history", "All trust stanza declarations"):
                 summary_selector = devtools.evaluate("(() => { const summaries = [...document.querySelectorAll('#agent-inline-detail details > summary')]; const node = summaries.find(n => n.textContent.startsWith(" + json.dumps(label) + ")); if (!node) return null; const parent = node.parentElement; return '#agent-inline-detail details:nth-of-type(' + ([...parent.parentElement.children].filter(n => n.tagName === 'DETAILS').indexOf(parent) + 1) + ') > summary'; })()")
                 require(bool(summary_selector), "Registry disclosure missing: " + label)

@@ -14,7 +14,7 @@ func TestRegistryDetailAcceptedWidthAndValueTypography(t *testing.T) {
 	}
 	css := string(data)
 	for _, rule := range []string{
-		".agent-inline-detail .spec{max-width:1000px}",
+		".agent-inline-detail .spec{max-width:1000px;border-top:1px solid var(--border-subtle)}",
 		".agent-inline-detail .panel-body>.inline-notice{max-width:1000px;line-height:19px}",
 		".agent-inline-detail .spec dd{font:12.5px/19px var(--mono)}",
 	} {

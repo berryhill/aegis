@@ -15,6 +15,9 @@ func TestRegistryHeaderAndRelationshipGrouping(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
+		`<section class="agent-evidence-card" aria-label="Provisioning evidence">`,
+		`<section class="agent-evidence-card" aria-label="Current session and execution">`,
+		`<p class="inline-notice authority-result"><strong>{ record.Agent.AuthorityState }</strong> · { record.Agent.EffectiveAuthority }</p>`,
 		`<div class="detail-actions"><a class="secondary" href={ agentRevisionRoute(surface, record) }>Refresh authority evidence</a>`,
 		`<span class="rc-chain"><span>{ record.Source }</span><i aria-hidden="true">→</i><span>{ record.Owner }</span></span>`,
 	} {

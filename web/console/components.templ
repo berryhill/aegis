@@ -460,13 +460,18 @@ templ AgentInlineDetail(surface SurfaceModel, record *RecordModel) {
 				<div class="section-label">Charter revision</div>
 				<dl class="spec"><dt>Agent ID</dt><dd>{ record.Agent.StableID }</dd><dt>Charter revision</dt><dd>{ fmt.Sprintf("%s r%d", record.Agent.CharterID, record.Agent.CharterRevision) }</dd><dt>Charter digest</dt><dd>{ record.Agent.CharterDigest }</dd><dt>Runtime target</dt><dd>{ record.Agent.RuntimeAdapter + " / " + record.Agent.Runtime + " / " + record.Agent.RuntimeTarget }</dd><dt>Registry revision</dt><dd>{ fmt.Sprintf("r%d @ %s", record.Agent.Revision, record.Agent.RevisionDigest) }</dd></dl>
 				<p class="charter-evidence-note">{ record.Agent.CharterEvidence }</p>
-				<div class="section-label">Provisioning evidence</div>
-				<p>{ record.Agent.ProvisioningEvidence }</p>
-				@FieldList(record.Agent.ReceiptFields, "No exact-bound receipt evidence available")
+				<section class="agent-evidence-card" aria-label="Provisioning evidence">
+					<div class="section-label">Provisioning evidence</div>
+					if len(record.Agent.ReceiptFields) > 0 {
+						<span class="evidence-status">Recorded receipt evidence</span>
+					}
+					<p>{ record.Agent.ProvisioningEvidence }</p>
+					@FieldList(record.Agent.ReceiptFields, "No exact-bound receipt evidence available")
+				</section>
 				<details><summary>Charter revision history · { strconv.Itoa(len(record.Agent.CharterHistory)) }</summary><p>{ record.Agent.CharterHistoryEvidence }</p>@FieldList(record.Agent.CharterHistory, "No verified charter revisions available")<h3>Registry revision history</h3><p>{ record.Agent.HistoryEvidence }</p>@RelatedRecords(record.Agent.History)</details>
 				<section aria-label="Effective authority" data-authority-state={ record.Agent.AuthorityState }>
 					<div class="section-label">Effective authority</div>
-					<p>{ record.Agent.EffectiveAuthority }</p>
+					<p class="inline-notice authority-result"><strong>{ record.Agent.AuthorityState }</strong> · { record.Agent.EffectiveAuthority }</p>
 					<dl class="spec"><dt>Evaluated for authenticated operator</dt><dd>{ record.Agent.EvaluatedFor }</dd></dl>
 					@FieldList(record.Agent.AuthorityFields, "No effective permissions asserted")
 				</section>
@@ -476,10 +481,15 @@ templ AgentInlineDetail(surface SurfaceModel, record *RecordModel) {
 						<section class="panel-body" aria-label={ "Declared stanza " + stanza.ID }><h3>{ stanza.Name } · { stanza.ID }</h3><p>Enabled: { strconv.FormatBool(stanza.Enabled) } · declaration only</p>@FieldList(stanza.Fields, "Declaration unavailable")</section>
 					}
 				</details>
-				<div class="section-label">Current session and execution</div>
-				<p>{ record.Agent.SessionEvidence }</p>
-				@FieldList(record.Agent.SessionFields, "No exact-bound session evidence available")
-				@RelatedRecords(record.Agent.Executions)
+				<section class="agent-evidence-card" aria-label="Current session and execution">
+					<div class="section-label">Current session and execution</div>
+					if len(record.Agent.SessionFields) > 0 {
+						<span class="evidence-status">Recorded session evidence</span>
+					}
+					<p>{ record.Agent.SessionEvidence }</p>
+					@FieldList(record.Agent.SessionFields, "No exact-bound session evidence available")
+					@RelatedRecords(record.Agent.Executions)
+				</section>
 				<details><summary>Registry provenance and related definitions</summary><dl class="spec"><dt>Fleet source</dt><dd>{ record.Agent.FleetID + " / " + record.Agent.SourceKind + " / " + record.Agent.SourceID }</dd><dt>Owner</dt><dd>{ record.Agent.OwnerID }</dd><dt>Accountability</dt><dd>{ record.Agent.AccountabilityID }</dd><dt>Declared capabilities</dt><dd>{ strings.Join(record.Agent.Capabilities, ", ") }</dd><dt>Declared policies</dt><dd>{ strings.Join(record.Agent.Policies, "\n") }</dd></dl>@RelatedRecords(record.Links)</details>
 				if record.Agent.LifecycleEligible {
 					<div class="section-label">Lifecycle controls</div>
