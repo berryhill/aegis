@@ -580,13 +580,11 @@ def main() -> int:
             devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
             geometry = devtools.evaluate("(() => { const search = document.querySelector('form[action=\"/console/agents\"] .search input'); const facts = document.querySelector('.registry-card .rc-facts'); const notice = document.querySelector('#agent-inline-detail .inline-notice'); return {width: innerWidth, scrollWidth: document.documentElement.scrollWidth, searchWidth: search.getBoundingClientRect().width, columns: getComputedStyle(facts).gridTemplateColumns.split(' ').length, noticeMaxWidth: getComputedStyle(notice).maxWidth}; })()")
             require(geometry["width"] == width and geometry["scrollWidth"] <= width, "Registry must render at the requested CSS viewport, not a scaled overflow viewport: " + json.dumps(geometry))
-            # Long readiness evidence remains complete; on narrow screens it
-            # occupies its own row rather than colliding with authority text.
-            expected_columns = 2 if width <= 600 else 3
-            require(geometry["searchWidth"] >= 260 and geometry["columns"] == expected_columns, "Registry search/card geometry regressed: " + json.dumps(geometry))
-            if width <= 600:
-                readiness_row = devtools.evaluate("(() => { const cards = [...document.querySelectorAll('.registry-card .rc-facts')]; return cards.length > 0 && cards.every(card => { const facts = [...card.children]; return facts.length === 3 && facts[2].getBoundingClientRect().top >= Math.max(facts[0].getBoundingClientRect().bottom, facts[1].getBoundingClientRect().bottom); }); })()")
-                require(readiness_row is True, "Mobile readiness must occupy a separate nonoverlapping row")
+            # Compact summaries retain the fresh-admission caveat and the
+            # accepted three-column strip at both qualified viewport widths.
+            require(geometry["searchWidth"] >= 260 and geometry["columns"] == 3, "Registry search/card geometry regressed: " + json.dumps(geometry))
+            summary_rows = devtools.evaluate("(() => { const cards = [...document.querySelectorAll('.registry-card .rc-facts')]; return cards.length > 0 && cards.every(card => { const facts = [...card.children]; return facts.length === 3 && Math.max(...facts.map(n => n.getBoundingClientRect().top)) - Math.min(...facts.map(n => n.getBoundingClientRect().top)) < 1; }); })()")
+            require(summary_rows is True, "Registry card summaries must share one aligned row")
             require(geometry["noticeMaxWidth"] == "1000px", "Registry readiness must use the accepted detail-body width: " + json.dumps(geometry))
             label_overflow = devtools.evaluate("[...document.querySelectorAll('#agent-inline-detail .spec dt')].filter(n => n.getClientRects().length && n.scrollWidth > n.clientWidth + 1).map(n => ({label:n.textContent, width:n.clientWidth, scrollWidth:n.scrollWidth}))")
             require(not label_overflow, "Registry evidence labels overlap their value column: " + json.dumps(label_overflow))

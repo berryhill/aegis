@@ -16,7 +16,7 @@ func TestRegistryMobileLayoutContract(t *testing.T) {
 	for _, rule := range []string{
 		`@media(max-width:760px){form.list-bar[action="/console/agents"]{flex-wrap:wrap;padding:9px 13px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface2)}`,
 		`form.list-bar[action="/console/agents"]>.search{flex:1 1 100%;max-width:none}`,
-		`form.list-bar[action="/console/agents"]>.count{flex-basis:100%;margin-left:0}`,
+		`form.list-bar[action="/console/agents"]>.count{flex:0 0 auto;margin-left:auto}`,
 		`@media(max-width:420px){.content:has(form[action="/console/agents"]){padding:16px 11px 44px}}`,
 	} {
 		if !strings.Contains(css, rule) {

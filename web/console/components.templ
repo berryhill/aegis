@@ -394,7 +394,7 @@ templ QueueRecordPanel(surface SurfaceModel, records []RecordModel) {
 
 templ AgentFilters(surface SurfaceModel) {
 	<form class="list-bar" method="get" action="/console/agents" aria-label="Filter Agent Registry">
-		<label class="search"><span class="sr-only">Search agents</span><input name="q" type="search" value={ surface.Query } placeholder="Search agents" autocomplete="off" maxlength="128"/></label>
+		<label class="search"><span class="sr-only">Search agents</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg><input name="q" type="search" value={ surface.Query } placeholder="Search agents" autocomplete="off" maxlength="128"/></label>
 		<label class="lifecycle-filter"><span class="sr-only">Lifecycle</span><select name="lifecycle">
 			<option value="all" selected?={ surface.Lifecycle == "all" }>All lifecycle states</option>
 			<option value="enabled" selected?={ surface.Lifecycle == "enabled" }>Enabled</option>
@@ -414,7 +414,7 @@ templ AgentCard(surface SurfaceModel, record RecordModel) {
 			}
 		</span>
 		<span class="rc-chain"><span>{ record.Source }</span><i aria-hidden="true">→</i><span>{ record.Owner }</span></span>
-		<dl class="rc-facts"><div><dt>Execution readiness</dt><dd>{ record.Readiness }</dd></div><div><dt>Authority</dt><dd>{ record.Authority }</dd></div><div><dt>Provisioning</dt><dd>{ record.Provisioning }</dd></div></dl>
+		<dl class="rc-facts"><div><dt>Execution readiness</dt><dd title={ record.Readiness }>{ registryCardReadiness(record.Readiness) }</dd></div><div><dt>Declared authority</dt><dd>{ strings.TrimSuffix(record.Authority, " declared") }</dd></div><div><dt>Provisioning</dt><dd title={ record.Provisioning }>{ registryCardProvisioning(record.Provisioning) }</dd></div></dl>
 	</a>
 }
 

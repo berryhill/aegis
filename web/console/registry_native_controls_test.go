@@ -20,7 +20,9 @@ func TestRegistryNativeControlPresentation(t *testing.T) {
 		`.agent-inline-detail .lifecycle-form label{display:flex;align-items:center;gap:8px;`,
 		`@media(min-width:601px){form.list-bar[action="/console/agents"]>.search{flex:0 1 290px}}`,
 		`.agent-inline-detail .panel-body>section[aria-label="Effective authority"]{margin-top:22px}`,
-		`@media(max-width:600px){.registry-card .rc-facts{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px}.registry-card .rc-facts>div:last-child{grid-column:1/-1}}`,
+		`.registry-card .rc-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));`,
+		`form.list-bar[action="/console/agents"]>.count{flex:0 0 auto;margin-left:auto}`,
+		`form.list-bar[action="/console/agents"]>.lifecycle-filter{flex:1 1 130px;width:auto;min-width:0}`,
 	} {
 		if !strings.Contains(css, rule) {
 			t.Errorf("missing scoped native-control styling: %s", rule)

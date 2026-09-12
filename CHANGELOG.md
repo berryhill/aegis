@@ -57,6 +57,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Compact Registry card summaries preserve fresh-admission and denial wording while keeping full statements in inline detail and title text; authority counts are explicitly labeled as declarations. The responsive summary strip uses the accepted auto-fit columns, and native search, lifecycle, Apply and count controls remain grouped without changing form behavior.
 - Reject legacy overlapping authenticated stanza matches before applying a requested stanza constraint. Empty, matching, and unknown requested names cannot mask ambiguity or select authority; regressions require denial with no selected stanza. Reconciled launch documentation with expertise v3, default host-file custody, and the exact development `.aegis` reset exception.
 
 - Corrected the installed-console proof's native touch coordinates for a panned visual viewport, preserving trusted touch/click delivery and authenticated server-rendered navigation. Chrome proof teardown now requests orderly browser shutdown and waits before closing DevTools or removing the profile; focused regressions cover visual viewport offsets, zoom, and bounded shutdown fallback.

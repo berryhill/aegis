@@ -278,7 +278,7 @@ func TestAgentRegistryRendersOperatorContractWithoutClaimingBrowserAuthority(t *
 	html := output.String()
 	for _, required := range []string{
 		"Participants", "Prepare charter import", `disabled`, `name="q"`, `value="office"`, `name="lifecycle"`,
-		"All lifecycle states", "Execution readiness", "Authority", "Provisioning", "Back to Registry",
+		"All lifecycle states", "Execution readiness", "Declared authority", "Provisioning", "Back to Registry",
 		"Readiness is derived from the immutable lifecycle record", "browser view grants no runtime authority",
 		"Not evaluated by this Registry read", `record_key=office`, `@media(max-width:700px)`,
 	} {
