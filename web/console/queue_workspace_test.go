@@ -83,16 +83,16 @@ func TestQueueTopologyCyclicBranchingTerminalAndHistoricalCases(t *testing.T) {
 // disposition") must NOT appear in the rendered HTML.
 func TestQueueWorkspaceRendersPinnedControlFlowAndTabs(t *testing.T) {
 	record := &RecordModel{Key: "queue-pinned", Label: "queue-pinned", Revision: "r2", Lifecycle: "failed", Queue: &QueueDetailModel{
-		ExecutionType:      "Pinned Graph run",
-		QueueItemIdentity:  "queue-pinned",
-		QueueItemDigest:    "sha256:item",
-		SnapshotDigest:     "sha256:snapshot",
-		PinnedGraph:        "graph-pinned",
+		ExecutionType:       "Pinned Graph run",
+		QueueItemIdentity:   "queue-pinned",
+		QueueItemDigest:     "sha256:item",
+		SnapshotDigest:      "sha256:snapshot",
+		PinnedGraph:         "graph-pinned",
 		PinnedGraphRevision: "r2",
-		PinnedGraphDigest:  "sha256:graph",
-		Participant:        "agent-x r1 @ sha256:agent",
-		TerminalOutcome:    "failed",
-		FailureLocation:    "review",
+		PinnedGraphDigest:   "sha256:graph",
+		Participant:         "agent-x r1 @ sha256:agent",
+		TerminalOutcome:     "failed",
+		FailureLocation:     "review",
 		Nodes: []QueueControlNodeModel{
 			{Index: 0, NodeID: "intake", State: "succeeded", ExecutionState: "succeeded", AttemptNumber: 1, AttemptState: "succeeded", TerminalEligible: false, Reachable: true},
 			{Index: 1, NodeID: "review", State: "failed", ExecutionState: "failed", AttemptNumber: 1, AttemptState: "failed", TerminalEligible: true, FailureLocation: true, Reachable: true},
@@ -100,14 +100,14 @@ func TestQueueWorkspaceRendersPinnedControlFlowAndTabs(t *testing.T) {
 		Edges: []QueueControlEdgeModel{
 			{Index: 0, EdgeID: "intake-to-review", From: "intake", To: "review", Outcome: "taken"},
 		},
-		Inputs:    []QueueInputModel{{PortID: "input", Type: "string", Value: "", Source: "default", Status: "applicable"}},
-		Outputs:   []QueueOutputModel{{PortID: "result", Type: "string", Applicability: "declared", Completeness: "unavailable"}},
-		Timeline:  []QueueTimelineModel{{Title: "Queued", State: "queued", At: "2026-08-18T12:00:00Z", Detail: "queue-pinned"}},
-		Evidence:  []QueueEvidenceModel{{Claim: "review-receipt", MediaType: "verification-receipt", VerifierID: "v", PolicyVersion: "v1", Outcome: "passed", ExpectedDigest: "sha256:expected", AttemptDigest: "sha256:observed", ObservedAt: "2026-08-18T12:00:00Z"}},
-		Authority: []FieldModel{{Label: "Mandate", Value: "mandate-x"}},
-		Admission: []FieldModel{{Label: "State", Value: "failed"}},
-		Snapshot:  []FieldModel{{Label: "Snapshot ID", Value: "snapshot-x"}},
-		Links:     []LinkModel{{Label: "Agent · review", Detail: "agent-x r1 @ sha256:agent", URL: "/console/agents?record_key=agent-x&revision=1#/agents/agent-x"}},
+		Inputs:           []QueueInputModel{{PortID: "input", Type: "string", Value: "", Source: "default", Status: "applicable"}},
+		Outputs:          []QueueOutputModel{{PortID: "result", Type: "string", Applicability: "declared", Completeness: "unavailable"}},
+		Timeline:         []QueueTimelineModel{{Title: "Queued", State: "queued", At: "2026-08-18T12:00:00Z", Detail: "queue-pinned"}},
+		Evidence:         []QueueEvidenceModel{{Claim: "review-receipt", MediaType: "verification-receipt", VerifierID: "v", PolicyVersion: "v1", Outcome: "passed", ExpectedDigest: "sha256:expected", AttemptDigest: "sha256:observed", ObservedAt: "2026-08-18T12:00:00Z"}},
+		Authority:        []FieldModel{{Label: "Mandate", Value: "mandate-x"}},
+		Admission:        []FieldModel{{Label: "State", Value: "failed"}},
+		Snapshot:         []FieldModel{{Label: "Snapshot ID", Value: "snapshot-x"}},
+		Links:            []LinkModel{{Label: "Agent · review", Detail: "agent-x r1 @ sha256:agent", URL: "/console/agents?record_key=agent-x&revision=1#/agents/agent-x"}},
 		ContextualAction: &QueueControlModel{Operation: "cancel", Label: "Cancel execution", Enabled: false, Reason: "terminal work cannot transition", Consequence: "Records an operator cancellation and terminal disposition; running work is not asserted stopped by the browser."},
 	}}
 	var out strings.Builder
@@ -194,14 +194,14 @@ func TestQueueWorkspaceCSSAndJSEmbedded(t *testing.T) {
 // requires fresh authenticated admission.
 func TestQueueWorkspaceSecurityNegativeCannotForgeLifecycleAuthorityEvidence(t *testing.T) {
 	detail := &QueueDetailModel{
-		ExecutionType:    "Pinned Graph run",
+		ExecutionType:     "Pinned Graph run",
 		QueueItemIdentity: "queue-130",
-		TerminalOutcome:  "failed",
-		FailureLocation:  "review",
-		Nodes: []QueueControlNodeModel{{Index: 0, NodeID: "review", State: "failed", ExecutionState: "failed", TerminalEligible: true, FailureLocation: true, Reachable: true}},
-		Edges: []QueueControlEdgeModel{{Index: 0, EdgeID: "e", From: "review", To: "review", Outcome: "pending"}},
-		Evidence: []QueueEvidenceModel{{Claim: "review-receipt", Outcome: "passed", ExpectedDigest: "sha256:expected", AttemptDigest: "sha256:observed", VerifierID: "v", PolicyVersion: "v1", ObservedAt: "2026-08-18T12:00:00Z"}},
-		DispositionState: "Authoritative terminal disposition · failed · runtime_exit_nonzero",
+		TerminalOutcome:   "failed",
+		FailureLocation:   "review",
+		Nodes:             []QueueControlNodeModel{{Index: 0, NodeID: "review", State: "failed", ExecutionState: "failed", TerminalEligible: true, FailureLocation: true, Reachable: true}},
+		Edges:             []QueueControlEdgeModel{{Index: 0, EdgeID: "e", From: "review", To: "review", Outcome: "pending"}},
+		Evidence:          []QueueEvidenceModel{{Claim: "review-receipt", Outcome: "passed", ExpectedDigest: "sha256:expected", AttemptDigest: "sha256:observed", VerifierID: "v", PolicyVersion: "v1", ObservedAt: "2026-08-18T12:00:00Z"}},
+		DispositionState:  "Authoritative terminal disposition · failed · runtime_exit_nonzero",
 	}
 	record := &RecordModel{Key: "queue-130", Label: "queue-130", Revision: "r2", Lifecycle: "failed", Queue: detail}
 	var out strings.Builder

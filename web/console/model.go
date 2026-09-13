@@ -315,8 +315,8 @@ type QueueInputModel struct {
 }
 
 type QueueOutputModel struct {
-	PortID       string
-	Type         string
+	PortID        string
+	Type          string
 	Applicability string
 	Completeness  string // complete / partial / unavailable / inapplicable.
 
