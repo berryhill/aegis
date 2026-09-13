@@ -227,37 +227,108 @@ type LoopLifecycleEventModel struct {
 }
 
 // QueueDetailModel is a presentation-only projection of authoritative queue
-// records. States remain attached to their source record; the UI never derives
-// success from the presence of runtime output.
+// records. The pinned Graph/Loop revision is reconstructed independently of the
+// current catalogue; the UI never derives success from the presence of runtime
+// output. Six supporting tabs are populated directly from authoritative runtime
+// facts so the contextual action can be evaluated without leaving the workspace.
 type QueueDetailModel struct {
-	QueueItem        []FieldModel
-	Dependencies     []FieldModel
-	Runtime          []FieldModel
-	GraphRun         QueueExecutionNodeModel
-	Loops            []QueueExecutionNodeModel
-	Attempts         []QueueAttemptModel
-	Timeline         []QueueTimelineModel
-	Artifact         []FieldModel
-	Receipts         []QueueReceiptModel
-	Disposition      []FieldModel
-	Claims           []FieldModel
-	Retries          []FieldModel
-	Cancellations    []FieldModel
-	Controls         []QueueControlModel
+	// Header / summary facts.
+	ExecutionType       string // Graph run · pinned Graph/Loop snapshot identity.
+	QueueItemIdentity   string
+	QueueItemDigest     string
+	SnapshotDigest      string
+	PinnedGraph         string
+	PinnedGraphRevision string
+	PinnedGraphDigest   string
+	Participant         string
+	CatalogueDrift      string
+	SubmittedAt         string
+	AdmittedAt          string
+	StartedAt           string
+	EndedAt             string
+	ReconstructionWarn  string
+	ContextualAction    *QueueControlModel // Only one reviewed operation may surface at a time.
+
+	// Pinned control-flow projection.
+	Nodes     []QueueControlNodeModel
+	Edges     []QueueControlEdgeModel
+	NodeCount int
+	EdgeCount int
+
+	// Tab inputs.
+	Inputs    []QueueInputModel
+	Outputs   []QueueOutputModel
+	Timeline  []QueueTimelineModel
+	Authority []FieldModel
+	Evidence  []QueueEvidenceModel
+	Admission []FieldModel
+	Snapshot  []FieldModel
+
+	// Tab references (related records) and durable state facts.
 	Links            []LinkModel
+	GraphRunDigest   string
 	ArtifactState    string
 	ReceiptState     string
 	DispositionState string
+	TerminalOutcome  string
+	FailureLocation  string // Graph node ID where the authoritative failure lives.
+	CycleWarning     string // Bounded-cycle summary if any node is part of a cycle.
 }
 
-type QueueExecutionNodeModel struct{ ID, Kind, State, Binding, Digest string }
-
-type QueueAttemptModel struct {
-	ID, State, LoopID, ClaimID, Created, Digest string
-	Number                                      uint32
+// QueueControlNodeModel projects one exact pinned Graph node onto authoritative
+// runtime state for that exact coordinate. Selection is by array index, not by
+// any untrusted ID.
+type QueueControlNodeModel struct {
+	Index            int
+	GridColumn       int
+	GridRow          int
+	NodeID           string
+	State            string // projected from authoritative runtime: pending, started, succeeded, failed, denied, cancelled, expired, revoked, terminal.
+	ExecutionState   string // authoritative Loop execution state.
+	AttemptNumber    uint32 // authoritative latest attempt number for this node (0 if none).
+	AttemptState     string // authoritative latest attempt state.
+	Current          bool   // node is the current control point.
+	TerminalEligible bool   // step carries a terminal outcome that may finish here.
+	FailureLocation  bool   // authoritative failure location.
+	CycleMember      bool   // node participates in a bounded cycle.
+	Reachable        bool   // successor edges that have not been taken in the current causal chain.
 }
 
-type QueueTimelineModel struct{ Title, State, At, Detail string }
+// QueueControlEdgeModel projects one exact pinned Graph edge onto its
+// authoritative transition outcome.
+type QueueControlEdgeModel struct {
+	Index    int
+	EdgeID   string
+	From     string
+	To       string
+	Mappings string
+	Outcome  string // taken / not-taken / pending / unreachable.
+	Cycle    bool   // edge participates in a cycle.
+}
+
+type QueueInputModel struct {
+	PortID string
+	Type   string
+	Value  string
+	Source string // default / caller / system / pinned reference.
+	Status string // applicable / missing / rejected / applied.
+}
+
+type QueueOutputModel struct {
+	PortID       string
+	Type         string
+	Applicability string
+	Completeness  string // complete / partial / unavailable / inapplicable.
+
+}
+
+type QueueEvidenceModel struct {
+	Claim, MediaType, ExpectedDigest, VerifierID, PolicyVersion, Outcome, AttemptDigest, FailureCategory, ObservedAt string
+}
+
+type QueueTimelineModel struct {
+	Title, State, At, Detail, Cause string
+}
 
 type QueueControlModel struct {
 	Operation   string
@@ -267,9 +338,15 @@ type QueueControlModel struct {
 	Consequence string
 }
 
-type QueueReceiptModel struct {
-	ID, Outcome, Claim, Verifier, ExpectedDigest, ObservedDigest, FailureCategory, ObservedAt string
-}
+// QueueTopology is a presentation-only projection of the exact pinned Graph
+// revision onto authoritative runtime state. It cannot validate, sequence, or
+// admit execution. Array positions, never untrusted IDs, identify inspector
+// panels.
+//
+// Positioning uses CSS-grid track placement (gridColumn/gridRow) rather than
+// inline pixel styles. This keeps the rendered HTML compatible with the
+// console's strict Content Security Policy (style-src 'self').
+type QueueTopology = QueuePinnedTopology
 
 type GraphDetailModel struct {
 	GraphID             string

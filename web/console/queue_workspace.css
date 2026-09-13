@@ -1,0 +1,105 @@
+/* Read-only Queue execution workspace. The canvas projects authoritative
+   runtime state onto the exact pinned Graph/Loop revision; current control,
+   attempt, transitions, cycle bounds, terminal eligibility, and failure
+   location are all surfaced from authoritative runtime facts, never from
+   browser state. CSS-grid positioning keeps the workspace compatible with
+   the console's strict Content Security Policy (style-src 'self'). */
+.queue-detail-page [data-queue-workspace]{display:grid;gap:16px;min-width:0}
+.queue-detail-page .queue-record-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:start}
+.queue-record-head h2{font-size:24px;margin:0 0 6px}.queue-record-head p{color:var(--muted);overflow-wrap:anywhere}
+.queue-record-actions{display:flex;gap:8px;flex-wrap:wrap}.queue-record-actions .queue-control{margin:0}
+.queue-record-actions .queue-control p{margin:0 0 6px;font-size:12px;color:var(--muted)}
+.queue-record-head .record-head-tags{display:flex;gap:10px;flex-wrap:wrap;overflow-wrap:anywhere}
+.queue-record-head .meta-strip{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0 0}.meta-strip dt{font-size:11px;color:var(--muted)}.meta-strip dd{margin:4px 0;font-size:13px}
+.queue-admission{font-size:12px;color:var(--muted);overflow-wrap:anywhere}.queue-admission p{margin:4px 0}
+.queue-issues{padding-left:20px}.queue-issues code{color:var(--st-denied)}
+.queue-issues li[data-reason-code^="display."]{color:var(--muted)}
+.queue-detail-page .reconstruction-warning{padding:10px 12px;border:1px solid var(--border-warning,#c9843a);border-radius:var(--radius-sm);background:var(--bg-warning,rgba(201,100,66,0.08));font-size:12px;color:var(--muted);margin:8px 0}
+.queue-admission .cycle-warning{padding:8px 10px;border-left:3px solid var(--accent);font-size:12px;color:var(--muted);margin:8px 0;background:var(--surface2)}
+.queue-detail-page .queue-workspace{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.queue-detail-page .queue-workspace.solo{grid-template-columns:minmax(0,1fr)}
+.queue-workspace .qw-pane{min-width:0;display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);overflow:hidden}
+.queue-workspace .qw-canvas{height:min(56vh,520px);min-height:300px;background:var(--bg)}
+.queue-workspace .qw-inspector{max-height:min(76vh,720px)}.queue-workspace .qw-body{padding:14px;overflow:auto;min-height:0;overflow-wrap:anywhere}
+.queue-workspace .qw-head,.queue-workspace .canvas-bar{display:flex;gap:8px;align-items:center;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2);flex:none;flex-wrap:wrap}
+.queue-workspace .qw-title,.queue-workspace .canvas-title{margin:0;font-size:13px}.queue-workspace .qw-head button{margin-left:auto}
+.queue-workspace .canvas-tools{display:flex;gap:4px;align-items:center;margin-left:auto}.queue-workspace button{min-height:32px}.queue-workspace .canvas-tools output{font-size:11px;min-width:38px}
+.queue-workspace .canvas-hint{font-size:12px;line-height:18px;padding:7px 13px;margin:0;border-bottom:1px solid var(--border);color:var(--muted)}
+.queue-workspace .cycle-band{padding:11px 13px;border-bottom:1px solid var(--border);background:var(--surface);font-size:12px;line-height:18px;display:grid;gap:6px;overflow-wrap:anywhere}
+.queue-workspace .cycle-band .cycle-band-row{display:flex;gap:12px;flex-wrap:wrap}
+.queue-workspace .cycle-band dt{font-size:11px;color:var(--muted);display:inline}
+.queue-workspace .cycle-band dd{margin:0;font-size:12px;display:inline}
+.queue-workspace .cycle-band dl{display:grid;gap:2px}
+/* CSS-grid layout: rank columns, stack rows. The grid template is fully
+   derived from server-side data-columns/data-rows attributes and never relies
+   on user-supplied input. SVG paths are expressed in absolute pixel
+   coordinates inside a viewBox so the same coordinate system used by the
+   Loop and Graph workspaces remains consistent. */
+.queue-viewport{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;background-image:radial-gradient(circle at 1px 1px,var(--border) 1px,transparent 0);background-size:24px 24px;cursor:grab}
+.queue-stage{position:relative;display:grid;grid-auto-rows:102px;row-gap:32px;column-gap:32px;padding:32px;width:max-content;transform-origin:0 0;transition:none}
+.queue-stage[data-columns="1"]{grid-template-columns:212px}
+.queue-stage[data-columns="2"]{grid-template-columns:212px 212px}
+.queue-stage[data-columns="3"]{grid-template-columns:212px 212px 212px}
+.queue-stage[data-columns="4"]{grid-template-columns:212px 212px 212px 212px}
+.queue-stage[data-columns="5"]{grid-template-columns:212px 212px 212px 212px 212px}
+.queue-stage[data-columns="6"]{grid-template-columns:212px 212px 212px 212px 212px 212px}
+.queue-stage[data-columns="7"]{grid-template-columns:212px 212px 212px 212px 212px 212px 212px}
+.queue-stage[data-columns="8"]{grid-template-columns:212px 212px 212px 212px 212px 212px 212px 212px}
+.queue-edge-layer{position:absolute;inset:0;pointer-events:none;width:100%;height:100%}
+.queue-edge-path{stroke-width:1.5;fill:none;stroke-dasharray:0}
+.queue-edge-path.outcome-taken{stroke:var(--accent)}
+.queue-edge-path.outcome-pending{stroke:var(--muted);stroke-dasharray:5,4}
+.queue-edge-path.outcome-not-taken{stroke:var(--border)}
+.queue-edge-path.outcome-unreachable{stroke:var(--border);stroke-dasharray:2,4;opacity:.6}
+#queue-arrow-taken path{fill:var(--accent)}
+#queue-arrow-pending path{fill:var(--muted)}
+#queue-arrow-not-taken path{fill:var(--border)}
+.queue-workspace .queue-node{width:212px;min-height:102px;display:block;padding:9px 11px;text-align:left;font:inherit;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;justify-self:start}
+.queue-workspace .queue-node[data-grid-column="1"]{grid-column:1}
+.queue-workspace .queue-node[data-grid-column="2"]{grid-column:2}
+.queue-workspace .queue-node[data-grid-column="3"]{grid-column:3}
+.queue-workspace .queue-node[data-grid-column="4"]{grid-column:4}
+.queue-workspace .queue-node[data-grid-column="5"]{grid-column:5}
+.queue-workspace .queue-node[data-grid-column="6"]{grid-column:6}
+.queue-workspace .queue-node[data-grid-column="7"]{grid-column:7}
+.queue-workspace .queue-node[data-grid-column="8"]{grid-column:8}
+.queue-node strong,.queue-node span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;line-height:17px}.queue-node strong{font-size:12.5px}.queue-node small{color:var(--muted);font-size:11px}
+.queue-node .queue-node-state{color:var(--accent)}
+.queue-node.state-failed,.queue-node.state-denied,.queue-node.state-cancelled,.queue-node.state-expired,.queue-node.state-revoked{border-color:var(--st-denied)}
+.queue-node.state-succeeded{border-color:var(--st-ok,#3a8a4d)}
+.queue-node.state-started{border-color:var(--accent)}
+.queue-node.terminal-eligible{box-shadow:inset 0 0 0 1px var(--accent)}
+.queue-node.failure-location{outline:2px solid var(--st-denied);outline-offset:1px}
+.queue-node.cycle-member{background:linear-gradient(180deg,var(--surface),var(--surface2))}
+.queue-node[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.queue-workspace :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.queue-textual{overflow-wrap:anywhere}.queue-textual details{padding:10px;border-bottom:1px solid var(--border)}.queue-textual summary{cursor:pointer}
+.queue-workspace [hidden]{display:none!important}
+.queue-tab-nav{display:flex;gap:6px;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap}
+.queue-tab-nav button{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);font:inherit;cursor:pointer}
+.queue-tab-nav button[aria-pressed=true]{color:var(--accent);border-color:var(--border);background:var(--surface)}
+.queue-workspace .qw-tab-panel{padding:14px;display:grid;gap:12px}
+.queue-workspace .qw-tab-panel[hidden]{display:none!important}
+.queue-support-section{display:grid;gap:8px}
+.queue-support-section h4{margin:0;font-size:13px}
+.queue-support-section .spec{display:grid;gap:6px;font-size:12px}
+.queue-support-section .spec dt{font-size:11px;color:var(--muted)}
+.queue-support-section .spec dd{margin:0 0 6px;overflow-wrap:anywhere}
+.queue-support-section .empty-note{font-size:12px;color:var(--muted)}
+.queue-inputs,.queue-outputs{width:100%;border-collapse:collapse;font-size:12px}
+.queue-inputs th,.queue-inputs td,.queue-outputs th,.queue-outputs td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top}
+.queue-inputs th,.queue-outputs th{font-size:11px;color:var(--muted);background:var(--surface2)}
+.queue-inputs code{font-family:inherit}
+.queue-timeline,.queue-evidence,.queue-edges{padding-left:20px;display:grid;gap:8px}
+.queue-timeline li,.queue-evidence li,.queue-edges li{font-size:12px;display:grid;gap:4px;border-bottom:1px solid var(--border);padding-bottom:8px}
+.queue-timeline li[data-state="failed"],.queue-timeline li[data-state="denied"],.queue-timeline li[data-state="cancelled"],.queue-timeline li[data-state="expired"],.queue-timeline li[data-state="revoked"]{color:var(--st-denied)}
+.queue-evidence li[data-outcome="failed"],.queue-evidence li[data-outcome="denied"]{color:var(--st-denied)}
+.queue-evidence li[data-outcome="passed"]{color:var(--st-ok,#3a8a4d)}
+.queue-evidence .compact-facts{display:grid;gap:4px;font-size:11px}
+.queue-evidence .compact-facts div{display:grid;grid-template-columns:140px 1fr;gap:6px}
+.queue-evidence .compact-facts dt{color:var(--muted)}
+.queue-evidence .compact-facts dd{margin:0;overflow-wrap:anywhere}
+.queue-textual .queue-record-json{font-size:11px;white-space:pre-wrap;max-height:320px;overflow:auto}
+.contextual-action{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2)}
+.contextual-action p{margin:0;font-size:12px;color:var(--muted)}
+@media(max-width:1080px){.queue-detail-page .queue-workspace{grid-template-columns:minmax(0,1fr)}.queue-workspace .qw-canvas{height:min(46vh,340px)}.queue-workspace .qw-inspector{max-height:none}.queue-workspace .qw-body{overflow:visible}.queue-detail-page .queue-record-head{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.queue-record-actions{flex-direction:column;align-items:stretch}.queue-workspace .canvas-tools button{min-width:40px;min-height:40px}.queue-record-head .meta-strip{gap:16px}.queue-tab-nav button{flex:1 1 auto;text-align:center}}

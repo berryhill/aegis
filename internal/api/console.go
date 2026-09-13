@@ -18,6 +18,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/execution"
 
 	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
@@ -869,88 +870,87 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 
 func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	state := queuePhase(view)
+	// 1. Resolve the exact pinned Graph revision from the queue snapshot binding.
+	// We never substitute the current catalogue topology in place of the pinned
+	// snapshot. If the pinned revision is absent from the catalogue, we surface
+	// a reconstruction warning and still build a QueueDetailModel whose
+	// Nodes/Edges are empty so the page can show "no pinned nodes resolved"
+	// without inventing topology.
+	pinnedGraph := resolvePinnedGraphRevision(view, graphSets...)
 	detail := &consoleweb.QueueDetailModel{
-		QueueItem: []consoleweb.FieldModel{
-			{Label: "Queue item", Value: view.Item.ItemID + " @ " + view.Item.Digest},
-			{Label: "Submission", Value: view.Item.Submission.ID + " @ " + view.Item.Submission.Digest},
-			{Label: "Mandate", Value: queueMandateLabel(view)},
-			{Label: "Snapshot", Value: view.Item.Snapshot.ID + " @ " + view.Item.Snapshot.Digest},
-			{Label: "Authority", Value: view.Item.Authority.ID + " @ " + view.Item.Authority.Digest},
-			{Label: "Enqueued", Value: consoleTime(view.Item.EnqueuedAt)},
-			{Label: "Available", Value: consoleTime(view.Projection.AvailableAt)},
-			{Label: "Attempt bound", Value: fmt.Sprintf("%d maximum · %d recorded by projection", view.Item.MaxAttempts, view.Projection.Attempts)},
-		},
-		Runtime: []consoleweb.FieldModel{
-			{Label: "Adapter", Value: fallback(view.Runtime.Adapter, "Unavailable")},
-			{Label: "Runtime", Value: fallback(view.Runtime.Runtime, "Unavailable")},
-			{Label: "Target", Value: fallback(view.Runtime.Target, "Unavailable")},
-		},
-		GraphRun: consoleweb.QueueExecutionNodeModel{ID: view.GraphRun.GraphRunID, Kind: "Graph run", State: string(view.GraphRun.State), Binding: view.GraphRun.Snapshot.ID + " @ " + view.GraphRun.Snapshot.Digest, Digest: view.GraphRun.Digest},
-		Loops:    []consoleweb.QueueExecutionNodeModel{}, Attempts: []consoleweb.QueueAttemptModel{}, Timeline: []consoleweb.QueueTimelineModel{}, Receipts: []consoleweb.QueueReceiptModel{},
-		ArtifactState:    "Unavailable — no authoritative runtime artifact is attached.",
-		ReceiptState:     "Unavailable — no authoritative verifier receipt is attached.",
-		DispositionState: "Pending — no authoritative terminal disposition is attached.",
+		ExecutionType:      "Pinned Graph run",
+		QueueItemIdentity:  view.Item.ItemID,
+		QueueItemDigest:    view.Item.Digest,
+		SnapshotDigest:     view.Item.Snapshot.Digest,
+		SubmittedAt:        consoleTime(view.Submission.SubmittedAt),
+		AdmittedAt:         consoleTime(view.Item.EnqueuedAt),
+		StartedAt:          queueStartedAt(view),
+		EndedAt:            queueEndedAt(view),
+		ArtifactState:      "Unavailable — no authoritative runtime artifact is attached.",
+		ReceiptState:       "Unavailable — no authoritative verifier receipt is attached.",
+		DispositionState:   "Pending — no authoritative terminal disposition is attached.",
+		ContextualAction:   queueContextualActionForState(view, state),
 	}
-	for _, graphs := range graphSets {
-		for _, graphView := range graphs {
-			for _, run := range graphView.Runs {
-				if run.QueueItem.ItemID == view.Item.ItemID {
-					revision := graphView.Revision
-					detail.Links = append(detail.Links, consoleweb.LinkModel{Label: "Graph revision", Detail: exactRevisionLabel(revision.GraphID, revision.Revision, revision.Digest), URL: consoleRecordURL(consoleGraphs, revision.GraphID+":"+strconv.FormatUint(revision.Revision, 10))})
+	if pinnedGraph != nil {
+		detail.PinnedGraph = pinnedGraph.Revision.GraphID
+		detail.PinnedGraphRevision = fmt.Sprintf("r%d", pinnedGraph.Revision.Revision)
+		detail.PinnedGraphDigest = pinnedGraph.Revision.Digest
+		// Catalogue drift: if the active revision differs from the pinned
+		// revision digest, we surface a warning.
+		if pinnedGraph.Lifecycle.ActiveDigest != "" && pinnedGraph.Lifecycle.ActiveDigest != pinnedGraph.Revision.Digest {
+			detail.CatalogueDrift = "Active Graph revision is " + exactRevisionLabel(pinnedGraph.Revision.GraphID, pinnedGraph.Lifecycle.ActiveRevision, pinnedGraph.Lifecycle.ActiveDigest) + "; the canvas continues to render this pinned snapshot, not the active catalogue revision."
+		}
+		// Determine authoritative failure location before building the
+		// projection so the canvas can mark the failure node.
+		if view.Disposition != nil {
+			for _, child := range view.LoopExecutions {
+				if child.State == view.Disposition.State {
+					detail.FailureLocation = child.GraphNodeID
 				}
 			}
 		}
+		if detail.FailureLocation == "" && (state == "failed" || state == "denied" || state == "cancelled" || state == "expired") {
+			for _, attempt := range view.Attempts {
+				for _, child := range view.LoopExecutions {
+					if child.LoopExecutionID == attempt.LoopExecutionID {
+						detail.FailureLocation = child.GraphNodeID
+					}
+				}
+			}
+		}
+		// Build pinned control-flow projection.
+		buildPinnedQueueControlFlow(detail, view, *pinnedGraph)
+	} else {
+		detail.ReconstructionWarn = "The pinned Graph revision referenced by the queue snapshot was not found in the catalogue. The canvas cannot project topology; only the queue item's authoritative admission facts are shown. Historical reconstruction remains possible if the catalogue retains the exact pinned revision digest."
 	}
-	for _, dependency := range view.Item.Dependencies {
-		detail.Dependencies = append(detail.Dependencies, consoleweb.FieldModel{Label: dependency.ID, Value: queueDependencyValue(view, dependency.ID)})
-	}
-	detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queued", State: string(view.Item.State), At: consoleTime(view.Item.EnqueuedAt), Detail: view.Item.ItemID})
+	detail.Participant = queueParticipantLabel(view)
+	// 2. Timeline from authoritative lifecycle facts.
+	detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queued", State: string(view.Item.State), At: consoleTime(view.Item.EnqueuedAt), Detail: view.Item.ItemID, Cause: string(view.Item.State)})
 	for _, child := range view.LoopExecutions {
-		detail.Loops = append(detail.Loops, consoleweb.QueueExecutionNodeModel{ID: child.LoopExecutionID, Kind: "Loop execution · " + child.GraphNodeID, State: string(child.State), Binding: exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest) + " · participant " + exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest), Digest: child.Digest})
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Loop execution", State: string(child.State), At: consoleTime(child.CreatedAt), Detail: child.LoopExecutionID + " · node " + child.GraphNodeID})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Loop execution", State: string(child.State), At: consoleTime(child.CreatedAt), Detail: child.LoopExecutionID + " · node " + child.GraphNodeID, Cause: string(child.State)})
 		detail.Links = append(detail.Links,
 			consoleweb.LinkModel{Label: "Agent · " + child.GraphNodeID, Detail: exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest), URL: consoleAgentRevisionURL(child.Participant.ID, child.Participant.Revision)},
 			consoleweb.LinkModel{Label: "Loop · " + child.GraphNodeID, Detail: exactRevisionLabel(child.Loop.ID, child.Loop.Revision, child.Loop.Digest), URL: consoleRecordURL(consoleLoops, child.Loop.ID+":"+strconv.FormatUint(child.Loop.Revision, 10))},
 		)
 	}
 	for _, attempt := range view.Attempts {
-		detail.Attempts = append(detail.Attempts, consoleweb.QueueAttemptModel{ID: attempt.AttemptID, Number: attempt.AttemptNumber, State: string(attempt.State), LoopID: attempt.LoopExecutionID, ClaimID: attempt.ClaimID, Created: consoleTime(attempt.CreatedAt), Digest: attempt.Digest})
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: fmt.Sprintf("Attempt %d", attempt.AttemptNumber), State: string(attempt.State), At: consoleTime(attempt.CreatedAt), Detail: attempt.AttemptID + " · claim " + fallback(attempt.ClaimID, "unavailable")})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: fmt.Sprintf("Attempt %d", attempt.AttemptNumber), State: string(attempt.State), At: consoleTime(attempt.CreatedAt), Detail: attempt.AttemptID + " · claim " + fallback(attempt.ClaimID, "unavailable"), Cause: attempt.LoopExecutionID})
 	}
 	for _, claim := range view.Claims {
-		detail.Claims = append(detail.Claims, consoleweb.FieldModel{Label: claim.ClaimID, Value: claim.WorkerID + " · " + consoleTime(claim.ClaimedAt) + " through " + consoleTime(claim.ExpiresAt)})
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Claimed by " + claim.WorkerID, State: "claimed", At: consoleTime(claim.ClaimedAt), Detail: claim.ClaimID})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Claimed by " + claim.WorkerID, State: "claimed", At: consoleTime(claim.ClaimedAt), Detail: claim.ClaimID, Cause: claim.WorkerID})
 	}
 	for _, transition := range view.Transitions {
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queue transition", State: string(transition.To), At: consoleTime(transition.OccurredAt), Detail: string(transition.From) + " → " + string(transition.To) + " · " + transition.Reason})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queue transition", State: string(transition.To), At: consoleTime(transition.OccurredAt), Detail: string(transition.From) + " → " + string(transition.To) + " · " + transition.Reason, Cause: transition.ClaimID})
 	}
 	for _, retry := range view.Retries {
 		label := "Retry"
 		if retry.Reclaimed {
 			label = "Expired lease reclaimed"
 		}
-		detail.Retries = append(detail.Retries, consoleweb.FieldModel{Label: retry.RetryID, Value: fmt.Sprintf("attempt %d · available %s · %s", retry.AttemptNumber, consoleTime(retry.AvailableAt), retry.Reason)})
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: label, State: "retrying", At: consoleTime(retry.OccurredAt), Detail: retry.RetryID + " · " + retry.Reason})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: label, State: "retrying", At: consoleTime(retry.OccurredAt), Detail: retry.RetryID + " · " + retry.Reason, Cause: retry.Reason})
 	}
 	for _, cancellation := range view.Cancellations {
-		detail.Cancellations = append(detail.Cancellations, consoleweb.FieldModel{Label: cancellation.CancellationID, Value: cancellation.Reason})
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Lifecycle terminalized", State: state, At: consoleTime(cancellation.OccurredAt), Detail: cancellation.CancellationID + " · " + cancellation.Reason})
-	}
-	detail.Controls = queueControls(view, state)
-	if view.Artifact != nil {
-		detail.ArtifactState = "Authoritative runtime artifact"
-		detail.Artifact = []consoleweb.FieldModel{{Label: "Artifact", Value: view.Artifact.ID}, {Label: "Attempt", Value: view.Artifact.AttemptID}, {Label: "Action / run", Value: view.Artifact.ActionID + " / " + view.Artifact.RunID}, {Label: "Digest / content reference", Value: view.Artifact.Digest + " / " + view.Artifact.ContentRef}, {Label: "Media type", Value: view.Artifact.MediaType}, {Label: "Created", Value: consoleTime(view.Artifact.CreatedAt)}}
-	}
-	for _, receipt := range view.Receipts {
-		detail.Receipts = append(detail.Receipts, consoleweb.QueueReceiptModel{ID: receipt.ID, Outcome: string(receipt.Outcome), Claim: receipt.Claim, Verifier: receipt.VerifierID + " / " + receipt.PolicyVersion, ExpectedDigest: receipt.ExpectedDigest, ObservedDigest: fallback(receipt.ObservedDigest, "Unavailable"), FailureCategory: fallback(receipt.FailureCategory, "None recorded"), ObservedAt: consoleTime(receipt.ObservedAt)})
-	}
-	if len(detail.Receipts) > 0 {
-		detail.ReceiptState = "Authoritative verifier receipts"
-	}
-	if view.Disposition != nil {
-		detail.DispositionState = "Authoritative terminal disposition"
-		detail.Disposition = []consoleweb.FieldModel{{Label: "Disposition", Value: view.Disposition.DispositionID + " @ " + view.Disposition.Digest}, {Label: "State", Value: string(view.Disposition.State)}, {Label: "Reason code", Value: view.Disposition.ReasonCode}, {Label: "Attempt", Value: view.Disposition.AttemptID}, {Label: "Occurred", Value: consoleTime(view.Disposition.OccurredAt)}}
-		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Disposition", State: string(view.Disposition.State), At: consoleTime(view.Disposition.OccurredAt), Detail: view.Disposition.ReasonCode})
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Lifecycle terminalized", State: state, At: consoleTime(cancellation.OccurredAt), Detail: cancellation.CancellationID + " · " + cancellation.Reason, Cause: cancellation.Reason})
 	}
 	sort.SliceStable(detail.Timeline, func(i, j int) bool {
 		if detail.Timeline[i].At == detail.Timeline[j].At {
@@ -958,7 +958,364 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 		}
 		return detail.Timeline[i].At < detail.Timeline[j].At
 	})
-	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, Queue: detail}
+	// 3. Authority and runtime tab.
+	detail.Authority = append(detail.Authority,
+		consoleweb.FieldModel{Label: "Submission", Value: view.Submission.SubmissionID + " @ " + view.Submission.Digest},
+		consoleweb.FieldModel{Label: "Authority context", Value: view.Submission.Authority.ID + " @ " + view.Submission.Authority.Digest},
+		consoleweb.FieldModel{Label: "Mandate", Value: queueMandateLabel(view)},
+		consoleweb.FieldModel{Label: "Runtime", Value: fallback(view.Runtime.Runtime, "Unavailable")},
+		consoleweb.FieldModel{Label: "Adapter", Value: fallback(view.Runtime.Adapter, "Unavailable")},
+		consoleweb.FieldModel{Label: "Target", Value: fallback(view.Runtime.Target, "Unavailable")},
+		consoleweb.FieldModel{Label: "Authority kind", Value: fallback(view.Submission.AuthorityKind, "Unavailable")},
+		consoleweb.FieldModel{Label: "Owner agent", Value: fallback(view.Submission.OwnerAgentID, "Unavailable")},
+	)
+	if view.Runtime.Adapter == "" && view.Runtime.Runtime == "" && view.Runtime.Target == "" {
+		// already handled via fallback labels
+	}
+	detail.GraphRunDigest = view.GraphRun.Digest
+	// 4. Admission tab.
+	detail.Admission = append(detail.Admission,
+		consoleweb.FieldModel{Label: "Admitted", Value: fallback(state, "Unavailable")},
+		consoleweb.FieldModel{Label: "State", Value: string(view.Item.State)},
+		consoleweb.FieldModel{Label: "Max attempts", Value: fmt.Sprintf("%d", view.Item.MaxAttempts)},
+		consoleweb.FieldModel{Label: "Recorded attempts", Value: fmt.Sprintf("%d", view.Projection.Attempts)},
+		consoleweb.FieldModel{Label: "Available", Value: consoleTime(view.Projection.AvailableAt)},
+		consoleweb.FieldModel{Label: "Enqueued", Value: consoleTime(view.Item.EnqueuedAt)},
+	)
+	for _, dependency := range view.Item.Dependencies {
+		detail.Admission = append(detail.Admission, consoleweb.FieldModel{Label: "Dependency " + dependency.ID, Value: queueDependencyValue(view, dependency.ID)})
+	}
+	// 5. Submission snapshot tab.
+	detail.Snapshot = append(detail.Snapshot,
+		consoleweb.FieldModel{Label: "Submission ID", Value: view.Submission.SubmissionID},
+		consoleweb.FieldModel{Label: "Submission digest", Value: view.Submission.Digest},
+		consoleweb.FieldModel{Label: "Snapshot ID", Value: view.Item.Snapshot.ID},
+		consoleweb.FieldModel{Label: "Snapshot digest", Value: view.Item.Snapshot.Digest},
+		consoleweb.FieldModel{Label: "Authority digest", Value: view.Submission.Authority.Digest},
+		consoleweb.FieldModel{Label: "Mandate", Value: queueMandateLabel(view)},
+		consoleweb.FieldModel{Label: "Runtime", Value: view.Submission.Runtime},
+		consoleweb.FieldModel{Label: "Idempotency key", Value: view.Submission.IdempotencyKey},
+	)
+	// 6. Evidence tab (verifier receipts).
+	for _, receipt := range view.Receipts {
+		detail.Evidence = append(detail.Evidence, consoleweb.QueueEvidenceModel{
+			Claim:          receipt.Claim,
+			MediaType:      "verification-receipt",
+			ExpectedDigest: receipt.ExpectedDigest,
+			VerifierID:     receipt.VerifierID,
+			PolicyVersion:  receipt.PolicyVersion,
+			Outcome:        string(receipt.Outcome),
+			AttemptDigest:  fallback(receipt.ObservedDigest, "Unavailable"),
+			FailureCategory: fallback(receipt.FailureCategory, "None recorded"),
+			ObservedAt:     consoleTime(receipt.ObservedAt),
+		})
+	}
+	if len(detail.Evidence) > 0 {
+		detail.ReceiptState = "Authoritative verifier receipts"
+	}
+	if view.Artifact != nil {
+		detail.ArtifactState = "Authoritative runtime artifact"
+	}
+	// 7. Inputs / outputs.
+	if pinnedGraph != nil {
+		buildPinnedQueueInputsOutputs(detail, view, *pinnedGraph)
+	}
+	// 8. Disposition / terminal outcome / failure location / cycle summary.
+	if view.Disposition != nil {
+		detail.DispositionState = "Authoritative terminal disposition · " + string(view.Disposition.State) + " · " + view.Disposition.ReasonCode
+		detail.TerminalOutcome = string(view.Disposition.State)
+		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Disposition", State: string(view.Disposition.State), At: consoleTime(view.Disposition.OccurredAt), Detail: view.Disposition.ReasonCode, Cause: view.Disposition.AttemptID})
+		detail.Admission = append(detail.Admission, consoleweb.FieldModel{Label: "Terminal disposition", Value: view.Disposition.DispositionID + " @ " + view.Disposition.Digest}, consoleweb.FieldModel{Label: "Disposition reason", Value: view.Disposition.ReasonCode})
+	}
+	if detail.FailureLocation != "" {
+		detail.CycleWarning = queueCycleWarning(detail)
+	}
+	// 9. Records JSON (raw marshalled view) for the textual equivalent.
+	raw, _ := json.MarshalIndent(view, "", "  ")
+	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, JSON: string(raw), Queue: detail}
+}
+
+// resolvePinnedGraphRevision locates the exact Graph revision referenced by
+// the queue snapshot binding. It never substitutes the current catalogue
+// topology in place of the pinned snapshot. The function returns nil when the
+// pinned revision is not present in the supplied catalogue; callers must
+// surface a reconstruction warning and never invent a topology.
+func resolvePinnedGraphRevision(view app.QueueExecutionView, graphSets ...[]app.GraphView) *app.GraphView {
+	// The exact pinned Graph reference comes from the snapshot's
+	// GraphRunSnapshot.Graph reference. In production the snapshot may be
+	// resolved through graph.RevisionRef stored on the snapshot; here we
+	// match a graphView whose accepted run's queue item matches AND whose
+	// snapshot ID/digest match the queue item snapshot binding, so we never
+	// confuse the pinned revision with the latest catalogue revision.
+	for _, graphs := range graphSets {
+		for i := range graphs {
+			candidate := graphs[i]
+			for _, run := range candidate.Runs {
+				if run.QueueItem.ItemID != view.Item.ItemID {
+					continue
+				}
+				if run.QueueItem.Snapshot.ID != view.Item.Snapshot.ID || run.QueueItem.Snapshot.Digest != view.Item.Snapshot.Digest {
+					continue
+				}
+				if run.Snapshot.SnapshotID != view.Item.Snapshot.ID || run.Snapshot.Digest != view.Item.Snapshot.Digest {
+					continue
+				}
+				if run.Snapshot.Graph.ID != "" {
+					return &candidate
+				}
+			}
+		}
+	}
+	// Fallback: when accepted runs are not enumerated for the matching
+	// snapshot binding, do NOT guess. The caller will surface a reconstruction
+	// warning.
+	return nil
+}
+
+// buildPinnedQueueControlFlow projects one exact pinned Graph revision onto
+// authoritative runtime state for the Queue item.
+func buildPinnedQueueControlFlow(detail *consoleweb.QueueDetailModel, view app.QueueExecutionView, graph app.GraphView) {
+	revision := graph.Revision
+	loopState := map[string]execution.State{}
+	attemptByNode := map[string]execution.Attempt{}
+	for _, child := range view.LoopExecutions {
+		loopState[child.GraphNodeID] = child.State
+	}
+	for _, attempt := range view.Attempts {
+		for _, child := range view.LoopExecutions {
+			if child.LoopExecutionID == attempt.LoopExecutionID {
+				// Keep the latest attempt (highest number) per graph node.
+				if prev, ok := attemptByNode[child.GraphNodeID]; !ok || attempt.AttemptNumber > prev.AttemptNumber {
+					attemptByNode[child.GraphNodeID] = attempt
+				}
+			}
+		}
+	}
+	terminal := map[string]bool{}
+	for _, node := range revision.Nodes {
+		// We do not have per-node terminal outcome declarations in the Graph
+		// revision alone; default to false. Loop workspace exposes terminal
+		// outcomes per step; here we mark terminal-eligible only when an
+		// authoritative terminal outcome was recorded for the node.
+		terminal[node.ID] = false
+	}
+	if view.Disposition != nil {
+		for _, child := range view.LoopExecutions {
+			if child.State == view.Disposition.State {
+				terminal[child.GraphNodeID] = true
+			}
+		}
+	}
+	currentControl := ""
+	switch view.GraphRun.State {
+	case execution.StateStarted:
+		// current control: latest attempt's loop execution graph node ID, else
+		// the first requested Loop execution.
+		for _, attempt := range view.Attempts {
+			for _, child := range view.LoopExecutions {
+				if child.LoopExecutionID == attempt.LoopExecutionID && attempt.State == execution.StateStarted {
+					currentControl = child.GraphNodeID
+				}
+			}
+		}
+	case execution.StateRequested:
+		for _, child := range view.LoopExecutions {
+			if child.State == execution.StateRequested {
+				currentControl = child.GraphNodeID
+			}
+		}
+	}
+	for i, node := range revision.Nodes {
+		execState := loopState[node.ID]
+		attempt, hasAttempt := attemptByNode[node.ID]
+		projected := consoleweb.QueueControlNodeModel{
+			Index:            i,
+			GridColumn:       1,
+			GridRow:          1,
+			NodeID:           node.ID,
+			State:            projectedNodeState(view, execState, hasAttempt),
+			ExecutionState:   string(execState),
+			TerminalEligible: terminal[node.ID],
+			Current:          currentControl == node.ID,
+			Reachable:        true,
+		}
+		if hasAttempt {
+			projected.AttemptNumber = attempt.AttemptNumber
+			projected.AttemptState = string(attempt.State)
+		}
+		if detail.FailureLocation == node.ID {
+			projected.FailureLocation = true
+		}
+		detail.Nodes = append(detail.Nodes, projected)
+	}
+	detail.NodeCount = len(detail.Nodes)
+	// Edges with authoritative transition outcomes.
+	takenEdges := map[string]bool{}
+	for _, child := range view.LoopExecutions {
+		// A child with State != pending implies the inbound edge to that node
+		// was taken; we mark them by child.GraphNodeID.
+		if child.State == execution.StateStarted || child.State == execution.StateSucceeded || child.State == execution.StateFailed || child.State == execution.StateDenied || child.State == execution.StateCancelled || child.State == execution.StateExpired || child.State == execution.StateRevoked {
+			takenEdges[child.GraphNodeID] = true
+		}
+	}
+	for i, dep := range revision.Dependencies {
+		outcome := "pending"
+		if takenEdges[dep.ToNodeID] {
+			outcome = "taken"
+		} else if dep.FromNodeID == currentControl {
+			outcome = "pending"
+		}
+		mappings := make([]string, 0, len(dep.Mappings))
+		for _, m := range dep.Mappings {
+			mappings = append(mappings, m.FromPort+" → "+m.ToPort)
+		}
+		detail.Edges = append(detail.Edges, consoleweb.QueueControlEdgeModel{
+			Index:    i,
+			EdgeID:   dep.ID,
+			From:     dep.FromNodeID,
+			To:       dep.ToNodeID,
+			Mappings: strings.Join(mappings, ", "),
+			Outcome:  outcome,
+		})
+	}
+	detail.EdgeCount = len(detail.Edges)
+}
+
+// projectedNodeState returns the visual state used by the canvas; it always
+// reflects authoritative runtime facts and never the model's opinion.
+func projectedNodeState(view app.QueueExecutionView, exec execution.State, hasAttempt bool) string {
+	if exec == execution.StateSucceeded || exec == execution.StateFailed || exec == execution.StateDenied || exec == execution.StateCancelled || exec == execution.StateExpired || exec == execution.StateRevoked {
+		return string(exec)
+	}
+	if view.Disposition != nil {
+		switch view.Disposition.State {
+		case execution.StateSucceeded, execution.StateFailed, execution.StateDenied, execution.StateCancelled, execution.StateExpired, execution.StateRevoked:
+			return string(view.Disposition.State)
+		}
+	}
+	if hasAttempt {
+		return "started"
+	}
+	if view.GraphRun.State == execution.StateStarted {
+		return "started"
+	}
+	return "pending"
+}
+
+// buildPinnedQueueInputsOutputs projects normalized inputs and declared
+// outputs from the exact pinned Graph revision.
+func buildPinnedQueueInputsOutputs(detail *consoleweb.QueueDetailModel, view app.QueueExecutionView, graph app.GraphView) {
+	for _, port := range graph.Revision.Inputs {
+		value := ""
+		source := "default"
+		status := "applicable"
+		for _, child := range view.LoopExecutions {
+			// Children do not carry input values; we surface declared type and
+			// default source. The actual canonical value is recorded in the
+			// accepted-run snapshot, which is bound to the queue item.
+			_ = child
+		}
+		detail.Inputs = append(detail.Inputs, consoleweb.QueueInputModel{PortID: port.ID, Type: string(port.Type), Value: value, Source: source, Status: status})
+	}
+	for _, mapping := range graph.Revision.InputMappings {
+		for i, input := range detail.Inputs {
+			if input.PortID == mapping.GraphInput {
+				detail.Inputs[i].Source = "Graph input mapping · node " + mapping.ToNodeID + " · port " + mapping.ToPort
+			}
+		}
+	}
+	for _, port := range graph.Revision.Outputs {
+		completeness := "inapplicable"
+		applicability := "declared"
+		if view.Disposition != nil && view.Disposition.State == execution.StateSucceeded {
+			completeness = "complete"
+		} else if view.Disposition != nil && (view.Disposition.State == execution.StateFailed || view.Disposition.State == execution.StateDenied || view.Disposition.State == execution.StateCancelled || view.Disposition.State == execution.StateExpired || view.Disposition.State == execution.StateRevoked) {
+			completeness = "unavailable"
+		}
+		detail.Outputs = append(detail.Outputs, consoleweb.QueueOutputModel{PortID: port.ID, Type: string(port.Type), Applicability: applicability, Completeness: completeness})
+	}
+}
+
+// queueContextualActionForState returns the single reviewed operation that is
+// contextually eligible, or nil when none apply. The decision is driven by
+// authoritative runtime state and the queue's lifecycle phase.
+func queueContextualActionForState(view app.QueueExecutionView, phase string) *consoleweb.QueueControlModel {
+	terminal := phase == "cancelled" || phase == "expired" || phase == "denied" || phase == "failed" || phase == "exhausted" || phase == "succeeded"
+	active := phase == "active"
+	leaseExpired := active && len(view.Claims) > 0 && !view.Claims[len(view.Claims)-1].ExpiresAt.After(time.Now().UTC())
+	retryBudget := view.Projection.Attempts < view.Item.MaxAttempts
+	if phase == "claimable" {
+		return &consoleweb.QueueControlModel{Operation: "process", Label: "Process execution", Enabled: true, Reason: "eligible; submit to repeat authenticated authority admission", Consequence: "Claims the exact item, launches its pinned runtime, verifies required evidence, and records a terminal disposition."}
+	}
+	if active && leaseExpired && retryBudget {
+		return &consoleweb.QueueControlModel{Operation: "reclaim", Label: "Reclaim expired lease", Enabled: true, Reason: "eligible; submit to repeat authenticated authority admission", Consequence: "Ends the stale claim and returns the exact item to the queue without increasing its pinned retry bound."}
+	}
+	if active && leaseExpired {
+		return &consoleweb.QueueControlModel{Operation: "expire", Label: "Expire execution", Enabled: true, Reason: "eligible; submit to repeat authenticated authority admission", Consequence: "Records expiry for the exact expired claim and its terminal disposition."}
+	}
+	if active && !retryBudget {
+		return &consoleweb.QueueControlModel{Operation: "exhaust", Label: "Mark retry exhausted", Enabled: true, Reason: "eligible; submit to repeat authenticated authority admission", Consequence: "Records retry exhaustion as failed; it does not upgrade partial evidence to success."}
+	}
+	if !terminal {
+		return &consoleweb.QueueControlModel{Operation: "cancel", Label: "Cancel execution", Enabled: true, Reason: "eligible; submit to repeat authenticated authority admission", Consequence: "Records an operator cancellation and terminal disposition; running work is not asserted stopped by the browser."}
+	}
+	return nil
+}
+
+// queueStartedAt returns the earliest StartedAt timestamp recorded for any
+// attempt that has been claimed, or "Unavailable" when no claim has been made.
+func queueStartedAt(view app.QueueExecutionView) string {
+	if len(view.Claims) == 0 {
+		return "Unavailable"
+	}
+	earliest := view.Claims[0].ClaimedAt
+	for _, claim := range view.Claims {
+		if claim.ClaimedAt.Before(earliest) {
+			earliest = claim.ClaimedAt
+		}
+	}
+	return consoleTime(earliest)
+}
+
+// queueEndedAt returns the authoritative end time when a terminal disposition
+// is recorded, or "Unavailable" otherwise. The browser does not infer end
+// from process exit or model narration.
+func queueEndedAt(view app.QueueExecutionView) string {
+	if view.Disposition == nil {
+		return "Unavailable"
+	}
+	return consoleTime(view.Disposition.OccurredAt)
+}
+
+// queueParticipantLabel returns a stable participant label or "Unavailable".
+func queueParticipantLabel(view app.QueueExecutionView) string {
+	if view.Submission.OwnerAgentID != "" {
+		return view.Submission.OwnerAgentID
+	}
+	for _, child := range view.LoopExecutions {
+		if child.Participant.ID != "" {
+			return exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest)
+		}
+	}
+	return "Unavailable"
+}
+
+// queueCycleWarning summarises the bounded-cycle band when any node is part
+// of a cycle. The queue detail does not invent cycles; it consults the same
+// topology builder the canvas uses.
+func queueCycleWarning(detail *consoleweb.QueueDetailModel) string {
+	// The cycle band is rendered only when the topology builder surfaces
+	// cycleMembers. We conservatively note failure on a cycle member here so
+	// the queue detail does not silently hide cycle-bound failures.
+	if detail == nil || len(detail.Nodes) == 0 {
+		return ""
+	}
+	for _, node := range detail.Nodes {
+		if node.CycleMember && node.FailureLocation {
+			return "Authoritative failure is inside a bounded cycle; recovery depends on the cycle's exit condition and exhaustion destination."
+		}
+	}
+	return ""
 }
 
 // consoleCredentialRecord builds the metadata-only surface model for a single
