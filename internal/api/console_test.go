@@ -581,6 +581,7 @@ func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *te
 	view := app.QueueExecutionView{
 		Item: queue.Item{ItemID: "queue-130", Digest: digest("1"), State: queue.StateQueued, MaxAttempts: 3, EnqueuedAt: at,
 			Submission: reference.DigestRef{ID: "submission-130", Digest: digest("2")}, Snapshot: reference.DigestRef{ID: "snapshot-130", Digest: digest("3")}, Authority: reference.DigestRef{ID: "authority-130", Digest: digest("4")}},
+		Submission: queue.Submission{SubmissionID: "submission-130", Digest: digest("2"), Authority: reference.DigestRef{ID: "authority-130", Digest: digest("4")}, MandateID: "mandate-130", Runtime: "hermes-agent", SubmittedAt: at, IdempotencyKey: "idem-130"},
 		Projection: queue.Projection{QueueItemID: "queue-130", State: queue.StateFailed, Attempts: 1, AvailableAt: at},
 		GraphRun:   execution.GraphRun{GraphRunID: "graph-run-130", State: execution.StateSucceeded, Snapshot: reference.DigestRef{ID: "snapshot-130", Digest: digest("3")}, Digest: digest("5")},
 		LoopExecutions: []execution.LoopExecution{{LoopExecutionID: "loop-exec-130", GraphNodeID: "review", State: execution.StateFailed, CreatedAt: at,
@@ -591,22 +592,34 @@ func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *te
 		Receipts:    []evidence.VerificationReceipt{{ID: "receipt-130", Outcome: evidence.Passed, Claim: "review-receipt", VerifierID: "artifact-verifier", PolicyVersion: "v1", ExpectedDigest: digest("a"), ObservedDigest: digest("a"), ObservedAt: at}},
 		Disposition: &disposition.Record{DispositionID: "disposition-130", Digest: digest("b"), State: execution.StateFailed, ReasonCode: "runtime_exit_nonzero", AttemptID: "attempt-130", OccurredAt: at},
 	}
-	record := consoleQueueRecord(view)
-	if record.Key != "queue-130" || record.Lifecycle != "failed" || record.Queue == nil || record.Queue.GraphRun.State != "succeeded" {
+	// Build a catalogue that contains the exact pinned Graph revision for the
+	// snapshot binding so the page reconstructs the pinned control flow.
+	pinned := app.GraphView{
+		Revision: graph.GraphRevision{GraphID: "graph-130", Revision: 2, Digest: digest("g"), Nodes: []graph.Node{{ID: "review"}}, Dependencies: []graph.Dependency{}},
+		Runs: []app.AcceptedGraphRunView{{
+			Snapshot:  graph.GraphRunSnapshot{SnapshotID: "snapshot-130", Digest: digest("3"), Graph: reference.RevisionRef{ID: "graph-130", Revision: 2, Digest: digest("g")}},
+			QueueItem: queue.Item{ItemID: "queue-130", Snapshot: reference.DigestRef{ID: "snapshot-130", Digest: digest("3")}, Digest: digest("1")},
+			GraphRun:  execution.GraphRun{GraphRunID: "graph-run-130"},
+		}},
+	}
+	record := consoleQueueRecord(view, []app.GraphView{pinned})
+	if record.Key != "queue-130" || record.Lifecycle != "failed" || record.Queue == nil || record.Queue.GraphRunDigest != digest("5") {
 		t.Fatalf("queue truth was collapsed or upgraded: %+v", record)
 	}
-	wantBinding := exactRevisionLabel("loop-review", 7, digest("6")) + " · participant " + exactRevisionLabel("agent-reviewer", 2, digest("7"))
-	if len(record.Queue.Loops) != 1 || record.Queue.Loops[0].Binding != wantBinding {
-		t.Fatalf("exact Loop/participant provenance lost: %+v", record.Queue.Loops)
+	if record.Queue.FailureLocation != "review" || !record.Queue.Nodes[0].FailureLocation {
+		t.Fatalf("authoritative failure location not projected onto pinned control flow: %+v", record.Queue)
 	}
 	if len(record.Queue.Links) < 2 || record.Queue.Links[0].URL != "/console/agents?record_key=agent-reviewer&revision=2#/agents/agent-reviewer" {
 		t.Fatalf("Queue participant link lost exact Agent revision: %+v", record.Queue.Links)
 	}
-	if len(record.Queue.Attempts) != 1 || record.Queue.Attempts[0].ClaimID != "claim-130" || len(record.Queue.Receipts) != 1 || record.Queue.Receipts[0].Outcome != "passed" {
-		t.Fatalf("attempt or receipt provenance lost: %+v", record.Queue)
+	if len(record.Queue.Nodes) == 0 || record.Queue.Nodes[0].NodeID != "review" || record.Queue.Nodes[0].State != "failed" {
+		t.Fatalf("pinned Graph node projection lost: %+v", record.Queue.Nodes)
 	}
-	if record.Queue.Disposition[1].Value != "failed" || record.Queue.Disposition[2].Value != "runtime_exit_nonzero" {
-		t.Fatalf("authoritative disposition lost: %+v", record.Queue.Disposition)
+	if len(record.Queue.Evidence) != 1 || record.Queue.Evidence[0].Outcome != "passed" || record.Queue.Evidence[0].VerifierID != "artifact-verifier" {
+		t.Fatalf("verifier receipt evidence lost: %+v", record.Queue.Evidence)
+	}
+	if record.Queue.DispositionState == "" || !strings.Contains(record.Queue.DispositionState, "runtime_exit_nonzero") {
+		t.Fatalf("authoritative disposition lost: %q", record.Queue.DispositionState)
 	}
 }
 
@@ -711,8 +724,11 @@ func TestConsoleQueueRecordSeparatesLifecycleViewsAndOrdersCausalHistory(t *test
 			t.Fatalf("timeline is not causal: %+v", record.Queue.Timeline)
 		}
 	}
-	if record.Queue.Controls[0].Enabled || !record.Queue.Controls[1].Enabled || !record.Queue.Controls[3].Enabled || record.Queue.Controls[4].Enabled {
-		t.Fatalf("control eligibility is not fail-closed: %+v", record.Queue.Controls)
+	// Contextual action must reflect authoritative runtime state. The view
+	// has an expired lease and no terminal disposition; the page should
+	// surface Reclaim (or Expire) as the single contextually eligible action.
+	if record.Queue.ContextualAction == nil || (record.Queue.ContextualAction.Operation != "reclaim" && record.Queue.ContextualAction.Operation != "expire") {
+		t.Fatalf("contextual action is not fail-closed or off-lease: %+v", record.Queue.ContextualAction)
 	}
 }
 

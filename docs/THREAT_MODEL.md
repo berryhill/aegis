@@ -186,12 +186,13 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 | Threat | Control | Residual limit |
 |---|---|---|
 | Prompt, browser, or caller reason selects authority | Closed console operation vocabulary; session, exact-origin, CSRF, and principal checks; reload immutable queue item; generate identifiers server-side; repeat fresh exact-context admission; no grant union | Eligibility is advisory and stale submissions still deny |
+| Browser state forges lifecycle, authority, evidence, or outcome | Queue detail renders the exact pinned Graph/Loop revision from the queue snapshot binding (never current catalogue topology); passes, artifacts, and process exit cannot upgrade terminal state; contextual action is the single reviewed operation; all submitted forms include CSRF and reload the authoritative queue item before mutation | Browser cannot broaden a session's authority; only mutation path is the typed operate endpoint |
 | Forged or replayed browser lifecycle operation | Accept only CSRF plus one operation; reject unknown/duplicate fields; bind exact path item to authoritative reload; classify malformed, unauthorized, ambiguous, invalid-transition, stale-state, and live-retry denial separately | Same-account browser compromise can submit as its still-valid principal session; it cannot broaden that session's authority |
 | Live retry creates concurrent runtime effects | Live preemption is denied; reclaim requires an expired bounded lease | No distributed lease coordinator |
 | Retry substitutes GraphRun or LoopExecution | Preserve the immutable GraphRun and one LoopExecution; create only a new bounded claim/attempt | Single-node worker only |
 | Cancellation or expiry disappears with caller cancellation | Authenticate and admit first, then detach only the bounded atomic terminal commit | Host/process loss still relies on qualified store durability |
-| Revocation, exhaustion, denial, failure, or success collapse together | Persist distinct terminal state/reason, transition, audit, and disposition facts | No automated lifecycle scheduler |
-| Historical facts become future authority | Read models and browser timelines are projections only; every new effect repeats admission | Audit is not externally anchored |
+| Revocation, exhaustion, denial, failure, or success collapse together | Persist distinct terminal state/reason, transition, audit, and disposition facts; browser surfaces each as a distinct visual state | No automated lifecycle scheduler |
+| Historical facts become future authority | Read models and browser timelines are projections only; every new effect repeats admission; pinned reconstruction warns when the catalogue no longer retains the exact revision digest | Audit is not externally anchored |
 
 ## Registered-Agent workspace threats
 

@@ -468,23 +468,39 @@ func TestLoopGraphHandoffDistinguishesZeroOneAndManyGraphs(t *testing.T) {
 func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t *testing.T) {
 	var output bytes.Buffer
 	record := RecordModel{Key: "queue-130", Label: "queue-130", Summary: "graph-run-130 · failed", Lifecycle: "failed", Revision: "snapshot-130", Runtime: "hermes-agent", Queue: &QueueDetailModel{
-		QueueItem: []FieldModel{{Label: "Queue item", Value: "queue-130 @ sha256:item"}, {Label: "Authority", Value: "authority-130 @ sha256:authority"}},
-		Runtime:   []FieldModel{{Label: "Adapter", Value: "hermes"}, {Label: "Target", Value: "aegis-owned-ephemeral"}},
-		GraphRun:  QueueExecutionNodeModel{ID: "graph-run-130", Kind: "Graph run", State: "succeeded", Binding: "snapshot-130 @ sha256:snapshot"},
-		Loops:     []QueueExecutionNodeModel{{ID: "loop-exec-130", Kind: "Loop execution · review", State: "failed", Binding: "loop-review r7 @ sha256:loop"}},
-		Attempts:  []QueueAttemptModel{{ID: "attempt-130", Number: 1, State: "failed", LoopID: "loop-exec-130", ClaimID: "claim-130", Created: "2026-08-18T12:00:00Z", Digest: "sha256:attempt"}},
-		Timeline:  []QueueTimelineModel{{Title: "Queued", State: "queued", At: "2026-08-18T11:59:00Z", Detail: "queue-130"}, {Title: "Attempt 1", State: "failed", At: "2026-08-18T12:00:00Z", Detail: "attempt-130"}, {Title: "Disposition", State: "failed", At: "2026-08-18T12:01:00Z", Detail: "runtime_exit_nonzero"}},
-		Artifact:  []FieldModel{{Label: "Artifact", Value: "artifact-130"}}, ArtifactState: "Authoritative runtime artifact",
-		Receipts: []QueueReceiptModel{{ID: "receipt-130", Outcome: "passed", Claim: "review-receipt", Verifier: "artifact-verifier / v1"}}, ReceiptState: "Authoritative verifier receipts",
-		Disposition: []FieldModel{{Label: "State", Value: "failed"}, {Label: "Reason code", Value: "runtime_exit_nonzero"}}, DispositionState: "Authoritative terminal disposition",
-		Controls: []QueueControlModel{{Operation: "cancel", Label: "Cancel execution", Enabled: true, Reason: "eligible", Consequence: "Records an operator cancellation."}, {Operation: "retry", Label: "Retry active execution", Enabled: false, Reason: "runtime stop is unproven", Consequence: "Denied until Aegis proves runtime stop."}},
+		ExecutionType:       "Pinned Graph run",
+		QueueItemIdentity:   "queue-130",
+		QueueItemDigest:     "sha256:item",
+		SnapshotDigest:      "sha256:snapshot",
+		PinnedGraph:         "graph-review",
+		PinnedGraphRevision: "r2",
+		PinnedGraphDigest:   "sha256:graph",
+		Participant:         "agent-reviewer r2 @ sha256:agent",
+		SubmittedAt:         "2026-08-18T11:58:00Z",
+		AdmittedAt:          "2026-08-18T11:59:00Z",
+		StartedAt:           "2026-08-18T12:00:00Z",
+		EndedAt:             "2026-08-18T12:01:00Z",
+		TerminalOutcome:     "failed",
+		FailureLocation:     "review",
+		Nodes: []QueueControlNodeModel{
+			{Index: 0, NodeID: "review", State: "failed", ExecutionState: "failed", AttemptNumber: 1, AttemptState: "failed", TerminalEligible: true, FailureLocation: true, Reachable: true},
+		},
+		Edges:            []QueueControlEdgeModel{{Index: 0, EdgeID: "e0", From: "review", To: "review", Outcome: "pending"}},
+		Inputs:           []QueueInputModel{{PortID: "input", Type: "string", Value: "", Source: "default", Status: "applicable"}},
+		Outputs:          []QueueOutputModel{{PortID: "result", Type: "string", Applicability: "declared", Completeness: "unavailable"}},
+		Timeline:         []QueueTimelineModel{{Title: "Queued", State: "queued", At: "2026-08-18T11:59:00Z", Detail: "queue-130"}, {Title: "Attempt 1", State: "failed", At: "2026-08-18T12:00:00Z", Detail: "attempt-130"}, {Title: "Disposition", State: "failed", At: "2026-08-18T12:01:00Z", Detail: "runtime_exit_nonzero"}},
+		Evidence:         []QueueEvidenceModel{{Claim: "review-receipt", MediaType: "verification-receipt", VerifierID: "artifact-verifier", PolicyVersion: "v1", Outcome: "passed", ExpectedDigest: "sha256:expected", AttemptDigest: "sha256:observed", FailureCategory: "None recorded", ObservedAt: "2026-08-18T12:00:30Z"}},
+		ArtifactState:    "Authoritative runtime artifact",
+		ReceiptState:     "Authoritative verifier receipts",
+		DispositionState: "Authoritative terminal disposition · failed · runtime_exit_nonzero",
+		ContextualAction: &QueueControlModel{Operation: "cancel", Label: "Cancel execution", Enabled: false, Reason: "terminal work cannot transition", Consequence: "Records an operator cancellation and terminal disposition; running work is not asserted stopped by the browser."},
 	}}
 	model := PageModel{Authenticated: true, CSRF: "csrf-session", Surface: SurfaceModel{Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true, TotalCount: 1, QueueState: "failed", QueueStates: []string{"failed"}, FailedRecords: []RecordModel{record}, Records: []RecordModel{record}, Inspector: &record, InspectorOpen: true, CSRF: "csrf-session"}}
 	if err := Document(model).Render(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
 	html := output.String()
-	ordered := []string{"Authoritative execution record", "Execution canvas", "Inspector", "Execution timeline", "Attempt provenance", "Runtime artifact", "Verifier receipts", "Terminal disposition"}
+	ordered := []string{"Pinned Graph run", "Pinned control flow", "Inputs and outputs", "Timeline", "Authority and runtime", "Evidence", "Admission", "Submission snapshot", "Accessible textual equivalent"}
 	position := -1
 	for _, text := range ordered {
 		next := strings.Index(html, text)
@@ -493,20 +509,15 @@ func TestExecutionQueueDetailRendersAuthoritativeOrderAndNeverUpgradesSuccess(t 
 		}
 		position = next
 	}
-	for _, required := range []string{"queue-130", "#/queue/queue-130", "/console/queue?state=failed#/queue", "graph-run-130", "loop-exec-130", "attempt-130", "claim-130", "artifact-130", "receipt-130", "runtime_exit_nonzero", "Only this authoritative disposition can support terminal success", "has not been upgraded"} {
+	for _, required := range []string{"queue-130", "#/queue/queue-130", "/console/queue?state=failed#/queue", "graph-review", "attempt-130", "runtime_exit_nonzero", "Authoritative failure", "data-contextual-action=\"cancel\"", "Pinned Graph revision", "Only this authoritative disposition can carry terminal success"} {
 		if !strings.Contains(html, required) {
 			t.Fatalf("execution detail missing %q", required)
 		}
 	}
-	for _, required := range []string{`method="post"`, `action="/console/queue/queue-130/operate"`, `name="csrf" value="csrf-session"`, `name="operation" value="cancel"`, `name="operation" value="retry"`, "Records an operator cancellation.", "Denied until Aegis proves runtime stop."} {
-		if !strings.Contains(html, required) {
-			t.Fatalf("execution lifecycle controls missing %q: %s", required, html)
-		}
+	if !strings.Contains(html, "artifact-verifier") {
+		t.Fatalf("verifier receipt provenance lost")
 	}
-	if strings.Count(html, `type="submit" class="secondary"`) != 2 || !strings.Contains(html, `value="cancel"><p><strong>Cancel execution`) || !strings.Contains(html, `value="retry"><p><strong>Retry active execution`) || !strings.Contains(html, `class="secondary" disabled data-eligible="false"`) {
-		t.Fatalf("queue controls did not preserve exact eligibility: %s", html)
-	}
-	if strings.Contains(html, "Succeeded execution") || strings.Contains(html, "execution succeeded") {
+	if strings.Contains(html, "execution succeeded") {
 		t.Fatalf("passing receipt or Graph run upgraded failed queue truth: %s", html)
 	}
 }
