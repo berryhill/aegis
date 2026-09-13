@@ -847,17 +847,12 @@ templ ExecutionNode(node QueueExecutionNodeModel) {
 }
 
 templ GraphInspector(surface SurfaceModel, record *RecordModel) {
-	<div class="detail-head"><div class="detail-title"><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Revision } · <span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span></p></div><div><a class="primary" href={ graphRunURL(record) }>Run Graph</a> <a id="close-inspector" class="secondary" href={ collectionRoute(surface) }>Back to Graphs</a></div></div>
-	<div class="graph-detail">
-		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Validation</dt><dd>{ record.Graph.Validation }</dd></dl>@RelatedRecords(record.Graph.Links)</section>
-		<section aria-labelledby="graph-topology"><h3 id="graph-topology">Topology</h3><div class="topology-canvas">
-			for _, node := range record.Graph.Nodes {
-				<article class="topology-node"><strong>{ node.ID }</strong><span>Agent · { node.Participant }</span><span>Loop · { node.Loop }</span><small>Inputs · { node.Inputs }</small><small>Outputs · { node.Outputs }</small></article>
-			}
-			for _, edge := range record.Graph.Edges {
-				<div class="topology-edge"><strong>{ edge.ID }</strong><span>{ edge.From } → { edge.To }</span><small>{ edge.Mappings }</small></div>
-			}
-		</div></section>
+	@GraphWorkspace(surface, record, buildGraphTopology(record.Graph))
+}
+
+templ GraphDefinitionDetails(record *RecordModel) {
+	<div class="graph-definition-details">
+		<section class="graph-contract" aria-labelledby="graph-provenance"><h3 id="graph-provenance">Exact provenance</h3><dl class="spec"><dt>Revision digest</dt><dd>{ record.Graph.Digest }</dd><dt>Previous digest</dt><dd>{ record.Graph.PreviousDigest }</dd><dt>Stored validation</dt><dd>{ record.Graph.Validation }</dd></dl>@RelatedRecords(record.Graph.Links)</section>
 		<section class="graph-grid" aria-label="Graph contracts"><div><h3>Input schema</h3>@FieldList(record.Graph.InputSchema, "No Graph inputs")</div><div><h3>Output schema</h3>@FieldList(record.Graph.OutputSchema, "No Graph outputs")</div><div><h3>Admission policies</h3>@FieldList(record.Graph.Policies, "No admission policies")</div></section>
 		<section aria-labelledby="accepted-submissions"><h3 id="accepted-submissions">Accepted submission snapshots</h3>
 			if len(record.Graph.AcceptedRuns) == 0 {
@@ -868,6 +863,9 @@ templ GraphInspector(surface SurfaceModel, record *RecordModel) {
 			}
 		</section>
 		<section aria-labelledby="rejected-submissions"><h3 id="rejected-submissions">Durable rejected submissions</h3><p class="inline-notice">Rejections do not carry a Graph reference and are therefore shown as fleet-wide submission truth, never attributed to this Graph.</p>@FieldList(record.Graph.RejectedSubmissions, "No durable rejections")</section>
+		if record.JSON != "" {
+			<details><summary>Exact Graph record JSON</summary><pre class="graph-record-json">{ record.JSON }</pre></details>
+		}
 	</div>
 }
 

@@ -1,5 +1,25 @@
 "use strict";
 
+// Fragments are not sent to the server. Resolve Graph bookmarks through the
+// existing authenticated read route; a record key selects only a rendered view.
+(() => {
+  const resolveGraph = () => {
+    if (location.pathname !== "/console/graphs") return;
+    const prefix = "#/graphs/";
+    if (!location.hash.startsWith(prefix)) return;
+    let key;
+    try { key = decodeURIComponent(location.hash.slice(prefix.length)); }
+    catch (_) { return; }
+    if (!key || key.length > 1024 || /[\u0000-\u001f\u007f]/.test(key)) return;
+    const target = new URL(location.href);
+    if (target.searchParams.get("record_key") === key) return;
+    target.searchParams.set("record_key", key);
+    location.replace(target.href);
+  };
+  resolveGraph();
+  window.addEventListener("hashchange", resolveGraph);
+})();
+
 // Collection context is presentation-only. It can restore viewport and focus to
 // a rendered record, but it never participates in server decisions.
 (() => {
