@@ -94,9 +94,14 @@ func TestLegacyAmbiguousSelectionDeniesWithoutUnion(t *testing.T) {
 	charter.Stanzas[1].Authentication.Selectors = []core.IdentitySelector{{PrincipalIDs: []string{"principal-1"}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}
 	legacy := core.CanonicalCharter{Charter: charter, Digest: core.Digest(charter)}
 	subject := core.Subject{ID: "local-uid:4242", Kind: "human", PrincipalID: "principal-1", Issuer: "local-os", Method: "local-os", AuthenticatedAt: s.Now(), ExpiresAt: s.Now().Add(time.Minute)}
-	decision, err := s.Select(legacy, subject, "", core.Environment{Name: "local"})
-	if !errors.Is(err, ErrAmbiguous) || decision.Reason != "multiple_authorized_matches" || decision.MatchingCount != 2 || decision.Selected != nil {
-		t.Fatalf("decision=%+v err=%v", decision, err)
+	// A requested stanza is a constraint, never authority to resolve ambiguity.
+	for _, requested := range []string{"", charter.Stanzas[0].ID, charter.Stanzas[1].ID, "unauthorized"} {
+		t.Run("requested="+requested, func(t *testing.T) {
+			decision, err := s.Select(legacy, subject, requested, core.Environment{Name: "local"})
+			if !errors.Is(err, ErrAmbiguous) || decision.Allowed || decision.Reason != "multiple_authorized_matches" || decision.MatchingCount != 2 || decision.Selected != nil {
+				t.Fatalf("decision=%+v err=%v", decision, err)
+			}
+		})
 	}
 }
 

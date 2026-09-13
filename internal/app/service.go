@@ -413,6 +413,11 @@ func (s *Service) Select(c core.CanonicalCharter, sub core.Subject, requested st
 		authorized = append(authorized, st)
 	}
 
+	// A requested stanza constrains selection; it cannot resolve ambiguous authority.
+	d.MatchingCount = len(authorized)
+	if len(authorized) > 1 {
+		return deny("multiple_authorized_matches", fmt.Errorf("%w: %d stanzas match", ErrAmbiguous, len(authorized)))
+	}
 	matches := authorized
 	if requested != "" {
 		matches = matches[:0]
@@ -431,9 +436,6 @@ func (s *Service) Select(c core.CanonicalCharter, sub core.Subject, requested st
 			return deny("stale_authentication", fmt.Errorf("%w: authentication is not fresh enough", ErrDenied))
 		}
 		return deny("zero_authorized_matches", fmt.Errorf("%w: no authorized stanza", ErrDenied))
-	}
-	if len(matches) > 1 {
-		return deny("multiple_authorized_matches", fmt.Errorf("%w: %d stanzas match", ErrAmbiguous, len(matches)))
 	}
 	d.Allowed, d.Selected, d.Reason = true, &matches[0], "exactly_one_authorized_match"
 	return d, nil

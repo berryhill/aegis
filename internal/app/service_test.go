@@ -170,7 +170,16 @@ func TestSelectionZeroAmbiguousAndNoUnion(t *testing.T) {
 		t.Fatalf("ambiguous selection=%+v err=%v", d, err)
 	}
 	d, err = s.Select(cc, principalSubject, "principal", core.Environment{Name: "local"})
-	if err != nil || len(d.Selected.Grant.Tools) != 1 || d.Selected.Grant.Tools[0] != "no_mcp" {
+	if !errors.Is(err, ErrAmbiguous) || d.Allowed || d.Selected != nil || d.MatchingCount != 2 {
+		t.Fatalf("requested stanza resolved ambiguous authority: %+v %v", d, err)
+	}
+	// A unique authorized stanza still exposes only its own grants.
+	cc, err = core.Canonicalize(testCharter(s.Now()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err = s.Select(cc, principalSubject, "principal", core.Environment{Name: "local"})
+	if err != nil || d.Selected == nil || len(d.Selected.Grant.Tools) != 1 || d.Selected.Grant.Tools[0] != "no_mcp" {
 		t.Fatalf("authority was not exactly one stanza: %+v %v", d, err)
 	}
 }

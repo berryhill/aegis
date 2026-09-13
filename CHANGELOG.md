@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Release-readiness verification now preserves an explicitly configured `AEGIS_PROOF_SOCKET_DIR` instead of replacing it with a potentially overlong checkout path. Installed console directory validation and all acceptance gates remain unchanged.
+
 ### Added
 
 - Replaced the selected Graph's static card inspector with a read-only routed topology workspace: connected directed edges, bounded pan/zoom/fit, contextual exact-revision node details, typed mappings and adjacency, and a native textual equivalent. Stored validation remains separate from current structural checks; lifecycle blockers and unevaluated submission admission are explicit. Canvas interactions do not grant authority or submit work.

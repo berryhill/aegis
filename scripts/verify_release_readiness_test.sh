@@ -54,6 +54,7 @@ verify:
 	@test -z "$$(git status --porcelain=v1)"
 	@test -n "$$AEGIS_PROOF_SOCKET_DIR"
 	@test -d "$$AEGIS_PROOF_SOCKET_DIR"
+	@test -z "$$EXPECTED_PROOF_SOCKET_DIR" || test "$$AEGIS_PROOF_SOCKET_DIR" = "$$EXPECTED_PROOF_SOCKET_DIR"
 	@test "$$AEGIS_PROOF_SOCKET_DIR" != "$$(pwd -P)"
 	@grep -Eq '^## \[1.2.3\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$$' CHANGELOG.md
 	@awk '/^## Unreleased$$/{getline; if ($$0 != "") exit 1; getline; if ($$0 !~ /^## \[1.2.3\] - /) exit 1}' CHANGELOG.md
@@ -76,6 +77,14 @@ after=$(sha256sum "$fixture/CHANGELOG.md" | cut -d' ' -f1)
 grep -Fq 'fixture verification passed' "$root/success-output" || fail_test 'candidate verification did not run'
 grep -Fq "release readiness verified: version=1.2.3 source_revision=$revision" "$root/success-output" || fail_test 'success identity was not reported'
 [ -z "$(git -C "$fixture" status --porcelain=v1)" ] || fail_test 'readiness verification dirtied source'
+
+mkdir -p "$root/socket-root"
+(
+  cd "$fixture"
+  AEGIS_PROOF_SOCKET_DIR="$root/socket-root" EXPECTED_PROOF_SOCKET_DIR="$root/socket-root" \
+    ./scripts/verify-release-readiness.sh 1.2.3 "$revision" >"$root/socket-root-output"
+)
+grep -Fq 'fixture verification passed' "$root/socket-root-output" || fail_test 'explicit socket root was not preserved'
 
 setup_repo inherited-hook
 revision=$(git -C "$fixture" rev-parse HEAD)
