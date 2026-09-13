@@ -613,6 +613,11 @@ def main() -> int:
         devtools.command("Page.reload", {"ignoreCache": True})
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "reloaded exact Loop canonical URL")
         time.sleep(0.5)
+        # Loops enter canvas-first; related records belong to the inspector.
+        # Open it through the real product control, never by changing the DOM.
+        wait_for(devtools, "document.querySelector('#loop-context')?.hidden === true && document.querySelector('[data-loop-definition]')?.getAttribute('aria-expanded') === 'false'", "canvas-first Loop with collapsed definition inspector")
+        click(devtools, '[data-loop-definition]')
+        wait_for(devtools, "document.querySelector('[data-loop-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#loop-context')?.checkVisibility() && document.querySelector('[data-loop-definition-panel]')?.checkVisibility() && document.querySelector('#loop-context .related-records a[href^=\"/console/graphs?record_key=proof-graph%3A1\"]')?.checkVisibility()", "Definition details opened visible Loop inspector and Graph related link")
         click(devtools, '.related-records a[href^="/console/graphs?record_key=proof-graph%3A1"]')
         wait_for(devtools, "location.pathname === '/console/graphs' && location.hash === '#/graphs/proof-graph:1' && document.querySelector('#graph-detail-page')?.dataset.composition === 'graph-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "Loop to exact replacement-page Graph related record")
         time.sleep(0.5)
