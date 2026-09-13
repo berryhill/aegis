@@ -8,6 +8,36 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 )
 
+// loopGeometryCoverage rejects missing, duplicate, and unknown identities before
+// endpoint checks, so iterating an empty projection cannot count as evidence.
+func loopGeometryCoverage(topology LoopTopology, detail *LoopDetailModel) error {
+	if len(detail.Steps) == 0 || len(detail.Transitions) == 0 || len(topology.Nodes) != len(detail.Steps) || len(topology.Edges) != len(detail.Transitions) {
+		return fmt.Errorf("incomplete topology: %d nodes, %d edges; want %d nodes, %d edges", len(topology.Nodes), len(topology.Edges), len(detail.Steps), len(detail.Transitions))
+	}
+	nodes := map[string]int{}
+	for _, node := range topology.Nodes {
+		nodes[node.Step.ID]++
+	}
+	for _, step := range detail.Steps {
+		if nodes[step.ID] != 1 {
+			return fmt.Errorf("node %s appears %d times", step.ID, nodes[step.ID])
+		}
+	}
+	edges := map[int]int{}
+	for _, edge := range topology.Edges {
+		if edge.Index < 0 || edge.Index >= len(detail.Transitions) {
+			return fmt.Errorf("unknown transition index %d", edge.Index)
+		}
+		edges[edge.Index]++
+	}
+	for index, transition := range detail.Transitions {
+		if edges[index] != 1 {
+			return fmt.Errorf("transition %s (%s -> %s) appears %d times", transition.ID, transition.FromStepID, transition.ToStepID, edges[index])
+		}
+	}
+	return nil
+}
+
 // These checks cover the no-JavaScript, strict-CSP coordinate contract.
 // Browser-computed endpoint alignment remains a separate acceptance check.
 func TestLoopGridPlacementCoversSupportedBounds(t *testing.T) {
@@ -42,6 +72,32 @@ func TestLoopGridPlacementRejectsOutOfRangeSelectors(t *testing.T) {
 	}
 }
 
+func TestLoopGeometryWideReverseDeclaration(t *testing.T) {
+	for _, size := range []int{9, loop.MaxSteps} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			detail := &LoopDetailModel{}
+			for i := size - 1; i >= 0; i-- {
+				detail.Steps = append(detail.Steps, LoopStepModel{ID: fmt.Sprintf("step-%d", i), Entry: i == 0})
+			}
+			for i := 0; i < size-1; i++ {
+				detail.Transitions = append(detail.Transitions, LoopTransitionModel{ID: fmt.Sprintf("edge-%d", i), FromStepID: fmt.Sprintf("step-%d", i), ToStepID: fmt.Sprintf("step-%d", i+1)})
+			}
+			topology := buildLoopTopology(detail)
+			if err := loopGeometryCoverage(topology, detail); err != nil {
+				t.Fatal(err)
+			}
+			if len(topology.Issues) != 0 || topology.Columns != size || topology.Rows != 1 {
+				t.Fatalf("unexpected wide topology: columns=%d rows=%d issues=%v", topology.Columns, topology.Rows, topology.Issues)
+			}
+			for index, node := range topology.Nodes {
+				if node.GridColumn != size-index || node.GridRow != 1 {
+					t.Fatalf("node %s misplaced at %d,%d", node.Step.ID, node.GridColumn, node.GridRow)
+				}
+			}
+		})
+	}
+}
+
 func TestLoopGeometryReverseDeclarationBranchAndJoin(t *testing.T) {
 	detail := &LoopDetailModel{
 		Steps: []LoopStepModel{{ID: "join"}, {ID: "right"}, {ID: "left"}, {ID: "entry", Entry: true}},
@@ -55,6 +111,34 @@ func TestLoopGeometryReverseDeclarationBranchAndJoin(t *testing.T) {
 	topology := buildLoopTopology(detail)
 	if len(topology.Issues) != 0 || topology.Columns != 3 || topology.Rows != 2 {
 		t.Fatalf("unexpected topology: %+v", topology)
+	}
+	if err := loopGeometryCoverage(topology, detail); err != nil {
+		t.Fatal(err)
+	}
+	// Mutation control: a missing edge must fail coverage, including the
+	// previously vacuous case where the projection returns no edges at all.
+	for removed := range topology.Edges {
+		mutated := topology
+		mutated.Edges = append(append([]LoopLine(nil), topology.Edges[:removed]...), topology.Edges[removed+1:]...)
+		if loopGeometryCoverage(mutated, detail) == nil {
+			t.Fatalf("coverage accepted missing transition %d", removed)
+		}
+	}
+	empty := topology
+	empty.Edges = nil
+	if loopGeometryCoverage(empty, detail) == nil {
+		t.Fatal("coverage accepted zero edges")
+	}
+	duplicate := topology
+	duplicate.Edges = append([]LoopLine(nil), topology.Edges...)
+	duplicate.Edges[0] = duplicate.Edges[1]
+	if loopGeometryCoverage(duplicate, detail) == nil {
+		t.Fatal("coverage accepted duplicate transition with unchanged edge count")
+	}
+	missingNode := topology
+	missingNode.Nodes = topology.Nodes[1:]
+	if loopGeometryCoverage(missingNode, detail) == nil {
+		t.Fatal("coverage accepted missing node")
 	}
 	positions := map[string]LoopPosition{}
 	occupied := map[[2]int]bool{}
