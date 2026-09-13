@@ -18,7 +18,6 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
-	"github.com/berryhill/aegis/internal/execution"
 
 	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
@@ -1076,58 +1075,19 @@ func resolvePinnedGraphRevision(view app.QueueExecutionView, graphSets ...[]app.
 // authoritative runtime state for the Queue item.
 func buildPinnedQueueControlFlow(detail *consoleweb.QueueDetailModel, view app.QueueExecutionView, graph app.GraphView) {
 	revision := graph.Revision
-	loopState := map[string]execution.State{}
-	attemptByNode := map[string]execution.Attempt{}
+	loopState := map[string]app.QueueExecutionState{}
 	for _, child := range view.LoopExecutions {
-		loopState[child.GraphNodeID] = child.State
+		loopState[child.GraphNodeID] = app.QueueExecutionStateFromExecution(child.State)
 	}
-	for _, attempt := range view.Attempts {
-		for _, child := range view.LoopExecutions {
-			if child.LoopExecutionID == attempt.LoopExecutionID {
-				// Keep the latest attempt (highest number) per graph node.
-				if prev, ok := attemptByNode[child.GraphNodeID]; !ok || attempt.AttemptNumber > prev.AttemptNumber {
-					attemptByNode[child.GraphNodeID] = attempt
-				}
-			}
-		}
-	}
-	terminal := map[string]bool{}
-	for _, node := range revision.Nodes {
-		// We do not have per-node terminal outcome declarations in the Graph
-		// revision alone; default to false. Loop workspace exposes terminal
-		// outcomes per step; here we mark terminal-eligible only when an
-		// authoritative terminal outcome was recorded for the node.
-		terminal[node.ID] = false
-	}
-	if view.Disposition != nil {
-		for _, child := range view.LoopExecutions {
-			if child.State == view.Disposition.State {
-				terminal[child.GraphNodeID] = true
-			}
-		}
-	}
-	currentControl := ""
-	switch view.GraphRun.State {
-	case execution.StateStarted:
-		// current control: latest attempt's loop execution graph node ID, else
-		// the first requested Loop execution.
-		for _, attempt := range view.Attempts {
-			for _, child := range view.LoopExecutions {
-				if child.LoopExecutionID == attempt.LoopExecutionID && attempt.State == execution.StateStarted {
-					currentControl = child.GraphNodeID
-				}
-			}
-		}
-	case execution.StateRequested:
-		for _, child := range view.LoopExecutions {
-			if child.State == execution.StateRequested {
-				currentControl = child.GraphNodeID
-			}
-		}
-	}
+	terminalNodes := view.QueueTerminalNodeIDs()
+	currentControl := view.QueueCurrentControlNodeID()
 	for i, node := range revision.Nodes {
 		execState := loopState[node.ID]
-		attempt, hasAttempt := attemptByNode[node.ID]
+		if execState == "" {
+			execState = view.QueueLoopExecutionState(node.ID)
+		}
+		attemptNumber, hasAttempt := view.QueueNodeAttemptNumber(node.ID)
+		attemptState := view.QueueNodeAttemptState(node.ID)
 		projected := consoleweb.QueueControlNodeModel{
 			Index:            i,
 			GridColumn:       1,
@@ -1135,13 +1095,13 @@ func buildPinnedQueueControlFlow(detail *consoleweb.QueueDetailModel, view app.Q
 			NodeID:           node.ID,
 			State:            projectedNodeState(view, execState, hasAttempt),
 			ExecutionState:   string(execState),
-			TerminalEligible: terminal[node.ID],
+			TerminalEligible: terminalNodes[node.ID],
 			Current:          currentControl == node.ID,
 			Reachable:        true,
 		}
 		if hasAttempt {
-			projected.AttemptNumber = attempt.AttemptNumber
-			projected.AttemptState = string(attempt.State)
+			projected.AttemptNumber = attemptNumber
+			projected.AttemptState = string(attemptState)
 		}
 		if detail.FailureLocation == node.ID {
 			projected.FailureLocation = true
@@ -1150,17 +1110,9 @@ func buildPinnedQueueControlFlow(detail *consoleweb.QueueDetailModel, view app.Q
 	}
 	detail.NodeCount = len(detail.Nodes)
 	// Edges with authoritative transition outcomes.
-	takenEdges := map[string]bool{}
-	for _, child := range view.LoopExecutions {
-		// A child with State != pending implies the inbound edge to that node
-		// was taken; we mark them by child.GraphNodeID.
-		if child.State == execution.StateStarted || child.State == execution.StateSucceeded || child.State == execution.StateFailed || child.State == execution.StateDenied || child.State == execution.StateCancelled || child.State == execution.StateExpired || child.State == execution.StateRevoked {
-			takenEdges[child.GraphNodeID] = true
-		}
-	}
 	for i, dep := range revision.Dependencies {
 		outcome := "pending"
-		if takenEdges[dep.ToNodeID] {
+		if view.QueueLoopExecutionTaken(dep.ToNodeID) {
 			outcome = "taken"
 		} else if dep.FromNodeID == currentControl {
 			outcome = "pending"
@@ -1183,20 +1135,17 @@ func buildPinnedQueueControlFlow(detail *consoleweb.QueueDetailModel, view app.Q
 
 // projectedNodeState returns the visual state used by the canvas; it always
 // reflects authoritative runtime facts and never the model's opinion.
-func projectedNodeState(view app.QueueExecutionView, exec execution.State, hasAttempt bool) string {
-	if exec == execution.StateSucceeded || exec == execution.StateFailed || exec == execution.StateDenied || exec == execution.StateCancelled || exec == execution.StateExpired || exec == execution.StateRevoked {
+func projectedNodeState(view app.QueueExecutionView, exec app.QueueExecutionState, hasAttempt bool) string {
+	if exec.IsTerminal() {
 		return string(exec)
 	}
-	if view.Disposition != nil {
-		switch view.Disposition.State {
-		case execution.StateSucceeded, execution.StateFailed, execution.StateDenied, execution.StateCancelled, execution.StateExpired, execution.StateRevoked:
-			return string(view.Disposition.State)
-		}
+	if state := view.QueueExecutionDispositionState(); state != "" && state.IsTerminal() {
+		return string(state)
 	}
 	if hasAttempt {
 		return "started"
 	}
-	if view.GraphRun.State == execution.StateStarted {
+	if view.QueueGraphRunState() == "started" {
 		return "started"
 	}
 	return "pending"
@@ -1209,12 +1158,6 @@ func buildPinnedQueueInputsOutputs(detail *consoleweb.QueueDetailModel, view app
 		value := ""
 		source := "default"
 		status := "applicable"
-		for _, child := range view.LoopExecutions {
-			// Children do not carry input values; we surface declared type and
-			// default source. The actual canonical value is recorded in the
-			// accepted-run snapshot, which is bound to the queue item.
-			_ = child
-		}
 		detail.Inputs = append(detail.Inputs, consoleweb.QueueInputModel{PortID: port.ID, Type: string(port.Type), Value: value, Source: source, Status: status})
 	}
 	for _, mapping := range graph.Revision.InputMappings {
@@ -1224,14 +1167,9 @@ func buildPinnedQueueInputsOutputs(detail *consoleweb.QueueDetailModel, view app
 			}
 		}
 	}
+	completeness := view.QueueOutputCompleteness()
 	for _, port := range graph.Revision.Outputs {
-		completeness := "inapplicable"
 		applicability := "declared"
-		if view.Disposition != nil && view.Disposition.State == execution.StateSucceeded {
-			completeness = "complete"
-		} else if view.Disposition != nil && (view.Disposition.State == execution.StateFailed || view.Disposition.State == execution.StateDenied || view.Disposition.State == execution.StateCancelled || view.Disposition.State == execution.StateExpired || view.Disposition.State == execution.StateRevoked) {
-			completeness = "unavailable"
-		}
 		detail.Outputs = append(detail.Outputs, consoleweb.QueueOutputModel{PortID: port.ID, Type: string(port.Type), Applicability: applicability, Completeness: completeness})
 	}
 }
