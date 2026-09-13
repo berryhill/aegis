@@ -433,8 +433,25 @@ def main() -> int:
     # Keep enough immutable draft definitions to exercise bounded console
     # pagination after the durable server restart. These are ordinary candidate
     # CLI publications, not persistence fixtures.
+    geometry_manifest = []
     for index in (2, 3):
         draft = json.loads(loop_file.read_text(encoding="utf-8"))
+        # Real immutable, validated publications; never injected browser DOM.
+        # Exercise declaration-order independence, a branch/join beyond eight
+        # columns, and the supported 256-step placement boundary.
+        count = 12 if index == 2 else 256
+        steps = [{"id": f"s{i}", "kind": "action", "input_ports": [], "output_ports": [],
+                  "retry": {"max_attempts": 1}, "evidence_claims": []} for i in range(count)]
+        steps[-1].update(kind="terminal", terminal={"outcome": "succeeded", "output_mappings": []})
+        links = [(i, i + 1) for i in range(count - 1)]
+        if index == 2:
+            steps[0]["kind"] = "gate"
+            links = [(0, 1), (0, 2), (1, 3), (2, 3)] + [(i, i + 1) for i in range(3, count - 1)]
+        transitions = [{"id": f"e{a}-{b}", "from_step_id": f"s{a}", "to_step_id": f"s{b}",
+                        "condition": f"branch-{b}" if index == 2 and a == 0 else "", "mappings": []}
+                       for a, b in links]
+        draft["revision"].update(entry_step_id="s0", steps=list(reversed(steps)),
+                                 transitions=transitions, required_evidence=[])
         draft["revision"]["loop_id"] = f"proof-loop-{index}"
         draft["idempotency_key"] = f"installed-proof-loop-{index}"
         draft_path = fixtures / f"loop-{index}.json"
@@ -442,6 +459,11 @@ def main() -> int:
         published_draft = aegis("loops", "publish", input_file=draft_path)
         if published_draft.get("validation", {}).get("outcome") != "valid":
             fail(f"draft Loop {index} was not valid")
+        geometry_manifest.append({"loop_id": draft["revision"]["loop_id"],
+                                  "digest": published_draft["revision"]["digest"],
+                                  "steps": [s["id"] for s in draft["revision"]["steps"]],
+                                  "transitions": [[t["id"], t["from_step_id"], t["to_step_id"]] for t in transitions]})
+    write_json(root / "loop-geometry-manifest.json", geometry_manifest)
 
     evidence = {
         "schema_version": 1,

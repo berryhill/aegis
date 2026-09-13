@@ -8,6 +8,46 @@ from unittest import mock
 from scripts import console_browser_test
 
 
+class LoopGeometryTest(unittest.TestCase):
+    def measurement(self):
+        return {"nodes": [{"id": "a", "left": 10, "right": 110, "top": 20, "bottom": 70},
+                          {"id": "b", "left": 150, "right": 250, "top": 80, "bottom": 130}],
+                "edges": [{"id": "ab", "start": [110, 45], "end": [150, 105]}]}
+
+    def check(self, value):
+        console_browser_test.validate_loop_geometry(value, ["a", "b"], [("ab", "a", "b")])
+
+    def test_translated_scaled_viewport_coordinates(self):
+        for scale in (0.35, 0.5, 1, 1.5):
+            value = self.measurement()
+            for n in value["nodes"]:
+                for k in ("left", "right", "top", "bottom"):
+                    n[k] = n[k] * scale - 321
+            for point in (value["edges"][0]["start"], value["edges"][0]["end"]):
+                point[:] = [v * scale - 321 for v in point]
+            self.check(value)
+
+    def test_rejects_missing_duplicate_zero_and_misaligned_geometry(self):
+        mutations = [lambda v: v.update(nodes=[]), lambda v: v.update(edges=[]),
+                     lambda v: v["nodes"].append(v["nodes"][0]),
+                     lambda v: v["nodes"][1].update(id="a"),
+                     lambda v: v["edges"].append(v["edges"][0]),
+                     lambda v: v["edges"][0].update(id="wrong"),
+                     lambda v: v["edges"][0].update(start=[120, 45]),
+                     lambda v: v["edges"][0].update(end=[float("nan"), 105]),
+                     lambda v: v["nodes"][0].update(right=10)]
+        for mutate in mutations:
+            with self.subTest(mutation=mutate):
+                value = self.measurement()
+                mutate(value)
+                with self.assertRaises(RuntimeError):
+                    self.check(value)
+
+    def test_rejects_empty_expected_topology(self):
+        with self.assertRaises(RuntimeError):
+            console_browser_test.validate_loop_geometry({"nodes": [], "edges": []}, [], [])
+
+
 class ChromeEnvironmentTest(unittest.TestCase):
     def test_absolute_nested_tmpdir_keeps_same_directory_without_parent_mutation(self):
         temporary = str(pathlib.Path(".scratch/browser-test").absolute())
