@@ -188,7 +188,8 @@ def main():
             other_key = links.first.get_attribute('id')
             require(other_key is not None, 'revoke record identity missing')
             assert other_key is not None
-            execute(review({'operation': 'revoke', 'record_id': other_key.removeprefix('record-'), 'version': '1', 'reason': 'generated-proof'}))
+            revoked_key = other_key.removeprefix('record-')
+            execute(review({'operation': 'revoke', 'record_id': revoked_key, 'version': '1', 'reason': 'generated-proof'}))
             for width in [1440, 900, 390]:
                 page.set_viewport_size({'width': width, 'height': 900})
                 page.goto(collection)
@@ -263,6 +264,16 @@ def main():
             reference.close()
             context.close()
             browser.close()
+        # Release the writer lock, then independently reopen existing custody
+        # read-only in a fresh process. HTTP mutation success is not persistence.
+        server.terminate()
+        server.wait(timeout=5)
+        readback = subprocess.run(['go', 'run', './scripts/verify-credential-revocation',
+                                   str(state / 'credentials/authority.db'), revoked_key, '1'],
+                                  cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+        require(readback.returncode == 0, 'independent exact-version revocation readback failed')
+        report['persisted_revocation'] = {'independent_process': True, 'read_only': True,
+                                         'exact_record_and_version': True, 'whole_record_revoked': False}
         report['generated_material_operations'] = 'create allowed; unauthenticated, missing-CSRF, cross-origin and replay denied'
         report['native_fallback'] = ['no-script', 'denied-storage']
         private_json(root / 'result.json', report)

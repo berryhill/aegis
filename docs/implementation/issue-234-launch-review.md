@@ -1,5 +1,42 @@
 # Issue 234 — launch-asset review
 
+## Attempt 10 / execution 112 — exact persisted version readback
+
+The harness now stops its isolated server and runs a fresh read-only bbolt
+process against existing generated-material custody. It checks the exact
+record/version revocation entry, fixed reason and nonzero timestamp, and rejects
+an unexpected whole-record revocation. No keys, values or ciphertext are loaded
+or printed by the helper. Regression cases reject wrong record, wrong version,
+wrong reason, missing timestamp and unexpected whole-record revocation.
+
+The strengthened harness passed at 1440/900/390 using the retained execution-107
+extracted binary (SHA-256
+`f21121f00fc287e11fbc5226e4517976a766daf1caf99253d2118b5676283a77`), including
+fresh-process persisted readback, denial cases, native fallback and offline
+accepted-artifact capture with blocked remote requests. This is a harness repair
+proof against the retained binary, not newly committed successor packaging,
+independent visual acceptance, supported-Hermes qualification or publication.
+Evidence: `.scratch/credentials-ex112-exact-version.log`.
+
+An initial draft repeated the previously recorded error of expecting version 1
+revocation to change record status. Fresh GET showed the exact record still
+active; `internal/credentials/bbolt/store.go:769-778` establishes why: nonzero
+versions use the revocations bucket, while version 0 alone changes record status.
+That draft was withdrawn, not accepted as a product defect. Two earlier probe
+runs failed before initialization because Go was absent from PATH; discovery
+resolved the existing executable at `/home/silas/go/bin/go`. No toolchain or
+runtime was installed or reconfigured.
+
+The drawer failure remains unresolved: retained event evidence has trusted
+pointerup only; the helper requires touchend after `Input.synthesizeTapGesture`.
+No established production cause was found and neither the touchend gate nor
+cross-task Registry/Graph code was changed. Full successor testing, complete
+launch-asset/workflow review, independent visual review, supported-Hermes proof,
+owner reporting decisions and publication gates remain pending. CHANGELOG is
+updated for the proof-only helper; no blanket launch review is claimed here.
+
+
+
 ## Attempt 9 / execution 101 — source-review follow-up
 
 A bounded independent same-provider/model read-only reviewer found no production

@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Added a fresh-process, read-only bbolt check to the generated-material Credentials harness after server shutdown. It verifies the exact record/version revocation reason and timestamp and rejects an unexpected whole-record revocation; it does not infer persisted state from the HTTP response or active/revoked inventory status.
+
 - Added a separate generated-material-only installed Credentials browser harness. It authenticates the configured proof principal, populates records through reviewed HTTP operations, and checks responsive navigation and native fallbacks without discovering or simulating Hermes. Its screenshots support independent accepted-design review; running the harness is not release or runtime acceptance.
 
 - Added registered-Agent workspace self-service. A freshly authenticated principal can delegate a fixed credential-free workspace to one exact latest enabled Agent revision, allowing stable-owner mutation of its own Loop/Graph definitions, submission and Queue management only as an exact Graph participant, and fleet-wide shared definition read/reference/use without a provisioning receipt or runtime session. Runtime processing still requires a fresh controller-issued authority binding and admission; only Aegis manages credentials, and the feature does not claim native agent transport or automatic execution.
