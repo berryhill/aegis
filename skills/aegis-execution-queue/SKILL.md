@@ -58,6 +58,13 @@ Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` f
 
 Report immutable item and snapshot bindings separately from the current projection. Then report Graph-run and Loop-execution causality; ordered attempts and claims; lease and budget eligibility; dependencies; runtime route; transitions and lifecycle requests; artifact and receipt verification; disposition; and any unavailable or corrupt readback.
 
+## Bundled portable contracts
+
+Read `references/queue-contract.v1.md` before preparing requests. Complete synthetic
+wire examples are `references/bind-runtime.v1.json` and `references/reclaim.v1.json`.
+They are strict-decoder examples, not authenticated executable facts. In JSON,
+retry `backoff` is an integer nanosecond count, not a string such as `"1s"`.
+
 ## Bind workspace work to runtime authority
 
 `aegis queue bind-runtime FILE` is the shipped CLI boundary. Its strict object contains exactly `agent_id`, `authority` (an existing authenticated runtime authority `id`/`digest` reference), `queue_item_id`, `binding_id`, and `transition_id`. The authenticated principal supplies the exact registered Agent selector; Aegis derives its workspace internally and checks the Queue owner's provenance. The Agent selector is not runtime authority. Obtain the runtime reference through the controller's supported authenticated session path; never construct an authority object from prose.

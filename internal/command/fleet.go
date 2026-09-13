@@ -224,10 +224,17 @@ func fleetGraphsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
+	checkSubmission := false
 	submit := &cobra.Command{Use: "submit FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.SubmitGraphInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
+		}
+		if checkSubmission {
+			if err := app.CheckGraphSubmissionShape(input); err != nil {
+				return usage(err)
+			}
+			return output(cmd, map[string]any{"status": "valid", "evidence_class": "request_shape_validation", "authority_admission": "not_run", "submitted": false})
 		}
 		service, err := build(cmd)
 		if err != nil {
@@ -239,6 +246,7 @@ func fleetGraphsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
+	submit.Flags().BoolVar(&checkSubmission, "check", false, "Check request shape without authentication, stores, or submission")
 	command.AddCommand(list, publish, show, submit)
 	return command
 }

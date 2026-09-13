@@ -4,6 +4,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Bundled complete synthetic Queue runtime-binding and expired-lease reclaim request contracts, including nanosecond backoff encoding, exact readback and daemon-online limitations. Strict CLI decoder regressions verify typed examples and unknown-field denial before service construction; these are not installed-agent or runtime acceptance proofs.
+
+- Fixed authenticated Queue list/show for workspace submissions awaiting runtime, including multi-node Graphs. Readback validates every exact participant revision and reports `node_runtimes`; the legacy `runtime` field is populated only for single-node Graphs. Awaiting-runtime history does not require a terminal disposition. This does not enable multi-node processing or grant runtime authority; terminal evidence requirements remain unchanged.
+
+- Added `aegis graphs submit --check FILE`, a store-free, non-authorizing request-shape preflight using the actual strict application request. It detects missing operation identities (including `transition_id`), unknown fields, invalid references, attempt bounds and mixed authority selectors. Bundled a complete synthetic workspace submission and portable contract; neither preflight nor the example proves service admission or installed-agent behavior.
+
 - Corrected Graph skill workspace publication/submission recipes to use `agent_id` and server-derived authority, distinguish `awaiting_runtime` acceptance from runnable work, and preserve required transition and idempotency identities. Guidance regressions and existing workspace service tests are separate from still-unproven installed-agent acceptance.
 
 - Corrected Loop skill publication/lifecycle recipes to select registered-Agent workspace via `agent_id`, omit server-derived authority/publisher fields, and distinguish workspace from runtime mandate readback. Missing portable builders and daemon-online adapters remain explicit gaps, not invented commands.

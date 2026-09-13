@@ -28,6 +28,17 @@ The manager-onboarding skill uses non-secret classification examples from `skill
 
 The operator-lifecycle-diagnostics skill uses non-secret interpretation examples from `skills/aegis-operator-lifecycle-diagnostics/references/lifecycle-fixtures.json` and routes normative questions to `docs/PATH_LAYOUT.md`, the relevant lifecycle implementation, and installed command help. Its fixtures do not prove live host state, identity, authority, release provenance, ownership, service health, rollback eligibility, recovery, or completion. The skill authenticates and authorizes nothing: diagnosis is read-only by default, and each mutation retains the authentication, terminal, preview, confirmation, and post-operation controls its shipped command actually implements. It explicitly records that direct self-update has no separate principal-authentication or apply-confirmation boundary, that `update --check` does not inspect archives or checksums, and that package-manager ownership is operator-supplied context. It does not provide a general doctor, repair, executable rollback, or arbitrary backup-restore surface; absent operations are reported as unavailable rather than simulated. It does not claim host sandboxing, complete zero trust, general least privilege, service readiness from process activity, or recovery from process exit or model narration.
 
+The Graph skill now bundles `references/submission-contract.v1.md` and a complete
+synthetic `references/workspace-submit.v1.json` request. With an executable whose
+help advertises the flag, `aegis graphs submit --check FILE` strictly decodes
+that application request and checks required envelope fields without opening
+stores. It emits `evidence_class=request_shape_validation`,
+`authority_admission=not_run`, and `submitted=false`; it does not resolve Graphs,
+validate actual Graph input types, grant authority, or prove behavior. The
+synthetic references must never be submitted unchanged. An older executable
+without `--check` is missing this capability even if the advisory skill installs;
+full capability-qualified compatibility remains outstanding.
+
 The strict `skills/aegis-skills.json` manifest binds the bundle and each skill to exact content digests, compatibility ranges, operation ownership, dependencies, authority class, required operations and toolsets, sensitivity, network, filesystem, and file inventory declarations. `skills/evaluations.json` carries the non-secret structural evaluation cases. Neither file grants runtime authority.
 
 ## Validate and evaluate source
@@ -92,6 +103,18 @@ Never test installation against a normal profile. Use a durable repository-local
 4. Verify that the ordinary profile was not touched and that no Aegis-managed disposable runtime home received the skill.
 
 These live GitHub commands prove published-repository discovery and are intentionally separate from hermetic unit tests. They cannot prove an unmerged revision is already available from the public tap.
+
+## Queue historical readback
+
+Authenticated Queue `list` and exact `show` include valid workspace submissions in
+`awaiting_runtime` without requiring a terminal disposition. They do not claim a
+runtime has been bound, claimed, or executed. Every Graph node's exact participant
+revision is reloaded and digest-checked. The response adds `node_runtimes`, keyed
+by node ID; legacy `runtime` is populated for single-node Graphs only (an empty
+binding for multi-node Graphs). Multi-node history visibility is not multi-node
+processing support. Corrupt participant evidence still fails closed with
+`repair_required`. The isolated HTTP regression is service evidence, not an
+installed skill or actual-agent behavioral qualification.
 
 ## Updates, local changes, and rollback
 

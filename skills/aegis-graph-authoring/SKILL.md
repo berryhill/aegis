@@ -34,6 +34,7 @@ First run `aegis graphs --help`. The compatible CLI exposes:
 - `aegis graphs publish FILE`
 - `aegis graphs show GRAPH REVISION`
 - `aegis graphs submit FILE`
+- `aegis graphs submit --check FILE` (request-shape preflight only; requires this flag in installed help)
 
 The alias `aegis graph` exists, but prefer the canonical plural command in durable instructions. Protected HTTP adapters expose `GET /v1/graphs`, `POST /v1/graphs`, `GET /v1/graphs/:graph/:revision`, and `POST /v1/queue`; authenticated readback additionally exposes `GET /v1/graphs/:graph/lifecycle` and `GET /v1/submissions`. If an operation is absent from installed help, report it unavailable instead of inventing compose, validate, activate, retire, update, delete, latest, scheduler, or completion commands. The browser has a bounded authenticated composer and submit form, but browser fields do not select authority.
 
@@ -67,6 +68,16 @@ Treat a hand-authored digest as a proposal only: `aegis graphs publish FILE` can
 There is no shipped CLI Graph activation or retirement command. In the current shipped repository path, a successful publication atomically records the exact published revision as the active Graph lifecycle selection; there is no separate caller lifecycle action. Verify that active revision and digest through authenticated lifecycle or list readback, and do not invent lifecycle mutation instructions.
 
 ## Prepare normalized typed submission input
+
+Use the bundled [submission contract](references/submission-contract.v1.md) and
+[complete synthetic request](references/workspace-submit.v1.json). Run
+`aegis graphs submit --check FILE` before an authorized mutation if installed
+help advertises `--check`. It strictly decodes the actual application request
+and checks required envelope fields without opening stores. Its
+`request_shape_validation` result is not authentication, authority admission,
+Graph resolution, typed input validation, or submission evidence. Missing
+`transition_id` and unknown `rejection_idempotency_key` fail locally; ordinary
+submission still uses unchanged authoritative admission and durable rejection.
 
 A CLI submission file is a strict `SubmitGraphInput` JSON object containing:
 
