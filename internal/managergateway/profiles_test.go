@@ -187,6 +187,16 @@ func TestDegradedManagerTurnServesAuthoritativeProfileIntentsWithoutModel(t *tes
 		if result.Kind != wantKind || result.Origin != TurnOriginAuthoritative || result.Data["model_bypassed"] != true {
 			t.Fatalf("unexpected authoritative degraded result: %+v", result)
 		}
+		if wantKind == "local_hermes_agent_import_prepared" {
+			proposal, ok := result.Data["proposal"].(app.LocalHermesAgentImportProposal)
+			if !ok || string(proposal.Lifecycle) != "enabled" ||
+				!strings.Contains(result.Message, "Proposed Registry lifecycle: enabled") ||
+				!strings.Contains(result.Message, "not runtime readiness or authority") ||
+				strings.Contains(result.Message, "remains disabled") ||
+				result.Data["registered"] != false || result.Data["activation"] != false {
+				t.Fatalf("import review must disclose enabled eligibility without mutation or authority: %+v", result)
+			}
+		}
 	}
 
 	if _, err := service.Turn(context.Background(), subject, "degraded", token, "hello"); !errors.Is(err, ErrTurnRuntimeUnavailable) {

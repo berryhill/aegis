@@ -2,7 +2,7 @@
 
 Objective: authorized new registrations default to canonical `enabled` before preview, validation and sealing. Active Registry eligibility does not mean running, ready, provisioned, delegated or runtime-authorized.
 
-Gap: fixture lifecycle omission currently fails validation; explicit default-profile import hardcodes disabled.
+Original gap (before candidate 4f50cd611ca96e0914081a49639b77a992fd92bf): fixture lifecycle omission failed validation; explicit default-profile import hardcoded disabled.
 
 Scope: registration input decoding and explicit import proposals/confirmation/readback only. Canonical revision decoding stays strict. Preserve explicit disabled/retired input, prior lifecycle decisions, provenance, exact approvals and fresh authority admission. No discovery-side writes or runtime activation.
 
