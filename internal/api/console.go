@@ -1022,9 +1022,14 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	// 8. Disposition / terminal outcome / failure location / cycle summary.
 	if view.Disposition != nil {
 		detail.DispositionState = "Authoritative terminal disposition · " + string(view.Disposition.State) + " · " + view.Disposition.ReasonCode
+		detail.DispositionID = view.Disposition.DispositionID
+		detail.DispositionReason = view.Disposition.ReasonCode
 		detail.TerminalOutcome = string(view.Disposition.State)
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Disposition", State: string(view.Disposition.State), At: consoleTime(view.Disposition.OccurredAt), Detail: view.Disposition.ReasonCode, Cause: view.Disposition.AttemptID})
 		detail.Admission = append(detail.Admission, consoleweb.FieldModel{Label: "Terminal disposition", Value: view.Disposition.DispositionID + " @ " + view.Disposition.Digest}, consoleweb.FieldModel{Label: "Disposition reason", Value: view.Disposition.ReasonCode})
+	}
+	if view.Artifact != nil {
+		detail.ArtifactID = view.Artifact.ID
 	}
 	if detail.FailureLocation != "" {
 		detail.CycleWarning = queueCycleWarning(detail)

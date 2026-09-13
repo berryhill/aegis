@@ -232,3 +232,48 @@ func TestQueueWorkspaceSecurityNegativeCannotForgeLifecycleAuthorityEvidence(t *
 		t.Fatalf("lifecycle state-large failed missing")
 	}
 }
+
+// TestQueueWorkspaceSurfacesAuthoritativeEvidenceChainAsVisibleText verifies
+// that the disposition identity, artifact identity, and disposition reason
+// code are projected into the always-visible inspector body. The browser proof
+// (scripts/console_browser_test.py) requires these exact values in
+// document.body.innerText, which excludes hidden <details> and tab panels.
+// Hiding them would let browser state hide evidence from the operator.
+func TestQueueWorkspaceSurfacesAuthoritativeEvidenceChainAsVisibleText(t *testing.T) {
+	detail := &QueueDetailModel{
+		ExecutionType:       "Pinned Graph run",
+		QueueItemIdentity:   "queue-accepted",
+		QueueItemDigest:     "sha256:item",
+		SnapshotDigest:      "sha256:snapshot",
+		PinnedGraph:         "proof-graph",
+		PinnedGraphRevision: "r1",
+		PinnedGraphDigest:   "sha256:graph",
+		Participant:         "proof-agent r1 @ sha256:agent",
+		TerminalOutcome:     "succeeded",
+		DispositionState:    "Authoritative terminal disposition · succeeded · evidence_satisfied",
+		DispositionID:       "disposition-accepted",
+		DispositionReason:   "evidence_satisfied",
+		ArtifactID:          "artifact-accepted",
+		Nodes:               []QueueControlNodeModel{{Index: 0, NodeID: "build", State: "succeeded", ExecutionState: "succeeded", AttemptNumber: 1, AttemptState: "succeeded", TerminalEligible: true, Reachable: true}},
+		Edges:               []QueueControlEdgeModel{{Index: 0, EdgeID: "build-only", From: "build", To: "build", Outcome: "taken"}},
+	}
+	record := &RecordModel{Key: "queue-accepted", Label: "queue-accepted", Revision: "r1", Lifecycle: "succeeded", Queue: detail}
+	var out strings.Builder
+	if err := QueueWorkspace(SurfaceModel{Domain: DomainQueue}, record, buildQueuePinnedTopology(detail)).Render(context.Background(), &out); err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, required := range []string{
+		`data-queue-disposition-state`,
+		`data-queue-disposition-id`,
+		`data-queue-artifact-id`,
+		`evidence_satisfied`,
+		`disposition-accepted`,
+		`artifact-accepted`,
+		`Authoritative terminal disposition`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("visible evidence chain missing %q in rendered HTML", required)
+		}
+	}
+}

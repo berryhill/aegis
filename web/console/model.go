@@ -265,14 +265,17 @@ type QueueDetailModel struct {
 	Snapshot  []FieldModel
 
 	// Tab references (related records) and durable state facts.
-	Links            []LinkModel
-	GraphRunDigest   string
-	ArtifactState    string
-	ReceiptState     string
-	DispositionState string
-	TerminalOutcome  string
-	FailureLocation  string // Graph node ID where the authoritative failure lives.
-	CycleWarning     string // Bounded-cycle summary if any node is part of a cycle.
+	Links             []LinkModel
+	GraphRunDigest    string
+	ArtifactState     string
+	ReceiptState      string
+	DispositionState  string
+	DispositionID     string // Authoritative disposition record identity (visible evidence chain anchor).
+	DispositionReason string // Authoritative disposition reason code (e.g. evidence_satisfied).
+	ArtifactID        string // Authoritative runtime artifact identity (visible evidence chain anchor).
+	TerminalOutcome   string
+	FailureLocation   string // Graph node ID where the authoritative failure lives.
+	CycleWarning      string // Bounded-cycle summary if any node is part of a cycle.
 }
 
 // QueueControlNodeModel projects one exact pinned Graph node onto authoritative
