@@ -35,7 +35,25 @@ func TestGatewayIntakePTY(t *testing.T) {
 	}
 }
 
+// TestInstalledGatewayIntakePTY executes an independently built release binary.
+// Only service-manager observation is a fixture; the CLI, Unix API, principal
+// authentication, terminal intake and encrypted persistence are real. This is
+// not live-model or systemd deployment acceptance.
+func TestInstalledGatewayIntakePTY(t *testing.T) {
+	binary := os.Getenv("AEGIS_INTAKE_ACCEPTANCE_BINARY")
+	if binary == "" {
+		t.Skip("set AEGIS_INTAKE_ACCEPTANCE_BINARY to an exact-candidate installed binary")
+	}
+	for _, scenario := range []string{"typed", "multiline", "decline", "typeahead", "interrupt", "eof", "mismatch"} {
+		t.Run(scenario, func(t *testing.T) { testGatewayIntakePTYBinary(t, scenario, binary) })
+	}
+}
+
 func testGatewayIntakePTY(t *testing.T, scenario string) {
+	testGatewayIntakePTYBinary(t, scenario, "")
+}
+
+func testGatewayIntakePTYBinary(t *testing.T, scenario, binary string) {
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)
@@ -123,15 +141,6 @@ func testGatewayIntakePTY(t *testing.T, scenario string) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	client, err := newGatewayManagerClient(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expires, err := client.open(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.close(context.Background())
 	master, slave := openCommandPTY(t)
 	defer master.Close()
 	defer slave.Close()
@@ -145,7 +154,25 @@ func testGatewayIntakePTY(t *testing.T, scenario string) {
 	cmd.SetOut(slave)
 	cmd.SetErr(slave)
 	done := make(chan error, 1)
-	go func() { done <- runGatewayManagerLoop(cmd, cfg, client, expires) }()
+	if binary == "" {
+		client, err := newGatewayManagerClient(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expires, err := client.open(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer client.close(context.Background())
+		go func() { done <- runGatewayManagerLoop(cmd, cfg, client, expires) }()
+	} else {
+		process := installedIntakeCommand(t, ctx, root, binary, cfg, slave)
+		if err := process.Start(); err != nil {
+			t.Fatal("installed terminal could not start")
+		}
+		go func() { done <- process.Wait() }()
+		t.Cleanup(func() { _ = process.Process.Kill() })
+	}
 	var capture bytes.Buffer
 	wait := func(marker string) {
 		deadline := time.Now().Add(5 * time.Second)
@@ -195,6 +222,13 @@ func testGatewayIntakePTY(t *testing.T, scenario string) {
 		send([]byte("\n"))
 	}
 	wait("Type exactly yes")
+	if !bytes.Contains(capture.Bytes(), []byte("reference=disposable kind=opaque principal=principal")) {
+		t.Fatal("exact metadata review missing before approval")
+	}
+	beforeApproval, err := repo.List(ctx, "", 100)
+	if err != nil || len(beforeApproval) != 0 {
+		t.Fatal("credential persisted before explicit approval")
+	}
 	capture.Reset()
 	successful := scenario == "typed" || scenario == "multiline"
 	var value []byte
@@ -240,7 +274,7 @@ func testGatewayIntakePTY(t *testing.T, scenario string) {
 		wait("Credential creation cancelled")
 	}
 	wait("? help; Ctrl-D exit) ")
-	if len(value) > 0 && bytes.Contains(capture.Bytes(), value) {
+	if len(value) > 0 && bytes.Contains(capture.Bytes(), bytes.SplitN(value, []byte{'\n'}, 2)[0]) {
 		t.Fatal("value echoed in protected dialog")
 	}
 	// Continue a deterministic command in the same authenticated conversation.
@@ -248,7 +282,7 @@ func testGatewayIntakePTY(t *testing.T, scenario string) {
 	send([]byte("/status\r"))
 	wait("manager.status:")
 	wait("? help; Ctrl-D exit) ")
-	if len(value) > 0 && bytes.Contains(capture.Bytes(), value) {
+	if len(value) > 0 && bytes.Contains(capture.Bytes(), bytes.SplitN(value, []byte{'\n'}, 2)[0]) {
 		t.Fatal("value leaked into subsequent conversation")
 	}
 	send([]byte("/exit\r"))
@@ -287,21 +321,31 @@ func testGatewayIntakePTY(t *testing.T, scenario string) {
 		if err != nil || len(reopened) != 1 || reopened[0].ID != records[0].ID {
 			t.Fatal("reopen metadata mismatch")
 		}
+		if err = credentials.NewAuthority(repo, custody).ReadValue(context.Background(), "disposable", func(_ credentials.SecretRecord, decrypted []byte) error {
+			if !bytes.Equal(decrypted, value) {
+				t.Error("reopened protected bytes differ from confirmed input")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal("reopened protected value readback failed")
+		}
 	}
-	// Inspect retained state/audit files for the synthetic value, never printing it.
+	// Scan all disposable files, including custody outside state.Root(). Check
+	// the generated first line as well as the complete multiline representation.
 	if len(value) > 0 {
-		err = filepath.WalkDir(state.Root(), func(path string, d os.DirEntry, e error) error {
+		canary := bytes.SplitN(value, []byte{'\n'}, 2)[0]
+		err = filepath.WalkDir(root, func(path string, d os.DirEntry, e error) error {
 			if e != nil {
 				return e
 			}
-			if d.IsDir() {
+			if !d.Type().IsRegular() {
 				return nil
 			}
 			body, e := os.ReadFile(path)
 			if e != nil {
 				return e
 			}
-			if bytes.Contains(body, value) {
+			if bytes.Contains(body, canary) {
 				t.Error("protected value retained in application state")
 			}
 			return nil

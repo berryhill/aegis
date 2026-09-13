@@ -54,6 +54,22 @@ Production import changes must satisfy `internal/architecture/boundaries_test.go
 
 Manager lifecycle and terminal-presentation tests must use disposable configuration/state, fake Hermes/Ollama processes or loopback fixtures, and PTYs rather than a developer's real model store or runtime profile. Built-in Agent bootstrap tests must use an isolated fleet store and authenticated fixture principal, cover fresh approval/decline, resume, exact idempotent readback, collision denial, and generic lifecycle immutability, and assert that normal `~/.hermes` is untouched. Manager gateway tests must bind the expertise projection version/digest, prove polite and generic registration/credential-create intents bypass the model, prove ordinary turn bodies never accept credential values, prove unsupported clients retain unavailable guidance, and exercise capable-terminal metadata handoff plus separate session-bound review/approval/raw-value creation, and preserve the closed typed failure taxonomy without matching producer error strings. Terminal changes must cover rich and `AEGIS_ACCESSIBLE=1` profiles, 40-column/no-color output, multiline/history/paste/help keys, adversarial ANSI/OSC/DCS/control/bidi text, bounded event/transcript state, safe streaming across fragmented JSON/UTF-8/control sequences, proposal buffering, random-canary absence from every presentation surface, and raw/echo/canonical restoration. Cover cancellation at each intake stage, terminal restoration, EOF, expiry, first/second signals, rollback order, idempotent bounded cleanup, exact readiness reason codes, no-download discovery, declined/interrupted configuration, and certification/configuration drift.
 
+## Installed-terminal integration proof (Linux)
+
+After verifying a clean candidate archive and extracting its native binary, run the opt-in test below. Supply the checksum and revision from that independently verified candidate; a missing or mismatched identity fails closed. The normal Go suite skips this external-binary test when the binary variable is unset.
+
+```sh
+AEGIS_INTAKE_ACCEPTANCE_BINARY=/ABSOLUTE/EXTRACTED/aegis \
+AEGIS_INTAKE_ACCEPTANCE_SHA256=VERIFIED_BINARY_SHA256 \
+AEGIS_INTAKE_ACCEPTANCE_REVISION=VERIFIED_CLEAN_GIT_REVISION \
+GOMAXPROCS=2 GOFLAGS=-p=1 GOMEMLIMIT=2GiB \
+  go test ./internal/command -run '^TestInstalledGatewayIntakePTY$' -count=1 -parallel=2 -v
+```
+
+This executes the supplied production CLI through a real Linux PTY against the test source's real `api.Serve`, Unix peer authentication, Badger authority and disposable encrypted bbolt custody. The test simulates only read-only systemd observations in a private HOME/XDG/PATH; it never invokes the host service manager. Both phrases, exact metadata review, explicit approval, typed/multiline confirmation, continued `/status`, terminal restoration, single-record reopen and protected in-memory value equality are checked. Decline, type-ahead, interruption, EOF and mismatch require zero records. Generated values are checked for absence from captured terminal output and disposable regular files, including custody. No transcript or plaintext value is retained.
+
+This is installed-CLI integration with a deterministic degraded gateway, not live-model, real-systemd deployment, packaged `aegis serve` startup or production custody-initialization acceptance. The server harness revision and binary revision are separate evidence identities. A changed candidate needs its own exact-identity proof. Pair this run with the gateway/API approval, authentication, replay, expiry, revocation and unsupported-client regressions; the PTY scenarios alone do not prove those denials.
+
 ## Change rules
 
 The separate installed Credentials journey requires Go, Python Playwright and `/usr/bin/google-chrome`, but no Hermes executable or provider. After the normal archive/checksum/provenance verification, run:
