@@ -2,7 +2,27 @@
 set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
-socket_dir=${AEGIS_PROOF_SOCKET_DIR:-$repo}
+# Reserve space for the per-port ".installed-console-PORT.sock" suffix used
+# by the integrated proof. The host Unix-domain socket path limit is 108
+# bytes; a default of the source repository fails to bind on a long checkout.
+proof_socket_budget=80
+default_short_proof_socket_root="/home/silas/.hermes/.scratch/aegis-installed-sockets"
+socket_dir=${AEGIS_PROOF_SOCKET_DIR:-}
+socket_dir_created=false
+if [ -z "$socket_dir" ]; then
+  if [ "${#repo}" -lt "$proof_socket_budget" ] && [ -d "$repo" ] && [ ! -L "$repo" ]; then
+    socket_dir=$repo
+  else
+    if [ ! -d "$default_short_proof_socket_root" ]; then
+      mkdir -m 0700 "$default_short_proof_socket_root" || {
+        printf '%s\n' "installed console proof short socket root is not writable: $default_short_proof_socket_root" >&2
+        exit 1
+      }
+    fi
+    socket_dir=$(mktemp -d "$default_short_proof_socket_root/aegis.XXXXXXXX")
+    socket_dir_created=true
+  fi
+fi
 case "$socket_dir" in /*) ;; *) printf '%s\n' 'installed console proof socket directory must be absolute' >&2; exit 1 ;; esac
 [ -d "$socket_dir" ] && [ ! -L "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be one existing real directory' >&2; exit 1; }
 [ "$(CDPATH= cd -- "$socket_dir" && pwd -P)" = "$socket_dir" ] || { printf '%s\n' 'installed console proof socket directory must be canonical' >&2; exit 1; }
@@ -19,6 +39,9 @@ cleanup() {
     rm -rf "$workspace"
   else
     printf 'installed console proof workspace retained after failure: %s\n' "$workspace" >&2
+  fi
+  if [ "${socket_dir_created:-false}" = true ] && [ -d "$socket_dir" ]; then
+    rm -rf "$socket_dir"
   fi
 }
 trap cleanup EXIT HUP INT TERM
