@@ -18,9 +18,9 @@ Scope: replace path-based publication with Linux `openat2`/descriptor-relative o
 
 Scope: define a narrow checkpoint sink and verification contract for separately protected retention. Relevant files: `internal/store`, `internal/config`, `docs/THREAT_MODEL.md`. Acceptance: replacement/truncation detected relative to retained head; no private key in runtime process. Dependency: operator-selected retention facility.
 
-## 5. Produce and review the no-key terminal recording
+## 5. Publish the retained no-key terminal recording after owner review
 
-Scope: run `docs/RECORDING.md`, sanitize, replay, and verify against current CLI. Acceptance: no secrets/personal paths, authentic provider failure, script and cast agree. Dependency: maintainer approval to publish generated recording.
+Completed locally: the refreshed capture is retained and its reproducible capture/replay workflow is documented in `docs/RECORDING.md`. Remaining scope: repository-owner review and explicit publication approval, then authorized publication of that exact reviewed recording. Acceptance: repeat sanitization and replay against the publication candidate, retaining honest no-key/provider boundaries; do not treat local capture as remote publication. No remote issue or release is created by this proposal.
 
 ## 6. Verify the Aegis-owned Hermes broker bridge
 

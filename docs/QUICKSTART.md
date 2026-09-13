@@ -59,19 +59,20 @@ path.write_text(secrets.token_hex(32) + "\n", encoding="ascii")
 path.chmod(0o600)
 PY
 python3 - "$uid" "$user" "$transport_dir" <<'PY'
-import pathlib, sys
+import json, pathlib, sys
 path = pathlib.Path(".aegis.yaml")
 text = path.read_text()
 text = text.replace("REPLACE_WITH_LOCAL_UID", sys.argv[1])
 text = text.replace("REPLACE_WITH_LOCAL_USERNAME", sys.argv[2])
 text = text.replace("REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR", sys.argv[3])
+text = text.replace("state_dir: ./.aegis/state", "state_dir: " + json.dumps(str(pathlib.Path(".aegis/state").resolve())))
 path.write_text(text)
 PY
 cp examples/office-charter.json .office-charter.json
 sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" .office-charter.json
 ```
 
-The copied files are local working files and should not be committed.
+The copied files are local working files and should not be committed. This copied-config path is only the credential-independent CLI demonstration; it does not enroll a principal-password verifier and cannot start the browser console. Do not treat operational-authority reconciliation as password enrollment.
 
 The copied valid configuration does not initialize operational authority. In a real terminal, run `./aegis --config .aegis.yaml init`, verify the displayed authenticated UID/username and exact `state/persistence/authority-v1` path, and type `y` or `yes` at the default-deny compatibility-reconciliation prompt. This creates one secure empty generation only when that path is exactly absent. You may exit the later credential/model onboarding stages if this quickstart is exercising only credential-independent commands. Non-interactive `init`, bare startup, and ordinary commands instead return `operational_authority_not_initialized` with exit status 2 and perform no mutation. Existing invalid or populated state is preserved for operator repair and is never replaced.
 
@@ -87,9 +88,28 @@ Success means Hermes is named and versioned explicitly, charter validation retur
 
 ## Verify the console and daemon-ownership contract
 
-The example configuration serves the embedded shell at `http://127.0.0.1:8443/console` and restricts plaintext use to loopback. For this disposable checkout proof, start the foreground daemon with `./aegis --config .aegis.yaml serve`. The daemon takes `<unix_socket>.lock` before stale-socket inspection/removal; a concurrent second `serve` must fail with `another Aegis control-plane daemon owns this transport` and must not disturb the first socket. While the socket is online, store-backed CLI commands deny with `control_plane_online` instead of opening authoritative stores directly.
+Use a separate, absent configuration and state for password-enrolling initialization, not the copied `.aegis.yaml` above. In a real terminal:
 
-Run `./aegis --config .aegis.yaml console` to print the configured `/console` URL and the explicit `principal_password` authentication requirement; it does not create an authenticated browser session. Open that URL and sign in with the enrolled principal password. Loading the shell alone does not authenticate the browser, and failed verification issues no session cookie. The resulting volatile browser session expires after five minutes or when principal authentication expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback.
+```sh
+console_root=$(pwd -P)/.aegis/console-demo
+test ! -e "$console_root" || { printf '%s\n' 'Choose a new disposable console directory; do not overwrite existing state.' >&2; exit 1; }
+./aegis --config "$console_root/aegis.yaml" --state-dir "$console_root/state" init
+```
+
+Enter and confirm a new principal password through protected input. Review `Create first-run Aegis configuration` (use `details` to inspect the exact UID, username, paths and bytes), then type `yes`. At `Choose custody [Y=gateway-ready/n=exit/advanced]:`, type `n`, **not Enter**. Initialization exits successfully with principal configuration, a salted password verifier, protected transport token, and empty operational authority; the custody decline does not undo those explicitly approved artifacts. No credential authority, model, agent, gateway unit, or runtime session is created. Declining initial configuration leaves it absent; non-TTY initialization denies without mutation. A missing or malformed verifier still denies `serve` rather than silently enrolling one.
+
+For this disposable foreground proof, choose an unused loopback port and a short existing canonical socket directory. The default is the checkout; for a long checkout set `AEGIS_PROOF_SOCKET_DIR` to a short, private task-owned directory first. Keep the resulting socket path below the host Unix-socket limit; do not use a symlink to shorten it. These environment overrides apply to both `serve` and `console` in this shell:
+
+```sh
+export AEGIS_API_LISTEN=127.0.0.1:18443
+export AEGIS_API_CONSOLE_ORIGIN=http://127.0.0.1:18443
+export AEGIS_API_UNIX_SOCKET="${AEGIS_PROOF_SOCKET_DIR:-$(pwd -P)}/.quickstart-console.sock"
+./aegis --config "$console_root/aegis.yaml" serve
+```
+
+The daemon stays in the foreground; this is not systemd gateway installation. Stop it with Ctrl-C after the proof. It takes `<unix_socket>.lock` before stale-socket inspection/removal; a concurrent second `serve` using the same configuration and overrides must fail with `another Aegis control-plane daemon owns this transport` and must not disturb the first socket. While the socket is online, store-backed CLI commands deny with `control_plane_online` instead of opening authoritative stores directly.
+
+In a second terminal with the same `console_root` and three overrides, run `./aegis --config "$console_root/aegis.yaml" console` to print the configured `/console` URL and the explicit `principal_password` authentication requirement; it does not create an authenticated browser session. Open that URL and sign in with the enrolled principal password. Loading the shell alone does not authenticate the browser, and failed verification issues no session cookie. The resulting volatile browser session expires after five minutes or when principal authentication expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback. After stopping the daemon, unset `AEGIS_API_LISTEN`, `AEGIS_API_CONSOLE_ORIGIN`, and `AEGIS_API_UNIX_SOCKET` before returning to the independent copied-config examples.
 
 Bare development and production binaries use the explicitly approved gateway once initialization and operational authority are complete. The explicit lifecycle commands are:
 

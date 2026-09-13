@@ -57,6 +57,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Preserved caller-supplied canonical short socket directories in release-readiness verification, with a long-checkout regression. Separated the copied-config CLI quickstart from fresh password-enrolling console initialization, and added a real-PTY principal-only initialization/foreground login proof retaining incorrect-password and missing-verifier denial. Corrected Registry principal-versus-runtime and scoped charter-pre-import security claims, direct bare-manager startup guidance, and the local-recording versus owner-publication backlog.
 - Compact Registry card summaries preserve fresh-admission and denial wording while keeping full statements in inline detail and title text; authority counts are explicitly labeled as declarations. The responsive summary strip uses the accepted auto-fit columns, and native search, lifecycle, Apply and count controls remain grouped without changing form behavior.
 - Reject legacy overlapping authenticated stanza matches before applying a requested stanza constraint. Empty, matching, and unknown requested names cannot mask ambiguity or select authority; regressions require denial with no selected stanza. Reconciled launch documentation with expertise v3, default host-file custody, and the exact development `.aegis` reset exception.
 

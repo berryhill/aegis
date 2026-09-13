@@ -55,7 +55,9 @@ candidate_revision=$(git -C "$work_root/candidate" rev-parse HEAD)
 
 (
   cd "$work_root/candidate"
-  AEGIS_PROOF_SOCKET_DIR="$repo" make verify
+  # The installed proof validates canonical socket paths. Preserve an explicit
+  # short caller path when this checkout is too long for a Unix-domain socket.
+  AEGIS_PROOF_SOCKET_DIR="${AEGIS_PROOF_SOCKET_DIR:-$repo}" make verify
   git diff --check
   [ -z "$(git status --porcelain=v1)" ] || fail 'verification mutated the release candidate snapshot'
 )

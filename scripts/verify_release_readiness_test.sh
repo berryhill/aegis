@@ -55,6 +55,7 @@ verify:
 	@test -n "$$AEGIS_PROOF_SOCKET_DIR"
 	@test -d "$$AEGIS_PROOF_SOCKET_DIR"
 	@test "$$AEGIS_PROOF_SOCKET_DIR" != "$$(pwd -P)"
+	@test -z "$$EXPECTED_PROOF_SOCKET_DIR" || test "$$AEGIS_PROOF_SOCKET_DIR" = "$$EXPECTED_PROOF_SOCKET_DIR"
 	@grep -Eq '^## \[1.2.3\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$$' CHANGELOG.md
 	@awk '/^## Unreleased$$/{getline; if ($$0 != "") exit 1; getline; if ($$0 !~ /^## \[1.2.3\] - /) exit 1}' CHANGELOG.md
 	@printf 'fixture verification passed\n'
@@ -76,6 +77,16 @@ after=$(sha256sum "$fixture/CHANGELOG.md" | cut -d' ' -f1)
 grep -Fq 'fixture verification passed' "$root/success-output" || fail_test 'candidate verification did not run'
 grep -Fq "release readiness verified: version=1.2.3 source_revision=$revision" "$root/success-output" || fail_test 'success identity was not reported'
 [ -z "$(git -C "$fixture" status --porcelain=v1)" ] || fail_test 'readiness verification dirtied source'
+
+# A long checkout must retain the caller's short canonical socket directory.
+setup_repo long-checkout-path-that-cannot-be-used-for-a-unix-domain-socket
+revision=$(git -C "$fixture" rev-parse HEAD)
+(
+  cd "$fixture"
+  AEGIS_PROOF_SOCKET_DIR="$repo" EXPECTED_PROOF_SOCKET_DIR="$repo" \
+    ./scripts/verify-release-readiness.sh 1.2.3 "$revision" >"$root/long-checkout-output"
+)
+grep -Fq 'release readiness verified:' "$root/long-checkout-output" || fail_test 'caller socket directory was not preserved'
 
 setup_repo inherited-hook
 revision=$(git -C "$fixture" rev-parse HEAD)
