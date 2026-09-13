@@ -597,9 +597,9 @@ func TestConsoleQueueRecordPreservesAuthoritativeFailureAndExactProvenance(t *te
 	pinned := app.GraphView{
 		Revision: graph.GraphRevision{GraphID: "graph-130", Revision: 2, Digest: digest("g"), Nodes: []graph.Node{{ID: "review"}}, Dependencies: []graph.Dependency{}},
 		Runs: []app.AcceptedGraphRunView{{
-			Snapshot: graph.GraphRunSnapshot{SnapshotID: "snapshot-130", Digest: digest("3"), Graph: reference.RevisionRef{ID: "graph-130", Revision: 2, Digest: digest("g")}},
+			Snapshot:  graph.GraphRunSnapshot{SnapshotID: "snapshot-130", Digest: digest("3"), Graph: reference.RevisionRef{ID: "graph-130", Revision: 2, Digest: digest("g")}},
 			QueueItem: queue.Item{ItemID: "queue-130", Snapshot: reference.DigestRef{ID: "snapshot-130", Digest: digest("3")}, Digest: digest("1")},
-			GraphRun: execution.GraphRun{GraphRunID: "graph-run-130"},
+			GraphRun:  execution.GraphRun{GraphRunID: "graph-run-130"},
 		}},
 	}
 	record := consoleQueueRecord(view, []app.GraphView{pinned})

@@ -878,18 +878,18 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	// without inventing topology.
 	pinnedGraph := resolvePinnedGraphRevision(view, graphSets...)
 	detail := &consoleweb.QueueDetailModel{
-		ExecutionType:      "Pinned Graph run",
-		QueueItemIdentity:  view.Item.ItemID,
-		QueueItemDigest:    view.Item.Digest,
-		SnapshotDigest:     view.Item.Snapshot.Digest,
-		SubmittedAt:        consoleTime(view.Submission.SubmittedAt),
-		AdmittedAt:         consoleTime(view.Item.EnqueuedAt),
-		StartedAt:          queueStartedAt(view),
-		EndedAt:            queueEndedAt(view),
-		ArtifactState:      "Unavailable — no authoritative runtime artifact is attached.",
-		ReceiptState:       "Unavailable — no authoritative verifier receipt is attached.",
-		DispositionState:   "Pending — no authoritative terminal disposition is attached.",
-		ContextualAction:   queueContextualActionForState(view, state),
+		ExecutionType:     "Pinned Graph run",
+		QueueItemIdentity: view.Item.ItemID,
+		QueueItemDigest:   view.Item.Digest,
+		SnapshotDigest:    view.Item.Snapshot.Digest,
+		SubmittedAt:       consoleTime(view.Submission.SubmittedAt),
+		AdmittedAt:        consoleTime(view.Item.EnqueuedAt),
+		StartedAt:         queueStartedAt(view),
+		EndedAt:           queueEndedAt(view),
+		ArtifactState:     "Unavailable — no authoritative runtime artifact is attached.",
+		ReceiptState:      "Unavailable — no authoritative verifier receipt is attached.",
+		DispositionState:  "Pending — no authoritative terminal disposition is attached.",
+		ContextualAction:  queueContextualActionForState(view, state),
 	}
 	if pinnedGraph != nil {
 		detail.PinnedGraph = pinnedGraph.Revision.GraphID
@@ -999,15 +999,15 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	// 6. Evidence tab (verifier receipts).
 	for _, receipt := range view.Receipts {
 		detail.Evidence = append(detail.Evidence, consoleweb.QueueEvidenceModel{
-			Claim:          receipt.Claim,
-			MediaType:      "verification-receipt",
-			ExpectedDigest: receipt.ExpectedDigest,
-			VerifierID:     receipt.VerifierID,
-			PolicyVersion:  receipt.PolicyVersion,
-			Outcome:        string(receipt.Outcome),
-			AttemptDigest:  fallback(receipt.ObservedDigest, "Unavailable"),
+			Claim:           receipt.Claim,
+			MediaType:       "verification-receipt",
+			ExpectedDigest:  receipt.ExpectedDigest,
+			VerifierID:      receipt.VerifierID,
+			PolicyVersion:   receipt.PolicyVersion,
+			Outcome:         string(receipt.Outcome),
+			AttemptDigest:   fallback(receipt.ObservedDigest, "Unavailable"),
 			FailureCategory: fallback(receipt.FailureCategory, "None recorded"),
-			ObservedAt:     consoleTime(receipt.ObservedAt),
+			ObservedAt:      consoleTime(receipt.ObservedAt),
 		})
 	}
 	if len(detail.Evidence) > 0 {
