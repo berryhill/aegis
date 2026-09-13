@@ -7,6 +7,7 @@ import base64
 import hashlib
 import http.client
 import json
+import os
 import pathlib
 import secrets
 import socket
@@ -24,6 +25,25 @@ class ProcessState(Protocol):
 CHROME_START_TIMEOUT = 15
 PAGE_TARGET_TIMEOUT = 8
 TOUCH_PROOF_STORAGE_KEY = "aegis-browser-touch-proof"
+
+
+def chrome_environment() -> dict[str, str]:
+    """Keep Chrome temporary files in the selected directory with a short spelling.
+
+    Chrome was observed to trap before DevTools readiness with a long absolute
+    TMPDIR in a nested worktree, but start with its relative spelling. Keep
+    temporary path names short without guessing the failing Chrome subsystem.
+    A relative spelling names the same directory under the inherited cwd;
+    it does not relocate evidence or weaken the sandbox. Do not mutate the
+    parent environment.
+    """
+    environment = os.environ.copy()
+    temporary = environment.get("TMPDIR")
+    if temporary:
+        relative = os.path.relpath(os.path.realpath(temporary))
+        if len(os.fsencode(relative)) < len(os.fsencode(temporary)):
+            environment["TMPDIR"] = relative
+    return environment
 
 
 def require(condition: bool, message: str) -> None:
@@ -484,6 +504,7 @@ def main() -> int:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=chrome_stderr,
+        env=chrome_environment(),
         text=True,
     )
     devtools: DevTools | None = None

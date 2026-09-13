@@ -8,6 +8,24 @@ from unittest import mock
 from scripts import console_browser_test
 
 
+class ChromeEnvironmentTest(unittest.TestCase):
+    def test_absolute_nested_tmpdir_keeps_same_directory_without_parent_mutation(self):
+        temporary = str(pathlib.Path(".scratch/browser-test").absolute())
+        with mock.patch.dict(console_browser_test.os.environ, {"TMPDIR": temporary}, clear=True):
+            environment = console_browser_test.chrome_environment()
+            self.assertEqual(environment["TMPDIR"], ".scratch/browser-test")
+            self.assertEqual(pathlib.Path(environment["TMPDIR"]).resolve(), pathlib.Path(temporary).resolve())
+            self.assertEqual(console_browser_test.os.environ["TMPDIR"], temporary)
+
+    def test_short_relative_tmpdir_is_preserved(self):
+        with mock.patch.dict(console_browser_test.os.environ, {"TMPDIR": ".scratch/c"}, clear=True):
+            self.assertEqual(console_browser_test.chrome_environment(), {"TMPDIR": ".scratch/c"})
+
+    def test_unset_tmpdir_does_not_invent_a_location(self):
+        with mock.patch.dict(console_browser_test.os.environ, {}, clear=True):
+            self.assertEqual(console_browser_test.chrome_environment(), {})
+
+
 class ProcessStub:
     def __init__(self, status):
         self.status = status
@@ -250,6 +268,7 @@ class NativeTouchTest(unittest.TestCase):
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                env=console_browser_test.chrome_environment(),
             )
             devtools = None
             try:
