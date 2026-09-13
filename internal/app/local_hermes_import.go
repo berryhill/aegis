@@ -85,7 +85,7 @@ func localHermesDefaultAgentRevisionMatches(agent FleetAgent, principalID, chart
 		return false
 	}
 	if initial {
-		return agent.Revision.Revision == 1 && agent.Revision.Digest == agent.Registration.InitialRevision.Digest && agent.Revision.Lifecycle == registry.LifecycleDisabled
+		return agent.Revision.Revision == 1 && agent.Revision.Digest == agent.Registration.InitialRevision.Digest && (agent.Revision.Lifecycle == registry.LifecycleDisabled || agent.Revision.Lifecycle == registry.LifecycleEnabled)
 	}
 	return agent.Revision.Revision >= 1
 }
@@ -220,7 +220,7 @@ func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.S
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
 	sourceID := "hermes-default-profile"
-	fixture := registry.CurrentFleetFixture{SchemaVersion: registry.CurrentFleetFixtureSchemaVersion, FleetID: fleetID, Agents: []registry.CurrentFleetAgent{{SourceID: sourceID, AgentID: agentID, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"}, Ownership: registry.Ownership{OwnerID: subject.PrincipalID, AccountabilityID: subject.PrincipalID}, Lifecycle: registry.LifecycleDisabled, Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agentID, Revision: 1, Digest: charter.Digest}}}}
+	fixture := registry.CurrentFleetFixture{SchemaVersion: registry.CurrentFleetFixtureSchemaVersion, FleetID: fleetID, Agents: []registry.CurrentFleetAgent{{SourceID: sourceID, AgentID: agentID, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"}, Ownership: registry.Ownership{OwnerID: subject.PrincipalID, AccountabilityID: subject.PrincipalID}, Lifecycle: registry.LifecycleEnabled, Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agentID, Revision: 1, Digest: charter.Digest}}}}
 	fixtureData, err := json.Marshal(fixture)
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
@@ -238,7 +238,7 @@ func (s *Service) localHermesImportArtifacts(ctx context.Context, subject core.S
 	if err != nil {
 		return LocalHermesAgentImportProposal{}, core.CanonicalCharter{}, nil, err
 	}
-	base := AgentRegistrationProposal{AgentID: agentID, CharterDigest: charter.Digest, RevisionDigest: revision.Digest, Revision: 1, FleetID: fleetID, SourceID: sourceID, Runtime: "hermes / hermes-agent / aegis-owned-ephemeral", Owner: subject.PrincipalID, Accountability: subject.PrincipalID, Capabilities: "None declared", Policies: "None declared", Lifecycle: string(registry.LifecycleDisabled)}
+	base := AgentRegistrationProposal{AgentID: agentID, CharterDigest: charter.Digest, RevisionDigest: revision.Digest, Revision: 1, FleetID: fleetID, SourceID: sourceID, Runtime: "hermes / hermes-agent / aegis-owned-ephemeral", Owner: subject.PrincipalID, Accountability: subject.PrincipalID, Capabilities: "None declared", Policies: "None declared", Lifecycle: string(revision.Lifecycle)}
 	proposal := LocalHermesAgentImportProposal{AgentRegistrationProposal: base, SelectedProfile: "profile/default", ProfileFingerprint: evidence.Fingerprint, Confirmation: "/agents import hermes default confirm " + revision.Digest}
 	return proposal, charter, fixtureData, nil
 }
