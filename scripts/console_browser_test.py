@@ -450,6 +450,22 @@ def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
         })
 
 
+def verify_default_session_cookie(devtools: DevTools, origin: str, login_started: float, login_finished: float) -> float:
+    """Check installed default lifetime and protections without rendering cookie material."""
+    cookies = devtools.command("Network.getCookies", {"urls": [origin + "/console"]}).get("cookies", [])
+    sessions = [cookie for cookie in cookies if cookie.get("name") == "aegis-console"]
+    require(len(sessions) == 1, "expected exactly one browser session cookie")
+    cookie = sessions[0]
+    expires = cookie.get("expires", 0)
+    require(isinstance(expires, (int, float)) and login_started + 3599 <= expires <= login_finished + 3600,
+            "installed browser session does not have the default one-hour deadline")
+    require(cookie.get("httpOnly") is True and cookie.get("sameSite") == "Strict" and cookie.get("path") == "/console",
+            "installed browser session cookie protections changed")
+    require(not origin.startswith("https:") or cookie.get("secure") is True,
+            "HTTPS browser session cookie is not Secure")
+    return expires
+
+
 def main() -> int:
     if len(sys.argv) not in (4, 7):
         raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [register CHARTER_JSON CURRENT_FLEET_JSON]")
@@ -506,8 +522,18 @@ def main() -> int:
         navigate(devtools, origin + "/console")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
         insert_text(devtools, "#password", initial_password)
+        login_started = time.time()
         click(devtools, "#session-form button[type=submit]")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === 'Agent Registry'", "authenticated Agent Registry")
+        login_finished = time.time()
+        session_deadline = verify_default_session_cookie(devtools, origin, login_started, login_finished)
+        # Exercise installed authenticated reads, not a displayed timeout label.
+        for domain, title in (("graphs", "Graphs"), ("loops", "Loops"), ("agents", "Agent Registry")):
+            time.sleep(1.0)  # Respect the existing coarse pre-auth source limiter.
+            navigate(devtools, origin + "/console/" + domain)
+            wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === " + json.dumps(title), "default-lifetime authenticated navigation")
+            require(verify_default_session_cookie(devtools, origin, login_started, login_finished) == session_deadline,
+                    "ordinary navigation renewed the browser deadline")
         time.sleep(0.5)
 
         if registration_only:
@@ -526,7 +552,7 @@ def main() -> int:
             wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#agent-registration-execute') && document.body.textContent.includes('Exact immutable registration proposal')", "exact Agent registration review")
             click(devtools, '#agent-registration-execute button[type="submit"]')
             wait_for(devtools, "document.readyState === 'complete' && document.body.innerText.includes('Registered Agent with authoritative exact revision readback') && !!document.querySelector('a[href*=\"record_key=proof-agent\"]')", "browser-authenticated Agent registration")
-            print(json.dumps({"browser": "Google Chrome", "browser_authenticated_agent_registration": "pass", "invalid_source_denial": "pass", "credentials_used_for_fleet_workflow": False}, sort_keys=True))
+            print(json.dumps({"browser": "Google Chrome", "browser_authenticated_agent_registration": "pass", "default_one_hour_cookie_and_nonrenewing_navigation": "pass", "elapsed_hour_proof": False, "invalid_source_denial": "pass", "credentials_used_for_fleet_workflow": False}, sort_keys=True))
             return 0
 
         expected = {
@@ -888,6 +914,8 @@ def main() -> int:
         require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
         print(json.dumps({
             "browser": "Google Chrome",
+            "default_one_hour_cookie_and_nonrenewing_navigation": "pass",
+            "elapsed_hour_proof": False,
             "password_login": "pass",
             "password_rotation": "pass",
             "old_session_invalidation": "pass",
