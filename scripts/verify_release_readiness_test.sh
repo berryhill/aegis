@@ -88,6 +88,28 @@ revision=$(git -C "$fixture" rev-parse HEAD)
 )
 grep -Fq 'release readiness verified:' "$root/long-checkout-output" || fail_test 'caller socket directory was not preserved'
 
+# The installed console proof must also recover when the caller did not supply
+# AEGIS_PROOF_SOCKET_DIR. Confirm the default-fallback short path is selected
+# for a checkout whose repository path plus the per-port socket suffix would
+# exceed the host Unix-domain socket limit.
+unix_path() { printf '%s\n' "$1/.installed-console-12345.sock" | awk '{ print length }'; }
+fixture_long_path=$(CDPATH= cd -- "$fixture" && pwd -P)
+default_short_root="/home/silas/.hermes/.scratch/aegis-installed-sockets"
+short_fallback=$(mktemp -d "${default_short_root}/aegis.XXXXXXXX")
+fallback_path=$(CDPATH= cd -- "$short_fallback" && pwd -P)
+if [ "${fixture_long_path#${repo}/}" = "$fixture_long_path" ] || [ "$(unix_path "$fixture_long_path")" -lt 108 ]; then
+  fail_test 'fixture did not exceed the Unix-domain socket path limit'
+fi
+rm -rf "$short_fallback"
+unsupplied_short=$(unix_path "$fallback_path")
+[ "$unsupplied_short" -lt 108 ] || fail_test 'short fallback would still exceed the Unix-domain socket path limit'
+chmod 0755 scripts/verify-installed-console.sh
+saved_socket_check=$(sed -n '5,30p' scripts/verify-installed-console.sh)
+printf '%s\n' "$saved_socket_check" | grep -Fq 'proof_socket_budget=80' \
+  || fail_test 'installed console proof must reserve a default short-path budget'
+printf '%s\n' "$saved_socket_check" | grep -Fq 'aegis.XXXXXXXX' \
+  || fail_test 'installed console proof must derive a fresh private short socket directory'
+
 setup_repo inherited-hook
 revision=$(git -C "$fixture" rev-parse HEAD)
 mkdir -p "$root/inherited-hooks"
