@@ -710,9 +710,36 @@ def main() -> int:
                 for state, selector in (("fit", "[data-loop-fit]"), ("zoom-in", '[data-loop-zoom="in"]'), ("zoom-out", '[data-loop-zoom="out"]')):
                     click(devtools, selector)
                     measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-" + state, fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                # Zoom through actual controls until horizontal pan is possible.
+                for _ in range(17):
+                    if devtools.evaluate("document.querySelector('[data-loop-stage]').getBoundingClientRect().width > document.querySelector('[data-loop-viewport]').clientWidth + 160"):
+                        break
+                    click(devtools, '[data-loop-zoom="in"]')
+                scroll_left = "document.querySelector('[data-loop-viewport]').scrollLeft"
                 devtools.evaluate("document.querySelector('[data-loop-viewport]').focus()")
+                before_pan = devtools.evaluate(scroll_left)
                 key(devtools, "ArrowRight")
+                wait_for(devtools, scroll_left + " > " + str(before_pan + 1), "actual keyboard pan displacement")
                 measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-keyboard-pan", fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                # Locate visible canvas background, never drag a node/control.
+                point = devtools.evaluate("""(() => {
+                    const v = document.querySelector('[data-loop-viewport]');
+                    v.scrollIntoView({block:'center'});
+                    const r = v.getBoundingClientRect();
+                    for (let y = Math.max(1,r.top+8); y < Math.min(innerHeight-1,r.bottom-8); y += 12)
+                        for (let x = Math.max(90,r.left+90); x < Math.min(innerWidth-1,r.right-8); x += 12) {
+                            const n = document.elementFromPoint(x,y);
+                            if (n && v.contains(n) && !n.closest('button')) return {x,y};
+                        }
+                    return null;
+                })()""")
+                require(bool(point), "no visible canvas background for pointer drag")
+                before_drag = devtools.evaluate(scroll_left)
+                devtools.command("Input.dispatchMouseEvent", {"type": "mousePressed", **point, "button": "left", "buttons": 1, "clickCount": 1})
+                devtools.command("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": point["x"] - 60, "y": point["y"], "button": "left", "buttons": 1})
+                devtools.command("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": point["x"] - 60, "y": point["y"], "button": "left", "buttons": 0, "clickCount": 1})
+                wait_for(devtools, scroll_left + " > " + str(before_drag + 1), "actual pointer drag displacement")
+                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-pointer-drag", fixture["steps"], fixture["transitions"], fixture["digest"], width)
                 devtools.evaluate("document.querySelector('[data-loop-node]').focus()")
                 key(devtools, "Enter")
                 wait_for(devtools, "document.querySelector('[data-loop-node]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('[data-loop-node-panel]')?.checkVisibility()", "keyboard Loop node inspection")
