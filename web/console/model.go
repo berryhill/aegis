@@ -171,6 +171,8 @@ type LinkModel struct{ Label, Detail, URL string }
 type LoopDetailModel struct {
 	TargetID, Digest, PreviousDigest, PublisherID, ExpectedLifecycleDigest string
 	EntryStepID, Validation, ValidationDigest                              string
+	Description, LatestVersion, GraphChildSummary                          string
+	CycleSummary, ExitCondition, ExhaustionDestination                     string
 	CanActivate, CanRetire                                                 bool
 	CanvasWidth, CanvasHeight                                              int
 	Inputs, Outputs                                                        []LoopPortModel
@@ -188,13 +190,18 @@ type LoopPortModel struct {
 }
 
 type LoopStepModel struct {
-	ID, Kind, GateMode, TerminalOutcome string
-	MaxAttempts                         uint16
-	Entry                               bool
-	X, Y                                int
-	Inputs, Outputs                     []LoopPortModel
-	EvidenceClaims                      []LoopEvidenceClaimModel
-	TerminalMappings                    []LoopPortMappingModel
+	ID, Kind, GateMode, TerminalOutcome         string
+	DisplayName, Description, Instruction, Tool string
+	Capabilities                                []string
+	TimeoutSeconds                              uint32
+	FailureBehavior                             string
+	ExpectedOutput                              string
+	MaxAttempts                                 uint16
+	Entry                                       bool
+	X, Y                                        int
+	Inputs, Outputs                             []LoopPortModel
+	EvidenceClaims                              []LoopEvidenceClaimModel
+	TerminalMappings                            []LoopPortMappingModel
 }
 
 type LoopEvidenceClaimModel struct {
@@ -302,6 +309,46 @@ type GraphEdgeModel struct {
 	From     string
 	To       string
 	Mappings string
+}
+
+// LoopTopology is a presentation-only projection of one Loop revision. It
+// cannot validate, sequence, or admit execution. Array positions, never
+// untrusted IDs, identify inspector panels.
+//
+// Positioning uses CSS-grid track placement (gridColumn/gridRow) rather than
+// inline pixel styles. This keeps the rendered HTML compatible with the
+// console's strict Content Security Policy (style-src 'self').
+type LoopTopology struct {
+	Nodes                 []LoopPosition
+	Edges                 []LoopLine
+	Issues                []LoopIssueModel
+	Columns               int
+	Rows                  int
+	CycleMembers          []string
+	CycleMaxIterations    uint16
+	CycleExitCondition    string
+	CycleExhaustionToID   string
+	ExhaustionDestination string
+}
+
+type LoopPosition struct {
+	Index               int
+	GridColumn, GridRow int
+	Step                LoopStepModel
+	Incoming, Outgoing  []LoopTransitionModel
+	DisplayName         string
+	InDegree, OutDegree int
+}
+
+type LoopLine struct {
+	Index int
+	Path  string
+}
+
+// LoopIssueModel describes a presentation-time concern derived from a stored
+// revision. It is never an admission decision.
+type LoopIssueModel struct {
+	Code, Path, Message string
 }
 
 type GraphRunModel struct {
