@@ -262,14 +262,14 @@ func localHermesBootstrapProposal() (app.LocalHermesAgentImportProposal, app.Fle
 			AgentID: app.LocalHermesDefaultAgentID("principal"), CharterDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			RevisionDigest: digest, Revision: 1, FleetID: app.LocalHermesDefaultFleetID("principal"), SourceID: "hermes-default-profile",
 			Runtime: "hermes / hermes-agent / aegis-owned-ephemeral", Owner: "principal", Accountability: "principal",
-			Capabilities: "None declared", Policies: "None declared", Lifecycle: string(registry.LifecycleDisabled),
+			Capabilities: "None declared", Policies: "None declared", Lifecycle: string(registry.LifecycleEnabled),
 		},
 		SelectedProfile: "profile/default", ProfileFingerprint: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 	}
 	source := registry.FleetSource{FleetID: proposal.FleetID, Kind: registry.CurrentFleetSourceKind, SourceID: proposal.SourceID}
 	agent := app.FleetAgent{
 		Registration: registry.AgentRegistration{AgentID: proposal.AgentID, Source: source, InitialRevision: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: proposal.AgentID, Revision: 1, Digest: digest}},
-		Revision:     registry.AgentRevision{SchemaVersion: registry.AgentRevisionSchemaVersion, AgentID: proposal.AgentID, Revision: 1, Source: source, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"}, Ownership: registry.Ownership{OwnerID: "principal", AccountabilityID: "principal"}, Lifecycle: registry.LifecycleDisabled, Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: proposal.AgentID, Revision: 1, Digest: proposal.CharterDigest}, Digest: digest},
+		Revision:     registry.AgentRevision{SchemaVersion: registry.AgentRevisionSchemaVersion, AgentID: proposal.AgentID, Revision: 1, Source: source, Runtime: registry.RuntimeBinding{Adapter: "hermes", Runtime: "hermes-agent", Target: "aegis-owned-ephemeral"}, Ownership: registry.Ownership{OwnerID: "principal", AccountabilityID: "principal"}, Lifecycle: registry.LifecycleEnabled, Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: proposal.AgentID, Revision: 1, Digest: proposal.CharterDigest}, Digest: digest},
 	}
 	return proposal, agent
 }

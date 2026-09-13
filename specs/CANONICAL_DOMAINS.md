@@ -28,7 +28,7 @@ Revocation never rewrites a mandate or authority context. Authority is effective
 
 ## Agent Registry (`internal/registry`)
 
-Registry owns stable executable-participant identity. `AgentRegistration` records existing-fleet provenance, runtime-adapter binding, accountability, and enabled/disabled/retired lifecycle. Immutable `AgentRevision` records reference one exact canonical charter revision and digest; display metadata and operational health are not identity or admission authority.
+Registry owns stable executable-participant identity. New registration fixture input MUST default an omitted `lifecycle` to `enabled` before validation, preview, and digest approval. Explicit `disabled` and `retired` MUST be preserved; malformed explicit values MUST deny. Canonical persisted revisions MUST still require an explicit valid lifecycle. Existing records MUST NOT be migrated or re-enabled by this input default. Enabled is Registry eligibility, not runtime readiness, activation, workspace delegation, or execution/credential authority. `AgentRegistration` records existing-fleet provenance, runtime-adapter binding, accountability, and enabled/disabled/retired lifecycle. Immutable `AgentRevision` records reference one exact canonical charter revision and digest; display metadata and operational health are not identity or admission authority.
 
 Registration never grants a model authority to create, enable, rebind, or retire a participant. The authenticated operator establishes the initial fleet binding. Later agent-authenticated mutations require one exact authority context and explicit policy. Disabled or retired participants deny new publication, submission, claim, and launch while historical records remain readable.
 
