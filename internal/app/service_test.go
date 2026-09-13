@@ -170,8 +170,8 @@ func TestSelectionZeroAmbiguousAndNoUnion(t *testing.T) {
 		t.Fatalf("ambiguous selection=%+v err=%v", d, err)
 	}
 	d, err = s.Select(cc, principalSubject, "principal", core.Environment{Name: "local"})
-	if err != nil || len(d.Selected.Grant.Tools) != 1 || d.Selected.Grant.Tools[0] != "no_mcp" {
-		t.Fatalf("authority was not exactly one stanza: %+v %v", d, err)
+	if !errors.Is(err, ErrAmbiguous) || d.Allowed || d.Selected != nil || d.MatchingCount != 2 {
+		t.Fatalf("requested stanza masked ambiguity: %+v %v", d, err)
 	}
 }
 

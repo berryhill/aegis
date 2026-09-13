@@ -21,7 +21,7 @@ python3 -m unittest scripts/verify_release_archive_test.py
 ./scripts/verify-installed-mvi.sh
 ```
 
-The first four commands verify the pinned Datastar asset and browser-security contract, regenerate templ output, and reject generated/module drift. The final command requires the checkout to resolve to one exact clean tracked Git commit, builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, embeds that revision, rejects missing, dirty, malformed, or mismatched Go VCS metadata, requires each archive to contain exactly one root `aegis` regular file with mode `0755`, verifies their checksums, extracts the native archive, and verifies its injected stable version plus exact `version --provenance` revision before running it with an isolated `HOME`. It first requires the bare non-TTY result `manager_not_initialized` with exit status 2 and no canonical `.aegis` creation, then drives the extracted native binary through the credential-independent Registry → Loop → Graph → Queue → evidence/disposition vertical. Its installed-console proof reconstructs a complete durable Agent → Loop → Graph → Queue chain, including content-addressed artifact, verification receipt, and terminal disposition records. Real headless Chrome exchanges a fresh bootstrap, follows only rendered exact-related-record links across that chain, verifies canonical Agent-revision and immutable Loop/Graph/Queue URLs across direct load, reload, Back, and Forward, and exercises server-side Loop search, lifecycle filtering, and pagination while preserving query state. It then closes the exact inspector and signs out under the production CSP. The proof also requires zero CSP violations, JavaScript errors, request failures, or unexpected HTTP 500 responses, proves the console document loads only the bounded same-origin navigation asset as executable client JavaScript, and verifies that the retained self-hosted Datastar asset is directly servable but absent from both unauthenticated and authenticated documents. The fleet vertical checks accepted execution, durable wrong-authority rejection, fresh admission, terminal queue readback, and exact historical definition digests. Supplying a version, empty output directory, and exact revision, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist "$(git rev-parse --verify HEAD^{commit})"`, retains only the archives and `SHA256SUMS`; the isolated proof state is still removed. Never point it at a directory containing retained files. The command intentionally denies a worktree with tracked changes and verifies only the exact committed revision.
+The first four commands verify the pinned Datastar asset and browser-security contract, regenerate templ output, and reject generated/module drift. The final command requires the checkout to resolve to one exact clean tracked Git commit, builds all four declared Linux/macOS amd64/arm64 archives in an ignored repository-local proof workspace, embeds that revision, rejects missing, dirty, malformed, or mismatched Go VCS metadata, requires each archive to contain exactly one root `aegis` regular file with mode `0755`, verifies their checksums, extracts the native archive, and verifies its injected stable version plus exact `version --provenance` revision before running it with an isolated `HOME`. It first requires the bare non-TTY result `manager_not_initialized` with exit status 2 and no canonical `.aegis` creation, then drives the extracted native binary through the credential-independent Registry → Loop → Graph → Queue → evidence/disposition vertical. Its installed-console proof reconstructs a complete durable Agent → Loop → Graph → Queue chain, including content-addressed artifact, verification receipt, and terminal disposition records. Real headless Chrome authenticates through the enrolled principal-password form, follows only rendered exact-related-record links across that chain, verifies canonical Agent-revision and immutable Loop/Graph/Queue URLs across direct load, reload, Back, and Forward, and exercises server-side Loop search, lifecycle filtering, and pagination while preserving query state. It then closes the exact inspector and signs out under the production CSP. The proof also requires zero CSP violations, JavaScript errors, request failures, or unexpected HTTP 500 responses, proves the console document loads only the bounded same-origin navigation asset as executable client JavaScript, and verifies that the retained self-hosted Datastar asset is directly servable but absent from both unauthenticated and authenticated documents. The fleet vertical checks accepted execution, durable wrong-authority rejection, fresh admission, terminal queue readback, and exact historical definition digests. Supplying a version, empty output directory, and exact revision, for example `./scripts/verify-installed-mvi.sh 1.2.3 dist "$(git rev-parse --verify HEAD^{commit})"`, retains only the archives and `SHA256SUMS`; the isolated proof state is still removed. Never point it at a directory containing retained files. The command intentionally denies a worktree with tracked changes and verifies only the exact committed revision.
 
 An exact pre-publication candidate proof is deliberately explicit and must run from a clean committed revision. Create a decision file outside the evidence workspace with exactly these fields (no extras):
 
@@ -59,19 +59,20 @@ path.write_text(secrets.token_hex(32) + "\n", encoding="ascii")
 path.chmod(0o600)
 PY
 python3 - "$uid" "$user" "$transport_dir" <<'PY'
-import pathlib, sys
+import json, pathlib, sys
 path = pathlib.Path(".aegis.yaml")
 text = path.read_text()
 text = text.replace("REPLACE_WITH_LOCAL_UID", sys.argv[1])
 text = text.replace("REPLACE_WITH_LOCAL_USERNAME", sys.argv[2])
 text = text.replace("REPLACE_WITH_ABSOLUTE_TRANSPORT_DIR", sys.argv[3])
+text = text.replace("state_dir: ./.aegis/state", "state_dir: " + json.dumps(str(pathlib.Path(".aegis/state").resolve())))
 path.write_text(text)
 PY
 cp examples/office-charter.json .office-charter.json
 sed -i "s/REPLACE_WITH_LOCAL_UID/$uid/g; s/REPLACE_WITH_LOCAL_USERNAME/$user/g" .office-charter.json
 ```
 
-The copied files are local working files and should not be committed.
+The copied files are local working files and should not be committed. This copied-config path is only the credential-independent CLI demonstration; it does not enroll a principal-password verifier and cannot start the browser console. Do not treat operational-authority reconciliation as password enrollment.
 
 The copied valid configuration does not initialize operational authority. In a real terminal, run `./aegis --config .aegis.yaml init`, verify the displayed authenticated UID/username and exact `state/persistence/authority-v1` path, and type `y` or `yes` at the default-deny compatibility-reconciliation prompt. This creates one secure empty generation only when that path is exactly absent. You may exit the later credential/model onboarding stages if this quickstart is exercising only credential-independent commands. Non-interactive `init`, bare startup, and ordinary commands instead return `operational_authority_not_initialized` with exit status 2 and perform no mutation. Existing invalid or populated state is preserved for operator repair and is never replaced.
 
@@ -87,9 +88,28 @@ Success means Hermes is named and versioned explicitly, charter validation retur
 
 ## Verify the console and daemon-ownership contract
 
-The example configuration serves the embedded shell at `http://127.0.0.1:8443/console` and restricts plaintext use to loopback. For this disposable checkout proof, start the foreground daemon with `./aegis --config .aegis.yaml serve`. The daemon takes `<unix_socket>.lock` before stale-socket inspection/removal; a concurrent second `serve` must fail with `another Aegis control-plane daemon owns this transport` and must not disturb the first socket. While the socket is online, store-backed CLI commands deny with `control_plane_online` instead of opening authoritative stores directly.
+Use a separate, absent configuration and state for password-enrolling initialization, not the copied `.aegis.yaml` above. In a real terminal:
 
-Run `./aegis --config .aegis.yaml console` to print the configured `/console` URL and the explicit `principal_password` authentication requirement; it does not create an authenticated browser session. Open that URL and sign in with the enrolled principal password. Loading the shell alone does not authenticate the browser, and failed verification issues no session cookie. The resulting volatile browser session expires after five minutes or when principal authentication expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback.
+```sh
+console_root=$(pwd -P)/.aegis/console-demo
+test ! -e "$console_root" || { printf '%s\n' 'Choose a new disposable console directory; do not overwrite existing state.' >&2; exit 1; }
+./aegis --config "$console_root/aegis.yaml" --state-dir "$console_root/state" init
+```
+
+Enter and confirm a new principal password through protected input. Review `Create first-run Aegis configuration` (use `details` to inspect the exact UID, username, paths and bytes), then type `yes`. At `Choose custody [Y=gateway-ready/n=exit/advanced]:`, type `n`, **not Enter**. Initialization exits successfully with principal configuration, a salted password verifier, protected transport token, and empty operational authority; the custody decline does not undo those explicitly approved artifacts. No credential authority, model, agent, gateway unit, or runtime session is created. Declining initial configuration leaves it absent; non-TTY initialization denies without mutation. A missing or malformed verifier still denies `serve` rather than silently enrolling one.
+
+For this disposable foreground proof, choose an unused loopback port and a short existing canonical socket directory. The default is the checkout; for a long checkout set `AEGIS_PROOF_SOCKET_DIR` to a short, private task-owned directory first. Keep the resulting socket path below the host Unix-socket limit; do not use a symlink to shorten it. These environment overrides apply to both `serve` and `console` in this shell:
+
+```sh
+export AEGIS_API_LISTEN=127.0.0.1:18443
+export AEGIS_API_CONSOLE_ORIGIN=http://127.0.0.1:18443
+export AEGIS_API_UNIX_SOCKET="${AEGIS_PROOF_SOCKET_DIR:-$(pwd -P)}/.quickstart-console.sock"
+./aegis --config "$console_root/aegis.yaml" serve
+```
+
+The daemon stays in the foreground; this is not systemd gateway installation. Stop it with Ctrl-C after the proof. It takes `<unix_socket>.lock` before stale-socket inspection/removal; a concurrent second `serve` using the same configuration and overrides must fail with `another Aegis control-plane daemon owns this transport` and must not disturb the first socket. While the socket is online, store-backed CLI commands deny with `control_plane_online` instead of opening authoritative stores directly.
+
+In a second terminal with the same `console_root` and three overrides, run `./aegis --config "$console_root/aegis.yaml" console` to print the configured `/console` URL and the explicit `principal_password` authentication requirement; it does not create an authenticated browser session. Open that URL and sign in with the enrolled principal password. Loading the shell alone does not authenticate the browser, and failed verification issues no session cookie. The resulting volatile browser session expires after five minutes or when principal authentication expires, whichever comes first. Use an HTTPS `api.console.origin` and configure both API TLS files before exposing the TCP listener beyond loopback. After stopping the daemon, unset `AEGIS_API_LISTEN`, `AEGIS_API_CONSOLE_ORIGIN`, and `AEGIS_API_UNIX_SOCKET` before returning to the independent copied-config examples.
 
 Bare development and production binaries use the explicitly approved gateway once initialization and operational authority are complete. The explicit lifecycle commands are:
 
@@ -201,7 +221,7 @@ An explicit request such as `what is the value for credential: "demo"` or `I nee
 
 Without `credentials.design_provider` and its source credential, this must not be presented as a successful model turn. The command may reach Hermes and report its authentic provider-configuration failure. It uses disposable state and does not modify the normal Hermes profile.
 
-Clean up this repository-local example with `rm -f aegis .aegis.yaml .office-charter.json && rm -rf .aegis`. `aegis reset` deliberately rejects repository paths and is not a replacement for that explicit example cleanup.
+Clean up this repository-local example with `rm -f aegis .aegis.yaml .office-charter.json && rm -rf .aegis`. Development `aegis reset` permits only recognized artifacts within the verified development binary's exact ignored `.aegis` subtree; it does not remove the example's root-level configuration, charter, or executable and is not a replacement for that explicit example cleanup. Other repository paths remain denied.
 ## Registered-Agent workspace behavior
 
 After an Agent has an exact latest enabled Registry revision, a freshly authenticated principal can delegate its fixed self-service workspace through the shared application service. No provisioning receipt, credential setup, or running session is required to author that Agent's own Loop/Graph definitions or submit a Graph in which that exact revision participates. Definitions are fleet-wide readable and reusable; only their stable owner may publish later revisions or change lifecycle. Workspace-submitted work remains `awaiting-runtime` until Aegis binds fresh controller runtime authority. It does not execute automatically, and only the controller may administer or apply credentials. Use installed command/API help rather than inventing a native agent transport or autonomous worker command.

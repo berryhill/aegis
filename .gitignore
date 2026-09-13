@@ -3,6 +3,9 @@
 go.tar.gz
 govulncheck
 
+# Task-local verification artifacts (never release source)
+/.scratch/
+
 # Go build and test outputs
 /aegis
 /aegis-*

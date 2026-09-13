@@ -18,9 +18,9 @@ Scope: replace path-based publication with Linux `openat2`/descriptor-relative o
 
 Scope: define a narrow checkpoint sink and verification contract for separately protected retention. Relevant files: `internal/store`, `internal/config`, `docs/THREAT_MODEL.md`. Acceptance: replacement/truncation detected relative to retained head; no private key in runtime process. Dependency: operator-selected retention facility.
 
-## 5. Produce and review the no-key terminal recording
+## 5. Publish the retained no-key terminal recording after owner review
 
-Scope: run `docs/RECORDING.md`, sanitize, replay, and verify against current CLI. Acceptance: no secrets/personal paths, authentic provider failure, script and cast agree. Dependency: maintainer approval to publish generated recording.
+Completed locally: the refreshed capture is retained and its reproducible capture/replay workflow is documented in `docs/RECORDING.md`. Remaining scope: repository-owner review and explicit publication approval, then authorized publication of that exact reviewed recording. Acceptance: repeat sanitization and replay against the publication candidate, retaining honest no-key/provider boundaries; do not treat local capture as remote publication. No remote issue or release is created by this proposal.
 
 ## 6. Verify the Aegis-owned Hermes broker bridge
 
@@ -60,7 +60,7 @@ Scope: add a typed gateway-owned migration for installations whose already-runni
 
 ## 15. Prove manager authoritative-intent and typed-failure compatibility across clients
 
-Scope: add contract fixtures for generic/polite Agent-registration and credential-create model bypass; closed deterministic self-expertise guidance for official skill installation, imported-profile content separation, and immutable Agent-ID/unsupported-alias semantics; expertise-v2 digest visibility; unavailable protected intake; principal-bound manager expiry; normal-expiry versus premature authorization-failure rendering; runtime cleanup; and every typed manager turn failure. Relevant files: `internal/managergateway`, `internal/api`, `internal/command`, and manager client documentation. Acceptance: recognized create values and high-confidence credential material do not reach the model; arbitrary-text detection is explicitly not claimed as complete DLP; no protected create is claimed through the turn endpoint; unknown/status-inconsistent failures deny; CLI remediation is stable; `/agents` remains discoverable in conversational and degraded modes. Security: fixtures use generated canaries only and never serialize producer diagnostics as authoritative guidance.
+Scope: add contract fixtures for generic/polite Agent-registration and credential-create model bypass; closed deterministic self-expertise guidance for official skill installation, imported-profile content separation, and immutable Agent-ID/unsupported-alias semantics; expertise-v3 digest visibility; unavailable protected intake; principal-bound manager expiry; normal-expiry versus premature authorization-failure rendering; runtime cleanup; and every typed manager turn failure. Relevant files: `internal/managergateway`, `internal/api`, `internal/command`, and manager client documentation. Acceptance: recognized create values and high-confidence credential material do not reach the model; arbitrary-text detection is explicitly not claimed as complete DLP; no protected create is claimed through the turn endpoint; unknown/status-inconsistent failures deny; CLI remediation is stable; `/agents` remains discoverable in conversational and degraded modes. Security: fixtures use generated canaries only and never serialize producer diagnostics as authoritative guidance.
 
 ### Execution Queue lifecycle status
 

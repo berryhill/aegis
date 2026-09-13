@@ -9,6 +9,34 @@ REPOSITORY = Path(__file__).resolve().parents[1]
 
 
 class NoKeyDemoTest(unittest.TestCase):
+    def test_retained_recording_current_boundary_and_timing(self):
+        # A replay alone cannot detect a stale script capture. Check current
+        # workflow markers and the recorded byte stream without asserting that
+        # this demonstration proves provider success or release provenance.
+        recording = (REPOSITORY / "docs/assets/aegis-no-key.typescript").read_bytes()
+        body = recording.split(b"\n", 1)[1]
+        timing = (REPOSITORY / "docs/assets/aegis-no-key.timing").read_text().splitlines()
+        recorded_bytes = 0
+        for row in timing:
+            delay, count = row.split()
+            self.assertGreaterEqual(float(delay), 0)
+            self.assertGreater(int(count), 0)
+            recorded_bytes += int(count)
+        self.assertTrue(body[recorded_bytes:].startswith(b"\nScript done"))
+        self.assertIn(b'COMMAND_EXIT_CODE="0"', body[recorded_bytes:])
+        transcript = body[:recorded_bytes].decode().replace("\r\n", "\n")
+        for marker in (
+            "== Explicit Hermes discovery ==",
+            '"runtime": "hermes-agent"',
+            "== Checkout execution profile ==\naegis version dev",
+            "Strict validation passed.",
+            '"token": "[REDACTED]"',
+            "No inference provider configured",
+            "no model success is claimed",
+        ):
+            self.assertIn(marker, transcript)
+        self.assertNotRegex(transcript, r"/home/|Bearer [A-Za-z0-9]|sk-[A-Za-z0-9]|[a-f0-9]{64}")
+
     def test_checkout_profile_and_honest_provider_boundary(self):
         with tempfile.TemporaryDirectory(prefix="aegis-demo-hermes-") as fixture:
             fixture_root = Path(fixture)

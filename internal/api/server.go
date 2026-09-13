@@ -451,6 +451,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleweb.PageModel{Authenticated: true, Surface: consoleweb.SurfaceModel{Domain: string(domain), Title: "Fleet control", State: "unavailable", Status: "Fleet control unavailable. No collection was treated as empty."}}, nil
 		}
+		var selectedAgent *app.FleetAgent
 		if domain == consoleAgents && c.QueryParam("revision") != "" {
 			revision, revisionErr := requiredRevision(c.QueryParam("revision"))
 			if revisionErr != nil || c.QueryParam("record_key") == "" {
@@ -463,7 +464,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			replaced := false
 			for index := range surface.Agents {
 				if surface.Agents[index].Revision.AgentID == exact.Revision.AgentID {
-					surface.Agents[index] = exact
+					selectedAgent = &exact
 					replaced = true
 					break
 				}
@@ -523,6 +524,31 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				syncConsoleQueueBands(&model)
 			}
 		}
+		// Resolve the filtered, paginated selection before joining evidence. Keep
+		// the latest roster independent from an exact historical detail, and do
+		// not let individual render handlers overwrite this authenticated join.
+		if domain == consoleAgents && c.QueryParam("record_key") != "" {
+			if err = selectConsoleRecord(&model, c.QueryParam("record_key")); err != nil {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+			}
+		}
+		if domain == consoleAgents && model.Inspector != nil {
+			for _, latest := range surface.Agents {
+				if latest.Revision.AgentID != model.Inspector.Key {
+					continue
+				}
+				selected := latest
+				if selectedAgent != nil {
+					selected = *selectedAgent
+				}
+				detail, detailErr := consoleAgentDetail(c.Request().Context(), svc, subject, selected, latest, surface)
+				if detailErr != nil {
+					return consoleweb.PageModel{}, detailErr
+				}
+				model.Inspector = &detail
+				break
+			}
+		}
 		if domain == consoleCredentials && credentialPage != nil {
 			model.Query = strings.TrimSpace(c.QueryParam("q"))
 			model.Lifecycle = c.QueryParam("status")
@@ -540,6 +566,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		model.CSRF = csrf
 		if model.CollectionURL == "" {
 			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
+		}
+		if domain == consoleAgents && model.Inspector != nil {
+			preserveAgentHistoryContext(model.Inspector.Agent, model.CollectionURL)
 		}
 		return consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: model}, nil
 	}
@@ -561,7 +590,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if err != nil {
 				return err
 			}
-			if recordKey := c.QueryParam("record_key"); recordKey != "" {
+			if recordKey := c.QueryParam("record_key"); recordKey != "" && domain != consoleAgents {
 				if err = selectConsoleRecord(&model.Surface, recordKey); err != nil {
 					return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
 				}
@@ -1161,7 +1190,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
-		if err = selectConsoleRecord(&model.Surface, c.QueryParam("record_key")); err != nil {
+		if domain != consoleAgents {
+			if err = selectConsoleRecord(&model.Surface, c.QueryParam("record_key")); err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+			}
+		} else if model.Surface.Inspector == nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
 		}
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
