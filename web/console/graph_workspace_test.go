@@ -121,11 +121,11 @@ func TestGraphWorkspaceRendersReadOnlyContextAndTextFallback(t *testing.T) {
 	g := &GraphDetailModel{GraphID: "graph-x", LatestVersion: "r2 · viewing historical revision", CurrentValidation: "invalid", Validation: "valid · stored-digest", Nodes: []GraphNodeModel{{ID: "<script>alert(1)</script>", Participant: "agent r7 @ sha256:a", Loop: "loop r2 @ sha256:l", InputMappings: []FieldModel{{Label: "source", Value: "target"}}}, {ID: "b"}}, Edges: []GraphEdgeModel{{ID: "edge", From: "<script>alert(1)</script>", To: "b"}}, ValidationIssues: []GraphIssueModel{{Code: "invalid.test", Path: "nodes[0]", Message: "test failure"}}}
 	r := RecordModel{Key: "graph-x:1", Label: "graph-x", Revision: "r1", Lifecycle: "draft", Graph: g}
 	var out bytes.Buffer
-	if err := GraphDetailPage(SurfaceModel{Domain: DomainGraphs}, &r).Render(context.Background(), &out); err != nil {
+	if err := GraphWorkspace(SurfaceModel{Domain: DomainGraphs}, &r, buildGraphTopology(g)).Render(context.Background(), &out); err != nil {
 		t.Fatal(err)
 	}
 	html := out.String()
-	for _, want := range []string{"#/graphs/graph-x:1", "Prepare execution request", "Definition details", "graph-edge-path", "marker-end=\"url(#graph-arrow)\"", "data-graph-node=\"0\"", "data-graph-node-panel=\"0\"", "aria-pressed=\"false\"", "Accessible textual equivalent", "Input mappings", "Incoming edges", "Outgoing edges", "data-reason-code=\"invalid.test\"", "viewing historical revision", "data-grid-column=\"1\"", "Stored validation"} {
+	for _, want := range []string{"Prepare execution request", "Definition details", "graph-edge-path", "marker-end=\"url(#graph-arrow)\"", "data-graph-node=\"0\"", "data-graph-node-panel=\"0\"", "aria-pressed=\"false\"", "Accessible textual equivalent", "Input mappings", "Incoming edges", "Outgoing edges", "data-reason-code=\"invalid.test\"", "viewing historical revision", "data-grid-column=\"1\"", "Stored validation"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("missing %q", want)
 		}
