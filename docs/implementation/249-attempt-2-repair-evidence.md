@@ -46,3 +46,28 @@ The following complete canonical prior-review findings remain OPEN, not silently
 | Publication and CI | Prior publish/CI outputs were DEFERRED_LOCAL_FAILURE | Discover/reuse the task-owned PR only after local gates pass, then verify exact published-head CI; no publication or merge evidence exists for this repair |
 
 This is implementation-step evidence, not final acceptance. No commit, push, PR write, release, runtime provisioning/activation, model change, task creation, or merge was performed by this step. Subsequent conductor gates must retain the open findings and establish their own fresh evidence.
+
+## Attempt 4 correction — LA249-05
+
+Input packet: `tflp_37f87cbb0c4b4502`, hash `e47517adec88aded8a480c563dde5ce104eec1cb0d71d3e593f18f3aa71bf9a3`; task/session unchanged. Pre-edit HEAD was `bd075cb5f677c413987adce58b4b08b79137f989`, clean on `task-t_a08be60-249`, matching the packet.
+
+Contract: correct the threat-model diagram to show enabled initial Registry eligibility after separate exact approval, without implying runtime readiness, activation, or execution authority. Preserve all registration code, explicit disabled/retired inputs, historical records, malformed-input denial and runtime admission. This is a documentation-only repair, not an authority change.
+
+Correction to the historical claims at lines 15 and 28: those claims were incomplete. Direct pre-edit readback confirmed `DefaultImport[Disabled local-default Agent revision 1]` in the diagram. LA249-05 is now source-resolved by replacing that node with enabled Registry-only eligibility and adding an explicit no-runtime-authority edge. The separate review/approval and exact-digest readback edges remain intact. This entry supersedes only the stale-diagram finding and the overbroad historical wording claims; historical evidence above is retained unchanged.
+
+Fresh verification in this activity:
+
+- Diagram assertions passed for enabled eligibility, separate exact approval, absence of the old disabled node, and explicit no-runtime-authority edge.
+- `GOMAXPROCS=2 GOFLAGS="${GOFLAGS:+$GOFLAGS }-p=1" GOMEMLIMIT=2GiB /home/silas/go/bin/go test ./internal/registry ./internal/app -parallel=2 -run 'TestRegistrationLifecycleDefaultsOnlyWhenOmitted|TestExecutableResolutionFailsClosedForDigestLifecycleAndRetirement|TestBootstrapLocalHermesImport' -count=1` passed both packages. Toolchain: `go1.26.6 linux/amd64`. This is fresh focused success/denial evidence, not reuse of the previous go1.26.8 installed proof.
+- Targeted current Markdown scan found no remaining disabled-new-import promise outside the repaired diagram. Remaining matches were historical evidence or preservation of explicit disabled inputs. This is a targeted source scan, not exhaustive semantic or executable acceptance.
+- Launch-impact scan inspected README, LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, CHANGELOG, threat model, architecture, quickstart, no-key demonstration, recording guidance and retained recording/timing, and contributor backlog for this wording defect. Only the threat-model diagram requires a product-asset edit in this activity; this audit receives the correction. Release archives/checksums were not requalified, recorded commands were not replayed, and external issues/releases were not inspected or mutated.
+- `git diff --check` passed before this evidence append; final diff readback is required afterward.
+
+Carried ledger (not cleared by this repair):
+
+- LA249-04 — candidate_acceptance; incomplete required verification; repair_kind infrastructure: pinned scanner qualification, applicable documented workflows, and broad/race/vet remain unresolved. Final verification owns broad acceptance. Changed source identity requires new packaging/checksum and installed acceptance qualification; no old archive is accepted for the repaired revision.
+- LA249-02 and LA249-03 — retain the packet's historical attempt-3 resolutions only. Current-candidate installed/browser and supported-Hermes evidence must undergo source, dependency, toolchain and environment validity checks; they were not rerun here.
+- Publication/exact-head CI — candidate_acceptance; pending_ci: still deferred, not successful. Publish only at its canonical step after local gates.
+- Private security/conduct reporting routes — community_release; owner_decision: retained unwaived, no invented contacts or release approval.
+
+No flow completion or continuation is claimed here: flow-step tools are unavailable in this worker; the identity-bound stdout completion envelope must be processed by the dispatcher before another canonical activity.

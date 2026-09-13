@@ -66,7 +66,8 @@ flowchart LR
   FleetFixture[Strict current-fleet fixture] -->|proposal; no authority| Registry[Immutable Agent Registry domain]
   Bootstrap[Fresh/resumed authenticated bootstrap] -->|explicit approval| BuiltIn[Canonical aegis-system Agent revision 1]
   BuiltIn -->|exact idempotent readback; collision denial| Registry
-  Bootstrap -->|separate read-only review + exact approval| DefaultImport[Disabled local-default Agent revision 1]
+  Bootstrap -->|separate read-only review + exact approval| DefaultImport[Enabled local-default Agent revision 1; Registry eligibility only]
+  DefaultImport -. no runtime readiness, activation, or execution authority .-> Aegis
   Hermes -->|metadata-only no-follow inspection; no content reads or writes| DefaultImport
   DefaultImport -->|exact digest + full readback| Registry
   BuiltIn -. no credential, stanza, mandate, or model authority .-> Aegis
