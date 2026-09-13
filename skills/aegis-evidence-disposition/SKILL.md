@@ -30,6 +30,7 @@ First run `aegis queue --help`. The compatible CLI exposes:
 
 - `aegis queue list`
 - `aegis queue show ITEM`
+- `aegis queue bind-runtime FILE` (controller-only CLI; no HTTP equivalent; routes to `aegis-execution-queue` for the request contract)
 - `aegis queue process FILE`
 - `aegis queue retry FILE`
 - `aegis queue cancel FILE`

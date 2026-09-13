@@ -14,6 +14,8 @@ var requiredEvaluationClasses = []string{
 	"secret_canary",
 }
 
+// Evaluate validates fixture structure and declared safety expectations only.
+// It does not execute requests, services, runtimes, or agent behavior.
 func Evaluate(root string, manifest Manifest) (EvaluationResult, error) {
 	data, err := readBounded(filepath.Join(root, EvaluationsName), MaxEvaluationBytes)
 	if err != nil {
@@ -26,9 +28,9 @@ func Evaluate(root string, manifest Manifest) (EvaluationResult, error) {
 	if suite.SchemaVersion != EvaluationSchema {
 		return EvaluationResult{}, deny("unsupported_evaluation_schema", EvaluationsName, fmt.Sprintf("schema_version must be %d", EvaluationSchema))
 	}
-	knownOperations := make(map[string]bool, len(manifest.Operations))
+	knownOperations := make(map[string]string, len(manifest.Operations))
 	for _, operation := range manifest.Operations {
-		knownOperations[operation.Operation] = true
+		knownOperations[operation.Operation] = operation.Availability
 	}
 	classes := map[string]bool{}
 	ids := map[string]bool{}
@@ -54,8 +56,12 @@ func Evaluate(root string, manifest Manifest) (EvaluationResult, error) {
 		}
 		switch evaluation.Expected {
 		case "route":
-			if !knownOperations[evaluation.Operation] {
+			availability, known := knownOperations[evaluation.Operation]
+			if !known {
 				return EvaluationResult{}, deny("orphan_evaluation_operation", location, evaluation.Operation)
+			}
+			if availability != "shipped" {
+				return EvaluationResult{}, deny("unavailable_evaluation_operation", location, evaluation.Operation)
 			}
 		case "deny":
 			if evaluation.Operation != "" {
@@ -73,7 +79,15 @@ func Evaluate(root string, manifest Manifest) (EvaluationResult, error) {
 			return EvaluationResult{}, deny("evaluation_coverage_missing", EvaluationsName, class)
 		}
 	}
-	return EvaluationResult{Cases: len(suite.Cases), Passed: len(suite.Cases)}, nil
+	return EvaluationResult{
+		Status:              "valid",
+		EvidenceClass:       "structural_fixture_validation",
+		Cases:               len(suite.Cases),
+		StructurallyValid:   len(suite.Cases),
+		BehavioralExecution: "not_run",
+		ServiceExecution:    "not_run",
+		RuntimeExecution:    "not_run",
+	}, nil
 }
 
 func scanEvaluation(location string, evaluation EvaluationCase) error {

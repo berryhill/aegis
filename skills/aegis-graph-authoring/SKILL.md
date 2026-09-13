@@ -48,7 +48,12 @@ The alias `aegis graph` exists, but prefer the canonical plural command in durab
 7. For revision 1, omit both predecessor fields. For revision N greater than 1, set revision `previous_digest` and top-level `expected_previous_digest` to the exact digest of revision N-1. Revisions are contiguous and create-only; never substitute a mutable current or latest revision.
 8. Use a fresh stable `idempotency_key` for one intended publication. Reusing the same key or revision identity with changed content is a conflict, not authorization to overwrite.
 
-The publish file is a strict `PublishGraphInput` JSON object containing `authority`, `revision`, optional `expected_previous_digest`, and `idempotency_key`. The authority digest reference must come from current authenticated Aegis readback, not from the model, a fixture, another session, or a browser field. Treat a hand-authored digest as a proposal only: `aegis graphs publish FILE` canonicalizes the revision and produces the authoritative revision and validation digests.
+The publish file is a strict `PublishGraphInput` JSON object containing `revision`, optional `expected_previous_digest`, and `idempotency_key`, with one of these authority paths:
+
+- Registered-Agent workspace: supply the `agent_id` selector for the intended latest enabled registered Agent and omit `authority`. Aegis authenticates the principal and derives the workspace binding and publisher provenance server-side. Do not fabricate a workspace authority object. This path requires no provisioning receipt or running runtime session and grants no credential or execution rights.
+- Runtime authority: omit `agent_id` and supply the exact current `authority` digest reference from authenticated Aegis readback, never from a model, fixture, another session, or browser field.
+
+Treat a hand-authored digest as a proposal only: `aegis graphs publish FILE` canonicalizes the revision and produces the authoritative revision and validation digests. When the local store is daemon-owned and the CLI reports `control_plane_online`, stop the direct-store path. Use only an available product-owned authenticated adapter; do not stop the daemon, extract its token, or create a second writer or temporary authenticated client.
 
 ## Publish and verify exact history
 
@@ -65,7 +70,8 @@ There is no shipped CLI Graph activation or retirement command. In the current s
 
 A CLI submission file is a strict `SubmitGraphInput` JSON object containing:
 
-- current exact `authority` digest reference;
+- workspace path: the `agent_id` selector; omit `authority` and `workspace` because Aegis derives them after authenticating the principal and resolving that exact latest enabled Agent;
+- runtime path instead: omit `agent_id` and supply the current exact `authority` digest reference; do not mix paths;
 - exact `graph` reference with ID, positive revision, and digest;
 - `inputs`, each with `port_id`, declared `type`, and a JSON `value` of that type;
 - stable `submission_id`, `idempotency_key`, `snapshot_id`, `queue_item_id`, `graph_run_id`, `transition_id`, and `rejection_id` identities;
@@ -73,14 +79,14 @@ A CLI submission file is a strict `SubmitGraphInput` JSON object containing:
 
 Supply each required Graph input exactly once, omit undeclared inputs, preserve the declared type, and use actual JSON values: a JSON string for `string`; an exact `sha256:` content-digest JSON string for `artifact`; JSON true/false for `boolean`; an integral JSON number for `integer`; a finite JSON number for `number`; an object for `object`; and an array for `array`. Aegis canonicalizes each value, sorts normalized inputs by port ID, rejects duplicate or type-mismatched inputs, and derives exact participant and Loop references from the sealed Graph. Do not pre-author the run snapshot or copy references from another run.
 
-Use one idempotency key for one exact intended submission. An identical accepted or rejected replay returns the durable prior outcome; changed reuse conflicts. Never change payload or generated identities under the same idempotency key to evade a durable rejection.
+Use one idempotency key for one exact intended submission. `rejection_idempotency_key` is not a supported field; `transition_id` is required even for workspace submissions. An identical accepted or rejected replay returns the durable prior outcome; changed reuse conflicts. Never change payload or generated identities under the same idempotency key to evade a durable rejection.
 
 ## Submit, inspect, and distinguish outcomes
 
 1. Submit only after explicit authorization for the exact Graph revision and typed input: `aegis graphs submit FILE`.
 2. Aegis performs action readiness and fresh exactly-one-context authority admission, reloads the exact Graph, requires the authority Agent to be a bound participant, normalizes inputs into an immutable run snapshot, and reloads every exact active Loop and enabled participant. Preserve durable denials such as `readiness_denied`, `authority_denied`, `graph_mismatch`, `participant_rebinding`, `invalid_inputs`, `loop_interface_mismatch`, `loop_inactive`, `participant_unavailable`, `authority_participant_mismatch`, `loop_unavailable`, and `invalid_submission`.
-3. Keep accepted and rejected outcomes distinct. An accepted decision contains an immutable snapshot, submission, queued item, Graph run, and initial queued transition. A rejection contains a durable rejection identity, submission and idempotency identity, reason code, reason, and timestamp. Neither outcome may be relabeled by model narration.
-4. For acceptance, require exact digest-linked readback among snapshot, submission, queue item, Graph run, and transition. Confirm normalized inputs and exact resolved Agent/Loop references in the snapshot, plus exact authority, mandate, runtime, attempt bound, and causal IDs in the admitted records.
+3. Keep accepted and rejected outcomes distinct. The response envelope contains `accepted` or `rejection`, plus `created`. Acceptance contains an immutable snapshot, submission, queue item, Graph run, and initial transition. Workspace acceptance starts in `awaiting_runtime`, not runnable `queued`; it needs a fresh controller-issued runtime binding. A rejection contains a durable rejection identity, submission and idempotency identity, reason code, reason, and timestamp. Neither outcome may be relabeled by model narration.
+4. For acceptance, require exact digest-linked readback among snapshot, submission, queue item, Graph run, and transition. Confirm normalized inputs and exact resolved Agent/Loop references in the snapshot, the attempt bound and causal IDs. Workspace readback must retain server-derived workspace provenance and exact Agent binding; do not require or fabricate a runtime mandate before controller binding. Runtime-bound records must instead match their exact admitted authority, mandate, and runtime.
 5. Inspect `aegis graphs list` for Graph-associated accepted-run snapshots, `GET /v1/submissions` for authoritative accepted and rejected submission history, and `aegis queue show ITEM` for subsequent queue causality. The CLI has no standalone submission-history verb.
 6. Queue acceptance is not a claim, runtime attempt, verified evidence, or terminal success. Claims, effects, retries, evidence, cancellation, denial, failure, expiry, revocation, exhaustion, and success remain separate authoritative Queue/execution records.
 

@@ -42,7 +42,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(map[string]any{"status": "passed", "cases": result.Cases, "passed": result.Passed})
+		return printJSON(result)
 	case "build":
 		if len(args) != 5 {
 			return fmt.Errorf("build requires ROOT, DIST, VERSION, and SOURCE_REVISION")

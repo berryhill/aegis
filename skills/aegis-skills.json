@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:ae4f7e8c939c14772e0337a96400f9209ff9400b91c1fd2d47609985e045470a",
+    "content_digest": "sha256:cfcc299f623c1e25584b97a348a8683642deb7e0bbac239d02c975362c61b05f",
     "source_revision": "repository"
   },
   "operations": [
@@ -82,7 +82,7 @@
     {
       "operation": "aegis.deployment-projection.reconcile",
       "primary_skill": "aegis-deployment-projection",
-      "availability": "shipped"
+      "availability": "unavailable"
     }
   ],
   "skills": [
@@ -245,17 +245,17 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:7db038329a0140ba096b09982a2bfc1d578d69c88dc58e1a334025e8ad138c67",
+      "content_digest": "sha256:9670e9a3bec6e33446b536092d20518c305d415206fc633571144cff025102ec",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:ed1fd21ecb2d2db8f565cd504d835ffc706e1ac14bdc2174f0d1f93e29b22ecb",
-          "size": 12053
+          "sha256": "sha256:406be29260834620abbf1c135f1deb29a185416f7c830574606c12e8470935e9",
+          "size": 12662
         },
         {
           "path": "references/registry-fixtures.json",
-          "sha256": "sha256:715949fd384214a113e9ff0924f03ee4f17bc3cab79be688f00742f8bcc4aa75",
-          "size": 4563
+          "sha256": "sha256:a9f8305e77189b8204e28c37bac3e333f1a63e522f8690ccfb4c9a74a45a7133",
+          "size": 6320
         }
       ]
     },
@@ -309,12 +309,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:c0fb308217f0a583c31406379a38b950ce7bc5257ff03073eaa924b579bd4641",
+      "content_digest": "sha256:c7b98eb05125a28515c815633feb97e08be4c55d31a08c3aa760cdfc943f0fda",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:54baa655585c38b6df7b8a82cb94314ff41ef203bec3670d6252b173117272d9",
-          "size": 9622
+          "sha256": "sha256:5b705fe8b8b938af7ac5ae1d8c846bbf01ac7c87f361c4322d60ae25eb008521",
+          "size": 11501
         }
       ]
     },
@@ -338,12 +338,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:6fb17120ce0fa3d3f5f0d79f370c7721ac3e00ce64449bf62b2c7a9959c30a9d",
+      "content_digest": "sha256:c3ccfd4ac90f3dea7718de1793302cb8ce1b18cb7f60a8b5071ed6c1e21996a6",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:716d73ec33ad241b309b022c5772122552f3384949b03ae36adc26c88050a34b",
-          "size": 13236
+          "sha256": "sha256:c5091d207c623222671ce9390a924019f401af7e692614467bcc40aa4c68a597",
+          "size": 14726
         }
       ]
     },
@@ -365,12 +365,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:56b9efa8d61bbb816c949587af19508b0732b44ce1955c67b7ad46e20b8f9149",
+      "content_digest": "sha256:7cf380e6fcfbd7bc30b42c83dd9cdbad4da38e1a599c975a1ae51cbc9ec3d6cd",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:a293db14662d1aae963f6f9860ed939d11543f937f4b38f1ccb9c1e94e0a78e8",
-          "size": 11657
+          "sha256": "sha256:27f895c2dd6f4decebc2fdeb0ae812ce35cfb6d4856a3ac13b22d0bf1b6ade45",
+          "size": 13014
         }
       ]
     },
@@ -428,12 +428,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:9edebba0a736fe71d8bd79a24797c1767e42bd86b1d18813a9310ef99a4fc011",
+      "content_digest": "sha256:1c4e1d4d21c7d5983c88a0731a6200e1f877f6cac951f2223f0edc9a825954aa",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:3de985425e7f2d094f3805a7861c98d1f47bc9f6df5e9e80745eb4df7e61b2aa",
-          "size": 13074
+          "sha256": "sha256:5abda86da4a7a442d8238b8e36fdb3ca1e3f21e8de533458b51d0752c24eab4b",
+          "size": 13210
         },
         {
           "path": "references/evidence-fixtures.json",

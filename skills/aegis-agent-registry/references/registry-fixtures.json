@@ -3,9 +3,11 @@
   "fixtures": [
     {
       "id": "registered-exact-participant",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "aegis agents register response",
       "authoritative_result": {
         "created": true,
+        "agent": {
         "registration": {
           "schema_version": "aegis.registry.registration.v1",
           "agent_id": "agent-example",
@@ -25,22 +27,43 @@
           "policy_refs": [{"id": "policy-example", "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],
           "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
+        }
       },
       "expected_interpretation": "Report a newly created immutable revision only after the registration initial_revision and returned revision agree exactly. The runtime target is not a canonical Hermes profile identity or proof of deployment."
     },
     {
       "id": "duplicate-identical",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "aegis agents register idempotent response",
       "authoritative_result": {
         "created": false,
-        "agent_id": "agent-example",
-        "revision": 1,
-        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        "agent": {
+          "registration": {
+            "schema_version": "aegis.registry.registration.v1",
+            "agent_id": "agent-example",
+            "source": {"fleet_id": "fleet-example", "kind": "current-fleet", "source_id": "source-example"},
+            "initial_revision": {"id": "agent-example", "revision": 1, "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+          },
+          "revision": {
+            "schema_version": "aegis.registry.agent-revision.v1",
+            "agent_id": "agent-example",
+            "revision": 1,
+            "source": {"fleet_id": "fleet-example", "kind": "current-fleet", "source_id": "source-example"},
+            "runtime": {"adapter": "hermes", "runtime": "hermes-agent-0.18", "target": "profile-example"},
+            "ownership": {"owner_id": "owner-example", "accountability_id": "accountability-example"},
+            "lifecycle": "enabled",
+            "charter": {"id": "agent-example", "revision": 3, "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+            "capability_declarations": ["fleet-read"],
+            "policy_refs": [{"id": "policy-example", "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],
+            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        }
       },
       "expected_interpretation": "Report idempotent existing readback, not a new revision or update."
     },
     {
       "id": "duplicate-different-conflict",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "typed registration error",
       "authoritative_result": {
         "state": "conflict",
@@ -50,6 +73,7 @@
     },
     {
       "id": "stale-lifecycle-revision",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "typed lifecycle error",
       "authoritative_result": {
         "state": "conflict",
@@ -60,6 +84,7 @@
     },
     {
       "id": "disabled-history-readable",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "aegis agents history response",
       "authoritative_result": {
         "current_lifecycle": "disabled",
@@ -70,6 +95,7 @@
     },
     {
       "id": "retired-reactivation-denied",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "typed lifecycle error plus history readback",
       "authoritative_result": {
         "current_lifecycle": "retired",
@@ -82,6 +108,7 @@
     },
     {
       "id": "interrupted-registration-readback",
+      "representation": "explanatory_projection_not_wire_response",
       "surface": "post-interruption exact show and history",
       "authoritative_result": {
         "process_exit_known": true,

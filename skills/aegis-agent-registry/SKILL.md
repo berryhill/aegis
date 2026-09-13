@@ -56,7 +56,7 @@ If an operation is absent from installed help, label it unavailable. There is no
    - initial lifecycle;
    - sorted capability declarations and sorted exact policy digest references.
 4. Route the request to `aegis agents register FILE` or `POST /v1/agents`. Aegis strictly decodes the request, resolves exactly one matching source, verifies the pre-imported charter binding, seals revision 1, and performs create-only persistence.
-5. Require authoritative response readback. Preserve `created`, `registration.agent_id`, `registration.source`, `registration.initial_revision`, and every field of `revision`, including its exact digest.
+5. Require authoritative response readback. CLI registration and HTTP `POST /v1/agents` return `{ "agent": { "registration": ..., "revision": ... }, "created": true|false }`. Preserve `created`, `agent.registration.agent_id`, `agent.registration.source`, `agent.registration.initial_revision`, and every field of `agent.revision`, including its exact digest. Exact show returns the Agent object directly; history returns an array of revisions, not this registration envelope.
 
 An identical retry is idempotent and returns the existing canonical record with `created: false`. The same Agent ID or fleet-source identity with different content is a conflict, not an update. Missing, malformed, ambiguous, or non-canonical candidates deny; do not repair fields in the model.
 
@@ -100,4 +100,4 @@ Report with these headings: operation; authenticated Aegis surface; canonical Ag
 
 ## Progressive disclosure
 
-Use `references/registry-fixtures.json` only as non-secret interpretation examples. Fixtures are not live Registry records or authority. Consult `specs/CANONICAL_DOMAINS.md`, `specs/MVP.md`, `internal/registry/model.go`, `internal/registry/source.go`, and installed command help for the current contract. Consequential actions must remain in typed Aegis services; this skill never reimplements authentication, policy, persistence, provisioning, scheduling, credential custody, or audit authority.
+Use `references/registry-fixtures.json` only as non-secret interpretation examples. Every fixture is marked `explanatory_projection_not_wire_response`: reduced fields, synthetic digests, error summaries, and history summaries are not complete serialized adapter responses or valid request templates. The registration projections preserve the real `{agent, created}` envelope; exact replay retains the same Agent content. Fixtures are not live Registry records or authority. Consult `specs/CANONICAL_DOMAINS.md`, `specs/MVP.md`, `internal/registry/model.go`, `internal/registry/source.go`, and installed command help for the current contract. Consequential actions must remain in typed Aegis services; this skill never reimplements authentication, policy, persistence, provisioning, scheduling, credential custody, or audit authority.

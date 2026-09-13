@@ -31,6 +31,7 @@ First use `aegis queue --help`. The compatible CLI operations are:
 
 - `aegis queue list`
 - `aegis queue show ITEM`
+- `aegis queue bind-runtime FILE` (controller-only; no HTTP equivalent)
 - `aegis queue process FILE`
 - `aegis queue retry FILE`
 - `aegis queue cancel FILE`
@@ -57,6 +58,12 @@ Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` f
 
 Report immutable item and snapshot bindings separately from the current projection. Then report Graph-run and Loop-execution causality; ordered attempts and claims; lease and budget eligibility; dependencies; runtime route; transitions and lifecycle requests; artifact and receipt verification; disposition; and any unavailable or corrupt readback.
 
+## Bind workspace work to runtime authority
+
+`aegis queue bind-runtime FILE` is the shipped CLI boundary. Its strict object contains exactly `agent_id`, `authority` (an existing authenticated runtime authority `id`/`digest` reference), `queue_item_id`, `binding_id`, and `transition_id`. The authenticated principal supplies the exact registered Agent selector; Aegis derives its workspace internally and checks the Queue owner's provenance. The Agent selector is not runtime authority. Obtain the runtime reference through the controller's supported authenticated session path; never construct an authority object from prose.
+
+The response is `{ "binding": ..., "created": ... }`. Preserve the binding and transition identities across reconciliation of an unknown outcome. Read back the binding and Queue projection before processing; binding does not execute an attempt. There is no `POST /v1/queue/:item/bind-runtime` adapter in this revision. When a running control plane denies direct-store access with `control_plane_online`, report the missing online adapter; do not stop the daemon, open a second writer, extract tokens, or invent an HTTP client to bypass it.
+
 ## Process one eligible item
 
 1. Read the exact item immediately before action. Require queued projection state, `available_at` eligibility, remaining `max_attempts` budget, satisfied dependencies, no live claim, and the exact registered runtime route.
@@ -70,8 +77,8 @@ Report immutable item and snapshot bindings separately from the current projecti
 Retry is a controller decision that returns one claimed item to queued availability. It does not execute the next attempt.
 
 1. Read the exact active claim, lease expiry, attempt count, maximum budget, and transition head. Require remaining budget and a claimed nonterminal item.
-2. For an acknowledged stopped runtime, use a strict retry request with exact current `authority` and `queue_item_id`, fresh `retry_id` and `transition_id`, bounded `backoff`, `reclaimed: false`, and the shipped closed retry reason.
-3. For an expired lease, use the same `aegis queue retry FILE` surface with `reclaimed: true` and `reason_code: "lease_reclaimed"`. Reclaim before exact lease expiry denies. Do not infer expiry from a stale clock, process absence, or operator prose.
+2. Ordinary retry with `reclaimed: false` is unavailable: Aegis has no authoritative durable runtime-stop acknowledgment and persistence rejects it. Process absence, a stopped-runtime claim, or operator prose cannot release the lease.
+3. For an expired lease, prepare a strict request with exact current `authority` and `queue_item_id`, fresh `retry_id` and `transition_id`, bounded `backoff`, `reclaimed: true`, and `reason_code: "lease_reclaimed"`; use `aegis queue retry FILE`. Reclaim before exact lease expiry denies. Do not infer expiry from a stale clock, process absence, or operator prose.
 4. Backoff must remain nonnegative and no greater than 24 hours. Live-lease retry, attempt-budget exhaustion, wrong reason/reclaim pairing, stale authority, terminal state, duplicate-ID conflict, and unavailable canonical history deny.
 5. Read back the exact retry and transition. Require the same Queue item, Graph run, and Loop execution, queued projection state, cleared active claim, unchanged consumed-attempt count, and exact `available_at`. A later process operation receives a fresh claim and next numbered attempt.
 
