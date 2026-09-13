@@ -1,0 +1,376 @@
+package consoleweb
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
+
+// QueueWorkspace renders the Queue detail as the accepted interactive
+// control-flow workspace. It reconstructs the exact pinned Graph/Loop
+// revision from the queue snapshot binding and projects authoritative
+// runtime state onto the resulting nodes and transitions. Browser selection
+// and canvas state never enter the projection or any reviewed operation.
+templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePinnedTopology) {
+	<div data-queue-workspace>
+		<nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Execution Queue</a></nav>
+		<div class="record-head queue-record-head">
+			<div>
+				<span class="eyebrow">{ record.Queue.ExecutionType }</span>
+				<h2 id="inspector-title">{ record.Label }</h2>
+				<p>{ record.Queue.QueueItemIdentity } · pinned snapshot { record.Queue.SnapshotDigest }</p>
+				if record.Queue.PinnedGraphDigest != "" {
+					<p>{ record.Queue.PinnedGraph } · { record.Queue.PinnedGraphRevision } · { record.Queue.PinnedGraphDigest }</p>
+				}
+				if record.Queue.CatalogueDrift != "" {
+					<div class="reconstruction-warning" role="status" data-drift="catalogue"><strong>Catalogue drift detected.</strong> { record.Queue.CatalogueDrift } The canvas continues to render the pinned snapshot; the current catalogue does not override it.</div>
+				}
+				if record.Queue.ReconstructionWarn != "" {
+					<div class="reconstruction-warning" role="status" data-reconstruction="missing"><strong>Pinned snapshot reconstruction is partial.</strong> { record.Queue.ReconstructionWarn }</div>
+				}
+				<div class="record-head-tags">
+					<span class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span>
+					if record.Queue.TerminalOutcome != "" {
+						<span>Terminal outcome · { record.Queue.TerminalOutcome }</span>
+					}
+					if record.Queue.FailureLocation != "" {
+						<span>Authoritative failure · { record.Queue.FailureLocation }</span>
+					}
+				</div>
+				<dl class="meta-strip">
+					<div><dt>Submitted</dt><dd>{ queueOptionalField(record.Queue.SubmittedAt) }</dd></div>
+					<div><dt>Admitted</dt><dd>{ queueOptionalField(record.Queue.AdmittedAt) }</dd></div>
+					<div><dt>Started</dt><dd>{ queueOptionalField(record.Queue.StartedAt) }</dd></div>
+					<div><dt>Ended</dt><dd>{ queueOptionalField(record.Queue.EndedAt) }</dd></div>
+					<div><dt>Participant</dt><dd>{ queueOptionalField(record.Queue.Participant) }</dd></div>
+				</dl>
+			</div>
+			if record.Queue.ContextualAction != nil {
+				<div class="queue-record-actions">
+					<form class="queue-control contextual-action" method="post" action={ "/console/queue/" + queueURLPathEscape(record.Key) + "/operate" } data-contextual-action={ record.Queue.ContextualAction.Operation }>
+						<input type="hidden" name="csrf" value={ surface.CSRF }/>
+						<input type="hidden" name="operation" value={ record.Queue.ContextualAction.Operation }/>
+						<p><strong>{ record.Queue.ContextualAction.Label }</strong><span>{ record.Queue.ContextualAction.Consequence }</span></p>
+						<button type="submit" class="secondary" title={ record.Queue.ContextualAction.Reason }>{ record.Queue.ContextualAction.Label }</button>
+					</form>
+				</div>
+			}
+		</div>
+		<section class="queue-admission" aria-label="Execution identity, lifecycle, and authority admission">
+			<p>This page reconstructs the exact pinned Graph revision from the queue snapshot binding. It never substitutes current catalogue topology in place of the pinned snapshot.</p>
+			<p>Artifact, receipt, and process-exit signals are not upgraded into terminal success. Only the authoritative terminal disposition or its absence can carry terminal state.</p>
+			if record.Queue.CycleWarning != "" {
+				<p class="cycle-warning"><strong>Bounded cycle present.</strong> { record.Queue.CycleWarning }</p>
+			}
+			@QueueIssues(topology.Issues)
+		</section>
+		if len(topology.CycleMembers) > 0 {
+			<section class="cycle-band" aria-label="Bounded cycle summary">
+				<strong>Bounded cycle</strong>
+				<span>The pinned Graph definition contains a control-flow cycle. The viewport omits the directed layout so the cycle is not misrepresented as a finite DAG.</span>
+				<dl>
+					<div class="cycle-band-row"><dt>Members</dt><dd>{ queueCycleMembersLabel(topology.CycleMembers) }</dd></div>
+					<div class="cycle-band-row"><dt>Maximum iterations</dt><dd>{ queueOptionalField(fmt.Sprintf("%d", topology.CycleMaxIterations)) }</dd></div>
+					<div class="cycle-band-row"><dt>Exit condition</dt><dd>{ queueOptionalField(topology.CycleExitCondition) }</dd></div>
+					<div class="cycle-band-row"><dt>Exhaustion destination</dt><dd>{ queueOptionalField(topology.ExhaustionDestination) }</dd></div>
+				</dl>
+			</section>
+		}
+		<div class="detail-split queue-workspace">
+			<section class="qw-pane qw-canvas" aria-labelledby="queue-canvas-title">
+				<div class="canvas-bar">
+					<h3 class="canvas-title" id="queue-canvas-title">Pinned control flow · current control and transition outcomes</h3>
+					<div class="canvas-tools" role="group" aria-label="Topology controls">
+						<button type="button" class="ghost" data-queue-zoom="out" aria-label="Zoom out">−</button>
+						<button type="button" class="ghost" data-queue-fit>Fit</button>
+						<button type="button" class="ghost" data-queue-zoom="in" aria-label="Zoom in">+</button>
+						<output data-queue-scale aria-live="polite">100%</output>
+					</div>
+				</div>
+				<p class="canvas-hint" id="queue-canvas-help">Read-only. Pinned Graph nodes are projected with authoritative runtime state. Select a node to inspect its current control, attempt, transitions, terminal eligibility, and failure context. Scroll or drag to pan; use arrow keys on the canvas. Tab to nodes, Enter to select. Textual equivalent below.</p>
+				<div class="queue-viewport" data-queue-viewport tabindex="0" role="region" aria-label="Pinned Graph control flow" aria-describedby="queue-canvas-help">
+					<div class="queue-stage" data-queue-stage="true" data-columns={ fmt.Sprint(topology.Columns) } data-rows={ fmt.Sprint(topology.Rows) }>
+						<svg class="queue-edge-layer" viewBox={ fmt.Sprintf("0 0 %d %d", topology.Columns*244+32, topology.Rows*134+32) } preserveAspectRatio="none" aria-hidden="true">
+							<defs>
+								<marker id="queue-arrow-taken" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+								<marker id="queue-arrow-pending" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+								<marker id="queue-arrow-not-taken" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
+							</defs>
+							for _, edge := range topology.EdgeGeometry {
+								<path class={ "queue-edge-path outcome-" + topology.Edges[edge.Index].Outcome } d={ edge.Path } marker-end={ "url(#queue-arrow-" + topology.Edges[edge.Index].Outcome + ")" } data-edge-index={ fmt.Sprint(edge.Index) } data-edge-outcome={ topology.Edges[edge.Index].Outcome }><title>{ topology.Edges[edge.Index].EdgeID + " · " + topology.Edges[edge.Index].Outcome }</title></path>
+							}
+						</svg>
+						for _, node := range topology.Nodes {
+							<button type="button" class={ "queue-node state-" + node.State, templ.KV("current", node.Current), templ.KV("terminal-eligible", node.TerminalEligible), templ.KV("failure-location", node.FailureLocation), templ.KV("cycle-member", node.CycleMember) } data-queue-node={ fmt.Sprint(node.Index) } data-grid-column={ fmt.Sprint(node.GridColumn) } data-grid-row={ fmt.Sprint(node.GridRow) } aria-controls="queue-context" aria-pressed="false">
+								<strong>{ node.NodeID }</strong>
+								<span class="queue-node-state">{ node.State }</span>
+								<span class="queue-node-execution">{ node.ExecutionState }</span>
+								if node.AttemptNumber > 0 {
+									<span class="queue-node-attempt">attempt { fmt.Sprint(node.AttemptNumber) } · { node.AttemptState }</span>
+								}
+								if node.TerminalEligible {
+									<small>terminal-eligible</small>
+								}
+								if node.FailureLocation {
+									<small>failure location</small>
+								}
+							</button>
+						}
+					</div>
+				</div>
+			</section>
+			<aside class="qw-pane qw-inspector" id="queue-context" aria-labelledby="queue-context-title">
+				<div class="qw-head">
+					<h3 class="qw-title" id="queue-context-title" tabindex="-1">Inspector</h3>
+					<button type="button" class="ghost" data-queue-close aria-label="Close inspector">×</button>
+				</div>
+				<div class="qw-body">
+					<div data-queue-definition-panel>@QueueDefinitionDetails(record)</div>
+					for _, node := range topology.Nodes {
+						<section data-queue-node-panel={ fmt.Sprint(node.Index) } hidden>
+							<button type="button" class="ghost" data-queue-definition>← Back to queue</button>
+							@QueueNodeDetails(node)
+						</section>
+					}
+				</div>
+			</aside>
+		</div>
+		<nav class="queue-tab-nav" aria-label="Queue supporting definition sections">
+			<button type="button" data-queue-tab="inputs" aria-pressed="true">Inputs and outputs</button>
+			<button type="button" data-queue-tab="timeline" aria-pressed="false">Timeline</button>
+			<button type="button" data-queue-tab="authority" aria-pressed="false">Authority and runtime</button>
+			<button type="button" data-queue-tab="evidence" aria-pressed="false">Evidence</button>
+			<button type="button" data-queue-tab="admission" aria-pressed="false">Admission</button>
+			<button type="button" data-queue-tab="snapshot" aria-pressed="false">Submission snapshot</button>
+		</nav>
+		<div class="qw-tab-panel" data-queue-tab-panel="inputs">
+			<section class="queue-support-section">
+				<h4>Normalized inputs</h4>
+				<p class="inline-notice">Inputs retain canonical type, source/default binding, and value. Validation is admission truth, not current state.</p>
+				if len(record.Queue.Inputs) == 0 {
+					<p class="empty-note">No normalized inputs recorded.</p>
+				}
+				if len(record.Queue.Inputs) > 0 {
+					<table class="queue-inputs" aria-label="Normalized inputs">
+						<thead><tr><th>Port</th><th>Type</th><th>Source</th><th>Value</th><th>Status</th></tr></thead>
+						<tbody>
+							for _, input := range record.Queue.Inputs {
+								<tr>
+									<td>{ input.PortID }</td>
+									<td>{ input.Type }</td>
+									<td>{ input.Source }</td>
+									<td><code>{ input.Value }</code></td>
+									<td>{ input.Status }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</section>
+			<section class="queue-support-section">
+				<h4>Outputs applicability and completeness</h4>
+				if len(record.Queue.Outputs) == 0 {
+					<p class="empty-note">No declared outputs recorded.</p>
+				}
+				if len(record.Queue.Outputs) > 0 {
+					<table class="queue-outputs" aria-label="Declared outputs">
+						<thead><tr><th>Port</th><th>Type</th><th>Applicability</th><th>Completeness</th></tr></thead>
+						<tbody>
+							for _, output := range record.Queue.Outputs {
+								<tr>
+									<td>{ output.PortID }</td>
+									<td>{ output.Type }</td>
+									<td>{ output.Applicability }</td>
+									<td>{ output.Completeness }</td>
+								</tr>
+							}
+						</tbody>
+					</table>
+				}
+			</section>
+			<section class="queue-support-section">
+				<h4>Related exact records</h4>
+				@RelatedRecords(record.Queue.Links)
+			</section>
+		</div>
+		<div class="qw-tab-panel" data-queue-tab-panel="timeline" hidden>
+			<section class="queue-support-section">
+				<h4>Immutable execution timeline</h4>
+				if len(record.Queue.Timeline) == 0 {
+					<p class="empty-note">No timeline events are recorded for this execution.</p>
+				}
+				if len(record.Queue.Timeline) > 0 {
+					<ol class="queue-timeline" aria-label="Execution timeline">
+						for _, event := range record.Queue.Timeline {
+							<li data-state={ event.State }>
+								<header><strong>{ event.Title }</strong><span>{ event.State }</span><time>{ event.At }</time></header>
+								<p>{ event.Detail }</p>
+								if event.Cause != "" {
+									<small>cause · { event.Cause }</small>
+								}
+							</li>
+						}
+					</ol>
+				}
+			</section>
+		</div>
+		<div class="qw-tab-panel" data-queue-tab-panel="authority" hidden>
+			<section class="queue-support-section">
+				<h4>Authority, mandate, and runtime</h4>
+				<p class="inline-notice">These are exact admission facts at the time of submission. The current browser state does not authorize anything; every command repeats fresh authority admission.</p>
+				@FieldList(record.Queue.Authority, "No authority or runtime facts available")
+				if record.Queue.GraphRunDigest != "" {
+					<p class="inline-notice">Graph run digest · <code>{ record.Queue.GraphRunDigest }</code></p>
+				}
+			</section>
+		</div>
+		<div class="qw-tab-panel" data-queue-tab-panel="evidence" hidden>
+			<section class="queue-support-section">
+				<h4>Verifier receipts and runtime artifact</h4>
+				<p class="inline-notice">Receipts and artifact content are evidence, not authorization and not completion.</p>
+				<p class="truth-label">Verifier receipts · { record.Queue.ReceiptState }</p>
+				if len(record.Queue.Evidence) == 0 {
+					<p class="empty-note">No verifier receipts are recorded.</p>
+				}
+				if len(record.Queue.Evidence) > 0 {
+					<ol class="queue-evidence" aria-label="Verifier receipts">
+						for _, receipt := range record.Queue.Evidence {
+							<li data-outcome={ receipt.Outcome }>
+								<header><strong>{ receipt.Claim }</strong><span>{ receipt.Outcome }</span></header>
+								<dl class="compact-facts">
+									<div><dt>Media type</dt><dd>{ receipt.MediaType }</dd></div>
+									<div><dt>Expected digest</dt><dd><code>{ receipt.ExpectedDigest }</code></dd></div>
+									<div><dt>Observed</dt><dd><code>{ receipt.AttemptDigest }</code> · { receipt.ObservedAt }</dd></div>
+									<div><dt>Verifier</dt><dd>{ receipt.VerifierID } / { receipt.PolicyVersion }</dd></div>
+									<div><dt>Failure category</dt><dd>{ receipt.FailureCategory }</dd></div>
+								</dl>
+							</li>
+						}
+					</ol>
+				}
+				<p class="truth-label">Runtime artifact · { record.Queue.ArtifactState }</p>
+				<p class="inline-notice">A non-empty artifact does not by itself upgrade execution state. Only this authoritative disposition can carry terminal success; verifier receipts and artifact content remain evidence, not authorization.</p>
+			</section>
+		</div>
+		<div class="qw-tab-panel" data-queue-tab-panel="admission" hidden>
+			<section class="queue-support-section">
+				<h4>Admission facts</h4>
+				<p class="inline-notice">Admission facts record what was admitted and why a rejection was durable. The current detail does not re-admit; each command reloads authority.</p>
+				@FieldList(record.Queue.Admission, "No admission facts available")
+			</section>
+		</div>
+		<div class="qw-tab-panel" data-queue-tab-panel="snapshot" hidden>
+			<section class="queue-support-section">
+				<h4>Submission snapshot</h4>
+				<p class="inline-notice">The submission snapshot binds the exact definitions and authority context used at admission time. Definitions can advance in the catalogue after this snapshot was created; the snapshot is immutable and remains the authoritative binding for this execution.</p>
+				@FieldList(record.Queue.Snapshot, "No submission snapshot facts available")
+			</section>
+		</div>
+		<details class="queue-textual">
+			<summary>Accessible textual equivalent · all declared nodes and transitions</summary>
+			<p>Stored definitions, not an execution schedule. Invalid edges remain listed even when no safe geometry can be drawn.</p>
+			for _, node := range topology.Nodes {
+				<details>
+					<summary>{ node.NodeID } · node { fmt.Sprint(node.Index+1) }</summary>
+					@QueueNodeDetails(node)
+				</details>
+			}
+			<h4>All declared transitions</h4>
+			if len(record.Queue.Edges) == 0 {
+				<p class="empty-note">No transitions are declared. Terminal-only definitions remain explicit.</p>
+			}
+			if len(record.Queue.Edges) > 0 {
+				<ol class="queue-edges" aria-label="Declared transitions">
+					for _, edge := range record.Queue.Edges {
+						<li data-outcome={ edge.Outcome }>
+							<strong>{ edge.EdgeID }</strong>
+							<span>{ edge.From } → { edge.To }</span>
+							<small>{ edge.Mappings }</small>
+							<small>outcome · { edge.Outcome }</small>
+						</li>
+					}
+				</ol>
+			}
+		</details>
+	</div>
+}
+
+templ QueueIssues(issues []GraphIssueModel) {
+	if len(issues) > 0 {
+		<ul class="queue-issues">
+			for _, issue := range issues {
+				<li data-reason-code={ issue.Code } data-issue-path={ issue.Path }><code>{ issue.Code }</code> · { issue.Path } · { issue.Message }</li>
+			}
+		</ul>
+	}
+}
+
+templ QueueNodeDetails(node QueueControlNodeModel) {
+	<h4>{ node.NodeID }</h4>
+	<dl class="spec">
+		<dt>Projected state</dt><dd>{ node.State }</dd>
+		<dt>Authoritative Loop execution state</dt><dd>{ node.ExecutionState }</dd>
+		if node.AttemptNumber > 0 {
+			<dt>Latest attempt</dt><dd>attempt { fmt.Sprint(node.AttemptNumber) } · { node.AttemptState }</dd>
+		}
+		<dt>Current control</dt><dd>{ queueBoolField(node.Current, "yes", "no") }</dd>
+		<dt>Terminal eligible</dt><dd>{ queueBoolField(node.TerminalEligible, "yes", "no") }</dd>
+		<dt>Failure location</dt><dd>{ queueBoolField(node.FailureLocation, "yes", "no") }</dd>
+		<dt>Cycle member</dt><dd>{ queueBoolField(node.CycleMember, "yes", "no") }</dd>
+		<dt>Reachable</dt><dd>{ queueBoolField(node.Reachable, "yes", "no") }</dd>
+	</dl>
+	if node.TerminalEligible {
+		<p class="inline-notice">This node may produce a terminal outcome if it becomes the authoritative terminal disposition.</p>
+	}
+	if node.FailureLocation {
+		<p class="inline-notice">This node is the authoritative failure location recorded for this execution.</p>
+	}
+}
+
+templ QueueDefinitionDetails(record *RecordModel) {
+	<div class="queue-definition-details">
+		<section class="queue-contract" aria-labelledby="queue-provenance">
+			<h4 id="queue-provenance">Exact pinned snapshot</h4>
+			<dl class="spec">
+				<dt>Execution type</dt><dd>{ record.Queue.ExecutionType }</dd>
+				<dt>Queue item</dt><dd>{ record.Queue.QueueItemIdentity }</dd>
+				<dt>Queue item digest</dt><dd><code>{ record.Queue.QueueItemDigest }</code></dd>
+				<dt>Snapshot digest</dt><dd><code>{ record.Queue.SnapshotDigest }</code></dd>
+				<dt>Pinned Graph</dt><dd>{ record.Queue.PinnedGraph }</dd>
+				<dt>Pinned Graph revision</dt><dd>{ record.Queue.PinnedGraphRevision }</dd>
+				<dt>Pinned Graph digest</dt><dd><code>{ record.Queue.PinnedGraphDigest }</code></dd>
+				<dt>Participant</dt><dd>{ record.Queue.Participant }</dd>
+				if record.Queue.CatalogueDrift != "" {
+					<dt>Catalogue drift</dt><dd>{ record.Queue.CatalogueDrift }</dd>
+				}
+			</dl>
+		</section>
+		if record.JSON != "" {
+			<details><summary>Exact Queue record JSON</summary><pre class="queue-record-json">{ record.JSON }</pre></details>
+		}
+	</div>
+}
+
+// queueURLPathEscape is a safe wrapper for URL escaping.
+func queueURLPathEscape(key string) string { return url.PathEscape(key) }
+
+func queueOptionalField(value string) string {
+	if value == "" {
+		return "Unavailable"
+	}
+	return value
+}
+
+func queueCycleMembersLabel(members []string) string {
+	if len(members) == 0 {
+		return "Unavailable"
+	}
+	return strings.Join(members, ", ")
+}
+
+func queueBoolField(value bool, yes, no string) string {
+	if value {
+		return yes
+	}
+	return no
+}

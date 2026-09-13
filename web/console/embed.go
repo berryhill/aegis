@@ -11,7 +11,10 @@ var graphWorkspaceCSS []byte
 //go:embed loop_workspace.css
 var loopWorkspaceCSS []byte
 
-var CSS = append(append(append([]byte{}, baseCSS...), graphWorkspaceCSS...), loopWorkspaceCSS...)
+//go:embed queue_workspace.css
+var queueWorkspaceCSS []byte
+
+var CSS = append(append(append(append([]byte{}, baseCSS...), graphWorkspaceCSS...), loopWorkspaceCSS...), queueWorkspaceCSS...)
 
 // NavigationJS progressively restores collection viewport and focus. Native
 // links remain complete when scripts or session storage are unavailable.
@@ -25,7 +28,10 @@ var graphWorkspaceJS []byte
 //go:embed loop_workspace.js
 var loopWorkspaceJS []byte
 
-var NavigationJS = append(append(append([]byte{}, navigationJS...), graphWorkspaceJS...), loopWorkspaceJS...)
+//go:embed queue_workspace.js
+var queueWorkspaceJS []byte
+
+var NavigationJS = append(append(append(append([]byte{}, navigationJS...), graphWorkspaceJS...), loopWorkspaceJS...), queueWorkspaceJS...)
 
 //go:embed vendor/datastar-v1.0.2.js
 var Datastar []byte
