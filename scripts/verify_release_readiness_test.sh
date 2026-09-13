@@ -54,8 +54,8 @@ verify:
 	@test -z "$$(git status --porcelain=v1)"
 	@test -n "$$AEGIS_PROOF_SOCKET_DIR"
 	@test -d "$$AEGIS_PROOF_SOCKET_DIR"
-	@test -z "$$EXPECTED_PROOF_SOCKET_DIR" || test "$$AEGIS_PROOF_SOCKET_DIR" = "$$EXPECTED_PROOF_SOCKET_DIR"
 	@test "$$AEGIS_PROOF_SOCKET_DIR" != "$$(pwd -P)"
+	@test -z "$$EXPECTED_PROOF_SOCKET_DIR" || test "$$AEGIS_PROOF_SOCKET_DIR" = "$$EXPECTED_PROOF_SOCKET_DIR"
 	@grep -Eq '^## \[1.2.3\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$$' CHANGELOG.md
 	@awk '/^## Unreleased$$/{getline; if ($$0 != "") exit 1; getline; if ($$0 !~ /^## \[1.2.3\] - /) exit 1}' CHANGELOG.md
 	@printf 'fixture verification passed\n'
@@ -78,13 +78,49 @@ grep -Fq 'fixture verification passed' "$root/success-output" || fail_test 'cand
 grep -Fq "release readiness verified: version=1.2.3 source_revision=$revision" "$root/success-output" || fail_test 'success identity was not reported'
 [ -z "$(git -C "$fixture" status --porcelain=v1)" ] || fail_test 'readiness verification dirtied source'
 
-mkdir -p "$root/socket-root"
+# A long checkout must retain the caller's short canonical socket directory.
+setup_repo long-checkout-path-that-cannot-be-used-for-a-unix-domain-socket
+revision=$(git -C "$fixture" rev-parse HEAD)
 (
   cd "$fixture"
-  AEGIS_PROOF_SOCKET_DIR="$root/socket-root" EXPECTED_PROOF_SOCKET_DIR="$root/socket-root" \
-    ./scripts/verify-release-readiness.sh 1.2.3 "$revision" >"$root/socket-root-output"
+  AEGIS_PROOF_SOCKET_DIR="$repo" EXPECTED_PROOF_SOCKET_DIR="$repo" \
+    ./scripts/verify-release-readiness.sh 1.2.3 "$revision" >"$root/long-checkout-output"
 )
-grep -Fq 'fixture verification passed' "$root/socket-root-output" || fail_test 'explicit socket root was not preserved'
+grep -Fq 'release readiness verified:' "$root/long-checkout-output" || fail_test 'caller socket directory was not preserved'
+
+# The installed console proof must also recover when the caller did not supply
+# AEGIS_PROOF_SOCKET_DIR. Confirm the default-fallback short path is selected
+# for a checkout whose repository path plus the per-port socket suffix would
+# exceed the host Unix-domain socket limit. The fallback must also be writable
+# on a CI runner, so the regression exercises the first existing writable
+# directory from the documented candidate list.
+unix_path() { printf '%s\n' "$1/.installed-console-12345.sock" | awk '{ print length }'; }
+fixture_long_path=$(CDPATH= cd -- "$fixture" && pwd -P)
+default_short_root=
+for candidate_root in /home/silas/.hermes/.scratch/aegis-installed-sockets "${RUNNER_TEMP:-}" "${TMPDIR:-}" /tmp; do
+  [ -n "$candidate_root" ] || continue
+  if [ -d "$candidate_root" ] && [ ! -L "$candidate_root" ] && [ -w "$candidate_root" ]; then
+    default_short_root=$candidate_root
+    break
+  fi
+done
+[ -n "$default_short_root" ] || fail_test 'no writable default short socket root is available for the CI environment'
+short_fallback=$(mktemp -d "${default_short_root}/aegis.XXXXXXXX")
+fallback_path=$(CDPATH= cd -- "$short_fallback" && pwd -P)
+if [ "${fixture_long_path#${repo}/}" = "$fixture_long_path" ] || [ "$(unix_path "$fixture_long_path")" -lt 108 ]; then
+  fail_test 'fixture did not exceed the Unix-domain socket path limit'
+fi
+rm -rf "$short_fallback"
+unsupplied_short=$(unix_path "$fallback_path")
+[ "$unsupplied_short" -lt 108 ] || fail_test 'short fallback would still exceed the Unix-domain socket path limit'
+chmod 0755 scripts/verify-installed-console.sh
+saved_socket_check=$(sed -n '5,40p' scripts/verify-installed-console.sh)
+printf '%s\n' "$saved_socket_check" | grep -Fq 'proof_socket_budget=80' \
+  || fail_test 'installed console proof must reserve a default short-path budget'
+printf '%s\n' "$saved_socket_check" | grep -Fq 'aegis.XXXXXXXX' \
+  || fail_test 'installed console proof must derive a fresh private short socket directory'
+printf '%s\n' "$saved_socket_check" | grep -Fq 'RUNNER_TEMP' \
+  || fail_test 'installed console proof must fall back to a CI-safe short-path root when the controller scratch directory is unavailable'
 
 setup_repo inherited-hook
 revision=$(git -C "$fixture" rev-parse HEAD)
