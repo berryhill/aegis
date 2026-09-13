@@ -460,15 +460,21 @@ def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
     modifiers = 8 if shift else 0
     virtual_key = {"Tab": 9, "Enter": 13, "Escape": 27, "ArrowRight": 39}.get(key_name)
     require(virtual_key is not None, f"browser proof does not define a native key code for {key_name}")
-    for event_type in ("rawKeyDown", "keyUp"):
-        devtools.command("Input.dispatchKeyEvent", {
+    # Enter needs its character event for native button activation in Chrome.
+    # rawKeyDown/keyUp alone delivers keydown but never the default click.
+    down_type = "keyDown" if key_name == "Enter" else "rawKeyDown"
+    for event_type in (down_type, "keyUp"):
+        params = {
             "type": event_type,
             "key": key_name,
             "code": key_name,
             "modifiers": modifiers,
             "windowsVirtualKeyCode": virtual_key,
             "nativeVirtualKeyCode": virtual_key,
-        })
+        }
+        if key_name == "Enter" and event_type == "keyDown":
+            params.update(text="\r", unmodifiedText="\r")
+        devtools.command("Input.dispatchKeyEvent", params)
 
 
 # Domain contract: measure an authenticated immutable definition without changing

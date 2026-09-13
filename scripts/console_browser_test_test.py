@@ -160,13 +160,17 @@ class NativeKeyTest(unittest.TestCase):
             self.assertEqual(params["windowsVirtualKeyCode"], 9)
             self.assertEqual(params["nativeVirtualKeyCode"], 9)
 
-    def test_enter_uses_trusted_native_key_code(self):
+    def test_enter_uses_native_character_activation(self):
         devtools = mock.MagicMock()
 
         console_browser_test.key(devtools, "Enter")
 
         self.assertEqual(devtools.command.call_count, 2)
-        for call, event_type in zip(devtools.command.call_args_list, ("rawKeyDown", "keyUp")):
+        down = devtools.command.call_args_list[0].args[1]
+        self.assertEqual(down["text"], "\r")
+        self.assertEqual(down["unmodifiedText"], "\r")
+        self.assertNotIn("text", devtools.command.call_args_list[1].args[1])
+        for call, event_type in zip(devtools.command.call_args_list, ("keyDown", "keyUp")):
             method, params = call.args
             self.assertEqual(method, "Input.dispatchKeyEvent")
             self.assertEqual(params["type"], event_type)
