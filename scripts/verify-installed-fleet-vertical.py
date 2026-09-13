@@ -33,6 +33,18 @@ def write_json(path: Path, value: object) -> None:
     path.chmod(0o600)
 
 
+def stop_server(server: subprocess.Popen) -> None:
+    server.terminate()
+    try:
+        status = server.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server.wait(timeout=5)
+        fail("console server required forced cleanup; clean restart not proven")
+    if status != 0:
+        fail("console server did not shut down successfully")
+
+
 def main() -> int:
     if len(sys.argv) != 3:
         print("usage: verify-installed-fleet-vertical.py INSTALLED_AEGIS EMPTY_PROOF_ROOT", file=sys.stderr)
@@ -157,20 +169,19 @@ def main() -> int:
                 if charter is None or fixture is None:
                     fail("registration phase omitted bounded source artifacts")
                 command.extend(["register", str(charter), str(fixture)])
+            elif phase == "registration-readback":
+                command.append("registration-readback")
             completed = subprocess.run(command, cwd=console_repo, env=environment, text=True, timeout=120, check=False)
             if completed.returncode != 0:
                 fail(f"real-browser {phase} phase exited {completed.returncode}")
         finally:
-            server.terminate()
             try:
-                server.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server.kill()
-                server.wait(timeout=5)
-            server_log.close()
-            if console_socket:
-                Path(console_socket).unlink(missing_ok=True)
-                Path(console_socket + ".lock").unlink(missing_ok=True)
+                stop_server(server)
+            finally:
+                server_log.close()
+                if console_socket:
+                    Path(console_socket).unlink(missing_ok=True)
+                    Path(console_socket + ".lock").unlink(missing_ok=True)
 
     def aegis(*arguments: str, input_file: Path | None = None, expect_list: bool = False) -> Any:
         command = [str(binary), "--config", str(config), *arguments]
@@ -234,7 +245,7 @@ def main() -> int:
             "source_id": "proof-source", "agent_id": "proof-agent",
             "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "target": "aegis-owned-ephemeral"},
             "ownership": {"owner_id": "principal-1", "accountability_id": "installed-proof"},
-            "lifecycle": "enabled",
+            # Omission must default at registration, never in stored revisions.
             "charter": {"schema_version": "aegis.reference.revision.v1", "id": "proof-agent", "revision": 1, "digest": charter_digest},
             "capability_declarations": ["fleet.execute"],
         }],
@@ -255,6 +266,23 @@ def main() -> int:
         agent_revision = registered["agent"]["revision"]
     if not registered.get("created") or agent_revision["charter"]["digest"] != charter_digest:
         fail("registry did not retain immutable charter provenance")
+    if agent_revision.get("lifecycle") != "enabled" or agent_revision.get("revision") != 1:
+        fail("omitted registration lifecycle did not persist as enabled revision 1")
+    if console_browser:
+        browser_identity = json.loads((root / "registration-identity.json").read_text(encoding="utf-8"))
+        if browser_identity != {"revision": 1, "digest": agent_revision["digest"]}:
+            fail("browser review and detail differ from canonical registered revision")
+    if gateway_log.exists():
+        fail("registration unexpectedly invoked the runtime gateway")
+    browser_phase("registration-readback")
+    restarted_revision = aegis("agents", "show", "proof-agent", "1")["revision"]
+    if restarted_revision != agent_revision or gateway_log.exists():
+        fail("registration restart changed canonical revision or invoked runtime")
+    if aegis("agents", "show", "proof-agent")["revision"] != agent_revision:
+        fail("registration restart unexpectedly advanced the latest revision")
+    print(json.dumps({"registration_default": "enabled", "agent_id": "proof-agent", "revision": 1,
+                      "digest": agent_revision["digest"], "fresh_process_readback": "pass",
+                      "browser_restart": bool(console_browser), "runtime_invoked": False}, sort_keys=True))
 
     # Start the authority-bearing runtime session only after the browser
     # registration server has shut down. Clean server shutdown intentionally
