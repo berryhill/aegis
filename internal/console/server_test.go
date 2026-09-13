@@ -33,8 +33,8 @@ func TestPrincipalPasswordLoginCreatesBoundedExactPrincipalSessionAndThrottlesFa
 	if subject.PrincipalID != "principal" || subject.Method != "password" || subject.Issuer != "aegis-principal-auth" || subject.ID == "" {
 		t.Fatalf("password login produced wrong subject: %+v", subject)
 	}
-	if !expires.Equal(now.Add(time.Minute)) || sessionValue == "" {
-		t.Fatalf("session was not bounded by principal authentication: expires=%s value=%q", expires, sessionValue)
+	if !expires.Equal(now.Add(2*time.Minute)) || sessionValue == "" {
+		t.Fatalf("session did not honor the configured browser lifetime: expires=%s", expires)
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		_, _, _, _, loginErr := manager.Login(request, "client-two", []byte("wrong-password-value"))

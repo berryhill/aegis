@@ -314,7 +314,7 @@ func Defaults() Config {
 }
 
 func DefaultsFor(resolved layout.Layout) Config {
-	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20, Console: APIConsole{Origin: "http://127.0.0.1:8443", SessionTTL: 5 * time.Minute, MaxPageSize: 100}}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
+	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20, Console: APIConsole{Origin: "http://127.0.0.1:8443", SessionTTL: time.Hour, MaxPageSize: 100}}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
 
 // WithStateDir changes the state root while preserving explicit paths.
@@ -386,7 +386,7 @@ func (c Config) Validate() error {
 			es = append(es, errors.New("plaintext API console requires a loopback TCP listener"))
 		}
 	}
-	if c.API.Console.SessionTTL <= 0 || c.API.Console.SessionTTL > 15*time.Minute || c.API.Console.MaxPageSize < 1 || c.API.Console.MaxPageSize > 1000 {
+	if c.API.Console.SessionTTL <= 0 || c.API.Console.SessionTTL > time.Hour || c.API.Console.MaxPageSize < 1 || c.API.Console.MaxPageSize > 1000 {
 		es = append(es, errors.New("API console limits must be positive and bounded"))
 	}
 	if c.Audit.CheckpointDir == "" {

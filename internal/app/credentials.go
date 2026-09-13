@@ -108,7 +108,7 @@ type CredentialCollectionPage struct {
 // QueryCredentialsAs performs filtering, deterministic pagination, matching
 // counts, and exact deep-link resolution inside the authoritative store.
 func (s *Service) QueryCredentialsAs(ctx context.Context, subject core.Subject, query CredentialCollectionQuery) (CredentialCollectionPage, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequirePrincipalIdentity(subject); err != nil {
 		return CredentialCollectionPage{}, err
 	}
 	if !s.hasCredentials() {
@@ -136,7 +136,7 @@ func (s *Service) QueryCredentialsAs(ctx context.Context, subject core.Subject, 
 }
 
 func (s *Service) CredentialAs(ctx context.Context, subject core.Subject, recordID string) (CredentialView, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequirePrincipalIdentity(subject); err != nil {
 		return CredentialView{}, err
 	}
 	if !s.hasCredentials() {
@@ -184,7 +184,7 @@ func (s *Service) ConfigureCredentials(repository credentials.Repository, custod
 // a ready/empty record with an explanatory reason. Failures are surfaced as
 // readiness errors.
 func (s *Service) ListCredentialsAs(ctx context.Context, subject core.Subject) ([]CredentialView, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequirePrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
 	if !s.hasCredentials() {

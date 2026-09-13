@@ -64,6 +64,7 @@ templ Header(authenticated bool, csrf string, title string) {
 		}
 		if authenticated {
 			<button id="open-password-rotation" type="button" class="ghost btn-sm" commandfor="principal-password-rotation" command="show-modal">Rotate password</button>
+			<a class="ghost btn-sm" href="/console/reauthenticate">Reauthenticate</a>
 			<form class="logout-form" method="post" action="/console/logout">
 				<input type="hidden" name="csrf" value={ csrf }/>
 				<button id="logout" class="ghost btn-sm" type="submit">Sign out</button>

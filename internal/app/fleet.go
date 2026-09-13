@@ -333,6 +333,14 @@ func (s *Service) requireFleetPrincipal(subject core.Subject) error {
 	if err := s.requirePrincipal(subject); err != nil {
 		return err
 	}
+	return s.requireFleetPrincipalIdentity(subject)
+}
+
+// Read-only fleet projections do not mint workspace or runtime authority.
+func (s *Service) requireFleetPrincipalIdentity(subject core.Subject) error {
+	if err := s.RequirePrincipalIdentity(subject); err != nil {
+		return err
+	}
 	if s.FleetRepository == nil || s.Fleet == nil || s.QueueWorker == nil {
 		return ErrFleetUnavailable
 	}
@@ -494,7 +502,7 @@ func (s *Service) RegisterFleetAgentAs(ctx context.Context, subject core.Subject
 }
 
 func (s *Service) ListFleetAgentsAs(ctx context.Context, subject core.Subject) ([]FleetAgent, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
 	registrations, err := s.FleetRepository.ListAgentRegistrations(ctx)
@@ -521,7 +529,7 @@ func (s *Service) ListFleetAgents(ctx context.Context) ([]FleetAgent, error) {
 }
 
 func (s *Service) GetFleetAgentAs(ctx context.Context, subject core.Subject, id string, revision uint64) (FleetAgent, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return FleetAgent{}, err
 	}
 	registration, err := s.FleetRepository.GetAgentRegistration(ctx, id)
@@ -546,7 +554,7 @@ func (s *Service) GetFleetAgent(ctx context.Context, id string, revision uint64)
 }
 
 func (s *Service) ListFleetAgentRevisionsAs(ctx context.Context, subject core.Subject, id string) ([]registry.AgentRevision, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
 	return s.FleetRepository.ListAgentRevisions(ctx, id)
@@ -643,7 +651,7 @@ func (s *Service) SetLoopLifecycle(ctx context.Context, id string, input SetLoop
 }
 
 func (s *Service) GetLoopAs(ctx context.Context, subject core.Subject, id string, revision uint64) (loop.LoopRevision, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return loop.LoopRevision{}, err
 	}
 	if revision == 0 {
@@ -661,7 +669,7 @@ func (s *Service) GetLoop(ctx context.Context, id string, revision uint64) (loop
 }
 
 func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]LoopView, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
 	revisions, err := s.FleetRepository.ListLoopRevisions(ctx)
@@ -794,7 +802,7 @@ func (s *Service) PublishGraph(ctx context.Context, input PublishGraphInput) (Pu
 }
 
 func (s *Service) GetGraphAs(ctx context.Context, subject core.Subject, id string, revision uint64) (graph.GraphRevision, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return graph.GraphRevision{}, err
 	}
 	if revision == 0 {
@@ -812,7 +820,7 @@ func (s *Service) GetGraph(ctx context.Context, id string, revision uint64) (gra
 }
 
 func (s *Service) ListGraphsAs(ctx context.Context, subject core.Subject) ([]GraphView, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
 	revisions, err := s.FleetRepository.ListGraphRevisions(ctx)
@@ -872,14 +880,14 @@ func (s *Service) ListGraphs(ctx context.Context) ([]GraphView, error) {
 }
 
 func (s *Service) GetGraphLifecycleAs(ctx context.Context, subject core.Subject, id string) (graph.Lifecycle, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return graph.Lifecycle{}, err
 	}
 	return s.FleetRepository.GetGraphLifecycle(ctx, id)
 }
 
 func (s *Service) ListSubmissionHistoryAs(ctx context.Context, subject core.Subject) (SubmissionHistory, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return SubmissionHistory{}, err
 	}
 	submissions, err := s.FleetRepository.ListSubmissions(ctx)
@@ -966,7 +974,7 @@ func (s *Service) GetQueueItem(ctx context.Context, id string) (QueueExecutionVi
 }
 
 func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]QueueExecutionView, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
 	items, err := s.FleetRepository.ListQueueItems(ctx)
@@ -1239,7 +1247,7 @@ func (s *Service) RevokeQueueItem(ctx context.Context, input TerminalQueueItemIn
 }
 
 func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (FleetSurface, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequirePrincipalIdentity(subject); err != nil {
 		return FleetSurface{}, err
 	}
 	surface := FleetSurface{

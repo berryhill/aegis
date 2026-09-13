@@ -16,7 +16,7 @@ import (
 // previews a session (which would issue a mandate), provisions, or admits work.
 // No browser field is accepted as a subject, stanza, or environment selector.
 func consoleAgentDetail(ctx context.Context, svc *app.Service, subject core.Subject, selected, latest app.FleetAgent, surface app.FleetSurface) (consoleweb.RecordModel, error) {
-	if err := svc.RequirePrincipal(subject); err != nil {
+	if err := svc.RequirePrincipalIdentity(subject); err != nil {
 		return consoleweb.RecordModel{}, err
 	}
 	record := consoleAgentRecord(selected, surface)

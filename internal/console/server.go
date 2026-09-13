@@ -22,6 +22,7 @@ import (
 
 var (
 	ErrUnauthenticated            = errors.New("console authentication failed")
+	ErrReauthenticationRequired   = errors.New("fresh principal authentication required; sign in at /console/reauthenticate")
 	ErrDenied                     = errors.New("console request denied")
 	ErrInvalidInput               = errors.New("invalid console input")
 	ErrReviewReceiptInvalidFormat = errors.New("review_receipt_invalid_format")
@@ -78,7 +79,7 @@ type Manager struct {
 }
 
 func New(config Config, now func() time.Time) (*Manager, error) {
-	if now == nil || config.SessionTTL <= 0 || config.SessionTTL > 15*time.Minute || config.MaxPageSize < 1 || config.MaxPageSize > 1000 {
+	if now == nil || config.SessionTTL <= 0 || config.SessionTTL > time.Hour || config.MaxPageSize < 1 || config.MaxPageSize > 1000 {
 		return nil, fmt.Errorf("%w: console limits must be positive and bounded", ErrInvalidInput)
 	}
 	origin, err := url.Parse(config.Origin)
@@ -167,7 +168,9 @@ func (m *Manager) Login(request *http.Request, client string, password []byte) (
 	if err != nil {
 		return "", "", time.Time{}, core.Subject{}, fmt.Errorf("generate principal authentication subject: %w", err)
 	}
-	subject := core.Subject{ID: "password:" + subjectValue, Kind: "principal", PrincipalID: m.config.PrincipalID, Issuer: "aegis-principal-auth", Method: "password", AuthenticatedAt: now, ExpiresAt: now.Add(m.config.PrincipalAuthTTL)}
+	// Browser identity lifetime is independent of sensitive-operation freshness.
+	// Mutation admission returns a copy bounded by PrincipalAuthTTL instead.
+	subject := core.Subject{ID: "password:" + subjectValue, Kind: "principal", PrincipalID: m.config.PrincipalID, Issuer: "aegis-principal-auth", Method: "password", AuthenticatedAt: now, ExpiresAt: now.Add(m.config.SessionTTL)}
 	sessionValue, sessionDigest, err := opaque()
 	if err != nil {
 		return "", "", time.Time{}, core.Subject{}, fmt.Errorf("generate console session: %w", err)
@@ -213,6 +216,13 @@ func (m *Manager) IssueReviewReceipt(request *http.Request, purpose string, payl
 		return "", ErrUnauthenticated
 	}
 	expires := now.Add(reviewReceiptTTL)
+	freshUntil := candidate.subject.AuthenticatedAt.Add(m.config.PrincipalAuthTTL)
+	if candidate.subject.AuthenticatedAt.IsZero() || candidate.subject.AuthenticatedAt.After(now) || !now.Before(freshUntil) {
+		return "", ErrReauthenticationRequired
+	}
+	if freshUntil.Before(expires) {
+		expires = freshUntil
+	}
 	if candidate.expires.Before(expires) {
 		expires = candidate.expires
 	}
@@ -300,6 +310,24 @@ func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {
 }
 
 func (m *Manager) AuthorizeMutation(request *http.Request) (core.Subject, error) {
+	subject, err := m.AuthorizeSessionMutation(request)
+	if err != nil {
+		return core.Subject{}, err
+	}
+	now := m.now()
+	freshUntil := subject.AuthenticatedAt.Add(m.config.PrincipalAuthTTL)
+	if subject.AuthenticatedAt.IsZero() || subject.AuthenticatedAt.After(now) || !now.Before(freshUntil) {
+		return core.Subject{}, ErrReauthenticationRequired
+	}
+	if freshUntil.Before(subject.ExpiresAt) {
+		subject.ExpiresAt = freshUntil
+	}
+	return subject, nil
+}
+
+// AuthorizeSessionMutation checks identity, origin and CSRF without granting
+// fresh principal authority. It is for logout, not consequential operations.
+func (m *Manager) AuthorizeSessionMutation(request *http.Request) (core.Subject, error) {
 	subject, err := m.Authenticate(request)
 	if err != nil {
 		return core.Subject{}, err
