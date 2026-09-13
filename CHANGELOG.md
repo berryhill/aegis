@@ -4,6 +4,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Fixed identical Graph submission replay through the public Queue adapter by reusing the persisted submission timestamp after fresh admission. Exact immutable request-binding checks remain enforced: changed inputs with the same key still conflict, and unknown fields are rejected before Queue mutation. Real-store HTTP regressions cover both single-node and multi-node history; this is not installed-agent or runtime-execution qualification.
+
+
 - Bundled complete synthetic Queue runtime-binding and expired-lease reclaim request contracts, including nanosecond backoff encoding, exact readback and daemon-online limitations. Strict CLI decoder regressions verify typed examples and unknown-field denial before service construction; these are not installed-agent or runtime acceptance proofs.
 
 - Fixed authenticated Queue list/show for workspace submissions awaiting runtime, including multi-node Graphs. Readback validates every exact participant revision and reports `node_runtimes`; the legacy `runtime` field is populated only for single-node Graphs. Awaiting-runtime history does not require a terminal disposition. This does not enable multi-node processing or grant runtime authority; terminal evidence requirements remain unchanged.

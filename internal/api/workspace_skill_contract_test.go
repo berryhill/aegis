@@ -86,13 +86,51 @@ func workspaceSkillSubmissionPublicReadback(t *testing.T, multiNode bool) {
 	apiRequest(t, client, http.MethodPost, "/v1/graphs", app.PublishGraphInput{AgentID: agent.AgentID, Revision: revision, IdempotencyKey: "skill-proof-graph"}, &graphPublished, http.StatusCreated)
 	var decision orchestration.SubmissionDecision
 	input := app.SubmitGraphInput{WorkspaceAgentID: agent.AgentID, Graph: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: graphPublished.Revision.GraphID, Revision: graphPublished.Revision.Revision, Digest: graphPublished.Revision.Digest}, Inputs: []graph.NormalizedInput{{PortID: "value", Type: graph.TypeString, Value: json.RawMessage(`"skill proof"`)}}, SubmissionID: "skill-proof-submission", IdempotencyKey: "skill-proof-submit", SnapshotID: "skill-proof-snapshot", QueueItemID: "skill-proof-queue", GraphRunID: "skill-proof-run", TransitionID: "skill-proof-transition", RejectionID: "skill-proof-rejection", MaxAttempts: 1}
+	t.Run("invented_field_denied_before_mutation", func(t *testing.T) {
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var malformed map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &malformed); err != nil {
+			t.Fatal(err)
+		}
+		// Regression for the operator trace: this is not a supported field.
+		malformed["rejection_idempotency_key"] = json.RawMessage(`"invented-key"`)
+		apiRequest(t, client, http.MethodPost, "/v1/queue", malformed, nil, http.StatusBadRequest)
+		var items []app.QueueExecutionView
+		apiRequest(t, client, http.MethodGet, "/v1/queue", nil, &items, http.StatusOK)
+		if len(items) != 0 {
+			t.Fatal("malformed submission created Queue work")
+		}
+	})
 	apiRequest(t, client, http.MethodPost, "/v1/queue", input, &decision, http.StatusCreated)
 	if decision.Accepted == nil || decision.Accepted.InitialTransition.To != queue.StateAwaitingRuntime {
 		t.Fatal("workspace submission did not enter awaiting-runtime")
 	}
+	t.Run("same_intent_replay", func(t *testing.T) {
+		var replay orchestration.SubmissionDecision
+		apiRequest(t, client, http.MethodPost, "/v1/queue", input, &replay, http.StatusOK)
+		if replay.Created || replay.Accepted == nil || replay.Rejection != nil {
+			t.Fatal("same-intent replay did not recover the accepted submission")
+		}
+		if replay.Accepted.Submission.Digest != decision.Accepted.Submission.Digest ||
+			replay.Accepted.Snapshot.Digest != decision.Accepted.Snapshot.Digest ||
+			replay.Accepted.QueueItem.Digest != decision.Accepted.QueueItem.Digest {
+			t.Fatal("same-intent replay changed immutable submission identities")
+		}
+	})
+	t.Run("same_key_changed_inputs_denied", func(t *testing.T) {
+		changed := input
+		changed.Inputs = []graph.NormalizedInput{{PortID: "value", Type: graph.TypeString, Value: json.RawMessage(`"different intent"`)}}
+		apiRequest(t, client, http.MethodPost, "/v1/queue", changed, nil, http.StatusConflict)
+	})
 	t.Run("list", func(t *testing.T) {
 		var items []app.QueueExecutionView
 		apiRequest(t, client, http.MethodGet, "/v1/queue", nil, &items, http.StatusOK)
+		if len(items) != 1 || items[0].Projection.QueueItemID != input.QueueItemID {
+			t.Fatal("submission recovery did not preserve exactly one Queue item")
+		}
 	})
 	t.Run("show", func(t *testing.T) {
 		var item app.QueueExecutionView
