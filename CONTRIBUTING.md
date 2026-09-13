@@ -11,7 +11,8 @@
 
 ```sh
 go mod download
-go build ./cmd/aegis
+./scripts/build-source.sh ./aegis
+python3 scripts/build_source_test.py
 python3 scripts/verify-console-vendor.py
 python3 scripts/console_security_test.py
 go generate ./web/console
@@ -52,6 +53,21 @@ Production import changes must satisfy `internal/architecture/boundaries_test.go
 Manager lifecycle and terminal-presentation tests must use disposable configuration/state, fake Hermes/Ollama processes or loopback fixtures, and PTYs rather than a developer's real model store or runtime profile. Built-in Agent bootstrap tests must use an isolated fleet store and authenticated fixture principal, cover fresh approval/decline, resume, exact idempotent readback, collision denial, and generic lifecycle immutability, and assert that normal `~/.hermes` is untouched. Manager gateway tests must bind the expertise projection version/digest, prove polite and generic registration/credential-create intents bypass the model, prove protected credential creation remains unavailable on the turn endpoint, and preserve the closed typed failure taxonomy without matching producer error strings. Terminal changes must cover rich and `AEGIS_ACCESSIBLE=1` profiles, 40-column/no-color output, multiline/history/paste/help keys, adversarial ANSI/OSC/DCS/control/bidi text, bounded event/transcript state, safe streaming across fragmented JSON/UTF-8/control sequences, proposal buffering, random-canary absence from every presentation surface, and raw/echo/canonical restoration. Cover cancellation at each intake stage, terminal restoration, EOF, expiry, first/second signals, rollback order, idempotent bounded cleanup, exact readiness reason codes, no-download discovery, declined/interrupted configuration, and certification/configuration drift.
 
 ## Change rules
+
+The separate installed Credentials journey requires Go, Python Playwright and `/usr/bin/google-chrome`, but no Hermes executable or provider. After the normal archive/checksum/provenance verification, run:
+
+```sh
+python3 -m unittest discover -s scripts -p verify_installed_credentials_test.py
+AEGIS_PROOF_SOCKET_DIR=/ABSOLUTE/EXISTING/DURABLE/SHORT/DIRECTORY \
+  python3 scripts/verify-installed-credentials.py \
+  /ABSOLUTE/EXTRACTED/aegis "$PWD/.scratch/NEW-CREDENTIALS-PROOF" \
+  /ABSOLUTE/APPROVED/index.html
+```
+
+The fresh proof directory must be repository-local. The socket base must already exist; the harness reserves a new owner-only short child directory and removes only its own socket and lock after shutdown. Go initializers use the invoking build environment and its caches (and may download dependencies); only the candidate server uses the isolated HOME and minimal environment. The accepted artifact must match the harness's exact byte count and SHA-256 before any fixture creation. The harness initializes isolated authority/password/custody, starts the supplied binary directly with an isolated HOME and minimal environment, and creates/rotates/revokes generated records through actual authenticated review/execute routes. It retains metadata-only results and screenshots at 1440/900/390 for independent design review, removes generated plaintext authentication input, transport token and KEK on ordinary exit, and fails when any recorded geometry check fails. Failed or externally killed runs require checking that their proof process stopped and disposing of any remaining generated custody material. Do not stage proof directories, screenshots, logs or encrypted fixture stores. This is not a clean-candidate archive verifier, a supported-Hermes demonstration, an image-review verdict, or permission to bypass release gates.
+
+
+Credentials presentation regressions are covered by `go test ./web/console -count=1`, including semantic tables, metadata-only detail, canonical server-backed links, and the real-Chrome fixture harness when its prerequisites are available. Run `AEGIS_BROWSER_PYTHON=python3 go test ./web/console -run TestCredentialWorkspaceBrowser -count=1 -v` with Playwright installed in that Python and `/usr/bin/google-chrome` available to require the browser checks; the default run skips that opt-in test. Inspect test output for skipped browser checks. These rendered-fixture tests are not a replacement for the exact committed extracted-binary authenticated-console proof. Changes to fragment reconciliation must retain authenticated server reads and native query-bearing fallback links, with no browser authority or client-side detail construction.
 
 Preserve the identity, trust-stanza, mandate, exact-approval, deterministic-provisioning, credential-binding, and fail-closed invariants in `AGENTS.md`, `specs/MVP.md`, and `research/2026-07-17-embedded-bbolt-credential-authority.md`. In particular, identity must remain external to the model; prompts, profile names, model conclusions, and stanza requests must never authenticate; every session must bind exactly one stanza; zero or multiple matches must deny; stanza authority must never be unioned; and any stanza or material-authority change must require a new mandate and clean session. Cobra and Echo handlers must call shared application services. Keep stdout machine-readable and diagnostics on stderr. Do not add model-generated provisioning shell, ambient credentials, wildcard authority, generic runtime secret retrieval, or claims of sandboxing/guaranteed zeroization.
 

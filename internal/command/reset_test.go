@@ -226,6 +226,72 @@ func TestResetCommandDeclineEOFNonTTYAndCancellationWriteNothing(t *testing.T) {
 	}
 }
 
+type resetCancelInput struct{ cancel context.CancelFunc }
+
+func (r resetCancelInput) Read([]byte) (int, error) {
+	r.cancel()
+	return 0, context.Canceled
+}
+
+func TestResetFinalCancellationPreservesPreparationOutcome(t *testing.T) {
+	fixture := newResetCommandFixture(t, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	prepared := false
+	purged := false
+	prepare := func(*cobra.Command, string) error { prepared = true; return nil }
+	purge := func(context.Context, string) (bool, error) { purged = true; return false, nil }
+	cmd := resetCmdWithPreparation(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, DevelopmentProfile, nil, prepare, purge)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetIn(resetCancelInput{cancel: cancel})
+	err := cmd.ExecuteContext(ctx)
+	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "destructive deletion was not applied") || !strings.Contains(err.Error(), "preparation remains in effect") || strings.Contains(err.Error(), "no writes were performed") {
+		t.Fatal("cancellation must preserve prior preparation outcome and scoped deletion result")
+	}
+	if !prepared || purged {
+		t.Fatal("preparation or deletion boundary violated")
+	}
+	if _, err := os.Stat(fixture.config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.state, "plans", "one.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResetFinalDeclinePreservesPreparationOutcome(t *testing.T) {
+	for _, input := range []string{"no\n", ""} {
+		t.Run(fmt.Sprintf("input_%q", input), func(t *testing.T) {
+			fixture := newResetCommandFixture(t, true)
+			prepared := false
+			purged := false
+			prepare := func(*cobra.Command, string) error { prepared = true; return nil }
+			purge := func(context.Context, string) (bool, error) { purged = true; return false, nil }
+			cmd := resetCmdWithPreparation(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, DevelopmentProfile, nil, prepare, purge)
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetIn(strings.NewReader(input))
+			if err := cmd.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if !prepared || purged {
+				t.Fatal("preparation or deletion boundary violated")
+			}
+			if !strings.Contains(out.String(), `"state": "deletion_not_applied"`) || !strings.Contains(out.String(), `"scope": "destructive_deletion"`) || strings.Contains(out.String(), `"state": "unchanged"`) {
+				t.Fatal("final result must describe deletion only, preserving prior preparation outcome")
+			}
+			if _, err := os.Stat(fixture.config); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(fixture.state, "plans", "one.json")); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestResetCommandDetectsChangeBetweenPreviewAndApply(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
 	fixture.service.BeforeApply = func(resetdomain.Plan) {

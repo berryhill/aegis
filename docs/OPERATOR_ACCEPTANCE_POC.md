@@ -30,7 +30,7 @@ The driver sets `AEGIS_ACCESSIBLE=1`, `TERM=dumb`, and `NO_COLOR=1` for stable l
 From the repository root:
 
 ```sh
-go build -o aegis ./cmd/aegis
+./scripts/build-source.sh ./aegis
 python3 scripts/operator_acceptance_poc.py \
   --aegis ./aegis \
   --evidence ./operator-acceptance-evidence-$(date -u +%Y%m%dT%H%M%SZ)

@@ -114,7 +114,10 @@ func testPassphraseService(t *testing.T, scenario func() string, payload func() 
 		getenv:   os.Getenv,
 		lookPath: func(string) (string, error) { return "/fake/pinentry", nil },
 		command:  fakePinentryCommand(scenario, payload, capture),
-		timeout:  2 * time.Second,
+		// This subprocess is the full race-instrumented test binary, not pinentry.
+		// Allow startup and race-detector exit overhead under concurrent suites.
+		// Timeout behavior is tested separately with an explicit short deadline.
+		timeout: 10 * time.Second,
 	}
 }
 
@@ -271,12 +274,18 @@ func TestPinentryCancellationAndPostInteractionFailureNeverFallback(t *testing.T
 	for _, scenario := range []string{"cancel", "post-failure", "malformed-escape", "duplicate", "oversized-line", "oversized-stderr", "nonzero"} {
 		t.Run(scenario, func(t *testing.T) {
 			service := testPassphraseService(t, func() string { return scenario }, func() string { return "long-enough-value" }, "")
-			_, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: AuthorityPassphraseUnlock, Input: bytes.NewBufferString("terminal-canary\n"), Diagnostic: io.Discard})
-			if err == nil {
-				t.Fatal("failure accepted")
+			value, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: AuthorityPassphraseUnlock, Input: bytes.NewBufferString("terminal-canary\n"), Diagnostic: io.Discard})
+			defer wipeSecret(value)
+			if err == nil || len(value) != 0 {
+				t.Fatal("failure accepted or protected value returned")
 			}
-			if scenario == "cancel" && !IsPassphraseError(err, PassphraseCancelled) {
-				t.Fatalf("cancel kind=%v", err)
+			wantKind := PassphraseProtocol
+			if scenario == "cancel" {
+				wantKind = PassphraseCancelled
+			}
+			var protected *PassphraseError
+			if !errors.As(err, &protected) || protected.Kind != wantKind || !protected.Interaction {
+				t.Fatalf("post-interaction failure kind=%v; want %s without fallback", err, wantKind)
 			}
 			if strings.Contains(err.Error(), "long-enough-value") || strings.Contains(err.Error(), "terminal-canary") {
 				t.Fatal("error leaked sensitive input")

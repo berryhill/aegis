@@ -179,7 +179,7 @@ func resetCmdWithPreparation(service *resetdomain.Service, isTerminal func(io.Re
 				return err
 			}
 			if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
-				return usage(errors.New(resetdomain.ReasonRequiresTTY + ": reset requires real terminal input and output; no writes were performed"))
+				return usage(errors.New(resetdomain.ReasonRequiresTTY + ": reset requires real terminal input and output; destructive deletion was not applied; any separately approved gateway preparation remains in effect"))
 			}
 			if requiresAuthority {
 				if err = authenticate(cmd, plan); err != nil {
@@ -189,11 +189,11 @@ func resetCmdWithPreparation(service *resetdomain.Service, isTerminal func(io.Re
 			fmt.Fprint(cmd.OutOrStdout(), "Apply this exact reset plan? [y/N]: ")
 			answer, eof, readErr := newTerminalInput(cmd.InOrStdin()).ReadLine(cmd.Context(), 64)
 			if readErr != nil {
-				return fmt.Errorf("%s: confirmation input failed; no writes were performed: %w", resetdomain.ReasonDeclined, readErr)
+				return fmt.Errorf("%s: confirmation input failed; destructive deletion was not applied; any separately approved gateway preparation remains in effect: %w", resetdomain.ReasonDeclined, readErr)
 			}
 			answer = strings.ToLower(strings.TrimSpace(answer))
 			if eof || answer != "y" && answer != resetdomain.Confirmation {
-				return output(cmd, map[string]any{"state": "unchanged", "reason": resetdomain.ReasonDeclined, "written": false})
+				return output(cmd, map[string]any{"state": "deletion_not_applied", "scope": "destructive_deletion", "reason": resetdomain.ReasonDeclined, "written": false, "preparation": "any separately approved gateway preparation remains in effect"})
 			}
 			if requiresAuthority {
 				if err = authenticate(cmd, plan); err != nil {
