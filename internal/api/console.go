@@ -568,8 +568,9 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
-		CanRetire:  view.Lifecycle.State != "retired",
-		Validation: "Unavailable", ValidationDigest: "Unavailable",
+		CanRetire:     view.Lifecycle.State != "retired",
+		LatestVersion: fmt.Sprintf("r%d", revision.Revision),
+		Validation:    "Unavailable", ValidationDigest: "Unavailable",
 		Provenance: []consoleweb.FieldModel{
 			{Label: "Publisher Agent", Value: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest)},
 			{Label: "Authority context", Value: view.Provenance.Authority.ID + " @ " + view.Provenance.Authority.Digest},

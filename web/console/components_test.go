@@ -288,12 +288,13 @@ func TestAgentRegistryRendersOperatorContractWithoutClaimingBrowserAuthority(t *
 	}
 }
 
-func TestLoopDetailReplacesCollectionAndKeepsRelatedRecordsNative(t *testing.T) {
+func TestLoopDetailWorkspaceRendersAcceptedInteractiveControlFlow(t *testing.T) {
 	var output bytes.Buffer
 	record := RecordModel{Key: "loop-review:2", Label: "loop-review", Revision: "r2", Lifecycle: "active", Loop: &LoopDetailModel{
-		CanvasWidth: 860, CanvasHeight: 360, EntryStepID: "review", Validation: "valid · validator v1",
-		Steps:       []LoopStepModel{{ID: "review", Kind: "action", Entry: true, MaxAttempts: 2, X: 42, Y: 62}, {ID: "done", Kind: "terminal", TerminalOutcome: "succeeded", MaxAttempts: 1, X: 346, Y: 62}},
-		Transitions: []LoopTransitionModel{{ID: "complete", FromStepID: "review", ToStepID: "done", Condition: "approved", MaxTraversals: 1, Path: "M 254 113 C 300 113, 300 113, 346 113", LabelX: 300, LabelY: 105}},
+		EntryStepID: "review", Validation: "valid · validator v1", ValidationDigest: "sha256:val",
+		LatestVersion: "r2",
+		Steps:         []LoopStepModel{{ID: "review", Kind: "action", Entry: true, MaxAttempts: 2}, {ID: "done", Kind: "terminal", TerminalOutcome: "succeeded", MaxAttempts: 1}},
+		Transitions:   []LoopTransitionModel{{ID: "complete", FromStepID: "review", ToStepID: "done", Condition: "approved", MaxTraversals: 1}},
 	}, Links: []LinkModel{{Label: "Publisher Agent", Detail: "agent-reviewer r7 @ sha256:agent", URL: "/console/agents?record_key=agent-reviewer#/agents"}, {Label: "Bound Graph · review", Detail: "graph-review r4 @ sha256:graph", URL: "/console/graphs?record_key=graph-review%3A4#/graphs"}}}
 	model := PageModel{Authenticated: true, Surface: SurfaceModel{
 		Domain: DomainLoops, Title: "Loops", State: "ready", Authoritative: true, Query: "review", Lifecycle: "active",
@@ -304,14 +305,38 @@ func TestLoopDetailReplacesCollectionAndKeepsRelatedRecordsNative(t *testing.T) 
 		t.Fatal(err)
 	}
 	html := output.String()
-	for _, required := range []string{"loop-detail-page", `id="inspector-title"`, `class="record-list related-records"`, "Back to Loops", "Control flow", "Run from a Graph", "Definition details", "loop-flow-svg", "loop-arrow", "approved", `href="#step-contract-review"`, "Required inputs", "Evidence and outcomes", "Step contracts", "Related exact records", `href="/console/agents?record_key=agent-reviewer#/agents"`, `href="/console/graphs?record_key=graph-review%3A4#/graphs"`} {
+	for _, required := range []string{
+		"loop-detail-page", `id="inspector-title"`, `class="record-list related-records"`, "Back to Loops",
+		"Control flow", "Run from a Graph", "Definition details",
+		"data-loop-workspace", "data-loop-stage", "loop-edge-path", "loop-arrow", "marker-end=\"url(#loop-arrow)\"",
+		"data-loop-node=\"0\"", "data-loop-node=\"1\"",
+		"data-loop-node-panel=\"0\"", "data-loop-node-panel=\"1\"",
+		"loop-context-title",
+		"data-loop-tab=\"inputs\"", "data-loop-tab=\"evidence\"",
+		"Required inputs", "Evidence and outcomes",
+		"Accessible textual equivalent", "Textual equivalent",
+		"Graph-child execution explanation",
+		"Step · action", "Step · terminal",
+		"ENTRY", "SUCCEEDED",
+		"approved",
+		"data-loop-zoom=\"in\"", "data-loop-zoom=\"out\"", "data-loop-fit",
+		"Related exact records",
+		`href="/console/agents?record_key=agent-reviewer#/agents"`,
+		`href="/console/graphs?record_key=graph-review%3A4#/graphs"`,
+	} {
 		if !strings.Contains(html, required) {
-			t.Fatalf("dedicated Loop detail missing %q: %s", required, html)
+			t.Fatalf("dedicated Loop workspace missing %q: %s", required, html)
 		}
 	}
-	for _, forbidden := range []string{`action="/console/loops"`, `name="q"`, `name="lifecycle"`, `href="/console/loops?q=review#/loops"`, `href="/console/loops?page=3&amp;q=review#/loops"`, `>Current bounded result<`} {
+	for _, forbidden := range []string{
+		`action="/console/loops"`, `name="q"`, `name="lifecycle"`,
+		`href="/console/loops?q=review#/loops"`, `href="/console/loops?page=3&amp;q=review#/loops"`,
+		`>Current bounded result<`,
+		// Old static-anchor artifacts must not appear in the workspace.
+		"loop-flow-svg", `href="#step-contract-`, "loop-deep-details", "loop-canvas-viewport",
+	} {
 		if strings.Contains(html, forbidden) {
-			t.Fatalf("collection chrome remained behind dedicated Loop detail %q: %s", forbidden, html)
+			t.Fatalf("collection chrome or stale static anchors remained %q: %s", forbidden, html)
 		}
 	}
 }
