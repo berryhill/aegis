@@ -6,20 +6,31 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 # by the integrated proof. The host Unix-domain socket path limit is 108
 # bytes; a default of the source repository fails to bind on a long checkout.
 proof_socket_budget=80
-default_short_proof_socket_root="/home/silas/.hermes/.scratch/aegis-installed-sockets"
+# Default short-path socket roots, in preference order. The first entry is the
+# controller-side scratch directory; CI runners (which lack /home/silas) fall
+# back to GitHub Actions' $RUNNER_TEMP, then to a writable system scratch.
+default_short_proof_socket_roots="/home/silas/.hermes/.scratch/aegis-installed-sockets ${RUNNER_TEMP:-} ${TMPDIR:-} /tmp"
 socket_dir=${AEGIS_PROOF_SOCKET_DIR:-}
 socket_dir_created=false
 if [ -z "$socket_dir" ]; then
   if [ "${#repo}" -lt "$proof_socket_budget" ] && [ -d "$repo" ] && [ ! -L "$repo" ]; then
     socket_dir=$repo
   else
-    if [ ! -d "$default_short_proof_socket_root" ]; then
-      mkdir -m 0700 "$default_short_proof_socket_root" || {
-        printf '%s\n' "installed console proof short socket root is not writable: $default_short_proof_socket_root" >&2
-        exit 1
-      }
+    short_socket_root=
+    for candidate_root in $default_short_proof_socket_roots; do
+      [ -n "$candidate_root" ] || continue
+      # Skip a candidate that is not an existing, writable directory; otherwise
+      # the caller has already chosen an explicit root we must not override.
+      if [ -d "$candidate_root" ] && [ ! -L "$candidate_root" ] && [ -w "$candidate_root" ]; then
+        short_socket_root=$candidate_root
+        break
+      fi
+    done
+    if [ -z "$short_socket_root" ]; then
+      printf '%s\n' "installed console proof short socket root is not writable; set AEGIS_PROOF_SOCKET_DIR to a short canonical directory (candidates inspected: $default_short_proof_socket_roots)" >&2
+      exit 1
     fi
-    socket_dir=$(mktemp -d "$default_short_proof_socket_root/aegis.XXXXXXXX")
+    socket_dir=$(mktemp -d "$short_socket_root/aegis.XXXXXXXX")
     socket_dir_created=true
   fi
 fi
