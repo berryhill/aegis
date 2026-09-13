@@ -19,8 +19,8 @@ var (
 	protectedPasteEnd   = []byte("\x1b[201~")
 )
 
-func discardProtectedTerminalInput(file *os.File) {
-	_ = unix.IoctlSetInt(int(file.Fd()), unix.TCFLSH, unix.TCIFLUSH)
+func discardProtectedTerminalInput(file *os.File) error {
+	return unix.IoctlSetInt(int(file.Fd()), unix.TCFLSH, unix.TCIFLUSH)
 }
 
 func readProtectedTerminalLine(ctx context.Context, file *os.File, maximum int) ([]byte, error) {
@@ -46,7 +46,20 @@ func readProtectedTerminalLine(ctx context.Context, file *os.File, maximum int) 
 		}
 		count, readErr := file.Read(one)
 		if count == 1 {
-			if len(value) == 0 && one[0] == protectedPasteStart[0] {
+			// In the gateway's raw protected dialog these are operator controls,
+			// not value bytes. Bracketed paste retains its exact byte payload.
+			switch one[0] {
+			case 3, 4:
+				wipeSecret(value)
+				return nil, errProtectedDialogCancelled
+			case 8, 127:
+				if len(value) > 0 {
+					value[len(value)-1] = 0
+					value = value[:len(value)-1]
+				}
+				continue
+			}
+			if one[0] == protectedPasteStart[0] {
 				sequence, sequenceErr := readProtectedSequence(ctx, file, poll, protectedPasteStart[1:])
 				if sequenceErr != nil {
 					wipeSecret(value)

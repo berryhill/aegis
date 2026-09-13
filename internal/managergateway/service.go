@@ -49,6 +49,7 @@ type session struct {
 	reason   string
 	nextStep string
 	runtime  *conversation
+	intake   *credentialIntake
 }
 
 type Service struct {
@@ -346,6 +347,11 @@ func managerTurnContext(parent context.Context, timeout time.Duration) (context.
 }
 
 func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, input string) (TurnResult, error) {
+	return s.TurnWithProtectedIntake(ctx, subject, id, token, input, false)
+}
+
+// The capability flag selects a transport protocol, never identity or authority.
+func (s *Service) TurnWithProtectedIntake(ctx context.Context, subject core.Subject, id, token, input string, protected bool) (TurnResult, error) {
 	entry, err := s.authenticate(subject, id, token)
 	if err != nil {
 		return TurnResult{}, err
@@ -374,6 +380,9 @@ func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, inp
 	defer route.Wipe()
 	switch route.kind {
 	case intentCredentialCreate:
+		if protected && !route.credential.ValueRemoved && len(route.credential.Value) == 0 {
+			return s.beginCredentialIntake(ctx, entry)
+		}
 		return credentialCreationGuidance(route.credential, route.credentialParsed), nil
 	case intentCredentialIntake:
 		return credentialIntakeGuidance(), nil
