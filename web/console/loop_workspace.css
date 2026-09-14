@@ -36,6 +36,8 @@
 .loop-node .loop-node-step-kind{color:var(--accent)}.loop-node .loop-node-state-entry{font-weight:600}
 .loop-node[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}.loop-workspace :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .loop-edge-text{display:grid;gap:4px;padding:9px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere;font-size:12px}
+/* Keep authenticated status and logout inside the narrow Loop viewport. */
+@media(max-width:420px){body:has(.loop-detail-page) .topbar{gap:6px;padding:0 8px}body:has(.loop-detail-page) .topbar-status{white-space:normal;min-width:0;font-size:10px}body:has(.loop-detail-page) .topbar .ghost{white-space:normal;min-height:42px;padding:4px 7px}}
 .loop-textual{overflow-wrap:anywhere}.loop-textual details{padding:10px;border-bottom:1px solid var(--border)}.loop-textual summary{cursor:pointer}
 .loop-workspace [hidden]{display:none!important}
 .loop-tab-nav{display:flex;gap:6px;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2)}

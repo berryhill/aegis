@@ -57,6 +57,14 @@ func TestLoopGridPlacementCoversSupportedBounds(t *testing.T) {
 	}
 }
 
+func TestLoopNarrowViewportRetainsAuthenticatedHeaderControls(t *testing.T) {
+	// Source regression only: installed Chrome proves actual viewport geometry.
+	rule := `@media(max-width:420px){body:has(.loop-detail-page) .topbar{gap:6px;padding:0 8px}body:has(.loop-detail-page) .topbar-status{white-space:normal;min-width:0;font-size:10px}body:has(.loop-detail-page) .topbar .ghost{white-space:normal;min-height:42px;padding:4px 7px}}`
+	if !strings.Contains(string(CSS), rule) {
+		t.Fatal("missing Loop-scoped narrow authenticated-header containment")
+	}
+}
+
 func TestLoopGridPlacementRejectsOutOfRangeSelectors(t *testing.T) {
 	css := string(loopGridPlacementCSS())
 	for _, index := range []int{-1, 0, loop.MaxSteps + 1} {

@@ -43,6 +43,28 @@ class LoopGeometryTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     self.check(value)
 
+    def test_revision_viewport_guard_reports_only_identity_operands_and_phase(self):
+        for actual_digest, actual_width in (("other", 390), ("expected", 980)):
+            with self.subTest(digest=actual_digest, width=actual_width):
+                devtools = mock.MagicMock()
+                devtools.evaluate.return_value = {
+                    "digest": actual_digest, "width": actual_width,
+                    "unrelated": "must-not-be-logged",
+                }
+                with self.assertRaises(RuntimeError) as failure:
+                    console_browser_test.measure_loop_geometry(
+                        devtools, pathlib.Path("unused"), "fixture-390-fit",
+                        ["a", "b"], [("ab", "a", "b")], "expected", 390,
+                    )
+                message = str(failure.exception)
+                self.assertIn('"phase": "fixture-390-fit"', message)
+                self.assertIn('"expected_digest": "expected"', message)
+                self.assertIn('"actual_digest": "' + actual_digest + '"', message)
+                self.assertIn('"expected_width": 390', message)
+                self.assertIn('"actual_width": ' + str(actual_width), message)
+                self.assertNotIn("must-not-be-logged", message)
+                devtools.command.assert_not_called()
+
     def test_rejects_empty_expected_topology(self):
         with self.assertRaises(RuntimeError):
             console_browser_test.validate_loop_geometry({"nodes": [], "edges": []}, [], [])

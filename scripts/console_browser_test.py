@@ -529,7 +529,11 @@ def validate_loop_geometry(measurement, steps, transitions):
 
 def measure_loop_geometry(devtools, workspace, name, steps, transitions, digest, width):
     measurement = devtools.evaluate(LOOP_GEOMETRY_EXPRESSION)
-    require(measurement["digest"] == digest and measurement["width"] == width, "geometry revision or viewport mismatch")
+    require(measurement["digest"] == digest and measurement["width"] == width,
+            "geometry revision or viewport mismatch: " + json.dumps({
+                "phase": name, "expected_digest": digest, "actual_digest": measurement["digest"],
+                "expected_width": width, "actual_width": measurement["width"],
+            }, sort_keys=True))
     validate_loop_geometry(measurement, steps, transitions)
     # The caller owns durable custody; these files contain presentation data,
     # never the authenticated cookie or principal password.
