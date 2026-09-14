@@ -116,6 +116,69 @@ processing support. Corrupt participant evidence still fails closed with
 `repair_required`. The isolated HTTP regression is service evidence, not an
 installed skill or actual-agent behavioral qualification.
 
+## Managed exact-artifact inventory (explicit opt-in)
+
+A separate source-built `aegis-skillbundle` tool now implements `install`,
+`inventory`, `update`, and `rollback`. It is not the `aegis update` executable
+updater and is not yet a separately published release binary. Build it once:
+
+```sh
+go build -o .aegis-skill-proof/aegis-skillbundle ./internal/skillbundle/cmd
+```
+
+The compiled tool needs no checkout at operation time. Supply a downloaded or
+locally prepared archive, the independently selected exact `sha256:HEX` archive
+digest, its exact 40-hex source revision, and an explicit absolute destination:
+
+```text
+aegis-skillbundle install ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis-skillbundle inventory ABSOLUTE_HOME
+aegis-skillbundle update ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis-skillbundle rollback RETAINED_ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+```
+
+The destination must already be a canonical, non-symlink directory that is not
+group/world writable. Use a new mode-0700 repository-local proof home for tests.
+The tool never reads a default destination from `HOME` or `HERMES_HOME`. It refuses
+to adopt or overwrite an existing unmanaged `skills` directory, including an
+empty one. Do not use it to migrate an ordinary populated profile implicitly.
+Installation is an explicit operator filesystem action, not Aegis principal
+approval, session provisioning, runtime activation, or an authority grant.
+
+On Linux/macOS the tool verifies frozen archive bytes, stages and syncs the
+complete manifest/dependency inventory under `.aegis-skill-bundles/ARCHIVE_HEX`,
+and atomically replaces the destination's `skills` symlink. Other platforms
+report `installation_platform_unavailable`. Qualification of macOS durability
+and supported Hermes versions remains separate from Linux tests and cross-builds.
+The `.hub` operational-metadata link has one fixed managed target outside the
+immutable generation and survives updates and rollback; its contents are not
+read as source, provenance, approval, or behavioral evidence. All other installed
+paths must match the archive exactly. Source/archive validation still forbids
+symlinks; these two installed-layout links are tool-owned, not archive members.
+
+Each transaction holds a nonblocking process lock released by process exit.
+Interruption before pointer publication preserves the old inventory; after
+publication, read `inventory` before deciding whether to repeat the same exact
+artifact. A post-publication sync/readback error is an uncertain result, not
+proof of no mutation. Retained verified generations allow explicit rollback;
+no `latest` lookup or version guessing occurs. `update` and `rollback` use the
+same exact-artifact transaction; neither silently selects a version. Unreferenced
+staging/generation directories from interruption are not activated or garbage
+collected automatically. Never remove the lock inode to bypass a live transaction.
+
+`inventory` verifies the retained archive checksum/revision and every distributed
+byte, including manifest and evaluations, and emits
+`evidence_class=installed_inventory_verification`, exact version/digests/slugs,
+and `authority_granted=false`. Local edits, extra files, unsafe metadata links,
+and missing content deny inventory/update/rollback and are preserved for review.
+Hermes hub update/install commands must not independently mutate this managed
+inventory. Keep the destination quiescent during changes: pointer atomicity is
+not a snapshot across multiple file reads by an already-running agent, and the
+tool does not attest runtime inactivity or reload a running session.
+
+This tooling supplies distribution mechanics, not capability qualification,
+actual-agent behavioral acceptance, a public tap receipt, or release publication.
+
 ## Updates, local changes, and rollback
 
 Hermes 0.18.x `skills check` compares upstream content with the recorded installation hash. It does not independently make the Aegis manifest authoritative and must not be treated as approval or immutable provenance.
@@ -124,4 +187,4 @@ Before updating an official skill, compare every installed file with the exact f
 
 Rollback names a previously retained `aegis-skills_vVERSION.tar.gz` and its exact SHA-256 digest. Verify the archive and embedded source revision before restoring it. Never select rollback content through `latest`, a branch, or another mutable tag. A rollback also refuses locally modified installed files until the operator explicitly preserves or removes those changes.
 
-The repository currently supplies validation, evaluation, deterministic packaging, archive verification, release checksums, and Hermes tap/direct-install instructions. It does not silently enable official skills in runtime sessions, mutate normal profiles during tests, or turn a skill manifest, tap, archive tag, or model statement into Aegis authority.
+The repository currently supplies validation, evaluation, deterministic packaging, archive verification, explicit managed-inventory transactions, release checksums, and Hermes tap/direct-install instructions. It does not silently enable official skills in runtime sessions, mutate normal profiles during tests, or turn a skill manifest, tap, archive tag, or model statement into Aegis authority.

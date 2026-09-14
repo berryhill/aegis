@@ -9,6 +9,8 @@
 
 ## Setup and checks
 
+Skill distribution regressions run with `go test ./internal/skillbundle/... -race -parallel=2`. Use a repository-local temporary-directory base, constrained Go concurrency, and explicitly selected disposable homes. Managed installation tests cover exact bytes, local drift, metadata retention, update/rollback, interruption and locking; they do not prove supported Hermes or model behavior. Do not use normal profiles or independently run hub updates against a managed inventory.
+
 ```sh
 go mod download
 ./scripts/build-source.sh ./aegis

@@ -1,5 +1,7 @@
 # Aegis MVP Architecture
 
+The source-built skill inventory utility is separate from the authority graph below: explicit archive/digest/revision → verified private generation → atomic `skills` discovery pointer. Hermes `.hub` operational metadata has a fixed separate managed location and is not content or authority evidence. Inventory/update/rollback never construct application services, issue mandates or activate sessions; supported-runtime qualification is a separate gate. See `HERMES_SKILLS.md` for the managed-layout and quiescent-destination contract.
+
 Credentials presentation remains inside the typed console-to-application-service boundary shown below. Its semantic inventory and concise metadata/version detail use independent 42/58 desktop panes and a single pane at widths up to 900px. Same-origin fragment reconciliation reloads the authenticated server-backed record query; history/session snapshots restore presentation only. No new authority component, credential route, or mutation path is introduced.
 
 ```mermaid

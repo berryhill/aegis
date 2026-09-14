@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Added explicit source-built skill-bundle install/inventory/update/rollback tooling with frozen checksum/revision verification, private retained generations, process locking, atomic discovery-pointer replacement, exact installed-byte checks and local-edit refusal. Hermes `.hub` operational metadata is retained separately from immutable bundle content. Archive extraction is bounded by member count and total bytes. This is distribution mechanics, not supported-runtime, actual-agent, or publication qualification; existing unmanaged skill directories are not adopted.
+
 - Fixed identical Graph submission replay through the public Queue adapter by reusing the persisted submission timestamp after fresh admission. Exact immutable request-binding checks remain enforced: changed inputs with the same key still conflict, and unknown fields are rejected before Queue mutation. Real-store HTTP regressions cover both single-node and multi-node history; this is not installed-agent or runtime-execution qualification.
 
 

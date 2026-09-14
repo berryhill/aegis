@@ -115,6 +115,16 @@ func exactRevision(value string) bool {
 }
 
 func VerifyArchive(archive, expectedSourceRevision string) (Manifest, error) {
+	work, err := os.MkdirTemp(filepath.Dir(archive), ".aegis-skills-verify-*")
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer os.RemoveAll(work)
+	return verifyArchiveInto(archive, expectedSourceRevision, work)
+}
+
+// verifyArchiveInto extracts only into a caller-owned private empty directory.
+func verifyArchiveInto(archive, expectedSourceRevision, work string) (Manifest, error) {
 	if !exactRevision(expectedSourceRevision) {
 		return Manifest{}, deny("invalid_source_revision", archive, "verification requires one expected lowercase 40-hex Git revision")
 	}
@@ -133,13 +143,9 @@ func VerifyArchive(archive, expectedSourceRevision string) (Manifest, error) {
 	}
 	defer gz.Close()
 	reader := tar.NewReader(gz)
-	work, err := os.MkdirTemp(filepath.Dir(archive), ".aegis-skills-verify-*")
-	if err != nil {
-		return Manifest{}, err
-	}
-	defer os.RemoveAll(work)
 	var prefix string
 	seen := map[string]bool{}
+	var extractedBytes int64
 	for {
 		header, nextErr := reader.Next()
 		if nextErr == io.EOF {
@@ -171,6 +177,10 @@ func VerifyArchive(archive, expectedSourceRevision string) (Manifest, error) {
 		seen[parts[1]] = true
 		if header.Size < 0 || header.Size > MaxManifestBytes {
 			return Manifest{}, deny("archive_member_too_large", header.Name, "member exceeds the bounded archive limit")
+		}
+		extractedBytes += header.Size
+		if len(seen) > 2048 || extractedBytes > 64<<20 {
+			return Manifest{}, deny("archive_extraction_limit", archive, "archive exceeds 2048 members or 64 MiB extracted bytes")
 		}
 		content, readErr := io.ReadAll(io.LimitReader(reader, MaxManifestBytes+1))
 		if readErr != nil || int64(len(content)) != header.Size {
