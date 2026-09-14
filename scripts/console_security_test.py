@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import sys
@@ -16,6 +17,44 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
+
+
+def bounded_navigation_source(source: str) -> str:
+    """Remove only exact reviewed fragment adapters, rejecting any drift.
+
+    These hashes pin source, not runtime authorization. Changes require review
+    of the adapter and its dynamic navigation tests before updating the pin.
+    Presentation-only code outside the adapters remains subject to the normal
+    forbidden-primitive checks. Never derive expected hashes from input source.
+    """
+    require(source.count('const credentials = location.pathname === "/console/credentials";') == 1,
+            "credential fragment route guard changed")
+    adapters = (
+        ('  const resolveGraph = () => {',
+         '  window.addEventListener("hashchange", resolveGraph);',
+         '1163f088a34a655360fdf67ea175498ffbb1de4aa85600b173b51648ec3e0e43'),
+        ('  const resolveAgentFragment = () => {',
+         '  addEventListener("hashchange", resolveAgentFragment);',
+         '1ec3ec5d56958b6ef381f80fc312da98af06c8cadac03a2dd0fd7a6875402002'),
+        ('  const reconcileFragment = () => {',
+         '    } else reconcileFragment();\n  });',
+         '52e5555338b3150491220ddde404a1ac36be9df597acdd62669aef97553657fa'),
+    )
+    remainder = source
+    for start, end, digest in adapters:
+        require(remainder.count(start) == 1 and remainder.count(end) == 1,
+                "fragment adapter missing or duplicated")
+        begin = remainder.index(start)
+        finish = remainder.index(end) + len(end)
+        require(finish > begin, "fragment adapter boundaries reordered")
+        block = remainder[begin:finish]
+        require(hashlib.sha256(block.encode("utf-8")).hexdigest() == digest,
+                "reviewed fragment adapter changed")
+        remainder = remainder[:begin] + remainder[finish:]
+    for forbidden in ("location.hash", "location.replace"):
+        require(forbidden not in remainder,
+                f"unreviewed fragment primitive: {forbidden}")
+    return remainder
 
 
 def main() -> int:
@@ -54,6 +93,7 @@ def main() -> int:
     require("data-on:" not in component and "data-bind:" not in component,
             "console template still requires inline script execution")
 
+    bounded_navigation_source(navigation)
     for forbidden in (
         "fetch(", "XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "localStorage",
         "document.cookie", "location.search", "URLSearchParams", "innerHTML",

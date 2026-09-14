@@ -492,7 +492,7 @@ For rotation/replacement, revocation, binding, and other non-insert mutations, b
 - disclosure mode, initially `brokered` or `stored-only`;
 - statement that no-echo-intake and complete inline-create values are not sent to Hermes/model.
 
-First-time insert-only create requires no redundant confirmation: the authenticated principal's unambiguous imperative authorizes the exact parsed reference and supplied or protected-intake value. A duplicate reference fails atomically and MUST direct the principal to the confirmed rotation path. Where confirmation remains required, the model cannot supply it; the authenticated principal must confirm through the Aegis UI.
+The supervised gateway-backed terminal uses the explicit session-bound review/approval/intake protocol in `CONTROL_PLANE_API.md`: its generic conversational create request does not authorize metadata that has not yet been collected, and it MUST receive fresh explicit metadata-bound approval before collecting a value. The following insert-only imperative rule applies to the in-process manager, not this gateway protocol. First-time insert-only create requires no redundant confirmation: the authenticated principal's unambiguous imperative authorizes the exact parsed reference and supplied or protected-intake value. A duplicate reference fails atomically and MUST direct the principal to the confirmed rotation path. Where confirmation remains required, the model cannot supply it; the authenticated principal must confirm through the Aegis UI.
 
 ### 8.4 Failure
 

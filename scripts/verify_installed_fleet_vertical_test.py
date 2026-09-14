@@ -37,7 +37,7 @@ class InstalledFleetVerticalContract(unittest.TestCase):
 
     def test_queue_evidence_inspector_is_opened_before_readback(self) -> None:
         browser = (REPO / "scripts" / "console_browser_test.py").read_text(encoding="utf-8")
-        self.assertLess(browser.index('"visible Queue definition evidence"'),
+        self.assertLess(browser.index('"Definition details opened visible Queue evidence inspector"'),
                         browser.index('"Graph to replacement-page Queue evidence, receipt, and disposition chain"'))
 
     def test_clean_shutdown_rejects_crash_and_forced_cleanup(self) -> None:

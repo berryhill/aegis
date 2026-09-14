@@ -676,20 +676,20 @@ def main() -> int:
         click(devtools, '[data-graph-definition]')
         wait_for(devtools, "document.querySelector('[data-graph-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#graph-context')?.checkVisibility() && document.querySelector('[data-graph-definition-panel]')?.checkVisibility() && document.querySelector('#graph-context .related-records a[href^=\"/console/queue?record_key=queue-accepted\"]')?.checkVisibility()", "Definition details opened visible Graph inspector and Queue related link")
         click(devtools, '.related-records a[href^="/console/queue?record_key=queue-accepted"]')
-        # Queue starts canvas-first. Do not race script initialization and
-        # accidentally accept evidence that is about to become hidden.
-        wait_for(devtools, "document.readyState === 'complete' && location.pathname === '/console/queue' && document.querySelector('#queue-context')?.hidden === true && document.activeElement?.id === 'queue-detail' && !!document.querySelector('[data-queue-node]')", "canvas-first Queue before evidence inspection")
-        click(devtools, '[data-queue-node]')
-        wait_for(devtools, "document.querySelector('[data-queue-node-panel]:not([hidden]) [data-queue-definition]')?.checkVisibility()", "native Queue node inspector")
-        click(devtools, '[data-queue-node-panel]:not([hidden]) [data-queue-definition]')
-        wait_for(devtools, "document.querySelector('[data-queue-definition-panel]')?.checkVisibility()", "visible Queue definition evidence")
+        # Queue also initializes canvas-first. Evidence is inside its definition
+        # inspector; reading innerText before initialization races its collapse.
+        wait_for(devtools, "document.readyState === 'complete' && location.pathname === '/console/queue' && document.activeElement?.id === 'queue-detail' && document.querySelector('#queue-context')?.hidden === true && document.querySelector('[data-queue-definition]')?.getAttribute('aria-expanded') === 'false'", "canvas-first Queue with collapsed definition inspector and route focus")
+        click(devtools, '[data-queue-node="0"]')
+        wait_for(devtools, "document.querySelector('[data-queue-node-panel=\"0\"]')?.checkVisibility() && document.querySelector('[data-queue-node=\"0\"]')?.getAttribute('aria-pressed') === 'true'", "Queue node opened its visible inspector")
+        click(devtools, '[data-queue-node-panel="0"] [data-queue-definition]')
+        wait_for(devtools, "document.querySelector('[data-queue-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#queue-context')?.checkVisibility() && document.querySelector('[data-queue-definition-panel]')?.checkVisibility() && document.activeElement?.id === 'queue-context-title'", "Definition details opened visible Queue evidence inspector")
         wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
         desktop_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
         require(desktop_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(desktop_detail_png) > 1024, "desktop detail screenshot was not a bounded PNG")
         devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
         devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
         narrow_detail = devtools.evaluate("(() => ({overflow: document.documentElement.scrollWidth > innerWidth, composition: document.querySelector('#queue-detail')?.dataset.composition, focused: document.activeElement?.id}))()")
-        require(narrow_detail == {"overflow": False, "composition": "queue-replacement", "focused": "queue-context-title"}, f"narrow reduced-motion Queue inspector lost DOM/focus fidelity: {narrow_detail}")
+        require(narrow_detail == {"overflow": False, "composition": "queue-replacement", "focused": "queue-context-title"}, f"narrow reduced-motion Queue detail lost DOM/focus fidelity: {narrow_detail}")
         narrow_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
         require(narrow_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(narrow_detail_png) > 1024 and narrow_detail_png != desktop_detail_png, "narrow detail screenshot did not prove viewport-specific rendering")
         devtools.command("Emulation.clearDeviceMetricsOverride")
