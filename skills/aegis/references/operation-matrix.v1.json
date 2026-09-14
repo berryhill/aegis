@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "evidence_class": "structural-coverage-only",
+  "transport_boundary": "A listed CLI and a listed HTTP endpoint are distinct adapters, not interchangeable transports. Most direct-service CLI commands fail control_plane_online while the configured gateway owns state. Use only an already supplied product-owned typed online interface; do not stop the gateway, open a second writer, extract authentication material or implement a generic HTTP client. The catalog does not grant access, provide request schemas or qualify an installed executable. The enclosing verified archive binds these source references to its exact source_revision.",
+  "authority_boundary": "Installed skill text grants no authority. Typed product authentication, exactly one stanza, approvals, mandates, persistence and evidence remain external. No permission union; missing or ambiguous authority denies. Source/test references are navigation, not claims that behavioral tests passed.",
+  "classifications": {
+    "shipped": "Concrete public product transport exists; installation does not authorize use or prove acceptance.",
+    "missing-adapter": "Product capability exists through another surface, but the named transport adapter does not.",
+    "advisory": "Explanation or review only; no authoritative effect.",
+    "unavailable": "No supported public operation; do not simulate it."
+  },
+  "coverage": "Canonical constructor-built Cobra nodes including groups and bare root; aliases inherit their canonical owner's contract. Cobra-generated help/completion are framework discovery, not product operations. HTTP entries are METHOD PATH, including console and health/static routes. Structural source registration coverage is not live HTTP or installed-agent acceptance.",
+  "excluded_cli": [{"path":"aegis credential-bridge","reason":"Hidden internal broker stdio entrypoint; not a public skill transport."}],
+  "framework_exclusions": ["Cobra-generated help and completion, including __complete and __completeNoDesc; not present in NewRoot before framework initialization"],
+  "owners": [
+    {
+      "skill":"aegis",
+      "classification":"advisory",
+      "authority":"Discovery and routing only. Console authentication is outside model text; static assets confer no authority.",
+      "sources":["internal/command/root.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/console_test.go"],
+      "cli":[],
+      "http":["GET /console","GET /favicon.ico","GET /console/assets/app.css","GET /console/assets/navigation.js","GET /console/assets/datastar-v1.0.2.js","GET /console/fragments/surface","GET /console/fragments/inspect"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-manager-onboarding",
+      "classification":"shipped",
+      "authority":"Authenticated local principal and exact configured manager model/certification; explicit bootstrap or configuration confirmation. Manager session capability and product checks, not chat identity, govern commands and turns.",
+      "sources":["internal/command/manager.go","internal/command/manager_model.go","internal/command/manager_certify.go","internal/api/server.go"],
+      "tests":["internal/command/manager_test.go","internal/command/manager_model_test.go","internal/api/manager_gateway_test.go"],
+      "cli":["aegis","aegis init","aegis manager","aegis manager certify","aegis manager model","aegis manager model candidates","aegis manager model candidate","aegis manager model discover","aegis manager model route","aegis manager model configure","aegis manager model status"],
+      "http":["POST /v1/manager/sessions","POST /v1/manager/sessions/:session/commands","POST /v1/manager/sessions/:session/turns","DELETE /v1/manager/sessions/:session","POST /console/api/commands/preview","POST /console/api/commands/execute","GET /console/api/state","POST /console/login","POST /console/password","DELETE /console/session","POST /console/logout"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-operator-lifecycle-diagnostics",
+      "classification":"shipped",
+      "authority":"Version/health are diagnostic only. Gateway installation, migration and reset retain their command-specific typed configuration, authentication and confirmation controls. Direct executable update has no separate principal-authentication or apply-confirmation boundary; it requires explicit operator intent and release verification, not inferred chat authorization. Health is not task completion or authority evidence.",
+      "sources":["internal/command/root.go","internal/command/userservice.go","internal/command/reset.go","internal/command/migrate_layout.go","internal/api/server.go"],
+      "tests":["internal/command/userservice_action_test.go","internal/command/reset_test.go","internal/command/migrate_layout_test.go"],
+      "cli":["aegis version","aegis runtime","aegis config","aegis update","aegis migrate-layout","aegis reset","aegis serve","aegis console","aegis gateway","aegis gateway preview","aegis gateway install","aegis gateway status","aegis gateway start","aegis gateway stop","aegis gateway restart","aegis gateway uninstall"],
+      "http":["GET /livez","GET /readyz","GET /v1/runtime","GET /v1/config"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-charter-design",
+      "classification":"shipped",
+      "authority":"Principal-only isolated Hermes design proposes, never provisions. Canonical validation/import does not approve an artifact; exact digest approval is separate.",
+      "sources":["internal/command/root.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/server_test.go"],
+      "cli":["aegis design","aegis charter","aegis charter validate","aegis charter import","aegis charter list","aegis charter show"],
+      "http":["GET /v1/agents/:agent/charters","GET /v1/charters/:agent/:revision","POST /v1/charters/validate","POST /v1/charters/import","POST /v1/design","GET /console/agents/charter-import"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-trust-context-inspection",
+      "classification":"shipped",
+      "authority":"Product authenticates subject and deterministically selects exactly one stanza. Explain/effective readback neither issues authority nor unions stanzas; material changes require a new mandate and clean session.",
+      "sources":["internal/command/root.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/server_test.go"],
+      "cli":["aegis charter explain","aegis charter effective","aegis session authority"],
+      "http":["GET /v1/charters/:agent/:revision/stanzas/:stanza","POST /v1/authorization/explain","GET /v1/sessions/:id/authority"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-approval-provisioning",
+      "classification":"shipped",
+      "authority":"Authenticated principal reviews exact canonical plan/charter digests; single-use approval and deterministic provisioner apply only the approved revision. Any change invalidates approval; verify authoritative receipts before activation.",
+      "sources":["internal/command/root.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/server_test.go"],
+      "cli":["aegis plan","aegis plan preview","aegis plan show","aegis approval","aegis approval request","aegis approval approve","aegis approval reject","aegis approval show","aegis provision"],
+      "http":["POST /v1/plans/preview","GET /v1/plans","GET /v1/plans/:id","GET /v1/approvals","GET /v1/approvals/:id","POST /v1/approvals","POST /v1/approvals/:id/decision","POST /v1/provision","GET /v1/receipts","GET /v1/receipts/:id"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-agent-registry",
+      "classification":"shipped",
+      "authority":"Authenticated principal registration preserves immutable fleet, charter, runtime and stable owner provenance; exact revision lifecycle checks remain in product services. Registration is not runtime authority.",
+      "sources":["internal/command/fleet.go","internal/api/server.go"],
+      "tests":["internal/api/agent_console_execution_test.go","internal/api/agent_console_detail_test.go","internal/command/domain_surface_test.go"],
+      "cli":["aegis agents","aegis agents register","aegis agents list","aegis agents show","aegis agents history","aegis agents enable","aegis agents disable","aegis agents retire"],
+      "http":["GET /v1/agents","POST /v1/agents","GET /v1/agents/:agent","GET /v1/agents/:agent/revisions","PUT /v1/agents/:agent/lifecycle","GET /v1/fleet/readiness","GET /console/agents","POST /console/agents/registration/review","POST /console/agents/registration/execute","POST /console/agents/:agent/lifecycle"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-session-operations",
+      "classification":"shipped",
+      "authority":"Fresh authenticated admission binds one exact stanza, runtime, charter and expiring mandate; clean runtime session required. Revocation/termination are product effects; session/home isolation is not a host sandbox.",
+      "sources":["internal/command/root.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/server_test.go"],
+      "cli":["aegis session","aegis session preview","aegis session start","aegis session list","aegis session show","aegis session revoke","aegis session terminate"],
+      "http":["POST /v1/sessions/preview","POST /v1/sessions/start","GET /v1/sessions","GET /v1/sessions/:id","POST /v1/sessions/:id/revoke","POST /v1/sessions/:id/terminate"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-loop-authoring",
+      "classification":"shipped",
+      "authority":"Exact authenticated workspace or runtime authority; stable owner controls publication/lifecycle, immutable definitions remain fleet-shared. Console mutations require authenticated same-origin CSRF and exact preview/execute contract.",
+      "sources":["internal/command/fleet.go","internal/api/server.go"],
+      "tests":["internal/api/workspace_skill_contract_test.go","internal/api/loop_console_form_test.go"],
+      "cli":["aegis loops","aegis loops list","aegis loops publish","aegis loops show","aegis loops activate","aegis loops retire"],
+      "http":["GET /v1/loops","POST /v1/loops","PUT /v1/loops/:loop/lifecycle","GET /v1/loops/:loop/:revision","GET /console/loops","GET /console/loops/compose","POST /console/loops/preview","POST /console/loops/lifecycle-preview","POST /console/loops/execute"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-graph-authoring",
+      "classification":"shipped",
+      "authority":"Immutable exact Agent/Loop revisions and normalized typed inputs; authenticated stable owner publication, participant-scoped workspace submission or runtime authority. Server-derived console authority and CSRF; admission/rejection and idempotency are canonical product facts.",
+      "sources":["internal/command/fleet.go","internal/api/server.go"],
+      "tests":["internal/command/graph_preflight_test.go","internal/api/console_graph_workspace_test.go","internal/api/workspace_skill_contract_test.go"],
+      "cli":["aegis graphs","aegis graphs list","aegis graphs publish","aegis graphs show","aegis graphs submit"],
+      "http":["GET /v1/graphs","POST /v1/graphs","GET /v1/graphs/:graph/:revision","GET /v1/graphs/:graph/lifecycle","POST /v1/queue","GET /console/graphs","GET /console/graphs/compose","GET /console/graphs/run","POST /console/graphs/publish","POST /console/graphs/submit"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-execution-queue",
+      "classification":"shipped",
+      "authority":"Workspace may manage only its own admitted work, not claim/runtime effects. Controller issues fresh runtime binding; every consequential effect repeats authority admission. Bounded claims/retries and distinct lifecycle outcomes are persisted externally.",
+      "sources":["internal/command/fleet.go","internal/api/server.go"],
+      "tests":["internal/command/queue_skill_contract_test.go","internal/api/server_test.go"],
+      "cli":["aegis queue","aegis queue list","aegis queue bind-runtime","aegis queue process","aegis queue retry","aegis queue cancel","aegis queue expire","aegis queue exhaust","aegis queue revoke"],
+      "http":["GET /v1/queue","POST /v1/queue/:item/process","POST /v1/queue/:item/retry","POST /v1/queue/:item/cancel","POST /v1/queue/:item/expire","POST /v1/queue/:item/exhaust","POST /v1/queue/:item/revoke","GET /console/queue","POST /console/queue/:item/operate"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-evidence-disposition",
+      "classification":"shipped",
+      "authority":"Inspect authoritative immutable snapshots, attempts and exact content-addressed evidence. Product disposition checks exact verification claims; process exit, model narration and structural catalog tests are not completion proof.",
+      "sources":["internal/command/fleet.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/server_test.go"],
+      "cli":["aegis queue show"],
+      "http":["GET /v1/queue/:item","GET /v1/submissions"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-credential-authority",
+      "classification":"shipped",
+      "authority":"Controller/principal-only encrypted custody and exact scoped binding; ordinary registered workspaces have zero credential rights. Protected intake requires authenticated local transport, session capability, confirmed operation and bounded octet-stream intake; never place values in skill text, argv, JSON chat or logs. No generic authenticated client is supplied.",
+      "sources":["internal/command/secret.go","internal/api/server.go","internal/api/manager_credential_intake.go"],
+      "tests":["internal/command/secret_authority_test.go","internal/api/credential_console_test.go","internal/api/manager_credential_intake_test.go"],
+      "cli":["aegis secret","aegis secret initialize","aegis secret put","aegis secret metadata","aegis secret list","aegis secret rotate","aegis secret revoke","aegis secret bind","aegis secret backup"],
+      "http":["GET /console/credentials","GET /console/credentials/operation","POST /console/credentials/operation/review","POST /console/credentials/operation/cancel","POST /console/credentials/operation/execute","POST /v1/manager/sessions/:session/credential-intake","POST /v1/manager/sessions/:session/credential-intake/:operation/value"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-audit-verification",
+      "classification":"shipped",
+      "authority":"Authenticated product audit emission, chained records and delivery verification; projection rebuild is derived state, not authority. An audit list or model-authored report cannot attest runtime completion.",
+      "sources":["internal/command/root.go","internal/api/server.go"],
+      "tests":["internal/command/domain_surface_test.go","internal/api/server_test.go"],
+      "cli":["aegis audit","aegis audit list","aegis audit verify","aegis audit delivery-status","aegis audit deliver","aegis audit verify-delivery","aegis audit rebuild-projection"],
+      "http":["GET /v1/audit","GET /v1/audit/verify","GET /v1/audit/delivery/status","POST /v1/audit/delivery","GET /v1/audit/delivery/verify","POST /v1/audit/projection/rebuild"],
+      "transport_classification":"shipped"
+    },
+    {
+      "skill":"aegis-deployment-projection",
+      "classification":"advisory",
+      "authority":"Review specification only; no model signing, deployment authority, activation, acknowledgment or rollback. Audit projection rebuild is not deployment projection.",
+      "sources":["specs/DEPLOYMENT_PROJECTION.md"],
+      "tests":["internal/command/distributed_operation_matrix_test.go"],
+      "cli":[],
+      "http":[],
+      "transport_classification":"unavailable"
+    }
+  ],
+  "gaps": [
+    {"skill":"aegis-manager-onboarding","operation":"General conversational platform operation routing (#248)","classification":"missing-adapter","reason":"Manager commands/turns are bounded typed interfaces, not a generic proxy to every CLI or REST operation. Protected credential creation delivered by #245/#254 does not supply general Loop/Graph/Queue authoring/execution adapters. Use exact exposed product controls only."},
+    {"skill":"aegis-operator-lifecycle-diagnostics","operation":"Transparent daemon-online routing of direct-service CLI operations","classification":"missing-adapter","reason":"NewRoot rejects non-serve direct-store construction when the configured control-plane socket exists. CLI/API presence in this inventory does not implement automatic CLI-over-HTTP forwarding or authorize a second writer."},
+    {"skill":"aegis-execution-queue","operation":"HTTP runtime-authority binding","classification":"missing-adapter","reason":"Only aegis queue bind-runtime FILE is public; no bind-runtime HTTP route is registered. Do not invent one or substitute workspace authority."},
+    {"skill":"aegis-evidence-disposition","operation":"Reviewer-authored reevaluation","classification":"unavailable","reason":"No supported public reevaluation command or route; inspect existing authoritative disposition instead."},
+    {"skill":"aegis-deployment-projection","operation":"Compile/sign/publish/activate/acknowledge/rollback deployment projection","classification":"unavailable","reason":"Specification and advisory review only; no supported typed public CLI/API transport."},
+    {"skill":"aegis-graph-authoring","operation":"Graph lifecycle mutation","classification":"unavailable","reason":"Public lifecycle readback exists; no Graph lifecycle mutation command or route."}
+  ]
+}

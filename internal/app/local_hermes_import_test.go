@@ -338,7 +338,7 @@ func TestRequireSingleLocalHermesImportCandidateFailsClosed(t *testing.T) {
 	}
 }
 
-func TestBootstrapLocalHermesImportRegistersSecondDisabledAgentWithExactReplayAndNoProfileMutation(t *testing.T) {
+func TestBootstrapLocalHermesImportRegistersSecondEnabledAgentWithExactReplayAndNoProfileMutation(t *testing.T) {
 	service := testService(t)
 	root := filepath.Join(t.TempDir(), ".hermes")
 	if err := os.Mkdir(root, 0o700); err != nil {
@@ -370,8 +370,14 @@ func TestBootstrapLocalHermesImportRegistersSecondDisabledAgentWithExactReplayAn
 	if err != nil {
 		t.Fatal(err)
 	}
+	if proposal.Lifecycle != string(registry.LifecycleEnabled) {
+		t.Fatalf("registration preview must disclose enabled default: %q", proposal.Lifecycle)
+	}
 	imported, created, err := service.ConfirmLocalHermesAgentImportForBootstrapAs(context.Background(), subject, proposal.RevisionDigest)
-	if err != nil || !created || imported.Revision.Lifecycle != registry.LifecycleDisabled || len(imported.Revision.CapabilityDeclarations) != 0 || len(imported.Revision.PolicyRefs) != 0 {
+	if err == nil && (imported.Revision.Digest != proposal.RevisionDigest || imported.Revision.Revision != proposal.Revision || string(imported.Revision.Lifecycle) != proposal.Lifecycle) {
+		t.Fatal("persisted registration differs from exact approved preview")
+	}
+	if err != nil || !created || imported.Revision.Lifecycle != registry.LifecycleEnabled || len(imported.Revision.CapabilityDeclarations) != 0 || len(imported.Revision.PolicyRefs) != 0 {
 		t.Fatalf("bootstrap import: created=%t imported=%+v err=%v", created, imported, err)
 	}
 	verified, err := service.VerifyLocalHermesAgentImportForBootstrapAs(context.Background(), subject)
@@ -394,16 +400,16 @@ func TestBootstrapLocalHermesImportRegistersSecondDisabledAgentWithExactReplayAn
 	if err != nil || string(contents) != string(markerContents) || !os.SameFile(before, after) || before.Mode() != after.Mode() || before.Size() != after.Size() {
 		t.Fatalf("profile marker mutated: contents_match=%t same_file=%t before=%+v after=%+v err=%v", string(contents) == string(markerContents), os.SameFile(before, after), before, after, err)
 	}
-	lifecycleInput, err := NewSetAgentLifecycleInput(imported.Revision.AgentID, imported.Revision.Revision, imported.Revision.Digest, string(registry.LifecycleEnabled))
+	lifecycleInput, err := NewSetAgentLifecycleInput(imported.Revision.AgentID, imported.Revision.Revision, imported.Revision.Digest, string(registry.LifecycleDisabled))
 	if err != nil {
 		t.Fatal(err)
 	}
-	enabled, err := service.SetAgentLifecycleAs(context.Background(), subject, imported.Revision.AgentID, lifecycleInput)
-	if err != nil || enabled.Revision.Revision != 2 || enabled.Revision.Lifecycle != registry.LifecycleEnabled {
-		t.Fatalf("enable imported Agent: agent=%+v err=%v", enabled, err)
+	disabled, err := service.SetAgentLifecycleAs(context.Background(), subject, imported.Revision.AgentID, lifecycleInput)
+	if err != nil || disabled.Revision.Revision != 2 || disabled.Revision.Lifecycle != registry.LifecycleDisabled {
+		t.Fatalf("disable imported Agent: agent=%+v err=%v", disabled, err)
 	}
 	verified, err = service.VerifyLocalHermesAgentImportForBootstrapAs(context.Background(), subject)
-	if err != nil || verified.Revision.Revision != 2 || verified.Revision.Lifecycle != registry.LifecycleEnabled || verified.Revision.Digest != enabled.Revision.Digest {
+	if err != nil || verified.Revision.Revision != 2 || verified.Revision.Lifecycle != registry.LifecycleDisabled || verified.Revision.Digest != disabled.Revision.Digest {
 		t.Fatalf("durable import verification did not report current lifecycle: agent=%+v err=%v", verified, err)
 	}
 }

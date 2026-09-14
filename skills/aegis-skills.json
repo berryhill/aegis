@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": ">=0.2.2,<1.0.0",
     "hermes_compatibility": ">=0.18.0,<0.19.0",
-    "content_digest": "sha256:14363bad0d0124dc8e09bd7fc0d00a68ae308f30d593b9ea879abc0b04713b0f",
+    "content_digest": "sha256:33399b458d22485fdc511e484bd7c0f523da8558682867b51c5c3e4d75d476b2",
     "source_revision": "repository"
   },
   "operations": [
@@ -88,7 +88,7 @@
   "skills": [
     {
       "slug": "aegis",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "path": "skills/aegis",
       "description": "Route Aegis questions and requests to shipped typed Aegis surfaces while preserving external identity, authority, and evidence boundaries.",
       "dependencies": [],
@@ -100,12 +100,17 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:5581f84eeabb549bc1a9c8694c67c6494e6e8dfdae7f6e40ac6509b1dd690fe8",
+      "content_digest": "sha256:133366f90da56c89c7aa3ba64b706cd2fcbea37851cf82b603a5c3ccfda3d518",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:519cba1b24f14303dc3078db0dd26837910a402fa181cdf67ddedb71a31c2424",
-          "size": 4858
+          "sha256": "sha256:00bf2b7caa7bdcac15f8263c00ec205275b400247e2d56fc2de1387f52de385d",
+          "size": 6600
+        },
+        {
+          "path": "references/operation-matrix.v1.json",
+          "sha256": "sha256:d1974c052c6b08af227f5303a89fa6e30d5d4272aa0b2dfdfd8ebc5d617d1f13",
+          "size": 18031
         }
       ]
     },
@@ -245,12 +250,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:9670e9a3bec6e33446b536092d20518c305d415206fc633571144cff025102ec",
+      "content_digest": "sha256:0a646a9ed567642784da7b9dba07180e1fe85e3f46822efbe48050ad05bdaba6",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:406be29260834620abbf1c135f1deb29a185416f7c830574606c12e8470935e9",
-          "size": 12662
+          "sha256": "sha256:6738b8255b76d1ac5e0415acac0be6d1916cdb8e96b8849beeefa8662b095137",
+          "size": 13116
         },
         {
           "path": "references/registry-fixtures.json",
@@ -401,7 +406,7 @@
     },
     {
       "slug": "aegis-credential-authority",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "path": "skills/aegis-credential-authority",
       "description": "Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.",
       "dependencies": [
@@ -418,17 +423,27 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:ac8b10692cd30cf6b41acaec9af4bda1fd5cd4219ec44a22b1c3fe4678ed970e",
+      "content_digest": "sha256:95d5f3c05d77c13bab2c7e7590bafd17f2fde9b9f1149b4b081226e69932f6b1",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:3220ecc471edf59cef6171cfab8701b121fb41dd8de6902725356e42bc5f44de",
-          "size": 11722
+          "sha256": "sha256:2929058bf0a1a6414c7ae1d3cb88e8122b96bf6a8b2fe6cf763bf9c98768e5c9",
+          "size": 12695
         },
         {
           "path": "references/credential-fixtures.json",
           "sha256": "sha256:26209418030bf57bca3978e94708864b6f70cd7bad23abf5cfce5a66171d428b",
           "size": 4582
+        },
+        {
+          "path": "references/protected-intake.v1.json",
+          "sha256": "sha256:3550e3aaef234002a8f7adc9e77cfae72fb1d25cf6dcba6aa72c261550e044ea",
+          "size": 578
+        },
+        {
+          "path": "references/protected-intake.v1.md",
+          "sha256": "sha256:e1691d7fe6100822bcb68f24bc80f152d2e16ccca2e1e544e5256122531caf0f",
+          "size": 6712
         }
       ]
     },
@@ -485,12 +500,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:f28f89de95bf54e6dcd086cbbfc41163bdbcbe202cf616e66d7bf53df8bba96d",
+      "content_digest": "sha256:f9cc4f97cd6896ef2ca887543a421f6433895a95632499e533a82f5ab4d8552a",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:1aa609c7c05bb2dc007e0b3a40cb4aa255abdd9f292fcf87625c1fc6926c1b3f",
-          "size": 14805
+          "sha256": "sha256:6b589c784f785203e6a3576ff582993604cc060f458fbb7b3b32a3251b0212d0",
+          "size": 14869
         },
         {
           "path": "references/onboarding-fixtures.json",

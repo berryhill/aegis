@@ -1445,6 +1445,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, result)
 	})
+	registerManagerCredentialIntake(g, managerGateway)
 	g.POST("/manager/sessions/:session/turns", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -1456,7 +1457,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err = decode(c, &input); err != nil {
 			return err
 		}
-		result, err := managerGateway.Turn(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
+		result, err := managerGateway.TurnWithProtectedIntake(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input, supportsManagerProtectedIntake(c.Request()))
 		if err != nil {
 			if errors.Is(err, app.ErrUnauthenticated) || errors.Is(err, app.ErrDenied) || errors.Is(err, app.ErrExpired) {
 				return err

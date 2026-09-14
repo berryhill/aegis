@@ -2,9 +2,11 @@ package registry
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/berryhill/aegis/internal/reference"
 )
@@ -46,6 +48,33 @@ type CurrentFleetAgent struct {
 	Charter                reference.RevisionRef `json:"charter"`
 	CapabilityDeclarations []string              `json:"capability_declarations"`
 	PolicyRefs             []reference.DigestRef `json:"policy_refs"`
+}
+
+// UnmarshalJSON defaults only an omitted registration lifecycle. Canonical
+// AgentRevision decoding deliberately has no default. Use the strict codec here
+// too so custom decoding cannot bypass unknown-field or duplicate-key rejection.
+func (agent *CurrentFleetAgent) UnmarshalJSON(data []byte) error {
+	type wireAgent CurrentFleetAgent
+	wire, err := decodeStrict(data, func(value wireAgent) error { return nil })
+	if err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key := range fields {
+		if key != "lifecycle" && strings.EqualFold(key, "lifecycle") {
+			return errors.New("registration lifecycle key must be lowercase")
+		}
+	}
+	if _, present := fields["lifecycle"]; !present {
+		wire.Lifecycle = LifecycleEnabled
+	} else if wire.Lifecycle != LifecycleEnabled && wire.Lifecycle != LifecycleDisabled && wire.Lifecycle != LifecycleRetired {
+		return errors.New("invalid registration lifecycle")
+	}
+	*agent = CurrentFleetAgent(wire)
+	return nil
 }
 
 // CurrentFleetFixtureSource is an explicit deterministic adapter for the current fleet.

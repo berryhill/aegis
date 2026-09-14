@@ -489,6 +489,28 @@ func validateClaimProjectionEligibility(txn *badgerdb.Txn, item queue.Item, proj
 		return nil
 	}
 
+	// A workspace's first claim is based on its immutable runtime binding,
+	// not a retry. Never let the queued projection alone grant eligibility.
+	if transition.From == queue.StateAwaitingRuntime {
+		wire, err := get(txn, key(familyQueueRuntimeBinding, item.ItemID))
+		if err != nil {
+			return fleet.ErrConflict
+		}
+		binding, err := queue.UnmarshalRuntimeBinding(wire)
+		if err != nil || binding.QueueItem != digestRef(item.ItemID, item.Digest) || binding.Submission != item.Submission || binding.BoundAt != transition.OccurredAt || projection.Attempts != 0 || projection.AvailableAt != binding.BoundAt || transition.ClaimID != "" {
+			return fleet.ErrConflict
+		}
+		wire, err = get(txn, key(familySubmission, item.Submission.ID))
+		if err != nil {
+			return fleet.ErrConflict
+		}
+		submission, err := queue.UnmarshalSubmission(wire)
+		if err != nil || submission.Digest != item.Submission.Digest || submission.AuthorityKind != "registered-agent-workspace" || submission.OwnerAgentID != binding.OwnerAgent.ID {
+			return fleet.ErrConflict
+		}
+		return nil
+	}
+
 	var matched *queue.Retry
 	err = scan(txn, familyQueueRetry, func(_, wire []byte) error {
 		retry, decodeErr := queue.UnmarshalRetry(wire)

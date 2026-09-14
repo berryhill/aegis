@@ -22,6 +22,17 @@ No suite skill authenticates, authorizes, approves, issues a mandate, provisions
 
 The session skill progressively discloses non-secret interpretation examples from `skills/aegis-session-operations/references/session-fixtures.json` and routes normative questions to `specs/RUNTIME_AND_SESSIONS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/AUDIT.md`, and installed command help. Those references grant no identity, mandate, process, authority, or receipt evidence. A material authority or stanza change requires a new mandate, immutable authority context, disposable Hermes home, and clean process; permissions are never unioned across stanzas.
 
+The credential-authority skill now includes a self-contained
+`references/protected-intake.v1.md` workflow and synthetic versioned metadata
+examples qualified against the actual protected-intake decoder after archive
+installation. The delivered #245/#254 Linux gateway terminal performs review,
+explicit approval, no-echo input, canonical creation and same-conversation return;
+external agents must not build their own value-bearing client. This is create and
+pending-operation cancel support, not an online adapter for rotate/revoke/bind or
+all #248 platform operations. The archive/decoder regression and genuine
+Unix-gateway/PTY-to-bbolt regressions are distinct from still-missing supported
+Hermes installed-agent behavior. No fixture contains values or authentication.
+
 The credential-authority skill progressively discloses non-secret interpretation examples from `skills/aegis-credential-authority/references/credential-fixtures.json` and routes normative questions to `docs/CREDENTIAL_BROKER.md`, credential-related specifications, and installed command help. Its fixtures contain metadata and denial state only; they never carry credential values, passphrases, key-encryption keys, capabilities, authentication headers, or live authority.
 
 The manager-onboarding skill uses non-secret classification examples from `skills/aegis-manager-onboarding/references/onboarding-fixtures.json` and routes normative questions to `specs/AEGIS_MANAGER.md`, `specs/MANAGER_LIFECYCLE_AND_ONBOARDING.md`, and installed command help. It routes every operation to a typed Aegis command. Each operational session requires exactly one externally authenticated trust stanza: zero matches deny and multiple matches deny as ambiguous. Prompt/model content cannot select or change stanza or authority; stanza or material-authority changes require a new mandate and clean runtime session. Only Aegis emits authoritative audit events, which model narration cannot create or replace.
@@ -40,6 +51,24 @@ without `--check` is missing this capability even if the advisory skill installs
 full capability-qualified compatibility remains outstanding.
 
 The strict `skills/aegis-skills.json` manifest binds the bundle and each skill to exact content digests, compatibility ranges, operation ownership, dependencies, authority class, required operations and toolsets, sensitivity, network, filesystem, and file inventory declarations. `skills/evaluations.json` carries the non-secret structural evaluation cases. Neither file grants runtime authority.
+
+## Bundled operation ownership and transport inventory
+
+The routing skill includes `references/operation-matrix.v1.json` for all fifteen
+primary skills. `TestDistributedOperationMatrix` compares unique ownership with
+the actual constructor-built Cobra tree and current public Echo registrations,
+including console, protected intake, health and static routes. Source and test
+references are navigation, not claims that the referenced tests passed. The
+archive's exact source revision binds the inventory; the inventory is not a
+portable schema or runtime-capability attestation.
+
+Explicit gaps distinguish missing adapters from unavailable operations: no HTTP
+runtime binding, no transparent daemon-online forwarding of direct-service CLI
+calls, no general conversational platform adapter supplied by credential intake,
+no Graph lifecycle mutation, reviewer reevaluation or deployment projection.
+CLI and API presence must not invite temporary authenticated clients, credential
+extraction or a second writer. Unknown mutation outcomes require authoritative
+readback with the same intent identity before replay.
 
 ## Validate and evaluate source
 
@@ -105,6 +134,16 @@ Never test installation against a normal profile. Use a durable repository-local
 These live GitHub commands prove published-repository discovery and are intentionally separate from hermetic unit tests. They cannot prove an unmerged revision is already available from the public tap.
 
 ## Queue historical readback
+
+The real-store `TestDQHandoff` regression exercises workspace acceptance,
+controller runtime binding through the application service (no HTTP binding
+route exists), first claim, live-lease denial, expiry-backed HTTP reclaim and
+authoritative failure from an incompatible runtime adapter. Claim eligibility
+reloads the exact immutable binding; completion binds audit to its runtime
+mandate while retaining original workspace submission provenance. Replay keeps
+the original timestamp and digest throughout. This is service/persistence
+evidence with a synthetic session process, not actual-agent or supported-Hermes
+execution success.
 
 Authenticated Queue `list` and exact `show` include valid workspace submissions in
 `awaiting_runtime` without requiring a terminal disposition. They do not claim a

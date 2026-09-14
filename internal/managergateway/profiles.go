@@ -24,11 +24,12 @@ const (
 )
 
 type TurnResult struct {
-	Kind      string         `json:"kind"`
-	Origin    string         `json:"origin"`
-	Message   string         `json:"message"`
-	Sensitive bool           `json:"sensitive,omitempty"`
-	Data      map[string]any `json:"data,omitempty"`
+	Intake    *CredentialIntakeHandoff `json:"protected_intake,omitempty"`
+	Kind      string                   `json:"kind"`
+	Origin    string                   `json:"origin"`
+	Message   string                   `json:"message"`
+	Sensitive bool                     `json:"sensitive,omitempty"`
+	Data      map[string]any           `json:"data,omitempty"`
 }
 
 type HermesProfileDescriptor struct {
