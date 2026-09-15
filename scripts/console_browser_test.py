@@ -207,6 +207,27 @@ def navigate(devtools: DevTools, url: str) -> None:
     require(not result.get("errorText"), f"browser navigation failed: {result.get('errorText')}")
 
 
+def refresh_registration_document(devtools: DevTools, timeout: float = 15) -> None:
+    previous = devtools.command("Page.getFrameTree")["frameTree"]["frame"]["loaderId"]
+    devtools.command("Page.reload", {"ignoreCache": True})
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        current = devtools.command("Page.getFrameTree")["frameTree"]["frame"]["loaderId"]
+        if current and current != previous and devtools.evaluate("document.readyState === 'complete'"):
+            return
+        time.sleep(0.05)
+    raise RuntimeError("registration refresh did not complete a new document")
+
+
+def registration_identity(devtools: DevTools, label: str) -> dict[str, Any]:
+    value = devtools.evaluate("Array.from(document.querySelectorAll('dt')).find(e => e.textContent.trim() === " + json.dumps(label) + ")?.nextElementSibling?.textContent.trim()")
+    parts = value.removeprefix("r").split(" @ ") if isinstance(value, str) else []
+    require(len(parts) == 2 and parts[0] == "1" and parts[1].startswith("sha256:")
+            and len(parts[1]) == 71 and all(c in "0123456789abcdef" for c in parts[1][7:]),
+            "browser registration omitted exact revision 1 and digest")
+    return {"revision": 1, "digest": parts[1]}
+
+
 def wait_for(
     devtools: DevTools,
     expression: str,
@@ -545,9 +566,25 @@ def measure_loop_geometry(devtools, workspace, name, steps, transitions, digest,
     (proof / (name + ".png")).write_bytes(png)
 
 
+def verify_enabled_registration(devtools: DevTools, origin: str, expected_identity: dict[str, Any]) -> None:
+    # Each document loads retained assets too. Respect the production source
+    # limiter (five requests/second) rather than weakening it for the proof.
+    time.sleep(1.0)
+    navigate(devtools, origin + "/console/agents")
+    wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#record-proof-agent .lifecycle.enabled')", "enabled new Agent collection readback")
+    time.sleep(1.0)
+    click(devtools, '#record-proof-agent')
+    wait_for(devtools, "document.readyState === 'complete' && location.search.includes('record_key=proof-agent') && !!document.querySelector('#agent-inline-detail .detail-title .lifecycle.enabled')", "enabled new Agent exact detail")
+    require(registration_identity(devtools, "Registry revision") == expected_identity, "browser detail differs from reviewed revision")
+    time.sleep(1.0)
+    refresh_registration_document(devtools)
+    wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#agent-inline-detail .detail-title .lifecycle.enabled')", "enabled new Agent after refresh")
+    require(registration_identity(devtools, "Registry revision") == expected_identity, "refreshed browser detail differs from reviewed revision")
+
+
 def main() -> int:
-    if len(sys.argv) not in (4, 7):
-        raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [register CHARTER_JSON CURRENT_FLEET_JSON]")
+    if len(sys.argv) not in (4, 5, 7):
+        raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [registration-readback | register CHARTER_JSON CURRENT_FLEET_JSON]")
     origin = sys.argv[1].rstrip("/")
     password_path = pathlib.Path(sys.argv[2])
     workspace = pathlib.Path(sys.argv[3])
@@ -555,11 +592,12 @@ def main() -> int:
     initial_password = passwords.get("initial")
     replacement_password = passwords.get("replacement")
     registration_only = len(sys.argv) == 7 and sys.argv[4] == "register"
-    if len(sys.argv) == 7 and not registration_only:
+    registration_readback = len(sys.argv) == 5 and sys.argv[4] == "registration-readback"
+    if (len(sys.argv) == 7 and not registration_only) or (len(sys.argv) == 5 and not registration_readback):
         raise RuntimeError("unsupported installed-console browser phase")
     require(isinstance(initial_password, str) and len(initial_password) >= 12, "browser proof received no initial password")
     require(isinstance(replacement_password, str) and len(replacement_password) >= 12, "browser proof received no replacement password")
-    chrome_home = workspace / ("chrome-registration" if registration_only else "chrome-inspection")
+    chrome_home = workspace / ("chrome-registration" if registration_only else "chrome-registration-readback" if registration_readback else "chrome-inspection")
     chrome_home.mkdir(mode=0o700)
     chrome_stderr_path = workspace / "chrome.stderr"
     chrome_stderr = chrome_stderr_path.open("w", encoding="utf-8")
@@ -606,6 +644,11 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && document.querySelector('#surface-title')?.textContent.trim() === 'Agent Registry'", "authenticated Agent Registry")
         time.sleep(0.5)
 
+        if registration_readback:
+            verify_enabled_registration(devtools, origin, json.loads((workspace / "registration-identity.json").read_text(encoding="utf-8")))
+            print(json.dumps({"browser_registration_restart_enabled": "pass", "runtime_authority_granted": False}, sort_keys=True))
+            return 0
+
         if registration_only:
             charter_json = pathlib.Path(sys.argv[5]).read_text(encoding="utf-8")
             fixture_json = pathlib.Path(sys.argv[6]).read_text(encoding="utf-8")
@@ -620,8 +663,14 @@ def main() -> int:
             replace_text(devtools, "#source-id", "proof-source")
             click(devtools, '#agent-registration-prepare button[type="submit"]')
             wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#agent-registration-execute') && document.body.textContent.includes('Exact immutable registration proposal')", "exact Agent registration review")
+            require(devtools.evaluate("Array.from(document.querySelectorAll('dt')).some(e => e.textContent.trim() === 'Lifecycle' && e.nextElementSibling?.textContent.trim() === 'enabled')"), "registration review omitted enabled lifecycle")
+            reviewed_identity = registration_identity(devtools, "Initial Agent revision")
             click(devtools, '#agent-registration-execute button[type="submit"]')
             wait_for(devtools, "document.readyState === 'complete' && document.body.innerText.includes('Registered Agent with authoritative exact revision readback') && !!document.querySelector('a[href*=\"record_key=proof-agent\"]')", "browser-authenticated Agent registration")
+            verify_enabled_registration(devtools, origin, reviewed_identity)
+            identity_path = workspace / "registration-identity.json"
+            identity_path.write_text(json.dumps(reviewed_identity), encoding="utf-8")
+            identity_path.chmod(0o600)
             print(json.dumps({"browser": "Google Chrome", "browser_authenticated_agent_registration": "pass", "invalid_source_denial": "pass", "credentials_used_for_fleet_workflow": False}, sort_keys=True))
             return 0
 
@@ -776,13 +825,20 @@ def main() -> int:
         click(devtools, '[data-graph-definition]')
         wait_for(devtools, "document.querySelector('[data-graph-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#graph-context')?.checkVisibility() && document.querySelector('[data-graph-definition-panel]')?.checkVisibility() && document.querySelector('#graph-context .related-records a[href^=\"/console/queue?record_key=queue-accepted\"]')?.checkVisibility()", "Definition details opened visible Graph inspector and Queue related link")
         click(devtools, '.related-records a[href^="/console/queue?record_key=queue-accepted"]')
+        # Queue also initializes canvas-first. Evidence is inside its definition
+        # inspector; reading innerText before initialization races its collapse.
+        wait_for(devtools, "document.readyState === 'complete' && location.pathname === '/console/queue' && document.activeElement?.id === 'queue-detail' && document.querySelector('#queue-context')?.hidden === true && document.querySelector('[data-queue-definition]')?.getAttribute('aria-expanded') === 'false'", "canvas-first Queue with collapsed definition inspector and route focus")
+        click(devtools, '[data-queue-node="0"]')
+        wait_for(devtools, "document.querySelector('[data-queue-node-panel=\"0\"]')?.checkVisibility() && document.querySelector('[data-queue-node=\"0\"]')?.getAttribute('aria-pressed') === 'true'", "Queue node opened its visible inspector")
+        click(devtools, '[data-queue-node-panel="0"] [data-queue-definition]')
+        wait_for(devtools, "document.querySelector('[data-queue-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#queue-context')?.checkVisibility() && document.querySelector('[data-queue-definition-panel]')?.checkVisibility() && document.activeElement?.id === 'queue-context-title'", "Definition details opened visible Queue evidence inspector")
         wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
         desktop_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
         require(desktop_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(desktop_detail_png) > 1024, "desktop detail screenshot was not a bounded PNG")
         devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
         devtools.command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
         narrow_detail = devtools.evaluate("(() => ({overflow: document.documentElement.scrollWidth > innerWidth, composition: document.querySelector('#queue-detail')?.dataset.composition, focused: document.activeElement?.id}))()")
-        require(narrow_detail == {"overflow": False, "composition": "queue-replacement", "focused": "queue-detail"}, f"narrow reduced-motion Queue detail lost DOM/focus fidelity: {narrow_detail}")
+        require(narrow_detail == {"overflow": False, "composition": "queue-replacement", "focused": "queue-context-title"}, f"narrow reduced-motion Queue detail lost DOM/focus fidelity: {narrow_detail}")
         narrow_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
         require(narrow_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(narrow_detail_png) > 1024 and narrow_detail_png != desktop_detail_png, "narrow detail screenshot did not prove viewport-specific rendering")
         devtools.command("Emulation.clearDeviceMetricsOverride")
