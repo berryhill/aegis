@@ -17,6 +17,8 @@ The retained files were regenerated from the then-current `scripts/demo-no-key.s
 
 Attempt 5 changes the script's internal build invocation to `scripts/build-source.sh` for verified worktree provenance; the retained attempt-3 recording remains historical development evidence, not a recording of this new build check or an exact-candidate proof. The build helper does not change demonstrated CLI syntax.
 
+The recording's explicit `session_ttl: 5m` comes from the copied example and remains a supported shorter override, not the current one-hour product default. It does not demonstrate browser login duration or sensitive-action freshness. Current installed acceptance must use the default-lifetime browser harness plus independent deterministic expiry/freshness tests; no elapsed-hour browser proof is claimed by replay.
+
 Interactive onboarding, gateway lifecycle, console authentication, and manager activation are deliberately outside this no-key demonstration. Their bounded built-binary PTY proof is `go test ./cmd/aegis -run TestBasicAndAdvancedBootstrapRoutesReachSameArtifactDerivedStateAndResume -count=1`; width/color hierarchy remains covered by focused `internal/tui` tests.
 
 To record with asciinema when available:

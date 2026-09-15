@@ -170,7 +170,15 @@ func newCredentialRouteFixture(t *testing.T) *credentialRouteFixture {
 
 func newCredentialRouteFixtureWithTTL(t *testing.T, sessionTTL time.Duration) *credentialRouteFixture {
 	t.Helper()
+	return newCredentialRouteFixtureWithClock(t, sessionTTL, nil)
+}
+
+func newCredentialRouteFixtureWithClock(t *testing.T, sessionTTL time.Duration, now func() time.Time) *credentialRouteFixture {
+	t.Helper()
 	svc := apiService(t)
+	if now != nil {
+		svc.Now = now
+	}
 	configureAPIFleet(t, svc)
 	root := filepath.Join(t.TempDir(), "credentials")
 	keyPath, databasePath := filepath.Join(root, "authority.kek"), filepath.Join(root, "authority.db")

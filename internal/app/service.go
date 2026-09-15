@@ -241,6 +241,24 @@ func (s *Service) AuthenticateUnixPeer(ctx context.Context, uid uint32) (core.Su
 }
 
 func (s *Service) requirePrincipal(sub core.Subject) error {
+	if err := s.RequirePrincipalIdentity(sub); err != nil {
+		return err
+	}
+	// Password subjects can outlive the sensitive-action freshness window for
+	// browser navigation. Never accept that longer identity as fresh authority.
+	if sub.Method == "password" {
+		now := s.Now()
+		if sub.AuthenticatedAt.IsZero() || sub.AuthenticatedAt.After(now) || !now.Before(sub.AuthenticatedAt.Add(s.Config.Principal.AuthTTL)) {
+			return fmt.Errorf("%w: operation requires fresh configured principal authentication", ErrDenied)
+		}
+	}
+	return nil
+}
+
+// RequirePrincipalIdentity admits read-only metadata access from a trusted
+// transport's authenticated subject. It must never authorize an authority
+// grant or mutation. Local-OS/CLI expiry and authentication are unchanged.
+func (s *Service) RequirePrincipalIdentity(sub core.Subject) error {
 	if sub.PrincipalID != s.Config.Principal.ID || sub.PrincipalID == "" || !s.Now().Before(sub.ExpiresAt) {
 		return fmt.Errorf("%w: operation requires fresh configured principal authentication", ErrDenied)
 	}
@@ -1055,6 +1073,16 @@ func (s *Service) PreviewSession(ctx context.Context, agent string, rev uint64, 
 	return s.PreviewSessionAs(ctx, sub, agent, rev, requested, env)
 }
 func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent string, rev uint64, requested string, env core.Environment) (core.Mandate, core.Decision, error) {
+	if sub.Method == "password" {
+		if err := s.requirePrincipal(sub); err != nil {
+			return core.Mandate{}, core.Decision{}, err
+		}
+		// Browser identity must not lengthen mandates even when this service
+		// is called directly rather than through console mutation admission.
+		if freshUntil := sub.AuthenticatedAt.Add(s.Config.Principal.AuthTTL); freshUntil.Before(sub.ExpiresAt) {
+			sub.ExpiresAt = freshUntil
+		}
+	}
 	c, err := s.GetCharter(agent, rev)
 	if err != nil {
 		return core.Mandate{}, core.Decision{}, err
@@ -1193,6 +1221,11 @@ func (s *Service) StartSession(ctx context.Context, mandateID string) (core.Sess
 	return s.StartSessionAs(ctx, sub, mandateID)
 }
 func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateID string) (core.Session, error) {
+	if sub.Method == "password" {
+		if err := s.requirePrincipal(sub); err != nil {
+			return core.Session{}, err
+		}
+	}
 	m, err := s.GetMandate(mandateID)
 	if err != nil {
 		return core.Session{}, err
@@ -1502,6 +1535,11 @@ func (s *Service) TerminateSession(ctx context.Context, id, reason string) error
 	return s.TerminateSessionAs(ctx, sub, id, reason)
 }
 func (s *Service) TerminateSessionAs(ctx context.Context, sub core.Subject, id, reason string) error {
+	if sub.Method == "password" {
+		if err := s.requirePrincipal(sub); err != nil {
+			return err
+		}
+	}
 	sess, err := s.GetSession(id)
 	if err != nil {
 		return err

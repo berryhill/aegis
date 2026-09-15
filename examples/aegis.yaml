@@ -26,6 +26,8 @@ api:
     # Plain HTTP is accepted only when both this origin and api.listen are loopback.
     # Use an exact https origin and configure both TLS files for remote access.
     origin: http://127.0.0.1:8443
+    # Explicit shorter override, retained on upgrade. Omit for the fixed 1h default.
+    # Positive durations up to 1h are supported; sensitive principal freshness is separate.
     session_ttl: 5m
     max_page_size: 100
 retention:

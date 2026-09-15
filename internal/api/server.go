@@ -198,6 +198,8 @@ func randomConsoleID(prefix string) (string, error) {
 
 func mapConsoleError(err error) error {
 	switch {
+	case errors.Is(err, console.ErrReauthenticationRequired):
+		return err
 	case errors.Is(err, console.ErrUnauthenticated):
 		return app.ErrUnauthenticated
 	case errors.Is(err, console.ErrDenied):
@@ -302,6 +304,19 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	preAuthLimit := newLimiter()
 	postAuthLimit := newLimiter()
 	e.HTTPErrorHandler = func(c *echo.Context, err error) {
+		if errors.Is(err, console.ErrReauthenticationRequired) {
+			consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+			model := consoleweb.PageModel{Authentication: consoleweb.AuthenticationModel{
+				SessionTTL: svc.Config.API.Console.SessionTTL.String(),
+				Status:     "This action requires fresh principal authentication. Sign in again, then review and retry the action. Nothing was executed.",
+				ReasonCode: "principal_reauthentication_required",
+			}, Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
+			content, renderErr := renderConsole(c.Request().Context(), consoleweb.Document(model))
+			if renderErr == nil {
+				_ = c.Blob(http.StatusUnauthorized, "text/html; charset=utf-8", content)
+				return
+			}
+		}
 		status, code, msg := classifyError(err)
 		rid, _ := c.Get("request_id").(string)
 		svc.Log.ErrorContext(c.Request().Context(), "API request failed", "request_id", rid, "route", c.Path(), "error", err)
@@ -427,6 +442,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			model.Status = "Authentication failed. Enter the enrolled principal password."
 			model.ReasonCode = reasonCode
 		}
+		if reasonCode == "principal_reauthentication_required" {
+			model.Status = "Sign in again for fresh principal authority. This creates a new fixed-lifetime browser session; pending reviews must be repeated."
+		}
 		return model
 	}
 	renderAuthentication := func(c *echo.Context, status int, reasonCode string) error {
@@ -440,7 +458,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.Blob(status, "text/html; charset=utf-8", content)
 	}
 	loadConsole := func(c *echo.Context, subject core.Subject, domain consoleDomain) (consoleweb.PageModel, error) {
-		if err := svc.RequirePrincipal(subject); err != nil {
+		if err := svc.RequirePrincipalIdentity(subject); err != nil {
 			return consoleweb.PageModel{}, err
 		}
 		limit, err := consoleManager.Page(c.QueryParam("limit"))
@@ -896,7 +914,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			consoleManager.ClearCookie(c.Response())
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequirePrincipalIdentity(subject); err != nil {
 			return err
 		}
 		surface, err := svc.FleetSurfaceAs(c.Request().Context(), subject)
@@ -1078,6 +1096,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", console.Datastar())
 	})
+	e.GET("/console/reauthenticate", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return renderAuthentication(c, http.StatusOK, "principal_reauthentication_required")
+	})
 	e.POST("/console/login", func(c *echo.Context) error {
 		consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
 		if err := consoleManager.ValidateOrigin(c.Request(), true); err != nil {
@@ -1110,6 +1134,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			consoleManager.RevokeSessionValue(sessionValue)
 			return err
 		}
+		// Explicit password reauthentication replaces, rather than renews, the
+		// old identity and invalidates its session-bound pending reviews.
+		consoleManager.Revoke(c.Request())
 		consoleManager.SetCookieUntil(c.Response(), sessionValue, expires)
 		return c.Redirect(http.StatusSeeOther, "/console/agents#/agents")
 	})
@@ -1342,7 +1369,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			consoleManager.ClearCookie(c.Response())
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequirePrincipalIdentity(subject); err != nil {
 			return err
 		}
 		limit, err := consoleManager.Page(c.QueryParam("limit"))
@@ -1390,11 +1417,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid console signals")
 			}
 		}
-		subject, err := consoleManager.AuthorizeMutation(c.Request())
+		subject, err := consoleManager.AuthorizeSessionMutation(c.Request())
 		if err != nil {
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequirePrincipalIdentity(subject); err != nil {
 			return err
 		}
 		if err = svc.AuditConsoleSession(c.Request().Context(), subject, "success", "browser_session_revoked"); err != nil {
