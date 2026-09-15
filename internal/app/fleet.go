@@ -259,19 +259,20 @@ type QueueExecutionView struct {
 	// Submission is the admitted queued request with full mandate context. It
 	// is resolved through the repository independently of Item.Submission,
 	// which only carries the immutable submission digest reference.
-	Submission     queue.Submission               `json:"submission"`
-	Projection     queue.Projection               `json:"projection"`
-	GraphRun       execution.GraphRun             `json:"graph_run"`
-	LoopExecutions []execution.LoopExecution      `json:"loop_executions"`
-	Attempts       []execution.Attempt            `json:"attempts"`
-	Claims         []queue.Claim                  `json:"claims"`
-	Transitions    []queue.QueueTransition        `json:"transitions"`
-	Retries        []queue.Retry                  `json:"retries"`
-	Cancellations  []queue.Cancellation           `json:"cancellations"`
-	Runtime        registry.RuntimeBinding        `json:"runtime"`
-	Artifact       *evidence.RuntimeArtifact      `json:"artifact,omitempty"`
-	Receipts       []evidence.VerificationReceipt `json:"receipts"`
-	Disposition    *disposition.Record            `json:"disposition,omitempty"`
+	Submission     queue.Submission                   `json:"submission"`
+	Projection     queue.Projection                   `json:"projection"`
+	GraphRun       execution.GraphRun                 `json:"graph_run"`
+	LoopExecutions []execution.LoopExecution          `json:"loop_executions"`
+	Attempts       []execution.Attempt                `json:"attempts"`
+	Claims         []queue.Claim                      `json:"claims"`
+	Transitions    []queue.QueueTransition            `json:"transitions"`
+	Retries        []queue.Retry                      `json:"retries"`
+	Cancellations  []queue.Cancellation               `json:"cancellations"`
+	Runtime        registry.RuntimeBinding            `json:"runtime"`
+	NodeRuntimes   map[string]registry.RuntimeBinding `json:"node_runtimes,omitempty"`
+	Artifact       *evidence.RuntimeArtifact          `json:"artifact,omitempty"`
+	Receipts       []evidence.VerificationReceipt     `json:"receipts"`
+	Disposition    *disposition.Record                `json:"disposition,omitempty"`
 }
 
 type SurfaceReadiness struct {
@@ -1033,15 +1034,25 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 			return nil, fleet.ErrCorrupt
 		}
 		graphRevision, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-		if loadErr != nil || graphRevision.Digest != snapshot.Graph.Digest || len(graphRevision.Nodes) != 1 {
+		if loadErr != nil || graphRevision.Digest != snapshot.Graph.Digest || len(graphRevision.Nodes) == 0 {
 			return nil, fleet.ErrCorrupt
 		}
-		participantRef := graphRevision.Nodes[0].Participant
-		participant, loadErr := s.FleetRepository.GetAgentRevision(ctx, participantRef.ID, participantRef.Revision)
-		if loadErr != nil || participant.Digest != participantRef.Digest {
-			return nil, fleet.ErrCorrupt
+		// Historical visibility is not processing admission. Validate every
+		// participant even when this Graph is unsupported by the bounded worker.
+		view.NodeRuntimes = make(map[string]registry.RuntimeBinding, len(graphRevision.Nodes))
+		for _, node := range graphRevision.Nodes {
+			participantRef := node.Participant
+			participant, loadErr := s.FleetRepository.GetAgentRevision(ctx, participantRef.ID, participantRef.Revision)
+			if loadErr != nil || participant.Digest != participantRef.Digest {
+				return nil, fleet.ErrCorrupt
+			}
+			view.NodeRuntimes[node.ID] = participant.Runtime
 		}
-		view.Runtime = participant.Runtime
+		// Preserve the single-node response without claiming one runtime is
+		// representative of an entire multi-node Graph.
+		if len(graphRevision.Nodes) == 1 {
+			view.Runtime = view.NodeRuntimes[graphRevision.Nodes[0].ID]
+		}
 		foundRun := false
 		for _, run := range runs {
 			if run.GraphRunID == item.GraphRunID {
@@ -1075,7 +1086,7 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 				view.Claims = append(view.Claims, claim)
 			}
 		}
-		if projection.State != queue.StateQueued && projection.State != queue.StateClaimed {
+		if projection.State != queue.StateQueued && projection.State != queue.StateClaimed && projection.State != queue.StateAwaitingRuntime {
 			dispositionRecord, loadErr := s.FleetRepository.GetDispositionByGraphRun(ctx, item.GraphRunID)
 			if loadErr != nil || dispositionRecord.QueueItem.ID != item.ItemID || dispositionRecord.QueueItem.Digest != item.Digest {
 				return nil, fleet.ErrCorrupt

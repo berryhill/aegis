@@ -111,7 +111,22 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			return e
 		}
 		submission, e := queue.UnmarshalSubmission(submissionWire)
-		if e != nil || fact.Event.MandateID != submission.MandateID {
+		if e != nil || submission.Digest != item.Submission.Digest {
+			return fleet.ErrConflict
+		}
+		mandateID := submission.MandateID
+		if submission.AuthorityKind == "registered-agent-workspace" {
+			bindingWire, loadErr := get(txn, key(familyQueueRuntimeBinding, item.ItemID))
+			if loadErr != nil {
+				return fleet.ErrConflict
+			}
+			binding, loadErr := queue.UnmarshalRuntimeBinding(bindingWire)
+			if loadErr != nil || binding.QueueItem != storedClaim.QueueItem || binding.Submission != item.Submission || binding.Authority != storedClaim.Authority || binding.OwnerAgent.ID != submission.OwnerAgentID {
+				return fleet.ErrConflict
+			}
+			mandateID = binding.MandateID
+		}
+		if fact.Event.MandateID != mandateID {
 			return fleet.ErrConflict
 		}
 		if _, found, e := optional(txn, key(familyDispositionByRun, completion.Disposition.GraphRunID)); e != nil {

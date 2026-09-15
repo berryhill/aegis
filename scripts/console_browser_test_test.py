@@ -17,6 +17,17 @@ class ProcessStub:
 
 
 class PageWebsocketTest(unittest.TestCase):
+    def test_queue_evidence_requires_real_inspector_navigation(self):
+        source = pathlib.Path(console_browser_test.__file__).read_text()
+        start = source.index('canvas-first Queue with collapsed definition inspector and route focus')
+        node = source.index("click(devtools, '[data-queue-node=\"0\"]')", start)
+        definition = source.index("click(devtools, '[data-queue-node-panel=\"0\"] [data-queue-definition]')", node)
+        visible = source.index('Definition details opened visible Queue evidence inspector', definition)
+        evidence = source.index('Graph to replacement-page Queue evidence, receipt, and disposition chain', visible)
+        for term in ('artifact-accepted', 'disposition-accepted', 'evidence_satisfied'):
+            self.assertIn(term, source[visible:evidence])
+        self.assertIn('"focused": "queue-context-title"', source[evidence:])
+
     def test_denies_when_chrome_exits_after_active_port_publication(self):
         with self.assertRaisesRegex(
             RuntimeError,

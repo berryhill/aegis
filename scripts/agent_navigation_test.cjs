@@ -5,8 +5,11 @@ const vm = require('node:vm');
 const source = fs.readFileSync('web/console/navigation.js', 'utf8');
 function resolve(href) {
   const replacements = [];
-  const location = {href, hash: new URL(href).hash, replace: value => replacements.push(value)};
-  vm.runInNewContext(source, {URL, location, document: {body: {dataset: {}}}, addEventListener() {}});
+  const url = new URL(href);
+  const location = {href, hash: url.hash, pathname: url.pathname, replace: value => replacements.push(value)};
+  const context = {URL, location, document: {body: {dataset: {}}}, addEventListener() {}};
+  context.window = context;
+  vm.runInNewContext(source, context);
   return replacements;
 }
 const base = 'https://aegis.invalid/console/agents';

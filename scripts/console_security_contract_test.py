@@ -13,6 +13,20 @@ class FragmentContractTest(unittest.TestCase):
         self.assertNotIn("location.hash", remainder)
         self.assertNotIn("location.replace", remainder)
 
+    def test_unreviewed_fragment_uses_rejected(self):
+        for extra in ('location.hash = "#/agents/other";',
+                      'location.replace("https://evil.invalid");'):
+            with self.subTest(extra=extra), self.assertRaises(AssertionError):
+                bounded_navigation_source(self.source + "\n" + extra)
+
+    def test_missing_or_duplicate_adapters_rejected(self):
+        for marker in ('  const resolveGraph = () => {',
+                       '  const resolveAgentFragment = () => {',
+                       '  const reconcileFragment = () => {'):
+            for changed in (self.source.replace(marker, "", 1), self.source + marker):
+                with self.subTest(marker=marker), self.assertRaises(AssertionError):
+                    bounded_navigation_source(changed)
+
     def test_security_mutations_rejected(self):
         for old, new in [
             ("key.length > 1024", "key.length > 999999"),
@@ -21,6 +35,10 @@ class FragmentContractTest(unittest.TestCase):
             ('target.searchParams.set("record_key", key)', 'target.searchParams.set("admin", key)'),
             ('location.replace(target.href)', 'document.body.innerHTML = key'),
             ('location.pathname === "/console/credentials"', 'true'),
+            ('location.pathname !== "/console/graphs"', 'false'),
+            ('{0,127}', '{0,999999}'),
+            ('target.pathname = "/console/agents"', 'target.pathname = "/console/credentials"'),
+            ('target.searchParams.delete("revision")', 'target.searchParams.delete("other")'),
         ]:
             with self.subTest(mutation=old):
                 self.assertIn(old, self.source)

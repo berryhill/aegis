@@ -47,22 +47,29 @@ The alias `aegis loop` exists, but prefer the canonical plural command in durabl
 5. Use a fresh stable `idempotency_key` for one intended publication. A repeated key or payload is not permission to substitute changed content; preserve conflict and replay denials.
 6. Treat model output as a proposal only. Do not claim that a hand-authored or locally hashed document is canonical until the typed Aegis service returns the exact normalized revision, validation, and digest.
 
-The publish file is a strict `PublishLoopInput` JSON object containing `authority`, `publisher`, `revision`, optional `expected_previous_digest`, and `idempotency_key`. Authority and publisher values must come from current authenticated Aegis readback, not from the model, a fixture, another session, or browser input.
+The publish file is a strict `PublishLoopInput` JSON object. Choose the authority path explicitly:
+
+- Registered-Agent workspace: supply `agent_id`, `revision`, optional `expected_previous_digest`, and `idempotency_key`; omit `authority` and `publisher`. The authenticated service resolves the exact latest enabled Agent, checks the principal and stable owner, and constructs server-derived workspace authority and publisher references. `agent_id` is a selector, not authentication or a caller-issued delegation. No provisioning receipt, running session, runtime mandate, or credential is needed for workspace publication.
+- Runtime authority: omit `agent_id` and supply `authority`, `publisher`, `revision`, optional `expected_previous_digest`, and `idempotency_key`. Authority and publisher values must come from current authenticated Aegis readback, not from the model, a fixture, another session, or browser input. Do not manufacture a runtime reference when only workspace authority is available.
+
+These are field recipes, not complete schema-validated request examples. This bundle does not yet provide a complete portable Loop builder. If the installed interface cannot prepare the required revision without guessing, report that adapter/material gap before attempting mutation.
+
+Direct-store CLI access is unavailable when the daemon owns the store (`control_plane_online`). Do not stop the daemon, open a second writer, extract its token, or build an ad-hoc authenticated client to follow this recipe. Use a documented installed typed adapter if available; otherwise report the online adapter gap.
 
 ## Publish and verify
 
 1. Publish only after the authenticated operator explicitly requests the exact operation and reviewed file: `aegis loops publish FILE`.
 2. Aegis reauthenticates and performs fresh authority admission. Preserve denials for malformed structure, invalid ports or topology, absent evidence contracts, non-contiguous revisions, predecessor mismatch, an existing revision conflict, publisher substitution, authority drift, or unavailable persistence.
 3. On success, inspect the returned `revision`, `validation`, and `decision`. Require validation outcome `valid`; match the exact Loop ID, revision, revision digest, validator, and validation digest. `decision.idempotent` describes service handling and does not weaken exact-content requirements.
-4. Read back the exact immutable record with `aegis loops show LOOP REVISION`. Match its revision and digest, validation record, publisher Agent, authority context, mandate, stanza, runtime, charter, and publication-provenance digest.
+4. Read back the exact immutable record with `aegis loops show LOOP REVISION`. Match its revision and digest, validation record, publisher Agent, authority context, and publication-provenance digest. Workspace readback does not require a runtime mandate or session: verify the workspace authority kind and exact registered-Agent/owner binding rather than inventing runtime provenance. On the runtime-authority path, also verify the returned mandate, stanza, runtime, and charter bindings.
 5. A successful command exit, model narration, browser confirmation page, or projection alone is not publication evidence. If exact readback is absent, inconsistent, or corrupt, report publication unverified and stop.
 
 ## Activate an exact revision
 
 1. Activation is a separate consequential operation. Obtain explicit authorization for the exact Loop revision and its current lifecycle head.
-2. Prepare a strict `SetLoopLifecycleInput` JSON object containing current `authority`, exact `publisher`, exact `loop` revision reference, fresh stable `event_id`, and `expected_previous_digest` equal to the latest lifecycle-event digest, or empty only when no lifecycle event exists. The CLI sets state to `active`; do not rely on a caller-supplied state.
+2. Prepare a strict `SetLoopLifecycleInput` JSON object containing exact `loop` revision reference, fresh stable `event_id`, and `expected_previous_digest` equal to the latest lifecycle-event digest, or empty only when no lifecycle event exists. For workspace lifecycle, supply `agent_id` and omit `authority` and `publisher`; the service derives both using the same owner-bound path as publication. For runtime lifecycle, omit `agent_id` and supply current `authority` and exact `publisher`. The CLI sets state to `active`; do not rely on a caller-supplied state.
 3. Run `aegis loops activate LOOP FILE`. The positional Loop ID must equal `loop.id`. Any stale lifecycle head, foreign or invalid revision, retired Loop, publisher or authority substitution, or ambiguous authority denies.
-4. Read back with `aegis loops show LOOP REVISION`. Require lifecycle state `active`, exact active revision and digest, and an appended lifecycle event whose event ID, previous digest, publisher, authority, mandate, stanza, and digest match the returned result.
+4. Read back with `aegis loops show LOOP REVISION`. Require lifecycle state `active`, exact active revision and digest, and an appended lifecycle event whose event ID, previous digest, publisher, authority, and digest match the returned result. Verify workspace or runtime provenance according to the selected path above; do not require runtime mandate/stanza fields for workspace lifecycle.
 5. Activation selects an immutable revision for new use; it does not mutate historical Graph snapshots, queue items, runs, attempts, or evidence, and it does not itself execute the Loop.
 
 ## Retire without rewriting history

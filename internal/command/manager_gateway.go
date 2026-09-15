@@ -22,13 +22,14 @@ import (
 )
 
 type gatewayManagerClient struct {
-	http      *http.Client
-	transport string
-	sessionID string
-	token     string
-	mode      string
-	reason    string
-	nextStep  string
+	http            *http.Client
+	transport       string
+	sessionID       string
+	token           string
+	mode            string
+	reason          string
+	nextStep        string
+	protectedIntake bool
 }
 
 type managerCommandParseError struct {
@@ -110,7 +111,7 @@ func newGatewayManagerClient(cfg config.Config) (*gatewayManagerClient, error) {
 	// The server write deadline includes its own five-second response margin.
 	// Keep an additional client-side transport margin so the client cannot
 	// cancel an admitted cleanup at the same instant as the server deadline.
-	return &gatewayManagerClient{http: &http.Client{Transport: transport, Timeout: requestTimeout + 10*time.Second}, transport: cfg.API.Token}, nil
+	return &gatewayManagerClient{http: &http.Client{Transport: transport, Timeout: requestTimeout + 10*time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, transport: cfg.API.Token}, nil
 }
 
 func (c *gatewayManagerClient) open(ctx context.Context) (time.Time, error) {
@@ -184,6 +185,12 @@ func (c *gatewayManagerClient) turn(ctx context.Context, input string) (managerg
 }
 
 func validGatewayTurnResult(result managergateway.TurnResult) bool {
+	if result.Intake != nil && (result.Kind != "credential_protected_intake" || result.Origin != managergateway.TurnOriginAuthoritative || result.Intake.Protocol != managergateway.ProtectedIntakeProtocol) {
+		return false
+	}
+	if result.Kind == "credential_protected_intake" && result.Intake == nil {
+		return false
+	}
 	if strings.TrimSpace(result.Message) == "" || (result.Origin != managergateway.TurnOriginModel && result.Origin != managergateway.TurnOriginAuthoritative) {
 		return false
 	}
@@ -252,6 +259,9 @@ func (c *gatewayManagerClient) request(ctx context.Context, method, path string,
 	}
 	request.Header.Set("Authorization", "Bearer "+c.transport)
 	request.Header.Set("Content-Type", "application/json")
+	if c.protectedIntake {
+		request.Header.Set(managergateway.ProtectedIntakeHeader, managergateway.ProtectedIntakeProtocol)
+	}
 	return request, nil
 }
 
@@ -351,6 +361,7 @@ func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewa
 	defer cancelSession()
 	output := tui.NewSynchronizedWriter(cmd.OutOrStdout())
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), nil)
+	client.protectedIntake = gatewayProtectedIntakeAvailable(cmd)
 	composer := tui.NewComposer(cmd.InOrStdin(), output, int(cfg.Manager.Ingress.MaximumMessageBytes))
 	if client.mode == "conversational" {
 		fmt.Fprintf(output, "AEGIS / manager — authenticated conversational agent\nHermes Agent: active exact-local session. Gateway owns authority and writable application state.\nPrincipal: authenticated; stanza: secrets-manager; mandate expires %s.\n%s\n", expires.UTC().Format(time.RFC3339), gatewayManagerCommandSummary())
@@ -401,6 +412,12 @@ func runGatewayManagerLoop(cmd *cobra.Command, cfg config.Config, client *gatewa
 					continue
 				}
 				return turnErr
+			}
+			if result.Intake != nil {
+				if err := runGatewayCredentialIntake(sessionCtx, cmd, client, result, output); err != nil {
+					return err
+				}
+				continue
 			}
 			renderGatewayTurn(output, result)
 			continue

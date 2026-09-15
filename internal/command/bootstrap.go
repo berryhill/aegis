@@ -253,7 +253,7 @@ func bootstrapLocalHermesDefaultAgentWithService(cmd *cobra.Command, service loc
 	details := fmt.Sprintf("profile=%s; profile fingerprint=%s; agent=%s; fleet/source=%s/%s; owner=%s; accountable principal=%s; runtime=%s; lifecycle=%s; capabilities=%s; policies=%s; proposed revision digest=%s", proposal.SelectedProfile, proposal.ProfileFingerprint, proposal.AgentID, proposal.FleetID, proposal.SourceID, proposal.Owner, proposal.Accountability, proposal.Runtime, proposal.Lifecycle, proposal.Capabilities, proposal.Policies, proposal.RevisionDigest)
 	reviewed, err := view.approve(cmd, input, bootstrapDecision{
 		Title:          "Review discovered Hermes default profile import",
-		Recommendation: "Review the safe metadata-only candidate before deciding whether to register it as a disabled Aegis Agent.",
+		Recommendation: "Review the safe metadata-only candidate before deciding whether to register it as an enabled Aegis Agent.",
 		Consequence:    "This review is read-only. It does not register, activate, copy, execute, or inherit the default Hermes profile or any of its authority.",
 		Details:        details,
 		DefaultDecline: true,
@@ -264,9 +264,9 @@ func bootstrapLocalHermesDefaultAgentWithService(cmd *cobra.Command, service loc
 	}
 
 	approved, err := view.approve(cmd, input, bootstrapDecision{
-		Title:          "Register discovered Hermes default profile as a disabled Agent",
-		Recommendation: "Register only the exact reviewed provenance candidate when it should become an explicit, disabled fleet participant.",
-		Consequence:    "Creates one immutable disabled Agent after exact proposal regeneration and digest verification. It does not modify the Hermes profile, activate execution, or import credentials, capabilities, skills, memories, plugins, MCP configuration, or authority.",
+		Title:          "Register discovered Hermes default profile as an enabled Agent",
+		Recommendation: "Register only the exact reviewed provenance candidate when it should become an explicit, enabled fleet participant (Registry eligibility only, not runtime readiness).",
+		Consequence:    "Creates one immutable enabled Agent after exact proposal regeneration and digest verification. It does not modify the Hermes profile, activate execution, or import credentials, capabilities, skills, memories, plugins, MCP configuration, or authority.",
 		Details:        details,
 		DefaultDecline: true,
 	})
@@ -289,7 +289,7 @@ func bootstrapLocalHermesDefaultAgentWithService(cmd *cobra.Command, service loc
 	if err := verifyBootstrapAgentList(cmd.Context(), service, subject, verified); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Default Hermes profile Agent registered=%t and exactly verified at %s; lifecycle=disabled; activation=false; authoritative Agent Registry contains built-in aegis plus the imported profile.\n", created, stored.Revision.Digest)
+	fmt.Fprintf(cmd.OutOrStdout(), "Default Hermes profile Agent registered=%t and exactly verified at %s; lifecycle=%s; activation=false; authoritative Agent Registry contains built-in aegis plus the imported profile.\n", created, stored.Revision.Digest, stored.Revision.Lifecycle)
 	return nil
 }
 
@@ -330,7 +330,7 @@ func localHermesImportMatchesProposal(agent app.FleetAgent, proposal app.LocalHe
 		agent.Revision.Runtime.Target == "aegis-owned-ephemeral" &&
 		agent.Revision.Ownership.OwnerID == proposal.Owner &&
 		agent.Revision.Ownership.AccountabilityID == proposal.Accountability &&
-		agent.Revision.Lifecycle == registry.LifecycleDisabled &&
+		agent.Revision.Lifecycle == registry.LifecycleEnabled && proposal.Lifecycle == string(agent.Revision.Lifecycle) &&
 		len(agent.Revision.CapabilityDeclarations) == 0 && len(agent.Revision.PolicyRefs) == 0
 }
 

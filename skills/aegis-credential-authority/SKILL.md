@@ -1,7 +1,7 @@
 ---
 name: aegis-credential-authority
 description: Operate encrypted Aegis credential custody and exact typed broker bindings through shipped principal-only services without exposing secret values or widening runtime authority.
-version: 0.2.0
+version: 0.2.1
 metadata:
   hermes:
     tags:
@@ -41,6 +41,21 @@ First inspect `aegis secret --help`, `aegis serve --help`, and the installed con
 - the long-lived `aegis serve` owner for the optional Linux broker
 
 If an operation or option is absent from installed help, report it unavailable. Do not invent generic secret reads, arbitrary HTTP forwarding, caller-selected URLs, headers, methods, profiles, deployments, or broker destinations.
+
+## Daemon-owned conversational creation
+
+When the gateway owns application state, use the authenticated Linux Aegis
+terminal's protected creation dialog, not a second direct-store CLI writer.
+`references/protected-intake.v1.md` is the self-contained operator workflow,
+metadata contract, denial and interrupted-outcome guide for the delivered
+`aegis.credential-intake.v1` interface. Ask `can we add a secret for a test?`
+without a value; Aegis owns metadata review, explicit approval, separate no-echo
+value/confirmation, encrypted creation and return to the same conversation.
+`references/protected-intake.v1.json` contains synthetic decoder examples only;
+never submit its invented operation identity or implement a credential-bearing
+client from the examples. This interface supports create and pending-operation
+cancel, not online rotation, revocation, binding or backup. Unsupported clients
+and `control_plane_online` remain denials, not permission for a workaround.
 
 ## Establish and unlock custody
 
