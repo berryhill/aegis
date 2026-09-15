@@ -96,6 +96,7 @@ type FleetRepository interface {
 	ListLoopLifecycleEvents(context.Context) ([]loop.LifecycleEvent, error)
 	GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error)
 	GetGraphLifecycle(context.Context, string) (graph.Lifecycle, error)
+	GetSubmission(context.Context, string) (queue.Submission, error)
 	AcceptSubmission(context.Context, fleet.AcceptedSubmission, fleet.AuditFact) (bool, error)
 	RejectSubmission(context.Context, queue.Rejection, fleet.AuditFact) (bool, error)
 }
@@ -713,6 +714,14 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 		}
 	}
 	now := service.now()
+	// Admission above remains fresh on replay. Only reuse canonical time;
+	// AcceptSubmission still compares the complete immutable request binding,
+	// including authority, typed inputs, IDs, and the bounded attempt policy.
+	if prior, loadErr := service.repository.GetSubmission(ctx, request.SubmissionID); loadErr == nil {
+		now = prior.SubmittedAt
+	} else if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return SubmissionDecision{}, loadErr
+	}
 	authorityRef := request.Authority
 	authorityKind, ownerID := "runtime-session", ""
 	if request.Workspace != nil {

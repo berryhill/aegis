@@ -29,7 +29,7 @@ func TestValidateRepositoryBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate() error = %v", err)
 	}
-	if result.Cases < len(requiredEvaluationClasses) || result.Passed != result.Cases {
+	if result.Cases < len(requiredEvaluationClasses) || result.StructurallyValid != result.Cases {
 		t.Fatalf("Evaluate() result = %#v", result)
 	}
 }
@@ -656,7 +656,10 @@ func TestAgentRegistrySkill(t *testing.T) {
 			t.Errorf("Registry fixtures missing %q", id)
 		}
 	}
-	registered := byID["registered-exact-participant"]
+	registered, ok := byID["registered-exact-participant"]["agent"].(map[string]any)
+	if !ok {
+		t.Fatal("registered fixture lacks the public agent response envelope")
+	}
 	registration, registrationOK := registered["registration"].(map[string]any)
 	revision, revisionOK := registered["revision"].(map[string]any)
 	initial, initialOK := registration["initial_revision"].(map[string]any)
@@ -919,6 +922,9 @@ func TestExecutionQueueSkill(t *testing.T) {
 		"aegis queue exhaust FILE",
 		"aegis queue revoke FILE",
 		"There is no separate reclaim command",
+		"aegis queue bind-runtime FILE",
+		"Ordinary retry with `reclaimed: false` is unavailable",
+		"control_plane_online",
 		"reclaimed: true",
 		"reason_code: \"lease_reclaimed\"",
 		"Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, and general multi-node execution are unavailable",
@@ -1421,8 +1427,8 @@ func TestDeploymentProjectionSkill(t *testing.T) {
 			owner = &manifest.Operations[i]
 		}
 	}
-	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "shipped" {
-		t.Fatalf("deployment projection operation owner = %#v", owner)
+	if owner == nil || owner.PrimarySkill != slug || owner.Availability != "unavailable" {
+		t.Fatalf("deployment projection operation owner = %#v; advisory skill must not advertise executable reconciliation", owner)
 	}
 	if skill == nil || skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 || strings.Join(skill.Dependencies, ",") != "aegis,aegis-agent-registry,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
 		t.Fatalf("deployment projection skill contract = %#v", skill)
@@ -1473,11 +1479,7 @@ func TestDeploymentProjectionSkill(t *testing.T) {
 			t.Errorf("deployment projection evaluation %q = %#v, want class %q", id, evaluation, class)
 			continue
 		}
-		if class == "happy_path" {
-			if evaluation.Expected != "route" || evaluation.Operation != operation {
-				t.Errorf("deployment projection happy path does not route to %q: %#v", operation, evaluation)
-			}
-		} else if evaluation.Expected != "deny" || evaluation.Operation != "" {
+		if evaluation.Expected != "deny" || evaluation.Operation != "" {
 			t.Errorf("deployment projection denial %q is not a non-routing deny: %#v", id, evaluation)
 		}
 	}

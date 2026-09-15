@@ -9,8 +9,8 @@ The repository-root `skills/` directory is the canonical reviewed source for the
 - `skills/aegis-approval-provisioning/SKILL.md` is an advisory skill for exact provisioning-plan review, authenticated single-use decisions, deterministic Aegis-owned apply, interrupted-intent recovery, and receipt verification.
 - `skills/aegis-agent-registry/SKILL.md` is an advisory skill for exact existing-fleet registration, immutable current/history inspection, and append-only enabled/disabled/retired lifecycle governance.
 - `skills/aegis-session-operations/SKILL.md` is an advisory routing skill for previewing and operating clean, mandate-bound Hermes sessions through typed Aegis lifecycle services.
-- `skills/aegis-loop-authoring/SKILL.md` is an advisory skill for authoring, publishing, activating, inspecting, and retiring immutable typed Loop revisions through authenticated Aegis services.
-- `skills/aegis-graph-authoring/SKILL.md` is an advisory skill for composing, publishing, inspecting, and submitting immutable typed Graph revisions with exact Agent/Loop bindings and durable admission readback.
+- `skills/aegis-loop-authoring/SKILL.md` is an advisory skill for authoring, publishing, activating, inspecting, and retiring immutable typed Loop revisions through authenticated Aegis services. Its field recipes distinguish `agent_id` workspace selection and server-derived authority from runtime-authority inputs and readback. They are not a complete portable builder or proof of daemon-online transport; missing adapters remain explicit.
+- `skills/aegis-graph-authoring/SKILL.md` is an advisory skill for composing, publishing, inspecting, and submitting immutable typed Graph revisions with exact Agent/Loop bindings and durable admission readback. Its recipes distinguish authenticated `agent_id` workspace selection, server-derived provenance and `awaiting_runtime` acceptance from runtime-bound work. They preserve required `transition_id` and reject invented rejection-idempotency fields; they do not establish portable-schema or installed-agent acceptance.
 - `skills/aegis-execution-queue/SKILL.md` is an advisory skill for exact Queue inspection and the shipped process, retry/reclaim, cancellation, expiry, exhaustion, and revocation lifecycle through authenticated Aegis services.
 - `skills/aegis-evidence-disposition/SKILL.md` is an advisory skill for reconstructing exact Queue, Attempt, artifact, verification, and terminal-disposition lineage while preserving process/evidence separation and unsupported reviewer-reevaluation boundaries.
 - `skills/aegis-credential-authority/SKILL.md` is an advisory skill for principal-only encrypted custody administration, exact broker binding, revocation, backup, and the single typed sanitized GitHub read path.
@@ -22,15 +22,61 @@ No suite skill authenticates, authorizes, approves, issues a mandate, provisions
 
 The session skill progressively discloses non-secret interpretation examples from `skills/aegis-session-operations/references/session-fixtures.json` and routes normative questions to `specs/RUNTIME_AND_SESSIONS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/AUDIT.md`, and installed command help. Those references grant no identity, mandate, process, authority, or receipt evidence. A material authority or stanza change requires a new mandate, immutable authority context, disposable Hermes home, and clean process; permissions are never unioned across stanzas.
 
+The credential-authority skill now includes a self-contained
+`references/protected-intake.v1.md` workflow and synthetic versioned metadata
+examples qualified against the actual protected-intake decoder after archive
+installation. The delivered #245/#254 Linux gateway terminal performs review,
+explicit approval, no-echo input, canonical creation and same-conversation return;
+external agents must not build their own value-bearing client. This is create and
+pending-operation cancel support, not an online adapter for rotate/revoke/bind or
+all #248 platform operations. The archive/decoder regression and genuine
+Unix-gateway/PTY-to-bbolt regressions are distinct from still-missing supported
+Hermes installed-agent behavior. No fixture contains values or authentication.
+
 The credential-authority skill progressively discloses non-secret interpretation examples from `skills/aegis-credential-authority/references/credential-fixtures.json` and routes normative questions to `docs/CREDENTIAL_BROKER.md`, credential-related specifications, and installed command help. Its fixtures contain metadata and denial state only; they never carry credential values, passphrases, key-encryption keys, capabilities, authentication headers, or live authority.
 
 The manager-onboarding skill uses non-secret classification examples from `skills/aegis-manager-onboarding/references/onboarding-fixtures.json` and routes normative questions to `specs/AEGIS_MANAGER.md`, `specs/MANAGER_LIFECYCLE_AND_ONBOARDING.md`, and installed command help. It routes every operation to a typed Aegis command. Each operational session requires exactly one externally authenticated trust stanza: zero matches deny and multiple matches deny as ambiguous. Prompt/model content cannot select or change stanza or authority; stanza or material-authority changes require a new mandate and clean runtime session. Only Aegis emits authoritative audit events, which model narration cannot create or replace.
 
 The operator-lifecycle-diagnostics skill uses non-secret interpretation examples from `skills/aegis-operator-lifecycle-diagnostics/references/lifecycle-fixtures.json` and routes normative questions to `docs/PATH_LAYOUT.md`, the relevant lifecycle implementation, and installed command help. Its fixtures do not prove live host state, identity, authority, release provenance, ownership, service health, rollback eligibility, recovery, or completion. The skill authenticates and authorizes nothing: diagnosis is read-only by default, and each mutation retains the authentication, terminal, preview, confirmation, and post-operation controls its shipped command actually implements. It explicitly records that direct self-update has no separate principal-authentication or apply-confirmation boundary, that `update --check` does not inspect archives or checksums, and that package-manager ownership is operator-supplied context. It does not provide a general doctor, repair, executable rollback, or arbitrary backup-restore surface; absent operations are reported as unavailable rather than simulated. It does not claim host sandboxing, complete zero trust, general least privilege, service readiness from process activity, or recovery from process exit or model narration.
 
+The Graph skill now bundles `references/submission-contract.v1.md` and a complete
+synthetic `references/workspace-submit.v1.json` request. With an executable whose
+help advertises the flag, `aegis graphs submit --check FILE` strictly decodes
+that application request and checks required envelope fields without opening
+stores. It emits `evidence_class=request_shape_validation`,
+`authority_admission=not_run`, and `submitted=false`; it does not resolve Graphs,
+validate actual Graph input types, grant authority, or prove behavior. The
+synthetic references must never be submitted unchanged. An older executable
+without `--check` is missing this capability even if the advisory skill installs;
+full capability-qualified compatibility remains outstanding.
+
 The strict `skills/aegis-skills.json` manifest binds the bundle and each skill to exact content digests, compatibility ranges, operation ownership, dependencies, authority class, required operations and toolsets, sensitivity, network, filesystem, and file inventory declarations. `skills/evaluations.json` carries the non-secret structural evaluation cases. Neither file grants runtime authority.
 
+## Bundled operation ownership and transport inventory
+
+The routing skill includes `references/operation-matrix.v1.json` for all fifteen
+primary skills. `TestDistributedOperationMatrix` compares unique ownership with
+the actual constructor-built Cobra tree and current public Echo registrations,
+including console, protected intake, health and static routes. Source and test
+references are navigation, not claims that the referenced tests passed. The
+archive's exact source revision binds the inventory; the inventory is not a
+portable schema or runtime-capability attestation.
+
+Explicit gaps distinguish missing adapters from unavailable operations: no HTTP
+runtime binding, no transparent daemon-online forwarding of direct-service CLI
+calls, no general conversational platform adapter supplied by credential intake,
+no Graph lifecycle mutation, reviewer reevaluation or deployment projection.
+CLI and API presence must not invite temporary authenticated clients, credential
+extraction or a second writer. Unknown mutation outcomes require authoritative
+readback with the same intent identity before replay.
+
 ## Validate and evaluate source
+
+Registry interpretation fixtures explicitly declare `explanatory_projection_not_wire_response`. Their registration projections preserve the CLI/HTTP `{agent, created}` envelope and identical Agent content on replay, but reduced fields, synthetic digests, and error/history summaries are not complete wire contracts. Projection regression tests and the existing real-store Registry API test are distinct evidence; neither is an installed-agent behavioral evaluation.
+
+Operation availability is distinct from skill installation: the shipped advisory deployment-projection skill owns an `unavailable` reconciliation operation. Evaluation rejects any `route` expectation whose operation is not explicitly `shipped`. A normal request for an unavailable operation expects denial, not a simulated operation; prerequisite reads cannot stand in for projection execution.
+
+`evaluate` reports `status: "valid"`, `evidence_class: "structural_fixture_validation"`, and the `cases` / `structurally_valid` counts. Behavioral, service, and runtime execution are explicitly `not_run`. The old unqualified `passed` count is removed: consumers must use `structurally_valid`, not interpret fixture validation as successful operation. This command validates declared expectations; it does not run an agent, submit requests, exercise a service, or observe a runtime. Packaging, request-schema tests, real-store integration, runtime protocol, observed agent behavior, installed inventory, and public publication require separate evidence.
 
 Run `make skillbundle-verify`. The target executes the Go validator and evaluator under `internal/skillbundle/`. Validation denies unknown JSON or YAML fields, trailing documents, undeclared files, symlinks, non-regular files, executable skill content, path traversal, digest or size drift, duplicate or orphan operation ownership, dependency errors, remote active content, inline network or shell behavior, secret-shaped literals, and positive prompt-authority claims.
 
@@ -87,6 +133,91 @@ Never test installation against a normal profile. Use a durable repository-local
 
 These live GitHub commands prove published-repository discovery and are intentionally separate from hermetic unit tests. They cannot prove an unmerged revision is already available from the public tap.
 
+## Queue historical readback
+
+The real-store `TestDQHandoff` regression exercises workspace acceptance,
+controller runtime binding through the application service (no HTTP binding
+route exists), first claim, live-lease denial, expiry-backed HTTP reclaim and
+authoritative failure from an incompatible runtime adapter. Claim eligibility
+reloads the exact immutable binding; completion binds audit to its runtime
+mandate while retaining original workspace submission provenance. Replay keeps
+the original timestamp and digest throughout. This is service/persistence
+evidence with a synthetic session process, not actual-agent or supported-Hermes
+execution success.
+
+Authenticated Queue `list` and exact `show` include valid workspace submissions in
+`awaiting_runtime` without requiring a terminal disposition. They do not claim a
+runtime has been bound, claimed, or executed. Every Graph node's exact participant
+revision is reloaded and digest-checked. The response adds `node_runtimes`, keyed
+by node ID; legacy `runtime` is populated for single-node Graphs only (an empty
+binding for multi-node Graphs). Multi-node history visibility is not multi-node
+processing support. Corrupt participant evidence still fails closed with
+`repair_required`. The isolated HTTP regression is service evidence, not an
+installed skill or actual-agent behavioral qualification.
+
+## Managed exact-artifact inventory (explicit opt-in)
+
+A separate source-built `aegis-skillbundle` tool now implements `install`,
+`inventory`, `update`, and `rollback`. It is not the `aegis update` executable
+updater and is not yet a separately published release binary. Build it once:
+
+```sh
+go build -o .aegis-skill-proof/aegis-skillbundle ./internal/skillbundle/cmd
+```
+
+The compiled tool needs no checkout at operation time. Supply a downloaded or
+locally prepared archive, the independently selected exact `sha256:HEX` archive
+digest, its exact 40-hex source revision, and an explicit absolute destination:
+
+```text
+aegis-skillbundle install ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis-skillbundle inventory ABSOLUTE_HOME
+aegis-skillbundle update ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis-skillbundle rollback RETAINED_ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+```
+
+The destination must already be a canonical, non-symlink directory that is not
+group/world writable. Use a new mode-0700 repository-local proof home for tests.
+The tool never reads a default destination from `HOME` or `HERMES_HOME`. It refuses
+to adopt or overwrite an existing unmanaged `skills` directory, including an
+empty one. Do not use it to migrate an ordinary populated profile implicitly.
+Installation is an explicit operator filesystem action, not Aegis principal
+approval, session provisioning, runtime activation, or an authority grant.
+
+On Linux/macOS the tool verifies frozen archive bytes, stages and syncs the
+complete manifest/dependency inventory under `.aegis-skill-bundles/ARCHIVE_HEX`,
+and atomically replaces the destination's `skills` symlink. Other platforms
+report `installation_platform_unavailable`. Qualification of macOS durability
+and supported Hermes versions remains separate from Linux tests and cross-builds.
+The `.hub` operational-metadata link has one fixed managed target outside the
+immutable generation and survives updates and rollback; its contents are not
+read as source, provenance, approval, or behavioral evidence. All other installed
+paths must match the archive exactly. Source/archive validation still forbids
+symlinks; these two installed-layout links are tool-owned, not archive members.
+
+Each transaction holds a nonblocking process lock released by process exit.
+Interruption before pointer publication preserves the old inventory; after
+publication, read `inventory` before deciding whether to repeat the same exact
+artifact. A post-publication sync/readback error is an uncertain result, not
+proof of no mutation. Retained verified generations allow explicit rollback;
+no `latest` lookup or version guessing occurs. `update` and `rollback` use the
+same exact-artifact transaction; neither silently selects a version. Unreferenced
+staging/generation directories from interruption are not activated or garbage
+collected automatically. Never remove the lock inode to bypass a live transaction.
+
+`inventory` verifies the retained archive checksum/revision and every distributed
+byte, including manifest and evaluations, and emits
+`evidence_class=installed_inventory_verification`, exact version/digests/slugs,
+and `authority_granted=false`. Local edits, extra files, unsafe metadata links,
+and missing content deny inventory/update/rollback and are preserved for review.
+Hermes hub update/install commands must not independently mutate this managed
+inventory. Keep the destination quiescent during changes: pointer atomicity is
+not a snapshot across multiple file reads by an already-running agent, and the
+tool does not attest runtime inactivity or reload a running session.
+
+This tooling supplies distribution mechanics, not capability qualification,
+actual-agent behavioral acceptance, a public tap receipt, or release publication.
+
 ## Updates, local changes, and rollback
 
 Hermes 0.18.x `skills check` compares upstream content with the recorded installation hash. It does not independently make the Aegis manifest authoritative and must not be treated as approval or immutable provenance.
@@ -95,4 +226,4 @@ Before updating an official skill, compare every installed file with the exact f
 
 Rollback names a previously retained `aegis-skills_vVERSION.tar.gz` and its exact SHA-256 digest. Verify the archive and embedded source revision before restoring it. Never select rollback content through `latest`, a branch, or another mutable tag. A rollback also refuses locally modified installed files until the operator explicitly preserves or removes those changes.
 
-The repository currently supplies validation, evaluation, deterministic packaging, archive verification, release checksums, and Hermes tap/direct-install instructions. It does not silently enable official skills in runtime sessions, mutate normal profiles during tests, or turn a skill manifest, tap, archive tag, or model statement into Aegis authority.
+The repository currently supplies validation, evaluation, deterministic packaging, archive verification, explicit managed-inventory transactions, release checksums, and Hermes tap/direct-install instructions. It does not silently enable official skills in runtime sessions, mutate normal profiles during tests, or turn a skill manifest, tap, archive tag, or model statement into Aegis authority.

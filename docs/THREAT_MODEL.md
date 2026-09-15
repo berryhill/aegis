@@ -14,9 +14,21 @@ The MVP protects principal identity, canonical charters, immutable registered-Ag
 
 ## Trust boundaries
 
+Workspace-origin Queue claims reload the immutable runtime binding and its exact
+submission, item, owner and timing rather than trusting a queued projection.
+Completion checks its audit mandate against that binding, not the original
+workspace provenance. Neither this persistence consistency check nor an expired
+lease grants runtime authority; application admission remains fresh and external
+to the model. The bounded service regression proves failure disposition and
+reclaim, not live-runtime success.
+
+
+Managed skill distribution is outside the Aegis authority path: an explicit archive/digest/revision and destination select advisory bytes, never a principal or mandate. The tool's retained generations, process lock, exact inventory comparison and atomic discovery pointer protect cooperating installation/update/recovery operations. One fixed `.hub` pointer separates Hermes operational metadata from immutable skill content. The archive verifier bounds total extraction as well as each member. Publisher authentication, hostile same-account filesystem mutation, supported-runtime qualification and coherent multi-file reads by active sessions are not established by these mechanics; destinations must be quiescent during changes.
+
 The gateway-backed Linux credential-create dialog is separate from ordinary chat. A metadata-only handoff binds one operation to the authenticated session/principal and expires within five minutes or session expiry. Review freezes exact reference/kind; explicit approval permits a separate bounded raw-byte submission, never a model turn. Session/operation/stage/expiry substitution and replay deny; consumption precedes canonical creation, including uncertain post-persistence audit/readback failures. Inspect metadata after an uncertain result rather than replaying the value. Closing the session or restarting the gateway invalidates pending operations. Unsupported clients retain guidance only.
 
 The metadata endpoint strictly bounds and decodes its closed object; the value endpoint requires the protected protocol header and nonempty `application/octet-stream` bytes up to 1 MiB. Origin/Sec-Fetch-Site-bearing requests deny. The header advertises protocol compatibility, not authentication or attestation of a real terminal; Unix transport, session and fresh configured-principal checks remain necessary. Malformed requests rejected before consumption need not consume an operation. No-echo mode spans metadata, approval and confirmation, with fresh approval type-ahead discarded. Unsynchronized protected reads stop the conversation rather than admit late bytes to chat. Same-account/root compromise, terminal recording and guaranteed memory erasure remain outside this protection. See [Terminal Credentials](TERMINAL_CREDENTIALS.md) for the available flow and its limits.
+
 
 Requested-stanza narrowing cannot resolve multiple authenticated authorized matches: the full set is checked for ambiguity first. Source provenance is also checked independently of successful compilation: `scripts/build-source.sh` pins the verified Git worktree and compares Go's embedded revision, commit time, and dirty status before publishing a local binary. This prevents accidental enclosing-repository stamps, not malicious same-account source mutation or publisher impersonation; release clean-source checks remain required.
 

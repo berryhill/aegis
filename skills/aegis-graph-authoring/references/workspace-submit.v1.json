@@ -1,0 +1,18 @@
+{
+  "agent_id": "example-agent",
+  "graph": {
+    "schema_version": "aegis.reference.revision.v1",
+    "id": "example-graph",
+    "revision": 1,
+    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "inputs": [],
+  "submission_id": "example-submission-1",
+  "idempotency_key": "example-submit-1",
+  "snapshot_id": "example-snapshot-1",
+  "queue_item_id": "example-queue-1",
+  "graph_run_id": "example-run-1",
+  "transition_id": "example-transition-1",
+  "rejection_id": "example-rejection-1",
+  "max_attempts": 1
+}

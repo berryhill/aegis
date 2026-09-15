@@ -1,0 +1,11 @@
+{
+  "agent_id": "synthetic-agent",
+  "authority": {
+    "schema_version": "aegis.reference.digest.v1",
+    "id": "synthetic-runtime-authority",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "queue_item_id": "synthetic-queue-item",
+  "binding_id": "synthetic-runtime-binding",
+  "transition_id": "synthetic-binding-transition"
+}

@@ -1,0 +1,13 @@
+{
+  "authority": {
+    "schema_version": "aegis.reference.digest.v1",
+    "id": "synthetic-runtime-authority",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "queue_item_id": "synthetic-queue-item",
+  "retry_id": "synthetic-retry",
+  "transition_id": "synthetic-retry-transition",
+  "backoff": 1000000000,
+  "reclaimed": true,
+  "reason_code": "lease_reclaimed"
+}
