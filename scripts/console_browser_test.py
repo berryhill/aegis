@@ -7,6 +7,7 @@ import base64
 import hashlib
 import http.client
 import json
+import os
 import pathlib
 import secrets
 import socket
@@ -14,6 +15,7 @@ import struct
 import subprocess
 import sys
 import time
+import urllib.parse
 from typing import Any, Protocol
 
 
@@ -24,6 +26,25 @@ class ProcessState(Protocol):
 CHROME_START_TIMEOUT = 15
 PAGE_TARGET_TIMEOUT = 8
 TOUCH_PROOF_STORAGE_KEY = "aegis-browser-touch-proof"
+
+
+def chrome_environment() -> dict[str, str]:
+    """Keep Chrome temporary files in the selected directory with a short spelling.
+
+    Chrome was observed to trap before DevTools readiness with a long absolute
+    TMPDIR in a nested worktree, but start with its relative spelling. Keep
+    temporary path names short without guessing the failing Chrome subsystem.
+    A relative spelling names the same directory under the inherited cwd;
+    it does not relocate evidence or weaken the sandbox. Do not mutate the
+    parent environment.
+    """
+    environment = os.environ.copy()
+    temporary = environment.get("TMPDIR")
+    if temporary:
+        relative = os.path.relpath(os.path.realpath(temporary))
+        if len(os.fsencode(relative)) < len(os.fsencode(temporary)):
+            environment["TMPDIR"] = relative
+    return environment
 
 
 def require(condition: bool, message: str) -> None:
@@ -458,17 +479,91 @@ def set_touch_emulation(devtools: DevTools, enabled: bool) -> None:
 def key(devtools: DevTools, key_name: str, *, shift: bool = False) -> None:
     """Send real browser key events instead of calling DOM handlers directly."""
     modifiers = 8 if shift else 0
-    virtual_key = {"Tab": 9, "Enter": 13, "Escape": 27}.get(key_name)
+    virtual_key = {"Tab": 9, "Enter": 13, "Escape": 27, "ArrowRight": 39}.get(key_name)
     require(virtual_key is not None, f"browser proof does not define a native key code for {key_name}")
-    for event_type in ("rawKeyDown", "keyUp"):
-        devtools.command("Input.dispatchKeyEvent", {
+    # Enter needs its character event for native button activation in Chrome.
+    # rawKeyDown/keyUp alone delivers keydown but never the default click.
+    down_type = "keyDown" if key_name == "Enter" else "rawKeyDown"
+    for event_type in (down_type, "keyUp"):
+        params = {
             "type": event_type,
             "key": key_name,
             "code": key_name,
             "modifiers": modifiers,
             "windowsVirtualKeyCode": virtual_key,
             "nativeVirtualKeyCode": virtual_key,
-        })
+        }
+        if key_name == "Enter" and event_type == "keyDown":
+            params.update(text="\r", unmodifiedText="\r")
+        devtools.command("Input.dispatchKeyEvent", params)
+
+
+# Domain contract: measure an authenticated immutable definition without changing
+# its DOM, authority or transitions. SVG and node borders must share viewport
+# coordinates, including the product's zoom and scroll transforms.
+LOOP_GEOMETRY_EXPRESSION = r"""(() => {
+  const nodes = [...document.querySelectorAll('[data-loop-node]')].map(node => {
+    const panel = document.querySelector('[data-loop-node-panel="' + node.dataset.loopNode + '"]');
+    const label = [...panel.querySelectorAll('dt')].find(dt => dt.textContent === 'Step ID');
+    const r = node.getBoundingClientRect();
+    return {id: label?.nextElementSibling?.textContent, left:r.left, right:r.right,
+            top:r.top, bottom:r.bottom};
+  });
+  const edges = [...document.querySelectorAll('.loop-edge-path')].map(path => {
+    const matrix = path.getScreenCTM();
+    const start = path.getPointAtLength(0).matrixTransform(matrix);
+    const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
+    return {id:path.querySelector('title')?.textContent,
+            start:[start.x,start.y], end:[end.x,end.y]};
+  });
+  const digestLabel = [...document.querySelectorAll('.loop-contract dt')].find(dt => dt.textContent === 'Revision digest');
+  return {nodes, edges, url:location.href, width:innerWidth, digest:digestLabel?.nextElementSibling?.textContent,
+          scale:document.querySelector('[data-loop-scale]')?.textContent};
+})()"""
+
+
+def validate_loop_geometry(measurement, steps, transitions):
+    """Require exact nonzero coverage before any numeric comparisons."""
+    import math
+
+    nodes, edges = measurement["nodes"], measurement["edges"]
+    require(bool(steps) and bool(transitions), "geometry fixture must have nodes and edges")
+    require(len(set(steps)) == len(steps), "duplicate expected node")
+    require(len({edge[0] for edge in transitions}) == len(transitions), "duplicate expected edge")
+    require(len(nodes) == len(steps) and {n["id"] for n in nodes} == set(steps), "missing or duplicate geometry nodes")
+    require(len(edges) == len(transitions) and {e["id"] for e in edges} == {t[0] for t in transitions}, "missing or duplicate geometry edges")
+    by_node = {node["id"]: node for node in nodes}
+    by_edge = {edge["id"]: edge for edge in edges}
+    for node in nodes:
+        require(all(math.isfinite(node[k]) for k in ("left", "right", "top", "bottom")), "nonfinite node border")
+        require(node["right"] > node["left"] and node["bottom"] > node["top"], "zero-sized node")
+    for edge_id, source, target in transitions:
+        a, b = by_node[source], by_node[target]
+        expected = ((a["right"], (a["top"] + a["bottom"]) / 2),
+                    (b["left"], (b["top"] + b["bottom"]) / 2))
+        edge = by_edge[edge_id]
+        for actual, border in zip((edge["start"], edge["end"]), expected):
+            require(len(actual) == 2 and all(math.isfinite(v) for v in actual), "nonfinite SVG endpoint")
+            require(max(abs(actual[i] - border[i]) for i in range(2)) <= 1,
+                    "SVG endpoint misses node border: " + json.dumps({"edge": edge_id, "actual": actual, "border": border}))
+
+
+def measure_loop_geometry(devtools, workspace, name, steps, transitions, digest, width):
+    measurement = devtools.evaluate(LOOP_GEOMETRY_EXPRESSION)
+    require(measurement["digest"] == digest and measurement["width"] == width,
+            "geometry revision or viewport mismatch: " + json.dumps({
+                "phase": name, "expected_digest": digest, "actual_digest": measurement["digest"],
+                "expected_width": width, "actual_width": measurement["width"],
+            }, sort_keys=True))
+    validate_loop_geometry(measurement, steps, transitions)
+    # The caller owns durable custody; these files contain presentation data,
+    # never the authenticated cookie or principal password.
+    proof = workspace.parent / (workspace.name + "-loop-geometry")
+    proof.mkdir(exist_ok=True)
+    (proof / (name + ".json")).write_text(json.dumps(measurement, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
+    require(png.startswith(b"\x89PNG\r\n\x1a\n") and len(png) > 1024, "Loop screenshot missing")
+    (proof / (name + ".png")).write_bytes(png)
 
 
 def verify_default_session_cookie(devtools: DevTools, origin: str, login_started: float, login_finished: float) -> float:
@@ -537,6 +632,7 @@ def main() -> int:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=chrome_stderr,
+        env=chrome_environment(),
         text=True,
     )
     devtools: DevTools | None = None
@@ -687,6 +783,59 @@ def main() -> int:
         devtools.command("Page.reload", {"ignoreCache": True})
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "reloaded exact Loop canonical URL")
         time.sleep(0.5)
+        manifest = json.loads((workspace / "loop-geometry-manifest.json").read_text(encoding="utf-8"))
+        require(len(manifest) == 2, "missing Loop geometry fixture matrix")
+        for fixture in manifest:
+            record_key = fixture["loop_id"] + ":1"
+            navigate(devtools, origin + "/console/loops?record_key=" + urllib.parse.quote(record_key) + "#/loops/" + record_key)
+            wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === " + json.dumps(fixture["loop_id"]), "exact geometry fixture")
+            for width, height in ((1440, 900), (390, 844)):
+                devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
+                for state, selector in (("fit", "[data-loop-fit]"), ("zoom-in", '[data-loop-zoom="in"]'), ("zoom-out", '[data-loop-zoom="out"]')):
+                    click(devtools, selector)
+                    measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-" + state, fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                # Zoom through actual controls until horizontal pan is possible.
+                for _ in range(17):
+                    if devtools.evaluate("document.querySelector('[data-loop-stage]').getBoundingClientRect().width > document.querySelector('[data-loop-viewport]').clientWidth + 160"):
+                        break
+                    click(devtools, '[data-loop-zoom="in"]')
+                scroll_left = "document.querySelector('[data-loop-viewport]').scrollLeft"
+                devtools.evaluate("document.querySelector('[data-loop-viewport]').focus()")
+                before_pan = devtools.evaluate(scroll_left)
+                key(devtools, "ArrowRight")
+                wait_for(devtools, scroll_left + " > " + str(before_pan + 1), "actual keyboard pan displacement")
+                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-keyboard-pan", fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                # Locate visible canvas background, never drag a node/control.
+                point = devtools.evaluate("""(() => {
+                    const v = document.querySelector('[data-loop-viewport]');
+                    v.scrollIntoView({block:'center'});
+                    const r = v.getBoundingClientRect();
+                    for (let y = Math.max(1,r.top+8); y < Math.min(innerHeight-1,r.bottom-8); y += 12)
+                        for (let x = Math.max(90,r.left+90); x < Math.min(innerWidth-1,r.right-8); x += 12) {
+                            const n = document.elementFromPoint(x,y);
+                            if (n && v.contains(n) && !n.closest('button')) return {x,y};
+                        }
+                    return null;
+                })()""")
+                require(bool(point), "no visible canvas background for pointer drag")
+                before_drag = devtools.evaluate(scroll_left)
+                devtools.command("Input.dispatchMouseEvent", {"type": "mousePressed", **point, "button": "left", "buttons": 1, "clickCount": 1})
+                devtools.command("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": point["x"] - 60, "y": point["y"], "button": "left", "buttons": 1})
+                devtools.command("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": point["x"] - 60, "y": point["y"], "button": "left", "buttons": 0, "clickCount": 1})
+                wait_for(devtools, scroll_left + " > " + str(before_drag + 1), "actual pointer drag displacement")
+                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-pointer-drag", fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                devtools.evaluate("document.querySelector('[data-loop-node]').focus()")
+                key(devtools, "Enter")
+                wait_for(devtools, "document.querySelector('[data-loop-node]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('[data-loop-node-panel]')?.checkVisibility()", "keyboard Loop node inspection")
+                click(devtools, '[data-loop-close]')
+                click(devtools, '.loop-textual > summary')
+                require(devtools.evaluate("document.querySelectorAll('.loop-textual > details').length") == len(fixture["steps"]), "missing accessible textual nodes")
+                require(devtools.evaluate("document.querySelectorAll('.loop-transitions > li').length") == len(fixture["transitions"]), "missing accessible textual transitions")
+                click(devtools, '.loop-textual > summary')
+            devtools.command("Emulation.clearDeviceMetricsOverride")
+            time.sleep(1)
+        navigate(devtools, origin + "/console/loops?record_key=proof-loop%3A1#/loops/proof-loop:1")
+        wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "restored exact primary Loop")
         # Loops enter canvas-first; related records belong to the inspector.
         # Open it through the real product control, never by changing the DOM.
         wait_for(devtools, "document.querySelector('#loop-context')?.hidden === true && document.querySelector('[data-loop-definition]')?.getAttribute('aria-expanded') === 'false'", "canvas-first Loop with collapsed definition inspector")

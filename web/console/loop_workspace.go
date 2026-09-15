@@ -8,6 +8,19 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 )
 
+// loopGridPlacementCSS emits only bounded, application-owned integer rules.
+// Served in the external stylesheet, these cover every admitted topology cell
+// without inline styles, dynamic CSS values, or a JavaScript layout dependency.
+func loopGridPlacementCSS() []byte {
+	var css strings.Builder
+	css.WriteByte('\n')
+	for i := 1; i <= loop.MaxSteps; i++ {
+		fmt.Fprintf(&css, ".loop-workspace .loop-node[data-grid-column=\"%d\"]{grid-column:%d}\n", i, i)
+		fmt.Fprintf(&css, ".loop-workspace .loop-node[data-grid-row=\"%d\"]{grid-row:%d}\n", i, i)
+	}
+	return []byte(css.String())
+}
+
 // buildLoopTopology projects one Loop revision into a presentation-only
 // topology. It cannot validate, sequence, or admit execution. Array positions,
 // never untrusted IDs, identify inspector panels.
