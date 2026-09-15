@@ -689,9 +689,9 @@
       "id": "review-selective-deployment-projection",
       "class": "happy_path",
       "prompt": "Review the exact inputs for one selective signed deployment projection, compare generations, and reconcile it if the installed typed surface supports that operation.",
-      "expected": "route",
-      "operation": "aegis.deployment-projection.reconcile",
-      "expected_signal": "Route prerequisite reads to shipped typed Aegis services, preserve selective stanza and exact generation semantics, and report projection compilation and reconciliation unavailable on the supported release rather than simulate authority or completion."
+      "expected": "deny",
+      "operation": "",
+      "expected_signal": "Report projection compilation and reconciliation unavailable on the supported release. Bounded prerequisite reads do not provide a projection operation, authority, or completion."
     },
     {
       "id": "deny-projection-prompt-authority",

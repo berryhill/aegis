@@ -71,8 +71,13 @@ type EvaluationCase struct {
 }
 
 type EvaluationResult struct {
-	Cases  int `json:"cases"`
-	Passed int `json:"passed"`
+	Status              string `json:"status"`
+	EvidenceClass       string `json:"evidence_class"`
+	Cases               int    `json:"cases"`
+	StructurallyValid   int    `json:"structurally_valid"`
+	BehavioralExecution string `json:"behavioral_execution"`
+	ServiceExecution    string `json:"service_execution"`
+	RuntimeExecution    string `json:"runtime_execution"`
 }
 
 type Denial struct {

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 
 	"github.com/berryhill/aegis/internal/skillbundle"
@@ -18,9 +20,29 @@ func main() {
 
 func run(args []string) error {
 	if len(args) < 2 {
-		return fmt.Errorf("usage: go run ./internal/skillbundle/cmd validate ROOT | evaluate ROOT | build ROOT DIST VERSION SOURCE_REVISION | verify ARCHIVE SOURCE_REVISION")
+		return fmt.Errorf("usage: aegis-skillbundle validate ROOT | evaluate ROOT | build ROOT DIST VERSION SOURCE_REVISION | verify ARCHIVE SOURCE_REVISION | install/update/rollback ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME | inventory ABSOLUTE_HOME")
 	}
 	switch args[0] {
+	case "install", "update", "rollback":
+		if len(args) != 5 {
+			return fmt.Errorf("%s requires ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME", args[0])
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		result, err := skillbundle.InstallArchive(ctx, args[1], args[2], args[3], args[4])
+		if err != nil {
+			return err
+		}
+		return printJSON(result)
+	case "inventory":
+		if len(args) != 2 {
+			return fmt.Errorf("inventory requires ABSOLUTE_HOME")
+		}
+		result, err := skillbundle.InspectInstalled(args[1])
+		if err != nil {
+			return err
+		}
+		return printJSON(result)
 	case "validate":
 		if len(args) != 2 {
 			return fmt.Errorf("validate requires ROOT")
@@ -42,7 +64,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSON(map[string]any{"status": "passed", "cases": result.Cases, "passed": result.Passed})
+		return printJSON(result)
 	case "build":
 		if len(args) != 5 {
 			return fmt.Errorf("build requires ROOT, DIST, VERSION, and SOURCE_REVISION")

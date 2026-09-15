@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "evidence_class": "synthetic_metadata_request_contract",
+  "protocol": "aegis.credential-intake.v1",
+  "qualification": "These examples contain no live operation or authentication. They are inputs to decoder tests, not requests for execution or approval.",
+  "requests": [
+    {"operation_id": "synthetic-operation-not-live", "action": "review", "reference": "disposable-test", "kind": "opaque"},
+    {"operation_id": "synthetic-operation-not-live", "action": "approve"},
+    {"operation_id": "synthetic-operation-not-live", "action": "cancel"}
+  ]
+}
