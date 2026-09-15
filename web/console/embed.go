@@ -14,7 +14,7 @@ var loopWorkspaceCSS []byte
 //go:embed queue_workspace.css
 var queueWorkspaceCSS []byte
 
-var CSS = append(append(append(append([]byte{}, baseCSS...), graphWorkspaceCSS...), loopWorkspaceCSS...), queueWorkspaceCSS...)
+var CSS = append(append(append(append(append([]byte{}, baseCSS...), graphWorkspaceCSS...), loopWorkspaceCSS...), queueWorkspaceCSS...), loopGridPlacementCSS()...)
 
 // NavigationJS progressively restores collection viewport and focus. Native
 // links remain complete when scripts or session storage are unavailable.
