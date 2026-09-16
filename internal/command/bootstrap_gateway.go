@@ -69,3 +69,30 @@ func prepareBootstrapGateway(cmd *cobra.Command, configPath string, runner users
 	fmt.Fprintln(cmd.OutOrStdout(), "Exact gateway stopped; resuming verified bootstrap artifacts without resetting state. Gateway activation is not automatic if setup is declined or fails.")
 	return true, nil
 }
+
+// requireBootstrapTransportAbsent rechecks the offline boundary after operator
+// input, before any local mutation. Presence is not proof of a live daemon, and
+// absence is not a lock: retain the store's own admission checks as well. Never
+// unlink a transport or infer permission to stop its owner here; exact gateway
+// recovery is separately approved at the bootstrap boundary.
+func requireBootstrapTransportAbsent(socket string) error {
+	if socket == "" {
+		return nil
+	}
+	_, err := os.Lstat(socket)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("control_plane_unavailable: inspect bootstrap transport before mutation: %w", err)
+	}
+	return errors.New("bootstrap_gateway_recovery_required: Unix transport is present; preserve state and rerun 'aegis init' for exact gateway recovery; unverified or stale transport must be repaired by its owner; no socket was removed and no local mutation was performed")
+}
+
+func requireBootstrapOfflineConfiguration(configPath string) error {
+	inspection := config.Inspect(configPath)
+	if inspection.State != config.StateValid {
+		return inspection.Failure()
+	}
+	return requireBootstrapTransportAbsent(inspection.Config.API.UnixSocket)
+}

@@ -16,9 +16,12 @@ flowchart TB
   CLI -->|bare startup: exact installed + loaded ExecStart identity, activity, authenticated readiness| StartupAdmission[Observational gateway admission]
   StartupAdmission -->|healthy: enter authenticated agent terminal directly| ManagerGateway
   StartupAdmission -. terminal unavailable: deny, no second writer .-> CLI
+  CLI -->|fresh init: planned transport absent before publication| FreshInit[Principal and operational initialization]
+  FreshInit -->|configuration created: repeat gateway admission| BootstrapRecovery
   CLI -->|interactive init with configured socket| BootstrapRecovery[Secure transport + exact healthy gateway]
   BootstrapRecovery -->|separate default-decline stop approval| ExactStop[Revalidated user-service stop]
   ExactStop -->|inactive and socket absent| OfflineBootstrap[Artifact-derived offline bootstrap; separate stage approvals]
+  OfflineBootstrap -->|after approval and protected intake| OfflineRecheck[Socket absence recheck before authority writes; not an atomic lifecycle lock]
   OfflineBootstrap -. declined or failed setup: remain stopped, no reset .-> CLI
 
   Password[Enrolled principal password verifier] -->|exact-origin verification| Console

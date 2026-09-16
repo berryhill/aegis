@@ -89,6 +89,9 @@ func (s *Service) Plan(configPath, statePath string) (Plan, error) {
 	candidate.Principal = principal
 	tokenPath := filepath.Join(statePath, "transport", "api.token")
 	unixSocket := filepath.Join(statePath, "transport", "aegis.sock")
+	if err := requireTransportAbsent(unixSocket); err != nil {
+		return Plan{}, err
+	}
 	token, err := existingOrRandomToken(tokenPath)
 	if err != nil {
 		return Plan{}, fmt.Errorf("prepare protected API transport: %w", err)
@@ -116,6 +119,23 @@ func (s *Service) EnrollPrincipalPassword(plan Plan, password []byte) (Plan, err
 	plan.password = &record
 	plan.PasswordDigest = hex.EncodeToString(digest[:])
 	return plan, nil
+}
+
+// requireTransportAbsent admits only absence, not an inferred offline owner.
+// Lstat deliberately rejects stale sockets, regular files, and dangling symlinks.
+// This is a preflight, not a transport lock; it never removes or stops anything.
+func requireTransportAbsent(socket string) error {
+	if socket == "" {
+		return errors.New("initialization Unix transport path is absent")
+	}
+	_, err := os.Lstat(socket)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("control_plane_unavailable: inspect initialization transport: %w", err)
+	}
+	return fmt.Errorf("bootstrap_gateway_recovery_required: Unix transport %s is present; preserve state and require exact gateway recovery or owner repair; no socket was removed and no initialization artifacts were changed", socket)
 }
 
 func existingOrRandomToken(path string) ([]byte, error) {
@@ -235,6 +255,9 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 			return inspection.Failure()
 		}
 		return fmt.Errorf("configuration %s appeared during initialization and was not overwritten", plan.ConfigPath)
+	}
+	if err = requireTransportAbsent(plan.UnixSocket); err != nil {
+		return err
 	}
 	if err = ensureSecureDirectory(filepath.Dir(plan.ConfigPath)); err != nil {
 		return err

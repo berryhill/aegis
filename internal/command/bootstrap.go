@@ -73,6 +73,12 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 			return false, err
 		}
 	}
+	// Fresh initialization reveals the configured transport for the first time.
+	// Reestablish the offline boundary before inspecting or mutating authority.
+	continued, err = prepareBootstrapGateway(cmd, configPath, runner, input, bootstrapView)
+	if err != nil || !continued {
+		return false, err
+	}
 	continued, err = reconcileOperationalAuthority(cmd, initializer, configPath, input, bootstrapView)
 	if err != nil || !continued {
 		return false, err
@@ -496,6 +502,9 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 		if revalidated.State != onboarding.PrincipalConfigured || revalidated.Reason != "systemd_authority_prerequisite_incomplete" {
 			return false, fmt.Errorf("principal/configuration changed after systemd authority preview: state=%s reason=%s", revalidated.State, revalidated.Reason)
 		}
+		if err = requireBootstrapOfflineConfiguration(snapshot.ConfigPath); err != nil {
+			return false, err
+		}
 		if err = onboarding.InitializeConfiguredSystemdAuthority(cmd.Context(), snapshot.ConfigPath); err != nil {
 			return false, err
 		}
@@ -549,6 +558,9 @@ func bootstrapAuthority(cmd *cobra.Command, build builder, input *terminalInput,
 	if revalidated.State != onboarding.PrincipalConfigured {
 		return false, fmt.Errorf("principal/configuration changed after preview: state=%s reason=%s", revalidated.State, revalidated.Reason)
 	}
+	if err = requireBootstrapOfflineConfiguration(snapshot.ConfigPath); err != nil {
+		return false, err
+	}
 	if custody == "systemd" {
 		if err = onboarding.ApplyAuthority(plan); err != nil {
 			return false, err
@@ -591,6 +603,10 @@ func bootstrapPassphraseAuthority(cmd *cobra.Command, build builder, snapshot on
 	}
 	passphrase, err := readAuthorityPassphrase(cmd, true)
 	if err != nil {
+		return false, err
+	}
+	if err = requireBootstrapOfflineConfiguration(snapshot.ConfigPath); err != nil {
+		wipeSecret(passphrase)
 		return false, err
 	}
 	if err = onboarding.InitializePassphraseAuthority(cmd.Context(), plan, passphrase); err != nil {
