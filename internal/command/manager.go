@@ -204,6 +204,9 @@ func reconcileOperationalAuthority(cmd *cobra.Command, initializer *initialize.S
 		fmt.Fprintln(cmd.OutOrStdout(), "Operational authority reconciliation declined; no writes were performed.")
 		return false, err
 	}
+	if err := requireBootstrapOfflineConfiguration(configPath); err != nil {
+		return false, err
+	}
 	generation, err := initializer.ApplyOperationalAuthority(cmd.Context(), plan)
 	if err != nil {
 		return false, err
@@ -240,6 +243,9 @@ func runFirstInitializationWithInput(cmd *cobra.Command, initializer *initialize
 	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Initialization declined; no writes were performed.")
+		return false, err
+	}
+	if err = requireBootstrapTransportAbsent(plan.UnixSocket); err != nil {
 		return false, err
 	}
 	if err = initializer.Apply(cmd.Context(), plan); err != nil {

@@ -148,6 +148,10 @@ Use interactive `aegis init` (or `./aegis --config .aegis.yaml init` for the che
 
 The stop action revalidates the exact service and waits for inactivity; bootstrap proceeds only after the socket is absent. Aegis never unlinks the socket to force recovery or opens a second store writer. Declining the stop changes nothing. Unknown, stale, unsafe, unavailable, or foreign transport fails closed: inspect `aegis gateway status` with the same executable/configuration and have its owner repair it before retrying.
 
+For a fresh installation without configuration, Aegis checks the planned Unix transport before publishing initialization artifacts. A present path denies initialization; it is not removed or assumed stale. Once configuration exists, bootstrap repeats the configured exact-gateway recovery check before authority setup. It also rechecks socket absence after operational/custody approvals and protected passphrase intake, before the corresponding writes. Earlier approved artifacts remain if a later check denies; these checks are not an atomic lifecycle lock.
+
+If this denial occurs before configuration exists, `aegis gateway status` and rerunning `aegis init` may also deny because the exact gateway cannot be verified from absent configuration. Have the transport/service owner inspect and repair the exact reported path and its owning service, then retry with the same executable and intended configuration. Do not delete the socket or reset retained state merely to bypass the guard. Automatic stop-and-resume is available only when secure configuration and exact healthy gateway evidence can be verified.
+
 After an approved stop, setup resumes from verified artifacts. Model binding, certification, registration, and activation retain their own approvals; a declined or failed later stage leaves the gateway stopped, with no automatic restart. Rerun `aegis init` to continue. This is offline bootstrap recovery, not a gateway-owned online migration or a reset.
 
 ## Reset and replay onboarding

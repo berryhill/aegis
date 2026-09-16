@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Fixed fresh-bootstrap transport ordering: initialization denies a present planned Unix transport before publication, rechecks configured gateway ownership after configuration creation, and repeats offline checks after operational/custody approvals and protected passphrase intake before the corresponding authority writes. Existing or newly observed transport is preserved and denies mutation at that boundary; these checks are not an atomic lifecycle lock or automatic stale-socket repair.
+
 - Added explicitly approved offline bootstrap recovery for an exact healthy gateway owning the secure configured Unix socket. Interactive `aegis init` offers a separate default-decline stop, revalidates service identity, verifies inactivity and socket absence, then resumes verified artifacts without resetting state. Unknown/stale/foreign transport denies; model binding, certification, registration, and activation remain separately approved, and declined or failed setup does not automatically restart the gateway.
 
 - Increased the default and maximum browser-console session lifetime to one fixed hour (#250). Ordinary authenticated reads no longer expire at the independent principal-freshness deadline; sensitive actions retain fresh authentication, approval, receipt, mandate, and runtime authority checks. Explicit password reauthentication replaces the old session and pending reviews. Positive shorter configurations remain honored, existing explicit durations are not rewritten on upgrade, and logout, revocation, rotation, and restart still invalidate sessions.
