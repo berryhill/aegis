@@ -59,7 +59,7 @@ func managerCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initi
 			authorityState = authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1")).State
 		}
 		if managerNeedsBootstrap(snapshot, authorityState) {
-			launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
+			launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger, runner)
 			if err != nil || !launch {
 				return err
 			}
@@ -139,7 +139,7 @@ func classifyBareStartup(snapshot onboarding.Snapshot, authority authoritybadger
 	return bareStartupReadyNoGateway
 }
 
-func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger) *cobra.Command {
+func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initializer *initialize.Service, options *rootOptions, logger *slog.Logger, runner userservice.Runner, activate func(*cobra.Command) error) *cobra.Command {
 	return &cobra.Command{Use: "init", Short: "Inspect or resume deterministic manager initialization", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !isTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			if operationalAuthorityAbsent(cmd.Context(), options.configFile) {
@@ -147,11 +147,11 @@ func initCmd(build builder, isTerminal func(io.Reader, io.Writer) bool, initiali
 			}
 			return usage(errors.New(managerdomain.ReasonRequiresTTY + ": initialization requires an interactive terminal"))
 		}
-		launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger)
+		launch, err := runBootstrap(cmd, build, initializer, options.configFile, options.stateDir, logger, runner)
 		if err != nil || !launch {
 			return err
 		}
-		return runManager(cmd, build)
+		return activate(cmd)
 	}}
 }
 

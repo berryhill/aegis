@@ -134,7 +134,7 @@ func (r *exactGatewayRunner) Output(_ context.Context, args ...string) ([]byte, 
 	}
 }
 
-func TestSecondBareRunAdmitsHealthyExactGatewayBeforeBootstrapAuthorityInspection(t *testing.T) {
+func TestExplicitManagerAdmitsHealthyExactGatewayBeforeBootstrapAuthorityInspection(t *testing.T) {
 	current, err := user.Current()
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +214,7 @@ func TestSecondBareRunAdmitsHealthyExactGatewayBeforeBootstrapAuthorityInspectio
 		UserService: runner,
 		IsTerminal:  func(io.Reader, io.Writer) bool { return true },
 	})
-	command.SetArgs([]string{"--config", configPath})
+	command.SetArgs([]string{"--config", configPath, "manager"})
 	if err = command.Execute(); err != nil {
 		t.Fatal(err)
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"github.com/berryhill/aegis/internal/tui"
+	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +45,7 @@ func inspectOnboarding(ctx context.Context, configPath string, logger *slog.Logg
 // runBootstrap resumes the explicit manager onboarding flow at the first
 // incomplete artifact-derived stage. Its bool result means the operator
 // selected immediate manager launch after a freshly reverified ready state.
-func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger) (bool, error) {
+func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Service, configPath, statePath string, logger *slog.Logger, runner userservice.Runner) (bool, error) {
 	capabilities := tui.Detect(cmd.InOrStdin(), cmd.OutOrStdout(), os.Getenv)
 	bootstrapView := newBootstrapPresentation(capabilities)
 	terminalOutput := tui.NewSynchronizedWriter(cmd.OutOrStdout())
@@ -54,6 +55,10 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 		return false, err
 	}
 	input := newTerminalInput(cmd.InOrStdin())
+	continued, err := prepareBootstrapGateway(cmd, configPath, runner, input, bootstrapView)
+	if err != nil || !continued {
+		return false, err
+	}
 	var authorityPassphrase []byte
 	defer wipeSecret(authorityPassphrase)
 	fmt.Fprintln(cmd.OutOrStdout(), "AEGIS / bootstrap")
@@ -68,7 +73,7 @@ func runBootstrap(cmd *cobra.Command, build builder, initializer *initialize.Ser
 			return false, err
 		}
 	}
-	continued, err := reconcileOperationalAuthority(cmd, initializer, configPath, input, bootstrapView)
+	continued, err = reconcileOperationalAuthority(cmd, initializer, configPath, input, bootstrapView)
 	if err != nil || !continued {
 		return false, err
 	}

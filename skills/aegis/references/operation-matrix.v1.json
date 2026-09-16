@@ -30,7 +30,7 @@
       "sources":["internal/command/manager.go","internal/command/manager_model.go","internal/command/manager_certify.go","internal/api/server.go"],
       "tests":["internal/command/manager_test.go","internal/command/manager_model_test.go","internal/api/manager_gateway_test.go"],
       "cli":["aegis","aegis init","aegis manager","aegis manager certify","aegis manager model","aegis manager model candidates","aegis manager model candidate","aegis manager model discover","aegis manager model route","aegis manager model configure","aegis manager model status"],
-      "http":["POST /v1/manager/sessions","POST /v1/manager/sessions/:session/commands","POST /v1/manager/sessions/:session/turns","DELETE /v1/manager/sessions/:session","POST /console/api/commands/preview","POST /console/api/commands/execute","GET /console/api/state","POST /console/login","POST /console/password","DELETE /console/session","POST /console/logout"],
+      "http":["POST /v1/manager/sessions","POST /v1/manager/sessions/:session/commands","POST /v1/manager/sessions/:session/turns","DELETE /v1/manager/sessions/:session","POST /console/api/commands/preview","POST /console/api/commands/execute","GET /console/api/state","GET /console/reauthenticate","POST /console/login","POST /console/password","DELETE /console/session","POST /console/logout"],
       "transport_classification":"shipped"
     },
     {
