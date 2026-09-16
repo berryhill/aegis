@@ -323,6 +323,57 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return nil
 	}
+	activateManager := func(cmd *cobra.Command, bootstrapApproved bool, gateway userservice.GatewayObservation) error {
+		gatewayCustody := ""
+		if current := config.Inspect(o.configFile); current.State == config.StateValid {
+			gatewayCustody = current.Config.Credentials.Authority.Custody
+		}
+		if requiresGateway(deps.Profile, gatewayCustody) {
+			input := newTerminalInput(cmd.InOrStdin())
+			reconciled, err := reconcileServeTransport(cmd, o.configFile, input)
+			if err != nil || !reconciled {
+				return err
+			}
+			if err = closeOpened(); err != nil {
+				return err
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			plan, err := userservice.Preview(executable, o.configFile)
+			if err != nil {
+				return err
+			}
+			installed, err := userservice.Installed(plan)
+			if err != nil {
+				return err
+			}
+			return activateAndEnterAegisAgent(func() error {
+				if installed {
+					if gateway.State == userservice.GatewayStopped {
+						if !bootstrapApproved {
+							return usage(errors.New("exact gateway is stopped; run 'aegis gateway start', then rerun 'aegis' to enter the agent terminal"))
+						}
+						result, actionErr := userservice.Action(cmd.Context(), deps.UserService, plan, "start", 20*time.Second)
+						if actionErr != nil {
+							return actionErr
+						}
+						return output(cmd, result)
+					}
+					return userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second)
+				}
+				approved, approveErr := approveServicePlan(cmd, plan, input)
+				if approveErr != nil || !approved {
+					return approveErr
+				}
+				return userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second)
+			}, func() error {
+				return runGatewayManager(cmd, o.configFile)
+			})
+		}
+		return runManager(cmd, build)
+	}
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		if updateAlias {
 			return runUpdate(cmd, deps.Updater, false)
@@ -375,7 +426,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if deps.Profile != "" {
 			fmt.Fprintf(cmd.OutOrStdout(), "[AEGIS] execution profile: %s; root: %s\n", deps.Profile, profileLayout.Root)
 		}
-		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
+		bootstrapApproved := false
 		authority := authoritybadger.Inspection{State: authoritybadger.StateAbsent}
 		gateway := userservice.GatewayObservation{}
 		inspection := config.Inspect(o.configFile)
@@ -389,6 +440,15 @@ func NewRoot(deps Dependencies) *cobra.Command {
 			}
 			switch gateway.State {
 			case userservice.GatewayHealthy:
+				// Transport readiness does not imply a bound manager model. Read
+				// only configuration here: the gateway still owns both stores.
+				if inspection.Config.Manager.Inference.Model == "" {
+					launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger, deps.UserService)
+					if err != nil || !launch {
+						return err
+					}
+					return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
+				}
 				return enterAegisAgent(func() error {
 					return runGatewayManager(cmd, o.configFile)
 				})
@@ -399,13 +459,13 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if inspection.State == config.StateValid {
 			authority = authoritybadger.Inspect(cmd.Context(), filepath.Join(inspection.Config.StateDir, "persistence", "authority-v1"))
 		}
+		snapshot := inspectOnboarding(cmd.Context(), o.configFile, deps.Logger)
 		class := classifyBareStartup(snapshot, authority, gateway)
 		if class == bareStartupAuthorityOrphaned || class == bareStartupAuthorityCorrupt {
 			return usage(fmt.Errorf("%s: existing operational authority requires operator repair and will not be replaced: %w", class, authority.Err))
 		}
-		bootstrapApproved := false
-		if bareRootNeedsBootstrap(snapshot, authority.State) {
-			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger)
+		if !bootstrapApproved && bareRootNeedsBootstrap(snapshot, authority.State) {
+			launch, err := runBootstrap(cmd, build, deps.Initializer, o.configFile, o.stateDir, deps.Logger, deps.UserService)
 			if err != nil || !launch {
 				return err
 			}
@@ -417,57 +477,11 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return err
 			}
 		}
-		gatewayCustody := ""
-		if current := config.Inspect(o.configFile); current.State == config.StateValid {
-			gatewayCustody = current.Config.Credentials.Authority.Custody
-		}
-		if requiresGateway(deps.Profile, gatewayCustody) {
-			input := newTerminalInput(cmd.InOrStdin())
-			reconciled, err := reconcileServeTransport(cmd, o.configFile, input)
-			if err != nil || !reconciled {
-				return err
-			}
-			if err = closeOpened(); err != nil {
-				return err
-			}
-			executable, err := os.Executable()
-			if err != nil {
-				return err
-			}
-			plan, err := userservice.Preview(executable, o.configFile)
-			if err != nil {
-				return err
-			}
-			installed, err := userservice.Installed(plan)
-			if err != nil {
-				return err
-			}
-			return activateAndEnterAegisAgent(func() error {
-				if installed {
-					if gateway.State == userservice.GatewayStopped {
-						if !bootstrapApproved {
-							return usage(errors.New("exact gateway is stopped; run 'aegis gateway start', then rerun 'aegis' to enter the agent terminal"))
-						}
-						result, actionErr := userservice.Action(cmd.Context(), deps.UserService, plan, "start", 20*time.Second)
-						if actionErr != nil {
-							return actionErr
-						}
-						return output(cmd, result)
-					}
-					return userservice.EnsureReady(cmd.Context(), plan, deps.UserService, 20*time.Second)
-				}
-				approved, approveErr := approveServicePlan(cmd, plan, input)
-				if approveErr != nil || !approved {
-					return approveErr
-				}
-				return userservice.Apply(cmd.Context(), plan, deps.UserService, 20*time.Second)
-			}, func() error {
-				return runGatewayManager(cmd, o.configFile)
-			})
-		}
-		return runManager(cmd, build)
+		return activateManager(cmd, bootstrapApproved, gateway)
 	}
-	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, deps.Profile), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
+	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, deps.Profile), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, func(cmd *cobra.Command) error {
+		return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
+	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {

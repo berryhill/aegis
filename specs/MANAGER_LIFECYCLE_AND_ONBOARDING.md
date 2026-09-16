@@ -463,6 +463,8 @@ Neither command may expose credential values, capabilities, or sensitive environ
 
 An authenticated operator MUST be able to progress from `manager_model_absent` to an exact configured and certified already-installed approved local model without manual YAML surgery. Interactive bootstrap MUST default to an identified concise `basic` presentation and expose exact authoritative evidence through `details`/`advanced` before presentation-owned approvals. Both depths MUST use the same artifact-derived progress, transition, authorization, and postcondition path; changing depth cannot grant authority or change progress.
 
+When interactive bootstrap encounters its configured Unix socket, it MUST deny local-store fallback unless secure transport belongs to the exact healthy user gateway. Stopping that gateway MUST require separate explicit default-decline approval, exact service-identity revalidation, observed inactivity, and socket absence before bootstrap proceeds. Recovery MUST NOT unlink transport or reset configuration, identities, approvals, model artifacts, or stores. Unknown, stale, unsafe, unavailable, or foreign transport MUST deny and require owner repair. Artifact-derived resume MUST preserve separate model-binding, certification, registration, and activation approvals; declined or failed setup after an approved stop MUST NOT automatically restart the gateway.
+
 ### 12.2 Required command capabilities
 
 Aegis MUST provide deterministic commands to:
