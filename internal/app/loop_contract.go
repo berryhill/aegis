@@ -35,9 +35,10 @@ const (
 	LoopStepGate     = loop.StepGate
 	LoopStepTerminal = loop.StepTerminal
 
-	LoopLifecycleActive  = loop.LifecycleActive
-	LoopLifecycleRetired = loop.LifecycleRetired
-	LoopValidationValid  = loop.ValidationValid
+	LoopLifecycleActive   = loop.LifecycleActive
+	LoopLifecycleRetired  = loop.LifecycleRetired
+	LoopValidationValid   = loop.ValidationValid
+	LoopValidationInvalid = loop.ValidationInvalid
 )
 
 func NewLoopRevision(candidate LoopCandidate) (LoopCandidate, LoopValidation, error) {

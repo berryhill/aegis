@@ -1,0 +1,40 @@
+{
+  "agent_id": "SELECT_EXISTING_ENABLED_AGENT",
+  "idempotency_key": "basic-implementation-revision-1",
+  "revision": {
+    "schema_version": "aegis.loop.revision.v2",
+    "loop_id": "basic-implementation",
+    "revision": 1,
+    "inputs": [
+      {"id": "task", "type": "string", "required": true},
+      {"id": "acceptance_criteria", "type": "string", "required": true}
+    ],
+    "outputs": [{"id": "report", "type": "string", "required": true}],
+    "entry_step_id": "implement",
+    "steps": [
+      {
+        "id": "implement", "kind": "action",
+        "input_ports": [
+          {"id": "task", "type": "string", "required": true},
+          {"id": "acceptance_criteria", "type": "string", "required": true}
+        ],
+        "output_ports": [{"id": "report", "type": "string", "required": true}],
+        "retry": {"max_attempts": 2},
+        "evidence_claims": []
+      },
+      {
+        "id": "done", "kind": "terminal",
+        "input_ports": [{"id": "report", "type": "string", "required": true}],
+        "output_ports": [{"id": "report", "type": "string", "required": true}],
+        "retry": {"max_attempts": 1},
+        "terminal": {"outcome": "succeeded", "output_mappings": [{"source_port": "report", "target_port": "report"}]},
+        "evidence_claims": []
+      }
+    ],
+    "transitions": [
+      {"id": "implementation-report", "from_step_id": "implement", "to_step_id": "done", "mappings": [{"source_port": "report", "target_port": "report"}]}
+    ],
+    "required_evidence": [],
+    "validator": {"id": "aegis.loop.validator", "version": "1"}
+  }
+}

@@ -54,7 +54,7 @@ type Dependencies struct {
 	Profile         ExecutionProfile
 	DevelopmentRoot string
 }
-type rootOptions struct{ configFile, stateDir, hermesExecutable, pinentryExecutable, runtime string }
+type rootOptions struct{ configFile, stateDir, hermesExecutable, pinentryExecutable, runtime, target string }
 
 type UpdateService interface {
 	Run(context.Context, bool) (selfupdate.Result, error)
@@ -142,6 +142,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.SetErr(deps.Err)
 	f := root.PersistentFlags()
 	f.StringVar(&o.configFile, "config", o.configFile, "configuration file")
+	f.StringVar(&o.target, "target", "", "owning console URL; use its authenticated Unix API, never a local-store fallback")
 	f.StringVar(&o.stateDir, "state-dir", o.stateDir, "Aegis state directory")
 	f.StringVar(&o.hermesExecutable, "hermes-executable", "", "Hermes executable")
 	f.StringVar(&o.pinentryExecutable, "pinentry-executable", "", "absolute path to a protected pinentry executable")
@@ -308,6 +309,12 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		if err := validateExecutionProfile(deps.Profile, profileLayout, o, cmd.Name() == "reset"); err != nil {
 			return usage(err)
+		}
+		if o.target != "" {
+			return nil // Online commands must not inspect or open local authority stores.
+		}
+		if cmd.Name() == "example" && cmd.Parent() != nil && cmd.Parent().Name() == "loops" {
+			return nil // Installed typed material requires no configured authority.
 		}
 		lifecycleConfig := o.configFile
 		if deps.Profile == ProductionProfile && !cmd.Flags().Changed("config") && !cmd.InheritedFlags().Changed("config") {
@@ -486,6 +493,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {
 			command.RunE = func(cmd *cobra.Command, args []string) (runErr error) {
+				if o.target != "" {
+					return runFleetOnline(cmd, args, o)
+				}
 				defer func() {
 					runErr = errors.Join(runErr, closeOpened())
 				}()

@@ -30,6 +30,8 @@ Use this skill to draft, validate, publish, inspect, activate, or retire an immu
 
 First use `aegis loops --help`. Supported commands in the compatible release are:
 
+- `aegis loops example` (typed publication template only)
+- `aegis loops validate FILE` (authenticated workspace structural validation, no publication)
 - `aegis loops list`
 - `aegis loops publish FILE`
 - `aegis loops show LOOP REVISION`
@@ -52,9 +54,9 @@ The publish file is a strict `PublishLoopInput` JSON object. Choose the authorit
 - Registered-Agent workspace: supply `agent_id`, `revision`, optional `expected_previous_digest`, and `idempotency_key`; omit `authority` and `publisher`. The authenticated service resolves the exact latest enabled Agent, checks the principal and stable owner, and constructs server-derived workspace authority and publisher references. `agent_id` is a selector, not authentication or a caller-issued delegation. No provisioning receipt, running session, runtime mandate, or credential is needed for workspace publication.
 - Runtime authority: omit `agent_id` and supply `authority`, `publisher`, `revision`, optional `expected_previous_digest`, and `idempotency_key`. Authority and publisher values must come from current authenticated Aegis readback, not from the model, a fixture, another session, or browser input. Do not manufacture a runtime reference when only workspace authority is available.
 
-These are field recipes, not complete schema-validated request examples. This bundle does not yet provide a complete portable Loop builder. If the installed interface cannot prepare the required revision without guessing, report that adapter/material gap before attempting mutation.
+Use `aegis loops example` for the installed schema-valid publication template. Select an existing enabled Agent explicitly; do not infer a builder from its name. The basic-implementation template is NOT an executable implementation workflow: task and acceptance_criteria are typed ports without instruction/value-bound bindings; empty evidence requirements prove nothing; max_attempts=2 does not enforce one corrective attempt; the success terminal is not a verification gate. Required evidence needs an actual pre-pinned expected digest, verifier ID and policy version. Never invent them or claim a generic test pass proves dynamic acceptance. Execution binding remains unsupported by this template.
 
-Direct-store CLI access is unavailable when the daemon owns the store (`control_plane_online`). Do not stop the daemon, open a second writer, extract its token, or build an ad-hoc authenticated client to follow this recipe. Use a documented installed typed adapter if available; otherwise report the online adapter gap.
+Direct-store CLI access is unavailable when the daemon owns the store (`control_plane_online`). Use `aegis --config OWNER_CONFIG --target CONSOLE_URL agents list`, then the same flags for `loops validate FILE`, `loops publish FILE`, and `loops show LOOP REVISION`. The URL selects the existing instance, not a credential destination: the installed adapter uses its configured protected Unix API and matches returned configuration before acting. There is no local-store fallback. Do not stop the daemon, initialize another store, extract its token, or build an ad-hoc client. Online support is limited to agents list/show/history and loops list/show/validate/publish; activation, queueing and execution are excluded.
 
 ## Publish and verify
 

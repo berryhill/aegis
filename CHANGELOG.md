@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Added explicit owning-instance `--target` Agent reads and Loop validation/publication/readback over the configured authenticated Unix API, plus an installed typed publication template. No activation, execution or code-task verification guarantee is implied.
+
 - Fixed fresh-bootstrap transport ordering: initialization denies a present planned Unix transport before publication, rechecks configured gateway ownership after configuration creation, and repeats offline checks after operational/custody approvals and protected passphrase intake before the corresponding authority writes. Existing or newly observed transport is preserved and denies mutation at that boundary; these checks are not an atomic lifecycle lock or automatic stale-socket repair.
 
 - Added explicitly approved offline bootstrap recovery for an exact healthy gateway owning the secure configured Unix socket. Interactive `aegis init` offers a separate default-decline stop, revalidates service identity, verifies inactivity and socket absence, then resumes verified artifacts without resetting state. Unknown/stale/foreign transport denies; model binding, certification, registration, and activation remain separately approved, and declined or failed setup does not automatically restart the gateway.

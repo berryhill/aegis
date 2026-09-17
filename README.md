@@ -245,3 +245,7 @@ Architecture tests additionally pin the two qualified persistence module version
 ## License
 
 Aegis is licensed under the [Apache License 2.0](LICENSE).
+
+### Publish to an existing gateway
+
+See [online Loop publication](docs/ONLINE_LOOP_PUBLICATION.md) for `--target`, authenticated validation and exact readback. `loops example` is a structural publication template, not an executable implementation/verification workflow.
