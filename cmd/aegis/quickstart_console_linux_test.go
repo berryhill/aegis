@@ -122,7 +122,9 @@ func TestQuickstartPrincipalOnlyInitializationCanServe(t *testing.T) {
 		server.Wait()
 		t.Fatalf("foreground console unavailable: %s", diagnostics.String())
 	}
-	loginClient := &http.Client{Timeout: time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	// Password verification deliberately performs memory-hard work. A one-second
+	// readiness-probe budget is not a login budget on a shared race-test runner.
+	loginClient := &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, valid := range []bool{false, true} {
 		value := password + "wrong"
 		if valid {
@@ -136,7 +138,7 @@ func TestQuickstartPrincipalOnlyInitializationCanServe(t *testing.T) {
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		response, err := loginClient.Do(request)
 		if err != nil {
-			t.Fatal("password login transport failed")
+			t.Fatalf("password login transport failed (timeout=%t)", os.IsTimeout(err))
 		}
 		response.Body.Close()
 		if valid {

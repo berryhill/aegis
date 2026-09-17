@@ -726,6 +726,16 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 			if !bytes.Contains(body, []byte(`aria-current="page"`)) {
 				t.Fatalf("route %s missing current-page aria marker", route.domain)
 			}
+			if bytes.Contains(body, []byte("Finish setup for this destination")) {
+				t.Fatalf("route %s confused operation prerequisites with initial setup", route.domain)
+			}
+			if route.domain == "loops" || route.domain == "graphs" || route.domain == "queue" {
+				for _, want := range []string{"Action prerequisites", "authority_context_required", "does not mean initial setup is incomplete"} {
+					if !bytes.Contains(body, []byte(want)) {
+						t.Fatalf("route %s missing operation-specific readiness explanation %q", route.domain, want)
+					}
+				}
+			}
 			if route.actionKey != "" {
 				if !bytes.Contains(body, []byte(route.actionLabel)) {
 					t.Fatalf("route %s missing action label %s", route.domain, route.actionLabel)
