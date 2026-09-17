@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Added explicit owning-instance `--target` Agent reads and Loop validation/publication/readback over the configured authenticated Unix API, plus an installed typed publication template. No activation, execution or code-task verification guarantee is implied.
+
 - Protected credential creation now distinguishes a committed record with incomplete audit/readback from a verified creation, independently reloads exact metadata, and never retries submitted values. Bounded same-session creation follow-ups and bare proposal guidance bypass the model. Credentials refresh on returning focus/BFCache only when no dialog or unsaved edits would be disrupted; current filters and selection are retained.
 
 - Fixed fresh-bootstrap transport ordering: initialization denies a present planned Unix transport before publication, rechecks configured gateway ownership after configuration creation, and repeats offline checks after operational/custody approvals and protected passphrase intake before the corresponding authority writes. Existing or newly observed transport is preserved and denies mutation at that boundary; these checks are not an atomic lifecycle lock or automatic stale-socket repair.

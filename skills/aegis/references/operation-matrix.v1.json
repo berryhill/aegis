@@ -99,8 +99,8 @@
       "authority":"Exact authenticated workspace or runtime authority; stable owner controls publication/lifecycle, immutable definitions remain fleet-shared. Console mutations require authenticated same-origin CSRF and exact preview/execute contract.",
       "sources":["internal/command/fleet.go","internal/api/server.go"],
       "tests":["internal/api/workspace_skill_contract_test.go","internal/api/loop_console_form_test.go"],
-      "cli":["aegis loops","aegis loops list","aegis loops publish","aegis loops show","aegis loops activate","aegis loops retire"],
-      "http":["GET /v1/loops","POST /v1/loops","PUT /v1/loops/:loop/lifecycle","GET /v1/loops/:loop/:revision","GET /console/loops","GET /console/loops/compose","POST /console/loops/preview","POST /console/loops/lifecycle-preview","POST /console/loops/execute"],
+      "cli":["aegis loops","aegis loops example","aegis loops validate","aegis loops list","aegis loops publish","aegis loops show","aegis loops activate","aegis loops retire"],
+      "http":["GET /v1/loops","POST /v1/loops/validate","POST /v1/loops","PUT /v1/loops/:loop/lifecycle","GET /v1/loops/:loop/:revision","GET /console/loops","GET /console/loops/compose","POST /console/loops/preview","POST /console/loops/lifecycle-preview","POST /console/loops/execute"],
       "transport_classification":"shipped"
     },
     {

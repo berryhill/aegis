@@ -177,7 +177,22 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 	}
 	activate := lifecycleCommand("activate", loop.LifecycleActive)
 	retire := lifecycleCommand("retire", loop.LifecycleRetired)
-	command.AddCommand(list, publish, show, activate, retire)
+	validate := &cobra.Command{Use: "validate FILE", Short: "Validate a workspace Loop candidate without publishing or executing", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		var input app.PublishLoopInput
+		if err := decodeJSONFile(args[0], &input); err != nil {
+			return usage(err)
+		}
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		value, err := service.ValidateLoop(cmd.Context(), input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	command.AddCommand(list, loopExampleCmd(), validate, publish, show, activate, retire)
 	return command
 }
 

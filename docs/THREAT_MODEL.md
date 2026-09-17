@@ -221,3 +221,7 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 | Workspace submits as an unrelated participant or manages another owner's Queue item | Exact Agent revision must be a pinned Graph participant; submission and Queue records carry owner provenance checked on mutation | This is application authorization, not tenant isolation from the host account |
 | Workspace submission executes without runtime authority | It starts `awaiting-runtime`; only an immutable fresh controller runtime binding plus normal admission can make it claimable | No automatic binder or scheduler is provided |
 | Registered Agent reaches credentials | Workspace capability set contains no credential rights; credential administration/application remains controller-only | Root, kernel, or compromised controller remains outside this boundary |
+
+## Online Loop publication boundary
+
+The installed `--target` adapter selects an existing console origin, uses only its configured authenticated Unix API, and compares `/v1/config` identity before Agent reads or Loop validation/publication/readback. It never opens a local-store fallback, starts a service, activates a Loop or queues work. Template validation is structural, not execution verification. See [online publication](ONLINE_LOOP_PUBLICATION.md).

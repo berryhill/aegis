@@ -1595,6 +1595,24 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, values)
 	})
+	g.POST("/loops/validate", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.PublishLoopInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.ValidateLoopAs(c.Request().Context(), subject, input)
+		if err != nil {
+			if value.Validation.Outcome == app.LoopValidationInvalid {
+				return c.JSON(http.StatusBadRequest, value)
+			}
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
 	g.POST("/loops", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
