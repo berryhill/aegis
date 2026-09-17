@@ -175,7 +175,9 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 	}
 	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
- if item.MaxAttempts != 1 { return WorkResult{}, fmt.Errorf("%w: implementation pass budget forbids Queue retries",ErrWorkerDenied) }
+		if item.MaxAttempts != 1 {
+			return WorkResult{}, fmt.Errorf("%w: implementation pass budget forbids Queue retries", ErrWorkerDenied)
+		}
 		if err := worker.implementation.authorize(loopRevision.Steps, participant); err != nil {
 			return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 		}
