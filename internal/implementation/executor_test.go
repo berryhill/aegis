@@ -40,6 +40,7 @@ func fixture(t *testing.T) (*Executor, loop.VerifiedImplementation) {
 		t.Fatal(err)
 	}
 	c := loop.ImplementationDraft("Return 42", "TestValue passes")
+	c.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "synthetic", Name: "TestValue"}}
 	c.Workspace = root
 	c.WritableFiles = []string{"value.go"}
 	c.Policy.TimeoutSeconds = 120
@@ -133,6 +134,7 @@ func TestContractStrictAndUnresolved(t *testing.T) {
 	if c.Validate() == nil {
 		t.Fatal("unresolved draft executable")
 	}
+	c.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "synthetic", Name: "TestValue"}}
 	c.Workspace = t.TempDir()
 	c.WritableFiles = []string{"value.go"}
 	b, _ := json.Marshal(c)

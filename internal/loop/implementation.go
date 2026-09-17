@@ -12,10 +12,16 @@ import (
 // It is deliberately separate from v2 so legacy canonical bytes are unchanged.
 const VerifiedImplementationSchema = "aegis.loop.verified-implementation.v1"
 
+type RequiredGoTest struct {
+	Package string `json:"package"`
+	Name    string `json:"name"`
+}
+
 type GoTestPolicy struct {
-	Kind           string   `json:"kind"`
-	Packages       []string `json:"packages"`
-	TimeoutSeconds uint16   `json:"timeout_seconds"`
+	RequiredTests  []RequiredGoTest `json:"required_tests"`
+	Kind           string           `json:"kind"`
+	Packages       []string         `json:"packages"`
+	TimeoutSeconds uint16           `json:"timeout_seconds"`
 }
 
 type VerifiedImplementation struct {
@@ -60,6 +66,17 @@ func (v VerifiedImplementation) Validate() error {
 		if p != "." && (!goPackagePath.MatchString(p) || strings.Contains(strings.TrimSuffix(p, "/..."), "..")) {
 			return errors.New("local Go package pattern required")
 		}
+	}
+	if len(v.Policy.RequiredTests) == 0 || len(v.Policy.RequiredTests) > 128 {
+		return errors.New("explicit required test identities required")
+	}
+	tests := map[string]bool{}
+	for _, test := range v.Policy.RequiredTests {
+		key := test.Package + "/" + test.Name
+		if test.Package == "" || strings.ContainsAny(test.Package, " 	\n") || !regexp.MustCompile(`^Test[A-Za-z0-9_]+$`).MatchString(test.Name) || tests[key] {
+			return errors.New("unique package and top-level test identities required")
+		}
+		tests[key] = true
 	}
 	return nil
 }

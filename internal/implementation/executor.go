@@ -4,11 +4,13 @@ package implementation
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -147,9 +149,26 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 	if err != nil || resolved != c.Workspace {
 		return r, errors.New("workspace must be a resolved operator-authorized directory")
 	}
-	if err = e.admit(ctx, "begin"); err != nil {
+	unlock, err := lockWorkspace(c.Workspace)
+	if err != nil {
 		return r, err
 	}
+	defer unlock()
+	if old, x := e.Read(id); x == nil {
+		if old.ContractDigest != cd {
+			return old, errors.New("reserved contract mismatch")
+		}
+		if old.State == "running" {
+			old.State = "interrupted"
+			if x = e.save(old); x != nil {
+				return old, x
+			}
+		}
+		return old, errors.New("run already reserved; budget cannot reset")
+	} else if !errors.Is(x, badger.ErrKeyNotFound) {
+		return r, x
+	}
+	admissionErr := e.admit(ctx, "begin")
 	r = Record{RunID: id, ContractDigest: cd, State: "running", Passes: []Pass{}}
 	err = e.DB.Update(func(t *badger.Txn) error {
 		_, x := t.Get(recordKey(id))
@@ -163,6 +182,9 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 	})
 	if err != nil {
 		return r, err
+	}
+	if admissionErr != nil {
+		return e.stop(r, admissionErr)
 	}
 	var previous []byte
 	for p := uint8(1); p <= c.MaxPasses; p++ {
@@ -178,6 +200,7 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		proposalContract := c
 		proposalContract.WritableFiles = append([]string(nil), c.WritableFiles...)
 		proposalContract.Policy.Packages = append([]string(nil), c.Policy.Packages...)
+		proposalContract.Policy.RequiredTests = append([]loop.RequiredGoTest(nil), c.Policy.RequiredTests...)
 		edits, x := e.Proposer.Propose(ctx, Request{Contract: proposalContract, PassID: r.Passes[len(r.Passes)-1].ID, PreviousCheck: append([]byte(nil), previous...)})
 		if x != nil {
 			return e.stop(r, x)
@@ -258,6 +281,13 @@ func (e *Executor) Revalidate(id string, c loop.VerifiedImplementation) error {
 		}
 	}
 	last := r.Passes[len(r.Passes)-1]
+	output, err := e.loadBlob(last.OutputDigest)
+	if err != nil {
+		return err
+	}
+	if !requiredTestsPassed(output, c.Policy.RequiredTests) {
+		return errors.New("required test evidence missing")
+	}
 	if !last.Passed {
 		return errors.New("controller check did not pass")
 	}
@@ -302,7 +332,13 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 		if err = e.admit(ctx, "write:"+v.Path); err != nil {
 			return err
 		}
-		f, x := root.OpenFile(v.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		var nonce [16]byte
+		if _, err = rand.Read(nonce[:]); err != nil {
+			return err
+		}
+		temp := filepath.Join(filepath.Dir(v.Path), ".aegis-edit-"+hex.EncodeToString(nonce[:]))
+		f, x := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		defer root.Remove(temp)
 		if x != nil {
 			return x
 		}
@@ -316,6 +352,9 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 		}
 		if closeErr != nil {
 			return closeErr
+		}
+		if err = root.Rename(temp, v.Path); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -344,9 +383,13 @@ func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]
 		return nil, false, err
 	}
 	defer os.RemoveAll(home)
-	args := []string{"test", "-count=1", "-p=1", "-timeout=" + fmt.Sprintf("%ds", c.Policy.TimeoutSeconds)}
+	args := []string{"test", "-json", "-count=1", "-p=1", "-timeout=" + fmt.Sprintf("%ds", c.Policy.TimeoutSeconds)}
 	args = append(args, c.Policy.Packages...)
 	cmd := exec.CommandContext(ctx, e.GoBinary, args...)
+	if err = configureProcess(cmd); err != nil {
+		return nil, false, err
+	}
+	defer killProcessGroup(cmd)
 	cmd.Dir = c.Workspace
 	cmd.Env = []string{"PATH=" + filepath.Dir(e.GoBinary), "HOME=" + home, "GOCACHE=" + filepath.Join(home, "cache"), "GOMODCACHE=" + filepath.Join(home, "modules"), "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off", "CGO_ENABLED=0", "GOMAXPROCS=2"}
 	cmd.WaitDelay = time.Second
@@ -366,7 +409,7 @@ func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]
 			return nil, false, err
 		}
 	}
-	return out.bytes, err == nil, nil
+	return out.bytes, err == nil && requiredTestsPassed(out.bytes, c.Policy.RequiredTests), nil
 }
 
 func snapshot(root string) ([]byte, error) {
@@ -374,16 +417,18 @@ func snapshot(root string) ([]byte, error) {
 		Path    string `json:"path"`
 		Content []byte `json:"content"`
 	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
 	files := []file{}
 	total := 0
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(dir.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, x := filepath.Rel(root, p)
-		if x != nil {
-			return x
-		}
+		rel := p
 		if rel == ".git" {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -399,14 +444,22 @@ func snapshot(root string) ([]byte, error) {
 		if strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return errors.New("workspace escape")
 		}
-		info, x := d.Info()
+		f, x := dir.Open(rel)
 		if x != nil {
 			return x
+		}
+		defer f.Close()
+		info, x := f.Stat()
+		if x != nil {
+			return x
+		}
+		if !info.Mode().IsRegular() || !singleLink(info) {
+			return errors.New("workspace requires single-link regular files")
 		}
 		if info.Size() > maxBytes || total+int(info.Size()) > maxBytes || len(files) >= 4096 {
 			return errors.New("workspace exceeds content bound")
 		}
-		b, x := os.ReadFile(p)
+		b, x := io.ReadAll(io.LimitReader(f, int64(maxBytes-total)+1))
 		if x != nil {
 			return x
 		}

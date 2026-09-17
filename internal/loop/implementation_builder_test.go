@@ -7,6 +7,7 @@ import (
 
 func TestImplementationRevisionImmutableBinding(t *testing.T) {
 	c := ImplementationDraft("implement addition", "native tests pass")
+	c.Policy.RequiredTests = []RequiredGoTest{{Package: "synthetic", Name: "TestValue"}}
 	c.Workspace = t.TempDir()
 	c.WritableFiles = []string{"sum.go"}
 	r, _, err := NewImplementationRevision("implementation", 1, "", c)

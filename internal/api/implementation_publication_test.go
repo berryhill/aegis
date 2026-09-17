@@ -47,6 +47,7 @@ func TestImplementationDraftAuthenticatedPublishReadback(t *testing.T) {
 	agent := registered.Agent.Revision
 
 	contract := loop.ImplementationDraft("implement addition", "native Go tests pass")
+	contract.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "synthetic", Name: "TestValue"}}
 	contract.Workspace = t.TempDir()
 	contract.WritableFiles = []string{"sum.go"}
 	revision, _, err := loop.NewImplementationRevision("implementation-draft", 1, "", contract)
