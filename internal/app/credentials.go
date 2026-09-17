@@ -13,6 +13,21 @@ import (
 
 var ErrCredentialUnavailable = errors.New("credential authority unavailable")
 
+// CredentialCreationPartial means custody committed, but audit or independent
+// metadata confirmation failed. It contains no backend error or value and must
+// never be treated as permission to replay the mutation.
+type CredentialCreationPartial struct {
+	RecordID         string
+	Reference        string
+	Kind             string
+	AuditVerified    bool
+	MetadataVerified bool
+}
+
+func (*CredentialCreationPartial) Error() string {
+	return "credential persisted; audit or metadata confirmation incomplete; do not replay the value"
+}
+
 // Credential error predicates keep transport adapters on the application
 // boundary instead of coupling them to the credential authority package.
 func IsCredentialNotFound(err error) bool { return errors.Is(err, credentials.ErrNotFound) }
@@ -226,10 +241,15 @@ func (s *Service) CreateCredentialAs(ctx context.Context, subject core.Subject, 
 		_ = s.AuditCredentialOperation(ctx, subject, "credential_created", "denied", "create_failed", "")
 		return CredentialView{}, err
 	}
-	if err = s.AuditCredentialOperation(ctx, subject, "credential_created", "ok", "operator_request", record.ID); err != nil {
-		return CredentialView{}, err
+	auditErr := s.AuditCredentialOperation(ctx, subject, "credential_created", "ok", "operator_request", record.ID)
+	// Read from custody again, not the in-memory return from Create. Exact
+	// identity and initial lifecycle must match; existence alone is insufficient.
+	view, readErr := s.CredentialAs(ctx, subject, record.ID)
+	verified := readErr == nil && view.ID == record.ID && view.Reference == input.Reference && view.Kind == input.Kind && view.CreatedBy == subject.PrincipalID && view.Status == credentials.StatusActive && view.CurrentVersion == 1 && len(view.VersionHistory) == 1 && view.VersionHistory[0].Version == 1 && view.BindingCount == 0
+	if auditErr != nil || !verified {
+		return CredentialView{}, &CredentialCreationPartial{RecordID: record.ID, Reference: input.Reference, Kind: input.Kind, AuditVerified: auditErr == nil, MetadataVerified: verified}
 	}
-	return s.buildCredentialView(ctx, record)
+	return view, nil
 }
 
 func (s *Service) RotateCredentialAs(ctx context.Context, subject core.Subject, recordID string, input RotateCredentialInput) (CredentialView, error) {
@@ -344,7 +364,10 @@ func (s *Service) buildCredentialView(ctx context.Context, record credentials.Se
 		view.Revocation = record.Revocation
 	}
 	history, err := s.CredentialAuthority.History(ctx, record.ID, 100)
-	if err == nil {
+	if err != nil {
+		return CredentialView{}, errors.New("credential history unavailable")
+	}
+	{
 		for _, version := range history {
 			view.VersionHistory = append(view.VersionHistory, CredentialVersionView{
 				Version:        version.Version,
@@ -356,9 +379,11 @@ func (s *Service) buildCredentialView(ctx context.Context, record credentials.Se
 			})
 		}
 	}
-	if bindings, countErr := s.CredentialAuthority.BindingCount(ctx, record.ID); countErr == nil {
-		view.BindingCount = bindings
+	bindings, countErr := s.CredentialAuthority.BindingCount(ctx, record.ID)
+	if countErr != nil {
+		return CredentialView{}, errors.New("credential bindings unavailable")
 	}
+	view.BindingCount = bindings
 	return view, nil
 }
 

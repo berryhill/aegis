@@ -24,6 +24,10 @@ import (
 )
 
 func intakeService(t *testing.T) (*Service, core.Subject, string) {
+	return intakeServiceWithRepository(t, nil)
+}
+
+func intakeServiceWithRepository(t *testing.T, wrap func(credentials.Repository) credentials.Repository) (*Service, core.Subject, string) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
@@ -51,7 +55,11 @@ func intakeService(t *testing.T) (*Service, core.Subject, string) {
 	cfg.StateDir = state.Root()
 	cfg.Audit.CheckpointDir = state.CheckpointRoot()
 	application := app.New(cfg, state, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	application.CredentialAuthority = credentials.NewAuthority(repo, custody)
+	var repository credentials.Repository = repo
+	if wrap != nil {
+		repository = wrap(repository)
+	}
+	application.CredentialAuthority = credentials.NewAuthority(repository, custody)
 	subject := core.Subject{ID: "test-subject", PrincipalID: "principal", ExpiresAt: time.Now().Add(time.Hour)}
 	material := make([]byte, 32)
 	_, _ = rand.Read(material)

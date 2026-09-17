@@ -45,6 +45,12 @@ func detectAuthoritativeIntent(input string) authoritativeRoute {
 	if strings.ContainsAny(input, "\r\n") || containsQuotedIntentSyntax(input) {
 		return authoritativeRoute{}
 	}
+	if strings.TrimSpace(input) == "secret.propose_create" {
+		return authoritativeRoute{kind: "credential_control"}
+	}
+	if credentialFollowup(input) {
+		return authoritativeRoute{kind: "credential_followup"}
+	}
 	normalized := normalizedIntent(candidate)
 	if normalized == "" || conversationalQuestion(normalized) {
 		return authoritativeRoute{}
@@ -62,6 +68,16 @@ var (
 	agentRegistrationGuidancePattern = regexp.MustCompile(`^(?:please )?(?:(?:i want to|i d like to|hey let s|hey lets) )?(?:register|add) (?:(?:a new|an?|the|our|another|new) )?agents?(?: [a-z0-9][a-z0-9._-]{0,63})?(?: for me)?$`)
 	managerLifecycleGuidancePattern  = regexp.MustCompile(`^(?:please )?(?:ensure our aegis gateway and dashboard are up to date|ensure the aegis manager is running and up to date|update and restart the aegis manager)$`)
 )
+
+// Only complete, value-free follow-ups are admitted; this predicate carries no
+// metadata or authority. The authenticated session supplies a five-minute scope.
+func credentialFollowup(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "let’s amke another one", "let's amke another one", "let’s make another one", "let's make another one", "make another one", "create another one", "add another one":
+		return true
+	}
+	return false
+}
 
 func authoritativeIntent(input string) string {
 	route := detectAuthoritativeIntent(input)
