@@ -126,7 +126,11 @@ func DecodeVerificationReceipt(ref string, content []byte) (VerificationReceipt,
 // CompletionProvenance is an opaque verifier-minted capability. Its fields are
 // intentionally inaccessible outside this package so completion callers cannot
 // mint evidence from projections they control.
-type CompletionProvenance struct{ digest string }
+type CompletionProvenance struct {
+	digest                 string
+	implementationCheck    func() error
+	implementationContract string
+}
 
 // AuthorizeCompletion independently reloads the artifact and every receipt at
 // the final verification boundary and seals their exact projections.
@@ -148,7 +152,7 @@ func (v *BlobVerifier) AuthorizeCompletion(ctx context.Context, artifact Runtime
 }
 
 func ValidateCompletionProvenance(provenance CompletionProvenance, artifact RuntimeArtifact, receipts []VerificationReceipt) bool {
-	return provenance.digest != "" && provenance == completionProvenance(artifact, receipts)
+	return provenance.digest != "" && provenance.digest == completionProvenance(artifact, receipts).digest && (provenance.implementationCheck == nil || provenance.implementationCheck() == nil)
 }
 
 func completionProvenance(artifact RuntimeArtifact, receipts []VerificationReceipt) CompletionProvenance {

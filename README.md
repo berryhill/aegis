@@ -1,5 +1,7 @@
 # Aegis
 
+Verified implementation authoring: `aegis loops implementation FILE` builds an explicit workspace/test-bound Loop v3 draft for a named existing Agent. Authenticated publication remains inactive; execution separately requires operator-authorized controller configuration and native trusted tests. See [the authoring and execution boundary](docs/VERIFIED_IMPLEMENTATION.md).
+
 Aegis is a Go control plane for authenticated, trust-stanza-bound sessions over an explicit Hermes Agent runtime. It does not hide Hermes, infer authority from prompts, or treat the model as an approver or provisioner.
 
 Its security contract is: identity and authority are established outside the model; prompts, profile names, model conclusions, and stanza requests are not authentication. Each runtime session binds to exactly one authenticated trust stanza. Trust stanzas are security contexts, not personalities: zero or multiple authorized matches deny, grants are never unioned, and a stanza or material-authority change requires a new mandate and clean session.

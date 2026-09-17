@@ -30,6 +30,7 @@ Use this skill to draft, validate, publish, inspect, activate, or retire an immu
 
 First use `aegis loops --help`. Supported commands in the compatible release are:
 
+- `aegis loops implementation FILE [--output NEW_FILE]` (local canonical v3 implementation draft; no authority, publication or execution)
 - `aegis loops example` (typed publication template only)
 - `aegis loops validate FILE` (authenticated workspace structural validation, no publication)
 - `aegis loops list`
@@ -57,6 +58,12 @@ The publish file is a strict `PublishLoopInput` JSON object. Choose the authorit
 Use `aegis loops example` for the installed schema-valid publication template. Select an existing enabled Agent explicitly; do not infer a builder from its name. The basic-implementation template is NOT an executable implementation workflow: task and acceptance_criteria are typed ports without instruction/value-bound bindings; empty evidence requirements prove nothing; max_attempts=2 does not enforce one corrective attempt; the success terminal is not a verification gate. Required evidence needs an actual pre-pinned expected digest, verifier ID and policy version. Never invent them or claim a generic test pass proves dynamic acceptance. Execution binding remains unsupported by this template.
 
 Direct-store CLI access is unavailable when the daemon owns the store (`control_plane_online`). Use `aegis --config OWNER_CONFIG --target CONSOLE_URL agents list`, then the same flags for `loops validate FILE`, `loops publish FILE`, and `loops show LOOP REVISION`. The URL selects the existing instance, not a credential destination: the installed adapter uses its configured protected Unix API and matches returned configuration before acting. There is no local-store fallback. Do not stop the daemon, initialize another store, extract its token, or build an ad-hoc client. Online support is limited to agents list/show/history and loops list/show/validate/publish; activation, queueing and execution are excluded.
+
+## Verified implementation authoring
+
+Use `loops implementation FILE` for real bounded implementation semantics, not `loops example`. Supply strict JSON with `agent_id`, `loop_id`, positive `revision`, `idempotency_key`, optional `previous_digest`, and `implementation`: schema `aegis.loop.verified-implementation.v1`, bounded `task` and `acceptance`, explicit absolute `workspace`, local non-test Go `writable_files`, `max_passes` 1–2, and `policy` with kind `go-test.v1`, local `packages`, exact `required_tests` package/name identities and timeout 1–120 seconds. Obtain these values from the owner and existing trusted tests. Output is a v3 publication candidate; online validation must resolve the actual Agent. `--output` creates a new private file and refuses overwrite.
+
+Publication remains inactive and does not authorize native code. Controller execution separately requires operator approval to configure an absolute trusted `implementation.go_binary` and exact `implementation.authorized_contracts` digest allowlist. Never edit that configuration, restart services or queue execution merely to finish authoring. Native Go tests are trusted host code, not sandboxed. Build source with `go build`, not `go run`. See `docs/VERIFIED_IMPLEMENTATION.md`.
 
 ## Publish and verify
 
@@ -91,6 +98,6 @@ After interruption, inspect the exact immutable revision and lifecycle history b
 
 ## Secret and progressive-disclosure handling
 
-Loop definitions and examples must contain no authentication material, credential values, broker capabilities, private prompts, raw runtime output, host paths, or secret-shaped canaries. Report only bounded non-secret authority references and provenance returned by Aegis; do not expose credential or capability values.
+Loop definitions and examples must contain no authentication material, credential values, broker capabilities, private prompts, raw runtime output, unrelated private host paths, or secret-shaped canaries. Verified implementation contracts necessarily bind the explicit owner-approved workspace path; do not publish it beyond the intended fleet. Report only bounded non-secret authority references and provenance returned by Aegis; do not expose credential or capability values.
 
 Consult `specs/CANONICAL_DOMAINS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/STORAGE.md`, the root `README.md`, and installed command help for normative and shipped behavior. Installing this advisory skill grants no Aegis identity, authority, publication right, lifecycle right, runtime capability, or filesystem/network access.

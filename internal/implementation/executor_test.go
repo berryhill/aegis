@@ -44,7 +44,7 @@ func fixture(t *testing.T) (*Executor, loop.VerifiedImplementation) {
 	c.Workspace = root
 	c.WritableFiles = []string{"value.go"}
 	c.Policy.TimeoutSeconds = 120
-	return &Executor{DB: db, GoBinary: goBin, Admit: func(context.Context, string) error { return nil }}, c
+	return &Executor{DB: testStore{db}, GoBinary: goBin, Admit: func(context.Context, string) error { return nil }}, c
 }
 func edits(value string) []Edit {
 	return []Edit{{Path: "value.go", Content: []byte("package synthetic\nfunc Value() int { return " + value + " }\n")}}
@@ -166,10 +166,43 @@ func TestInterruptedReservationAndEvidenceTamper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = e.DB.Update(func(tx *badger.Txn) error { return tx.Set(blobKey(d), []byte("PASS")) }); err != nil {
+	if err = e.DB.Put(blobKey(d), []byte("PASS")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = e.loadBlob(d); err == nil {
 		t.Fatal("content-addressed evidence tamper accepted")
 	}
+}
+
+type testStore struct{ db *badger.DB }
+
+func (s testStore) Get(k []byte) ([]byte, error) {
+	var b []byte
+	err := s.db.View(func(tx *badger.Txn) error {
+		i, e := tx.Get(k)
+		if e != nil {
+			return e
+		}
+		b, e = i.ValueCopy(nil)
+		return e
+	})
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		err = ErrNotFound
+	}
+	return b, err
+}
+func (s testStore) Put(k, b []byte) error {
+	return s.db.Update(func(tx *badger.Txn) error { return tx.Set(k, b) })
+}
+func (s testStore) Create(k, b []byte) error {
+	return s.db.Update(func(tx *badger.Txn) error {
+		_, err := tx.Get(k)
+		if err == nil {
+			return errors.New("reserved")
+		}
+		if !errors.Is(err, badger.ErrKeyNotFound) {
+			return err
+		}
+		return tx.Set(k, b)
+	})
 }

@@ -73,7 +73,14 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			return fleet.ErrConflict
 		}
 		projection, e := loadQueueProjection(txn, storedClaim.QueueItem.ID)
-		if e != nil || validateProjectionBasis(txn, projection) != nil || projection.State != queue.StateClaimed || projection.ActiveClaimID != storedClaim.ClaimID || !completion.Transition.OccurredAt.Before(storedClaim.ExpiresAt) {
+		if e != nil || validateProjectionBasis(txn, projection) != nil || projection.State != queue.StateClaimed || projection.ActiveClaimID != storedClaim.ClaimID {
+			return fleet.ErrConflict
+		}
+		// Lease expiry only permits recording the exact still-active claim's
+		// evidence-free expired outcome. It does not extend execution authority
+		// or permit late success (or any other late disposition).
+		if !completion.Transition.OccurredAt.Before(storedClaim.ExpiresAt) &&
+			(completion.Disposition.State != execution.StateExpired || completion.Transition.To != queue.StateExpired || completion.Artifact != nil || len(completion.Receipts) != 0) {
 			return fleet.ErrConflict
 		}
 		attemptWire, e := get(txn, key(familyAttempt, completion.Disposition.AttemptID))
@@ -208,6 +215,18 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 	}
 	revision, err := loop.UnmarshalRevision(revisionWire)
 	if err != nil || revision.Digest != loopExecution.Loop.Digest || len(revision.RequiredEvidence) != len(completion.Receipts) {
+		return false
+	}
+	if revision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+		for _, step := range revision.Steps {
+			if step.ID == completion.Artifact.ActionID && step.Implementation != nil {
+				d, e := step.Implementation.Digest()
+				if e != nil {
+					return false
+				}
+				return evidence.ValidateImplementationProvenance(completion.Provenance, d, loop.VerifiedImplementationSchema, *completion.Artifact, completion.Receipts)
+			}
+		}
 		return false
 	}
 	claims := map[string]loop.EvidenceClaim{}

@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/loop"
-	"github.com/dgraph-io/badger/v4"
 )
 
 const maxBytes = 8 << 20
@@ -57,7 +56,7 @@ type Record struct {
 	Passes         []Pass `json:"passes"`
 }
 type Executor struct {
-	DB       *badger.DB
+	DB       Store
 	GoBinary string
 	Proposer Proposer
 	Admit    Admit
@@ -66,30 +65,30 @@ type Executor struct {
 func digest(b []byte) string     { h := sha256.Sum256(b); return "sha256:" + hex.EncodeToString(h[:]) }
 func recordKey(id string) []byte { return []byte("implementation/run/" + digest([]byte(id))) }
 func blobKey(id string) []byte   { return []byte("implementation/blob/" + id) }
-func putJSON(txn *badger.Txn, k []byte, v any) error {
-	b, e := json.Marshal(v)
-	if e != nil {
-		return e
-	}
-	return txn.Set(k, b)
+
+// Store is opaque controller custody. Create must atomically reject existing keys.
+// Implementations own engine transactions and map absent reads to ErrNotFound.
+type Store interface {
+	Get([]byte) ([]byte, error)
+	Put([]byte, []byte) error
+	Create([]byte, []byte) error
 }
+
+var ErrNotFound = errors.New("implementation record not found")
+
 func (e *Executor) save(r Record) error {
-	return e.DB.Update(func(t *badger.Txn) error { return putJSON(t, recordKey(r.RunID), r) })
+	b, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	return e.DB.Put(recordKey(r.RunID), b)
 }
 func (e *Executor) blob(b []byte) (string, error) {
 	d := digest(b)
-	return d, e.DB.Update(func(t *badger.Txn) error { return t.Set(blobKey(d), b) })
+	return d, e.DB.Put(blobKey(d), b)
 }
 func (e *Executor) loadBlob(d string) ([]byte, error) {
-	var b []byte
-	err := e.DB.View(func(t *badger.Txn) error {
-		i, x := t.Get(blobKey(d))
-		if x != nil {
-			return x
-		}
-		b, x = i.ValueCopy(nil)
-		return x
-	})
+	b, err := e.DB.Get(blobKey(d))
 	if err == nil && digest(b) != d {
 		err = errors.New("evidence digest mismatch")
 	}
@@ -97,13 +96,10 @@ func (e *Executor) loadBlob(d string) ([]byte, error) {
 }
 func (e *Executor) Read(id string) (Record, error) {
 	var r Record
-	err := e.DB.View(func(t *badger.Txn) error {
-		i, x := t.Get(recordKey(id))
-		if x != nil {
-			return x
-		}
-		return i.Value(func(b []byte) error { return json.Unmarshal(b, &r) })
-	})
+	b, err := e.DB.Get(recordKey(id))
+	if err == nil {
+		err = json.Unmarshal(b, &r)
+	}
 	return r, err
 }
 
@@ -165,21 +161,15 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 			}
 		}
 		return old, errors.New("run already reserved; budget cannot reset")
-	} else if !errors.Is(x, badger.ErrKeyNotFound) {
+	} else if !errors.Is(x, ErrNotFound) {
 		return r, x
 	}
 	admissionErr := e.admit(ctx, "begin")
 	r = Record{RunID: id, ContractDigest: cd, State: "running", Passes: []Pass{}}
-	err = e.DB.Update(func(t *badger.Txn) error {
-		_, x := t.Get(recordKey(id))
-		if x == nil {
-			return errors.New("run already reserved; budget cannot reset")
-		}
-		if !errors.Is(x, badger.ErrKeyNotFound) {
-			return x
-		}
-		return putJSON(t, recordKey(id), r)
-	})
+	wire, err := json.Marshal(r)
+	if err == nil {
+		err = e.DB.Create(recordKey(id), wire)
+	}
 	if err != nil {
 		return r, err
 	}
@@ -299,6 +289,18 @@ func (e *Executor) Revalidate(id string, c loop.VerifiedImplementation) error {
 		return errors.New("verified workspace was modified")
 	}
 	return nil
+}
+
+// Output reloads the exact verified workspace artifact from controller custody.
+func (e *Executor) Output(id string, c loop.VerifiedImplementation) ([]byte, error) {
+	if err := e.Revalidate(id, c); err != nil {
+		return nil, err
+	}
+	r, err := e.Read(id)
+	if err != nil {
+		return nil, err
+	}
+	return e.loadBlob(r.Passes[len(r.Passes)-1].WorkspaceDigest)
 }
 
 func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edits []Edit) error {

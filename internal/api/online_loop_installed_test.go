@@ -63,7 +63,13 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 	if err != nil || !bytes.Contains(out, []byte("existing-builder")) {
 		t.Fatalf("list: %v %s", err, out)
 	}
-	example, err := exec.Command(binary, "loops", "example").Output()
+	contract := loop.VerifiedImplementation{SchemaVersion: loop.VerifiedImplementationSchema, Task: "Implement bounded addition", Acceptance: "TestAdd passes without modifying its source", Workspace: t.TempDir(), WritableFiles: []string{"add.go"}, MaxPasses: 2, Policy: loop.GoTestPolicy{Kind: "go-test.v1", Packages: []string{"."}, RequiredTests: []loop.RequiredGoTest{{Package: "example.test/add", Name: "TestAdd"}}, TimeoutSeconds: 30}}
+	authoringPath := filepath.Join(t.TempDir(), "authoring.json")
+	authoring, _ := json.Marshal(map[string]any{"agent_id": "existing-builder", "loop_id": "basic-implementation", "revision": 1, "idempotency_key": "installed-implementation-v3", "implementation": contract})
+	if err := os.WriteFile(authoringPath, authoring, 0600); err != nil {
+		t.Fatal(err)
+	}
+	example, err := exec.Command(binary, "loops", "implementation", authoringPath).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +118,7 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 	if err := json.Unmarshal(out, &view); err != nil {
 		t.Fatal(err)
 	}
-	if view.Revision.Digest != published.Revision.Digest || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
+	if view.Revision.SchemaVersion != loop.ImplementationRevisionSchemaVersion || view.Revision.Digest != input.Revision.Digest || view.Revision.Digest != published.Revision.Digest || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
 		t.Fatalf("incorrect inactive readback: %s", out)
 	}
 	out, err = run(cfgPath, target, "loops", "publish", inputPath)

@@ -192,7 +192,7 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(list, loopExampleCmd(), validate, publish, show, activate, retire)
+	command.AddCommand(list, loopExampleCmd(), loopImplementationCmd(), validate, publish, show, activate, retire)
 	return command
 }
 
