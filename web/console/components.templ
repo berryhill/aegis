@@ -315,7 +315,7 @@ templ CommandReceiptPage(model OperationReceiptModel) {
 templ ActionReadiness(actions []ActionModel) {
 	if hasBlockedAction(actions) {
 		<section class="onboard repair" aria-labelledby="onboard-heading">
-			<div class="onboard-head"><span class="signal" aria-hidden="true"></span><div><strong id="onboard-heading">Finish setup for this destination</strong> <span class="sub">Records stay inspectable while action prerequisites are outstanding.</span></div></div>
+			<div class="onboard-head"><span class="signal" aria-hidden="true"></span><div><strong id="onboard-heading">Action prerequisites</strong> <span class="sub">Records stay inspectable while action prerequisites are outstanding.</span></div></div>
 			<ul class="onboard-steps">
 				for _, action := range actions {
 					if action.State != "ready" {
@@ -323,6 +323,9 @@ templ ActionReadiness(actions []ActionModel) {
 							<span class={ "tag " + actionTag(action.State) }><i></i>{ stateHeading(action.State) }</span>
 							<div class="ob-copy">
 								<strong>{ action.Label }</strong>
+								if action.ReasonCode == "authority_context_required" {
+									<p>Operation-specific authority has not been selected for this action. This does not mean initial setup is incomplete. Preparing an action does not authorize it; submission still requires fresh admission.</p>
+								}
 								<p><code>{ action.ReasonCode }</code>
 									if len(action.RepairActions) > 0 {
 										<span> · Repair: { strings.Join(action.RepairActions, ", ") }</span>
