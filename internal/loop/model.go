@@ -4,10 +4,11 @@
 package loop
 
 const (
-	RevisionSchemaVersion   = "aegis.loop.revision.v2"
-	ValidationSchemaVersion = "aegis.loop.validation.v2"
-	ValidatorID             = "aegis.loop.validator"
-	ValidatorVersion        = "1"
+	RevisionSchemaVersion               = "aegis.loop.revision.v2"
+	ImplementationRevisionSchemaVersion = "aegis.loop.revision.v3"
+	ValidationSchemaVersion             = "aegis.loop.validation.v2"
+	ValidatorID                         = "aegis.loop.validator"
+	ValidatorVersion                    = "1"
 
 	MaxPorts       = 128
 	MaxSteps       = 256
@@ -103,14 +104,15 @@ type EvidenceRequirement struct {
 }
 
 type Step struct {
-	ID             string              `json:"id"`
-	Kind           StepKind            `json:"kind"`
-	InputPorts     []Port              `json:"input_ports"`
-	OutputPorts    []Port              `json:"output_ports"`
-	Retry          RetryPolicy         `json:"retry"`
-	Gate           *GateDefinition     `json:"gate,omitempty"`
-	Terminal       *TerminalDefinition `json:"terminal,omitempty"`
-	EvidenceClaims []EvidenceClaim     `json:"evidence_claims"`
+	Implementation *VerifiedImplementation `json:"implementation,omitempty"`
+	ID             string                  `json:"id"`
+	Kind           StepKind                `json:"kind"`
+	InputPorts     []Port                  `json:"input_ports"`
+	OutputPorts    []Port                  `json:"output_ports"`
+	Retry          RetryPolicy             `json:"retry"`
+	Gate           *GateDefinition         `json:"gate,omitempty"`
+	Terminal       *TerminalDefinition     `json:"terminal,omitempty"`
+	EvidenceClaims []EvidenceClaim         `json:"evidence_claims"`
 }
 
 type Transition struct {

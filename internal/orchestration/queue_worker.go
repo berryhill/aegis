@@ -42,6 +42,7 @@ type RuntimeRequest struct {
 	Participant     registry.AgentRevision
 	Launch          execution.LaunchContract
 	Admission       execution.AdmissionChecker
+	LoopRevision    loop.LoopRevision
 }
 
 type RuntimeResult struct {
@@ -67,6 +68,11 @@ type NoKeyAdapter struct{}
 func (NoKeyAdapter) Execute(ctx context.Context, request RuntimeRequest) (RuntimeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return RuntimeResult{}, err
+	}
+	for _, step := range request.LoopRevision.Steps {
+		if step.Implementation != nil {
+			return RuntimeResult{}, errors.New("no-key adapter cannot execute implementation contracts")
+		}
 	}
 	if request.GraphRunID == "" || request.LoopExecutionID == "" || request.GraphNodeID == "" || request.Authority.Validate() != nil || request.Participant.Runtime.Adapter != "no-key" {
 		return RuntimeResult{}, errors.New("exact no-key runtime binding is required")
@@ -232,7 +238,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	defer cancelRuntime()
 	runtimeResult, runtimeErr := worker.adapter.Execute(runtimeCtx, RuntimeRequest{
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
-		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch,
+		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority},
 	})
 	if runtimeErr != nil {
@@ -359,6 +365,9 @@ func evidenceClaims(revision loop.LoopRevision, actionID string) map[string]loop
 }
 
 func executableAction(revision loop.LoopRevision) (string, error) {
+	if revision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+		return "", errors.New("verified implementation completion custody is not configured; refusing legacy digest verification")
+	}
 	if len(revision.RequiredEvidence) == 0 {
 		return "", errors.New("executable Loop requires at least one precommitted evidence policy")
 	}

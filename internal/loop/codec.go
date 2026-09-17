@@ -15,7 +15,9 @@ import (
 // NewRevision canonicalizes, validates, and content-addresses a candidate. The
 // caller must still publish it through a create-only repository transaction.
 func NewRevision(candidate LoopRevision) (LoopRevision, LoopValidationResult, error) {
-	candidate.SchemaVersion = RevisionSchemaVersion
+	if candidate.SchemaVersion == "" {
+		candidate.SchemaVersion = RevisionSchemaVersion
+	}
 	candidate.Validator = ValidatorSpec{ID: ValidatorID, Version: ValidatorVersion}
 	candidate.Digest = ""
 	candidate = canonicalRevision(candidate)
@@ -131,6 +133,12 @@ func canonicalRevision(value LoopRevision) LoopRevision {
 	value.Outputs = canonicalPorts(value.Outputs)
 	value.Steps = append([]Step(nil), value.Steps...)
 	for index := range value.Steps {
+		if contract := value.Steps[index].Implementation; contract != nil {
+			copyContract := *contract
+			copyContract.WritableFiles = append([]string(nil), contract.WritableFiles...)
+			copyContract.Policy.Packages = append([]string(nil), contract.Policy.Packages...)
+			value.Steps[index].Implementation = &copyContract
+		}
 		value.Steps[index].InputPorts = canonicalPorts(value.Steps[index].InputPorts)
 		value.Steps[index].OutputPorts = canonicalPorts(value.Steps[index].OutputPorts)
 		value.Steps[index].EvidenceClaims = append([]EvidenceClaim(nil), value.Steps[index].EvidenceClaims...)

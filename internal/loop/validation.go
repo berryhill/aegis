@@ -37,7 +37,7 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 	add := func(code, path, message string) {
 		issues = append(issues, ValidationIssue{Code: code, Path: path, Message: message})
 	}
-	if revision.SchemaVersion != RevisionSchemaVersion {
+	if revision.SchemaVersion != RevisionSchemaVersion && revision.SchemaVersion != ImplementationRevisionSchemaVersion {
 		add("schema.unsupported", "schema_version", "unsupported Loop revision schema version")
 	}
 	if !validID(revision.LoopID) {
@@ -178,6 +178,31 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 		}
 	}
 	validateEvidence(revision, steps, add)
+	implementationCount := 0
+	for _, step := range revision.Steps {
+		if step.Implementation == nil {
+			continue
+		}
+		implementationCount++
+		if revision.SchemaVersion != ImplementationRevisionSchemaVersion || step.Kind != StepAction || step.Retry.MaxAttempts != 1 || step.Implementation.Validate() != nil {
+			add("implementation.invalid", "steps."+step.ID, "verified implementation requires v3, one action attempt and an exact validated contract")
+		}
+	}
+	if revision.SchemaVersion == ImplementationRevisionSchemaVersion {
+		entry := steps[revision.EntryStepID]
+		if len(revision.RequiredEvidence) != 1 || len(entry.EvidenceClaims) != 1 {
+			add("implementation.evidence", "required_evidence", "exact controller verification claim required")
+		} else {
+			claim := entry.EvidenceClaims[0]
+			requirement := revision.RequiredEvidence[0]
+			if requirement.Claim != "verified-implementation" || requirement.ProducerStepID != entry.ID || claim.Claim != requirement.Claim || claim.ExpectedDigest != "" || claim.VerifierID != "aegis.implementation.verifier" || claim.PolicyVersion != VerifiedImplementationSchema || claim.MediaType != "application/json" {
+				add("implementation.evidence", "required_evidence", "implementation requires actual checker evidence, not a predetermined digest")
+			}
+		}
+	}
+	if revision.SchemaVersion == ImplementationRevisionSchemaVersion && (implementationCount != 1 || len(revision.Steps) != 2 || len(revision.Transitions) != 1 || steps[revision.EntryStepID].Implementation == nil) {
+		add("implementation.shape", "steps", "v3 supports exactly one implementation action and one terminal")
+	}
 
 	if verifyDigest {
 		if !validDigest(revision.Digest) {
@@ -326,6 +351,9 @@ func validateEvidence(revision LoopRevision, steps map[string]Step, add func(str
 				continue
 			}
 			produced = true
+			if producer.Implementation != nil && claim.Claim == "verified-implementation" && claim.VerifierID == "aegis.implementation.verifier" && claim.PolicyVersion == VerifiedImplementationSchema && claim.ExpectedDigest == "" && claim.MediaType == "application/json" {
+				continue
+			}
 			if claim.MediaType == "" || !validDigest(claim.ExpectedDigest) || !validID(claim.VerifierID) || claim.PolicyVersion == "" || strings.TrimSpace(claim.PolicyVersion) != claim.PolicyVersion || len(claim.PolicyVersion) > 255 {
 				add("evidence.policy_invalid", path, "required evidence must pin media type, expected digest, verifier, and policy version")
 			}

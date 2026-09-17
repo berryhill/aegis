@@ -1,7 +1,11 @@
 # Bounded verified-implementation kernel (integration pending)
 
-This package is an additive, provider-free execution kernel, **not yet wired into
-Loop publication, Hermes, or the Queue worker**. Existing Loop v2 canonical bytes,
+This package is an additive, provider-free execution kernel. Loop v3 now binds
+the exact action contract through authenticated draft publication/readback. A
+typed, tool-free Hermes patch proposer exists, but **kernel execution and atomic
+Queue completion are not yet wired**. Production Queue execution rejects v3
+before claim; ordinary runtime adapters also reject implementation contracts.
+Existing Loop v2 canonical bytes,
 evidence claims and execution behavior are unchanged. Do not advertise this as an
 available console workflow or activate it through an existing v2 Loop.
 
@@ -35,10 +39,18 @@ hard-link defenses, competing workspace writers and hostile native-code containm
 are not provided. Source proposals are intended as untrusted data, while the
 proposal adapter and custody DB are trusted controller components.
 
-Remaining integration: versioned Step binding and canonicalization; runtime typed
-proposal transport; Graph/Queue routing; shared fleet transaction completion
-revalidation; authority adapter; crash reconciliation; publication/activation
-readiness; real service/storage draft publish/readback fixture; launch-asset review.
+Implemented integration: v3 Step binding, detached canonical copies, strict
+validation, typed authoring builder, authenticated Unix HTTP publication with
+real isolated persistence/readback and no Queue submission, immutable revision
+transport in RuntimeRequest, and strict tool-free Hermes proposal adapter.
+
+Remaining integration: wire proposer into kernel through controller-owned custody;
+Graph/Queue execution routing; shared fleet transaction checker-receipt completion
+revalidation (legacy ExpectedDigest verification must not be reused); explicit
+workspace/native-check authority adapter; hard-link defenses and exclusive
+workspace locks; crash reconciliation; browser authoring; activation readiness;
+first-pass/corrective/failure/tamper service-to-Queue execution tests; launch-asset
+review. The current production refusal is intentional until those gates exist.
 No general scheduler, credential broker, auto-commit/push or deployment is added.
 
 Verification: `GOMAXPROCS=2 go test -p 1 ./internal/loop ./internal/implementation`.
