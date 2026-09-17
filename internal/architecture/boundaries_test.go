@@ -28,11 +28,12 @@ var allowedInternalImports = map[string][]string{
 	"internal/queue":             {"internal/reference"},
 	"internal/core":              {},
 	"internal/execution":         {"internal/core", "internal/reference"},
+	"internal/implementation":    {"internal/loop"}, // Native action kernel; persistence is injected.
 	"internal/evidence":          {"internal/reference", "internal/store"},
 	"internal/disposition":       {"internal/execution", "internal/reference"},
 	"internal/store":             {"internal/core"},
 	"internal/persistence":       {"internal/core", "internal/persistence"},
-	"internal/persistence/fleet": {"internal/core", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
+	"internal/persistence/fleet": {"internal/core", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/principalauth":     {},
@@ -47,7 +48,7 @@ var allowedInternalImports = map[string][]string{
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
-	"initialize": {}, "layout": {}, "loop": {}, "manager": {}, "managergateway": {}, "migration": {},
+	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "skillbundle": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 	"userservice": {},

@@ -1,5 +1,9 @@
 # Aegis MVP Threat Model
 
+## Verified implementation native-code boundary
+
+Loop v3 publication is not host authorization. Exact implementation-contract digests in operator-approved controller configuration authorize both bounded source writes and native Go test execution. The default authorization set is empty. Agent/model proposals cannot populate it. Tests and imported code run with the controller OS identity and are **not sandboxed**; patch path restrictions are not native-code confinement. Trust the repository/tests and isolate the host account before authorizing. Fresh runtime admission and independently reloaded evidence remain required. See [Verified implementation](VERIFIED_IMPLEMENTATION.md).
+
 ## Scope and assets
 
 The MVP protects principal identity, canonical charters, immutable registered-Agent provenance and revisions, bounded workspace delegations and stable ownership, immutable Loop and Graph definitions and validation records, exact Graph participant/Loop bindings and run snapshots, durable submission outcomes and runtime bindings, queue/claim/run causality, content-addressed runtime output, verification receipts, terminal dispositions, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and Hermes Agent `>=0.18.0,<0.19.0`.

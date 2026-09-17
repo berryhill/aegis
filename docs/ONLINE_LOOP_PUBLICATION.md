@@ -1,5 +1,7 @@
 # Publish a Loop to the owning gateway
 
+For real bounded code-task semantics, use [`loops implementation FILE`](VERIFIED_IMPLEMENTATION.md) instead of the structural `loops example` below. The installed publication test now proves exact v3 builder output survives authenticated validation/publication and inactive readback; it does not execute code.
+
 If the console shows Agents but an offline CLI lists none, do not initialize a second instance or register duplicate Agents. Select the existing gateway's configuration and console URL explicitly. Commands below use placeholders supplied by the authenticated owner; no token copying is required.
 
 ```sh

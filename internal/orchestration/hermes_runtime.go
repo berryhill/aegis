@@ -40,6 +40,11 @@ func NewRoutedRuntimeAdapter(adapter *hermesruntime.Adapter, stateRoot string) (
 }
 
 func (adapter *RoutedRuntimeAdapter) Execute(ctx context.Context, request RuntimeRequest) (RuntimeResult, error) {
+	for _, step := range request.LoopRevision.Steps {
+		if step.Implementation != nil {
+			return RuntimeResult{}, errors.New("verified implementation requires controller checker and completion custody; ordinary runtime output cannot satisfy it")
+		}
+	}
 	switch request.Participant.Runtime.Adapter {
 	case "no-key":
 		return adapter.noKey.Execute(ctx, request)

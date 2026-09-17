@@ -4,6 +4,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Added local typed `loops implementation FILE [--output NEW_FILE]` authoring and installed CLI-to-authenticated-service v3 draft publication/readback coverage. Integrated implementation Queue processing requires exact operator-configured contract authorization, bounded Hermes patch proposals and independently reloaded evidence. Native Go tests are trusted code, not sandboxed. No automatic activation, queueing or service restart.
+
 - Corrected console action-readiness guidance: operation-specific authority prerequisites no longer claim initial setup is unfinished. Exact denial/unavailable/repair states and native forms remain unchanged; preparing an action does not grant admission.
 
 - Added explicit owning-instance `--target` Agent reads and Loop validation/publication/readback over the configured authenticated Unix API, plus an installed typed publication template. No activation, execution or code-task verification guarantee is implied.

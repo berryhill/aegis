@@ -83,3 +83,7 @@ A qualification change requires, in one reviewable change:
 - launch-asset review with unsupported claims removed.
 
 Passing unit tests does not promote an unlisted combination to qualified status.
+
+### Verified implementation custody
+
+`internal/implementation` owns the bounded native-action kernel and its run/pass records. It imports only the Loop contract and uses an opaque byte-store port; it never imports an engine. The fleet Badger owner supplies that port over the existing fleet-v1 writer, durability and lifecycle, not a separately opened database. Run reservations are atomic create-only writes; stored checker output and workspace snapshots are digest-verified on read. These operational implementation records cannot grant authority. Orchestration supplies the evidence-owned verifier callback; evidence has no dependency on the native executor or Loop domain. Final completion reloads the exact Loop contract and revalidates persisted checker custody and current workspace before success.

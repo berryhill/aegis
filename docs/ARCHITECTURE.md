@@ -1,5 +1,19 @@
 # Aegis MVP Architecture
 
+## Verified implementation path
+
+```text
+typed local authoring -> canonical Loop v3 draft
+  -> authenticated validate/publish -> immutable inactive revision
+separate operator config approval + exact contract digest
+  + activated definitions + Graph/Queue/runtime authority
+  -> Queue worker -> bounded Hermes patch proposal -> native Go checker
+  -> durable implementation records -> independent evidence reload
+  -> authoritative Queue disposition
+```
+
+No authoring/publication arrow grants execution authority. The controller requires an explicit trusted Go binary and contract allowlist; native tests are not sandboxed. See [Verified implementation](VERIFIED_IMPLEMENTATION.md).
+
 The source-built skill inventory utility is separate from the authority graph below: explicit archive/digest/revision → verified private generation → atomic `skills` discovery pointer. Hermes `.hub` operational metadata has a fixed separate managed location and is not content or authority evidence. Inventory/update/rollback never construct application services, issue mandates or activate sessions; supported-runtime qualification is a separate gate. See `HERMES_SKILLS.md` for the managed-layout and quiescent-destination contract.
 
 Credentials presentation remains inside the typed console-to-application-service boundary shown below. Its semantic inventory and concise metadata/version detail use independent 42/58 desktop panes and a single pane at widths up to 900px. Same-origin fragment reconciliation reloads the authenticated server-backed record query; history/session snapshots restore presentation only. No new authority component, credential route, or mutation path is introduced.
@@ -251,3 +265,7 @@ Terminal cancellation, expiry, authority revocation, retry exhaustion, denial, f
 ## Online Loop publication boundary
 
 The installed `--target` adapter selects an existing console origin, uses only its configured authenticated Unix API, and compares `/v1/config` identity before Agent reads or Loop validation/publication/readback. It never opens a local-store fallback, starts a service, activates a Loop or queues work. Template validation is structural, not execution verification. See [online publication](ONLINE_LOOP_PUBLICATION.md).
+
+## Verified implementation dependency boundary
+
+The native `internal/implementation` kernel depends on the Loop contract and an opaque custody port. Only `internal/persistence/fleet/badger` implements that port against the existing fleet-v1 writer. Orchestration connects independent native-check reloads to an evidence-owned callback DTO; `internal/evidence` imports neither Loop nor the executor. Terminal completion rechecks the immutable Loop contract, stored test evidence and current workspace, not an in-memory PASS. No second implementation database is opened.

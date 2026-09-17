@@ -42,6 +42,7 @@ type RuntimeRequest struct {
 	Participant     registry.AgentRevision
 	Launch          execution.LaunchContract
 	Admission       execution.AdmissionChecker
+	LoopRevision    loop.LoopRevision
 }
 
 type RuntimeResult struct {
@@ -68,6 +69,11 @@ func (NoKeyAdapter) Execute(ctx context.Context, request RuntimeRequest) (Runtim
 	if err := ctx.Err(); err != nil {
 		return RuntimeResult{}, err
 	}
+	for _, step := range request.LoopRevision.Steps {
+		if step.Implementation != nil {
+			return RuntimeResult{}, errors.New("no-key adapter cannot execute implementation contracts")
+		}
+	}
 	if request.GraphRunID == "" || request.LoopExecutionID == "" || request.GraphNodeID == "" || request.Authority.Validate() != nil || request.Participant.Runtime.Adapter != "no-key" {
 		return RuntimeResult{}, errors.New("exact no-key runtime binding is required")
 	}
@@ -79,12 +85,13 @@ func (NoKeyAdapter) Execute(ctx context.Context, request RuntimeRequest) (Runtim
 }
 
 type QueueWorker struct {
-	repository fleet.Repository
-	service    *FleetService
-	blobs      BlobStore
-	verifier   EvidenceVerifier
-	adapter    RuntimeAdapter
-	now        func() time.Time
+	repository     fleet.Repository
+	service        *FleetService
+	blobs          BlobStore
+	verifier       EvidenceVerifier
+	adapter        RuntimeAdapter
+	now            func() time.Time
+	implementation *ImplementationController
 }
 
 func NewQueueWorker(repository fleet.Repository, service *FleetService, blobs BlobStore, verifier EvidenceVerifier, adapter RuntimeAdapter, now func() time.Time) (*QueueWorker, error) {
@@ -167,6 +174,14 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil {
 		return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 	}
+	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+		if item.MaxAttempts != 1 {
+			return WorkResult{}, fmt.Errorf("%w: implementation pass budget forbids Queue retries", ErrWorkerDenied)
+		}
+		if err := worker.implementation.authorize(loopRevision.Steps, participant); err != nil {
+			return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
+		}
+	}
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionClaim, Subject: request.Subject, Authority: request.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph}); readiness.State != ReadinessReady {
 		return WorkResult{}, fmt.Errorf("%w: claim %s", ErrWorkerDenied, readiness.ReasonCode)
 	}
@@ -230,11 +245,15 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	// preserves an earlier caller deadline, so neither bound can be extended.
 	runtimeCtx, cancelRuntime := context.WithDeadline(ctx, claim.ExpiresAt)
 	defer cancelRuntime()
-	runtimeResult, runtimeErr := worker.adapter.Execute(runtimeCtx, RuntimeRequest{
+	runtimeRequest := RuntimeRequest{
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
-		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch,
+		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority},
-	})
+	}
+	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+		return worker.processImplementation(runtimeCtx, request, base, runtimeRequest, actionID)
+	}
+	runtimeResult, runtimeErr := worker.adapter.Execute(runtimeCtx, runtimeRequest)
 	if runtimeErr != nil {
 		state, reason := execution.StateFailed, "runtime_effect_failed"
 		var failure *RuntimeFailure
@@ -279,7 +298,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	return worker.terminal(ctx, request, base, execution.StateSucceeded, "evidence_satisfied", &artifact, receipts)
 }
 
-func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, result WorkResult, state execution.State, reason string, artifact *evidence.RuntimeArtifact, receipts []evidence.VerificationReceipt) (WorkResult, error) {
+func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, result WorkResult, state execution.State, reason string, artifact *evidence.RuntimeArtifact, receipts []evidence.VerificationReceipt, implementationProof ...evidence.CompletionProvenance) (WorkResult, error) {
 	// A request cancelled before disposition admission cannot gain authority.
 	// Detachment is reserved for the bounded repository commit below.
 	if err := ctx.Err(); err != nil {
@@ -307,6 +326,9 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 	completion := fleet.Completion{Claim: result.Claim, Artifact: artifact, Receipts: receipts, Disposition: dispositionRecord, Transition: transition}
 	if artifact != nil {
 		completion.Provenance, err = worker.verifier.AuthorizeCompletion(ctx, *artifact, receipts)
+		if len(implementationProof) == 1 {
+			completion.Provenance = implementationProof[0]
+		}
 		if err != nil {
 			return result, err
 		}
@@ -359,6 +381,14 @@ func evidenceClaims(revision loop.LoopRevision, actionID string) map[string]loop
 }
 
 func executableAction(revision loop.LoopRevision) (string, error) {
+	if revision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+		for _, step := range revision.Steps {
+			if step.Implementation != nil {
+				return step.ID, nil
+			}
+		}
+		return "", errors.New("implementation action missing")
+	}
 	if len(revision.RequiredEvidence) == 0 {
 		return "", errors.New("executable Loop requires at least one precommitted evidence policy")
 	}

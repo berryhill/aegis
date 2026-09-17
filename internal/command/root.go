@@ -283,7 +283,10 @@ func NewRoot(deps Dependencies) *cobra.Command {
 						var worker *orchestration.QueueWorker
 						worker, fleetErr = orchestration.NewQueueWorker(fleetStore, fleetService, st, verifier, runtimeAdapter, service.Now)
 						if fleetErr == nil {
-							fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
+							fleetErr = worker.ConfigureImplementation(cfg.Implementation, cfg.StateDir, h)
+							if fleetErr == nil {
+								fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
+							}
 						}
 					}
 				}
@@ -313,7 +316,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if o.target != "" {
 			return nil // Online commands must not inspect or open local authority stores.
 		}
-		if cmd.Name() == "example" && cmd.Parent() != nil && cmd.Parent().Name() == "loops" {
+		if (cmd.Name() == "example" || cmd.Name() == "implementation") && cmd.Parent() != nil && cmd.Parent().Name() == "loops" {
 			return nil // Installed typed material requires no configured authority.
 		}
 		lifecycleConfig := o.configFile
