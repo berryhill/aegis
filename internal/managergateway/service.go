@@ -40,16 +40,17 @@ type Opened struct {
 }
 
 type session struct {
-	id       string
-	token    [32]byte
-	subject  core.Subject
-	issuedAt time.Time
-	expires  time.Time
-	mode     string
-	reason   string
-	nextStep string
-	runtime  *conversation
-	intake   *credentialIntake
+	id                     string
+	token                  [32]byte
+	subject                core.Subject
+	issuedAt               time.Time
+	expires                time.Time
+	mode                   string
+	reason                 string
+	nextStep               string
+	runtime                *conversation
+	intake                 *credentialIntake
+	credentialContextUntil time.Time
 }
 
 type Service struct {
@@ -285,6 +286,7 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 	if err != nil {
 		return slash.Result{}, err
 	}
+	s.clearCredentialContext(entry)
 	ctx, cancel := managerSessionContext(ctx, entry.expires)
 	defer cancel()
 	request, err := s.registry.Parse(input)
@@ -346,6 +348,18 @@ func managerTurnContext(parent context.Context, timeout time.Duration) (context.
 	return context.WithTimeout(parent, timeout)
 }
 
+// A time bound alone cannot establish what an ambiguous follow-up refers to.
+// Any intervening noncredential turn invalidates the conversational hint.
+func (s *Service) clearCredentialContext(entry session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.sessions[entry.id]
+	if ok && current.token == entry.token {
+		current.credentialContextUntil = time.Time{}
+		s.sessions[entry.id] = current
+	}
+}
+
 func (s *Service) Turn(ctx context.Context, subject core.Subject, id, token, input string) (TurnResult, error) {
 	return s.TurnWithProtectedIntake(ctx, subject, id, token, input, false)
 }
@@ -365,6 +379,11 @@ func (s *Service) TurnWithProtectedIntake(ctx context.Context, subject core.Subj
 	if detection == slash.LiteralSlash {
 		input = slash.UnescapeLiteral(input)
 	}
+	route := detectAuthoritativeIntent(input)
+	defer route.Wipe()
+	if route.kind != "credential_control" && route.kind != "credential_followup" && route.kind != intentCredentialCreate && route.kind != intentCredentialIntake && !managerdomain.IsDeterministicCredentialRead(input) {
+		s.clearCredentialContext(entry)
+	}
 	if localProfileIntent(input) == "register_default" {
 		proposal, prepareErr := s.app.PrepareLocalHermesAgentImportAs(ctx, entry.subject)
 		if prepareErr != nil {
@@ -376,9 +395,14 @@ func (s *Service) TurnWithProtectedIntake(ctx context.Context, subject core.Subj
 	if result, handled, dispatchErr := DispatchDeterministicAegisTurn(ctx, s.app, entry.subject, input); handled {
 		return result, dispatchErr
 	}
-	route := detectAuthoritativeIntent(input)
-	defer route.Wipe()
 	switch route.kind {
+	case "credential_control":
+		return TurnResult{Kind: "credential_control_guidance", Origin: TurnOriginAuthoritative, Message: "That is an internal proposal identifier, not an operator command. Say create a credential to begin protected metadata review; never paste a value into chat.", Data: map[string]any{"created": false, "model_bypassed": true}}, nil
+	case "credential_followup":
+		if protected && s.now().Before(entry.credentialContextUntil) {
+			return s.beginCredentialIntake(ctx, entry)
+		}
+		return TurnResult{Kind: "credential_context_required", Origin: TurnOriginAuthoritative, Message: "Please name what you want to create, for example create a credential. No creation was attempted; never paste a value into chat.", Data: map[string]any{"created": false, "model_bypassed": true}}, nil
 	case intentCredentialCreate:
 		if protected && !route.credential.ValueRemoved && len(route.credential.Value) == 0 {
 			return s.beginCredentialIntake(ctx, entry)

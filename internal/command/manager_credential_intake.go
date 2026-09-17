@@ -65,7 +65,11 @@ func (c *gatewayManagerClient) intakeResponse(request *http.Request) (managergat
 		return managergateway.TurnResult{}, errProtectedCreation
 	}
 	var result managergateway.TurnResult
-	if err = json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&result); err != nil || !validGatewayTurnResult(result) {
+	decoder := json.NewDecoder(io.LimitReader(response.Body, 64<<10))
+	if err = decoder.Decode(&result); err != nil || !validGatewayTurnResult(result) {
+		return managergateway.TurnResult{}, errProtectedCreation
+	}
+	if decoder.Decode(new(any)) != io.EOF {
 		return managergateway.TurnResult{}, errProtectedCreation
 	}
 	return result, nil
@@ -239,12 +243,27 @@ func runGatewayCredentialIntake(parent context.Context, cmd *cobra.Command, c *g
 		fmt.Fprint(output, errProtectedCreation.Error()+"\r\n")
 		return nil
 	}
-	if result.Kind != "credential_created" || result.Origin != managergateway.TurnOriginAuthoritative || result.Data["created"] != true || result.Data["operation_id"] != h.OperationID || result.Data["reference"] != reference {
+	if (result.Kind != "credential_created" && result.Kind != "credential_creation_partial") || result.Origin != managergateway.TurnOriginAuthoritative || result.Data["created"] != true || result.Data["operation_id"] != h.OperationID || result.Data["reference"] != reference || result.Data["kind"] != kind {
 		return errProtectedCreation
 	}
 	// Render only validated metadata, not an arbitrary remote message or value.
 	record, ok := result.Data["record_id"].(string)
 	if !ok || !credentials.ValidateIdentifier(record) {
+		return errProtectedCreation
+	}
+	audit, auditOK := result.Data["audit_verified"].(bool)
+	metadata, metadataOK := result.Data["metadata_verified"].(bool)
+	if !auditOK || !metadataOK {
+		return errProtectedCreation
+	}
+	if result.Kind == "credential_creation_partial" {
+		if audit && metadata {
+			return errProtectedCreation
+		}
+		fmt.Fprintf(output, "Credential persisted: record=%s reference=%s. Audit verified=%t; metadata verified=%t. Confirmation incomplete; do not replay the value. Inspect credential metadata.\r\n", record, reference, audit, metadata)
+		return nil
+	}
+	if !audit || !metadata {
 		return errProtectedCreation
 	}
 	fmt.Fprintf(output, "Credential created: record=%s reference=%s. Metadata verified; returning to the same conversation.\r\n", record, reference)

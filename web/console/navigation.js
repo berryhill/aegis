@@ -138,5 +138,29 @@
   restore();
   // BFCache restores the original DOM without rerunning this script. The
   // entry snapshot captured on pagehide, not another entry's state, wins.
-  window.addEventListener("pageshow", (event) => { if (event.persisted) restore(); });
+  // Refresh only the read-only collection route on an actual return. Native
+  // reload repeats authentication and retains the full filter/selection URL.
+  // Never replace in-progress edits or a mutation dialog; there is no timer.
+  let away = false, reloading = false, dirty = false;
+  const refreshCredentials = () => {
+    if (!credentials || reloading || dirty || document.visibilityState === "hidden" ||
+        document.querySelector("dialog[open], [role='dialog'][aria-modal='true']")) return;
+    reloading = true;
+    const context = readContext();
+    saveEntry(snapshot(context?.recordKey || new URL(location.href).searchParams.get("record_key") || ""));
+    location.reload();
+  };
+  if (credentials) {
+    document.addEventListener("input", () => { dirty = true; });
+    document.addEventListener("change", () => { dirty = true; });
+    window.addEventListener("blur", () => { away = true; });
+    window.addEventListener("focus", () => {
+      if (!away) return;
+      away = false;
+      refreshCredentials();
+    });
+  }
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) { restore(); refreshCredentials(); }
+  });
 })();
