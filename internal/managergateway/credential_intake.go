@@ -86,6 +86,7 @@ func (s *Service) beginCredentialIntake(ctx context.Context, entry session) (Tur
 	}
 	h := CredentialIntakeHandoff{Protocol: ProtectedIntakeProtocol, OperationID: operation, SessionID: current.id, PrincipalID: current.subject.PrincipalID, ExpiresAt: expires, Stage: "metadata"}
 	current.intake = &credentialIntake{handoff: h}
+	current.credentialContextUntil = expires
 	s.sessions[entry.id] = current
 	return intakeResult(h), nil
 }
@@ -168,9 +169,11 @@ func (s *Service) ConsumeCredentialIntake(ctx context.Context, subject core.Subj
 	}
 	view, err := s.app.CreateCredentialAs(ctx, entry.subject, app.CreateCredentialInput{Reference: h.Reference, Kind: h.Kind, Value: value})
 	if err != nil {
-		// A persistence success followed by audit/readback failure is uncertain, not
-		// a safe retry. Do not expose backend diagnostics or issue another receipt.
-		return TurnResult{}, errors.New("credential creation not confirmed; operation consumed; inspect credential metadata before starting a new operation")
+		var partial *app.CredentialCreationPartial
+		if errors.As(err, &partial) {
+			return TurnResult{Kind: "credential_creation_partial", Origin: TurnOriginAuthoritative, Message: "Credential persisted; audit or metadata confirmation is incomplete. Do not replay the value. Inspect metadata before any new operation.", Data: map[string]any{"created": true, "record_id": partial.RecordID, "reference": partial.Reference, "kind": partial.Kind, "operation_id": operation, "audit_verified": partial.AuditVerified, "metadata_verified": partial.MetadataVerified, "model_bypassed": true}}, nil
+		}
+		return TurnResult{}, errors.New("credential creation not confirmed; operation consumed; do not replay the value; inspect credential metadata before starting a new operation")
 	}
-	return TurnResult{Kind: "credential_created", Origin: TurnOriginAuthoritative, Message: "Credential created and metadata verified. Returning to the same conversation.", Data: map[string]any{"created": true, "record_id": view.ID, "reference": view.Reference, "kind": view.Kind, "operation_id": operation, "model_bypassed": true}}, nil
+	return TurnResult{Kind: "credential_created", Origin: TurnOriginAuthoritative, Message: "Credential created and metadata independently verified. Returning to the same conversation.", Data: map[string]any{"created": true, "record_id": view.ID, "reference": view.Reference, "kind": view.Kind, "operation_id": operation, "audit_verified": true, "metadata_verified": true, "model_bypassed": true}}, nil
 }
