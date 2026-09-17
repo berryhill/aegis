@@ -104,7 +104,7 @@ func resolveDevelopmentRepository(configured string) (string, error) {
 		return "", err
 	}
 	if root == home || !pathWithinRoot(root, home) {
-		return "", errors.New("development repository must be a child of the authenticated operator home")
+		return "", errors.New("development repository must be a child of the authenticated operator home; development builds resolve the repository from the executable directory, not --config or the current directory. Do not use go run: build inside your checkout with ./scripts/build-source.sh ./aegis, then invoke ./aegis")
 	}
 	info, err := os.Lstat(root)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
