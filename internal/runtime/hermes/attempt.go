@@ -84,6 +84,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 
 	descriptor, err := a.Discover(turnContext)
 	if err != nil {
+		if contextErr := turnContext.Err(); contextErr != nil {
+			return AttemptTurnResult{}, contextErr
+		}
 		return AttemptTurnResult{}, err
 	}
 	if descriptor.Runtime != authority.Runtime.Runtime || descriptor.Version != authority.Runtime.Version {
