@@ -272,11 +272,33 @@ func (s *Service) VerifyLocalHermesAgentImportForBootstrapAs(ctx context.Context
 		return FleetAgent{}, ErrConflict
 	}
 	latest, err := s.GetFleetAgentAs(ctx, subject, agentID, 0)
-	if err != nil || !localHermesDefaultAgentRevisionMatches(latest, subject.PrincipalID, expectedCharter.Digest, false) {
-		if err != nil {
-			return FleetAgent{}, err
-		}
+	if err != nil {
+		return FleetAgent{}, err
+	}
+	previous := initial.Revision
+	if previous.CharterSuccessor != nil {
 		return FleetAgent{}, ErrConflict
+	}
+	for revision := uint64(2); revision <= latest.Revision.Revision; revision++ {
+		next, loadErr := s.FleetRepository.GetAgentRevision(ctx, agentID, revision)
+		if loadErr != nil {
+			return FleetAgent{}, loadErr
+		}
+		if next.Charter != previous.Charter {
+			if !s.validAgentCharterSuccessor(previous, next) {
+				return FleetAgent{}, ErrConflict
+			}
+		} else {
+			// Lifecycle-only revisions must preserve every other immutable field.
+			expected := previous
+			expected.Revision = next.Revision
+			expected.Lifecycle = next.Lifecycle
+			expected, loadErr = registry.SealRevision(expected)
+			if loadErr != nil || expected.Digest != next.Digest || previous.Lifecycle == registry.LifecycleRetired {
+				return FleetAgent{}, ErrConflict
+			}
+		}
+		previous = next
 	}
 	return latest, nil
 }

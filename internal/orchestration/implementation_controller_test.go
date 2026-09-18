@@ -129,7 +129,7 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			}
 			message := func(value string) string {
 				patch, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package fixture\nfunc Value() int {return " + value + "}\n")}}})
-				event, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.delta", "session_id": "queue-runtime-session", "payload": map[string]string{"delta": string(patch)}}})
+				event, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "queue-runtime-session", "payload": map[string]string{"text": string(patch), "status": "complete"}}})
 				return string(event)
 			}
 			first := message("42")
@@ -147,9 +147,9 @@ printf '%%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"queue-run
 read prompt
 printf '%%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"queue-runtime-session","payload":{}}}'
-if [ -f '%s' ]; then printf '%%s\n' '%s'; else printf '%%s\n' '%s'; fi
+completion=$(if [ -f '%s' ]; then printf '%%s\n' '%s'; else printf '%%s\n' '%s'; fi)
 : > '%s'
-printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"queue-runtime-session","payload":{}}}'
+printf '%%s\n' "$completion"
 while read rest; do :; done
 `, filepath.Join(root, "called"), second, first, filepath.Join(root, "called"))
 			adapter := routedHermesTestAdapter(t, root, script)

@@ -84,6 +84,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 
 	descriptor, err := a.Discover(turnContext)
 	if err != nil {
+		if contextErr := turnContext.Err(); contextErr != nil {
+			return AttemptTurnResult{}, contextErr
+		}
 		return AttemptTurnResult{}, err
 	}
 	if descriptor.Runtime != authority.Runtime.Runtime || descriptor.Version != authority.Runtime.Version {
@@ -113,7 +116,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	}
 	defer os.RemoveAll(home) //nolint:errcheck
 
-	toolsets := "no_mcp"
+	// Match the manager's real empty Hermes 0.18 toolset; no_mcp is an
+	// unknown-toolset sentinel and can trigger configured CLI-tool fallback.
+	toolsets := "context_engine"
 	if len(tools) > 0 {
 		toolsets = strings.Join(tools, ",")
 	}
@@ -131,6 +136,15 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	}
 	if request.Provider != "" {
 		command.Env = append(command.Env, "HERMES_TUI_PROVIDER="+request.Provider)
+	}
+	var release func() error
+	if authority.Authority.Hermes.LocalInference != nil {
+		var cleanup func()
+		release, cleanup, err = prepareLocal(turnContext, command, authority.Authority.Hermes, func(c context.Context) error { return checkAdmission(c, request, time.Now().UTC()) })
+		if err != nil {
+			return AttemptTurnResult{}, err
+		}
+		defer cleanup()
 	}
 	stdin, err := command.StdinPipe()
 	if err != nil {
@@ -166,6 +180,13 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 
 	if err = command.Start(); err != nil {
 		return finishAttempt(attempt, execution.StateFailed, "runtime_start_failed", err)
+	}
+	if release != nil {
+		if err = release(); err != nil {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+			return finishAttempt(attempt, execution.StateDenied, "local_inference_release_denied", err)
+		}
 	}
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
 	done := make(chan error, 1)
@@ -231,10 +252,30 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			if !messageStarted {
 				continue
 			}
-			if output.Len() == 0 {
-				if err = appendBounded(&output, attemptPayloadText(message.Params.Payload), request.Bounds.OutputBytes); err != nil {
-					return finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
-				}
+			// Hermes 0.18 emits complete/error/interrupted. Text and deltas are
+			// untrusted prose, never evidence that the runtime turn succeeded.
+			status, ok := message.Params.Payload["status"].(string)
+			if !ok {
+				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status missing or malformed"))
+			}
+			switch status {
+			case "interrupted":
+				return finishAttempt(attempt, execution.StateCancelled, "runtime_turn_interrupted", context.Canceled)
+			case "error":
+				return finishAttempt(attempt, execution.StateFailed, "runtime_turn_failed", errors.New("Hermes turn failed"))
+			case "complete":
+			default:
+				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status unknown"))
+			}
+			text, ok := message.Params.Payload["text"].(string)
+			if !ok || message.Params.Payload["error"] != nil {
+				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion payload invalid"))
+			}
+			// The terminal payload is authoritative for response bytes; streamed
+			// previews may be partial and must not replace the final response.
+			output.Reset()
+			if err = appendBounded(&output, text, request.Bounds.OutputBytes); err != nil {
+				return finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
 			}
 			finishedAt := time.Now().UTC()
 			if !finishedAt.Before(authority.ExpiresAt) {
@@ -261,6 +302,9 @@ func validateAttemptRequest(request AttemptTurnRequest) error {
 		return fmt.Errorf("%w: authority binding is invalid: %v", ErrAttemptDenied, err)
 	}
 	hermesBinding := request.Launch.AuthorityContext.Authority.Hermes
+	if hermesBinding.LocalInference != nil && len(request.Credentials) != 0 {
+		return fmt.Errorf("%w: local inference forbids credentials", ErrAttemptDenied)
+	}
 	if strings.TrimSpace(hermesBinding.Model) == "" || strings.TrimSpace(hermesBinding.Provider) == "" {
 		return fmt.Errorf("%w: authority-selected Hermes provider and model are required", ErrAttemptDenied)
 	}

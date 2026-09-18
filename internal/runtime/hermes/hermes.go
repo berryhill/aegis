@@ -37,10 +37,11 @@ var supportedToolsets = map[string]bool{
 }
 
 type processState struct {
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	home  string
-	done  chan error
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	home   string
+	done   chan error
+	cancel context.CancelFunc
 }
 type Adapter struct {
 	executable string
@@ -445,9 +446,12 @@ func (a *Adapter) RunDesignForeground(ctx context.Context, stateRoot string, ret
 	return home, nil
 }
 
-func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, authority core.AuthorityContext, credentials []Credential, bridge BrokerBridge) (string, string, int, []string, error) {
+func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, authority core.AuthorityContext, credentials []Credential, bridge BrokerBridge, fresh ...func(context.Context) error) (string, string, int, []string, error) {
 	if err := core.ValidateAuthorityContext(authority, m); err != nil {
 		return "", "", 0, nil, fmt.Errorf("runtime launch denied: %w", err)
+	}
+	if authority.Authority.Hermes.LocalInference != nil && (len(fresh) != 1 || fresh[0] == nil || len(credentials) != 0 || bridge.Enabled) {
+		return "", "", 0, nil, errors.New("local inference transport requires fresh authority and no credentials or bridge")
 	}
 	id := store.ID("hermes-session")
 	runtimeRoot := filepath.Join(stateRoot, "runtime")
@@ -458,7 +462,13 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 	if err != nil {
 		return "", "", 0, nil, err
 	}
-	pid, configuredToolsets, err := a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge)
+	var pid int
+	var configuredToolsets []string
+	if authority.Authority.Hermes.LocalInference != nil {
+		pid, err = a.launchLocal(ctx, id, home, authority, fresh[0])
+	} else {
+		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge)
+	}
 	if err != nil {
 		_ = os.RemoveAll(home)
 		return "", "", 0, nil, err
@@ -485,6 +495,9 @@ func (a *Adapter) Terminate(ctx context.Context, id string, remove bool) error {
 	a.mu.Unlock()
 	if p == nil {
 		return nil
+	}
+	if p.cancel != nil {
+		p.cancel()
 	}
 	_ = p.stdin.Close()
 	if p.cmd.Process != nil {

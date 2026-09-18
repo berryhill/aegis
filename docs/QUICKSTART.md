@@ -1,5 +1,7 @@
 # Five-Minute Quickstart
 
+For fixed-output v2 authoring, see [Executable hello](EXECUTABLE_HELLO.md). Runtime preparation and execution remain separate authenticated operations; the five-minute no-key path below is unchanged.
+
 For code-task authoring rather than the no-key substrate demo, see [Verified implementation](VERIFIED_IMPLEMENTATION.md): build with `go build -o ./aegis ./cmd/aegis`, then `./aegis loops implementation --help`. Drafting and inactive publication require no execution authorization. Never use `go run` as a build-only check.
 
 ## Prerequisites

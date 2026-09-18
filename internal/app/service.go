@@ -1236,7 +1236,12 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err = s.validateMandate(m); err != nil {
 		return core.Session{}, err
 	}
-	credentials, err := s.resolveProviderCredential(m.Hermes.Provider, m.Scopes.Credentials)
+	var credentials []hermes.Credential
+	if m.Hermes.LocalInference != nil {
+		err = core.ValidateLocalInferenceAuthority(m.Hermes, m.Tools, m.Scopes.Credentials)
+	} else {
+		credentials, err = s.resolveProviderCredential(m.Hermes.Provider, m.Scopes.Credentials)
+	}
 	if err != nil {
 		return core.Session{}, err
 	}
@@ -1285,7 +1290,19 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		}
 		return core.Session{}, err
 	}
-	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, authority, credentials, bridge)
+	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, authority, credentials, bridge, func(c context.Context) error {
+		if err := s.validateMandate(m); err != nil {
+			return err
+		}
+		decision, err := s.AuthorityCommands.AuthorityAdmission(c, authority.ID, authority.Digest, s.Now())
+		if err != nil {
+			return err
+		}
+		if !decision.Admitted {
+			return ErrDenied
+		}
+		return nil
+	})
 	if err != nil {
 		return core.Session{}, err
 	}

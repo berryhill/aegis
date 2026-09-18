@@ -110,7 +110,26 @@ func fleetAgentsCmd(build builder) *cobra.Command {
 	enable := lifecycleCommand("enable", registry.LifecycleEnabled)
 	disable := lifecycleCommand("disable", registry.LifecycleDisabled)
 	retire := lifecycleCommand("retire", registry.LifecycleRetired)
-	command.AddCommand(register, list, show, history, enable, disable, retire)
+	approveCharter := &cobra.Command{Use: "approve-charter AGENT FILE", Args: cobra.ExactArgs(2), RunE: func(cmd *cobra.Command, args []string) error {
+		var input app.ApproveAgentCharterInput
+		if err := decodeJSONFile(args[1], &input); err != nil {
+			return usage(err)
+		}
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		subject, err := service.Authenticate(cmd.Context())
+		if err != nil {
+			return err
+		}
+		value, err := service.ApproveAgentCharterAs(cmd.Context(), subject, args[0], input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	command.AddCommand(register, list, show, history, enable, disable, retire, approveCharter)
 	return command
 }
 
@@ -192,7 +211,7 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	command.AddCommand(list, loopExampleCmd(), loopImplementationCmd(), validate, publish, show, activate, retire)
+	command.AddCommand(list, loopExampleCmd(), loopHelloCmd(), loopImplementationCmd(), validate, publish, show, activate, retire)
 	return command
 }
 
