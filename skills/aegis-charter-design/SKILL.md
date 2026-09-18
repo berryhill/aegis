@@ -70,6 +70,10 @@ Report these fields when returned by Aegis: operation; authenticated principal; 
 
 Never describe a proposal as validated, validation as import, import as approval, explanation as authority, effective authority as a mandate, or any of them as provisioning or activation. Material charter or stanza authority changes require a new mandate and clean runtime session.
 
+## Owning-service online transport
+
+`charter validate FILE`, `charter import FILE`, and `charter show AGENT REVISION` support `--config OWNER_CONFIG --target CONSOLE_URL`. Import sends bounded JSON/YAML source bytes unchanged. Online show requires an explicit positive revision; design, list and stanza inspection are not in this online allowlist. The target selects the configured owner; transport uses its protected Unix socket and server-side SO_PEERCRED admission, never a second local store or generic bearer HTTP client. See `docs/EXECUTABLE_HELLO.md` for the individually reviewed preparation sequence.
+
 ## Progressive disclosure
 
 Consult `specs/CHARTER.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/APPROVAL_AND_PROVISIONING.md`, and `specs/RUNTIME_AND_SESSIONS.md` for normative semantics. Use the installed `aegis --help` surface as the shipped command contract. If an operation is absent, label it unavailable rather than inventing a command or bypassing Aegis with prompt logic or direct persistence.

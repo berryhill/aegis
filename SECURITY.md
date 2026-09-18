@@ -1,5 +1,9 @@
 # Security Policy
 
+## Local inference and hello boundary
+
+Fixed-output hello policy is precommitted, not model-issued evidence. Exact local model rechecks are drift detection, not atomic pinning across inference. Disposable homes and process-group cleanup are process custody, not a host sandbox. Live provider/model acceptance remains unverified.
+
 ## Status and supported versions
 
 Aegis is pre-1.0 MVP software and is not supported for production use. Security fixes are applied to the current `main` branch and are included in subsequent stable releases; older published `0.1.x` releases do not receive backports. The latest published release must not be interpreted as a production-support commitment.

@@ -1733,7 +1733,7 @@ func TestQueueLifecycleMutationRoutesRejectPathBodySubstitution(t *testing.T) {
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	client := unixClient(svc.Config.API.UnixSocket)
 
-	for _, action := range []string{"retry", "cancel", "expire", "exhaust", "revoke"} {
+	for _, action := range []string{"bind-runtime", "retry", "cancel", "expire", "exhaust", "revoke"} {
 		t.Run(action, func(t *testing.T) {
 			apiRequest(t, client, http.MethodPost, "/v1/queue/path-item/"+action, map[string]any{
 				"queue_item_id": "body-item",

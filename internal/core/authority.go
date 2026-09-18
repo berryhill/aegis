@@ -41,6 +41,9 @@ func AuthorityContextDigest(context AuthorityContext) string {
 }
 
 func ValidateAuthorityContext(context AuthorityContext, mandate Mandate) error {
+	if err := ValidateLocalInferenceAuthority(context.Authority.Hermes, context.Authority.Tools, context.Authority.Credentials); err != nil {
+		return err
+	}
 	if context.ID == "" || context.MandateID != mandate.ID || context.SessionID == "" ||
 		context.SubjectID != mandate.Subject.ID || context.AgentID != mandate.AgentID ||
 		context.CharterRevision != mandate.CharterRevision || context.CharterDigest != mandate.CharterDigest ||

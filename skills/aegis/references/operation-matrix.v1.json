@@ -136,11 +136,13 @@
       "authority": "Principal-only isolated Hermes design proposes, never provisions. Canonical validation/import does not approve an artifact; exact digest approval is separate.",
       "sources": [
         "internal/command/root.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/command/fleet_online.go"
       ],
       "tests": [
         "internal/command/domain_surface_test.go",
-        "internal/api/server_test.go"
+        "internal/api/server_test.go",
+        "internal/command/fleet_online_preparation_test.go"
       ],
       "cli": [
         "aegis design",
@@ -166,11 +168,13 @@
       "authority": "Product authenticates subject and deterministically selects exactly one stanza. Explain/effective readback neither issues authority nor unions stanzas; material changes require a new mandate and clean session.",
       "sources": [
         "internal/command/root.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/command/fleet_online.go"
       ],
       "tests": [
         "internal/command/domain_surface_test.go",
-        "internal/api/server_test.go"
+        "internal/api/server_test.go",
+        "internal/command/fleet_online_preparation_test.go"
       ],
       "cli": [
         "aegis charter explain",
@@ -190,11 +194,13 @@
       "authority": "Authenticated principal reviews exact canonical plan/charter digests; single-use approval and deterministic provisioner apply only the approved revision. Any change invalidates approval; verify authoritative receipts before activation.",
       "sources": [
         "internal/command/root.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/command/fleet_online.go"
       ],
       "tests": [
         "internal/command/domain_surface_test.go",
-        "internal/api/server_test.go"
+        "internal/api/server_test.go",
+        "internal/command/fleet_online_preparation_test.go"
       ],
       "cli": [
         "aegis plan",
@@ -242,7 +248,8 @@
         "aegis agents history",
         "aegis agents enable",
         "aegis agents disable",
-        "aegis agents retire"
+        "aegis agents retire",
+        "aegis agents approve-charter"
       ],
       "http": [
         "GET /v1/agents",
@@ -254,7 +261,8 @@
         "GET /console/agents",
         "POST /console/agents/registration/review",
         "POST /console/agents/registration/execute",
-        "POST /console/agents/:agent/lifecycle"
+        "POST /console/agents/:agent/lifecycle",
+        "PUT /v1/agents/:agent/charter"
       ],
       "transport_classification": "shipped"
     },
@@ -264,11 +272,13 @@
       "authority": "Fresh authenticated admission binds one exact stanza, runtime, charter and expiring mandate; clean runtime session required. Revocation/termination are product effects; session/home isolation is not a host sandbox.",
       "sources": [
         "internal/command/root.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/command/fleet_online.go"
       ],
       "tests": [
         "internal/command/domain_surface_test.go",
-        "internal/api/server_test.go"
+        "internal/api/server_test.go",
+        "internal/command/fleet_online_preparation_test.go"
       ],
       "cli": [
         "aegis session",
@@ -296,12 +306,14 @@
       "sources": [
         "internal/command/fleet.go",
         "internal/api/server.go",
-        "internal/command/loop_implementation.go"
+        "internal/command/loop_implementation.go",
+        "internal/command/loop_hello.go"
       ],
       "tests": [
         "internal/api/workspace_skill_contract_test.go",
         "internal/api/loop_console_form_test.go",
-        "internal/command/loop_implementation_test.go"
+        "internal/command/loop_implementation_test.go",
+        "internal/command/loop_hello_test.go"
       ],
       "cli": [
         "aegis loops",
@@ -312,7 +324,8 @@
         "aegis loops show",
         "aegis loops activate",
         "aegis loops retire",
-        "aegis loops implementation"
+        "aegis loops implementation",
+        "aegis loops hello"
       ],
       "http": [
         "GET /v1/loops",
@@ -394,7 +407,8 @@
         "POST /v1/queue/:item/exhaust",
         "POST /v1/queue/:item/revoke",
         "GET /console/queue",
-        "POST /console/queue/:item/operate"
+        "POST /console/queue/:item/operate",
+        "POST /v1/queue/:item/bind-runtime"
       ],
       "transport_classification": "shipped"
     },
@@ -512,13 +526,7 @@
       "skill": "aegis-operator-lifecycle-diagnostics",
       "operation": "Transparent daemon-online routing of direct-service CLI operations",
       "classification": "missing-adapter",
-      "reason": "NewRoot rejects non-serve direct-store construction when the configured control-plane socket exists. CLI/API presence in this inventory does not implement automatic CLI-over-HTTP forwarding or authorize a second writer."
-    },
-    {
-      "skill": "aegis-execution-queue",
-      "operation": "HTTP runtime-authority binding",
-      "classification": "missing-adapter",
-      "reason": "Only aegis queue bind-runtime FILE is public; no bind-runtime HTTP route is registered. Do not invent one or substitute workspace authority."
+      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent readback/approve-charter, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding."
     },
     {
       "skill": "aegis-evidence-disposition",

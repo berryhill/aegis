@@ -14,6 +14,7 @@ import (
 )
 
 type revisionDigestInput struct {
+	CharterSuccessor       *CharterSuccessor     `json:"charter_successor,omitempty"`
 	SchemaVersion          string                `json:"schema_version"`
 	AgentID                string                `json:"agent_id"`
 	Revision               uint64                `json:"revision"`
@@ -43,6 +44,7 @@ func SealRevision(revision AgentRevision) (AgentRevision, error) {
 
 func revisionDigest(revision AgentRevision) (string, error) {
 	wire, err := json.Marshal(revisionDigestInput{
+		CharterSuccessor:       revision.CharterSuccessor,
 		SchemaVersion:          revision.SchemaVersion,
 		AgentID:                revision.AgentID,
 		Revision:               revision.Revision,

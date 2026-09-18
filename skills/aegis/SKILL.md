@@ -49,6 +49,10 @@ This skill provides discovery, explanation, drafting, validation guidance, and r
 5. Send consequential work only to the typed Aegis surface. Do not reproduce policy, credential handling, scheduling, provisioning, or audit logic in the prompt.
 6. Report the service's accepted result, durable rejection, exact digest, or evidence status distinctly. Never infer completion from runtime narration or process exit.
 
+## Owning-service online allowlist
+
+With `--config OWNER_CONFIG --target CONSOLE_URL`, supported operations are `agents list|show|history|approve-charter`, `loops list|show|validate|publish|activate|retire`, `graphs list|show|publish|submit`, and `queue list|show|bind-runtime|process`. Preserve each command’s positional file/reference arguments from installed help. The URL selects the owning instance; the protected Unix API performs authentication. Other online operations, Graph lifecycle application and general scheduling remain unsupported. No local-store fallback is allowed.
+
 ## Progressive disclosure
 
 Start with the bundled `references/operation-matrix.v1.json`. It assigns every

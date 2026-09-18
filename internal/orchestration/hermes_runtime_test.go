@@ -39,7 +39,7 @@ read prompt
 printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"queue-runtime-session","payload":{}}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"queue-runtime-session","payload":{"delta":"verified Hermes output"}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"queue-runtime-session","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"queue-runtime-session","payload":{"status":"complete","text":"verified Hermes output"}}}'
 while read rest; do :; done
 `)
 	request := routedRuntimeRequest(root)

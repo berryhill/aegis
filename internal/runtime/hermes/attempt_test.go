@@ -45,7 +45,7 @@ printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"runtime-session-1","payload":{}}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-1","payload":{"delta":"bounded "}}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-1","payload":{"delta":"answer"}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"runtime-session-1","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"runtime-session-1","payload":{"status":"complete","text":"bounded answer"}}}'
 while read rest; do :; done
 `)
 	request := validAttemptTurnRequest(root)
@@ -89,7 +89,7 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","payload":{"text":"uncorrelated output"}}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"selected-session","payload":{}}}'
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"selected-session","payload":{"text":"selected output"}}}'
-printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"selected-session","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"selected-session","payload":{"status":"complete","text":"selected output"}}}'
 while read rest; do :; done
 `)
 	result, err := adapter.AttemptTurn(context.Background(), validAttemptTurnRequest(root))

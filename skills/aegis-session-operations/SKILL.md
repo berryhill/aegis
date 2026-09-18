@@ -81,6 +81,10 @@ Preserve Aegis's exact error or reason. Missing verified provisioning, unsupport
 
 After interruption, inspect the durable session and fresh authority before acting. If launch did not produce authoritative session readback, do not claim a running session. If lifecycle mutation has no durable readback, do not repeat it blindly or claim completion; inspect session and verified audit evidence, then use only the typed recovery authorized by Aegis.
 
+## Owning-service online transport
+
+`session preview AGENT --revision REVISION --stanza STANZA --environment local`, `session start MANDATE_ID`, `session list`, `session show SESSION_ID`, and `session authority SESSION_ID` support `--config OWNER_CONFIG --target CONSOLE_URL`. Use returned mandate/session/authority values, not invented IDs. Preview does not activate; start requires explicit activation authorization. Start allows six minutes; unknown outcomes require readback before retry. Online revoke/terminate remain outside this allowlist. The target selects the configured owner; transport uses its protected Unix socket and server-side SO_PEERCRED admission, never a second local store or generic bearer HTTP client. See `docs/EXECUTABLE_HELLO.md` for the individually reviewed preparation sequence.
+
 ## Progressive disclosure
 
 Use `references/session-fixtures.json` only as non-secret interpretation examples. Fixtures are not current identity, mandate, process, authority, or receipt evidence. Consult `specs/RUNTIME_AND_SESSIONS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/AUDIT.md`, and installed command help for normative and shipped behavior. Hermes remains explicit in every runtime description and limitation.

@@ -48,7 +48,14 @@ type Ownership struct {
 
 // AgentRevision is a create-only statement of executable-participant state.
 // Digest covers every field except Digest itself.
+// CharterSuccessor records exact principal approval without granting authority.
+type CharterSuccessor struct {
+	Previous   reference.RevisionRef `json:"previous"`
+	ApprovedBy string                `json:"approved_by"`
+}
+
 type AgentRevision struct {
+	CharterSuccessor       *CharterSuccessor     `json:"charter_successor,omitempty"`
 	SchemaVersion          string                `json:"schema_version"`
 	AgentID                string                `json:"agent_id"`
 	Revision               uint64                `json:"revision"`
@@ -136,6 +143,17 @@ func (revision AgentRevision) validateContent() error {
 	}
 	if revision.Charter.ID != revision.AgentID {
 		return errors.New("charter reference id must equal agent id")
+	}
+	if successor := revision.CharterSuccessor; successor != nil {
+		if err := successor.Previous.Validate(); err != nil {
+			return fmt.Errorf("validate charter successor predecessor: %w", err)
+		}
+		if successor.Previous.ID != revision.AgentID || successor.Previous.Revision >= revision.Revision {
+			return errors.New("charter successor must reference an earlier revision of this agent")
+		}
+		if successor.ApprovedBy != revision.Ownership.OwnerID {
+			return errors.New("charter successor approval must bind registry owner")
+		}
 	}
 	if err := validateUniqueIdentifiers("capability declaration", revision.CapabilityDeclarations); err != nil {
 		return err

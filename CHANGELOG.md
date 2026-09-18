@@ -4,6 +4,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Bounded hello and online execution preparation
+
+- Added local canonical v2 `loops hello FILE --output NEW_FILE` with exclusive creation, exact predecessor preservation and precommitted fixed-output evidence.
+- Added exact Agent charter successor approval and protected online Queue runtime binding/processing; synchronized distributed skills and operation coverage.
+- Credential-free local model rechecks detect drift; process custody is not sandboxing or atomic model pinning. Synthetic tests do not establish live model acceptance.
+
+
 - Added local typed `loops implementation FILE [--output NEW_FILE]` authoring and installed CLI-to-authenticated-service v3 draft publication/readback coverage. Integrated implementation Queue processing requires exact operator-configured contract authorization, bounded Hermes patch proposals and independently reloaded evidence. Native Go tests are trusted code, not sandboxed. No automatic activation, queueing or service restart.
 
 - Corrected console action-readiness guidance: operation-specific authority prerequisites no longer claim initial setup is unfinished. Exact denial/unavailable/repair states and native forms remain unchanged; preparing an action does not grant admission.

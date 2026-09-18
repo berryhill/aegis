@@ -25,8 +25,7 @@ import (
 // Domain contract: workspace authority cannot claim or bind runtime work. A
 // separately admitted controller context binds the exact Agent; submission
 // replay preserves the original timestamp even after binding and disposition.
-// Qualification: real stores and peer-authenticated HTTP, with BindQueueRuntimeAs
-// called in-process because there is no public HTTP binding route. apiService's
+// Qualification: real stores and peer-authenticated HTTP runtime binding. apiService's
 // synthetic session process is NOT supported-Hermes or installed-agent evidence.
 // The configured NoKeyAdapter must reject Hermes work: the resulting failure,
 // not a fabricated successful runtime result, is the authoritative disposition.
@@ -122,8 +121,42 @@ func TestDQHandoff(t *testing.T) {
 		t.Fatal("awaiting_runtime list mismatch")
 	}
 	bind := app.BindQueueRuntimeInput{AgentID: agent.AgentID, QueueItemID: input.QueueItemID, Authority: original.Authority, BindingID: "distributed-bind", TransitionID: "distributed-bound"}
-	if _, _, err := svc.BindQueueRuntimeAs(ctx, subject, bind); err == nil {
-		t.Fatal("workspace reference became runtime authority")
+	apiRequest(t, client, http.MethodPost, "/v1/queue/"+input.QueueItemID+"/bind-runtime", bind, nil, http.StatusForbidden)
+	// Authentication and strict decoding must deny before any queue mutation.
+	raw, err := json.Marshal(bind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, body, token string
+		status            int
+	}{
+		{"unauthenticated", string(raw), "", http.StatusUnauthorized},
+		{"unknown-field", strings.TrimSuffix(string(raw), "}") + `,"workspace":{}}`, "Bearer transport-secret", http.StatusBadRequest},
+		{"trailing-json", string(raw) + ` {}`, "Bearer transport-secret", http.StatusBadRequest},
+		{"path-mismatch", strings.Replace(string(raw), input.QueueItemID, "other-item", 1), "Bearer transport-secret", http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Preserve the production five-request/second limiter while adding two HTTP probes.
+			time.Sleep(500 * time.Millisecond)
+			req, err := http.NewRequest(http.MethodPost, "http://unix/v1/queue/"+input.QueueItemID+"/bind-runtime", strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", tc.token)
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != tc.status {
+				t.Fatalf("status=%d want=%d", response.StatusCode, tc.status)
+			}
+			if got := read(); got.Projection.State != queue.StateAwaitingRuntime || len(got.Claims) != 0 {
+				t.Fatal("denied binding mutated queue")
+			}
+		})
 	}
 	work := orchestration.WorkRequest{Authority: original.Authority, QueueItemID: input.QueueItemID, WorkerID: "distributed-worker", LoopExecutionID: "distributed-loop-execution", ClaimID: "distributed-claim", AttemptID: "distributed-attempt", ClaimTransitionID: "distributed-claimed", TerminalTransitionID: "distributed-terminal", DispositionID: "distributed-disposition", ArtifactID: "distributed-artifact", LeaseDuration: time.Minute}
 	if _, err := svc.ProcessQueueItemAs(ctx, subject, work); err == nil {
@@ -159,9 +192,14 @@ func TestDQHandoff(t *testing.T) {
 		t.Fatal("controller resolved a different stanza or mandate")
 	}
 	bind.Authority = authority.Authority
-	binding, created, err := svc.BindQueueRuntimeAs(ctx, subject, bind)
-	if err != nil || !created || binding.Authority != authority.Authority {
-		t.Fatalf("controller runtime bind: created=%v err=%v", created, err)
+	var bound struct {
+		Binding queue.RuntimeBinding `json:"binding"`
+		Created bool                 `json:"created"`
+	}
+	apiRequest(t, client, http.MethodPost, "/v1/queue/"+input.QueueItemID+"/bind-runtime", bind, &bound, http.StatusCreated)
+	binding := bound.Binding
+	if !bound.Created || binding.Authority != authority.Authority {
+		t.Fatalf("controller runtime bind: %+v", bound)
 	}
 	if view = read(); view.Projection.State != queue.StateQueued || view.Item.Authority != original.Authority {
 		t.Fatal("binding rewrote historical authority or failed to queue")

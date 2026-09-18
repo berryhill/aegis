@@ -30,6 +30,7 @@ Omitting `lifecycle` in a new registration fixture defaults to `enabled` before 
 
 Check `aegis agents --help` before routing work. The shipped CLI operations are:
 
+- `aegis agents approve-charter AGENT FILE` (principal-approved exact charter successor; also `PUT /v1/agents/:agent/charter`)
 - `aegis agents register FILE`
 - `aegis agents list`
 - `aegis agents show AGENT [REVISION]`
@@ -43,7 +44,7 @@ The corresponding protected HTTP operations are `POST /v1/agents`, `GET /v1/agen
 - `/agents import hermes default` — prepare a deterministic, non-authorizing proposal without mutation;
 - `/agents import hermes default confirm REVISION_DIGEST` — recompute fresh evidence and register only when the exact displayed digest is repeated.
 
-If an operation is absent from installed help, label it unavailable. There is no shipped Agent update, delete, unretire, deployment-management, named-profile import, arbitrary profile path, recursive profile discovery, or arbitrary source-scanning operation. The manager may expose sanitized read-only local profile inventory and the one exact default-profile import above; neither surface authorizes general scanning or execution.
+If an operation is absent from installed help, label it unavailable. There is no shipped general Agent update, delete, unretire, deployment-management, named-profile import, arbitrary profile path, recursive profile discovery, or arbitrary source-scanning operation. The manager may expose sanitized read-only local profile inventory and the one exact default-profile import above; neither surface authorizes general scanning or execution.
 
 ## Register one existing participant
 
@@ -72,6 +73,10 @@ An identical retry is idempotent and returns the existing canonical record with 
 6. Exact replay is idempotent. Changed evidence, wrong or stale digest, unsafe marker, source/Agent/charter collision, or ambiguous discovery denies. An interrupted charter-first write may leave only the exact immutable charter, which a later exact retry safely reuses.
 
 This transaction does not import prompts, toolsets, plugins, MCP servers, credentials, memories, sessions, capabilities, policies, model bindings, or runtime grants. It does not modify or launch Hermes, activate the Agent, issue a mandate, or make the persistent profile an admitted runtime home.
+
+## Approve an exact charter successor
+
+Use `aegis --config OWNER_CONFIG --target CONSOLE_URL agents approve-charter AGENT FILE` only after explicit approval. The strict file contains `expected` (the current exact Agent revision reference) and `charter` (the already imported exact successor charter reference). Both IDs must match AGENT. Aegis preserves ownership, runtime, lifecycle, source and declarations; stale input denies. Read back the returned successor with `agents show AGENT REVISION`. This creates no mandate, session or execution authority.
 
 ## Inspect and reconstruct history
 

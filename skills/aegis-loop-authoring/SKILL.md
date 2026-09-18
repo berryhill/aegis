@@ -31,6 +31,7 @@ Use this skill to draft, validate, publish, inspect, activate, or retire an immu
 First use `aegis loops --help`. Supported commands in the compatible release are:
 
 - `aegis loops implementation FILE [--output NEW_FILE]` (local canonical v3 implementation draft; no authority, publication or execution)
+- `aegis loops hello FILE --output NEW_FILE` (local canonical v2 fixed-output draft; exclusive create; named Agent, Loop ID, revision, optional predecessor and idempotency key; exact UTF-8 `hello` without newline, precommitted SHA-256 and artifact verifier policy; no receipt or execution)
 - `aegis loops example` (typed publication template only)
 - `aegis loops validate FILE` (authenticated workspace structural validation, no publication)
 - `aegis loops list`

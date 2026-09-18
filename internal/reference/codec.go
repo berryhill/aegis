@@ -74,6 +74,9 @@ func requireEOF(decoder *json.Decoder) error {
 // rejectDuplicateObjectKeys walks the token stream before typed decoding.
 // encoding/json otherwise accepts duplicate names using last-value-wins,
 // which is unsafe for immutable identity bindings.
+// RejectDuplicateObjectKeys rejects ambiguous JSON before typed authority decoding.
+func RejectDuplicateObjectKeys(data []byte) error { return rejectDuplicateObjectKeys(data) }
+
 func rejectDuplicateObjectKeys(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	first, err := decoder.Token()

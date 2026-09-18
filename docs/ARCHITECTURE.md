@@ -1,5 +1,16 @@
 # Aegis MVP Architecture
 
+## Fixed-output v2 hello path
+
+```text
+local hello builder -> canonical v2 draft -> authenticated workspace publication
+exact Agent + Loop -> one-node Graph -> awaiting-runtime Queue
+separate controller runtime preparation -> bind-runtime -> process
+artifact blob -> independent verification -> durable disposition
+```
+
+No arrow grants authority from prompt text. Local model recheck is drift detection, not atomic pinning; runtime process custody is not a sandbox.
+
 ## Verified implementation path
 
 ```text

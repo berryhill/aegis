@@ -52,6 +52,10 @@ For an existing session, preserve its returned status and lifecycle evidence. `m
 
 Zero matches and multiple matches both deny. An empty authority projection on denial grants nothing. A stanza request filters already-authorized matches and never establishes eligibility. Expiry or revocation requires fresh authenticated control-plane action and, where authority changes, a new mandate and clean session; conversation cannot recover it.
 
+## Owning-service online transport
+
+`session authority SESSION_ID` supports `--config OWNER_CONFIG --target CONSOLE_URL` and returns the current controller-issued exact reference. This does not supply online charter explain/effective adapters or grant authority through a stanza flag. The target selects the configured owner; transport uses its protected Unix socket and server-side SO_PEERCRED admission, never a second local store or generic bearer HTTP client. See `docs/EXECUTABLE_HELLO.md` for the individually reviewed preparation sequence.
+
 ## Progressive disclosure
 
 Use `references/inspection-fixtures.json` only as non-secret examples of expected interpretation. Fixtures are not live identity, mandate, or authority evidence. Consult `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/CHARTER.md`, and `specs/RUNTIME_AND_SESSIONS.md` for normative semantics. If an inspection operation is absent from installed `aegis --help`, label it unavailable rather than inventing a replacement.

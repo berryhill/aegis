@@ -316,7 +316,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if o.target != "" {
 			return nil // Online commands must not inspect or open local authority stores.
 		}
-		if (cmd.Name() == "example" || cmd.Name() == "implementation") && cmd.Parent() != nil && cmd.Parent().Name() == "loops" {
+		if (cmd.Name() == "example" || cmd.Name() == "implementation" || cmd.Name() == "hello") && cmd.Parent() != nil && cmd.Parent().Name() == "loops" {
 			return nil // Installed typed material requires no configured authority.
 		}
 		lifecycleConfig := o.configFile

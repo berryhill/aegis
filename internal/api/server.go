@@ -1569,6 +1569,21 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusOK, values)
 	})
+	g.PUT("/agents/:agent/charter", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.ApproveAgentCharterInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.ApproveAgentCharterAs(c.Request().Context(), subject, c.Param("agent"), input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, value)
+	})
 	g.PUT("/agents/:agent/lifecycle", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -1773,6 +1788,28 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/queue/:item/bind-runtime", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.BindQueueRuntimeInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItemID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		binding, created, err := svc.BindQueueRuntimeAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		status := http.StatusOK
+		if created {
+			status = http.StatusCreated
+		}
+		return c.JSON(status, map[string]any{"binding": binding, "created": created})
 	})
 	g.POST("/queue/:item/process", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

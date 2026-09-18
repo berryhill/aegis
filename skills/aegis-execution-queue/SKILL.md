@@ -31,7 +31,7 @@ First use `aegis queue --help`. The compatible CLI operations are:
 
 - `aegis queue list`
 - `aegis queue show ITEM`
-- `aegis queue bind-runtime FILE` (controller-only; no HTTP equivalent)
+- `aegis queue bind-runtime FILE` (controller-only; `POST /v1/queue/:item/bind-runtime`)
 - `aegis queue process FILE`
 - `aegis queue retry FILE`
 - `aegis queue cancel FILE`
@@ -69,7 +69,7 @@ retry `backoff` is an integer nanosecond count, not a string such as `"1s"`.
 
 `aegis queue bind-runtime FILE` is the shipped CLI boundary. Its strict object contains exactly `agent_id`, `authority` (an existing authenticated runtime authority `id`/`digest` reference), `queue_item_id`, `binding_id`, and `transition_id`. The authenticated principal supplies the exact registered Agent selector; Aegis derives its workspace internally and checks the Queue owner's provenance. The Agent selector is not runtime authority. Obtain the runtime reference through the controller's supported authenticated session path; never construct an authority object from prose.
 
-The response is `{ "binding": ..., "created": ... }`. Preserve the binding and transition identities across reconciliation of an unknown outcome. Read back the binding and Queue projection before processing; binding does not execute an attempt. There is no `POST /v1/queue/:item/bind-runtime` adapter in this revision. When a running control plane denies direct-store access with `control_plane_online`, report the missing online adapter; do not stop the daemon, open a second writer, extract tokens, or invent an HTTP client to bypass it.
+The response is `{ "binding": ..., "created": ... }`. Preserve the binding and transition identities across reconciliation of an unknown outcome. Read back the binding and Queue projection before processing; binding does not execute an attempt. Use the protected `POST /v1/queue/:item/bind-runtime` adapter or `aegis --config OWNER_CONFIG --target CONSOLE_URL queue bind-runtime FILE` while the gateway owns state. The same online flags support `queue process FILE`, `queue list`, and `queue show ITEM`. A direct-store `control_plane_online` denial must not be bypassed. Never stop the daemon, open a second writer, or extract tokens. Processing uses a bounded execution deadline; an unknown outcome requires exact Queue readback before any retry, not automatic resubmission.
 
 ## Process one eligible item
 

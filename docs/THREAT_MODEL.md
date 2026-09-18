@@ -1,5 +1,9 @@
 # Aegis MVP Threat Model
 
+## Local inference drift and process custody
+
+Local model digest rechecks detect drift but do not atomically pin the server model through inference. Host processes and disposable homes are not sandboxes. Hello claims bind exact UTF-8 output without newline before execution; only independently verified persisted artifacts may satisfy them.
+
 ## Verified implementation native-code boundary
 
 Loop v3 publication is not host authorization. Exact implementation-contract digests in operator-approved controller configuration authorize both bounded source writes and native Go test execution. The default authorization set is empty. Agent/model proposals cannot populate it. Tests and imported code run with the controller OS identity and are **not sandboxed**; patch path restrictions are not native-code confinement. Trust the repository/tests and isolate the host account before authorizing. Fresh runtime admission and independently reloaded evidence remain required. See [Verified implementation](VERIFIED_IMPLEMENTATION.md).

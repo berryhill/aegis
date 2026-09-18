@@ -88,6 +88,10 @@ Recovery marks an interrupted receipt `failed`. It removes only newly published 
 
 Report: operation; authenticated principal as returned by Aegis; agent and charter revision/digest; plan ID/digest; runtime and environment; complete effects; separated stanza grants and requested toolsets; diff; warnings; approval ID/status/requester/decider/expiry/consumption; receipt ID/status/bindings/artifacts/verification/times/failure; recovery state; limitations. Clearly distinguish proposed, reviewed, pending decision, approved, rejected, expired, consumed, provisioning, failed, recovered, verified, denied, and unavailable.
 
+## Owning-service online transport
+
+`plan preview AGENT --revision REVISION --environment local`, `plan show PLAN_ID`, `approval request PLAN_ID --ttl 5m`, `approval show APPROVAL_ID`, `approval approve APPROVAL_ID`, `approval reject APPROVAL_ID`, and `provision PLAN_ID APPROVAL_ID` support `--config OWNER_CONFIG --target CONSOLE_URL`. Review every exact plan and request a separate explicit approval; never auto-approve the workflow. Provisioning waits at most six minutes. Unknown mutation outcome requires owning-service record/receipt reconciliation, never automatic retry. The target selects the configured owner; transport uses its protected Unix socket and server-side SO_PEERCRED admission, never a second local store or generic bearer HTTP client. See `docs/EXECUTABLE_HELLO.md` for the individually reviewed preparation sequence.
+
 ## Progressive disclosure
 
 Use `references/provisioning-fixtures.json` only as non-secret interpretation examples, never as live authority or receipts. Consult `specs/APPROVAL_AND_PROVISIONING.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/CHARTER.md`, and the installed command help for normative and shipped behavior. Use `aegis-audit-verification` for canonical history correlation after receipt verification. Installing this skill grants no approval or provisioning authority.

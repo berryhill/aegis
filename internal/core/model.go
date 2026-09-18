@@ -66,13 +66,14 @@ type InformationFlowPolicy struct {
 	CrossStanza string `json:"cross_stanza"`
 }
 type HermesConfig struct {
-	Profile        string   `json:"profile"`
-	PersistentHome bool     `json:"persistent_home"`
-	MCPServers     []string `json:"mcp_servers"`
-	Plugins        []string `json:"plugins"`
-	Toolsets       []string `json:"toolsets"`
-	Model          string   `json:"model"`
-	Provider       string   `json:"provider"`
+	LocalInference *LocalInference `json:"local_inference,omitempty"`
+	Profile        string          `json:"profile"`
+	PersistentHome bool            `json:"persistent_home"`
+	MCPServers     []string        `json:"mcp_servers"`
+	Plugins        []string        `json:"plugins"`
+	Toolsets       []string        `json:"toolsets"`
+	Model          string          `json:"model"`
+	Provider       string          `json:"provider"`
 }
 type TrustStanza struct {
 	ID              string                `json:"id"`
@@ -368,6 +369,11 @@ func validateRequiredCharterFields(data []byte) error {
 			if err := json.Unmarshal(stanza[field], &object); err != nil {
 				return fmt.Errorf("decode charter: %s.%s must be an object", path, field)
 			}
+			if field == "hermes" {
+				if raw, exists := object["local_inference"]; exists && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+					return errors.New("local_inference must not be null")
+				}
+			}
 			if err := require(object, path+"."+field, required...); err != nil {
 				return err
 			}
@@ -490,8 +496,11 @@ func ValidateCharter(c Charter) error {
 		if s.Hermes.Profile != "" || s.Hermes.PersistentHome || len(s.Hermes.MCPServers) != 0 || len(s.Hermes.Plugins) != 0 {
 			add(p + " persistent profiles, homes, MCP servers, and plugins are unsupported")
 		}
+		if err := ValidateLocalInferenceAuthority(s.Hermes, s.Grant.Tools, s.Scopes.Credentials); err != nil {
+			add(p + " " + err.Error())
+		}
 		expectedCredential := "provider:" + s.Hermes.Provider
-		if s.Hermes.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential)) {
+		if s.Hermes.LocalInference == nil && s.Hermes.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential)) {
 			add(p + " credential scopes must include " + expectedCredential)
 		}
 		for _, x := range append(append([]string{}, s.Grant.Tools...), s.Grant.Capabilities...) {
