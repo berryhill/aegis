@@ -14,6 +14,8 @@ Read current projection, not the immutable initial transition, to determine life
 
 ## Single authenticated Loop execution request
 
+When the operator says “queue it” for an approved exact bounded Loop, use this single execution action, not a preparation-page handoff, binding file, second worker command, or repeated consent. Return the exact inline blocker if admission fails; never promote missing authority into executable Queue. The Queue overview omits generic prerequisite blocks; existing action and record-specific admission still fail closed.
+
 `aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` explicitly selects a compatible legacy preparation for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
 
 The controller composes the minimal exact Graph, prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
@@ -24,6 +26,6 @@ An interrupted reservation without matching success proof remains blocked as `se
 
 ## Collection and evidence boundaries
 
-`GET /v1/queue`, `queue list`, and the Queue console exclude current preparation and never-bound terminal preparation using immutable provenance plus exact persisted runtime binding. `GET /v1/preparations`, `queue preparations`, and `/console/preparations` expose that separate history. Exact `queue show` retains both. Lifecycle labels use the current projection; initial state is explicitly historical.
+`GET /v1/queue`, `queue list`, and the Queue console exclude current preparation and never-bound terminal preparation using immutable provenance plus exact persisted runtime binding. `GET /v1/preparations` and `queue preparations` retain diagnostic history for compatibility; they are not a user management handoff. There is no Preparation console page or navigation. Exact blockers are returned by the originating queue action and retained on its durable record. Exact `queue show` retains both. Lifecycle labels use the current projection; initial state is explicitly historical.
 
 Repository tests use isolated state and synthetic runtime fixtures with independently executed native checks. They do not establish access to a live host or prove live-provider/model acceptance.

@@ -412,7 +412,6 @@
         "GET /console/queue",
         "POST /console/queue/:item/operate",
         "POST /v1/queue/:item/bind-runtime",
-        "GET /console/preparations",
         "GET /v1/preparations"
       ],
       "transport_classification": "shipped"

@@ -1,6 +1,6 @@
 # Aegis
 
-`aegis loops queue FILE` performs one authenticated exact-Loop request within already approved scope, including session preparation and a bounded foreground worker. Missing prerequisites remain outside executable Queue as `preparation-pending`; legacy `awaiting-runtime` records retain their IDs. See [execution admission and recovery boundaries](specs/EXECUTION_PREPARATION.md).
+`aegis loops queue FILE` performs one authenticated exact-Loop request within already approved scope, including session preparation and a bounded foreground worker. Exact blockers return inline on the same action, with no Preparation page or management handoff. Missing prerequisites remain outside executable Queue as `preparation-pending`; legacy `awaiting-runtime` records retain their IDs. See [execution admission and recovery boundaries](specs/EXECUTION_PREPARATION.md).
 
 For a fixed-output executable v2 draft, use `aegis loops hello FILE --output NEW_FILE`; see [hello authoring and separately authorized runtime](docs/EXECUTABLE_HELLO.md). This is not live model acceptance.
 
