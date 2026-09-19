@@ -186,6 +186,7 @@ flowchart TB
   Reset[Profile-bound deterministic reset] -->|dev: confirmation; production: passphrase twice + confirmation| UserUnit
   Reset -->|exact owned gateway stopped and purged before config-last deletion| Config
   Reset -->|fresh inventory; bounded Badger and lifecycle-marker churn only in previewed persistence directories| State
+  Reset -->|missing-config dev orphan: VFS identity + same singleton flock through absence readback| Singleton
   Reset -. preserve .-> Hermes
   Reset -. preserve daemon and models .-> Ollama
 ```
