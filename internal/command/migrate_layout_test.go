@@ -33,7 +33,7 @@ func newMigrateCommandFixture(t *testing.T) migrateCommandFixture {
 	if err = os.Mkdir(home, 0700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", home)
+	isolateLifecycleEnvironment(t, home)
 	state := filepath.Join(home, ".local", "state", "aegis")
 	checkpoints := filepath.Join(home, ".local", "state", "aegis-checkpoints")
 	configPath := filepath.Join(home, ".config", "aegis", "aegis.yaml")
@@ -63,7 +63,7 @@ func newMigrateCommandFixture(t *testing.T) migrateCommandFixture {
 func executeMigrate(t *testing.T, fixture migrateCommandFixture, input string, terminal bool) (string, error) {
 	t.Helper()
 	var output bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader(input), Out: &output, Err: io.Discard, IsTerminal: func(io.Reader, io.Writer) bool { return terminal }, Migrator: fixture.service})
+	root := NewRoot(Dependencies{UserService: absentUserService(t), In: strings.NewReader(input), Out: &output, Err: io.Discard, IsTerminal: func(io.Reader, io.Writer) bool { return terminal }, Migrator: fixture.service})
 	root.SetArgs([]string{"migrate-layout"})
 	err := root.Execute()
 	return output.String(), err
@@ -110,6 +110,25 @@ func TestMigrateLayoutCommandPTYConfirmationAndDecline(t *testing.T) {
 }
 
 func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
+	// Model an installed host without reading its files or contacting its manager.
+	host := t.TempDir()
+	foreignUnit := filepath.Join(host, "xdg", "systemd", "user", "aegis.service")
+	if err := os.MkdirAll(filepath.Dir(foreignUnit), 0700); err != nil {
+		t.Fatal(err)
+	}
+	const foreign = "[Service]\nExecStart=/test-owned/foreign\n"
+	if err := os.WriteFile(foreignUnit, []byte(foreign), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", host)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(host, "xdg"))
+	t.Setenv("AEGIS_STATE_DIR", filepath.Join(host, "foreign-state"))
+	t.Cleanup(func() {
+		data, err := os.ReadFile(foreignUnit)
+		if err != nil || string(data) != foreign {
+			t.Errorf("foreign unit changed: %v", err)
+		}
+	})
 	fixture := newMigrateCommandFixture(t)
 	if _, err := executeMigrate(t, fixture, "\n", true); err != nil {
 		t.Fatal(err)
@@ -123,7 +142,7 @@ func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
 	passphrase := addResetPassphraseAuthority(t, resetFixture)
 	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
 	var resetOutput bytes.Buffer
-	resetRoot := NewRoot(Dependencies{In: strings.NewReader(resetdomain.Confirmation + "\n"), Out: &resetOutput, Err: io.Discard, Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	resetRoot := NewRoot(Dependencies{UserService: absentUserService(t), In: strings.NewReader(resetdomain.Confirmation + "\n"), Out: &resetOutput, Err: io.Discard, Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	resetRoot.SetArgs([]string{"reset"})
 	if err := resetRoot.Execute(); err != nil {
 		t.Fatal(err)
@@ -134,7 +153,7 @@ func TestIsolatedLegacyMigrateResetAndCanonicalBootstrap(t *testing.T) {
 
 	var bootstrap bytes.Buffer
 	bootstrapProvider := &sequencePassphrases{values: [][]byte{[]byte("principal-password")}}
-	bootstrapRoot := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &bootstrap, Err: io.Discard, Version: "test", Passphrases: bootstrapProvider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	bootstrapRoot := NewRoot(Dependencies{UserService: absentUserService(t), In: strings.NewReader("yes\n/status\n/quit\n"), Out: &bootstrap, Err: io.Discard, Version: "test", Passphrases: bootstrapProvider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	if err := bootstrapRoot.Execute(); err != nil {
 		t.Fatal(err)
 	}
