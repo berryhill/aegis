@@ -8,6 +8,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Stream the gateway-intake test's complete plaintext-canary scan with bounded memory, including matches across read boundaries, instead of loading preallocated Badger value logs into memory. Production storage options and race/security gates are unchanged.
+
 - Corrected exclusive lifecycle fixture waiting, direct-browser descendant cleanup after leader exit, host-independent supervisor tests and test-only helper dependency enforcement. Verification defaults now include a 512 MiB per-process Go soft memory target without changing the 6 GiB aggregate limit or persistence semantics.
 - Bound release verification and CI descendant resources, nested Go builds, subprocess output/cleanup, PTY capture, and Chrome protocol waits. Full verification now requires Linux cgroup v2 and a systemd user manager, with no unbounded fallback.
 - Always attempt authority database close after a sync error; preserve the failure and never publish a false CLEAN marker.

@@ -341,11 +341,16 @@ func testGatewayIntakePTYBinary(t *testing.T, scenario, binary string) {
 			if !d.Type().IsRegular() {
 				return nil
 			}
-			body, e := os.ReadFile(path)
+			file, e := os.Open(path)
 			if e != nil {
 				return e
 			}
-			if bytes.Contains(body, canary) {
+			defer file.Close()
+			found, e := streamContainsCanary(file, canary)
+			if e != nil {
+				return e
+			}
+			if found {
 				t.Error("protected value retained in application state")
 			}
 			return nil
