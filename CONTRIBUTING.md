@@ -9,6 +9,8 @@
 
 ## Setup and checks
 
+Rich-manager PTY senders must wait for the next composer prompt before sending exit commands or EOF. A response marker is not readiness: the composer restores canonical terminal mode between reads, so early carriage return is translated to the editor's multiline newline. `TestManagerResponseSenderWaitsForComposerReadiness` holds the real manager in that response phase and checks the sender, clean exit, and terminal restoration without changing production terminal modes or process deadlines.
+
 Skill distribution regressions run with `go test ./internal/skillbundle/... -race -parallel=2`. Use a repository-local temporary-directory base, constrained Go concurrency, and explicitly selected disposable homes. Managed installation tests cover exact bytes, local drift, metadata retention, update/rollback, interruption and locking; they do not prove supported Hermes or model behavior. Do not use normal profiles or independently run hub updates against a managed inventory.
 
 ```sh

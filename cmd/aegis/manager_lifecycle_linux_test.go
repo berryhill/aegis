@@ -248,7 +248,7 @@ func TestManagerExclusiveWaiterCleanup(t *testing.T) {
 	}
 }
 
-func startManagerPTY(t *testing.T, binary, configPath string) (*managerProcess, *os.File, *os.File, *unix.Termios) {
+func openManagerPTY(t *testing.T) (*os.File, *os.File, *unix.Termios) {
 	t.Helper()
 	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -272,6 +272,12 @@ func startManagerPTY(t *testing.T, binary, configPath string) (*managerProcess, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	return master, slave, initial
+}
+
+func startManagerPTY(t *testing.T, binary, configPath string) (*managerProcess, *os.File, *os.File, *unix.Termios) {
+	t.Helper()
+	master, slave, initial := openManagerPTY(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 	command := exec.CommandContext(ctx, binary, "--config", configPath, "manager")
@@ -280,7 +286,7 @@ func startManagerPTY(t *testing.T, binary, configPath string) (*managerProcess, 
 	command.Stdin, command.Stdout, command.Stderr = slave, slave, slave
 	command.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(configPath), "home"), "XDG_CONFIG_HOME="+filepath.Join(filepath.Dir(configPath), "xdg-config"), "XDG_STATE_HOME="+filepath.Join(filepath.Dir(configPath), "xdg-state"))
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
-	if err = command.Start(); err != nil {
+	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
 	process := watchManager(command)

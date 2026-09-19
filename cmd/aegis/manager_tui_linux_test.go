@@ -146,8 +146,7 @@ func TestManagerSlashRoutingConsumesUnknownMalformedAndLeadingWhitespaceLocally(
 		capture = readPTYUntilCount(t, master, capture, "Enter submit; Ctrl+J newline", index+2, 5*time.Second)
 	}
 	_, _ = master.Write([]byte("//status\r"))
-	capture = readPTYUntil(t, master, capture, "The local Aegis management model is unavailable (", 3*time.Second)
-	_, _ = master.Write([]byte("/quit\r"))
+	capture = quitManagerAfterResponse(t, master, capture, 5)
 	if err := process.Wait(); err != nil {
 		t.Fatalf("exit=%v output=%q", err, capture)
 	}
