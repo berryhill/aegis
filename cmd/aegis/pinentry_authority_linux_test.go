@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -269,7 +270,7 @@ func main(){
 		t.Fatal(err)
 	}
 	command := exec.Command("go", "build", "-o", binary, source)
-	if output, err := command.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(command, 2*time.Minute); err != nil {
 		t.Fatalf("build fake pinentry: %v\n%s", err, output)
 	}
 }
@@ -289,7 +290,7 @@ func main(){
 		t.Fatal(err)
 	}
 	command := exec.Command("go", "build", "-o", binary, source)
-	if output, err := command.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(command, 2*time.Minute); err != nil {
 		t.Fatalf("build cancel pinentry: %v\n%s", err, output)
 	}
 }

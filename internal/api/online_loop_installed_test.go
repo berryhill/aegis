@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/loop"
@@ -45,7 +47,7 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 	build := exec.Command("go", "build", "-ldflags=-X github.com/berryhill/aegis/internal/buildinfo.Version=0.0.0-online-test", "-o", binary, "./cmd/aegis")
 	build.Dir = "../.."
 	build.Env = append(os.Environ(), "GOMAXPROCS=2")
-	if out, err := build.CombinedOutput(); err != nil {
+	if out, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
 		t.Fatalf("build: %v %s", err, out)
 	}
 	cfgPath := filepath.Join(t.TempDir(), "owner.json")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,7 +119,7 @@ func TestStoreCloseNormalizesModesUnderPermissiveUmask(t *testing.T) {
 	root := filepath.Join(t.TempDir(), schemaVersion)
 	command := exec.Command(os.Args[0], "-test.run=^TestStoreCloseNormalizesModesUnderPermissiveUmask$")
 	command.Env = append(os.Environ(), "AEGIS_TEST_FLEET_MODE_ROOT="+root)
-	if output, err := command.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(command, 2*time.Minute); err != nil {
 		t.Fatalf("permissive-umask child failed: %v\n%s", err, output)
 	}
 

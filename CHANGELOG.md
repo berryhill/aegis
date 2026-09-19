@@ -4,7 +4,12 @@ Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` 
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
 
-## Unreleased
+## [Unreleased]
+
+### Fixed
+
+- Bound release verification and CI descendant resources, nested Go builds, subprocess output/cleanup, PTY capture, and Chrome protocol waits. Full verification now requires Linux cgroup v2 and a systemd user manager, with no unbounded fallback.
+- Always attempt authority database close after a sync error; preserve the failure and never publish a false CLEAN marker.
 
 ### Bounded hello and online execution preparation
 

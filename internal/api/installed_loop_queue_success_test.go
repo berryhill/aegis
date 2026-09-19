@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"io"
 	"net"
 	"net/http"
@@ -40,7 +41,7 @@ func newInstalledLoopQueueClient(t *testing.T, svc *app.Service) *installedLoopQ
 	build := exec.Command("go", "build", "-p=1", "-ldflags=-X github.com/berryhill/aegis/internal/buildinfo.Version=0.0.0-loop-queue-fixture", "-o", c.binary, "./cmd/aegis")
 	build.Dir = "../.."
 	build.Env = append(os.Environ(), "GOMAXPROCS=2")
-	if out, err := build.CombinedOutput(); err != nil {
+	if out, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
 		t.Fatalf("build: %v %s", err, out)
 	}
 	raw, err := json.Marshal(svc.Config)
@@ -55,7 +56,8 @@ func newInstalledLoopQueueClient(t *testing.T, svc *app.Service) *installedLoopQ
 
 func (c *installedLoopQueueClient) run(dest any, args ...string) error {
 	time.Sleep(250 * time.Millisecond)
-	out, err := exec.Command(c.binary, append([]string{"--config", c.config, "--target", c.target}, args...)...).CombinedOutput()
+	command := exec.Command(c.binary, append([]string{"--config", c.config, "--target", c.target}, args...)...)
+	out, err := testprocess.CombinedOutput(command, 30*time.Second)
 	if err != nil {
 		return fmt.Errorf("%v: %w: %s", args, err, out)
 	}

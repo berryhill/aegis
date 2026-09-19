@@ -17,6 +17,10 @@ import pwd
 import secrets
 import socket
 import subprocess
+try:
+    from scripts.verification_process import run_owned
+except ModuleNotFoundError:
+    from verification_process import run_owned
 import sys
 import time
 import urllib.request
@@ -195,7 +199,8 @@ def main() -> int:
                 command.extend(["register", str(charter), str(fixture)])
             elif phase == "registration-readback":
                 command.append("registration-readback")
-            completed = subprocess.run(command, cwd=console_repo, env=environment, text=True, timeout=120, check=False)
+            completed = run_owned(command, cwd=console_repo, env=environment, timeout=120)
+            sys.stdout.buffer.write(completed.stdout)
             if completed.returncode != 0:
                 fail(f"real-browser {phase} phase exited {completed.returncode}")
         finally:

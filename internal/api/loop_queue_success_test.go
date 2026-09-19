@@ -19,6 +19,7 @@ import (
 	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"net/http"
 	"os"
 	"os/exec"
@@ -406,7 +407,7 @@ while read rest; do :; done
 	}
 	check := exec.Command(goBinary, "test", "-count=1", "-run", "^TestHello$", ".")
 	check.Dir = workspace
-	if output, err := check.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(check, 2*time.Minute); err != nil {
 		t.Fatalf("independent TestHello: %v %s", err, output)
 	}
 

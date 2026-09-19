@@ -5,11 +5,13 @@ package skillbundle
 import (
 	"context"
 	"errors"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestManagedInventoryTransaction(t *testing.T) {
@@ -66,7 +68,7 @@ func TestManagedInventoryTransaction(t *testing.T) {
 	}
 	child := exec.Command(os.Args[0], "-test.run=^TestManagedInventoryTransaction$", "-test.parallel=1")
 	child.Env = append(os.Environ(), "AEGIS_SKILL_INSTALL_CRASH=before_publication", "AEGIS_SKILL_TEST_ARCHIVE="+second, "AEGIS_SKILL_TEST_DIGEST="+digest2, "AEGIS_SKILL_TEST_REVISION="+revision, "AEGIS_SKILL_TEST_HOME="+home)
-	childOutput, childErr := child.CombinedOutput()
+	childOutput, childErr := testprocess.CombinedOutput(child, 2*time.Minute)
 	var exitErr *exec.ExitError
 	if !errors.As(childErr, &exitErr) || exitErr.ExitCode() != 23 {
 		t.Fatalf("crash helper failed: %v %s", childErr, childOutput)

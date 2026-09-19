@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"os/user"
@@ -24,7 +25,7 @@ func TestCLIEndToEndHermetic(t *testing.T) {
 	binary := filepath.Join(root, "aegis")
 	build := exec.Command("go", "build", "-ldflags=-X=github.com/berryhill/aegis/internal/buildinfo.Version=test", "-o", binary, ".")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if output, err := build.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
 

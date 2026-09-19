@@ -4,6 +4,10 @@ SHELL := scripts/verify-shell.sh
 # only go 1.25+, so it builds with the older toolchain and then fails to
 # load packages that require go 1.26 (this project).
 export GOTOOLCHAIN := go1.26.6
+# Inherited by nested Go builds as well as package tests. Explicit values win.
+override export GOFLAGS := $(if $(filter -p=% -p,$(GOFLAGS)),$(GOFLAGS),$(strip $(GOFLAGS) -p=1))
+export GOMAXPROCS ?= 2
+.NOTPARALLEL:
 
 VERSION ?= 0.2.2
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
@@ -25,6 +29,11 @@ skillbundle-verify:
 	go run ./internal/skillbundle/cmd evaluate .
 
 verify:
+	python3 scripts/verify-budget.py $(MAKE) verify-stages
+
+.PHONY: verify-stages
+verify-stages:
+	@python3 scripts/verify-budget-stage.py --check
 	$(MAKE) skillbundle-verify
 	$(MAKE) console-verify
 	go mod tidy
@@ -33,7 +42,7 @@ verify:
 	test -z "$$(gofmt -l ./cmd ./internal ./web)"
 	./scripts/build-source.sh ./aegis
 	python3 scripts/build_source_test.py
-	python3 -m unittest scripts/console_browser_test_test.py
+	python3 -m unittest scripts/console_browser_test_test.py scripts/verification_resources_test.py
 	python3 -m unittest scripts/demo_no_key_test.py
 	python3 -m unittest scripts/operator_acceptance_poc_test.py
 	python3 -m unittest scripts/verify_installed_fleet_vertical_test.py
@@ -42,8 +51,8 @@ verify:
 	./scripts/verify_installed_mvi_test.sh
 	./scripts/verify_release_candidate_test.sh
 	./scripts/verify-installed-mvi.sh
-	go test ./...
-	go test -race ./...
+	go test -timeout=10m ./...
+	go test -race -timeout=15m ./...
 	go vet ./...
 	$(GOVULNCHECK) ./...
 

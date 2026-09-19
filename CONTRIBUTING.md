@@ -12,25 +12,26 @@
 Skill distribution regressions run with `go test ./internal/skillbundle/... -race -parallel=2`. Use a repository-local temporary-directory base, constrained Go concurrency, and explicitly selected disposable homes. Managed installation tests cover exact bytes, local drift, metadata retention, update/rollback, interruption and locking; they do not prove supported Hermes or model behavior. Do not use normal profiles or independently run hub updates against a managed inventory.
 
 ```sh
-go mod download
-./scripts/build-source.sh ./aegis
-python3 scripts/build_source_test.py
-python3 scripts/verify-console-vendor.py
-python3 scripts/console_security_test.py
-go generate ./web/console
-git diff --exit-code -- web/console go.mod go.sum
-go test ./...
-go test -race ./...
-go vet ./...
-go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
-govulncheck ./...
-test -z "$(gofmt -l ./cmd ./internal)"
-./scripts/verify_installed_mvi_test.sh
-python3 -m unittest scripts/verify_release_archive_test.py
-python3 -m unittest scripts/verify_installed_fleet_vertical_test.py
-./scripts/verify_release_candidate_test.sh
-./scripts/verify-installed-mvi.sh
+make verify
 ```
+
+The complete verification gate requires Linux cgroup v2 and an available systemd
+user manager (`systemctl --user show-environment`). It fails closed without them;
+macOS release archives remain supported, but full release verification runs on
+Linux, not through an unbounded macOS fallback. The supervisor limits the entire
+owned descendant tree to 6 GiB RAM, zero swap, 256 tasks, two CPU cores' quota,
+and one hour. Stage diagnostics report elapsed time and aggregate cgroup usage.
+Go defaults are inherited (`GOFLAGS=-p=1`, `GOMAXPROCS=2`); explicit settings are
+preserved but cannot escape the aggregate supervisor limits. This is resource
+custody, not a filesystem or credential sandbox.
+
+Run focused commands under the same budget, for example:
+
+```sh
+GOFLAGS=-p=1 GOMAXPROCS=2 python3 scripts/verify-budget.py \
+  go test -timeout=3m ./internal/testprocess ./internal/persistence/authority/badger
+```
+
 
 Before opening or updating a pull request, commit the candidate and run the exact-head release-readiness gate used by CI:
 

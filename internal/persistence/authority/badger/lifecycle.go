@@ -425,11 +425,9 @@ func (s *Store) Close() error {
 	}
 	s.closed = true
 	defer s.lease.release()
-	if err := s.db.Sync(); err != nil {
-		s.closeErr = err
-		return err
-	}
-	if err := s.db.Close(); err != nil {
+	// Closing owns resource release even when durability failed. Never publish
+	// CLEAN after either failure; repeated Close calls retain the original error.
+	if err := syncAndClose(s.db.Sync, s.db.Close); err != nil {
 		s.closeErr = err
 		return err
 	}
@@ -443,6 +441,12 @@ func (s *Store) Close() error {
 	}
 	s.closeErr = writeMarker(s.root, "CLEAN", s.generation)
 	return s.closeErr
+}
+
+func syncAndClose(syncDB, closeDB func() error) error {
+	syncErr := syncDB()
+	closeErr := closeDB()
+	return errors.Join(syncErr, closeErr)
 }
 
 func options(path string) badgerdb.Options {

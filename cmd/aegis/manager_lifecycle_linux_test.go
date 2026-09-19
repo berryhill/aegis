@@ -5,7 +5,9 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"os/user"
@@ -22,7 +24,7 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 	root := t.TempDir()
 	binary := filepath.Join(root, "aegis")
 	build := exec.Command("go", "build", "-ldflags=-X=github.com/berryhill/aegis/internal/buildinfo.Version=test", "-o", binary, ".")
-	if output, err := build.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
 		t.Fatalf("build lifecycle fixture: %v\n%s", err, output)
 	}
 	for _, test := range []struct {
@@ -200,6 +202,7 @@ func startManagerPTY(t *testing.T, binary, configPath string) (*exec.Cmd, *os.Fi
 		t.Fatal(err)
 	}
 	master := os.NewFile(uintptr(masterFD), "ptmx")
+	t.Cleanup(func() { _ = master.Close() })
 	if err = unix.IoctlSetPointerInt(masterFD, unix.TIOCSPTLCK, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -211,22 +214,36 @@ func startManagerPTY(t *testing.T, binary, configPath string) (*exec.Cmd, *os.Fi
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = slave.Close() })
 	initial, err := unix.IoctlGetTermios(int(slave.Fd()), unix.TCGETS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command(binary, "--config", configPath, "manager")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
+	command := exec.CommandContext(ctx, binary, "--config", configPath, "manager")
+	command.Cancel = func() error { return syscall.Kill(-command.Process.Pid, syscall.SIGKILL) }
+	command.WaitDelay = 2 * time.Second
 	command.Stdin, command.Stdout, command.Stderr = slave, slave, slave
 	command.Env = append(os.Environ(), "HOME="+filepath.Join(filepath.Dir(configPath), "home"), "XDG_CONFIG_HOME="+filepath.Join(filepath.Dir(configPath), "xdg-config"), "XDG_STATE_HOME="+filepath.Join(filepath.Dir(configPath), "xdg-state"))
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if err = command.Start(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if command.ProcessState == nil {
+			_ = command.Wait()
+		}
+	})
 	return command, master, slave, initial
 }
 
 func readPTYUntil(t *testing.T, master *os.File, initial []byte, marker string, timeout time.Duration) []byte {
 	t.Helper()
+	if len(initial) > 1<<20 {
+		t.Fatal("PTY output limit exceeded")
+	}
 	capture := bytes.NewBuffer(append([]byte(nil), initial...))
 	deadline := time.Now().Add(timeout)
 	poll := []unix.PollFd{{Fd: int32(master.Fd()), Events: unix.POLLIN | unix.POLLHUP | unix.POLLERR}}
@@ -247,6 +264,9 @@ func readPTYUntil(t *testing.T, master *os.File, initial []byte, marker string, 
 		buffer := make([]byte, 1024)
 		n, err := master.Read(buffer)
 		if n > 0 {
+			if capture.Len()+n > 1<<20 {
+				t.Fatal("PTY output limit exceeded")
+			}
 			capture.Write(buffer[:n])
 		}
 		if err != nil {

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,7 +109,7 @@ while read rest; do :; done
 	build := exec.Command("go", "build", "-p=1", "-ldflags=-X github.com/berryhill/aegis/internal/buildinfo.Version=0.0.0-hello-fixture", "-o", binary, "./cmd/aegis")
 	build.Dir = "../.."
 	build.Env = append(os.Environ(), "GOMAXPROCS=2")
-	if out, e := build.CombinedOutput(); e != nil {
+	if out, e := testprocess.CombinedOutput(build, 2*time.Minute); e != nil {
 		t.Fatalf("build: %v %s", e, out)
 	}
 	cfg := save("owner.json", svc.Config)
