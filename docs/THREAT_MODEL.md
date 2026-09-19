@@ -227,7 +227,7 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 | Prompt or stale record impersonates an Agent workspace | Controller derives a sealed workspace only after fresh principal authentication and exact latest-enabled Agent/owner readback | A compromised authenticated principal can delegate within that principal's policy |
 | Shared definition visibility becomes mutation authority | Fleet-wide reads/references are separate from stable-owner-only publication and lifecycle checks | Shared definitions can reveal non-secret fleet structure |
 | Workspace submits as an unrelated participant or manages another owner's Queue item | Exact Agent revision must be a pinned Graph participant; submission and Queue records carry owner provenance checked on mutation | This is application authorization, not tenant isolation from the host account |
-| Workspace submission executes without runtime authority | It starts `awaiting-runtime`; only an immutable fresh controller runtime binding plus normal admission can make it claimable | No automatic binder or scheduler is provided |
+| Workspace submission executes without runtime authority | It starts `preparation-pending`; only an immutable fresh controller runtime binding plus normal admission can make it claimable | No automatic binder or scheduler is provided |
 | Registered Agent reaches credentials | Workspace capability set contains no credential rights; credential administration/application remains controller-only | Root, kernel, or compromised controller remains outside this boundary |
 
 ## Online Loop publication boundary

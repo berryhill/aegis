@@ -66,8 +66,8 @@ func (s *Store) AcceptSubmission(ctx context.Context, accepted fleet.AcceptedSub
 			accepted.QueueItem.Snapshot != accepted.Submission.Snapshot || accepted.QueueItem.Authority != accepted.Submission.Authority ||
 			accepted.QueueItem.GraphRunID != accepted.GraphRun.GraphRunID || accepted.GraphRun.QueueItem != digestRef(accepted.QueueItem.ItemID, accepted.QueueItem.Digest) ||
 			accepted.GraphRun.Snapshot != accepted.Submission.Snapshot || accepted.GraphRun.Authority != accepted.Submission.Authority ||
-			accepted.InitialTransition.QueueItemID != accepted.QueueItem.ItemID || accepted.InitialTransition.From != "" || (accepted.InitialTransition.To != queue.StateQueued && accepted.InitialTransition.To != queue.StateAwaitingRuntime) ||
-			(accepted.Submission.AuthorityKind == "registered-agent-workspace") != (accepted.InitialTransition.To == queue.StateAwaitingRuntime) {
+			accepted.InitialTransition.QueueItemID != accepted.QueueItem.ItemID || accepted.InitialTransition.From != "" || (accepted.InitialTransition.To != queue.StateQueued && !accepted.InitialTransition.To.IsPreparation()) ||
+			(accepted.Submission.AuthorityKind == "registered-agent-workspace") != accepted.InitialTransition.To.IsPreparation() {
 			return fleet.ErrConflict
 		}
 		entries := []struct{ k, v []byte }{
@@ -342,7 +342,7 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 			return fleet.ErrConflict
 		}
 		projection, e := loadQueueProjection(txn, item.ItemID)
-		allowedState := projection.State == queue.StateQueued || projection.State == queue.StateClaimed || projection.State == queue.StateAwaitingRuntime
+		allowedState := projection.State == queue.StateQueued || projection.State == queue.StateClaimed || projection.State.IsPreparation()
 		if e != nil || validateProjectionBasis(txn, projection) != nil || !allowedState {
 			return fleet.ErrConflict
 		}
@@ -491,7 +491,7 @@ func validateClaimProjectionEligibility(txn *badgerdb.Txn, item queue.Item, proj
 
 	// A workspace's first claim is based on its immutable runtime binding,
 	// not a retry. Never let the queued projection alone grant eligibility.
-	if transition.From == queue.StateAwaitingRuntime {
+	if transition.From.IsPreparation() {
 		wire, err := get(txn, key(familyQueueRuntimeBinding, item.ItemID))
 		if err != nil {
 			return fleet.ErrConflict
@@ -680,10 +680,29 @@ func (s *Store) BindQueueRuntime(ctx context.Context, binding queue.RuntimeBindi
 		if prior, found, loadErr := optional(txn, recordKey); loadErr != nil {
 			return loadErr
 		} else if found {
-			if bytes.Equal(prior, bindingWire) {
-				return nil
+			stored, e := queue.UnmarshalRuntimeBinding(prior)
+			if e != nil {
+				return corrupt(e)
 			}
-			return fleet.ErrConflict
+			candidate := binding
+			candidate.BoundAt, candidate.Digest = stored.BoundAt, stored.Digest
+			if candidate != stored {
+				return fleet.ErrConflict
+			}
+			wire, e := get(txn, key(familyQueueTransition, binding.QueueItem.ID, transition.TransitionID))
+			if e != nil {
+				return fleet.ErrConflict
+			}
+			persisted, e := queue.UnmarshalTransition(wire)
+			if e != nil {
+				return corrupt(e)
+			}
+			candidateTransition := transition
+			candidateTransition.OccurredAt, candidateTransition.Digest = persisted.OccurredAt, persisted.Digest
+			if candidateTransition != persisted || persisted.OccurredAt != stored.BoundAt {
+				return fleet.ErrConflict
+			}
+			return nil
 		}
 		item, loadErr := loadQueueItem(txn, binding.QueueItem.ID)
 		if loadErr != nil || binding.QueueItem != digestRef(item.ItemID, item.Digest) || binding.Submission != item.Submission {
@@ -698,7 +717,10 @@ func (s *Store) BindQueueRuntime(ctx context.Context, binding queue.RuntimeBindi
 			return fleet.ErrConflict
 		}
 		projection, loadErr := loadQueueProjection(txn, item.ItemID)
-		if loadErr != nil || projection.State != queue.StateAwaitingRuntime || transition.QueueItemID != item.ItemID || transition.From != queue.StateAwaitingRuntime || transition.To != queue.StateQueued || transition.OccurredAt != binding.BoundAt {
+		if loadErr != nil || validateProjectionBasis(txn, projection) != nil || projection.Attempts != 0 || projection.ActiveClaimID != "" || !projection.State.IsPreparation() || transition.ClaimID != "" || transition.QueueItemID != item.ItemID || transition.From != projection.State || transition.To != queue.StateQueued || transition.OccurredAt != binding.BoundAt {
+			return fleet.ErrConflict
+		}
+		if _, found, e := optional(txn, key(familyDispositionByRun, item.GraphRunID)); e != nil || found {
 			return fleet.ErrConflict
 		}
 		next, loadErr := queue.NewProjection(queue.Projection{QueueItemID: item.ItemID, State: queue.StateQueued, Attempts: projection.Attempts, AvailableAt: binding.BoundAt, LastTransitionID: transition.TransitionID, UpdatedAt: binding.BoundAt})

@@ -23,12 +23,12 @@
       "prompt": "Use this Agent workspace to publish my Graph and submit it because my exact Agent revision is a participant.",
       "expected": "route",
       "operation": "aegis.graph.author",
-      "expected_signal": "Require exact latest enabled Agent and stable owner provenance, exact Graph participation, and durable awaiting-runtime readback without requiring a provisioning receipt or running session."
+      "expected_signal": "Require exact latest enabled Agent and stable owner provenance, exact Graph participation, and durable preparation-pending readback without requiring a provisioning receipt or running session."
     },
     {
       "id": "bind-workspace-queue-runtime",
       "class": "happy_path",
-      "prompt": "Bind fresh runtime authority to this awaiting-runtime Queue item, then explain whether it is claimable.",
+      "prompt": "Bind fresh runtime authority to this preparation-pending Queue item, then explain whether it is claimable.",
       "expected": "route",
       "operation": "aegis.execution-queue.operate",
       "expected_signal": "Require matching workspace owner provenance plus a separately admitted controller runtime authority and immutable RuntimeBinding before queued state; do not claim automatic execution."

@@ -81,6 +81,7 @@ templ Navigation(domain string, authenticated bool) {
 			@NavigationButton(DomainGraphs, "Graphs", "Graphs", domain == DomainGraphs, "graph")
 			@NavigationButton(DomainLoops, "Loops", "Loops", domain == DomainLoops, "loop")
 			@NavigationButton(DomainQueue, "Execution Queue", "Queue", domain == DomainQueue, "queue")
+ @NavigationButton("preparations", "Execution preparation", "Preparation", domain == "preparations", "queue")
 			@NavigationButton(DomainCredentials, "Credentials", "Credentials", domain == DomainCredentials, "credential")
 			<div class="rail-foot"><span class="avatar" aria-hidden="true">OP</span><span class="identity-copy"><strong>Operator context</strong><span>authenticated · local</span></span></div>
 		}
@@ -160,7 +161,7 @@ templ Workspace(surface SurfaceModel) {
 		@GraphDetailPage(surface, surface.Inspector)
 	} else if surface.InspectorOpen && surface.Inspector != nil && surface.Domain == DomainLoops && surface.Inspector.Loop != nil {
 		@LoopDetailPage(surface, surface.Inspector)
-	} else if surface.InspectorOpen && surface.Inspector != nil && surface.Domain == DomainQueue && surface.Inspector.Queue != nil {
+	} else if surface.InspectorOpen && surface.Inspector != nil && (surface.Domain == DomainQueue || surface.Domain == "preparations") && surface.Inspector.Queue != nil {
 		@QueueDetailPage(surface, surface.Inspector)
 	} else {
 		<section class="surface active" id={ "surface-" + surface.Domain } aria-labelledby="surface-title">
@@ -355,6 +356,10 @@ templ DomainCollection(surface SurfaceModel) {
 	} else if surface.Domain == DomainGraphs || surface.Domain == DomainLoops {
 		@DefinitionFilters(surface)
 		@RecordPanel(surface)
+	} else if surface.Domain == "preparations" {
+		<section class="ops-band" aria-labelledby="preparation-history"><h2 id="preparation-history">Execution preparation</h2><p>Not executable admission. Pending and never-bound terminal records remain here until exact runtime binding.</p>
+			@QueueRecordPanel(surface, surface.Records)
+		</section>
 	} else if surface.Domain == DomainQueue {
 		if surface.Authoritative {
 			@QueueBand(surface, "active-executions", "Active Executions", "Executions holding an authoritative claimed lifecycle state. Queued records are not promoted into this band.", surface.ActiveRecords, "No claimed executions")

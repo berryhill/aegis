@@ -18,7 +18,10 @@ func TestGraphWorkspaceRecipeDistinguishesAuthorityPaths(t *testing.T) {
 		"`agent_id` selector",
 		"omit `authority` and `workspace`",
 		"server-derived workspace provenance",
-		"`awaiting_runtime`",
+		"`preparation-pending`",
+		"legacy `awaiting-runtime` remains readable",
+		"not runnable `queued`",
+		"fresh controller-issued runtime binding",
 		"`rejection_idempotency_key` is not a supported field",
 	} {
 		if !strings.Contains(text, required) {

@@ -24,35 +24,36 @@ import (
 
 type fleetServiceRepository struct {
 	fleet.Repository
-	registration     registry.AgentRegistration
-	agent            registry.AgentRevision
-	agents           map[string]registry.AgentRevision
-	loop             loop.LoopRevision
-	graph            graph.GraphRevision
-	loopLifecycle    loop.Lifecycle
-	graphLifecycle   graph.Lifecycle
-	loadErr          error
-	accepted         *fleet.AcceptedSubmission
-	rejected         *queue.Rejection
-	registerFact     fleet.AuditFact
-	revisionFact     fleet.AuditFact
-	loopPublished    bool
-	loopPublication  loop.PublishRequest
-	loopProvenance   map[string]loop.PublicationProvenance
-	lifecycleEvent   loop.LifecycleEvent
-	lifecycleCalls   int
-	graphPublished   bool
-	graphPublication graph.PublishRequest
-	loopExecution    execution.LoopExecution
-	claim            queue.Claim
-	attempt          execution.Attempt
-	completion       fleet.Completion
-	projection       queue.Projection
-	retryMutation    fleet.RetryMutation
-	cancelMutation   fleet.CancellationMutation
-	terminalCtxErr   error
-	runtimeBinding   queue.RuntimeBinding
-	runtimeBound     bool
+	registration      registry.AgentRegistration
+	agent             registry.AgentRevision
+	agents            map[string]registry.AgentRevision
+	loop              loop.LoopRevision
+	graph             graph.GraphRevision
+	loopLifecycle     loop.Lifecycle
+	graphLifecycle    graph.Lifecycle
+	loadErr           error
+	accepted          *fleet.AcceptedSubmission
+	rejected          *queue.Rejection
+	registerFact      fleet.AuditFact
+	revisionFact      fleet.AuditFact
+	loopPublished     bool
+	loopPublication   loop.PublishRequest
+	loopProvenance    map[string]loop.PublicationProvenance
+	lifecycleEvent    loop.LifecycleEvent
+	lifecycleCalls    int
+	graphPublished    bool
+	graphPublication  graph.PublishRequest
+	loopExecution     execution.LoopExecution
+	claim             queue.Claim
+	attempt           execution.Attempt
+	completion        fleet.Completion
+	projection        queue.Projection
+	retryMutation     fleet.RetryMutation
+	cancelMutation    fleet.CancellationMutation
+	terminalCtxErr    error
+	runtimeBinding    queue.RuntimeBinding
+	runtimeTransition queue.QueueTransition
+	runtimeBound      bool
 }
 
 type staticFleetSource []registry.Candidate
@@ -107,7 +108,7 @@ func (repository *fleetServiceRepository) GetQueueProjection(context.Context, st
 	if repository.projection.State != "" {
 		return repository.projection, nil
 	}
-	return queue.Projection{State: queue.StateQueued, AvailableAt: repository.accepted.QueueItem.AvailableAt}, nil
+	return queue.Projection{State: repository.accepted.InitialTransition.To, AvailableAt: repository.accepted.QueueItem.AvailableAt}, nil
 }
 func (repository *fleetServiceRepository) GetClaim(context.Context, string) (queue.Claim, error) {
 	return repository.claim, nil
@@ -209,9 +210,13 @@ func (repository *fleetServiceRepository) BindQueueRuntime(_ context.Context, bi
 		return repository.runtimeBinding.Digest == binding.Digest, nil
 	}
 	repository.runtimeBinding = binding
+	repository.runtimeTransition = transition
 	repository.runtimeBound = true
 	repository.projection = queue.Projection{QueueItemID: transition.QueueItemID, State: transition.To, AvailableAt: repository.accepted.QueueItem.AvailableAt}
 	return true, nil
+}
+func (repository *fleetServiceRepository) ListQueueTransitions(context.Context, string) ([]queue.QueueTransition, error) {
+	return []queue.QueueTransition{repository.accepted.InitialTransition, repository.runtimeTransition}, nil
 }
 func (repository *fleetServiceRepository) AppendLoopLifecycle(_ context.Context, request loop.LifecycleRequest, _ fleet.AuditFact) (loop.LifecycleEvent, bool, error) {
 	repository.lifecycleEvent = request.Event

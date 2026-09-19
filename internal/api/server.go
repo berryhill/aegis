@@ -679,7 +679,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return subject, form, nil
 	}
 	e.GET("/console", consolePage)
-	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consoleCredentials} {
+	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consolePreparations, consoleCredentials} {
 		e.GET("/console/"+string(domain), consolePage)
 	}
 	e.GET("/console/agents/charter-import", charterImportPage)
@@ -1741,7 +1741,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
-		values, err := svc.ListQueueAs(c.Request().Context(), subject)
+		values, err := svc.ListExecutableQueueAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, values)
+	})
+	g.GET("/preparations", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		values, err := svc.ListPreparationsAs(c.Request().Context(), subject)
 		if err != nil {
 			return err
 		}
@@ -1824,6 +1835,21 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
 		}
 		value, err := svc.ProcessQueueItemAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/loops/queue", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.QueueLoopInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.QueueLoopAs(c.Request().Context(), subject, input)
 		if err != nil {
 			return err
 		}

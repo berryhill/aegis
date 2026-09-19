@@ -102,3 +102,11 @@ After interruption, inspect the exact immutable revision and lifecycle history b
 Loop definitions and examples must contain no authentication material, credential values, broker capabilities, private prompts, raw runtime output, unrelated private host paths, or secret-shaped canaries. Verified implementation contracts necessarily bind the explicit owner-approved workspace path; do not publish it beyond the intended fleet. Report only bounded non-secret authority references and provenance returned by Aegis; do not expose credential or capability values.
 
 Consult `specs/CANONICAL_DOMAINS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/STORAGE.md`, the root `README.md`, and installed command help for normative and shipped behavior. Installing this advisory skill grants no Aegis identity, authority, publication right, lifecycle right, runtime capability, or filesystem/network access.
+
+## Single authenticated Loop execution request
+
+`aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` explicitly selects a compatible legacy preparation for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
+
+The controller composes the minimal exact Graph, prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
+
+The durable `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. An interrupted preparation with no reusable authority remains blocked as `session_preparation_in_progress_or_interrupted`; explicit operator recovery is required. Do not delete the fence or mint substitute authority as automatic crash handling.

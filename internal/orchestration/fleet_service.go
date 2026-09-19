@@ -741,7 +741,7 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 	}
 	initialState, initialReason := queue.StateQueued, "submission accepted"
 	if request.Workspace != nil {
-		initialState, initialReason = queue.StateAwaitingRuntime, "submission accepted; awaiting exact runtime authority binding"
+		initialState, initialReason = queue.StatePreparationPending, "preparation accepted; not executable until exact runtime authority is bound"
 	}
 	transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.TransitionID, QueueItemID: item.ItemID, To: initialState, Reason: initialReason, OccurredAt: now})
 	if err != nil {

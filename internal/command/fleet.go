@@ -211,6 +211,22 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
+	queueLoop := &cobra.Command{Use: "queue FILE", Short: "Queue and process one exact Loop in the foreground", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		var input app.QueueLoopInput
+		if err := decodeJSONFile(args[0], &input); err != nil {
+			return usage(err)
+		}
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		value, err := service.QueueLoop(cmd.Context(), input)
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}}
+	command.AddCommand(queueLoop)
 	command.AddCommand(list, loopExampleCmd(), loopHelloCmd(), loopImplementationCmd(), validate, publish, show, activate, retire)
 	return command
 }
@@ -287,12 +303,24 @@ func fleetGraphsCmd(build builder) *cobra.Command {
 
 func fleetQueueCmd(build builder) *cobra.Command {
 	command := &cobra.Command{Use: "queue", Short: "Inspect and process authority-bound Execution Queue items"}
+	command.AddCommand(&cobra.Command{Use: "preparations", Short: "List non-executable preparation requests", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		values, err := service.ListPreparations(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return output(cmd, values)
+	}})
 	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		service, err := build(cmd)
 		if err != nil {
 			return err
 		}
 		values, err := service.ListQueue(cmd.Context())
+		values, _ = app.PartitionExecutionViews(values)
 		if err != nil {
 			return err
 		}

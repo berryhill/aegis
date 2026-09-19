@@ -193,11 +193,12 @@ func agentOperationReason(err error) string {
 type consoleDomain string
 
 const (
-	consoleAgents      consoleDomain = "agents"
-	consoleLoops       consoleDomain = "loops"
-	consoleGraphs      consoleDomain = "graphs"
-	consoleQueue       consoleDomain = "queue"
-	consoleCredentials consoleDomain = "credentials"
+	consoleAgents       consoleDomain = "agents"
+	consoleLoops        consoleDomain = "loops"
+	consoleGraphs       consoleDomain = "graphs"
+	consoleQueue        consoleDomain = "queue"
+	consolePreparations consoleDomain = "preparations"
+	consoleCredentials  consoleDomain = "credentials"
 )
 
 type consoleSignals struct {
@@ -239,7 +240,7 @@ func parseConsoleDomain(raw string) (consoleDomain, error) {
 		return consoleAgents, nil
 	}
 	switch domain {
-	case consoleAgents, consoleLoops, consoleGraphs, consoleQueue, consoleCredentials:
+	case consoleAgents, consoleLoops, consoleGraphs, consoleQueue, consolePreparations, consoleCredentials:
 		return domain, nil
 	default:
 		return "", errors.New("unknown console domain")
@@ -385,6 +386,11 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 		for _, value := range surface.Graphs {
 			values = append(values, value)
 		}
+	case consolePreparations:
+		model.Title, model.Eyebrow, model.Description = "Execution preparation", "Not executable", "Blocked runtime preparation. No worker is started. Foundational approval, provisioning and exact implementation-contract authorization remain explicit prerequisites."
+		for _, value := range surface.Preparations {
+			values = append(values, value)
+		}
 	case consoleQueue:
 		model.Title, model.Eyebrow, model.Description = "Execution Queue", "Runtime", "Submissions judged at admission. An admitted submission becomes an execution against an exact pinned definition version; a refused one never does. Select a record to inspect it against the revision it pinned."
 		for _, value := range surface.Queue {
@@ -446,7 +452,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Graph record")
 			}
 			record = consoleGraphRecord(graphView, surface.Submissions, string(data), surface.Graphs)
-		} else if domain == consoleQueue {
+		} else if domain == consoleQueue || domain == consolePreparations {
 			queueView, ok := value.(app.QueueExecutionView)
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Execution Queue record")
@@ -924,7 +930,21 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	}
 	detail.Participant = queueParticipantLabel(view)
 	// 2. Timeline from authoritative lifecycle facts.
-	detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Queued", State: string(view.Item.State), At: consoleTime(view.Item.EnqueuedAt), Detail: view.Item.ItemID, Cause: string(view.Item.State)})
+	initialTitle := "Queued"
+	initialState := view.Item.State
+	// The immutable item may retain the compatibility queued state. The
+	// original transition, not that compatibility field, records admission.
+	for _, transition := range view.Transitions {
+		if transition.From == "" {
+			initialState = transition.To
+			break
+		}
+	}
+	if initialState.IsPreparation() {
+		initialTitle = "Preparation recorded"
+		detail.AdmittedAt = "Not admitted at initial recording"
+	}
+	detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: initialTitle, State: string(initialState), At: consoleTime(view.Item.EnqueuedAt), Detail: view.Item.ItemID, Cause: string(initialState)})
 	for _, child := range view.LoopExecutions {
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Loop execution", State: string(child.State), At: consoleTime(child.CreatedAt), Detail: child.LoopExecutionID + " · node " + child.GraphNodeID, Cause: string(child.State)})
 		detail.Links = append(detail.Links,
@@ -975,7 +995,8 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	// 4. Admission tab.
 	detail.Admission = append(detail.Admission,
 		consoleweb.FieldModel{Label: "Admitted", Value: fallback(state, "Unavailable")},
-		consoleweb.FieldModel{Label: "State", Value: string(view.Item.State)},
+		consoleweb.FieldModel{Label: "State", Value: string(view.Projection.State)},
+		consoleweb.FieldModel{Label: "Initial state (historical)", Value: string(initialState)},
 		consoleweb.FieldModel{Label: "Max attempts", Value: fmt.Sprintf("%d", view.Item.MaxAttempts)},
 		consoleweb.FieldModel{Label: "Recorded attempts", Value: fmt.Sprintf("%d", view.Projection.Attempts)},
 		consoleweb.FieldModel{Label: "Available", Value: consoleTime(view.Projection.AvailableAt)},
@@ -2140,7 +2161,7 @@ func consoleRecordLabel(domain consoleDomain, value any) string {
 		if record, ok := value.(app.GraphView); ok {
 			return fmt.Sprintf("%s · revision %d", record.Revision.GraphID, record.Revision.Revision)
 		}
-	case consoleQueue:
+	case consoleQueue, consolePreparations:
 		if record, ok := value.(app.QueueExecutionView); ok {
 			return fmt.Sprintf("%s · %s", record.Item.ItemID, record.Projection.State)
 		}

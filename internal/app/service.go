@@ -992,16 +992,19 @@ func (s *Service) ApplyAs(ctx context.Context, sub core.Subject, planID, approva
 	return r, err
 }
 
-func (s *Service) hasVerifiedReceipt(digest string) bool {
+func (s *Service) hasVerifiedReceipt(digest string) (bool, error) {
 	found := false
-	_ = s.Store.List("receipts", func(b json.RawMessage) error {
+	err := s.Store.List("receipts", func(b json.RawMessage) error {
 		var r core.Receipt
-		if json.Unmarshal(b, &r) == nil && r.CharterDigest == digest && r.Status == "verified" {
+		if err := json.Unmarshal(b, &r); err != nil {
+			return err
+		}
+		if r.CharterDigest == digest && r.Status == "verified" {
 			found = true
 		}
 		return nil
 	})
-	return found
+	return found, err
 }
 
 // RecoverProvisioning converts durable in-progress intents left by an
@@ -1087,8 +1090,12 @@ func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent 
 	if err != nil {
 		return core.Mandate{}, core.Decision{}, err
 	}
-	if !s.hasVerifiedReceipt(c.Digest) {
-		return core.Mandate{}, core.Decision{}, fmt.Errorf("%w: charter has no verified provisioning receipt", ErrDenied)
+	verified, receiptErr := s.hasVerifiedReceipt(c.Digest)
+	if receiptErr != nil {
+		return core.Mandate{}, core.Decision{Reason: "provisioning_receipt_unavailable"}, fmt.Errorf("%w: provisioning_receipt_unavailable", ErrDenied)
+	}
+	if !verified {
+		return core.Mandate{}, core.Decision{Reason: "provisioning_receipt_missing"}, fmt.Errorf("%w: provisioning_receipt_missing", ErrDenied)
 	}
 	d, err := s.Select(c, sub, requested, env)
 	if err != nil {
@@ -1268,7 +1275,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		Authority: core.EffectiveAuthority{
 			StanzaID: m.StanzaID, Capabilities: append([]string(nil), m.Capabilities...),
 			Tools: append([]string(nil), m.Tools...), Memory: append([]string(nil), m.Scopes.Memory...),
-			Credentials: append([]string{}, m.Scopes.Credentials...), Hermes: m.Hermes,
+			Credentials: append([]string(nil), m.Scopes.Credentials...), Hermes: m.Hermes,
 		},
 		IssuedAt: issuedAt, ExpiresAt: m.ExpiresAt,
 	}

@@ -1,5 +1,7 @@
 # Changelog
 
+Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. This is not the completed one-action queue-this-Loop workflow. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
+
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
 
 ## Unreleased

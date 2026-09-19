@@ -26,7 +26,7 @@ aegis --config OWNER_CONFIG --target CONSOLE_URL loops show LOOP REVISION
 
 After explicit activation approval, prepare a lifecycle file with `agent_id`, exact `loop` reference, fresh `event_id` and actual lifecycle predecessor digest. Run `loops activate LOOP lifecycle.json` with the same owning-service flags and read back the exact Loop.
 
-Follow the shipped Graph authoring contract to prepare a single-node Graph binding these exact Agent and Loop revision/digests. Expose `task` and `acceptance_criteria` string inputs. Request exactly `hello` without newline; prompt instructions are not evidence. Use the same owning-service flags for `graphs publish graph.json`, `graphs show GRAPH REVISION`, and `graphs submit submission.json`. Preserve the actual returned Queue ID. Workspace submission begins awaiting-runtime; it does not execute.
+Follow the shipped Graph authoring contract to prepare a single-node Graph binding these exact Agent and Loop revision/digests. Expose `task` and `acceptance_criteria` string inputs. Request exactly `hello` without newline; prompt instructions are not evidence. Use the same owning-service flags for `graphs publish graph.json`, `graphs show GRAPH REVISION`, and `graphs submit submission.json`. Preserve the actual returned Queue ID. Workspace submission begins preparation-pending; it does not execute.
 
 ## Runtime preparation is separate
 

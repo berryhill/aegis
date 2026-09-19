@@ -22,7 +22,7 @@ Use this skill to inspect durable Queue history or route one explicitly authoriz
 - The model must not invent or repair authority, Queue, Graph, Loop, participant, claim, attempt, runtime, evidence, receipt, disposition, transition, or lifecycle identifiers.
 - A claim is a bounded single-winner lease, not runtime admission. Aegis repeats fresh admission before claim, runtime effect, evidence verification, and terminal disposition.
 - Browser state and request fields do not grant authority. The authenticated console derives authority and operation identities server-side; CLI and HTTP files carry strict typed references consumed by the same application service.
-- A registered-Agent workspace may submit and manage only Queue work carrying its matching owner provenance and only when that exact Agent revision participates in the Graph. Such work begins `awaiting-runtime`; workspace authority cannot claim or process it.
+- A registered-Agent workspace may submit and manage only Queue work carrying its matching owner provenance and only when that exact Agent revision participates in the Graph. Such work begins `preparation-pending`; workspace authority cannot claim or process it.
 - The Aegis controller must commit a fresh `RuntimeBinding` and repeat normal admission before transition to claimable `queued` state and before every effect. No native agent transport, automatic binder, polling loop, or automatic execution is implied.
 
 ## Confirm the shipped surface
@@ -47,7 +47,7 @@ Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, an
 
 Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` for exact historical readback. Keep these records distinct:
 
-- The immutable Queue item binds one accepted submission, normalized Graph snapshot, Graph run, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. Workspace-originated authority is control-plane ownership, not runtime authority: read `awaiting-runtime` and its later immutable runtime binding separately, and never infer one from the other. The item is not rewritten by lifecycle changes.
+- The immutable Queue item binds one accepted submission, normalized Graph snapshot, Graph run, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. Workspace-originated authority is control-plane ownership, not runtime authority: read `preparation-pending` and its later immutable runtime binding separately, and never infer one from the other. The item is not rewritten by lifecycle changes.
 - The Queue projection is rebuildable current state derived from canonical lifecycle records. It reports state, attempt count, availability, active claim, and transition head, but cannot grant authority.
 - The Graph run is the stable parent execution identity for the accepted snapshot. A Loop execution is the stable child identity for one exact Graph node, Loop revision, and participant revision across retries.
 - Each attempt is one numbered bounded try under that same Graph run and Loop execution. A retry creates a new attempt only when work is claimed again; it never creates a new Queue item or substitutes immutable definitions.
@@ -111,3 +111,11 @@ After interruption, call `aegis queue show ITEM` before repeating anything. If t
 Queue request files, examples, and reports must contain no authentication material, credential values, broker capabilities, private prompts, raw runtime output, reusable provider material, runtime-home paths, or secret-shaped canaries. Return only bounded non-secret authority references, runtime metadata, content digests, receipt status, and canonical lifecycle evidence exposed by Aegis.
 
 Consult `README.md`, `specs/MVP.md`, `specs/CANONICAL_DOMAINS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/STORAGE.md`, `internal/app/fleet.go`, `internal/orchestration/queue_worker.go`, `internal/orchestration/queue_lifecycle.go`, and installed command help as the canonical source for shipped behavior. Installing this advisory skill grants no Aegis identity, authority, Queue right, runtime capability, credential access, filesystem/network access, or completion evidence.
+
+## Single authenticated Loop execution request
+
+`aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` explicitly selects a compatible legacy preparation for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
+
+The controller composes the minimal exact Graph, prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
+
+The durable `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. An interrupted preparation with no reusable authority remains blocked as `session_preparation_in_progress_or_interrupted`; explicit operator recovery is required. Do not delete the fence or mint substitute authority as automatic crash handling.

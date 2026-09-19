@@ -163,6 +163,15 @@ type FleetCommandAuthority struct {
 // controller-owned authority repositories prove runtime authority. Missing,
 // ambiguous, stale, revoked, expired, disabled, or retired state fails closed.
 func (s *Service) FleetCommandAuthorityAs(ctx context.Context, subject core.Subject) (FleetCommandAuthority, error) {
+	return s.fleetCommandAuthorityForAgent(ctx, subject, nil)
+}
+
+type runtimeAuthorityDiagnostic struct{ reason string }
+
+func (e *runtimeAuthorityDiagnostic) Error() string { return e.reason }
+func (e *runtimeAuthorityDiagnostic) Unwrap() error { return ErrDenied }
+
+func (s *Service) fleetCommandAuthorityForAgent(ctx context.Context, subject core.Subject, exact *registry.AgentRevision) (FleetCommandAuthority, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return FleetCommandAuthority{}, err
 	}
@@ -175,14 +184,14 @@ func (s *Service) FleetCommandAuthorityAs(ctx context.Context, subject core.Subj
 	}
 	var authority core.AuthorityContext
 	for _, candidate := range contexts {
-		if candidate.SubjectID != subject.ID {
+		if candidate.SubjectID != subject.ID || (exact != nil && (candidate.AgentID != exact.AgentID || candidate.CharterRevision != exact.Charter.Revision || candidate.CharterDigest != exact.Charter.Digest || candidate.Runtime.Runtime != exact.Runtime.Runtime)) {
 			continue
 		}
 		mandate, lookupErr := s.Authority.GetMandate(ctx, candidate.MandateID)
 		if lookupErr != nil {
 			return FleetCommandAuthority{}, ErrDenied
 		}
-		if core.ValidateAuthorityContext(candidate, mandate) != nil {
+		if core.ValidateAuthorityContext(candidate, mandate) != nil || (exact != nil && (mandate.Target != exact.Runtime.Target || exact.Runtime.Adapter != "hermes")) {
 			continue
 		}
 		admission, admissionErr := s.AuthorityCommands.AuthorityAdmission(ctx, candidate.ID, candidate.Digest, s.Now())
@@ -193,12 +202,12 @@ func (s *Service) FleetCommandAuthorityAs(ctx context.Context, subject core.Subj
 			continue
 		}
 		if authority.ID != "" {
-			return FleetCommandAuthority{}, ErrDenied
+			return FleetCommandAuthority{}, &runtimeAuthorityDiagnostic{"runtime_authority_ambiguous"}
 		}
 		authority = candidate
 	}
 	if authority.ID == "" {
-		return FleetCommandAuthority{}, ErrDenied
+		return FleetCommandAuthority{}, &runtimeAuthorityDiagnostic{"no_live_exact_runtime_session"}
 	}
 	publisher, err := s.FleetRepository.LatestAgentRevision(ctx, authority.AgentID)
 	if err != nil || publisher.Lifecycle != registry.LifecycleEnabled {
@@ -259,20 +268,21 @@ type QueueExecutionView struct {
 	// Submission is the admitted queued request with full mandate context. It
 	// is resolved through the repository independently of Item.Submission,
 	// which only carries the immutable submission digest reference.
-	Submission     queue.Submission                   `json:"submission"`
-	Projection     queue.Projection                   `json:"projection"`
-	GraphRun       execution.GraphRun                 `json:"graph_run"`
-	LoopExecutions []execution.LoopExecution          `json:"loop_executions"`
-	Attempts       []execution.Attempt                `json:"attempts"`
-	Claims         []queue.Claim                      `json:"claims"`
-	Transitions    []queue.QueueTransition            `json:"transitions"`
-	Retries        []queue.Retry                      `json:"retries"`
-	Cancellations  []queue.Cancellation               `json:"cancellations"`
-	Runtime        registry.RuntimeBinding            `json:"runtime"`
-	NodeRuntimes   map[string]registry.RuntimeBinding `json:"node_runtimes,omitempty"`
-	Artifact       *evidence.RuntimeArtifact          `json:"artifact,omitempty"`
-	Receipts       []evidence.VerificationReceipt     `json:"receipts"`
-	Disposition    *disposition.Record                `json:"disposition,omitempty"`
+	Submission              queue.Submission                   `json:"submission"`
+	RuntimeAuthorityBinding *queue.RuntimeBinding              `json:"runtime_authority_binding,omitempty"`
+	Projection              queue.Projection                   `json:"projection"`
+	GraphRun                execution.GraphRun                 `json:"graph_run"`
+	LoopExecutions          []execution.LoopExecution          `json:"loop_executions"`
+	Attempts                []execution.Attempt                `json:"attempts"`
+	Claims                  []queue.Claim                      `json:"claims"`
+	Transitions             []queue.QueueTransition            `json:"transitions"`
+	Retries                 []queue.Retry                      `json:"retries"`
+	Cancellations           []queue.Cancellation               `json:"cancellations"`
+	Runtime                 registry.RuntimeBinding            `json:"runtime"`
+	NodeRuntimes            map[string]registry.RuntimeBinding `json:"node_runtimes,omitempty"`
+	Artifact                *evidence.RuntimeArtifact          `json:"artifact,omitempty"`
+	Receipts                []evidence.VerificationReceipt     `json:"receipts"`
+	Disposition             *disposition.Record                `json:"disposition,omitempty"`
 }
 
 type SurfaceReadiness struct {
@@ -313,6 +323,7 @@ type FleetSurface struct {
 	Graphs            []GraphView                        `json:"graphs"`
 	Submissions       SubmissionHistory                  `json:"submissions"`
 	Queue             []QueueExecutionView               `json:"queue"`
+	Preparations      []QueueExecutionView               `json:"preparations"`
 	Credentials       []CredentialView                   `json:"credentials"`
 	CredentialRecords []CredentialView                   `json:"credential_records"`
 	VaultStatus       VaultStatusView                    `json:"vault_status"`
@@ -1017,6 +1028,15 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		if loadErr != nil || view.Submission.Digest != item.Submission.Digest || view.Submission.SubmissionID != item.Submission.ID {
 			return nil, fleet.ErrCorrupt
 		}
+		binding, bindingErr := s.FleetRepository.GetQueueRuntimeBinding(ctx, item.ItemID)
+		if bindingErr == nil {
+			if binding.QueueItem.ID != item.ItemID || binding.QueueItem.Digest != item.Digest || binding.Submission != item.Submission {
+				return nil, fleet.ErrCorrupt
+			}
+			view.RuntimeAuthorityBinding = &binding
+		} else if !errors.Is(bindingErr, fleet.ErrNotFound) {
+			return nil, bindingErr
+		}
 		view.Transitions, err = s.FleetRepository.ListQueueTransitions(ctx, item.ItemID)
 		if err != nil {
 			return nil, err
@@ -1086,7 +1106,7 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 				view.Claims = append(view.Claims, claim)
 			}
 		}
-		if projection.State != queue.StateQueued && projection.State != queue.StateClaimed && projection.State != queue.StateAwaitingRuntime {
+		if projection.State != queue.StateQueued && projection.State != queue.StateClaimed && !projection.State.IsPreparation() {
 			dispositionRecord, loadErr := s.FleetRepository.GetDispositionByGraphRun(ctx, item.GraphRunID)
 			if loadErr != nil || dispositionRecord.QueueItem.ID != item.ItemID || dispositionRecord.QueueItem.Digest != item.Digest {
 				return nil, fleet.ErrCorrupt
@@ -1297,6 +1317,8 @@ func (s *Service) FleetSurfaceAs(ctx context.Context, subject core.Subject) (Fle
 		if ctx.Err() != nil {
 			return FleetSurface{}, ctx.Err()
 		}
+		surface.Queue, surface.Preparations = PartitionExecutionViews(surface.Queue)
+		surface.Readiness["preparations"] = collectionReadiness(len(surface.Preparations), "fleet.queue_items", err)
 		surface.Readiness["queue"] = collectionReadiness(len(surface.Queue), "fleet.queue_items", err)
 		for _, action := range []orchestration.FleetAction{
 			orchestration.FleetActionRegister, orchestration.FleetActionLoopPublish, orchestration.FleetActionGraphPublish,

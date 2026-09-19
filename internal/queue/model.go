@@ -26,16 +26,24 @@ const (
 type State string
 
 const (
-	StateAwaitingRuntime State = "awaiting-runtime"
-	StateQueued          State = "queued"
-	StateClaimed         State = "claimed"
-	StateSucceeded       State = "succeeded"
-	StateFailed          State = "failed"
-	StateDenied          State = "denied"
-	StateCancelled       State = "cancelled"
-	StateExpired         State = "expired"
-	StateRevoked         State = "revoked"
+	// StatePreparationPending is accepted definition/workspace intent, not
+	// executable admission. StateAwaitingRuntime remains readable for legacy facts.
+	StatePreparationPending State = "preparation-pending"
+	StateAwaitingRuntime    State = "awaiting-runtime"
+	StateQueued             State = "queued"
+	StateClaimed            State = "claimed"
+	StateSucceeded          State = "succeeded"
+	StateFailed             State = "failed"
+	StateDenied             State = "denied"
+	StateCancelled          State = "cancelled"
+	StateExpired            State = "expired"
+	StateRevoked            State = "revoked"
 )
+
+// IsPreparation identifies non-executable intent, including legacy records.
+func (s State) IsPreparation() bool {
+	return s == StatePreparationPending || s == StateAwaitingRuntime
+}
 
 // Submission is the immutable admitted request. Authority is an exact context
 // reference supplied by an authenticated application boundary, not by a model.

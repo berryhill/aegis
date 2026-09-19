@@ -430,6 +430,9 @@ func revisionRefKey(ref reference.RevisionRef) string {
 	return ref.ID + "\x00" + fmt.Sprint(ref.Revision) + "\x00" + ref.Digest
 }
 
+// CanonicalInputJSON applies the same strict input encoding used by snapshots.
+func CanonicalInputJSON(data []byte) ([]byte, error) { return canonicalJSON(data) }
+
 func canonicalJSON(data []byte) ([]byte, error) {
 	if len(data) == 0 || len(data) > MaxInputValueBytes || !utf8.Valid(data) {
 		return nil, errors.New("JSON value is empty, oversized, or invalid UTF-8")

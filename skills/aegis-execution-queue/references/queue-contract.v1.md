@@ -8,7 +8,7 @@ request-level schema_version field absent from the public decoder.
 
 ## Binding workspace work
 
-Read `aegis queue show ITEM` first. Require awaiting-runtime state and exact
+Read `aegis queue show ITEM` first. Require preparation-pending state and exact
 workspace owner/Agent provenance. The controller obtains an existing authenticated
 runtime authority for that same Agent through the supported session boundary.
 Copy bind-runtime.v1.json to an operator-approved request file and replace its
