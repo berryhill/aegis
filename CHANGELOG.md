@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Added plan-bound Linux development orphan-socket recovery for an absent exact-profile configuration, preserving live/unsafe transport and unrelated state. Reset no longer reports completion while the next bootstrap transport remains present.
+
 ### Fixed
 
 - Stream the gateway-intake test's complete plaintext-canary scan with bounded memory, including matches across read boundaries, instead of loading preallocated Badger value logs into memory. Production storage options and race/security gates are unchanged.

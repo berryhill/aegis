@@ -212,6 +212,13 @@ func resetCmdWithPreparation(service *resetdomain.Service, isTerminal func(io.Re
 			if err = service.Apply(cmd.Context(), plan); err != nil {
 				return err
 			}
+			nextState := options.stateDir
+			if nextState == "" {
+				nextState = config.Defaults().StateDir
+			}
+			if err = requireBootstrapTransportAbsent(filepath.Join(nextState, "transport", "aegis.sock")); err != nil {
+				return fmt.Errorf("%s: %w", resetdomain.ReasonIncomplete, err)
+			}
 			return output(cmd, map[string]any{"state": "uninitialized", "reason": "reset_complete", "gateway_purged": gatewayPurged, "next_command": "aegis", "retained_empty_legacy_directories": plan.LegacyRetained})
 		},
 	}
