@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import secrets
+import signal
 import socket
 import struct
 import subprocess
@@ -357,6 +358,14 @@ def replace_text(devtools: DevTools, selector: str, text: str) -> None:
     require(retained is True, f"browser control did not replace text: {selector}")
 
 
+def signal_chrome_group(process: subprocess.Popen, sig: int) -> None:
+    """Signal the group created at launch, even after its leader has exited."""
+    try:
+        os.killpg(process.pid, sig)
+    except ProcessLookupError:
+        pass
+
+
 def stop_chrome(process: subprocess.Popen, devtools: DevTools | None) -> None:
     """Wait for Chrome's orderly child/profile shutdown before deleting its home."""
     try:
@@ -371,15 +380,21 @@ def stop_chrome(process: subprocess.Popen, devtools: DevTools | None) -> None:
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.terminate()
+            signal_chrome_group(process, signal.SIGTERM)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
+                signal_chrome_group(process, signal.SIGKILL)
                 process.wait(timeout=5)
     finally:
-        if devtools is not None:
-            devtools.close()
+        # Browser.close/leader exit does not imply all descendants exited. Keep
+        # this unconditional, including startup failure and direct invocation.
+        try:
+            signal_chrome_group(process, signal.SIGKILL)
+            process.wait(timeout=5)
+        finally:
+            if devtools is not None:
+                devtools.close()
 
 
 def tap(devtools: DevTools, selector: str) -> None:
@@ -657,6 +672,7 @@ def main() -> int:
         stdout=subprocess.DEVNULL,
         stderr=chrome_stderr,
         env=chrome_environment(),
+        start_new_session=True,
         text=True,
     )
     devtools: DevTools | None = None

@@ -21,8 +21,11 @@ macOS release archives remain supported, but full release verification runs on
 Linux, not through an unbounded macOS fallback. The supervisor limits the entire
 owned descendant tree to 6 GiB RAM, zero swap, 256 tasks, two CPU cores' quota,
 and one hour. Stage diagnostics report elapsed time and aggregate cgroup usage.
-Go defaults are inherited (`GOFLAGS=-p=1`, `GOMAXPROCS=2`); explicit settings are
-preserved but cannot escape the aggregate supervisor limits. This is resource
+Go defaults are inherited (`GOFLAGS=-p=1`, `GOMAXPROCS=2`, `GOMEMLIMIT=512MiB`); explicit settings are
+preserved but cannot escape the aggregate supervisor limits. `GOMEMLIMIT` is a
+per-Go-process soft GC target, not a hard RSS limit; the unchanged 6 GiB cgroup
+remains the aggregate hard limit. It collects retired integration-fixture heaps
+without changing Badger storage/cache/durability options. This is resource
 custody, not a filesystem or credential sandbox.
 
 Run focused commands under the same budget, for example:

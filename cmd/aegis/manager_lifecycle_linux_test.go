@@ -53,8 +53,10 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 			if test.phrase != "" {
 				_, _ = master.Write([]byte(test.phrase + "\r"))
 				capture = readPTYUntil(t, master, capture, "The local Aegis management model is unavailable (", 3*time.Second)
-				if process.ProcessState != nil {
+				select {
+				case <-process.done:
 					t.Fatal("phrase containing exit alias terminated manager")
+				default:
 				}
 				// The response marker precedes the next Composer.Read call. Wait until
 				// that call has entered raw mode before sending carriage return;
@@ -68,8 +70,7 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 			} else {
 				_, _ = master.Write([]byte(test.input))
 			}
-			wait := make(chan error, 1)
-			go func() { wait <- process.Wait() }()
+			wait := process.done
 			deadline := time.Now().Add(5 * time.Second)
 			buffer := make([]byte, 1024)
 			poll := []unix.PollFd{{Fd: int32(master.Fd()), Events: unix.POLLIN | unix.POLLHUP | unix.POLLERR}}
@@ -82,8 +83,8 @@ func TestManagerPTYLifecycleSignalsEOFAndExitAliases(t *testing.T) {
 					}
 				}
 				select {
-				case err := <-wait:
-					if err != nil {
+				case <-wait:
+					if err := process.Wait(); err != nil {
 						t.Fatalf("manager exit: %v output=%q", err, capture)
 					}
 					goto exited
@@ -195,7 +196,59 @@ func TestSecondSIGINTForcesTerminationDuringBlockedCleanup(t *testing.T) {
 	}
 }
 
-func startManagerPTY(t *testing.T, binary, configPath string) (*exec.Cmd, *os.File, *os.File, *unix.Termios) {
+// managerProcess has exactly one exec.Cmd.Wait owner. Closing done publishes
+// the result to every observer, including cleanup after a test timeout/FailNow.
+type managerProcess struct {
+	*exec.Cmd
+	done chan struct{}
+	err  error
+}
+
+func watchManager(command *exec.Cmd) *managerProcess {
+	process := &managerProcess{Cmd: command, done: make(chan struct{})}
+	go func() {
+		process.err = command.Wait()
+		close(process.done)
+	}()
+	return process
+}
+
+func (process *managerProcess) Wait() error {
+	<-process.done
+	return process.err
+}
+
+func (process *managerProcess) stop() {
+	_ = syscall.Kill(-process.Process.Pid, syscall.SIGKILL)
+	_ = process.Wait()
+}
+
+func TestManagerExclusiveWaiterCleanup(t *testing.T) {
+	command := exec.Command("sh", "-c", "sleep 30 & wait")
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process := watchManager(command)
+	t.Cleanup(process.stop)
+	waiters := make(chan error, 8)
+	for i := 0; i < cap(waiters); i++ {
+		go func() { waiters <- process.Wait() }()
+	}
+	process.stop() // Simulate timeout cleanup while other callers wait.
+	for i := 0; i < cap(waiters); i++ {
+		select {
+		case err := <-waiters:
+			if err == nil || err != process.Wait() {
+				t.Fatalf("inconsistent wait result: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("waiter did not join cleanup")
+		}
+	}
+}
+
+func startManagerPTY(t *testing.T, binary, configPath string) (*managerProcess, *os.File, *os.File, *unix.Termios) {
 	t.Helper()
 	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -230,13 +283,9 @@ func startManagerPTY(t *testing.T, binary, configPath string) (*exec.Cmd, *os.Fi
 	if err = command.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
-		if command.ProcessState == nil {
-			_ = command.Wait()
-		}
-	})
-	return command, master, slave, initial
+	process := watchManager(command)
+	t.Cleanup(process.stop)
+	return process, master, slave, initial
 }
 
 func readPTYUntil(t *testing.T, master *os.File, initial []byte, marker string, timeout time.Duration) []byte {

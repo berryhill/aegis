@@ -92,7 +92,14 @@ class ResourceTests(unittest.TestCase):
         with mock.patch.object(module.shutil, 'which', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'no unbounded fallback'):
                 module.command(['true'])
-        unit, command = module.command(['true'])
+        with (mock.patch.object(module.sys, 'platform', 'linux'),
+              mock.patch.object(module.Path, 'exists', return_value=True),
+              mock.patch.object(module.shutil, 'which', return_value='/fixture/systemd-run')):
+            for environment, expected in (({}, '512MiB'), ({'GOMEMLIMIT': '384MiB'}, '384MiB')):
+                with mock.patch.dict(module.os.environ, environment, clear=True):
+                    unit, command = module.command(['true'])
+                self.assertIn('--setenv=GOMEMLIMIT=' + expected, command)
+                self.assertEqual(sum(arg.startswith('--setenv=GOMEMLIMIT=') for arg in command), 1)
         for prop in ('MemoryMax=6G', 'MemorySwapMax=0', 'TasksMax=256', 'RuntimeMaxSec=3600', 'KillMode=control-group'):
             self.assertIn('--property='+prop, command)
 

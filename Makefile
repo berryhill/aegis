@@ -7,6 +7,8 @@ export GOTOOLCHAIN := go1.26.6
 # Inherited by nested Go builds as well as package tests. Explicit values win.
 override export GOFLAGS := $(if $(filter -p=% -p,$(GOFLAGS)),$(GOFLAGS),$(strip $(GOFLAGS) -p=1))
 export GOMAXPROCS ?= 2
+# Collect retired fixture heaps before their host-sized GC goal exceeds the cgroup.
+export GOMEMLIMIT ?= 512MiB
 .NOTPARALLEL:
 
 VERSION ?= 0.2.2

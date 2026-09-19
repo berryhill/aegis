@@ -8,6 +8,32 @@ Non-goals: no service/laptop configuration changes, release publication, weaker 
 
 Proof policy: low concurrency, bounded cgroup execution, durable proof roots. Production storage tuning is not changed merely to make tests cheaper. Launch review and actual verification evidence follow in the delivery review.
 
+## Independent-review corrections
+
+- PTY fixtures now have one exclusive `exec.Cmd.Wait` goroutine. A closed completion
+  channel publishes its result to all callers; timeout cleanup kills the owned
+  group and joins that same waiter without polling `ProcessState`.
+- Direct Chrome launches own a process group. Cleanup signals the entire group
+  even after a successful leader exit; the leader-before-child regression uses
+  real processes. Integrated verification still requires the aggregate cgroup:
+  process groups alone do not confine deliberately escaping native processes.
+- `testprocess.CombinedOutput` accepts an unstarted plain `exec.Command` specification,
+  preserves argv[0], inherited descriptors, directory, stdin and environment, and
+  explicitly rejects context/custom process settings and preassigned output.
+  Architecture tests classify it as test-only and deny application imports,
+  including from the command binary.
+- Supervisor command-construction tests mock platform/cgroup/systemd discovery.
+- The first clean candidate failed architecture classification and later hit the
+  unchanged 6 GiB cgroup OOM limit. A focused `internal/command` run with the new
+  `GOMEMLIMIT=512MiB` soft target passed in 50.480s. This supports reducing GC heap
+  accumulation, not blaming or tuning storage: Badger cache, memtable, sync and
+  conflict options remain unchanged. Full-suite and race readback are separate
+  acceptance requirements, not implied by that focused result.
+
+The soft Go target is inherited by Make, the supervisor and nested testprocess
+builds; explicit overrides remain supported. It is not a hard per-process RSS
+ceiling or a replacement for cgroup enforcement.
+
 ## Launch-asset impact review
 
 - Updated CONTRIBUTING.md: the complete bounded gate and Linux/systemd/cgroup-v2 prerequisites, explicit macOS verification denial, focused supervised command, inherited defaults and limits.

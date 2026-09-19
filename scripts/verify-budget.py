@@ -19,7 +19,8 @@ def command(argv):
         "--property=KillMode=control-group", "--property=OOMPolicy=kill",
         "--property=MemoryAccounting=yes", "--property=CPUAccounting=yes",
         "--working-directory=" + os.getcwd(),
-        *["--setenv=" + k for k in os.environ],
+        *["--setenv=" + k for k in os.environ if k != "GOMEMLIMIT"],
+        "--setenv=GOMEMLIMIT=" + os.environ.get("GOMEMLIMIT", "512MiB"),
         "--setenv=AEGIS_VERIFY_UNIT=" + unit + ".service", "--", *argv]
 
 

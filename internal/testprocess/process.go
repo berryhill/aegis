@@ -28,6 +28,9 @@ func conservativeEnv(environment []string) []string {
 	if values["GOMAXPROCS"] == "" {
 		values["GOMAXPROCS"] = "2"
 	}
+	if values["GOMEMLIMIT"] == "" {
+		values["GOMEMLIMIT"] = "512MiB"
+	}
 	flags := values["GOFLAGS"]
 	explicit := false
 	for _, flag := range strings.Fields(flags) {
@@ -59,15 +62,30 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	return b.data.Write(p)
 }
 
-// CombinedOutput retains the caller's command configuration but gives it a
-// deadline, bounded output, pipe-drain deadline and owned-child cleanup.
+// CombinedOutput runs an unstarted exec.Command with a helper-owned deadline,
+// output capture and process group. It preserves Path, Args (including argv[0]),
+// Dir, Stdin and ExtraFiles; Env gains conservative Go defaults. CommandContext,
+// custom cancellation/process attributes, output writers and WaitDelay are not
+// supported and are rejected rather than silently discarded. The caller's Cmd
+// is a specification only: its Process/ProcessState are not populated.
 func CombinedOutput(command *exec.Cmd, timeout time.Duration) ([]byte, error) {
+	if command == nil || len(command.Args) == 0 || timeout <= 0 {
+		return nil, errors.New("test process requires a command and positive timeout")
+	}
+	if command.Err != nil {
+		return nil, command.Err
+	}
+	if command.Process != nil || command.ProcessState != nil || command.Cancel != nil ||
+		command.SysProcAttr != nil || command.Stdout != nil || command.Stderr != nil || command.WaitDelay != 0 {
+		return nil, errors.New("test process unsupported command settings: use an unstarted exec.Command without context, process attributes, output writers or WaitDelay")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	bounded := exec.CommandContext(ctx, command.Path, command.Args[1:]...)
 	bounded.Env, bounded.Dir, bounded.Stdin = command.Env, command.Dir, command.Stdin
 	bounded.Env = conservativeEnv(bounded.Env)
-	bounded.SysProcAttr = command.SysProcAttr
+	bounded.Args = append([]string(nil), command.Args...)
+	bounded.ExtraFiles = append([]*os.File(nil), command.ExtraFiles...)
 	own(bounded)
 	bounded.WaitDelay = 2 * time.Second
 	var output boundedOutput
