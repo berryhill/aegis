@@ -8,6 +8,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Synchronize the manager slash-routing PTY test's exit input with the next raw-mode composer prompt, not the preceding response text. A phase-held response regression checks canonical CR-to-LF translation, clean exit, and terminal restoration; production terminal modes and verification timeouts are unchanged.
+
 - Stream the gateway-intake test's complete plaintext-canary scan with bounded memory, including matches across read boundaries, instead of loading preallocated Badger value logs into memory. Production storage options and race/security gates are unchanged.
 
 - Corrected exclusive lifecycle fixture waiting, direct-browser descendant cleanup after leader exit, host-independent supervisor tests and test-only helper dependency enforcement. Verification defaults now include a 512 MiB per-process Go soft memory target without changing the 6 GiB aggregate limit or persistence semantics.
