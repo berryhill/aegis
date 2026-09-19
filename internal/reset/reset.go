@@ -213,6 +213,11 @@ func (s *Service) Plan(ctx context.Context, configuredPath string) (Plan, error)
 		plan.Artifacts = append(plan.Artifacts, artifact)
 	}
 
+	if inspection.State == config.StateAbsent {
+		if err = s.addOrphanTransport(ctx, &plan, home); err != nil {
+			return Plan{}, err
+		}
+	}
 	if cfg != nil {
 		if legacy {
 			if cfg.StateDir != resolvedLayout.LegacyState || (cfg.Audit.CheckpointDir != resolvedLayout.LegacyCheckpoints && cfg.Audit.CheckpointDir != filepath.Join(resolvedLayout.LegacyState, "audit-checkpoints")) {
@@ -913,6 +918,9 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 			return changed(statErr)
 		}
 		got, identityErr := identity(info, info.IsDir())
+		if artifact.Kind == "orphan-socket" {
+			got, identityErr = socketIdentity(info)
+		}
 		if identityErr != nil || got != artifact.identity {
 			return changed(fmt.Errorf("artifact identity changed: %s", artifact.Path))
 		}
@@ -952,6 +960,11 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	// non-empty directory. The configuration is removed last so failed state
 	// cleanup cannot masquerade as a completed reset.
 	for _, artifact := range plan.Artifacts {
+		if artifact.Kind == "orphan-socket" {
+			if err = removeOrphan(ctx, artifact, plan.Artifacts); err != nil {
+				return incomplete(err)
+			}
+		}
 		if artifact.Kind != "file" || artifact.Path == plan.ConfigPath {
 			continue
 		}
@@ -960,7 +973,7 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 	for _, artifact := range plan.Artifacts {
-		if artifact.Kind != "directory" {
+		if artifact.Kind != "directory" || artifact.Status == "preserve-anchor" {
 			continue
 		}
 		if artifact.Path == filepath.Dir(plan.ConfigPath) {
@@ -978,7 +991,7 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 		}
 	}
 	for _, artifact := range plan.Artifacts {
-		if artifact.Kind == "directory" && artifact.Path == filepath.Dir(plan.ConfigPath) {
+		if artifact.Kind == "directory" && artifact.Status != "preserve-anchor" && artifact.Path == filepath.Dir(plan.ConfigPath) {
 			if err = removeExact(ctx, artifact); err != nil {
 				return incomplete(err)
 			}
@@ -987,6 +1000,12 @@ func (s *Service) Apply(ctx context.Context, plan Plan) error {
 	inspection := config.Inspect(plan.ConfigPath)
 	if inspection.State != config.StateAbsent {
 		return incomplete(fmt.Errorf("post-reset configuration state is %s", inspection.State))
+	}
+	if s.RepositoryResetRoot != "" {
+		socket := filepath.Join(s.RepositoryResetRoot, "state", "transport", "aegis.sock")
+		if _, err := os.Lstat(socket); !errors.Is(err, os.ErrNotExist) {
+			return incomplete(errors.New("development bootstrap transport is still present or unverified"))
+		}
 	}
 	entries, readErr := os.ReadDir(filepath.Dir(plan.ConfigPath))
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {

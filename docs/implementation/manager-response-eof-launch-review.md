@@ -33,4 +33,18 @@ Both passed (23.028s and 1.397s package durations). Earlier implementation evide
 | Release binaries/checksums (`.github/workflows/release.yml` and documented installed verifier) | Reviewed contract; source packaging unchanged. No archive generation, checksum acceptance, tag movement, or release publication. Laptop candidate `a2d5a334ad48d74deda194a02cb6b5c63aacc740` remains untouched. |
 | Focused contributor issues (`docs/contributing/ISSUE_BACKLOG.md`) | Reviewed local proposals; unaffected. No remote issues created. |
 
-Release readiness remains with the parent: this narrow PR does not certify all launch assets, rerun the full release gate, or resolve pre-existing documented launch/publication gaps. Active PR 269's worktree is outside this change.
+Release readiness remains with the parent: this narrow PR does not certify all launch assets, rerun the full release gate, or resolve pre-existing documented launch/publication gaps. PR 269's separate worktree is outside this change.
+
+## Integration of merged PR 269
+
+Merged main `d61fa2ba18e343f3551a250acb1a3099df5b96a6` into the existing PTY feature branch with a normal merge, preserving both changelog entries and the reset implementation/security documentation without conflict. The PTY fixes remain unchanged; the reset security and command-proof ledger is retained in `reset-orphan-launch-review.md`. No parent proof files, socket, or installed candidate were changed.
+
+Bounded combined regression:
+
+```sh
+timeout --kill-after=5s 160s env GOMAXPROCS=2 GOMEMLIMIT=512MiB go test -p=1 -parallel=1 -race ./cmd/aegis ./internal/tui ./internal/reset ./internal/initialize ./internal/command -run 'TestManager(ResponseSenderWaitsForComposerReadiness|SlashRoutingConsumesUnknownMalformedAndLeadingWhitespaceLocally|PTYLifecycleSignalsEOFAndExitAliases|ExclusiveWaiterCleanup)$|TestOrphan|Test.*Reset|TestFreshBootstrapTransport|TestBootstrapTransport|TestPlanRejectsPresentTransport|TestExplicitInitDecline' -count=1 -timeout=120s
+```
+
+Passed: manager 9.802s, reset 3.060s, initialize 1.018s, command 23.144s. The selected expression matched no `internal/tui` tests; its package result is not additional TUI coverage. No full suite was run.
+
+Integration launch review: README, SECURITY, threat model, architecture, path layout and quickstart retain PR 269's exact development-only reset safety claims; CONTRIBUTING retains the response/composer readiness rule; CHANGELOG retains both fixes. LICENSE, CODE_OF_CONDUCT, no-key demonstration/script, recording contract, contributor proposals and release workflow remain unaffected by this integration. No demo/recording replay, release archive/checksum verification, release publication or live-service acceptance is claimed. Parent retains exact-head CI, installed proof and final PR merge responsibility.

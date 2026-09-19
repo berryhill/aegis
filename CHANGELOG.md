@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Hardened orphan recovery with kernel VFS device/inode diagnostics (including relative/alias non-listening binds) and the validated API transport lifecycle lock held through removal and absence readback.
+- Added plan-bound Linux development orphan-socket recovery for an absent exact-profile configuration, preserving live/unsafe transport and unrelated state. Reset no longer reports completion while the next bootstrap transport remains present.
+
 ### Fixed
 
 - Synchronize the manager slash-routing PTY test's exit input with the next raw-mode composer prompt, not the preceding response text. A phase-held response regression checks canonical CR-to-LF translation, clean exit, and terminal restoration; production terminal modes and verification timeouts are unchanged.
