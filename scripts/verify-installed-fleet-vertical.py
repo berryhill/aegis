@@ -17,11 +17,16 @@ import pwd
 import secrets
 import socket
 import subprocess
+import runpy
 import sys
 import time
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, NoReturn
+
+# run_path callers do not add this directory to sys.path. Load the exact
+# repository-owned sibling without depending on cwd or mutating import paths.
+run_owned = runpy.run_path(str(Path(__file__).resolve().with_name("verification_process.py")))["run_owned"]
 
 
 def fail(message: str) -> NoReturn:
@@ -195,7 +200,8 @@ def main() -> int:
                 command.extend(["register", str(charter), str(fixture)])
             elif phase == "registration-readback":
                 command.append("registration-readback")
-            completed = subprocess.run(command, cwd=console_repo, env=environment, text=True, timeout=120, check=False)
+            completed = run_owned(command, cwd=console_repo, env=environment, timeout=120)
+            sys.stdout.buffer.write(completed.stdout)
             if completed.returncode != 0:
                 fail(f"real-browser {phase} phase exited {completed.returncode}")
         finally:

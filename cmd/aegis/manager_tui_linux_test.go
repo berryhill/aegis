@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"github.com/berryhill/aegis/internal/testprocess"
 	"os"
 	"os/exec"
 	"strings"
@@ -181,13 +182,16 @@ func TestManagerCore15ProductionPathInIsolatedDegradedSession(t *testing.T) {
 func buildTestBinary(t *testing.T, path string) {
 	t.Helper()
 	command := exec.Command("go", "build", "-ldflags=-X=github.com/berryhill/aegis/internal/buildinfo.Version=test", "-o", path, ".")
-	if output, err := command.CombinedOutput(); err != nil {
+	if output, err := testprocess.CombinedOutput(command, 2*time.Minute); err != nil {
 		t.Fatalf("build: %v\n%s", err, output)
 	}
 }
 
 func readPTYUntilCount(t *testing.T, master *os.File, initial []byte, marker string, count int, timeout time.Duration) []byte {
 	t.Helper()
+	if len(initial) > 1<<20 {
+		t.Fatal("PTY output limit exceeded")
+	}
 	capture := bytes.NewBuffer(append([]byte(nil), initial...))
 	deadline := time.Now().Add(timeout)
 	poll := []unix.PollFd{{Fd: int32(master.Fd()), Events: unix.POLLIN | unix.POLLHUP | unix.POLLERR}}
@@ -208,6 +212,9 @@ func readPTYUntilCount(t *testing.T, master *os.File, initial []byte, marker str
 		buffer := make([]byte, 1024)
 		n, readErr := master.Read(buffer)
 		if n > 0 {
+			if capture.Len()+n > 1<<20 {
+				t.Fatal("PTY output limit exceeded")
+			}
 			capture.Write(buffer[:n])
 		}
 		if readErr != nil {

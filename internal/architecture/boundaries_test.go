@@ -46,6 +46,9 @@ var allowedInternalImports = map[string][]string{
 	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway", "internal/principalauth"},
 }
 
+// These families are buildable fixture support, never application dependencies.
+var classifiedTestOnlyFamilies = map[string]struct{}{"testprocess": {}}
+
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
@@ -114,9 +117,12 @@ func TestProtectedPackagesRespectDependencyDirection(t *testing.T) {
 
 func inspectProductionImports(root string) ([]string, error) {
 	var violations []string
-	err := filepath.WalkDir(filepath.Join(root, "internal"), func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if entry.IsDir() && filepath.Dir(path) == root && entry.Name() != "internal" && entry.Name() != "cmd" {
+			return filepath.SkipDir
 		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
 			return nil
@@ -144,8 +150,17 @@ func inspectProductionImports(root string) ([]string, error) {
 				continue
 			}
 			target := "internal/" + strings.TrimPrefix(importPath, moduleInternal)
+			family := strings.Split(strings.TrimPrefix(importPath, moduleInternal), "/")[0]
+			if _, testOnly := classifiedTestOnlyFamilies[family]; testOnly {
+				violations = append(violations, fmt.Sprintf("%s imports test-only helper %s", filepath.ToSlash(path), importPath))
+			}
 			if protected != "" && !matchesAnyLayer(target, allowedInternalImports[protected]) {
 				violations = append(violations, fmt.Sprintf("%s imports %s: protected layer %s allows only %v", filepath.ToSlash(path), importPath, protected, allowedInternalImports[protected]))
+			}
+			// cmd binaries are composition roots, but must still obey the
+			// test-only dependency prohibition above.
+			if strings.HasPrefix(source, "cmd/") {
+				continue
 			}
 			// CLI and HTTP are outer adapters. No production package may make them
 			// an inward dependency; command is the sole HTTP composition owner.
@@ -363,6 +378,26 @@ func TestCanonicalTypeOwnerClassifierRejectsDuplicateSchema(t *testing.T) {
 	}
 }
 
+func TestTestOnlyHelpersCannotEnterProduction(t *testing.T) {
+	for _, source := range []string{"internal/command", "cmd/aegis"} {
+		t.Run(source, func(t *testing.T) {
+			root := t.TempDir()
+			directory := filepath.Join(root, source)
+			if err := os.MkdirAll(directory, 0700); err != nil {
+				t.Fatal(err)
+			}
+			fixture := []byte("package fixture\nimport _ \"github.com/berryhill/aegis/internal/testprocess\"\n")
+			if err := os.WriteFile(filepath.Join(directory, "violation.go"), fixture, 0600); err != nil {
+				t.Fatal(err)
+			}
+			violations, err := inspectProductionImports(root)
+			if err != nil || len(violations) != 1 || !strings.Contains(violations[0], "test-only helper") {
+				t.Fatalf("production helper import not rejected: %v, %v", violations, err)
+			}
+		})
+	}
+}
+
 func TestEveryProductionPackageFamilyIsClassified(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(repositoryRoot(t), "internal"))
 	if err != nil {
@@ -370,6 +405,9 @@ func TestEveryProductionPackageFamilyIsClassified(t *testing.T) {
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() || entry.Name() == "architecture" {
+			continue
+		}
+		if _, testOnly := classifiedTestOnlyFamilies[entry.Name()]; testOnly {
 			continue
 		}
 		if _, ok := classifiedProductionFamilies[entry.Name()]; !ok {

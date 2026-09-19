@@ -1,0 +1,49 @@
+# Release verification resource and termination contract
+
+Objective: retain every release gate while bounding verification CPU, memory, process count, output and elapsed time; always clean up owned children and close authority storage after failure.
+
+Acceptance: inherited conservative Go defaults with valid explicit overrides preserved; Linux cgroup-supervised verification with fail-closed unavailable supervision; bounded CDP framing/events/deadlines; process-tree timeout cleanup; bounded test helpers and PTY buffers; Sync-failure close regression with no CLEAN marker; exact-head CI and verified main merge.
+
+Non-goals: no service/laptop configuration changes, release publication, weaker signing/authority/admission gates, or claim that these source risks caused the reported desktop freeze.
+
+Proof policy: low concurrency, bounded cgroup execution, durable proof roots. Production storage tuning is not changed merely to make tests cheaper. Launch review and actual verification evidence follow in the delivery review.
+
+## Independent-review corrections
+
+- PTY fixtures now have one exclusive `exec.Cmd.Wait` goroutine. A closed completion
+  channel publishes its result to all callers; timeout cleanup kills the owned
+  group and joins that same waiter without polling `ProcessState`.
+- Direct Chrome launches own a process group. Cleanup signals the entire group
+  even after a successful leader exit; the leader-before-child regression uses
+  real processes. Integrated verification still requires the aggregate cgroup:
+  process groups alone do not confine deliberately escaping native processes.
+- `testprocess.CombinedOutput` accepts an unstarted plain `exec.Command` specification,
+  preserves argv[0], inherited descriptors, directory, stdin and environment, and
+  explicitly rejects context/custom process settings and preassigned output.
+  Architecture tests classify it as test-only and deny application imports,
+  including from the command binary.
+- Supervisor command-construction tests mock platform/cgroup/systemd discovery.
+- The first clean candidate failed architecture classification and later hit the
+  unchanged 6 GiB cgroup OOM limit. A focused `internal/command` run with the new
+  `GOMEMLIMIT=512MiB` soft target passed in 50.480s. This supports reducing GC heap
+  accumulation, not blaming or tuning storage: Badger cache, memtable, sync and
+  conflict options remain unchanged. Full-suite and race readback are separate
+  acceptance requirements, not implied by that focused result.
+
+The soft Go target is inherited by Make, the supervisor and nested testprocess
+builds; explicit overrides remain supported. It is not a hard per-process RSS
+ceiling or a replacement for cgroup enforcement.
+
+## Launch-asset impact review
+
+- Updated CONTRIBUTING.md: the complete bounded gate and Linux/systemd/cgroup-v2 prerequisites, explicit macOS verification denial, focused supervised command, inherited defaults and limits.
+- Updated CHANGELOG.md: verification resource/termination and authority-close corrections.
+- Updated CI and release workflows: retain all tests, race, vet, vulnerability, archive/checksum and installed gates behind supervision. No release is published by this change.
+- Updated README.md with the full-verification prerequisite; reviewed LICENSE, SECURITY.md, CODE_OF_CONDUCT.md, docs/THREAT_MODEL.md, docs/ARCHITECTURE.md and docs/QUICKSTART.md: identity, runtime, installation, trust and product CLI contracts unchanged. Verification limits are not a security sandbox or supported-platform expansion.
+- Reviewed docs/DEMO_NO_KEY.md, scripts/demo-no-key.sh, docs/RECORDING.md and retained docs/assets/aegis-no-key.{typescript,timing}: no demonstration command/output change; retained capture remains explicitly historical, not fresh provider or release evidence.
+- Reviewed .github/workflows/release.yml, archive/checksum verifier and docs/contributing/ISSUE_BACKLOG.md: packaging formats and owner publication boundaries unchanged; backlog is explicitly repository-local. No GitHub release, recording publication or contributor issue was created.
+
+The installed, full-suite, race and vulnerability gates must pass on the committed
+candidate before merge. A dirty-tree local gate correctly stops at provenance;
+that is not passing installed verification. Exact-head CI and independent parent
+review remain mandatory; this document does not attest they have completed.

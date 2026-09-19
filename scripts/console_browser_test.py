@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import secrets
+import signal
 import socket
 import struct
 import subprocess
@@ -23,6 +24,10 @@ class ProcessState(Protocol):
     def poll(self) -> int | None: ...
 
 
+CDP_TIMEOUT = 15
+MAX_FRAME_BYTES = 8 * 1024 * 1024
+MAX_EVENT_BYTES = 16 * 1024 * 1024
+MAX_EVENTS = 10000
 CHROME_START_TIMEOUT = 15
 PAGE_TARGET_TIMEOUT = 8
 TOUCH_PROOF_STORAGE_KEY = "aegis-browser-touch-proof"
@@ -57,6 +62,7 @@ class DevTools:
         require(websocket_url.startswith("ws://"), "Chrome exposed an unsupported DevTools URL")
         authority, path = websocket_url[5:].split("/", 1)
         host, port_text = authority.rsplit(":", 1)
+        self.deadline = time.monotonic() + CDP_TIMEOUT
         self.sock = socket.create_connection((host, int(port_text)), timeout=5)
         key = base64.b64encode(secrets.token_bytes(16)).decode("ascii")
         request = (
@@ -71,16 +77,25 @@ class DevTools:
         require(f"sec-websocket-accept: {expected}".lower() in response.lower(), "Chrome returned an invalid DevTools handshake")
         self.next_id = 1
         self.events: list[dict[str, Any]] = []
+        self.event_bytes = 0
 
     def _read_http_headers(self) -> str:
         data = bytearray()
         while b"\r\n\r\n" not in data:
-            chunk = self.sock.recv(4096)
+            self._remaining()
+            chunk = self.sock.recv(1)
             require(bool(chunk), "Chrome closed the DevTools handshake")
             data.extend(chunk)
+            require(len(data) <= 16384, "DevTools handshake exceeds limit")
         return data.decode("latin-1")
 
+    def _remaining(self) -> None:
+        remaining = self.deadline - time.monotonic()
+        require(remaining > 0, "DevTools absolute deadline exceeded")
+        self.sock.settimeout(remaining)
+
     def _frame(self, payload: bytes) -> bytes:
+        require(len(payload) <= MAX_FRAME_BYTES, "DevTools output exceeds limit")
         mask = secrets.token_bytes(4)
         size = len(payload)
         header = bytearray([0x81])
@@ -99,6 +114,7 @@ class DevTools:
     def _recv_exact(self, size: int) -> bytes:
         data = bytearray()
         while len(data) < size:
+            self._remaining()
             chunk = self.sock.recv(size - len(data))
             require(bool(chunk), "Chrome closed the DevTools connection")
             data.extend(chunk)
@@ -113,6 +129,8 @@ class DevTools:
                 size = struct.unpack("!H", self._recv_exact(2))[0]
             elif size == 127:
                 size = struct.unpack("!Q", self._recv_exact(8))[0]
+            require(size <= MAX_FRAME_BYTES, "DevTools frame exceeds limit")
+            require(first & 0x80 and not first & 0x70, "Unsupported fragmented DevTools frame")
             mask = self._recv_exact(4) if second & 0x80 else b""
             payload = self._recv_exact(size)
             if mask:
@@ -126,6 +144,8 @@ class DevTools:
                 return json.loads(payload)
 
     def command(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        self.deadline = time.monotonic() + CDP_TIMEOUT
+        self._remaining()
         identifier = self.next_id
         self.next_id += 1
         message: dict[str, Any] = {"id": identifier, "method": method}
@@ -133,10 +153,13 @@ class DevTools:
             message["params"] = params
         self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
         while True:
+            self._remaining()
             received = self.receive()
             if received.get("id") == identifier:
                 require("error" not in received, f"DevTools command {method} failed")
                 return received.get("result", {})
+            self.event_bytes += len(json.dumps(received).encode("utf-8"))
+            require(len(self.events) < MAX_EVENTS and self.event_bytes <= MAX_EVENT_BYTES, "DevTools event budget exceeded")
             self.events.append(received)
 
     def evaluate(self, expression: str) -> Any:
@@ -157,7 +180,9 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
             connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
             connection.request("GET", "/json/list")
             response = connection.getresponse()
-            payload = json.loads(response.read())
+            payload_bytes = response.read(MAX_FRAME_BYTES + 1)
+            require(len(payload_bytes) <= MAX_FRAME_BYTES, "DevTools target list exceeds limit")
+            payload = json.loads(payload_bytes)
             connection.close()
             pages = [target for target in payload if target.get("type") == "page"]
             if pages:
@@ -333,6 +358,14 @@ def replace_text(devtools: DevTools, selector: str, text: str) -> None:
     require(retained is True, f"browser control did not replace text: {selector}")
 
 
+def signal_chrome_group(process: subprocess.Popen, sig: int) -> None:
+    """Signal the group created at launch, even after its leader has exited."""
+    try:
+        os.killpg(process.pid, sig)
+    except ProcessLookupError:
+        pass
+
+
 def stop_chrome(process: subprocess.Popen, devtools: DevTools | None) -> None:
     """Wait for Chrome's orderly child/profile shutdown before deleting its home."""
     try:
@@ -347,15 +380,21 @@ def stop_chrome(process: subprocess.Popen, devtools: DevTools | None) -> None:
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.terminate()
+            signal_chrome_group(process, signal.SIGTERM)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
+                signal_chrome_group(process, signal.SIGKILL)
                 process.wait(timeout=5)
     finally:
-        if devtools is not None:
-            devtools.close()
+        # Browser.close/leader exit does not imply all descendants exited. Keep
+        # this unconditional, including startup failure and direct invocation.
+        try:
+            signal_chrome_group(process, signal.SIGKILL)
+            process.wait(timeout=5)
+        finally:
+            if devtools is not None:
+                devtools.close()
 
 
 def tap(devtools: DevTools, selector: str) -> None:
@@ -633,6 +672,7 @@ def main() -> int:
         stdout=subprocess.DEVNULL,
         stderr=chrome_stderr,
         env=chrome_environment(),
+        start_new_session=True,
         text=True,
     )
     devtools: DevTools | None = None

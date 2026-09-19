@@ -9,6 +9,8 @@ permissions:
 
 env:
   GO_VERSION: "1.26.6"
+  GOFLAGS: "-p=1"
+  GOMAXPROCS: "2"
 
 jobs:
   build-release:
@@ -19,6 +21,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Prepare verification cgroup supervisor
+        run: |
+          sudo systemctl start "user@$(id -u).service"
+          printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
       - name: Test source
         run: |
           set -eu
@@ -30,26 +36,13 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           [ "v$version" = "$GITHUB_REF_NAME" ]
           printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          python3 scripts/verify-console-vendor.py
-          python3 scripts/console_security_test.py
-          python3 scripts/build_source_test.py
-          go generate ./web/console
-          git diff --exit-code -- web/console go.mod go.sum
-          go run ./internal/skillbundle/cmd validate .
-          go run ./internal/skillbundle/cmd evaluate .
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-          test -z "$(gofmt -l ./cmd ./internal ./web)"
-          go test ./...
-          go test -race ./...
-          go vet ./...
-          go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+          make verify
       - name: Build release archives
         run: |
           set -eu
           version=${GITHUB_REF_NAME#v}
           revision=$(git rev-parse --verify HEAD^{commit})
-          ./scripts/verify-installed-mvi.sh "$version" dist "$revision"
+          python3 scripts/verify-budget.py ./scripts/verify-installed-mvi.sh "$version" dist "$revision"
       - name: Publish GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}

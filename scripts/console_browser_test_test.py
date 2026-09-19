@@ -1,4 +1,7 @@
 import pathlib
+import os
+import signal
+import sys
 import subprocess
 import tempfile
 import time
@@ -218,35 +221,67 @@ class NativeKeyTest(unittest.TestCase):
 
 
 class ChromeShutdownTest(unittest.TestCase):
-    def test_orderly_shutdown_waits_before_closing_devtools(self):
+    @unittest.skipUnless(sys.platform == "linux", "Linux process state assertion")
+    def test_cleanup_kills_child_after_leader_exits(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            marker = pathlib.Path(directory) / "child"
+            code = ('import subprocess,pathlib; '
+                    'p=subprocess.Popen(["sleep","30"]); '
+                    'pathlib.Path(' + repr(str(marker)) + ').write_text(str(p.pid))')
+            process = subprocess.Popen([sys.executable, "-c", code], start_new_session=True)
+            try:
+                process.wait(timeout=5)
+                pid = int(marker.read_text())
+                console_browser_test.stop_chrome(process, None)
+                for _ in range(100):
+                    status = pathlib.Path(f"/proc/{pid}/stat")
+                    if not status.exists() or status.read_text().split()[2] == "Z":
+                        break
+                    time.sleep(.01)
+                else:
+                    self.fail("Chrome descendant survived leader-first exit")
+            finally:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=5)
+
+    @mock.patch.object(console_browser_test, "signal_chrome_group")
+    def test_orderly_shutdown_waits_before_closing_devtools(self, signal_group):
         calls = mock.MagicMock()
         process, devtools = calls.process, calls.devtools
         process.poll.return_value = None
         console_browser_test.stop_chrome(process, devtools)
         self.assertEqual(calls.mock_calls, [
             mock.call.process.poll(), mock.call.devtools.command("Browser.close"),
-            mock.call.process.wait(timeout=5), mock.call.devtools.close(),
+            mock.call.process.wait(timeout=5), mock.call.process.wait(timeout=5), mock.call.devtools.close(),
         ])
 
-    def test_disconnected_browser_still_waits_for_exit(self):
+    @mock.patch.object(console_browser_test, "signal_chrome_group")
+    def test_disconnected_browser_still_waits_for_exit(self, signal_group):
         process, devtools = mock.MagicMock(), mock.MagicMock()
         process.poll.return_value = None
         devtools.command.side_effect = OSError("connection closed")
         console_browser_test.stop_chrome(process, devtools)
-        process.wait.assert_called_once_with(timeout=5)
+        self.assertEqual(process.wait.call_args_list, [mock.call(timeout=5), mock.call(timeout=5)])
         process.terminate.assert_not_called()
         devtools.close.assert_called_once_with()
 
-    def test_unresponsive_browser_has_bounded_terminate_kill_wait(self):
+    @mock.patch.object(console_browser_test, "signal_chrome_group")
+    def test_unresponsive_browser_has_bounded_terminate_kill_wait(self, signal_group):
         calls = mock.MagicMock()
         process = calls.process
         process.wait.side_effect = [subprocess.TimeoutExpired("chrome", 5),
-                                    subprocess.TimeoutExpired("chrome", 5), 0]
+                                    subprocess.TimeoutExpired("chrome", 5), 0, 0]
         console_browser_test.stop_chrome(process, None)
         self.assertEqual(calls.mock_calls, [
-            mock.call.process.wait(timeout=5), mock.call.process.terminate(),
-            mock.call.process.wait(timeout=5), mock.call.process.kill(),
-            mock.call.process.wait(timeout=5),
+            mock.call.process.wait(timeout=5), mock.call.process.wait(timeout=5),
+            mock.call.process.wait(timeout=5), mock.call.process.wait(timeout=5),
+        ])
+        self.assertEqual(signal_group.call_args_list, [
+            mock.call(process, signal.SIGTERM), mock.call(process, signal.SIGKILL),
+            mock.call(process, signal.SIGKILL),
         ])
 
 
@@ -346,6 +381,7 @@ class NativeTouchTest(unittest.TestCase):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env=console_browser_test.chrome_environment(),
+                start_new_session=True,
             )
             devtools = None
             try:

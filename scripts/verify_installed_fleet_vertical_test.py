@@ -5,6 +5,8 @@ from pathlib import Path
 import ast
 import runpy
 import subprocess
+import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -15,6 +17,21 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class InstalledFleetVerticalContract(unittest.TestCase):
+    def test_runpy_loads_owned_sibling_from_unrelated_cwd(self) -> None:
+        # A fresh isolated interpreter excludes repository/PYTHONPATH imports.
+        script = REPO / "scripts/verify-installed-fleet-vertical.py"
+        with tempfile.TemporaryDirectory() as cwd:
+            result = subprocess.run(
+                [sys.executable, "-I", "-c",
+                 "import runpy, sys; before = list(sys.path); "
+                 "proof = runpy.run_path(sys.argv[1]); "
+                 "assert callable(proof['run_owned']); "
+                 "assert proof['geometry_revision'](2)['revision'] == 1; "
+                 "assert sys.path == before", str(script)],
+                cwd=cwd, capture_output=True, text=True, timeout=10,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_registration_default_and_restart_precede_runtime_authority(self) -> None:
         proof = (REPO / "scripts" / "verify-installed-fleet-vertical.py").read_text(encoding="utf-8")
         tree = ast.parse(proof)
