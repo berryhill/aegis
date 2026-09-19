@@ -36,6 +36,7 @@ func newResetCommandFixture(t *testing.T, initialized bool) resetCommandFixture 
 	if err = os.Mkdir(home, 0700); err != nil {
 		t.Fatal(err)
 	}
+	isolateLifecycleEnvironment(t, home)
 	configPath := filepath.Join(home, ".config", "aegis", "aegis.yaml")
 	state := filepath.Join(home, "state")
 	copyUser := *current
@@ -73,7 +74,7 @@ func executeReset(t *testing.T, fixture resetCommandFixture, input string, termi
 	passphrase := addResetPassphraseAuthority(t, fixture)
 	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
 	var out bytes.Buffer
-	root := NewRoot(Dependencies{In: strings.NewReader(input), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return terminal }, Resetter: fixture.service})
+	root := NewRoot(Dependencies{UserService: absentUserService(t), In: strings.NewReader(input), Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return terminal }, Resetter: fixture.service})
 	root.SetArgs([]string{"--config", fixture.config, "reset"})
 	if ctx != nil {
 		root.SetContext(ctx)
@@ -166,6 +167,7 @@ func TestProductionBareResetSelectsDiscoveredFormerLayout(t *testing.T) {
 		Profile:     ProductionProfile,
 		IsTerminal:  func(io.Reader, io.Writer) bool { return true },
 		Resetter:    fixture.service,
+		UserService: absentUserService(t),
 	})
 	root.SetArgs([]string{"reset"})
 	if err = root.Execute(); err != nil {
@@ -375,7 +377,7 @@ func TestResetAuthenticationPolicyDiffersByExecutionProfile(t *testing.T) {
 				return nil
 			}
 			var output bytes.Buffer
-			command := resetCmdWithAuthenticator(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, test.profile, authenticate)
+			command := resetCmdWithHooks(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, test.profile, authenticate, isolatedResetPurger(t))
 			command.SetIn(strings.NewReader("yes\n"))
 			command.SetOut(&output)
 			command.SetErr(io.Discard)
@@ -449,7 +451,7 @@ func TestProductionResetSecondAuthenticationFailureWritesNothing(t *testing.T) {
 		}
 		return nil
 	}
-	command := resetCmdWithAuthenticator(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile, authenticate)
+	command := resetCmdWithHooks(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile, authenticate, isolatedResetPurger(t))
 	command.SetIn(strings.NewReader("yes\n"))
 	command.SetOut(io.Discard)
 	command.SetErr(io.Discard)
@@ -534,7 +536,7 @@ func TestProductionResetAuthenticatesRealAuthorityTwice(t *testing.T) {
 	fixture := newResetCommandFixture(t, true)
 	passphrase := addResetPassphraseAuthority(t, fixture)
 	provider := &sequencePassphrases{values: [][]byte{append([]byte(nil), passphrase...), append([]byte(nil), passphrase...)}}
-	command := resetCmd(fixture.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile)
+	command := resetCmdWithRunner(fixture.service, absentUserService(t), func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: fixture.config}, ProductionProfile)
 	command.SetContext(context.WithValue(context.Background(), authorityPassphraseContextKey{}, AuthorityPassphraseProvider(provider)))
 	command.SetIn(strings.NewReader("yes\n"))
 	command.SetOut(io.Discard)
@@ -677,7 +679,7 @@ func TestResetThenBareOnboardingAndNonTTYBoundary(t *testing.T) {
 
 	var interactive bytes.Buffer
 	provider := &sequencePassphrases{values: [][]byte{[]byte("principal-password")}}
-	root := NewRoot(Dependencies{In: strings.NewReader("yes\n/status\n/quit\n"), Out: &interactive, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	root := NewRoot(Dependencies{UserService: absentUserService(t), In: strings.NewReader("yes\n/status\n/quit\n"), Out: &interactive, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--config", fixture.config, "--state-dir", fixture.state})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
@@ -697,7 +699,7 @@ func TestResetThenBareOnboardingAndNonTTYBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	nonTTY := NewRoot(Dependencies{In: strings.NewReader("ignored"), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
+	nonTTY := NewRoot(Dependencies{UserService: absentUserService(t), In: strings.NewReader("ignored"), Out: &output, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return false }})
 	nonTTY.SetArgs([]string{"--config", fixture.config})
 	err = nonTTY.Execute()
 	if err == nil || !strings.Contains(err.Error(), "manager_not_initialized") || !strings.Contains(output.String(), `"state": "uninitialized"`) {
