@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1275,7 +1276,9 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		Authority: core.EffectiveAuthority{
 			StanzaID: m.StanzaID, Capabilities: append([]string(nil), m.Capabilities...),
 			Tools: append([]string(nil), m.Tools...), Memory: append([]string(nil), m.Scopes.Memory...),
-			Credentials: append([]string(nil), m.Scopes.Credentials...), Hermes: m.Hermes,
+			// Preserve the immutable mandate's nil versus explicit-empty encoding;
+			// authority equivalence compares canonical digests, not slice lengths.
+			Credentials: slices.Clone(m.Scopes.Credentials), Hermes: m.Hermes,
 		},
 		IssuedAt: issuedAt, ExpiresAt: m.ExpiresAt,
 	}
