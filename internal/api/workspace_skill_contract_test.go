@@ -105,7 +105,7 @@ func workspaceSkillSubmissionPublicReadback(t *testing.T, multiNode bool) {
 		}
 	})
 	apiRequest(t, client, http.MethodPost, "/v1/queue", input, &decision, http.StatusCreated)
-	if decision.Accepted == nil || decision.Accepted.InitialTransition.To != queue.StateAwaitingRuntime {
+	if decision.Accepted == nil || decision.Accepted.InitialTransition.To != queue.StatePreparationPending {
 		t.Fatal("workspace submission did not enter awaiting-runtime")
 	}
 	t.Run("same_intent_replay", func(t *testing.T) {
@@ -127,7 +127,7 @@ func workspaceSkillSubmissionPublicReadback(t *testing.T, multiNode bool) {
 	})
 	t.Run("list", func(t *testing.T) {
 		var items []app.QueueExecutionView
-		apiRequest(t, client, http.MethodGet, "/v1/queue", nil, &items, http.StatusOK)
+		apiRequest(t, client, http.MethodGet, "/v1/preparations", nil, &items, http.StatusOK)
 		if len(items) != 1 || items[0].Projection.QueueItemID != input.QueueItemID {
 			t.Fatal("submission recovery did not preserve exactly one Queue item")
 		}
@@ -135,7 +135,7 @@ func workspaceSkillSubmissionPublicReadback(t *testing.T, multiNode bool) {
 	t.Run("show", func(t *testing.T) {
 		var item app.QueueExecutionView
 		apiRequest(t, client, http.MethodGet, "/v1/queue/skill-proof-queue", nil, &item, http.StatusOK)
-		if item.Projection.State != queue.StateAwaitingRuntime || item.Disposition != nil || len(item.Claims) != 0 || len(item.Attempts) != 0 {
+		if item.Projection.State != queue.StatePreparationPending || item.Disposition != nil || len(item.Claims) != 0 || len(item.Attempts) != 0 {
 			t.Fatal("historical readback invented execution or disposition")
 		}
 		if len(item.NodeRuntimes) != len(revision.Nodes) {

@@ -93,7 +93,7 @@ func TestDQHandoff(t *testing.T) {
 	input := app.SubmitGraphInput{WorkspaceAgentID: agent.AgentID, Graph: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: gp.Revision.GraphID, Revision: gp.Revision.Revision, Digest: gp.Revision.Digest}, Inputs: []graph.NormalizedInput{{PortID: "value", Type: graph.TypeString, Value: json.RawMessage(`"distributed proof"`)}}, SubmissionID: "distributed-submission", IdempotencyKey: "distributed-submit", SnapshotID: "distributed-snapshot", QueueItemID: "distributed-queue", GraphRunID: "distributed-run", TransitionID: "distributed-transition", RejectionID: "distributed-rejection", MaxAttempts: 2}
 	var accepted orchestration.SubmissionDecision
 	apiRequest(t, client, http.MethodPost, "/v1/queue", input, &accepted, http.StatusCreated)
-	if accepted.Accepted == nil || accepted.Accepted.InitialTransition.To != queue.StateAwaitingRuntime {
+	if accepted.Accepted == nil || accepted.Accepted.InitialTransition.To != queue.StatePreparationPending {
 		t.Fatal("workspace did not enter awaiting_runtime")
 	}
 	original := accepted.Accepted.Submission
@@ -112,12 +112,16 @@ func TestDQHandoff(t *testing.T) {
 		}
 	}
 	view := read()
-	if view.Projection.State != queue.StateAwaitingRuntime || len(view.Claims) != 0 || view.Disposition != nil {
+	if view.Projection.State != queue.StatePreparationPending || len(view.Claims) != 0 || view.Disposition != nil {
 		t.Fatal("workspace invented runtime execution")
 	}
 	var listed []app.QueueExecutionView
 	apiRequest(t, client, http.MethodGet, "/v1/queue", nil, &listed, http.StatusOK)
-	if len(listed) != 1 || listed[0].Projection.State != queue.StateAwaitingRuntime {
+	if len(listed) != 0 {
+		t.Fatal("preparation leaked into executable queue")
+	}
+	apiRequest(t, client, http.MethodGet, "/v1/preparations", nil, &listed, http.StatusOK)
+	if len(listed) != 1 || listed[0].Projection.State != queue.StatePreparationPending {
 		t.Fatal("awaiting_runtime list mismatch")
 	}
 	bind := app.BindQueueRuntimeInput{AgentID: agent.AgentID, QueueItemID: input.QueueItemID, Authority: original.Authority, BindingID: "distributed-bind", TransitionID: "distributed-bound"}
@@ -153,7 +157,7 @@ func TestDQHandoff(t *testing.T) {
 			if response.StatusCode != tc.status {
 				t.Fatalf("status=%d want=%d", response.StatusCode, tc.status)
 			}
-			if got := read(); got.Projection.State != queue.StateAwaitingRuntime || len(got.Claims) != 0 {
+			if got := read(); got.Projection.State != queue.StatePreparationPending || len(got.Claims) != 0 {
 				t.Fatal("denied binding mutated queue")
 			}
 		})
@@ -162,7 +166,7 @@ func TestDQHandoff(t *testing.T) {
 	if _, err := svc.ProcessQueueItemAs(ctx, subject, work); err == nil {
 		t.Fatal("workspace processed without runtime binding")
 	}
-	if view = read(); len(view.Claims) != 0 || view.Projection.State != queue.StateAwaitingRuntime {
+	if view = read(); len(view.Claims) != 0 || view.Projection.State != queue.StatePreparationPending {
 		t.Fatal("denied handoff mutated queue")
 	}
 	replay()

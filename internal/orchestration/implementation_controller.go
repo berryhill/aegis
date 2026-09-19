@@ -84,7 +84,7 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		if e != nil {
 			return e
 		}
-		if !decision.Allowed {
+		if execution.ValidateAdmission(runtime.Launch, decision, time.Now().UTC()) != nil {
 			return &implementation.Halt{State: "denied"}
 		}
 		return nil

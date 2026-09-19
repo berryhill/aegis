@@ -104,6 +104,12 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		path = "/v1/agents/" + url.PathEscape(args[0]) + fmt.Sprintf("?revision=%d", revision)
 	case "agents history":
 		path = "/v1/agents/" + url.PathEscape(args[0]) + "/revisions"
+	case "loops queue":
+		var proposal app.QueueLoopInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		method, path, input = http.MethodPost, "/v1/loops/queue", proposal
 	case "loops list":
 		path = "/v1/loops"
 	case "loops show":
@@ -173,6 +179,8 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 			return usage(errors.New("workspace authority must be server-derived"))
 		}
 		method, path, input = http.MethodPost, "/v1/queue", proposal
+	case "queue preparations":
+		path = "/v1/preparations"
 	case "queue list":
 		path = "/v1/queue"
 	case "queue show":
@@ -234,7 +242,7 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		}
 		timeout := controlTimeout
 		processing := method != http.MethodGet
-		if processing && (strings.HasSuffix(path, "/process") || path == "/v1/provision" || path == "/v1/sessions/start") {
+		if processing && (strings.HasSuffix(path, "/process") || path == "/v1/loops/queue" || path == "/v1/provision" || path == "/v1/sessions/start") {
 			timeout = executionTimeout
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
@@ -261,6 +269,18 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 			if processing && response.StatusCode >= 500 {
 				return unknown()
+			}
+			var denial struct {
+				Decision struct {
+					Reason string `json:"reason"`
+				} `json:"decision"`
+			}
+			_ = json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&denial)
+			// Only fixed public diagnostic codes may cross this boundary. Never echo
+			// arbitrary remote error text or trusted-input metadata.
+			switch denial.Decision.Reason {
+			case "provisioning_receipt_missing", "provisioning_receipt_unavailable":
+				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Decision.Reason)
 			}
 			return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d", method, path, response.StatusCode)
 		}

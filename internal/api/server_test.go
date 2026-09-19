@@ -1358,7 +1358,7 @@ func TestConsoleAuthenticatedSessionCSRFHeadersAndPagination(t *testing.T) {
 	if err = json.NewDecoder(state.Body).Decode(&consoleState); err != nil {
 		t.Fatal(err)
 	}
-	if consoleState.State != "ready" || len(consoleState.Surface.Readiness) != 5 {
+	if consoleState.State != "ready" || len(consoleState.Surface.Readiness) != 6 {
 		t.Fatalf("console did not return authoritative fleet readiness: %+v", consoleState)
 	}
 	for _, domain := range []string{"registry", "loops", "graphs", "queue"} {

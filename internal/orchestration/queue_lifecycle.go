@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -97,17 +98,55 @@ func (worker *QueueWorker) BindRuntime(ctx context.Context, request BindQueueRun
 	if err != nil || participant.Digest != workspace.Agent.Digest || !agentMatchesAuthority(participant, authority, mandate) {
 		return queue.RuntimeBinding{}, false, fmt.Errorf("%w: runtime authority does not bind workspace Agent", ErrWorkerDenied)
 	}
+	// Replay after fresh authorization returns the original immutable binding,
+	// rather than synthesizing a new timestamp/digest or a second execution.
+	prior, priorErr := worker.repository.GetQueueRuntimeBinding(ctx, item.ItemID)
+	if priorErr == nil {
+		if prior.BindingID != request.BindingID || prior.Authority != request.Authority || prior.OwnerAgent != workspace.Agent || prior.QueueItem != (reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: item.ItemID, Digest: item.Digest}) || prior.Submission != item.Submission || prior.MandateID != mandate.ID || prior.Runtime != runtimeID(authority.Runtime) {
+			return queue.RuntimeBinding{}, false, fleet.ErrConflict
+		}
+		transitions, err := worker.repository.ListQueueTransitions(ctx, item.ItemID)
+		if err != nil {
+			return queue.RuntimeBinding{}, false, err
+		}
+		for _, transition := range transitions {
+			if transition.TransitionID == request.TransitionID && transition.From.IsPreparation() && transition.To == queue.StateQueued && transition.OccurredAt.Equal(prior.BoundAt) {
+				return prior, false, nil
+			}
+		}
+		return queue.RuntimeBinding{}, false, fleet.ErrConflict
+	}
+	if !errors.Is(priorErr, fleet.ErrNotFound) {
+		return queue.RuntimeBinding{}, false, priorErr
+	}
+	projection, err := worker.repository.GetQueueProjection(ctx, item.ItemID)
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	if !projection.State.IsPreparation() || projection.Attempts != 0 {
+		// The binding may have committed between the absent read and projection read.
+		if _, e := worker.repository.GetQueueRuntimeBinding(ctx, item.ItemID); e == nil {
+			return worker.BindRuntime(ctx, request)
+		}
+		return queue.RuntimeBinding{}, false, fleet.ErrConflict
+	}
 	now := worker.now()
 	binding, err := queue.NewRuntimeBinding(queue.RuntimeBinding{BindingID: request.BindingID, QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: item.ItemID, Digest: item.Digest}, Submission: item.Submission, OwnerAgent: workspace.Agent, Authority: request.Authority, MandateID: mandate.ID, Runtime: runtimeID(authority.Runtime), BoundAt: now})
 	if err != nil {
 		return queue.RuntimeBinding{}, false, err
 	}
-	transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.TransitionID, QueueItemID: item.ItemID, From: queue.StateAwaitingRuntime, To: queue.StateQueued, Reason: "exact runtime authority bound", OccurredAt: now})
+	transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.TransitionID, QueueItemID: item.ItemID, From: projection.State, To: queue.StateQueued, Reason: "exact runtime authority bound", OccurredAt: now})
 	if err != nil {
 		return queue.RuntimeBinding{}, false, err
 	}
 	created, err := worker.repository.BindQueueRuntime(context.WithoutCancel(ctx), binding, transition, worker.service.auditFact("fleet.queue.runtime-bound", request.Subject, "exact same-Agent runtime authority bound", workspace.Agent.ID, authority.Authority.StanzaID, mandate.ID))
-	return binding, created, err
+	if err != nil {
+		return queue.RuntimeBinding{}, false, err
+	}
+	// Concurrent identical writers return the persisted winner, never a locally
+	// generated timestamp/digest that did not commit.
+	stored, err := worker.repository.GetQueueRuntimeBinding(ctx, item.ItemID)
+	return stored, created, err
 }
 
 func (worker *QueueWorker) Retry(ctx context.Context, request QueueRetryRequest) (queue.Retry, error) {
@@ -221,7 +260,7 @@ func (worker *QueueWorker) terminalize(ctx context.Context, request QueueTermina
 	if err != nil {
 		return queue.Cancellation{}, err
 	}
-	awaitingWorkspaceTerminal := request.Workspace != nil && projection.State == queue.StateAwaitingRuntime && (target == queue.StateCancelled || target == queue.StateRevoked)
+	awaitingWorkspaceTerminal := request.Workspace != nil && projection.State.IsPreparation() && (target == queue.StateCancelled || target == queue.StateRevoked)
 	if projection.State != queue.StateQueued && projection.State != queue.StateClaimed && !awaitingWorkspaceTerminal {
 		return queue.Cancellation{}, fmt.Errorf("%w: terminal queue item cannot transition", ErrWorkerDenied)
 	}

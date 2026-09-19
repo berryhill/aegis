@@ -188,7 +188,7 @@ func TestWorkspaceSubmissionRequiresActiveGraphAndPinsExactParticipantQueue(t *t
 		t.Fatalf("active Graph decision=%+v err=%v", decision, err)
 	}
 	accepted := decision.Accepted
-	if accepted.InitialTransition.To != queue.StateAwaitingRuntime || accepted.Submission.AuthorityKind != "registered-agent-workspace" || accepted.Submission.OwnerAgentID != workspace.Agent.ID || len(accepted.Snapshot.Participants) != 1 || accepted.Snapshot.Participants[0] != workspace.Agent {
+	if accepted.InitialTransition.To != queue.StatePreparationPending || accepted.Submission.AuthorityKind != "registered-agent-workspace" || accepted.Submission.OwnerAgentID != workspace.Agent.ID || len(accepted.Snapshot.Participants) != 1 || accepted.Snapshot.Participants[0] != workspace.Agent {
 		t.Fatalf("workspace queue did not pin exact participant/owner: %+v", accepted)
 	}
 }
@@ -216,6 +216,13 @@ func TestWorkspaceRuntimeHandoffProcessesOnlyWithSameAgentAuthority(t *testing.T
 	if err != nil || !created || binding.OwnerAgent != workspace.Agent || binding.Authority != runtimeAuthority {
 		t.Fatalf("same-Agent binding=%+v created=%t err=%v", binding, created, err)
 	}
+	// A later retry returns the original binding rather than minting a new
+	// timestamp, Queue ID, or runtime execution.
+	worker.now = func() time.Time { return binding.BoundAt.Add(time.Second) }
+	replayed, createdAgain, replayErr := worker.BindRuntime(context.Background(), BindQueueRuntimeRequest{Subject: subject, Workspace: &workspace, Authority: runtimeAuthority, QueueItemID: request.QueueItemID, BindingID: "owner-bind", TransitionID: "owner-transition"})
+	if replayErr != nil || createdAgain || replayed != binding {
+		t.Fatalf("binding replay changed immutable identity: %+v %t %v", replayed, createdAgain, replayErr)
+	}
 	blobs, err := store.Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -241,10 +248,10 @@ func TestWorkspaceOwnerQueueTerminalLifecycleAndCrossAgentDenial(t *testing.T) {
 		attempts uint32
 		invoke   func(*QueueWorker, QueueTerminalRequest) (queue.Cancellation, error)
 	}{
-		{"cancel", queue.StateAwaitingRuntime, 0, func(w *QueueWorker, r QueueTerminalRequest) (queue.Cancellation, error) {
+		{"cancel", queue.StatePreparationPending, 0, func(w *QueueWorker, r QueueTerminalRequest) (queue.Cancellation, error) {
 			return w.Cancel(context.Background(), r)
 		}},
-		{"revoke", queue.StateAwaitingRuntime, 0, func(w *QueueWorker, r QueueTerminalRequest) (queue.Cancellation, error) {
+		{"revoke", queue.StatePreparationPending, 0, func(w *QueueWorker, r QueueTerminalRequest) (queue.Cancellation, error) {
 			return w.Revoke(context.Background(), r)
 		}},
 		{"expire", queue.StateClaimed, 1, func(w *QueueWorker, r QueueTerminalRequest) (queue.Cancellation, error) {

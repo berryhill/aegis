@@ -179,7 +179,7 @@ while read rest; do :; done
 	input := app.SubmitGraphInput{WorkspaceAgentID: charter.AgentID, Graph: ref(gp.Revision.GraphID, 1, gp.Revision.Digest), Inputs: []graph.NormalizedInput{{PortID: "task", Type: graph.TypeString, Value: json.RawMessage(`"Say hello without newline"`)}, {PortID: "acceptance_criteria", Type: graph.TypeString, Value: json.RawMessage(`"exact hello"`)}}, SubmissionID: "hello-submit", IdempotencyKey: "hello-submit", SnapshotID: "hello-snapshot", QueueItemID: "hello-item", GraphRunID: "hello-run", TransitionID: "hello-admit", RejectionID: "hello-reject", MaxAttempts: 1}
 	var accepted orchestration.SubmissionDecision
 	run(&accepted, "graphs", "submit", save("submit.json", input))
-	if accepted.Accepted == nil || accepted.Accepted.InitialTransition.To != queue.StateAwaitingRuntime {
+	if accepted.Accepted == nil || accepted.Accepted.InitialTransition.To != queue.StatePreparationPending {
 		t.Fatal("workspace invented runtime authority")
 	}
 	bind := app.BindQueueRuntimeInput{AgentID: charter.AgentID, QueueItemID: input.QueueItemID, Authority: accepted.Accepted.Submission.Authority, BindingID: "hello-bind", TransitionID: "hello-bound"}

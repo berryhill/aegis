@@ -137,6 +137,9 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 	if e.DB == nil || e.Proposer == nil || e.Admit == nil || !filepath.IsAbs(e.GoBinary) || id == "" || len(id) > 255 {
 		return r, errors.New("controller dependencies and exact run identity required")
 	}
+	if err := Preflight(c, e.GoBinary); err != nil {
+		return r, err
+	}
 	cd, err := c.Digest()
 	if err != nil {
 		return r, err

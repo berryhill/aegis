@@ -54,7 +54,7 @@ Queue owns the authoritative operational lifecycle of submitted work. Canonical 
 
 Only one qualified atomic writer protocol may win a claim or terminal transition. Retries create new attempts under the same logical Graph and Loop executions. Queue projections and counts are rebuildable read models; they cannot admit work. Missing, stale, duplicate, revoked, expired, or ambiguous control state denies rather than guessing or merging.
 
-A workspace submission records `authority_kind=registered-agent-workspace` and owner provenance and begins `awaiting-runtime`. A `RuntimeBinding` is the immutable owner-authorized handoff to one fresh mandate/runtime authority. Only after that binding and normal fresh admission may Aegis transition work to claimable `queued` state. Workspace authority alone never authorizes processing.
+A workspace submission records `authority_kind=registered-agent-workspace` and owner provenance and begins `preparation-pending`. A `RuntimeBinding` is the immutable owner-authorized handoff to one fresh mandate/runtime authority. Only after that binding and normal fresh admission may Aegis transition work to claimable `queued` state. Workspace authority alone never authorizes processing.
 
 ## Execution (`internal/execution`)
 

@@ -127,9 +127,10 @@ func validateClaim(v Claim) error {
 	return validateDigest(v, v.Digest)
 }
 func validateTransition(v QueueTransition) error {
-	legal := (v.From == "" && (v.To == StateQueued || v.To == StateAwaitingRuntime) && v.ClaimID == "") ||
-		(v.From == StateAwaitingRuntime && v.To == StateQueued && v.ClaimID == "") ||
-		(v.From == StateAwaitingRuntime && terminalState(v.To) && v.ClaimID == "") ||
+	legal := (v.From == "" && (v.To == StateQueued || v.To.IsPreparation()) && v.ClaimID == "") ||
+		(v.From.IsPreparation() && v.To == v.From && v.ClaimID == "") ||
+		(v.From.IsPreparation() && v.To == StateQueued && v.ClaimID == "") ||
+		(v.From.IsPreparation() && terminalState(v.To) && v.ClaimID == "") ||
 		(v.From == StateQueued && v.To == StateClaimed && validID(v.ClaimID)) ||
 		(v.From == StateClaimed && v.To == StateQueued && validID(v.ClaimID)) ||
 		(v.From == StateQueued && v.To == StateCancelled && v.ClaimID == "") ||
@@ -156,7 +157,7 @@ func validateCancellation(v Cancellation) error {
 }
 func validateProjection(v Projection) error {
 	activeOK := (v.State == StateClaimed && validID(v.ActiveClaimID)) || (v.State != StateClaimed && v.ActiveClaimID == "")
-	stateOK := v.State == StateAwaitingRuntime || v.State == StateQueued || v.State == StateClaimed || terminalState(v.State)
+	stateOK := v.State.IsPreparation() || v.State == StateQueued || v.State == StateClaimed || terminalState(v.State)
 	if v.SchemaVersion != ProjectionSchemaVersion || !validID(v.QueueItemID) || !validID(v.LastTransitionID) || !activeOK || !stateOK || v.Attempts > MaxAttempts || v.AvailableAt.IsZero() || v.UpdatedAt.IsZero() {
 		return errors.New("invalid queue projection")
 	}

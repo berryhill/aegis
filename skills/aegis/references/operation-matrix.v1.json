@@ -325,7 +325,8 @@
         "aegis loops activate",
         "aegis loops retire",
         "aegis loops implementation",
-        "aegis loops hello"
+        "aegis loops hello",
+        "aegis loops queue"
       ],
       "http": [
         "GET /v1/loops",
@@ -337,7 +338,8 @@
         "GET /console/loops/compose",
         "POST /console/loops/preview",
         "POST /console/loops/lifecycle-preview",
-        "POST /console/loops/execute"
+        "POST /console/loops/execute",
+        "POST /v1/loops/queue"
       ],
       "transport_classification": "shipped"
     },
@@ -396,7 +398,8 @@
         "aegis queue cancel",
         "aegis queue expire",
         "aegis queue exhaust",
-        "aegis queue revoke"
+        "aegis queue revoke",
+        "aegis queue preparations"
       ],
       "http": [
         "GET /v1/queue",
@@ -408,7 +411,9 @@
         "POST /v1/queue/:item/revoke",
         "GET /console/queue",
         "POST /console/queue/:item/operate",
-        "POST /v1/queue/:item/bind-runtime"
+        "POST /v1/queue/:item/bind-runtime",
+        "GET /console/preparations",
+        "GET /v1/preparations"
       ],
       "transport_classification": "shipped"
     },
