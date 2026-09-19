@@ -5,7 +5,8 @@ package command
 import (
 	"bytes"
 	"context"
-	"github.com/spf13/cobra"
+	"crypto/rand"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/berryhill/aegis/internal/config"
 	resetdomain "github.com/berryhill/aegis/internal/reset"
+	"github.com/spf13/cobra"
 )
 
 func TestResetOrphanThenBare(t *testing.T) {
@@ -30,10 +33,36 @@ func TestResetOrphanThenBare(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.SetUnlinkOnClose(false)
-	l.Close()
-	os.Chmod(socket, 0600)
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(socket, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := os.Lstat(socket)
+	if err != nil || stale.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("stale socket fixture missing: %v", err)
+	}
 	var out bytes.Buffer
-	cmd := resetCmdWithHooks(f.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: f.config, stateDir: f.state}, DevelopmentProfile, func(_ *cobra.Command, _ resetdomain.Plan) error { return nil }, func(context.Context, string) (bool, error) { return false, nil })
+	newReset := func() *cobra.Command {
+		return resetCmdWithHooks(f.service, func(io.Reader, io.Writer) bool { return true }, &rootOptions{configFile: f.config, stateDir: f.state}, DevelopmentProfile, func(_ *cobra.Command, _ resetdomain.Plan) error { return nil }, func(context.Context, string) (bool, error) { return false, nil })
+	}
+	declined := newReset()
+	declined.SetIn(strings.NewReader("no\n"))
+	declined.SetOut(&out)
+	declined.SetErr(io.Discard)
+	if err := declined.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), resetdomain.ReasonDeclined) || !strings.Contains(out.String(), "deletion_not_applied") {
+		t.Fatal("missing explicit reset decline result")
+	}
+	out.Reset()
+	preserved, err := os.Lstat(socket)
+	if err != nil || !os.SameFile(stale, preserved) {
+		t.Fatalf("declined reset changed exact stale socket: %v", err)
+	}
+	cmd := newReset()
 	cmd.SetIn(strings.NewReader("yes\n"))
 	cmd.SetOut(&out)
 	if err := cmd.Execute(); err != nil {
@@ -42,11 +71,35 @@ func TestResetOrphanThenBare(t *testing.T) {
 	if !strings.Contains(out.String(), "reset_complete") {
 		t.Fatal(out.String())
 	}
+	if _, err := os.Lstat(socket); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("confirmed reset left exact stale socket %s: %v", socket, err)
+	}
 	out.Reset()
-	root := NewRoot(Dependencies{UserService: absentUserService(t), In: bootstrapApprovalReader{strings.NewReader("no\n")}, Out: &out, Err: io.Discard, Version: "test", IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+	// Exercise real first-run initialization, but never consult host pinentry.
+	// Deliver each approval separately, then explicitly decline credential custody.
+	provider := &sequencePassphrases{values: [][]byte{[]byte(rand.Text())}}
+	root := NewRoot(Dependencies{UserService: absentUserService(t), In: bootstrapApprovalReader{strings.NewReader("yes\nno\n")}, Out: &out, Err: io.Discard, Version: "test", Passphrases: provider, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 	root.SetArgs([]string{"--config", f.config, "--state-dir", f.state})
-	_ = root.Execute()
-	if !strings.Contains(out.String(), "local identity and configuration") {
-		t.Fatal(out.String())
+	if err := root.Execute(); err != nil {
+		t.Fatalf("bare startup after reset: %v", err)
+	}
+	for _, expected := range []string{"local identity and configuration", "Initialization completed atomically", "Setup progress  1/5 verified", "DECISION / Choose credential authority custody"} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("bare startup did not reach %q", expected)
+		}
+	}
+	if provider.calls != 1 {
+		t.Fatalf("protected input calls = %d, want exactly one initialization request", provider.calls)
+	}
+	if strings.Contains(out.String(), "bootstrap_gateway_recovery_required") {
+		t.Fatal("bare startup still denied on transport")
+	}
+	if config.Inspect(f.config).State != config.StateValid {
+		t.Fatal("bare startup did not persist valid configuration")
+	}
+	for _, path := range []string{socket, filepath.Join(f.state, "credentials", "authority.db"), filepath.Join(f.state, "credentials", "authority.kek"), filepath.Join(f.state, "credentials", "authority.kek.enc")} {
+		if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("declined custody boundary created %s: %v", path, err)
+		}
 	}
 }
