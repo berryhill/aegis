@@ -4,7 +4,7 @@ Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` 
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
 
-## [Unreleased]
+## Unreleased
 
 ### Fixed
 

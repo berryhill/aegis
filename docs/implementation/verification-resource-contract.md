@@ -13,7 +13,7 @@ Proof policy: low concurrency, bounded cgroup execution, durable proof roots. Pr
 - Updated CONTRIBUTING.md: the complete bounded gate and Linux/systemd/cgroup-v2 prerequisites, explicit macOS verification denial, focused supervised command, inherited defaults and limits.
 - Updated CHANGELOG.md: verification resource/termination and authority-close corrections.
 - Updated CI and release workflows: retain all tests, race, vet, vulnerability, archive/checksum and installed gates behind supervision. No release is published by this change.
-- Reviewed README.md, LICENSE, SECURITY.md, CODE_OF_CONDUCT.md, docs/THREAT_MODEL.md, docs/ARCHITECTURE.md and docs/QUICKSTART.md: identity, runtime, installation, trust and product CLI contracts unchanged. Verification limits are not a security sandbox or supported-platform expansion.
+- Updated README.md with the full-verification prerequisite; reviewed LICENSE, SECURITY.md, CODE_OF_CONDUCT.md, docs/THREAT_MODEL.md, docs/ARCHITECTURE.md and docs/QUICKSTART.md: identity, runtime, installation, trust and product CLI contracts unchanged. Verification limits are not a security sandbox or supported-platform expansion.
 - Reviewed docs/DEMO_NO_KEY.md, scripts/demo-no-key.sh, docs/RECORDING.md and retained docs/assets/aegis-no-key.{typescript,timing}: no demonstration command/output change; retained capture remains explicitly historical, not fresh provider or release evidence.
 - Reviewed .github/workflows/release.yml, archive/checksum verifier and docs/contributing/ISSUE_BACKLOG.md: packaging formats and owner publication boundaries unchanged; backlog is explicitly repository-local. No GitHub release, recording publication or contributor issue was created.
 
