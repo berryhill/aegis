@@ -193,12 +193,12 @@ func agentOperationReason(err error) string {
 type consoleDomain string
 
 const (
-	consoleAgents       consoleDomain = "agents"
-	consoleLoops        consoleDomain = "loops"
-	consoleGraphs       consoleDomain = "graphs"
-	consoleQueue        consoleDomain = "queue"
-	consolePreparations consoleDomain = "preparations"
-	consoleCredentials  consoleDomain = "credentials"
+	consoleAgents consoleDomain = "agents"
+	consoleLoops  consoleDomain = "loops"
+	consoleGraphs consoleDomain = "graphs"
+	consoleQueue  consoleDomain = "queue"
+
+	consoleCredentials consoleDomain = "credentials"
 )
 
 type consoleSignals struct {
@@ -240,7 +240,7 @@ func parseConsoleDomain(raw string) (consoleDomain, error) {
 		return consoleAgents, nil
 	}
 	switch domain {
-	case consoleAgents, consoleLoops, consoleGraphs, consoleQueue, consolePreparations, consoleCredentials:
+	case consoleAgents, consoleLoops, consoleGraphs, consoleQueue, consoleCredentials:
 		return domain, nil
 	default:
 		return "", errors.New("unknown console domain")
@@ -386,11 +386,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 		for _, value := range surface.Graphs {
 			values = append(values, value)
 		}
-	case consolePreparations:
-		model.Title, model.Eyebrow, model.Description = "Execution preparation", "Not executable", "Blocked runtime preparation. No worker is started. Foundational approval, provisioning and exact implementation-contract authorization remain explicit prerequisites."
-		for _, value := range surface.Preparations {
-			values = append(values, value)
-		}
+
 	case consoleQueue:
 		model.Title, model.Eyebrow, model.Description = "Execution Queue", "Runtime", "Submissions judged at admission. An admitted submission becomes an execution against an exact pinned definition version; a refused one never does. Select a record to inspect it against the revision it pinned."
 		for _, value := range surface.Queue {
@@ -452,7 +448,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Graph record")
 			}
 			record = consoleGraphRecord(graphView, surface.Submissions, string(data), surface.Graphs)
-		} else if domain == consoleQueue || domain == consolePreparations {
+		} else if domain == consoleQueue {
 			queueView, ok := value.(app.QueueExecutionView)
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Execution Queue record")
@@ -2161,7 +2157,7 @@ func consoleRecordLabel(domain consoleDomain, value any) string {
 		if record, ok := value.(app.GraphView); ok {
 			return fmt.Sprintf("%s · revision %d", record.Revision.GraphID, record.Revision.Revision)
 		}
-	case consoleQueue, consolePreparations:
+	case consoleQueue:
 		if record, ok := value.(app.QueueExecutionView); ok {
 			return fmt.Sprintf("%s · %s", record.Item.ItemID, record.Projection.State)
 		}

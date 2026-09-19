@@ -6,7 +6,11 @@ with exact public readback from your authorized operation. Never hash invented
 authority into existence. Example filenames version this recipe; do not add a
 request-level schema_version field absent from the public decoder.
 
-## Binding workspace work
+## Approved exact Loop execution
+
+Use `aegis loops queue FILE` for the approved bounded task. The controller handles approved-scope session creation/reuse, exact runtime binding and foreground execution in one request. Return exact blockers inline and read back the existing record; do not require a Preparation page, binding file, second worker command, or repeated approval for this action. Foundational authority is never inferred.
+
+## Lower-level binding workspace work
 
 Read `aegis queue show ITEM` first. Require preparation-pending state and exact
 workspace owner/Agent provenance. The controller obtains an existing authenticated
@@ -14,9 +18,8 @@ runtime authority for that same Agent through the supported session boundary.
 Copy bind-runtime.v1.json to an operator-approved request file and replace its
 references and operation IDs. Execute `aegis queue bind-runtime FILE` only with
 explicit authority for that operation. The Agent selector derives workspace
-ownership; it does not grant runtime power. There is no HTTP binding endpoint.
-If control_plane_online prevents this CLI operation, stop and report that missing
-adapter. Do not stop the daemon, open another writer, or extract API credentials.
+ownership; it does not grant runtime power. The protected HTTP binding endpoint is `POST /v1/queue/:item/bind-runtime`.
+Use the product-owned online adapter while the gateway owns state. Do not stop the daemon, open another writer, or extract API credentials.
 
 The actual CLI response envelope has binding and created fields. This reference
 does not pretend a reduced illustrative binding is a full serialized response.

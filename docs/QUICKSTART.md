@@ -48,7 +48,7 @@ The four-target build/checksum result is packaging evidence; the additional nati
 
 ## Console action prerequisites
 
-The authenticated console distinguishes collection availability from action admission. Its **Action prerequisites** panel reports operation-specific blockers, not bootstrap completion. `authority_context_required` means no exact authority was selected for that action; it does not mean initial setup is incomplete. Existing native preparation forms remain available as before, but preparation grants no authority: submission still repeats fresh admission. Authentication denial, unavailable stores, and repair-required states remain visible with their reason codes.
+The authenticated console distinguishes collection availability from action admission. Outside the Queue overview, its **Action prerequisites** panel reports operation-specific blockers, not bootstrap completion. The Queue overview retains the execution-request entry point without repeated generic denied blocks. The approved exact-Loop `aegis loops queue FILE` action executes in one bounded request, reporting exact blockers inline rather than handing off to a Preparation page or asking for a second worker command. `authority_context_required` means no exact authority was selected for that action; it does not mean initial setup is incomplete. Existing native preparation forms remain available as before, but preparation grants no authority: submission still repeats fresh admission. Authentication denial, unavailable stores, and repair-required states remain visible with their reason codes.
 
 ## Build and configure
 

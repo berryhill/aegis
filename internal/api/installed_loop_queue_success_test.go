@@ -151,21 +151,28 @@ func assertPreparationHTTP(t *testing.T, client *http.Client, origin, id, state 
 		if err != nil {
 			t.Fatal(err)
 		}
-		html := string(body)
-		if response.StatusCode != http.StatusOK || response.Request.URL.Path != "/console/preparations" || response.Header.Get("Cache-Control") != "no-store" || strings.Contains(html, "credential-workspace") || !strings.Contains(html, `data-route="preparations" aria-current="page"`) {
-			t.Fatalf("wrong authenticated preparation renderer: status=%d route=%s", response.StatusCode, route)
+		if response.StatusCode != http.StatusNotFound {
+			t.Fatalf("removed preparation route returned %d: %s", response.StatusCode, body)
 		}
-		if id == "" {
-			if !strings.Contains(html, "No records") {
-				t.Fatal("missing empty preparation view")
-			}
-			continue
+	}
+	response, err := client.Get(origin + "/console/queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("queue status=%d", response.StatusCode)
+	}
+	for _, forbidden := range []string{"/console/preparations", "Action prerequisites", "authority_context_required", "select_exact_authority_context", "Operation-specific authority", ">Claim<", ">Runtime effect<", ">Verify evidence<", ">Disposition<"} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("authenticated Queue overview retained %q", forbidden)
 		}
-		if !strings.Contains(html, id) || !strings.Contains(html, state) {
-			t.Fatalf("missing identity/current state %s on %s", state, route)
-		}
-		if strings.Contains(route, "record_key") && (!strings.Contains(html, "<dt>State</dt><dd>"+state+"</dd>") || !strings.Contains(html, "<dt>Initial state (historical)</dt><dd>preparation-pending</dd>") || !strings.Contains(html, "Preparation recorded")) {
-			t.Fatal("missing native preparation detail")
-		}
+	}
+	if !strings.Contains(string(body), `href="/console/graphs/run"`) {
+		t.Fatal("queue entry point missing")
 	}
 }

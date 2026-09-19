@@ -679,7 +679,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return subject, form, nil
 	}
 	e.GET("/console", consolePage)
-	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consolePreparations, consoleCredentials} {
+	for _, domain := range []consoleDomain{consoleAgents, consoleGraphs, consoleLoops, consoleQueue, consoleCredentials} {
 		e.GET("/console/"+string(domain), consolePage)
 	}
 	e.GET("/console/agents/charter-import", charterImportPage)
