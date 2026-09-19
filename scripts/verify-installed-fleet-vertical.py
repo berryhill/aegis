@@ -17,15 +17,16 @@ import pwd
 import secrets
 import socket
 import subprocess
-try:
-    from scripts.verification_process import run_owned
-except ModuleNotFoundError:
-    from verification_process import run_owned
+import runpy
 import sys
 import time
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, NoReturn
+
+# run_path callers do not add this directory to sys.path. Load the exact
+# repository-owned sibling without depending on cwd or mutating import paths.
+run_owned = runpy.run_path(str(Path(__file__).resolve().with_name("verification_process.py")))["run_owned"]
 
 
 def fail(message: str) -> NoReturn:
