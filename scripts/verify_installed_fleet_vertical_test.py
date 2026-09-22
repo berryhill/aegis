@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import ast
+import json
 import runpy
 import subprocess
 import sys
@@ -17,6 +18,36 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class InstalledFleetVerticalContract(unittest.TestCase):
+    def test_gateway_answers_empty_tools_preflight_before_session(self) -> None:
+        tree = ast.parse((REPO / "scripts/verify-installed-fleet-vertical.py").read_text())
+        gateway_source = next(node.args[0] for node in ast.walk(tree)
+                              if isinstance(node, ast.Call)
+                              and isinstance(node.func, ast.Attribute)
+                              and isinstance(node.func.value, ast.Name)
+                              and node.func.value.id == "gateway"
+                              and node.func.attr == "write_text")
+        with tempfile.TemporaryDirectory(dir=REPO) as directory:
+            root = Path(directory)
+            source = eval(compile(ast.Expression(gateway_source), "gateway-fixture", "eval"),
+                          {"gateway_log": root / "invoked"})
+            gateway = root / "gateway"
+            gateway.write_text(source)
+            requests = [
+                {"jsonrpc": "2.0", "id": "aegis-tools", "method": "tools.show", "params": {}},
+                {"jsonrpc": "2.0", "id": "create", "method": "session.create", "params": {}},
+                {"jsonrpc": "2.0", "id": "prompt", "method": "prompt.submit", "params": {}},
+            ]
+            result = subprocess.run(["sh", str(gateway)],
+                                    input="".join(json.dumps(r, separators=(",", ":")) + "\n" for r in requests),
+                                    text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            messages = [json.loads(line) for line in result.stdout.splitlines()]
+            self.assertEqual(messages[1], {"jsonrpc": "2.0", "id": "aegis-tools",
+                                          "result": {"total": 0, "sections": []}})
+            self.assertEqual(messages[2]["id"], "create")
+            self.assertEqual(messages[3]["id"], "prompt")
+            self.assertEqual(messages[-1]["params"]["type"], "message.complete")
+
     def test_runpy_loads_owned_sibling_from_unrelated_cwd(self) -> None:
         # A fresh isolated interpreter excludes repository/PYTHONPATH imports.
         script = REPO / "scripts/verify-installed-fleet-vertical.py"
