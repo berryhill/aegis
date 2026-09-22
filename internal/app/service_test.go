@@ -47,7 +47,7 @@ func testCharter(now time.Time) core.Charter {
 	team.Grant.Tools = []string{"web"}
 	team.Hermes.Toolsets = []string{"web"}
 	team.Scopes = core.Scopes{Memory: []string{"team-memory"}, Credentials: []string{"provider:test"}}
-	return core.Charter{SchemaVersion: core.SchemaVersion, AgentID: "office", Name: "Office", Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "aegis-owned-ephemeral"}, Stanzas: []core.TrustStanza{principal, team}, CreatedBy: "principal-1", CreatedAt: now}
+	return core.Charter{SchemaVersion: core.SchemaVersion, AgentID: "office", Name: "Office", Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, Stanzas: []core.TrustStanza{principal, team}, CreatedBy: "principal-1", CreatedAt: now}
 }
 func testService(t *testing.T) *Service {
 	t.Helper()
@@ -63,8 +63,15 @@ func testService(t *testing.T) *Service {
 	}
 	gateway := `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
-read tools
-printf '%s\n' '{"jsonrpc":"2.0","id":"bridge-tools-0","result":{"total":1,"sections":[{"name":"mcp-aegis","tools":[{"name":"mcp__aegis__github_get_repository"}]}]}}'
+IFS= read -r tools || exit 1
+case "$tools" in
+ *'"id":"aegis-tools"'*)
+  [ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
+  printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}';;
+ *'"id":"bridge-tools-0"'*)
+  printf '%s\n' '{"jsonrpc":"2.0","id":"bridge-tools-0","result":{"total":1,"sections":[{"name":"mcp-aegis","tools":[{"name":"mcp__aegis__github_get_repository"}]}]}}';;
+ *) exit 91;;
+esac
 while read rest; do :; done
 `
 	if err := os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(gateway), 0700); err != nil {
@@ -645,7 +652,7 @@ func TestCleanSessionsAndRevocation(t *testing.T) {
 		t.Fatalf("launched toolset verification=%+v", x1)
 	}
 	arguments, err := os.ReadFile(filepath.Join(x1.RuntimeHome, "launch-args"))
-	if err != nil || !strings.Contains(string(arguments), "--toolsets\nno_mcp\n") {
+	if err != nil || !strings.Contains(string(arguments), "--toolsets\ncontext_engine\n") {
 		t.Fatalf("actual Hermes launch arguments do not contain approved toolset: %q %v", arguments, err)
 	}
 	provider, err := os.ReadFile(filepath.Join(x1.RuntimeHome, "provider-present"))

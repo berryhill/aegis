@@ -2,6 +2,8 @@
 
 The recording source is `scripts/demo-no-key.sh`. It uses ignored disposable paths inside the checkout, initializes an empty generation-managed Badger authority only in its disposable workspace, derives only the local UID/username, sets the copied configuration and charter to mode `0600`, prints no credential values, and removes its workspace and demonstration executable.
 
+The minimum-version policy is now stable Hermes `>=0.18.0` without an arbitrary upper cap. This historical capture qualifies neither that entire range nor later releases; its exact runtime and bounded observations are recorded below. A fresh candidate recording remains required when demonstrated output changes.
+
 The retained recording is:
 
 - `docs/assets/aegis-no-key.typescript`

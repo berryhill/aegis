@@ -27,7 +27,7 @@ var AdapterVersion = buildinfo.Version
 const maximumVersionOutput = 64 << 10
 
 var versionRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$`)
-var versionOutputRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)( \(([0-9]+[.]){3}[0-9]+\)( · upstream [0-9a-f]{8,40} · local [0-9a-f]{8,40} \(\+[1-9][0-9]* carried commits?\))?)?$`)
+var versionOutputRE = regexp.MustCompile(`^Hermes Agent v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)( \(([0-9]+[.]){2,3}[0-9]+\)( · upstream [0-9a-f]{8,40} · local [0-9a-f]{8,40} \(\+[1-9][0-9]* carried commits?\))?)?$`)
 var requiredCapabilities = []string{"design-stdio", "process-isolation", "disposable-home", "lifecycle-termination", "toolset-selection", "safe-mode", "no-ambient-mcp", "no-ambient-plugins"}
 var supportedToolsets = map[string]bool{
 	"web": true, "browser": true, "terminal": true, "file": true,
@@ -114,11 +114,15 @@ func ParseVersionOutput(output []byte) (InstalledVersion, error) {
 	return installed, nil
 }
 
-// SupportedVersion implements the exact qualified Hermes range without
-// accepting prereleases, partial versions, or alternate constraint syntax.
+// SupportedVersion enforces the minimum stable Hermes version, not an upper
+// release cap. Protocol, tool, and authority checks remain separate requirements.
+// Compare canonical decimal components without integer overflow.
 func SupportedVersion(version string) bool {
 	match := versionRE.FindStringSubmatch("Hermes Agent v" + version)
-	return len(match) == 4 && match[1] == "0" && match[2] == "18"
+	if len(match) != 4 {
+		return false
+	}
+	return match[1] != "0" || len(match[2]) > 2 || (len(match[2]) == 2 && match[2] >= "18")
 }
 
 // ValidateCapabilities makes adapter assumptions reviewable and testable.
@@ -182,7 +186,7 @@ func ResolveTools(requested []string) ([]string, error) {
 	}
 	return out, nil
 }
-func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, model, provider string, credentials []Credential, bridge BrokerBridge) (int, []string, error) {
+func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, model, provider string, credentials []Credential, bridge BrokerBridge, expectedRuntime *core.RuntimeDescriptor) (int, []string, error) {
 	resolved, err := ResolveTools(tools)
 	if err != nil {
 		return 0, nil, err
@@ -193,6 +197,10 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	desc, err := a.Discover(ctx)
 	if err != nil {
 		return 0, nil, err
+	}
+	// Adapter-wide support never widens the runtime bound to an issued mandate.
+	if expectedRuntime != nil && (desc.Runtime != expectedRuntime.Runtime || desc.Version != expectedRuntime.Version) {
+		return 0, nil, errors.New("runtime binding does not match authority context")
 	}
 	args := []string{"--safe-mode", "--tui", "--toolsets"}
 	if bridge.Enabled {
@@ -206,11 +214,13 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		// disposable home and exact toolset retain isolation without that flag.
 		args = []string{"--ignore-rules", "--tui", "--toolsets"}
 	}
-	if len(resolved) == 0 {
-		args = append(args, "no_mcp")
-	} else {
-		args = append(args, strings.Join(resolved, ","))
+	pin := launchToolsets(resolved)
+	if pin == emptyToolset {
+		if err = probeEmptyGateway(ctx, desc, home); err != nil {
+			return 0, nil, err
+		}
 	}
+	args = append(args, pin)
 	if model != "" {
 		args = append(args, "--model", model)
 	}
@@ -409,7 +419,7 @@ func (a *Adapter) StartDesign(ctx context.Context, stateRoot string, retain bool
 	if err != nil {
 		return "", "", 0, err
 	}
-	pid, _, err := a.launch(ctx, id, home, nil, "", "", nil, BrokerBridge{})
+	pid, _, err := a.launch(ctx, id, home, nil, "", "", nil, BrokerBridge{}, nil)
 	if err != nil {
 		if !retain {
 			_ = os.RemoveAll(home)
@@ -420,7 +430,7 @@ func (a *Adapter) StartDesign(ctx context.Context, stateRoot string, retain bool
 }
 
 // RunDesignForeground runs the documented Hermes TUI attached to the caller's
-// terminal. Safe mode plus no_mcp removes ambient config, rules, memory,
+// terminal. Safe mode plus a verified empty toolset removes ambient config, rules, memory,
 // plugins, MCP servers, and normal CLI toolsets. It never uses one-shot/YOLO.
 func (a *Adapter) RunDesignForeground(ctx context.Context, stateRoot string, retain bool, in io.Reader, out, errOut io.Writer) (string, error) {
 	runtimeRoot := filepath.Join(stateRoot, "runtime")
@@ -438,7 +448,10 @@ func (a *Adapter) RunDesignForeground(ctx context.Context, stateRoot string, ret
 	if err != nil {
 		return home, err
 	}
-	cmd := exec.CommandContext(ctx, desc.Executable, "--safe-mode", "--tui", "--toolsets", "no_mcp")
+	if err = probeEmptyGateway(ctx, desc, home); err != nil {
+		return home, err
+	}
+	cmd := exec.CommandContext(ctx, desc.Executable, "--safe-mode", "--tui", "--toolsets", emptyToolset)
 	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = home, minimalEnv(home, nil), in, out, errOut
 	if err := cmd.Run(); err != nil {
 		return home, fmt.Errorf("Hermes design session: %w", err)
@@ -467,7 +480,7 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 	if authority.Authority.Hermes.LocalInference != nil {
 		pid, err = a.launchLocal(ctx, id, home, authority, fresh[0])
 	} else {
-		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge)
+		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge, &m.Runtime)
 	}
 	if err != nil {
 		_ = os.RemoveAll(home)

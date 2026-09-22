@@ -13,6 +13,8 @@ func TestAttemptTurnEmptyToolsUsesRecognizedEmptyToolset(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
 [ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 91
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-1"}}'
 read prompt

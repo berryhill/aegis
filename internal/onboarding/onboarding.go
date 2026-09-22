@@ -139,7 +139,7 @@ func (i *Inspector) Inspect(ctx context.Context, configuredPath string) Snapshot
 	}
 	descriptor, err := i.Runtime.Discover(ctx)
 	if err != nil {
-		s.Checks = append(s.Checks, Check{Name: "Hermes Agent", Status: "incomplete", Reason: "unsupported_or_absent", Remedy: "install Hermes Agent >=0.18.0,<0.19.0 and run aegis init"})
+		s.Checks = append(s.Checks, Check{Name: "Hermes Agent", Status: "incomplete", Reason: "unsupported_or_absent", Remedy: "install Hermes Agent >=0.18.0 and run aegis init"})
 		return s
 	}
 	s.HermesPath, s.HermesVersion = descriptor.Executable, descriptor.Version

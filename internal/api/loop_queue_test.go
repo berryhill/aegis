@@ -39,7 +39,7 @@ func TestExactLoopQueueMissingAuthority(t *testing.T) {
 	// Use the existing API execution fixture's exact principal selector, with
 	// fixture-only provider configuration and no newly invented authority.
 	charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: "distributed-agent", Name: "Distributed test", Revision: 1,
-		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "aegis-owned-ephemeral"},
+		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"},
 		Stanzas: []core.TrustStanza{{ID: "principal", Name: "Principal", Enabled: true,
 			Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{"local-uid:" + strconv.Itoa(os.Getuid())}, PrincipalIDs: []string{svc.Config.Principal.ID}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},
 			Grant:          core.Grant{Capabilities: []string{"chat"}, Tools: []string{"no_mcp"}}, Scopes: core.Scopes{Memory: []string{"principal-memory"}, Credentials: []string{"provider:test"}},

@@ -135,7 +135,7 @@ A public release is a no-go until every required gate is either verified or expl
 - [ ] The version and tag policy are coherent across CLI, adapter, module, changelog, and release workflow.
 - [ ] The release workflow has minimal permissions.
 - [ ] The tag is created only after the exact release commit passes verification.
-- [ ] Release notes include supported Hermes range, platforms, known limitations, and upgrade instructions.
+- [ ] Release notes distinguish the accepted stable Hermes minimum (`>=0.18.0`, no arbitrary upper cap) from exact qualified releases and include platforms, known limitations, and upgrade instructions.
 - [ ] Maintainer availability is reserved for launch-day questions and initial issue triage.
 - [ ] Rollback or withdrawal steps are documented if a release artifact is wrong or vulnerable.
 
@@ -357,7 +357,7 @@ Delay or withdraw the launch if:
 - The release contains an unreviewed credential, personal path, local binary, or toolchain artifact.
 - Vulnerability scanning is broken or reports an applicable reachable vulnerability.
 - Documentation materially overstates host, network, tool, credential, or audit enforcement.
-- The supported Hermes range cannot be reproduced.
+- The claimed exact-version Hermes qualification cannot be reproduced (accepting the minimum-version policy does not qualify all future releases).
 - Checksums do not match the published artifacts.
 - The private security-reporting route is not owner-approved.
 - Existing unrelated work would be overwritten or accidentally included.

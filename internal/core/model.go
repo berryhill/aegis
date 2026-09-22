@@ -16,10 +16,16 @@ import (
 
 const SchemaVersion = "aegis.dev/v1alpha1"
 
-// HermesVersionConstraint is the sole runtime range qualified by the MVP.
+// HermesVersionConstraint is the minimum stable runtime version accepted by the adapter.
+// Meeting it does not replace protocol, capability, or authority verification.
 // Charter text is authority-bearing, so equivalent-looking or broader
 // expressions are not accepted implicitly.
-const HermesVersionConstraint = ">=0.18.0,<0.19.0"
+const HermesVersionConstraint = ">=0.18.0"
+
+// LegacyHermesVersionConstraint remains valid for existing approved charters.
+// Preserve it verbatim: replacing it with the default broadens runtime authority
+// and changes the canonical charter digest, requiring a new approval.
+const LegacyHermesVersionConstraint = ">=0.18.0,<0.19.0"
 
 var idPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
@@ -415,8 +421,8 @@ func ValidateCharter(c Charter) error {
 	if c.CreatedBy == "" || c.CreatedAt.IsZero() {
 		add("creation identity and timestamp are required")
 	}
-	if c.Runtime.Adapter != "hermes" || c.Runtime.Runtime != "hermes-agent" || c.Runtime.VersionConstraint != HermesVersionConstraint || c.Runtime.Target == "" {
-		add("explicit Hermes runtime, qualified version constraint " + HermesVersionConstraint + ", and target are required")
+	if c.Runtime.Adapter != "hermes" || c.Runtime.Runtime != "hermes-agent" || (c.Runtime.VersionConstraint != HermesVersionConstraint && c.Runtime.VersionConstraint != LegacyHermesVersionConstraint) || c.Runtime.Target == "" {
+		add("explicit Hermes runtime, qualified version constraint " + HermesVersionConstraint + " or legacy " + LegacyHermesVersionConstraint + ", and target are required")
 	}
 	if len(c.Stanzas) == 0 {
 		add("at least one stanza is required")

@@ -33,7 +33,11 @@ func TestRoutedRuntimeAdapterExecutesRegisteredHermesBoundedTurn(t *testing.T) {
 [ "$HERMES_TUI_MODEL" = "proof-no-key" ] || exit 90
 [ "$HERMES_TUI_PROVIDER" = "none" ] || exit 91
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
-read create
+[ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
+IFS= read -r tools || exit 1
+case "$tools" in *'"method":"tools.show"'*) ;; *) exit 91;; esac
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
+IFS= read -r create || exit 0
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"queue-runtime-session"}}'
 read prompt
 printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'

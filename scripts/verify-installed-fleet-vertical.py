@@ -246,7 +246,7 @@ def main() -> int:
         "agent_id": "proof-agent",
         "name": "Installed Fleet Proof Agent",
         "revision": 1,
-        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "version_constraint": ">=0.18.0,<0.19.0", "target": "aegis-owned-ephemeral"},
+        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "version_constraint": ">=0.18.0", "target": "aegis-owned-ephemeral"},
         "stanzas": [{
             "id": "principal", "name": "Principal", "enabled": True,
             "authentication": {"methods": ["local-os"], "selectors": [{"kinds": ["human"], "subject_ids": [f"local-uid:{os.getuid()}"], "principal_ids": ["principal-1"], "issuers": ["local-os"], "claims": {}, "environments": ["local"]}], "require_fresh": True, "max_auth_age_seconds": 900},

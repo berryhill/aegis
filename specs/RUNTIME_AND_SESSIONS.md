@@ -2,11 +2,11 @@
 
 ## Explicit Hermes runtime
 
-The MVP supports Hermes Agent `>=0.18.0,<0.19.0`. Discovery displays the executable, installation, runtime version, and Aegis adapter version. Unsupported versions fail closed, and the CLI never disguises Hermes behind a generic runtime label.
+The adapter accepts stable Hermes Agent versions `>=0.18.0`, with no arbitrary upper cap. This minimum-version policy is not qualification of every accepted or future release. Retained live-runtime evidence names Hermes 0.18.2 (see `docs/RECORDING.md`); qualifying another release requires exact-version protocol and behavioral evidence. Strict version identity parsing, gateway protocol checks, capability verification, clean-session controls, and fresh authority admission still fail closed. Discovery displays the executable, installation, runtime version, and Aegis adapter version. Unsupported versions fail closed, and the CLI never disguises Hermes behind a generic runtime label.
 
 ## Design sessions
 
-Design uses Hermes safe mode, the structured TUI-gateway stdio protocol, `no_mcp`, and a disposable `HERMES_HOME`. It does not use one-shot mode and receives no provisioning, shell, arbitrary file-write, profile, plugin, MCP, cron, gateway, or ambient credential authority. Provider authentication is injected only when explicitly configured for design.
+Design uses Hermes safe mode, the structured TUI-gateway stdio protocol, explicit `context_engine` selection, and a disposable `HERMES_HOME`. Before prompting, Aegis requires `tools.show` to report zero tools and empty sections; unknown or widened tool selection fails closed. `no_mcp` remains an Aegis authority spelling and is not passed as the Hermes TUI toolset pin. Design does not use one-shot mode and receives no provisioning, shell, arbitrary file-write, profile, plugin, MCP, cron, gateway, or ambient credential authority. Provider authentication is injected only when explicitly configured for design.
 
 ## Mandates
 

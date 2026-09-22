@@ -38,6 +38,8 @@ func (a attemptAdmission) CheckRuntimeAdmission(_ context.Context, launch execut
 func TestAttemptTurnExecutesOneBoundedGatewayTurn(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-1"}}'
 read prompt
@@ -77,6 +79,8 @@ while read rest; do :; done
 func TestAttemptTurnIgnoresEventsFromUnrelatedGatewaySession(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"selected-session"}}'
 read prompt
@@ -160,6 +164,8 @@ func TestAttemptTurnEnforcesInputAndOutputBounds(t *testing.T) {
 	t.Run("output", func(t *testing.T) {
 		adapter, root := attemptTestAdapter(t, `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-2"}}'
 read prompt
@@ -183,6 +189,8 @@ while read rest; do :; done
 func TestAttemptTurnHonorsDurationAndCallerCancellation(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-3"}}'
 read prompt

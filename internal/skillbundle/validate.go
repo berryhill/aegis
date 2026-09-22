@@ -170,7 +170,7 @@ func validateManifestShape(manifest Manifest) error {
 	if manifest.Bundle.Name != "aegis-hermes-skills" || !semverPattern.MatchString(manifest.Bundle.Version) {
 		return deny("invalid_bundle_identity", ManifestName, "bundle name or stable version is invalid")
 	}
-	if manifest.Bundle.AegisRange == "" || manifest.Bundle.HermesRange != ">=0.18.0,<0.19.0" {
+	if manifest.Bundle.AegisRange == "" || manifest.Bundle.HermesRange != ">=0.18.0" {
 		return deny("invalid_compatibility", ManifestName, "Aegis range must be non-empty and Hermes range must match the supported adapter")
 	}
 	if !digestPattern.MatchString(manifest.Bundle.ContentDigest) || !revisionPattern.MatchString(manifest.Bundle.SourceRevision) {

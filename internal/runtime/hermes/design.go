@@ -72,7 +72,8 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Env = append(minimalEnv(home, credentials),
 		"HERMES_PYTHON_SRC_ROOT="+descriptor.Installation,
-		"HERMES_TUI_TOOLSETS=no_mcp",
+		"HERMES_TUI_TOOLSETS="+emptyToolset,
+		"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1",
 		"HERMES_TUI_SKILLS=",
 		"HERMES_DISABLE_AUTO_SKILLS=1",
 	)
@@ -116,6 +117,9 @@ func (a *Adapter) DesignProposal(ctx context.Context, stateRoot, requirements st
 		return message.Method == "event" && message.Params.Type == "gateway.ready"
 	}); err != nil {
 		return "", home, fmt.Errorf("Hermes gateway startup: %w", err)
+	}
+	if err = verifyEmptyGateway(ctx, stdin, messages, readErrors); err != nil {
+		return "", home, err
 	}
 	if err = writeGateway(stdin, "create", "session.create", map[string]any{"cols": 100, "source": "aegis-design"}); err != nil {
 		return "", home, err

@@ -140,6 +140,11 @@ func (a *Adapter) launchLocal(ctx context.Context, id, home string, authority co
 		<-ps.done
 		return 0, e
 	}
+	if e = verifyEmptyGateway(ready, stdin, messages, failures); e != nil {
+		cmd.Process.Kill()
+		<-ps.done
+		return 0, e
+	}
 	go func() {
 		for {
 			select {

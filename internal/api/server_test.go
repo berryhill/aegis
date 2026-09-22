@@ -295,8 +295,23 @@ func TestConsoleQueueOperationDenialsAreDistinctAndFailClosed(t *testing.T) {
 func apiService(t *testing.T) *app.Service {
 	t.Helper()
 	root := t.TempDir()
+	installation := filepath.Join(root, "hermes-install")
+	if err := os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gateway := `#!/bin/sh
+[ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+IFS= read -r tools || exit 1
+case "$tools" in *'"method":"tools.show"'*) ;; *) exit 91;; esac
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
+while IFS= read -r rest; do :; done
+`
+	if err := os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(gateway), 0700); err != nil {
+		t.Fatal(err)
+	}
 	executable := filepath.Join(root, "hermes-test")
-	script := "#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: /isolated/api-test'; exit 0; fi\n[ \"${TEST_PROVIDER_KEY:-}\" = \"api-test-secret\" ] || exit 41\nsleep 60 &\nwait\n"
+	script := "#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: " + installation + "'; exit 0; fi\n[ \"${TEST_PROVIDER_KEY:-}\" = \"api-test-secret\" ] || exit 41\nsleep 60 &\nwait\n"
 	if err := os.WriteFile(executable, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -877,7 +892,7 @@ func testConsoleAgentRegistrationAndLifecycle(t *testing.T, principalSelector bo
 
 	charter := core.Charter{
 		SchemaVersion: core.SchemaVersion, AgentID: "agent-alpha", Name: "Agent Alpha", Revision: 1,
-		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "profile/alpha"},
+		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "profile/alpha"},
 		Stanzas: []core.TrustStanza{{
 			ID: "principal", Name: "Principal", Enabled: true,
 			Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{"local-uid:" + strconv.Itoa(os.Getuid())}, PrincipalIDs: []string{"principal-1"}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},
@@ -1793,7 +1808,7 @@ func TestUnixAPICompleteOperationalWorkflow(t *testing.T) {
 		AgentID:       "api-agent",
 		Name:          "API Agent",
 		Revision:      1,
-		Runtime:       core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "aegis-owned-ephemeral"},
+		Runtime:       core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"},
 		Stanzas: []core.TrustStanza{{
 			ID: "principal", Name: "Principal", Enabled: true,
 			Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{"local-uid:" + uid}, PrincipalIDs: []string{"principal-1"}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},

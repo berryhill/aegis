@@ -4,8 +4,8 @@
     "name": "aegis-hermes-skills",
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
-    "hermes_compatibility": "\u003e=0.18.0,\u003c0.19.0",
-    "content_digest": "sha256:46bfeed381c3bc40579388e62fa7c786bedc2daa120287ee4fa61862ec9f10af",
+    "hermes_compatibility": "\u003e=0.18.0",
+    "content_digest": "sha256:8acf740e741fb199d572106b5164f5e160f6788d9eb912e1275ac19a6f3099b3",
     "source_revision": "repository"
   },
   "operations": [
@@ -500,17 +500,17 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:f9cc4f97cd6896ef2ca887543a421f6433895a95632499e533a82f5ab4d8552a",
+      "content_digest": "sha256:2b93d896f115242f8fa0c216b5257c5e2ae6669fdec0e5b74a0cdc77e41ba074",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:6b589c784f785203e6a3576ff582993604cc060f458fbb7b3b32a3251b0212d0",
-          "size": 14869
+          "sha256": "sha256:2568ada6701f9d110fdac95c391656c030a52081397b43268d03cb235e190cba",
+          "size": 15035
         },
         {
           "path": "references/onboarding-fixtures.json",
-          "sha256": "sha256:dd19f5644db161351f8068f9a7d5777d7c4aa242df187cbfcb485a43a83065d5",
-          "size": 4579
+          "sha256": "sha256:652d364c84d0e651003d0711f3462f55185eb8ec700ed5d14c325a7aa79bdba4",
+          "size": 4571
         }
       ]
     },
@@ -532,12 +532,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:7046719a18ae7575af39313a22e9e039c5722716ec58632e3cbeec4df96e0ecc",
+      "content_digest": "sha256:999d6230e4c4d204d7ec2fa581ef4d0810b904c614cabbe17260cb6da2f21aca",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:38760b4396fe30125f2f49524938bd986f6ff10cbc31e5808d608b6b48ffccbb",
-          "size": 16610
+          "sha256": "sha256:29eaf3830a14a5ac7c035866649672dde44b3bac10b1bb0c51b604ffe628fd3a",
+          "size": 16762
         },
         {
           "path": "references/lifecycle-fixtures.json",
