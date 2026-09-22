@@ -104,6 +104,9 @@ def main() -> int:
         "#!/bin/sh\n"
         f"printf 'invoked\\n' > '{gateway_log}'\n"
         "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"gateway.ready\",\"payload\":{}}}'\n"
+        "IFS= read -r tools || exit 1\n"
+        "case \"$tools\" in *'\"method\":\"tools.show\"'*) ;; *) exit 91;; esac\n"
+        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":\"aegis-tools\",\"result\":{\"total\":0,\"sections\":[]}}'\n"
         "read create\n"
         "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":\"create\",\"result\":{\"session_id\":\"installed-hermes-session\"}}'\n"
         "read prompt\n"
@@ -246,7 +249,7 @@ def main() -> int:
         "agent_id": "proof-agent",
         "name": "Installed Fleet Proof Agent",
         "revision": 1,
-        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "version_constraint": ">=0.18.0,<0.19.0", "target": "aegis-owned-ephemeral"},
+        "runtime": {"adapter": "hermes", "runtime": "hermes-agent", "version_constraint": ">=0.18.0", "target": "aegis-owned-ephemeral"},
         "stanzas": [{
             "id": "principal", "name": "Principal", "enabled": True,
             "authentication": {"methods": ["local-os"], "selectors": [{"kinds": ["human"], "subject_ids": [f"local-uid:{os.getuid()}"], "principal_ids": ["principal-1"], "issuers": ["local-os"], "claims": {}, "environments": ["local"]}], "require_fresh": True, "max_auth_age_seconds": 900},

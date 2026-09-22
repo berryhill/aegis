@@ -30,6 +30,8 @@ func TestAttemptInstalledCompletionShapes(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/delta=%s", tc.name, delta), func(t *testing.T) {
 				adapter, root := attemptTestAdapter(t, fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"method":"event","params":{"type":"gateway.ready"}}'
+read tools
+printf '%%s\n' '{"id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%%s\n' '{"id":"create","result":{"session_id":"installed"}}'
 read prompt
@@ -64,6 +66,8 @@ func (a *completionRevocation) CheckRuntimeAdmission(ctx context.Context, launch
 func TestAttemptCompletionRechecksAuthority(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
 printf '%s\n' '{"method":"event","params":{"type":"gateway.ready"}}'
+read tools
+printf '%s\n' '{"id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"id":"create","result":{"session_id":"installed"}}'
 read prompt

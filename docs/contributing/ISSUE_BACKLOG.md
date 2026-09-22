@@ -8,7 +8,7 @@ Scope: add strict configured certificate identity mapping for TCP API callers wi
 
 ## 2. Add Hermes post-launch inspection when upstream supports it
 
-Scope: research and implement a stable Hermes 0.18.x inspection protocol, or document upstream absence. Relevant files: `internal/runtime/hermes`, `research/HERMES_RUNTIME_RESEARCH.md`. Acceptance: compare reported toolsets to mandate and terminate on mismatch. Security: do not claim individual-tool attestation from launch arguments.
+Scope: research and implement a stable inspection protocol for an exact Hermes release accepted by the `>=0.18.0` minimum, or document upstream absence. Record the qualified release explicitly; no arbitrary upper cap or blanket future-release compatibility is implied. Relevant files: `internal/runtime/hermes`, `research/HERMES_RUNTIME_RESEARCH.md`. Acceptance: compare reported toolsets to mandate and terminate on mismatch. Security: do not claim individual-tool attestation from launch arguments.
 
 ## 3. Harden provisioning paths with descriptor-relative filesystem operations
 

@@ -8,7 +8,7 @@ For code-task authoring rather than the no-key substrate demo, see [Verified imp
 
 - Linux
 - Go 1.26.6+
-- Hermes Agent `>=0.18.0,<0.19.0` on `PATH`
+- Stable Hermes Agent `>=0.18.0` on `PATH` (no arbitrary upper cap; exact-version protocol checks still apply, and acceptance does not guarantee future-release compatibility)
 - A compatible `pinentry` in the operator's desktop session for protected authority prompts, or a real terminal for the no-echo fallback
 
 Install the latest tagged Aegis source with `go install github.com/berryhill/aegis/cmd/aegis@latest`, or continue below to build a checkout. Self-update requires a published, non-draft stable GitHub release with assets, not merely a local or remote Git tag; until publication completes it correctly reports the previous published stable version. `aegis --update` is the strict root-only alias for `aegis update`; both use the same checksum-verifying service.

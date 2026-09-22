@@ -116,12 +116,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	}
 	defer os.RemoveAll(home) //nolint:errcheck
 
-	// Match the manager's real empty Hermes 0.18 toolset; no_mcp is an
-	// unknown-toolset sentinel and can trigger configured CLI-tool fallback.
-	toolsets := "context_engine"
-	if len(tools) > 0 {
-		toolsets = strings.Join(tools, ",")
-	}
+	toolsets := launchToolsets(tools)
 	command := exec.CommandContext(turnContext, python, "-m", "tui_gateway.entry")
 	command.Dir = home
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -131,6 +126,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		"HERMES_TUI_SKILLS=",
 		"HERMES_DISABLE_AUTO_SKILLS=1",
 	)
+	command.Env = append(command.Env, "HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1")
 	if request.Model != "" {
 		command.Env = append(command.Env, "HERMES_TUI_MODEL="+request.Model)
 	}
@@ -200,6 +196,11 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return message.Method == "event" && message.Params.Type == "gateway.ready"
 	}); err != nil {
 		return finishContextError(attempt, authority.ExpiresAt, turnContext, err)
+	}
+	if toolsets == emptyToolset {
+		if err = verifyEmptyGateway(turnContext, stdin, messages, readErrors); err != nil {
+			return finishAttempt(attempt, execution.StateDenied, "tool_isolation_failed", err)
+		}
 	}
 	if err = writeGateway(stdin, "create", "session.create", map[string]any{"cols": 100, "source": "aegis-attempt"}); err != nil {
 		return finishAttempt(attempt, execution.StateFailed, "session_create_write_failed", err)

@@ -116,7 +116,9 @@ set -e
 [ "$(wc -c <"$workspace/hermes-version.out")" -le 4096 ] || fail 'Hermes version identity exceeds 4 KiB'
 hermes_version=$(tr '\n' ' ' <"$workspace/hermes-version.out" | cut -c1-512)
 [ -n "$hermes_version" ] || fail 'Hermes version identity is empty'
-printf '%s\n' "$hermes_version" | grep -Eq '(^|[^0-9])0\.18\.[0-9]+([^0-9]|$)' || fail 'Hermes version is outside supported >=0.18.0,<0.19.0 range'
+# Validate the complete identity, not a flattened/truncated numeric substring.
+# This is minimum-version preflight, not gateway or behavioral qualification.
+python3 "$repo/scripts/verify-hermes-version.py" "$workspace/hermes-version.out"
 rm -f "$workspace/hermes-version.out"
 
 # Rehearse replacement and exact rollback only in the task-owned workspace.

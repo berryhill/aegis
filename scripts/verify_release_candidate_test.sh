@@ -30,6 +30,7 @@ cat >"$root/hermes" <<'EOF'
 printf 'hermes 0.18.0\n'
 EOF
 chmod 0700 "$root/hermes"
+python3 "$repo/scripts/verify_hermes_version_test.py"
 revision=$(git -C "$repo" rev-parse HEAD)
 
 write_decision() {

@@ -52,7 +52,11 @@ func TestInstalledHelloOwningServiceChain(t *testing.T) {
 	mustWrite(svc.Config.HermesExecutable, []byte("#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+install+"'; exit 0; fi\nsleep 60 &\nwait\n"), 0700)
 	gateway := `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
-read create
+[ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
+IFS= read -r tools || exit 1
+case "$tools" in *'"method":"tools.show"'*) ;; *) exit 91;; esac
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
+IFS= read -r create || exit 0
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"hello-fixture"}}'
 read prompt
 printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'

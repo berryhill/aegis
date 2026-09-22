@@ -47,6 +47,8 @@ assert os.environ['OPENROUTER_API_KEY']=='aegis-local-parser-compatibility'
 assert 'HTTP_PROXY' not in os.environ
 print(json.dumps({'method':'event','params':{'type':'gateway.ready'}}),flush=True)
 sys.stdin.readline()
+print(json.dumps({'id':'aegis-tools','result':{'total':0,'sections':[]}}),flush=True)
+sys.stdin.readline()
 print(json.dumps({'id':'create','result':{'session_id':'local'}}),flush=True)
 p=json.loads(sys.stdin.readline())
 try:

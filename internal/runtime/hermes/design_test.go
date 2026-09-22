@@ -24,10 +24,12 @@ func TestDesignProposalUsesGatewayAndCleansHome(t *testing.T) {
 	}
 	python := filepath.Join(installation, "venv", "bin", "python")
 	gatewayScript := `#!/bin/sh
-if [ "$HERMES_TUI_TOOLSETS" != "no_mcp" ] || [ -n "$HERMES_TUI_SKILLS" ] || [ "$HERMES_DISABLE_AUTO_SKILLS" != "1" ]; then
+if [ "$HERMES_TUI_TOOLSETS" != "context_engine" ] || [ -n "$HERMES_TUI_SKILLS" ] || [ "$HERMES_DISABLE_AUTO_SKILLS" != "1" ]; then
   exit 9
 fi
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
 read create
 printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"design-1"}}'
 read prompt

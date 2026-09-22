@@ -39,6 +39,8 @@ assert os.environ['HERMES_TUI_MODEL']==os.environ['HERMES_MODEL']=='exact:1'
 assert 'HTTP_PROXY' not in os.environ
 assert 'ANTHROPIC_API_KEY' not in os.environ
 print(json.dumps({'method':'event','params':{'type':'gateway.ready'}}),flush=True)
+sys.stdin.readline()
+print(json.dumps({'id':'aegis-tools','result':{'total':0,'sections':[]}}),flush=True)
 req=urllib.request.Request(os.environ['OPENROUTER_BASE_URL']+'/chat/completions',data=json.dumps({'model':'exact:1','messages':[{'role':'user','content':'hi'}]}).encode(),headers={'Authorization':'Bearer '+os.environ['OPENROUTER_API_KEY']})
 try: urllib.request.urlopen(req).read()
 except Exception: pass

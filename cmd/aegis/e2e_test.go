@@ -29,11 +29,26 @@ func TestCLIEndToEndHermetic(t *testing.T) {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
 
+	installation := filepath.Join(root, "hermes-install")
+	if err := os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gateway := `#!/bin/sh
+[ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+IFS= read -r tools || exit 1
+case "$tools" in *'"method":"tools.show"'*) ;; *) exit 91;; esac
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
+while IFS= read -r rest; do :; done
+`
+	if err := os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(gateway), 0700); err != nil {
+		t.Fatal(err)
+	}
 	hermes := filepath.Join(root, "hermes-fixture")
 	fixture := `#!/bin/sh
 if [ "${1:-}" = "--version" ]; then
   echo 'Hermes Agent v0.18.2'
-  echo 'Install directory: /isolated/hermes-fixture'
+  echo 'Install directory: ` + installation + `'
   exit 0
 fi
 if [ "${TEST_PROVIDER_KEY:-}" != "e2e-fixture-secret" ]; then
@@ -98,7 +113,7 @@ credentials:
 		Runtime: core.RuntimeConstraint{
 			Adapter:           "hermes",
 			Runtime:           "hermes-agent",
-			VersionConstraint: ">=0.18.0,<0.19.0",
+			VersionConstraint: ">=0.18.0",
 			Target:            "aegis-owned-ephemeral",
 		},
 		Stanzas: []core.TrustStanza{{

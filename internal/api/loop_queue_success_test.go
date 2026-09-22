@@ -67,7 +67,7 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	// Use the existing API execution fixture's exact principal selector, with
 	// fixture-only provider configuration and no newly invented authority.
 	charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: "distributed-agent", Name: "Distributed test", Revision: 1,
-		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "aegis-owned-ephemeral"},
+		Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"},
 		Stanzas: []core.TrustStanza{{ID: "principal", Name: "Principal", Enabled: true,
 			Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{"local-uid:" + strconv.Itoa(os.Getuid())}, PrincipalIDs: []string{svc.Config.Principal.ID}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},
 			Grant:          core.Grant{Capabilities: []string{"chat"}, Tools: nil}, Scopes: core.Scopes{Memory: []string{"principal-memory"}, Credentials: nil},
@@ -186,13 +186,15 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 		t.Fatalf("no session: %+v %v", noSession, err)
 	}
 	if ready {
+		// Preserve the discoverable zero-tool probe for this provider:none session.
+		installation := filepath.Join(filepath.Dir(svc.Config.HermesExecutable), "hermes-install")
+		if err := os.WriteFile(svc.Config.HermesExecutable, []byte("#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+installation+"'; exit 0; fi\nsleep 60 &\nwait\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
 		var preview struct {
 			Mandate core.Mandate `json:"mandate"`
 		}
 		apiRequest(t, client, http.MethodPost, "/v1/sessions/preview", map[string]any{"agent": charter.AgentID, "revision": 1, "stanza": "principal", "environment": core.Environment{Name: "local"}}, &preview, http.StatusCreated)
-		if err := os.WriteFile(svc.Config.HermesExecutable, []byte("#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; exit 0; fi\nsleep 60 &\nwait\n"), 0700); err != nil {
-			t.Fatal(err)
-		}
 		session, err := svc.StartSessionAs(ctx, subject, preview.Mandate.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -210,7 +212,11 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	event, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "fixture", "payload": map[string]string{"status": "complete", "text": string(edits)}}})
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
-read create
+[ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
+IFS= read -r tools || exit 1
+case "$tools" in *'"method":"tools.show"'*) ;; *) exit 91;; esac
+printf '%%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
+IFS= read -r create || exit 0
 printf '%%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"fixture"}}'
 read prompt
 touch '%s'

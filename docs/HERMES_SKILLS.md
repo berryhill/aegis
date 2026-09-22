@@ -84,7 +84,7 @@ A release build runs `go run ./internal/skillbundle/cmd build . DIST VERSION SOU
 
 ## Hermes tap and direct install
 
-Hermes Agent `>=0.18.0,<0.19.0` discovers immediate skill directories beneath a configured tap's `skills/` path. Against the published `berryhill/aegis` repository:
+Aegis accepts stable Hermes Agent `>=0.18.0` without an arbitrary upper cap. The inspected Hermes skill-discovery contract uses immediate skill directories beneath a configured tap's `skills/` path; a later accepted version still needs exact-version skill/protocol qualification, not an assumption of compatibility. Against the published `berryhill/aegis` repository:
 
 1. `hermes skills tap add berryhill/aegis` records the tap in the selected `HERMES_HOME`.
 2. `hermes skills search aegis` shows the repository path and provenance.

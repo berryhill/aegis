@@ -14,7 +14,7 @@ func completePolicyCharter() Charter {
 		AgentID:       "policy-agent",
 		Name:          "Policy Agent",
 		Revision:      1,
-		Runtime:       RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0,<0.19.0", Target: "ephemeral"},
+		Runtime:       RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "ephemeral"},
 		Stanzas: []TrustStanza{{
 			ID: "principal", Name: "Principal", Enabled: true,
 			Authentication:  AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []IdentitySelector{{SubjectIDs: []string{"local-uid:1"}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},
@@ -100,11 +100,11 @@ func TestCharterAllowsExplicitNoProviderWithoutCredentialScope(t *testing.T) {
 
 func TestCharterRequiresExactQualifiedHermesVersionConstraint(t *testing.T) {
 	charter := completePolicyCharter()
-	charter.Runtime.VersionConstraint = HermesVersionConstraint
+	charter.Runtime.VersionConstraint = ">=0.18.0"
 	if err := ValidateCharter(charter); err != nil {
 		t.Fatalf("qualified runtime constraint rejected: %v", err)
 	}
-	for _, constraint := range []string{"", ">=0.18.0", ">=0.18.0, <0.19.0", "^0.18.0", ">=0.18.0,<0.20.0"} {
+	for _, constraint := range []string{"", ">=0.18.0, <0.19.0", "^0.18.0", ">=0.18.0,<0.20.0"} {
 		t.Run(constraint, func(t *testing.T) {
 			changed := completePolicyCharter()
 			changed.Runtime.VersionConstraint = constraint
