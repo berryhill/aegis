@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.9] - 2026-09-23
+
 ### Hermes minimum-version policy
 
 - Removed the arbitrary Hermes 0.19.0 upper cap: the accepted stable-version minimum is `>=0.18.0`. Version acceptance does not qualify every future release or relax strict identity parsing, gateway protocols, capability checks, immutable charter approval, or fresh authority admission. Release-candidate verification and generated fleet-proof charters use the same minimum; retained 0.18.2 live-runtime evidence is historical and is not new-release qualification.
