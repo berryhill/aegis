@@ -75,7 +75,14 @@ func TestGatewayFixtureMultiTurn(t *testing.T) {
 }
 
 func TestGatewayMalformedOversizedAndTimeoutFailClosed(t *testing.T) {
-	for name, input := range map[string]string{"malformed": "not-json\n", "duplicate": "{\"jsonrpc\":\"2.0\",\"jsonrpc\":\"2.0\"}\n", "oversized": strings.Repeat("x", 2048) + "\n"} {
+	for name, input := range map[string]string{
+		"malformed": "not-json\n", "duplicate": "{\"jsonrpc\":\"2.0\",\"jsonrpc\":\"2.0\"}\n",
+		"oversized":            strings.Repeat("x", 2048) + "\n",
+		"zero sequence":        `{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"s","seq":0}}` + "\n",
+		"negative sequence":    `{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"s","seq":-1}}` + "\n",
+		"sessionless sequence": `{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","seq":1}}` + "\n",
+		"unknown event field":  `{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"s","seq":1,"authority":true}}` + "\n",
+	} {
 		t.Run(name, func(t *testing.T) {
 			client, err := NewGatewayClient(strings.NewReader(input), io.Discard, 1024)
 			if err != nil {

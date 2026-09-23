@@ -20,6 +20,7 @@ type GatewayMessage struct {
 	Params  struct {
 		Type      string         `json:"type"`
 		SessionID string         `json:"session_id,omitempty"`
+		Seq       *uint64        `json:"seq,omitempty"`
 		Payload   map[string]any `json:"payload"`
 	} `json:"params,omitempty"`
 	Result map[string]any `json:"result,omitempty"`
@@ -64,6 +65,13 @@ func (c *GatewayClient) read(reader io.Reader) {
 		}
 		if message.JSONRPC != "2.0" {
 			c.fail(errors.New("Hermes gateway protocol version mismatch"))
+			return
+		}
+		// Hermes 0.21+ stamps session events for replay. The sequence is
+		// transport metadata, not authority; retain strict decoding while
+		// rejecting malformed or sessionless sequence claims.
+		if message.Params.Seq != nil && (*message.Params.Seq == 0 || message.Method != "event" || message.Params.SessionID == "") {
+			c.fail(errors.New("Hermes gateway event sequence is invalid"))
 			return
 		}
 		c.messages <- message
