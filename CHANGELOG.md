@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.11] - 2026-09-24
+
 ### Fixed
 
 - Wait for the exact Hermes session's settled `session.info` after `message.complete` before returning a reusable manager turn. This closes the certification multi-turn busy/interrupt race; a non-streaming prompt-submit RPC status, missing settlement, or malformed running state fails closed. The live local-model corpus still requires an operator-approved rerun before certification can be claimed.
