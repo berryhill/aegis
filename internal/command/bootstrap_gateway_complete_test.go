@@ -159,6 +159,7 @@ for line in sys.stdin:
   response=responses[match.group(1)] if match else {"schema_version":"aegis.manager.response.v1","kind":"message","message":"safe","proposal":None}
   for typ,payload in [("message.start",{}),("message.delta",{"text":json.dumps(response)}),("message.complete",{"status":"complete"})]:
    emit({"jsonrpc":"2.0","method":"event","params":{"type":typ,"session_id":"fixture","payload":payload}})
+  emit({"jsonrpc":"2.0","method":"event","params":{"type":"session.info","session_id":"fixture","payload":{"running":False}}})
 `
 			if err := os.WriteFile(filepath.Join(root, "python"), []byte(script), 0700); err != nil {
 				t.Fatal(err)

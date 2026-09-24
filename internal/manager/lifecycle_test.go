@@ -122,7 +122,8 @@ while IFS= read -r line; do
   *prompt.submit*)
    printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"fake-session"}}'
    printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"fake-session","payload":{"text":"` + strings.ReplaceAll(response, `"`, `\"`) + `"}}}'
-   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fake-session","payload":{"status":"complete"}}}' ;;
+   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fake-session","payload":{"status":"complete"}}}'
+   printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","session_id":"fake-session","payload":{"running":false}}}' ;;
  esac
 done
 `
