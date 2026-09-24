@@ -9,6 +9,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ### Added
 - Added an optional `doer.v1` mode to the exact-contract Loop v3 implementation action: fail-closed local Laya gate/judgment, bounded Hermes proposal/diagnosis/completion turns, at most three native Go-test passes, and content-addressed per-stage readback under the existing single-node Graph/Queue authority path. Operator-approved contract digest and separately configured local Laya interpreter/private home are required; model judgment never substitutes for native verification. No generic multi-step Loop interpreter, Jev backend, live-model acceptance, automatic Queue retry, or new host sandbox is claimed.
 
+## [0.2.11] - 2026-09-24
+
+### Fixed
+
+- Wait for the exact Hermes session's settled `session.info` after `message.complete` before returning a reusable manager turn. This closes the certification multi-turn busy/interrupt race; a non-streaming prompt-submit RPC status, missing settlement, or malformed running state fails closed. The live local-model corpus still requires an operator-approved rerun before certification can be claimed.
+
+
 ## [0.2.10] - 2026-09-24
 
 ### Fixed

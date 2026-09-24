@@ -60,4 +60,11 @@ func TestInstalledManagerGatewayProtocol(t *testing.T) {
 	if !strings.Contains(string(output), `"kind":"message"`) {
 		t.Fatalf("unexpected completion length=%d", len(output))
 	}
+	second, err := process.Client().Turn(ctx, session, "Return another safe message JSON envelope", 1<<20)
+	if err != nil {
+		t.Fatalf("second prompt.submit on settled session: %v", err)
+	}
+	if !strings.Contains(string(second), `"kind":"message"`) {
+		t.Fatalf("unexpected second completion length=%d", len(second))
+	}
 }
