@@ -161,6 +161,8 @@ func Inspect(path string) Inspection {
 type Implementation struct {
 	GoBinary            string   `mapstructure:"go_binary" json:"go_binary"`
 	AuthorizedContracts []string `mapstructure:"authorized_contracts" json:"authorized_contracts"`
+	LayaPython          string   `mapstructure:"laya_python" json:"laya_python,omitempty"`
+	LayaHome            string   `mapstructure:"laya_home" json:"laya_home,omitempty"`
 }
 
 type Config struct {

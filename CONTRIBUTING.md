@@ -37,6 +37,15 @@ GOFLAGS=-p=1 GOMAXPROCS=2 python3 scripts/verify-budget.py \
   go test -timeout=3m ./internal/testprocess ./internal/persistence/authority/badger
 ```
 
+For the optional v3 `doer.v1` action, run the focused kernel and Queue/Laya
+regressions before the full gate:
+
+```sh
+GOMAXPROCS=2 go test -p 1 ./internal/implementation ./internal/orchestration -run 'TestDoer|TestImplementationQueueNativeCompletion|TestLaya|TestLocalLaya'
+```
+The Queue fixture uses fake Laya/Hermes transports and a real native Go checker;
+it does not qualify a live model or authorize operator configuration.
+
 
 Before opening or updating a pull request, commit the candidate and run the exact-head release-readiness gate used by CI:
 

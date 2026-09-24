@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -46,7 +47,7 @@ func (r *implementationTestRepository) CompleteQueueItem(ctx context.Context, c 
 
 // The runtime is a protocol fixture; native checks and fleet completion are real.
 func TestImplementationQueueNativeCompletion(t *testing.T) {
-	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired"} {
+	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			root := t.TempDir()
@@ -65,6 +66,10 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			contract.Policy.Packages = []string{"."}
 			contract.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "fixture", Name: "TestValue"}}
 			contract.Policy.TimeoutSeconds = 120
+			if mode == "doer-needs-input" || mode == "doer-success" || mode == "doer-retry" {
+				contract.DecisionMode = "doer.v1"
+				contract.MaxPasses = 3
+			}
 			service, fixture, _, subject, _, _ := fleetServiceFixture(t)
 			now := time.Now().UTC()
 			service.now = func() time.Time { return time.Now().UTC() }
@@ -128,12 +133,16 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 				t.Fatalf("submission: %+v %v", decision, err)
 			}
 			message := func(value string) string {
-				patch, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package fixture\nfunc Value() int {return " + value + "}\n")}}})
+				proposal := map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package fixture\nfunc Value() int {return " + value + "}\n")}}}
+				if mode == "doer-success" || mode == "doer-retry" {
+					proposal["report"] = "Implemented the requested value and ran relevant checks"
+				}
+				patch, _ := json.Marshal(proposal)
 				event, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "queue-runtime-session", "payload": map[string]string{"text": string(patch), "status": "complete"}}})
 				return string(event)
 			}
 			first := message("42")
-			if mode == "correction" || mode == "exhaustion" {
+			if mode == "correction" || mode == "exhaustion" || mode == "doer-retry" {
 				first = message("0")
 			}
 			second := message("42")
@@ -179,6 +188,17 @@ while read rest; do :; done
 			if mode != "unauthorized" {
 				if err = worker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}}, filepath.Join(root, "state"), adapter.hermes); err != nil {
 					t.Fatal(err)
+				}
+				if contract.DecisionMode == "doer.v1" {
+					worker.implementation.decision = NewLayaDecisionAdapter(fakeLayaProcess(func(_ context.Context, input []byte) ([]byte, error) {
+						if mode == "doer-needs-input" {
+							return []byte(`{"version":1,"kind":"gate","answers":{"specified":{"choice":"no","answer_confidence":0.9},"result_defined":{"choice":"yes","answer_confidence":0.9}}}`), nil
+						}
+						if strings.Contains(string(input), `"kind":"verdict"`) {
+							return []byte(`{"version":1,"kind":"verdict","answers":{"done":{"choice":"yes","answer_confidence":0.9},"stays_in_scope":{"choice":"yes","answer_confidence":0.9},"fulfills":{"choice":"yes","answer_confidence":0.9},"works":{"choice":"yes","answer_confidence":0.9},"practices":{"choice":"yes","answer_confidence":0.9}}}`), nil
+						}
+						return []byte(`{"version":1,"kind":"gate","answers":{"specified":{"choice":"yes","answer_confidence":0.9},"result_defined":{"choice":"yes","answer_confidence":0.9}}}`), nil
+					}))
 				}
 			}
 			if mode == "tamper" {
@@ -253,11 +273,33 @@ while read rest; do :; done
 				}
 				return
 			}
+			if mode == "doer-needs-input" {
+				if err == nil || projection.State != queue.StateFailed || result.Disposition.ReasonCode != "implementation_needs_input" {
+					t.Fatalf("needs-input disposition: %+v %+v %v", result, projection, err)
+				}
+				kernel := &implementation.Executor{DB: repository.ImplementationStore()}
+				record, e := kernel.Read("attempt")
+				if e != nil || record.State != "needs_input" || len(record.Passes) != 0 || len(record.Stages) != 1 {
+					t.Fatalf("needs-input stage: %+v %v", record, e)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			if result.Disposition.State != execution.StateSucceeded || projection.State != queue.StateSucceeded || result.Artifact == nil {
 				t.Fatalf("completion: %+v %+v", result, projection)
+			}
+			if mode == "doer-success" || mode == "doer-retry" {
+				kernel := &implementation.Executor{DB: repository.ImplementationStore()}
+				record, readErr := kernel.Read("attempt")
+				passes := 1
+				if mode == "doer-retry" {
+					passes = 2
+				}
+				if readErr != nil || record.State != "succeeded" || len(record.Passes) != passes || len(record.Stages) < 4 || record.Stages[0].Name != "gate" {
+					t.Fatalf("doer stage readback: %+v %v", record, readErr)
+				}
 			}
 			output, err := blobs.GetBlob(result.Artifact.ContentRef)
 			if err != nil || len(output) == 0 {

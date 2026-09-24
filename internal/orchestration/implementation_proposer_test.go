@@ -20,3 +20,20 @@ func TestPatchProposalStrictDataOnly(t *testing.T) {
 		t.Fatal("missing adapter accepted")
 	}
 }
+
+func TestReportedPatchStrictSchema(t *testing.T) {
+	for _, wire := range []string{
+		`{"edits":[{"path":"sum.go","content":"eA=="}]}`,
+		`{"edits":[{"path":"sum.go","content":"eA=="}],"report":""}`,
+		`{"edits":[{"path":"sum.go","content":"eA=="}],"report":"done","report":"other"}`,
+		`{"edits":[{"path":"sum.go","content":"eA=="}],"report":"done","passed":true}`,
+	} {
+		if _, err := decodeReportedPatch([]byte(wire)); err == nil {
+			t.Fatalf("accepted %s", wire)
+		}
+	}
+	p, err := decodeReportedPatch([]byte(`{"edits":[{"path":"sum.go","content":"eA=="}],"report":"tested"}`))
+	if err != nil || p.Report != "tested" || len(p.Edits) != 1 {
+		t.Fatalf("%+v %v", p, err)
+	}
+}

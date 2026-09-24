@@ -1,18 +1,17 @@
-# Bounded verified-implementation kernel (integration pending)
+# Bounded verified-implementation kernel
 
-This package is an additive, provider-free execution kernel. Loop v3 now binds
-the exact action contract through authenticated draft publication/readback. A
-typed, tool-free Hermes patch proposer exists, but **kernel execution and atomic
-Queue completion are not yet wired**. Production Queue execution rejects v3
-before claim; ordinary runtime adapters also reject implementation contracts.
-Existing Loop v2 canonical bytes,
-evidence claims and execution behavior are unchanged. Do not advertise this as an
-available console workflow or activate it through an existing v2 Loop.
+This package is an additive controller-owned execution kernel. Loop v3 binds the
+exact action contract through authenticated publication and separate activation.
+The single-node Queue worker routes v3 to this kernel only after exact runtime
+admission and operator allowlisting; independently reloaded native checker
+evidence is required for atomic Queue success. Existing Loop v2 canonical bytes
+and its execution path remain unchanged. No generic multi-step interpreter or
+automatic Queue scheduler is supplied.
 
 `loop.ImplementationDraft` creates a typed v1 action contract with an explicitly
 unresolved workspace. `Validate` rejects unresolved workspace/source policy or missing immutable required package/test identities,
 unknown policy kinds, nonlocal package patterns and budgets outside one or two
-passes. Strict decoding rejects unknown and duplicate fields. Only explicitly
+passes (or one to three under `decision_mode: doer.v1`). Strict decoding rejects unknown and duplicate fields. Only explicitly
 listed non-test Go files may be proposed for writes; the model cannot supply a
 command, change tests or supply a PASS receipt.
 
@@ -37,18 +36,16 @@ rights. A trusted operator must explicitly authorize this code-execution scope.
 Environment scrubbing is not filesystem credential confinement. A nonblocking advisory lock on the canonical workspace directory serializes cooperating kernel executors across databases/processes. **The operator must exclude all external/noncooperating writers and directory replacement throughout custody.** Unix process groups are killed on cancellation and after checker exit, including remaining descendants; unsupported platforms fail closed. Process groups are not a sandbox, cgroup, or protection against hostile processes escaping their group. Strong isolation and hostile native-code containment are not provided. Native malicious tests can forge test events and remain out of scope. Source proposals are intended as untrusted data, while the
 proposal adapter and custody DB are trusted controller components.
 
-Implemented integration: v3 Step binding, detached canonical copies, strict
-validation, typed authoring builder, authenticated Unix HTTP publication with
-real isolated persistence/readback and no Queue submission, immutable revision
-transport in RuntimeRequest, and strict tool-free Hermes proposal adapter.
-
-Remaining integration: wire proposer into kernel through controller-owned custody;
-Graph/Queue execution routing; shared fleet transaction checker-receipt completion
-revalidation (legacy ExpectedDigest verification must not be reused); explicit
-workspace/native-check authority adapter; browser authoring; activation readiness;
-first-pass/corrective/failure/tamper service-to-Queue execution tests; launch-asset
-review. The current production refusal is intentional until those gates exist.
-No general scheduler, credential broker, auto-commit/push or deployment is added.
+The optional `doer.v1` action mode requires a separately configured local Laya
+backend and the same operator-allowlisted contract digest. A task gate occurs
+before the first pass. Each proposal includes an untrusted report; a typed Laya
+judgment and the native Go checker are both observed before success. Failed
+passes receive a tool-free Hermes diagnosis before the next bounded pass;
+completion assessment is non-authoritative. Content-addressed stage facts are
+stored under the implementation attempt and can be read back. These are internal
+passes under one Queue attempt, not a general Loop step executor or Doer's
+arbitrary file verifier. See `docs/VERIFIED_IMPLEMENTATION.md` for configuration
+and limitations. No credential broker, auto-commit/push or deployment is added.
 
 Verification: `GOMAXPROCS=2 go test -p 1 ./internal/loop ./internal/implementation`.
 The synthetic repository tests execute the real Go toolchain without a provider.

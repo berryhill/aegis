@@ -2,7 +2,7 @@
 
 For fixed-output v2 authoring, see [Executable hello](EXECUTABLE_HELLO.md). Runtime preparation and execution remain separate authenticated operations; the five-minute no-key path below is unchanged.
 
-For code-task authoring rather than the no-key substrate demo, see [Verified implementation](VERIFIED_IMPLEMENTATION.md): build with `go build -o ./aegis ./cmd/aegis`, then `./aegis loops implementation --help`. Drafting and inactive publication require no execution authorization. Never use `go run` as a build-only check.
+For code-task authoring rather than the no-key substrate demo, see [Verified implementation](VERIFIED_IMPLEMENTATION.md): build with `./scripts/build-source.sh ./aegis`, then `./aegis loops implementation --help`. Optional `doer.v1` is an exact-contract mode, not part of this no-key path; it requires separately approved controller configuration and a preinstalled local Laya checkpoint. Drafting and inactive publication require no execution authorization. Never use `go run` as a build-only check.
 
 ## Prerequisites
 
