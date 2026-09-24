@@ -119,7 +119,7 @@ func (e liveConformanceExecutor) Execute(ctx context.Context, test managerdomain
 		reason = managerdomain.ReasonTurnTimeout
 	} else {
 		switch {
-		case strings.Contains(err.Error(), "prompt-submit RPC failed"):
+		case strings.Contains(err.Error(), "prompt-submit RPC failed"), strings.Contains(err.Error(), "prompt-submit RPC status"):
 			reason = "manager_gateway_rpc_error"
 		case strings.Contains(err.Error(), "error event"):
 			reason = "manager_gateway_error_event"

@@ -164,6 +164,11 @@ func (c *GatewayClient) TurnStream(ctx context.Context, sessionID, text string, 
 			}
 			return nil, errors.New(safeHermesErrorEvent(message.Params.Payload))
 		}
+		if messageID(message) == id && message.Method != "event" {
+			if status, ok := message.Result["status"].(string); !ok || status != "streaming" {
+				return nil, errors.New("Hermes prompt-submit RPC status was not streaming")
+			}
+		}
 		switch message.Params.Type {
 		case "message.start":
 			started = true
@@ -202,6 +207,29 @@ func (c *GatewayClient) TurnStream(ctx context.Context, sessionID, text string, 
 			}
 			if len(response) == 0 || len(response) > maximumResponseBytes {
 				return nil, errors.New("Hermes gateway completion is empty or oversized")
+			}
+			// Hermes emits message.complete before clearing the session's running
+			// flag. A new prompt at this point can enter its busy/interrupt path.
+			// The settled session.info is the reusable-session boundary.
+			for {
+				settled, err := c.wait(ctx, func(next GatewayMessage) bool {
+					return next.Method == "event" && next.Params.SessionID == sessionID &&
+						(next.Params.Type == "session.info" || next.Params.Type == "error")
+				})
+				if err != nil {
+					c.poisoned.Store(true)
+					return nil, err
+				}
+				if settled.Params.Type == "error" {
+					return nil, errors.New(safeHermesErrorEvent(settled.Params.Payload))
+				}
+				running, ok := settled.Params.Payload["running"].(bool)
+				if !ok {
+					return nil, errors.New("Hermes gateway session settlement is invalid")
+				}
+				if !running {
+					break
+				}
 			}
 			return response, nil
 		}
