@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.10] - 2026-09-24
+
 ### Fixed
 
 - Accept Hermes's positive per-session `seq` event metadata in the strict manager gateway decoder. Previously a live Hermes 0.21.3 certification turn failed with `manager_gateway_protocol_error` before its model response could be evaluated. Unknown event fields and invalid sequence claims still fail closed; certification still requires every case to pass.
