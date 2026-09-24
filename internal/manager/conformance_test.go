@@ -240,6 +240,40 @@ func TestCertificationCanContinueAfterErrorsWithoutReturningArtifact(t *testing.
 	}
 }
 
+func TestCertificationSegmentsAdvanceOnlyExactPassedPrefix(t *testing.T) {
+	candidate := Candidates()[0]
+	digest := "sha256:" + strings.Repeat("b", 64)
+	var prior []ConformanceResult
+	var complete bool
+	for _, count := range []int{4, 4, 5} {
+		executor := &countingConformanceExecutor{}
+		cert, done, err := RunCertificationSegment(context.Background(), executor, candidate, candidate.OllamaName, digest, "Q4", "0.18.2", "0.32.0", 65536, time.Now(), prior, count)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(executor.calls) != count || len(cert.Results) != len(prior)+count {
+			t.Fatalf("segment calls=%v results=%d prior=%d", executor.calls, len(cert.Results), len(prior))
+		}
+		for index, id := range executor.calls {
+			if id != ConformanceCorpus()[len(prior)+index].ID {
+				t.Fatalf("segment replay or omission: %v", executor.calls)
+			}
+		}
+		if !done && cert.Validate() == nil {
+			t.Fatal("partial segment granted certification")
+		}
+		prior, complete = cert.Results, done
+	}
+	if !complete || ValidateCertification(prior) != nil {
+		t.Fatal("exact complete corpus was not certified")
+	}
+	invalid := append([]ConformanceResult(nil), prior[:4]...)
+	invalid[2] = invalid[1]
+	if _, _, err := RunCertificationSegment(context.Background(), &countingConformanceExecutor{}, candidate, candidate.OllamaName, digest, "Q4", "0.18.2", "0.32.0", 65536, time.Now(), invalid, 4); err == nil {
+		t.Fatal("duplicate or reordered checkpoint prefix accepted")
+	}
+}
+
 func TestSuccessfulCertificationRunsExactCorpusAndSavesAtomically(t *testing.T) {
 	executor := &countingConformanceExecutor{}
 	candidate := Candidates()[0]

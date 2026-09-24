@@ -172,16 +172,22 @@ func managerCertifyCmd(build builder) *cobra.Command {
 }
 
 func runManagerCertification(cmd *cobra.Command, build builder, candidateID string, progress func(string), continueOnError bool) (resultErr error) {
+	return runManagerCertificationSegment(cmd, build, candidateID, progress, continueOnError, nil)
+}
+
+func runManagerCertificationSegment(cmd *cobra.Command, build builder, candidateID string, progress func(string), continueOnError bool, checkpointed *bool) (resultErr error) {
 	service, subject, err := authenticatedService(cmd, build)
 	if err != nil {
 		return err
 	}
+	auditRecorded := false
 	defer func() {
+		if auditRecorded {
+			return
+		}
 		outcome, reason := "denied", "certification_failed"
 		details := map[string]string{"candidate_id": candidateID, "model": service.Config.Manager.Inference.Model, "model_digest": service.Config.Manager.Inference.ModelDigest}
-		if resultErr == nil {
-			outcome, reason = "ok", "certification_passed"
-		} else {
+		if resultErr != nil {
 			var failure *managerdomain.ConformanceFailure
 			if errors.As(resultErr, &failure) {
 				reason = failure.Reason
@@ -283,15 +289,80 @@ func runManagerCertification(cmd *cobra.Command, build builder, candidateID stri
 	if err = certificationCtx.Err(); err != nil {
 		return fmt.Errorf("certification authority expired before conformance began: %s", managerdomain.ReasonSessionExpired)
 	}
-	certification, err := managerdomain.RunCertificationWithOptions(certificationCtx, liveConformanceExecutor{gateway: hermes.Client(), budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), timeout: cfg.Hermes.TurnTimeout, progress: progress, proxy: proxy, format: format}, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC(), managerdomain.CertificationOptions{ContinueOnError: continueOnError})
+	instructionDigest := sha256.Sum256([]byte(managerdomain.ManagerSystemInstruction()))
+	expected := managerdomain.Certification{
+		SchemaVersion: "aegis.manager.certification.v1", CandidateID: candidate.ID, ArtifactName: cfg.Inference.Model,
+		ArtifactDigest: cfg.Inference.ModelDigest, Quantization: model.Details.QuantizationLevel,
+		HermesVersion: descriptor.Version, OllamaVersion: version, ContextLength: cfg.Hermes.ContextLength,
+		InstructionDigest: "sha256:" + hex.EncodeToString(instructionDigest[:]),
+		ResponseSchema:    managerdomain.ResponseSchemaVersion, CorpusDigest: managerdomain.CorpusDigest(),
+	}
+	checkpointPath := cfg.Inference.Certification + ".checkpoint"
+	var prior []managerdomain.ConformanceResult
+	previousCount := -1
+	var existing managerdomain.CertificationCheckpoint
+	if !continueOnError {
+		loaded, present, loadErr := managerdomain.LoadCertificationCheckpoint(checkpointPath, expected, subject.PrincipalID, time.Now().UTC())
+		if loadErr != nil {
+			return fmt.Errorf("certification checkpoint denied: %w", loadErr)
+		}
+		if present {
+			existing = loaded
+			prior = loaded.Certification.Results
+			previousCount = len(prior)
+		}
+	}
+	executor := liveConformanceExecutor{gateway: hermes.Client(), budget: &budget, maximum: int(cfg.Hermes.MaximumResponseBytes), timeout: cfg.Hermes.TurnTimeout, progress: progress, proxy: proxy, format: format}
+	var certification managerdomain.Certification
+	complete := false
+	if continueOnError {
+		certification, err = managerdomain.RunCertificationWithOptions(certificationCtx, executor, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC(), managerdomain.CertificationOptions{ContinueOnError: true})
+		complete = err == nil
+	} else {
+		certification, complete, err = managerdomain.RunCertificationSegment(certificationCtx, executor, *candidate, cfg.Inference.Model, cfg.Inference.ModelDigest, model.Details.QuantizationLevel, descriptor.Version, version, cfg.Hermes.ContextLength, time.Now().UTC(), prior, 4)
+	}
 	if err != nil {
 		return err
 	}
 	if err = cleanup.close(); err != nil {
 		return fmt.Errorf("manager certification cleanup failed before publication: %w", err)
 	}
+	if err = certificationCtx.Err(); err != nil || !time.Now().Before(subject.ExpiresAt) {
+		return fmt.Errorf("certification authority expired before publication: %s", managerdomain.ReasonSessionExpired)
+	}
+	auditCtx, stopAudit := context.WithDeadline(cmd.Context(), subject.ExpiresAt)
+	defer stopAudit()
+	auditReason := "certification_segment_validated"
+	if complete {
+		auditReason = "certification_conformance_passed"
+	}
+	if err = service.AuditManagerCertification(auditCtx, subject, "ok", auditReason, map[string]string{"candidate_id": candidateID, "model": cfg.Inference.Model, "model_digest": cfg.Inference.ModelDigest}); err != nil {
+		return err
+	}
+	auditRecorded = true
+	if err = certificationCtx.Err(); err != nil || !time.Now().Before(subject.ExpiresAt) {
+		return fmt.Errorf("certification authority expired before publication: %s", managerdomain.ReasonSessionExpired)
+	}
+	if !complete {
+		checkpoint := existing
+		if previousCount == -1 {
+			checkpoint = managerdomain.CertificationCheckpoint{SchemaVersion: "aegis.manager.certification-checkpoint.v1", PrincipalID: subject.PrincipalID, CreatedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(24 * time.Hour)}
+		}
+		checkpoint.Certification = certification
+		checkpoint.Certification.CertifiedAt = time.Time{}
+		if err = managerdomain.SaveCertificationCheckpoint(checkpointPath, checkpoint, previousCount); err != nil {
+			return fmt.Errorf("certification checkpoint failed: %w", err)
+		}
+		if checkpointed != nil {
+			*checkpointed = true
+		}
+		return output(cmd, map[string]any{"status": "checkpointed", "candidate_id": candidateID, "completed_cases": len(certification.Results), "total_cases": len(managerdomain.ConformanceCorpus()), "next": "aegis manager certify " + candidateID, "certified": false})
+	}
 	if err = managerdomain.SaveCertification(cfg.Inference.Certification, certification); err != nil {
 		return err
+	}
+	if _, err = managerdomain.LoadCertification(cfg.Inference.Certification, cfg.Inference.Model, cfg.Inference.ModelDigest, descriptor.Version, version, cfg.Hermes.ContextLength); err != nil {
+		return fmt.Errorf("certification readback failed: %w", err)
 	}
 	return output(cmd, map[string]any{"status": "certified", "candidate_id": certification.CandidateID, "artifact": certification.ArtifactName, "artifact_digest": certification.ArtifactDigest, "hermes_version": certification.HermesVersion, "ollama_version": certification.OllamaVersion, "context_length": certification.ContextLength, "corpus_digest": certification.CorpusDigest, "certified_at": certification.CertifiedAt, "certification": cfg.Inference.Certification})
 }

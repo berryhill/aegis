@@ -200,14 +200,29 @@ for line in sys.stdin:
 				return nil
 			}
 			var out bytes.Buffer
-			command := NewRoot(Dependencies{Profile: ProductionProfile, In: &bootstrapApprovalInput{out: &out, endpoint: server.URL}, Out: &out, Err: io.Discard, UserService: runner, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
-			args := []string{"--config", path}
-			if entry == "init" {
-				args = append(args, "init")
-			}
-			command.SetArgs(args)
-			if err := command.Execute(); err != nil {
-				t.Fatalf("approved resume: %v\n%s", err, out.String())
+			for segment := 0; segment < 4; segment++ {
+				out.Reset()
+				command := NewRoot(Dependencies{Profile: ProductionProfile, In: &bootstrapApprovalInput{out: &out, endpoint: server.URL}, Out: &out, Err: io.Discard, UserService: runner, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
+				args := []string{"--config", path}
+				if entry == "init" {
+					args = append(args, "init")
+				}
+				command.SetArgs(args)
+				if err := command.Execute(); err != nil {
+					t.Fatalf("approved segment %d: %v\n%s", segment, err, out.String())
+				}
+				if segment < 3 {
+					if !strings.Contains(out.String(), "Certification progress saved, not certified") || strings.Contains(out.String(), "READY / verified") || runner.active {
+						t.Fatalf("partial segment granted readiness or activation: %s", out.String())
+					}
+					current, err := config.Load(path, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err := os.Stat(current.Manager.Inference.Certification); !errors.Is(err, os.ErrNotExist) {
+						t.Fatalf("partial certification artifact exists: %v", err)
+					}
+				}
 			}
 			for _, want := range []string{"READY / verified", "Canonical built-in Aegis Agent registered=true", "Start authenticated manager"} {
 				if !strings.Contains(out.String(), want) {

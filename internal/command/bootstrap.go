@@ -830,20 +830,25 @@ func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalIn
 		}
 	}
 	approved, err := view.approve(cmd, input, bootstrapDecision{
-		Title:          "Run end-to-end certification",
+		Title:          "Run the next certification segment",
 		Recommendation: "Run now only when this workstation can sustain the exact local model workload.",
-		Consequence:    "May use substantial CPU, GPU, RAM, and time. Declining saves no certification; rerunning 'aegis init' resumes from verified artifacts.",
-		Details:        fmt.Sprintf("candidate=%s; path=Hermes Agent -> authenticated Aegis proxy -> Ollama; every named corpus case must pass; Aegis-created runtime resources are cleaned up afterward while pre-existing external runners are preserved", candidate),
+		Consequence:    "May use substantial CPU, GPU, RAM, and time. A bounded pass prefix may be saved without granting readiness; each next segment requires fresh authentication and approval. Declining saves no certification.",
+		Details:        fmt.Sprintf("candidate=%s; path=Hermes Agent -> authenticated Aegis proxy -> Ollama; every named corpus case must pass across exact validated segments; Aegis-created runtime resources are cleaned up afterward while pre-existing external runners are preserved", candidate),
 	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Certification declined; readiness was not reported.")
 		return false, err
 	}
-	err = runManagerCertification(cmd, build, candidate, func(stage string) {
+	checkpointed := false
+	err = runManagerCertificationSegment(cmd, build, candidate, func(stage string) {
 		fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
-	}, false)
+	}, false, &checkpointed)
 	if err != nil {
-		return false, fmt.Errorf("%w; certification was not saved; retry all cases with: aegis manager certify %s --continue-on-error", err, candidate)
+		return false, fmt.Errorf("%w; certification was not saved; resume the current segment with: aegis manager certify %s", err, candidate)
+	}
+	if checkpointed {
+		fmt.Fprintf(cmd.OutOrStdout(), "Certification progress saved, not certified. Run 'aegis init' again for the next freshly authenticated segment, or: aegis manager certify %s\n", candidate)
+		return false, nil
 	}
 	return true, nil
 }
