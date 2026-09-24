@@ -1,6 +1,7 @@
 package implementation
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -188,5 +189,38 @@ func TestDoerNeedsInputReportFailureDoesNotChangeState(t *testing.T) {
 	r, err := e.Run(context.Background(), "needs-input-report", c)
 	if err != nil || r.State != "needs_input" || len(r.Passes) != 0 || r.ReportError == "" || r.Completion != "" {
 		t.Fatalf("%+v %v", r, err)
+	}
+}
+
+type failingReportStore struct{ Store }
+
+func (s failingReportStore) Put(key, value []byte) error {
+	if bytes.Contains(value, []byte(`"completion":"`)) {
+		return errors.New("optional report write failed")
+	}
+	return s.Store.Put(key, value)
+}
+
+func TestDoerReportWriteFailureCannotStrandVerifiedResult(t *testing.T) {
+	e, c := fixture(t)
+	e.DB = failingReportStore{e.DB}
+	c = doerContract(c)
+	e.Decision = &decisionStub{gate: GateDecision{true, true}, verdict: Judgment{true, true, true, true, true}}
+	e.Proposer = reportProposer(func(context.Context, Request) (Proposal, error) {
+		return Proposal{Edits: edits("42"), Report: "completed"}, nil
+	})
+	e.Diagnosis = diagnosisFunc(func(context.Context, DiagnosisRequest) ([]byte, error) {
+		t.Fatal("diagnosis after passed check")
+		return nil, nil
+	})
+	e.Reporter = completionFunc(func(context.Context, Record) (string, error) {
+		return "The native check passed.", nil
+	})
+	r, err := e.Run(context.Background(), "optional-write-failure", c)
+	if err != nil || r.State != "succeeded" {
+		t.Fatalf("verified result stranded by optional write: %+v %v", r, err)
+	}
+	if err := e.Revalidate("optional-write-failure", c); err != nil {
+		t.Fatalf("authoritative evidence lost: %v", err)
 	}
 }

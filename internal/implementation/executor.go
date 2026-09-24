@@ -365,6 +365,7 @@ func (e *Executor) completeReport(ctx context.Context, r Record) (Record, error)
 	if e.Reporter == nil {
 		return r, nil
 	}
+	terminal := r // The terminal record was saved before optional reporting.
 	if err := e.admit(ctx, "completion_report"); err != nil {
 		r.ReportError = "completion report admission unavailable"
 	} else {
@@ -375,7 +376,13 @@ func (e *Executor) completeReport(ctx context.Context, r Record) (Record, error)
 			r.Completion = completion
 		}
 	}
-	return r, e.save(r)
+	if err := e.save(r); err != nil {
+		// Optional narration cannot turn a verified result into an evidence-free
+		// Queue disposition. The caller independently reloads the terminal
+		// record and native evidence before committing success.
+		return terminal, nil
+	}
+	return r, nil
 }
 
 // Revalidate is also the persistence-completion gate for adapters integrating
