@@ -254,6 +254,10 @@ Architecture tests additionally pin the two qualified persistence module version
 
 Aegis is licensed under the [Apache License 2.0](LICENSE).
 
+## Segmented certification
+
+Live Qwen-class models on workstation CPU may exceed the bounded principal authority. With v0.2.12+ `aegis` runs the corpus across one or more bounded segments under freshly authenticated principal authority; each segment saves an exact ordered pass prefix under owner-only state at `~/.aegis/state/manager/certifications/<model>.json.checkpoint`, refuses publication until every case has passed once under current authority, then publishes and reads back the existing full certification. The principal authentication TTL remains capped at 15 minutes and is never extended for a slow model; a checkpoint is nonauthorizing and is never a certification or readiness artifact.
+
 ### Publish to an existing gateway
 
 See [online Loop publication](docs/ONLINE_LOOP_PUBLICATION.md) for `--target`, authenticated validation and exact readback. `loops example` is a structural publication template, not an executable implementation/verification workflow.

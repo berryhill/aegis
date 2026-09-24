@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Segmented manager certification with owner-only pass-prefix checkpointing. Each bounded run uses a freshly authenticated principal subject whose expiry bounds setup, every complete case in that segment, audit, checkpoint commit, and cleanup; the principal authentication TTL remains capped at 15 minutes and is not lengthened to accommodate a slow model. A checkpoint is nonauthorizing: it is never a certification, model identity, runtime grant, or manager-readiness artifact. The unit tests cover exact ordered pass prefixes, duplicate/reordered/failed/unknown prefix rejection, exact identity/tuple binding, atomic fsync writes, and lifetime/principal/lock rejection. Full certification publication still requires every exact case passed under current authority, successful cleanup/audit, `Certification.Validate`, and exact `LoadCertification` readback. The normative spec changes are recorded under `specs/AEGIS_MANAGER.md` and `specs/MANAGER_LIFECYCLE_AND_ONBOARDING.md`.
+
 ## [0.2.11] - 2026-09-24
 
 ### Fixed
