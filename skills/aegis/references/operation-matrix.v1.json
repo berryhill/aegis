@@ -307,13 +307,15 @@
         "internal/command/fleet.go",
         "internal/api/server.go",
         "internal/command/loop_implementation.go",
-        "internal/command/loop_hello.go"
+        "internal/command/loop_hello.go",
+        "internal/command/loop_doer.go"
       ],
       "tests": [
         "internal/api/workspace_skill_contract_test.go",
         "internal/api/loop_console_form_test.go",
         "internal/command/loop_implementation_test.go",
-        "internal/command/loop_hello_test.go"
+        "internal/command/loop_hello_test.go",
+        "internal/command/loop_doer_test.go"
       ],
       "cli": [
         "aegis loops",
@@ -326,6 +328,7 @@
         "aegis loops retire",
         "aegis loops implementation",
         "aegis loops hello",
+        "aegis loops doer",
         "aegis loops queue"
       ],
       "http": [

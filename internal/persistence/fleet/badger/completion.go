@@ -229,6 +229,26 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 		}
 		return false
 	}
+	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		if revision.Doer == nil || completion.Artifact.ActionID != "verify" || len(revision.RequiredEvidence) != 1 ||
+			revision.RequiredEvidence[0].Claim != "selected-file-verified" || revision.RequiredEvidence[0].ProducerStepID != "verify" || len(completion.Receipts) != 1 {
+			return false
+		}
+		contractDigest, err := revision.Doer.Digest()
+		if err != nil {
+			return false
+		}
+		for _, step := range revision.Steps {
+			if step.ID == "verify" {
+				if len(step.EvidenceClaims) != 1 || step.EvidenceClaims[0].Claim != "selected-file-verified" || step.EvidenceClaims[0].ExpectedDigest != contractDigest ||
+					step.EvidenceClaims[0].VerifierID != loop.DoerVerifierID || step.EvidenceClaims[0].PolicyVersion != loop.DoerVerifierPolicy || step.EvidenceClaims[0].MediaType != completion.Artifact.MediaType {
+					return false
+				}
+				return evidence.ValidateSelectedFileProvenance(completion.Provenance, contractDigest, *completion.Artifact, completion.Receipts)
+			}
+		}
+		return false
+	}
 	claims := map[string]loop.EvidenceClaim{}
 	for _, step := range revision.Steps {
 		if step.ID == completion.Artifact.ActionID {

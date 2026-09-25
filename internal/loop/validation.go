@@ -37,7 +37,7 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 	add := func(code, path, message string) {
 		issues = append(issues, ValidationIssue{Code: code, Path: path, Message: message})
 	}
-	if revision.SchemaVersion != RevisionSchemaVersion && revision.SchemaVersion != ImplementationRevisionSchemaVersion {
+	if revision.SchemaVersion != RevisionSchemaVersion && revision.SchemaVersion != ImplementationRevisionSchemaVersion && revision.SchemaVersion != DoerRevisionSchemaVersion {
 		add("schema.unsupported", "schema_version", "unsupported Loop revision schema version")
 	}
 	if !validID(revision.LoopID) {
@@ -178,6 +178,16 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 		}
 	}
 	validateEvidence(revision, steps, add)
+	if revision.SchemaVersion == DoerRevisionSchemaVersion {
+		validateDoerRevision(revision, add)
+	} else if revision.Doer != nil {
+		add("doer.version", "doer", "Doer contract requires v4")
+	}
+	for _, step := range revision.Steps {
+		if revision.SchemaVersion != DoerRevisionSchemaVersion && step.Executable != nil {
+			add("doer.version", "steps."+step.ID+".executable", "executable binding requires v4")
+		}
+	}
 	implementationCount := 0
 	for _, step := range revision.Steps {
 		if step.Implementation == nil {
@@ -352,6 +362,9 @@ func validateEvidence(revision LoopRevision, steps map[string]Step, add func(str
 			}
 			produced = true
 			if producer.Implementation != nil && claim.Claim == "verified-implementation" && claim.VerifierID == "aegis.implementation.verifier" && claim.PolicyVersion == VerifiedImplementationSchema && claim.ExpectedDigest == "" && claim.MediaType == "application/json" {
+				continue
+			}
+			if revision.SchemaVersion == DoerRevisionSchemaVersion && producer.ID == "verify" && claim.Claim == "selected-file-verified" && claim.MediaType == "application/json" && claim.ExpectedDigest == "" && claim.VerifierID == DoerVerifierID && claim.PolicyVersion == DoerVerifierPolicy {
 				continue
 			}
 			if claim.MediaType == "" || !validDigest(claim.ExpectedDigest) || !validID(claim.VerifierID) || claim.PolicyVersion == "" || strings.TrimSpace(claim.PolicyVersion) != claim.PolicyVersion || len(claim.PolicyVersion) > 255 {

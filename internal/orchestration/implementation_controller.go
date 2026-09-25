@@ -18,9 +18,10 @@ import (
 // Exact contract digests in operator configuration authorize workspace writes AND native code execution.
 // Agent-authored definitions alone never grant host authority.
 type ImplementationController struct {
-	config  config.Implementation
-	root    string
-	adapter *hermesruntime.Adapter
+	config   config.Implementation
+	root     string
+	adapter  *hermesruntime.Adapter
+	decision *LayaDecisionAdapter
 }
 
 func (w *QueueWorker) ConfigureImplementation(c config.Implementation, stateRoot string, adapter *hermesruntime.Adapter) error {
@@ -30,8 +31,18 @@ func (w *QueueWorker) ConfigureImplementation(c config.Implementation, stateRoot
 	if !filepath.IsAbs(c.GoBinary) || !filepath.IsAbs(stateRoot) || adapter == nil {
 		return errors.New("explicit native checker and controller custody required")
 	}
+	if (c.LayaPython == "") != (c.LayaHome == "") {
+		return errors.New("local Laya executable and private home must be configured together")
+	}
+	var decision *LayaDecisionAdapter
+	if c.LayaPython != "" {
+		if !filepath.IsAbs(c.LayaPython) || !filepath.IsAbs(c.LayaHome) {
+			return errors.New("local Laya paths must be absolute")
+		}
+		decision = NewLayaDecisionAdapter(LocalLayaProcess{PythonExecutable: c.LayaPython, Home: c.LayaHome})
+	}
 	c.AuthorizedContracts = append([]string(nil), c.AuthorizedContracts...)
-	w.implementation = &ImplementationController{c, filepath.Join(stateRoot, "persistence", "fleet-v1"), adapter}
+	w.implementation = &ImplementationController{config: c, root: filepath.Join(stateRoot, "persistence", "fleet-v1"), adapter: adapter, decision: decision}
 	return nil
 }
 func (c *ImplementationController) authorize(steps []loop.Step, agent registry.AgentRevision) error {
@@ -68,7 +79,17 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 	if !ok {
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_custody_unavailable", nil, nil)
 	}
-	kernel := &implementation.Executor{DB: custody.ImplementationStore(), GoBinary: c.config.GoBinary, Proposer: HermesPatchProposer{Adapter: c.adapter, Request: hermesruntime.AttemptTurnRequest{Launch: runtime.Launch, Admission: runtime.Admission, ParentAttemptID: base.Attempt.AttemptID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(c.root)), "runtime", "fleet"), Model: runtime.Launch.AuthorityContext.Authority.Hermes.Model, Provider: runtime.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}}}
+	turn := hermesruntime.AttemptTurnRequest{Launch: runtime.Launch, Admission: runtime.Admission, ParentAttemptID: base.Attempt.AttemptID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(c.root)), "runtime", "fleet"), Model: runtime.Launch.AuthorityContext.Authority.Hermes.Model, Provider: runtime.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
+	kernel := &implementation.Executor{DB: custody.ImplementationStore(), GoBinary: c.config.GoBinary, Proposer: HermesPatchProposer{Adapter: c.adapter, Request: turn}}
+	if contract.DecisionMode == "doer.v1" {
+		if c.decision == nil {
+			return w.terminal(ctx, request, base, execution.StateDenied, "implementation_laya_unconfigured", nil, nil)
+		}
+		kernel.Decision = implementationLayaDecision{adapter: c.decision}
+		luna := implementationLuna{adapter: c.adapter, request: turn}
+		kernel.Diagnosis = luna
+		kernel.Reporter = luna
+	}
 	kernel.Admit = func(ctx context.Context, _ string) error {
 		p, e := w.repository.GetQueueProjection(ctx, request.QueueItemID)
 		if e != nil {
@@ -90,6 +111,9 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		return nil
 	}
 	record, err := kernel.Run(ctx, base.Attempt.AttemptID, contract)
+	if err == nil && record.State == "needs_input" {
+		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_needs_input", nil, nil)
+	}
 	if err != nil {
 		state := execution.State(record.State)
 		if executionQueueState(state) == "" {

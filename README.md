@@ -4,7 +4,9 @@
 
 For a fixed-output executable v2 draft, use `aegis loops hello FILE --output NEW_FILE`; see [hello authoring and separately authorized runtime](docs/EXECUTABLE_HELLO.md). This is not live model acceptance.
 
-Verified implementation authoring: `aegis loops implementation FILE` builds an explicit workspace/test-bound Loop v3 draft for a named existing Agent. Authenticated publication remains inactive; execution separately requires operator-authorized controller configuration and native trusted tests. See [the authoring and execution boundary](docs/VERIFIED_IMPLEMENTATION.md).
+Verified implementation authoring: `aegis loops implementation FILE` builds an explicit workspace/test-bound Loop v3 draft for a named existing Agent. An optional `doer.v1` decision mode adds a local Laya task gate and report judgment, bounded Hermes proposal/diagnosis turns, up to three native-check passes, and non-authoritative completion assessment within that same action. Publication remains inactive; execution separately requires operator-authorized controller configuration, a trusted local Laya installation, and native trusted tests. See [the authoring and execution boundary](docs/VERIFIED_IMPLEMENTATION.md).
+
+For a selected-file one-task Loop rather than Go-only v3 checks, `aegis loops doer FILE` builds an immutable v4 draft with controller-bound Laya eligibility/judgment, bounded Hermes proposal/diagnosis, safe file verification and evidence-gated Queue completion. Exact operator configuration and fresh runtime authority remain required; no model or skill installation follows from publication. See [the bounded Doer Loop contract](docs/DOER_LOOP.md).
 
 Aegis is a Go control plane for authenticated, trust-stanza-bound sessions over an explicit Hermes Agent runtime. It does not hide Hermes, infer authority from prompts, or treat the model as an approver or provisioner.
 

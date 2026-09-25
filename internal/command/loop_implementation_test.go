@@ -46,6 +46,25 @@ func TestImplementationDraftCLI(t *testing.T) {
 	if _, err := run("loops", "implementation", source, "--output", destination); err == nil {
 		t.Fatal("overwrote file")
 	}
+	input.Implementation.DecisionMode = "doer.v1"
+	input.Implementation.MaxPasses = 3
+	save()
+	doerDraft, err := run("loops", "implementation", source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doerPublication app.PublishLoopInput
+	if err := json.Unmarshal(doerDraft, &doerPublication); err != nil {
+		t.Fatal(err)
+	}
+	if doerPublication.Revision.Digest == publication.Revision.Digest || doerPublication.Revision.Steps[1].Implementation == nil || doerPublication.Revision.Steps[1].Implementation.DecisionMode != "doer.v1" || doerPublication.Revision.Steps[1].Implementation.MaxPasses != 3 {
+		t.Fatalf("doer contract was not bound to exact draft: %s", doerDraft)
+	}
+	input.Implementation.DecisionMode = ""
+	save()
+	if _, err := run("loops", "implementation", source); err == nil {
+		t.Fatal("accepted three passes without decision mode")
+	}
 	input.Implementation.Policy.RequiredTests = nil
 	save()
 	if _, err := run("loops", "implementation", source); err == nil {

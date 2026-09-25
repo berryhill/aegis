@@ -346,7 +346,7 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 		if e != nil || validateProjectionBasis(txn, projection) != nil || !allowedState {
 			return fleet.ErrConflict
 		}
-		terminal := mutation.Transition.To == queue.StateCancelled || (mutation.Transition.To == queue.StateExpired && projection.State == queue.StateClaimed) || mutation.Transition.To == queue.StateRevoked || (mutation.Transition.To == queue.StateFailed && projection.State == queue.StateClaimed && projection.Attempts >= item.MaxAttempts)
+		terminal := mutation.Transition.To == queue.StateCancelled || (mutation.Transition.To == queue.StateExpired && projection.State == queue.StateClaimed) || mutation.Transition.To == queue.StateRevoked || (mutation.Transition.To == queue.StateFailed && projection.State == queue.StateClaimed && projection.Attempts >= item.MaxAttempts) || (mutation.Transition.To == queue.StateDenied && projection.State == queue.StateQueued && projection.Attempts == 0 && mutation.Transition.Reason == "doer_needs_input")
 		if mutation.Transition.QueueItemID != item.ItemID || mutation.Transition.From != projection.State || !terminal || mutation.Transition.OccurredAt != mutation.Cancellation.OccurredAt {
 			return fleet.ErrConflict
 		}
@@ -357,6 +357,8 @@ func (s *Store) CancelQueueItem(ctx context.Context, mutation fleet.Cancellation
 			expectedState = execution.StateFailed
 		} else if mutation.Transition.To == queue.StateRevoked {
 			expectedState = execution.StateRevoked
+		} else if mutation.Transition.To == queue.StateDenied {
+			expectedState = execution.StateDenied
 		}
 		if mutation.Cancellation.Reason != mutation.Transition.Reason || string(mutation.Disposition.ReasonCode) != mutation.Cancellation.Reason || mutation.Disposition.GraphRunID != item.GraphRunID || mutation.Disposition.QueueItem != mutation.Cancellation.QueueItem || mutation.Disposition.Authority != item.Authority || mutation.Disposition.State != expectedState || string(mutation.Disposition.ReasonCode) != mutation.Transition.Reason || mutation.Disposition.OccurredAt != mutation.Cancellation.OccurredAt {
 			return fleet.ErrConflict

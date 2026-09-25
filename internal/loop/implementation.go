@@ -32,6 +32,7 @@ type VerifiedImplementation struct {
 	WritableFiles []string     `json:"writable_files"`
 	Policy        GoTestPolicy `json:"policy"`
 	MaxPasses     uint8        `json:"max_passes"`
+	DecisionMode  string       `json:"decision_mode,omitempty"`
 }
 
 // ImplementationDraft explicitly leaves workspace unresolved. It cannot execute
@@ -46,8 +47,14 @@ func (v VerifiedImplementation) Validate() error {
 	if v.SchemaVersion != VerifiedImplementationSchema || strings.TrimSpace(v.Task) == "" || strings.TrimSpace(v.Acceptance) == "" || len(v.Task) > 32768 || len(v.Acceptance) > 32768 {
 		return errors.New("exact version, bounded task and acceptance are required")
 	}
-	if !filepath.IsAbs(v.Workspace) || filepath.Clean(v.Workspace) != v.Workspace || v.Workspace == "/" || v.MaxPasses < 1 || v.MaxPasses > 2 {
-		return errors.New("explicit bounded workspace and one or two passes are required")
+	maxPasses := uint8(2)
+	if v.DecisionMode == "doer.v1" {
+		maxPasses = 3
+	} else if v.DecisionMode != "" {
+		return errors.New("unknown decision mode")
+	}
+	if !filepath.IsAbs(v.Workspace) || filepath.Clean(v.Workspace) != v.Workspace || v.Workspace == "/" || v.MaxPasses < 1 || v.MaxPasses > maxPasses {
+		return errors.New("explicit bounded workspace and pass budget are required")
 	}
 	if len(v.WritableFiles) == 0 || len(v.WritableFiles) > 128 {
 		return errors.New("explicit writable source files required")

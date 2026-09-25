@@ -268,21 +268,22 @@ type QueueExecutionView struct {
 	// Submission is the admitted queued request with full mandate context. It
 	// is resolved through the repository independently of Item.Submission,
 	// which only carries the immutable submission digest reference.
-	Submission              queue.Submission                   `json:"submission"`
-	RuntimeAuthorityBinding *queue.RuntimeBinding              `json:"runtime_authority_binding,omitempty"`
-	Projection              queue.Projection                   `json:"projection"`
-	GraphRun                execution.GraphRun                 `json:"graph_run"`
-	LoopExecutions          []execution.LoopExecution          `json:"loop_executions"`
-	Attempts                []execution.Attempt                `json:"attempts"`
-	Claims                  []queue.Claim                      `json:"claims"`
-	Transitions             []queue.QueueTransition            `json:"transitions"`
-	Retries                 []queue.Retry                      `json:"retries"`
-	Cancellations           []queue.Cancellation               `json:"cancellations"`
-	Runtime                 registry.RuntimeBinding            `json:"runtime"`
-	NodeRuntimes            map[string]registry.RuntimeBinding `json:"node_runtimes,omitempty"`
-	Artifact                *evidence.RuntimeArtifact          `json:"artifact,omitempty"`
-	Receipts                []evidence.VerificationReceipt     `json:"receipts"`
-	Disposition             *disposition.Record                `json:"disposition,omitempty"`
+	Submission              queue.Submission                        `json:"submission"`
+	RuntimeAuthorityBinding *queue.RuntimeBinding                   `json:"runtime_authority_binding,omitempty"`
+	Projection              queue.Projection                        `json:"projection"`
+	GraphRun                execution.GraphRun                      `json:"graph_run"`
+	LoopExecutions          []execution.LoopExecution               `json:"loop_executions"`
+	Attempts                []execution.Attempt                     `json:"attempts"`
+	Claims                  []queue.Claim                           `json:"claims"`
+	Transitions             []queue.QueueTransition                 `json:"transitions"`
+	Retries                 []queue.Retry                           `json:"retries"`
+	Cancellations           []queue.Cancellation                    `json:"cancellations"`
+	Runtime                 registry.RuntimeBinding                 `json:"runtime"`
+	NodeRuntimes            map[string]registry.RuntimeBinding      `json:"node_runtimes,omitempty"`
+	Artifact                *evidence.RuntimeArtifact               `json:"artifact,omitempty"`
+	Receipts                []evidence.VerificationReceipt          `json:"receipts"`
+	DoerSteps               map[string][]orchestration.DoerStepView `json:"doer_steps,omitempty"`
+	Disposition             *disposition.Record                     `json:"disposition,omitempty"`
 }
 
 type SurfaceReadiness struct {
@@ -1096,6 +1097,25 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 					return nil, fleet.ErrCorrupt
 				}
 				view.Attempts = append(view.Attempts, attempt)
+				for _, child := range view.LoopExecutions {
+					if child.LoopExecutionID != attempt.LoopExecutionID {
+						continue
+					}
+					revision, revisionErr := s.FleetRepository.GetLoopRevision(ctx, child.Loop.ID, child.Loop.Revision)
+					if revisionErr != nil || revision.Digest != child.Loop.Digest {
+						return nil, fleet.ErrCorrupt
+					}
+					if revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+						steps, traceErr := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, revision.Digest)
+						if traceErr != nil {
+							return nil, traceErr
+						}
+						if view.DoerSteps == nil {
+							view.DoerSteps = make(map[string][]orchestration.DoerStepView)
+						}
+						view.DoerSteps[attempt.AttemptID] = steps
+					}
+				}
 			}
 		}
 		for _, claim := range claims {

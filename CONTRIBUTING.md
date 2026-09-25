@@ -37,6 +37,26 @@ GOFLAGS=-p=1 GOMAXPROCS=2 python3 scripts/verify-budget.py \
   go test -timeout=3m ./internal/testprocess ./internal/persistence/authority/badger
 ```
 
+For the optional v3 `doer.v1` action, run the focused kernel and Queue/Laya
+regressions before the full gate:
+
+```sh
+GOMAXPROCS=2 go test -p 1 ./internal/implementation ./internal/orchestration -run 'TestDoer|TestImplementationQueueNativeCompletion|TestLaya|TestLocalLaya'
+```
+The Queue fixture uses fake Laya/Hermes transports and a real native Go checker;
+it does not qualify a live model or authorize operator configuration.
+
+The selected-file v4 Loop also requires exact definition/Queue/evidence checks:
+
+```sh
+GOMAXPROCS=2 go test -p 1 ./internal/loop ./internal/looprun ./internal/evidence ./internal/implementation ./internal/orchestration ./internal/persistence/fleet/badger -run 'TestDoer|TestSelectedFile|TestStepCheckpoint|TestImplementationQueueNativeCompletion/v4-' -count=1
+```
+
+Inspect the `aegis loops doer` draft, no-claim negative gate, file-symlink
+denial, terminal readback and actual authenticated Queue output separately.
+Synthetic gateway/model fixtures do not prove a live provider or local Laya
+checkpoint accepts a production task.
+
 
 Before opening or updating a pull request, commit the candidate and run the exact-head release-readiness gate used by CI:
 

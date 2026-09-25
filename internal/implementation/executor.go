@@ -28,9 +28,10 @@ type Edit struct {
 	Content []byte `json:"content"`
 }
 type Request struct {
-	Contract      loop.VerifiedImplementation
-	PassID        string
-	PreviousCheck []byte
+	Contract          loop.VerifiedImplementation
+	PassID            string
+	PreviousCheck     []byte
+	PreviousDiagnosis []byte
 }
 type Proposer interface {
 	Propose(context.Context, Request) ([]Edit, error)
@@ -50,16 +51,22 @@ type Pass struct {
 	Passed          bool   `json:"passed"`
 }
 type Record struct {
-	RunID          string `json:"run_id"`
-	ContractDigest string `json:"contract_digest"`
-	State          string `json:"state"`
-	Passes         []Pass `json:"passes"`
+	RunID          string  `json:"run_id"`
+	ContractDigest string  `json:"contract_digest"`
+	State          string  `json:"state"`
+	Passes         []Pass  `json:"passes"`
+	Completion     string  `json:"completion,omitempty"`
+	Stages         []Stage `json:"stages,omitempty"`
+	ReportError    string  `json:"report_error,omitempty"`
 }
 type Executor struct {
-	DB       Store
-	GoBinary string
-	Proposer Proposer
-	Admit    Admit
+	DB        Store
+	GoBinary  string
+	Proposer  Proposer
+	Admit     Admit
+	Decision  Decision
+	Diagnosis Diagnostician
+	Reporter  CompletionReporter
 }
 
 func digest(b []byte) string     { h := sha256.Sum256(b); return "sha256:" + hex.EncodeToString(h[:]) }
@@ -140,6 +147,11 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 	if err := Preflight(c, e.GoBinary); err != nil {
 		return r, err
 	}
+	doer := c.DecisionMode == "doer.v1"
+	reporting, reports := e.Proposer.(ReportingProposer)
+	if doer && (e.Decision == nil || e.Diagnosis == nil || !reports) {
+		return r, errors.New("doer decision, diagnosis and reporting proposer required")
+	}
 	cd, err := c.Digest()
 	if err != nil {
 		return r, err
@@ -180,7 +192,29 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		return e.stop(r, admissionErr)
 	}
 	var previous []byte
+	var previousDiagnosis []byte
+	if doer {
+		if err = e.admit(ctx, "gate"); err != nil {
+			return e.stop(r, err)
+		}
+		gate, x := e.Decision.Gate(ctx, "Task: "+c.Task+"\nExpected result: "+c.Acceptance)
+		if x != nil {
+			return e.stop(r, x)
+		}
+		if err = e.stage(&r, "", "gate", gate); err != nil {
+			return r, err
+		}
+		if !gate.Specified || !gate.ResultDefined {
+			r.State = "needs_input"
+			err = e.save(r)
+			if err == nil {
+				r, err = e.completeReport(ctx, r)
+			}
+			return r, err
+		}
+	}
 	for p := uint8(1); p <= c.MaxPasses; p++ {
+		var failures []string
 		r.Passes = append(r.Passes, Pass{ID: fmt.Sprintf("%s/pass/%d", id, p)})
 		if err = e.save(r); err != nil {
 			return r, err
@@ -194,12 +228,48 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		proposalContract.WritableFiles = append([]string(nil), c.WritableFiles...)
 		proposalContract.Policy.Packages = append([]string(nil), c.Policy.Packages...)
 		proposalContract.Policy.RequiredTests = append([]loop.RequiredGoTest(nil), c.Policy.RequiredTests...)
-		edits, x := e.Proposer.Propose(ctx, Request{Contract: proposalContract, PassID: r.Passes[len(r.Passes)-1].ID, PreviousCheck: append([]byte(nil), previous...)})
+		passID := r.Passes[len(r.Passes)-1].ID
+		request := Request{Contract: proposalContract, PassID: passID, PreviousCheck: append([]byte(nil), previous...), PreviousDiagnosis: append([]byte(nil), previousDiagnosis...)}
+		var edits []Edit
+		var report string
+		var x error
+		if doer {
+			var proposal Proposal
+			proposal, x = reporting.ProposeReport(ctx, request)
+			if x == nil {
+				edits, report = proposal.Edits, proposal.Report
+			}
+		} else {
+			edits, x = e.Proposer.Propose(ctx, request)
+		}
 		if x != nil {
 			return e.stop(r, x)
 		}
+		if doer {
+			if report == "" || len(report) > 65536 {
+				return e.stop(r, errors.New("bounded implementer report required"))
+			}
+			if err = e.stage(&r, passID, "implement", report); err != nil {
+				return r, err
+			}
+		}
 		if err = e.apply(ctx, c, edits); err != nil {
 			return e.stop(r, err)
+		}
+		judged := true
+		var judgment Judgment
+		if doer {
+			if err = e.admit(ctx, "judgment"); err != nil {
+				return e.stop(r, err)
+			}
+			judgment, x = e.Decision.Judge(ctx, "Task: "+c.Task+"\nExpected result: "+c.Acceptance, report)
+			if x != nil {
+				return e.stop(r, x)
+			}
+			if err = e.stage(&r, passID, "judgment", judgment); err != nil {
+				return r, err
+			}
+			judged = judgment.Passed()
 		}
 		before, x := snapshot(c.Workspace)
 		if x != nil {
@@ -227,11 +297,19 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		if x != nil {
 			return e.stop(r, x)
 		}
-		r.Passes[len(r.Passes)-1] = Pass{ID: r.Passes[len(r.Passes)-1].ID, WorkspaceDigest: wd, OutputDigest: od, Passed: passed}
+		if doer {
+			if err = e.stage(&r, passID, "check", struct {
+				OutputDigest string `json:"output_digest"`
+				Passed       bool   `json:"passed"`
+			}{od, passed}); err != nil {
+				return r, err
+			}
+		}
+		r.Passes[len(r.Passes)-1] = Pass{ID: passID, WorkspaceDigest: wd, OutputDigest: od, Passed: passed && judged}
 		if err = e.save(r); err != nil {
 			return r, err
 		}
-		if passed {
+		if passed && judged {
 			if err = e.admit(ctx, "complete"); err != nil {
 				return e.stop(r, err)
 			}
@@ -241,11 +319,70 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 			}
 			r.State = "succeeded"
 			err = e.save(r)
+			if err == nil && doer {
+				r, err = e.completeReport(ctx, r)
+			}
 			return r, err
 		}
 		previous = output
+		if doer {
+			if !judged {
+				failures = append(failures, "judgment rejected implementer report")
+			}
+			if !passed {
+				failures = append(failures, "independent Go test failed")
+			}
+			if p == c.MaxPasses {
+				break
+			}
+			if err = e.admit(ctx, "diagnosis"); err != nil {
+				return e.stop(r, err)
+			}
+			previousDiagnosis, x = e.Diagnosis.Diagnose(ctx, DiagnosisRequest{Task: c.Task, Acceptance: c.Acceptance, PassID: passID, Report: report, Judgment: judgment, Check: append([]byte(nil), output...), Failures: append([]string(nil), failures...)})
+			if x != nil {
+				return e.stop(r, x)
+			}
+			if len(previousDiagnosis) > 65536 {
+				return e.stop(r, errors.New("diagnosis exceeded limit"))
+			}
+			if err = e.stage(&r, passID, "diagnosis", string(previousDiagnosis)); err != nil {
+				return r, err
+			}
+		}
 	}
-	return e.stop(r, errors.New("verification budget exhausted"))
+	r, err = e.stop(r, errors.New("verification budget exhausted"))
+	if doer {
+		var reportErr error
+		r, reportErr = e.completeReport(ctx, r)
+		if reportErr != nil {
+			return r, reportErr
+		}
+	}
+	return r, err
+}
+
+func (e *Executor) completeReport(ctx context.Context, r Record) (Record, error) {
+	if e.Reporter == nil {
+		return r, nil
+	}
+	terminal := r // The terminal record was saved before optional reporting.
+	if err := e.admit(ctx, "completion_report"); err != nil {
+		r.ReportError = "completion report admission unavailable"
+	} else {
+		completion, err := e.Reporter.Report(ctx, r)
+		if err != nil || len(completion) > 4096 || completion == "" {
+			r.ReportError = "completion report failed"
+		} else {
+			r.Completion = completion
+		}
+	}
+	if err := e.save(r); err != nil {
+		// Optional narration cannot turn a verified result into an evidence-free
+		// Queue disposition. The caller independently reloads the terminal
+		// record and native evidence before committing success.
+		return terminal, nil
+	}
+	return r, nil
 }
 
 // Revalidate is also the persistence-completion gate for adapters integrating
@@ -261,6 +398,19 @@ func (e *Executor) Revalidate(id string, c loop.VerifiedImplementation) error {
 	}
 	if r.RunID != id || r.ContractDigest != cd || (r.State != "running" && r.State != "succeeded") || len(r.Passes) == 0 || len(r.Passes) > int(c.MaxPasses) {
 		return errors.New("completion binding mismatch")
+	}
+	if c.DecisionMode == "doer.v1" {
+		if len(r.Stages) < 4 || r.Stages[0].Name != "gate" || r.Stages[0].PassID != "" {
+			return errors.New("gate stage missing")
+		}
+		for _, stage := range r.Stages {
+			if stage.Name != "gate" && stage.Name != "implement" && stage.Name != "judgment" && stage.Name != "check" && stage.Name != "diagnosis" {
+				return errors.New("unknown decision stage")
+			}
+			if _, err := e.StageOutput(id, stage); err != nil {
+				return err
+			}
+		}
 	}
 	for n, p := range r.Passes {
 		if p.ID != fmt.Sprintf("%s/pass/%d", id, n+1) {
