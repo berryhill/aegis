@@ -6,11 +6,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
-## [0.2.12] - 2026-09-24
-
 ### Added
 - Added immutable Doer Loop v4 authoring and a bounded single-node execution path using existing Agent/Graph/Queue authority: typed preclaim Laya gate with zero-attempt `doer_needs_input` denial, tool-free Hermes proposals and diagnosis, Laya report judgment, independently read selected-file evidence, bounded internal retries, append-only step cursor and authenticated metadata-only Queue trace. Native selected-file verifier binds exact bytes to the pinned contract at terminal completion. No new model grants or host sandbox; live model/provider acceptance remains separate.
 - Added an optional `doer.v1` mode to the exact-contract Loop v3 implementation action: fail-closed local Laya gate/judgment, bounded Hermes proposal/diagnosis/completion turns, at most three native Go-test passes, and content-addressed per-stage readback under the existing single-node Graph/Queue authority path. Operator-approved contract digest and separately configured local Laya interpreter/private home are required; model judgment never substitutes for native verification. No generic multi-step Loop interpreter, Jev backend, live-model acceptance, automatic Queue retry, or new host sandbox is claimed.
+
+## [0.2.12] - 2026-09-24
+
+### Added
 - Segmented manager certification with owner-only pass-prefix checkpointing. Each bounded run uses a freshly authenticated principal subject whose expiry bounds setup, every complete case in that segment, audit, checkpoint commit, and cleanup; the principal authentication TTL remains capped at 15 minutes and is not lengthened to accommodate a slow model. A checkpoint is nonauthorizing: it is never a certification, model identity, runtime grant, or manager-readiness artifact. The unit tests cover exact ordered pass prefixes, duplicate/reordered/failed/unknown prefix rejection, exact identity/tuple binding, atomic fsync writes, and lifetime/principal/lock rejection. Full certification publication still requires every exact case passed under current authority, successful cleanup/audit, `Certification.Validate`, and exact `LoadCertification` readback. The normative spec changes are recorded under `specs/AEGIS_MANAGER.md` and `specs/MANAGER_LIFECYCLE_AND_ONBOARDING.md`.
 
 ## [0.2.11] - 2026-09-24
