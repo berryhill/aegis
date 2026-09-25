@@ -70,6 +70,46 @@ func TestCertificationCheckpointRejectsIdentityAndExpiry(t *testing.T) {
 	}
 }
 
+func TestRetireExpiredCheckpointRequiresExactIdentityAndPreservesEvidence(t *testing.T) {
+	path, cp, now := checkpointFixture(t)
+	if err := SaveCertificationCheckpoint(path, cp, -1); err != nil {
+		t.Fatal(err)
+	}
+	if err := RetireExpiredCertificationCheckpoint(path, cp.Certification, cp.PrincipalID, now); err == nil {
+		t.Fatal("live checkpoint retired")
+	}
+	wrong := cp.Certification
+	wrong.Quantization = "wrong"
+	if err := RetireExpiredCertificationCheckpoint(path, wrong, cp.PrincipalID, cp.ExpiresAt); err == nil {
+		t.Fatal("wrong identity retired")
+	}
+	if err := RetireExpiredCertificationCheckpoint(path, cp.Certification, "wrong-principal", cp.ExpiresAt); err == nil {
+		t.Fatal("wrong principal retired")
+	}
+	if err := RetireExpiredCertificationCheckpoint(path, cp.Certification, cp.PrincipalID, cp.ExpiresAt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("expired checkpoint still active: %v", err)
+	}
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), filepath.Base(path)+".expired.") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("retired evidence missing")
+	}
+	if err := SaveCertificationCheckpoint(path, cp, -1); err != nil {
+		t.Fatalf("new campaign blocked: %v", err)
+	}
+}
+
 func TestCertificationCheckpointRejectsInvalidPrefix(t *testing.T) {
 	cases := ConformanceCorpus()
 	for _, tc := range []struct {

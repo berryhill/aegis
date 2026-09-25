@@ -842,7 +842,7 @@ func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalIn
 	checkpointed := false
 	err = runManagerCertificationSegment(cmd, build, candidate, func(stage string) {
 		fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
-	}, false, &checkpointed)
+	}, false, &checkpointed, false)
 	if err != nil {
 		return false, fmt.Errorf("%w; certification was not saved; resume the current segment with: aegis manager certify %s", err, candidate)
 	}

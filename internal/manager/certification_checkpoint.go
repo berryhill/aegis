@@ -32,6 +32,8 @@ type checkpointEnvelope struct {
 
 const checkpointSchemaVersion = "aegis.manager.certification-checkpoint.v1"
 
+var ErrCertificationCheckpointExpired = errors.New("certification checkpoint expired")
+
 func checkpointTuple(c Certification) Certification {
 	c.Results = nil
 	c.CertifiedAt = time.Time{}
@@ -192,10 +194,57 @@ func LoadCertificationCheckpoint(path string, expected Certification, principalI
 	if err := validateCheckpoint(cp); err != nil {
 		return CertificationCheckpoint{}, true, err
 	}
-	if principalID == "" || cp.PrincipalID != principalID || !reflect.DeepEqual(checkpointTuple(cp.Certification), checkpointTuple(expected)) || now.Before(cp.CreatedAt) || !now.Before(cp.ExpiresAt) {
+	if principalID == "" || cp.PrincipalID != principalID || !reflect.DeepEqual(checkpointTuple(cp.Certification), checkpointTuple(expected)) || now.Before(cp.CreatedAt) {
 		return CertificationCheckpoint{}, true, errors.New("checkpoint identity or lifetime mismatch")
 	}
+	if !now.Before(cp.ExpiresAt) {
+		return CertificationCheckpoint{}, true, ErrCertificationCheckpointExpired
+	}
 	return cp, true, nil
+}
+
+// RetireExpiredCertificationCheckpoint is an explicit, non-authorizing reset
+// for an expired exact campaign. The caller must authenticate and audit its
+// intent separately. Malformed or mismatched records are never retired here.
+func RetireExpiredCertificationCheckpoint(path string, expected Certification, principalID string, now time.Time) error {
+	if err := checkpointDirectory(path, false); err != nil {
+		return err
+	}
+	lock, err := openCheckpointFile(path+".lock", syscall.O_RDWR|syscall.O_CREAT, 0600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	lockedInfo, statErr := lock.Stat()
+	pathInfo, pathErr := os.Lstat(path + ".lock")
+	if statErr != nil || pathErr != nil || !os.SameFile(lockedInfo, pathInfo) {
+		return errors.New("checkpoint lock changed while waiting")
+	}
+	cp, present, err := readCheckpoint(path)
+	if err != nil || !present {
+		return errors.New("checkpoint cannot be safely retired")
+	}
+	if cp.PrincipalID != principalID || !reflect.DeepEqual(checkpointTuple(cp.Certification), checkpointTuple(expected)) || now.Before(cp.ExpiresAt) || now.Before(cp.CreatedAt) {
+		return errors.New("checkpoint is not the exact expired campaign")
+	}
+	// A create-only retired name preserves the prior evidence for review.
+	retired := path + ".expired." + fmt.Sprint(now.UnixNano())
+	if _, err := os.Lstat(retired); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return errors.New("checkpoint retired destination is occupied or unsafe")
+	}
+	if err := os.Rename(path, retired); err != nil {
+		return err
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 // SaveCertificationCheckpoint atomically advances the exact passed prefix under

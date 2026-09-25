@@ -286,6 +286,7 @@ func (s *Service) addLegacyScope(ctx context.Context, plan *Plan, cfg config.Con
 			return deny(errors.New("legacy manager certification is outside the recognized legacy state root"))
 		}
 		configuredFiles[certification], configuredFiles[certification+".new"] = true, true
+		configuredFiles[certification+".checkpoint"], configuredFiles[certification+".checkpoint.lock"] = true, true
 	}
 	authority := cfg.Credentials.Authority
 	for _, authorityPath := range []string{authority.Database, authority.KEKFile} {
@@ -421,6 +422,8 @@ func (s *Service) addConfiguredScope(ctx context.Context, plan *Plan, cfg config
 		}
 		configuredFiles[certification] = true
 		configuredFiles[certification+".new"] = true
+		configuredFiles[certification+".checkpoint"] = true
+		configuredFiles[certification+".checkpoint.lock"] = true
 	}
 	modelStore := filepath.Join(state, "manager", "ollama-models")
 	if existsNoFollow(modelStore) {
@@ -670,7 +673,7 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 	case "runtime":
 		return len(parts) >= 3 && runtimeName(parts[1])
 	case "manager":
-		return len(parts) == 3 && parts[1] == "certifications" && (strings.HasSuffix(parts[2], ".json") || strings.HasSuffix(parts[2], ".json.new"))
+		return len(parts) == 3 && parts[1] == "certifications" && managerCertificationArtifact(parts[2])
 	case "audit-checkpoints":
 		return len(parts) == 2 && (parts[1] == "signing-key" || strings.HasSuffix(parts[1], ".json") || strings.HasPrefix(parts[1], ".aegis-"))
 	case "transport":
@@ -680,6 +683,18 @@ func recognized(root inventoryRoot, relative string, info os.FileInfo) bool {
 	default:
 		return false
 	}
+}
+
+func managerCertificationArtifact(name string) bool {
+	if strings.HasSuffix(name, ".json") || strings.HasSuffix(name, ".json.new") || strings.HasSuffix(name, ".json.checkpoint") || strings.HasSuffix(name, ".json.checkpoint.lock") {
+		return true
+	}
+	_, suffix, ok := strings.Cut(name, ".json.checkpoint.expired.")
+	if !ok || suffix == "" {
+		return false
+	}
+	_, err := strconv.ParseInt(suffix, 10, 64)
+	return err == nil
 }
 
 func authorityBadgerRepairable(root inventoryRoot, relative string, info os.FileInfo) bool {
