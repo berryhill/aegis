@@ -35,12 +35,17 @@ func TestSelectedFileReceiptBindsActualBytesAndRechecksAtCompletion(t *testing.T
 	}
 	artifact := RuntimeArtifact{ID: "artifact", AttemptID: binding.AttemptID, ActionID: binding.ActionID, RunID: binding.RunID, OwnerID: binding.OwnerID, AuthorityContextID: binding.AuthorityContextID, AuthorityContextDigest: binding.AuthorityContextDigest, Digest: ref, ContentRef: ref, MediaType: "application/octet-stream", CreatedAt: time.Now().UTC()}
 	contract := "sha256:" + strings.Repeat("a", 64)
-	receipt, proof, err := verifier.VerifySelectedFileArtifact(context.Background(), artifact, workspace, policy, pin, contract, binding)
+	receipt, proof, err := verifier.VerifySelectedFileArtifact(context.Background(), artifact, workspace, policy, pin, contract, ref, binding)
 	if err != nil || receipt.Outcome != Passed || receipt.ExpectedDigest != ref || !ValidateSelectedFileProvenance(proof, contract, artifact, []VerificationReceipt{receipt}) {
 		t.Fatalf("receipt=%+v err=%v", receipt, err)
 	}
 	if _, err := verifier.ReloadReceipt(context.Background(), receipt.EvidenceRef); err != nil {
 		t.Fatal(err)
+	}
+	// Both byte strings satisfy the trimmed-text assertion. Only the exact
+	// controller-applied edit from this pass may receive a successful receipt.
+	if _, _, err := verifier.VerifySelectedFileArtifact(context.Background(), artifact, workspace, policy, pin, contract, sha256Reference([]byte("hello")), binding); err == nil {
+		t.Fatal("assertion-compatible but foreign produced bytes received a receipt")
 	}
 	if ValidateSelectedFileProvenance(proof, "sha256:"+strings.Repeat("b", 64), artifact, []VerificationReceipt{receipt}) {
 		t.Fatal("substituted contract accepted")

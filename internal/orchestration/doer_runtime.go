@@ -142,7 +142,7 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 		return w.terminal(ctx, request, base, execution.StateDenied, "doer_artifact_admission_denied", nil, nil)
 	}
 	observation, err := evidence.VerifySelectedFile(ctx, contract.Workspace, policy, policyDigest, binding)
-	if err != nil || observation.Outcome != evidence.Passed {
+	if err != nil || observation.Outcome != evidence.Passed || observation.ContentDigest == "" || observation.ContentDigest != executor.selectedEditDigest {
 		return w.terminal(ctx, request, base, execution.StateFailed, "doer_file_changed", nil, nil)
 	}
 	ref, err := w.blobs.PutBlob(observation.Content)
@@ -156,7 +156,7 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 	if err := admit(ctx, "evidence"); err != nil {
 		return w.terminal(ctx, request, base, execution.StateDenied, "doer_evidence_admission_denied", nil, nil)
 	}
-	receipt, proof, err := verifier.VerifySelectedFileArtifact(ctx, artifact, contract.Workspace, policy, policyDigest, contractDigest, binding)
+	receipt, proof, err := verifier.VerifySelectedFileArtifact(ctx, artifact, contract.Workspace, policy, policyDigest, contractDigest, executor.selectedEditDigest, binding)
 	if err != nil {
 		return w.terminal(ctx, request, base, execution.StateFailed, "doer_evidence_failed", nil, nil)
 	}

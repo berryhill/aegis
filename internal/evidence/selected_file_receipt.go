@@ -15,15 +15,15 @@ const DoerFileVerifierPolicyV1 = "aegis.doer.selected-file.v1"
 // VerifySelectedFileArtifact binds the actual selected file bytes in the
 // content-addressed blob store to one exact controller-pinned assertion. The
 // callback is re-run at final repository completion; a model cannot mint it.
-func (v *BlobVerifier) VerifySelectedFileArtifact(ctx context.Context, artifact RuntimeArtifact, workspace string, policy SelectedFilePolicy, policyDigest, contractDigest string, binding SelectedFileBinding) (VerificationReceipt, CompletionProvenance, error) {
-	if v == nil || binding.Validate() != nil || !validDigest(contractDigest) || artifact.Validate() != nil || artifact.MediaType != "application/octet-stream" ||
+func (v *BlobVerifier) VerifySelectedFileArtifact(ctx context.Context, artifact RuntimeArtifact, workspace string, policy SelectedFilePolicy, policyDigest, contractDigest, producedDigest string, binding SelectedFileBinding) (VerificationReceipt, CompletionProvenance, error) {
+	if v == nil || binding.Validate() != nil || !validDigest(contractDigest) || !validDigest(producedDigest) || artifact.Validate() != nil || artifact.MediaType != "application/octet-stream" ||
 		artifact.AttemptID != binding.AttemptID || artifact.ActionID != binding.ActionID || artifact.RunID != binding.RunID || artifact.OwnerID != binding.OwnerID ||
 		artifact.AuthorityContextID != binding.AuthorityContextID || artifact.AuthorityContextDigest != binding.AuthorityContextDigest {
 		return VerificationReceipt{}, CompletionProvenance{}, errors.New("selected-file artifact binding invalid")
 	}
 	check := func() error {
 		observation, err := VerifySelectedFile(ctx, workspace, policy, policyDigest, binding)
-		if err != nil || observation.Outcome != Passed || observation.ContentDigest != artifact.Digest {
+		if err != nil || observation.Outcome != Passed || observation.ContentDigest != artifact.Digest || observation.ContentDigest != producedDigest {
 			return errors.New("selected-file assertion no longer passes")
 		}
 		stored, err := v.store.GetBlob(artifact.ContentRef)
