@@ -200,7 +200,7 @@ for line in sys.stdin:
 				return nil
 			}
 			var out bytes.Buffer
-			for segment := 0; segment < 4; segment++ {
+			for segment := 0; segment < 1; segment++ {
 				out.Reset()
 				command := NewRoot(Dependencies{Profile: ProductionProfile, In: &bootstrapApprovalInput{out: &out, endpoint: server.URL}, Out: &out, Err: io.Discard, UserService: runner, IsTerminal: func(io.Reader, io.Writer) bool { return true }})
 				args := []string{"--config", path}
@@ -211,18 +211,16 @@ for line in sys.stdin:
 				if err := command.Execute(); err != nil {
 					t.Fatalf("approved segment %d: %v\n%s", segment, err, out.String())
 				}
-				if segment < 3 {
-					if !strings.Contains(out.String(), "Certification progress saved, not certified") || strings.Contains(out.String(), "READY / verified") || runner.active {
-						t.Fatalf("partial segment granted readiness or activation: %s", out.String())
-					}
-					current, err := config.Load(path, nil)
-					if err != nil {
-						t.Fatal(err)
-					}
-					if _, err := os.Stat(current.Manager.Inference.Certification); !errors.Is(err, os.ErrNotExist) {
-						t.Fatalf("partial certification artifact exists: %v", err)
-					}
-				}
+
+			}
+			if got := strings.Count(out.String(), "  conformance: "); got != len(managerdomain.ConformanceCorpus()) {
+				t.Fatalf("one approval did not run the complete corpus: cases=%d output=%s", got, out.String())
+			}
+			if got := strings.Count(out.String(), "checkpointed; reauthenticating"); got != 3 {
+				t.Fatalf("expected three bounded intermediate checkpoints, got %d: %s", got, out.String())
+			}
+			if got := strings.Count(out.String(), "DECISION / Run end-to-end certification"); got != 1 {
+				t.Fatalf("unexpected certification approval count=%d: %s", got, out.String())
 			}
 			for _, want := range []string{"READY / verified", "Canonical built-in Aegis Agent registered=true", "Start authenticated manager"} {
 				if !strings.Contains(out.String(), want) {
@@ -238,6 +236,16 @@ for line in sys.stdin:
 			}
 			if _, err = os.Stat(current.Manager.Inference.Certification); err != nil {
 				t.Fatal(err)
+			}
+			audit, err := os.ReadFile(filepath.Join(current.StateDir, "audit.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := bytes.Count(audit, []byte(`"reason":"certification_segment_validated"`)); got != 3 {
+				t.Fatalf("intermediate segment audit count=%d want 3", got)
+			}
+			if got := bytes.Count(audit, []byte(`"reason":"certification_conformance_passed"`)); got != 1 {
+				t.Fatalf("final conformance audit count=%d want 1", got)
 			}
 		})
 	}

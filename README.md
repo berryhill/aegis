@@ -260,6 +260,8 @@ Aegis is licensed under the [Apache License 2.0](LICENSE).
 
 Live Qwen-class models on workstation CPU may exceed the bounded principal authority. With v0.2.12+ `aegis` runs the corpus across one or more bounded segments under freshly authenticated principal authority; each segment saves an exact ordered pass prefix under owner-only state at `~/.aegis/state/manager/certifications/<model>.json.checkpoint`, refuses publication until every case has passed once under current authority, then publishes and reads back the existing full certification. The principal authentication TTL remains capped at 15 minutes and is never extended for a slow model; a checkpoint is nonauthorizing and is never a certification or readiness artifact.
 
+One approval at the interactive `aegis init`/bare `aegis` certification decision now runs the finite corpus through all needed bounded segments in the same command. Aegis independently reauthenticates the local principal and cleans up runtime resources between segments; a failed case, expired authority, or denied checkpoint stops the run without readiness. Explicit `aegis manager certify CANDIDATE_ID` remains a single-segment command for manual resume. Source-built `./aegis` uses its checkout-local `.aegis`, not the installed command's production `~/.aegis` checkpoint.
+
 ### Publish to an existing gateway
 
 See [online Loop publication](docs/ONLINE_LOOP_PUBLICATION.md) for `--target`, authenticated validation and exact readback. `loops example` is a structural publication template, not an executable implementation/verification workflow.

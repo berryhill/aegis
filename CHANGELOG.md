@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- One approved interactive `aegis init`/bare bootstrap now continues the finite exact manager conformance corpus across independently authenticated, bounded four-case segments instead of exiting after the first nonauthorizing checkpoint. Each segment still rechecks the kernel principal, owns fresh Hermes/proxy custody, repeats model/identity admission, cleans up, audits, and persists only verified pass-prefix metadata; any failure stops without readiness or a partial certification. The explicit `aegis manager certify` command remains a single-segment/resume surface. A synthetic full bootstrap test proves one approval, all thirteen cases, three intermediate checkpoints, and final artifact/readiness; a real model run remains a separate gate.
+
 ### Added
 - Added immutable Doer Loop v4 authoring and a bounded single-node execution path using existing Agent/Graph/Queue authority: typed preclaim Laya gate with zero-attempt `doer_needs_input` denial, tool-free Hermes proposals and diagnosis, Laya report judgment, independently read selected-file evidence, bounded internal retries, append-only step cursor and authenticated metadata-only Queue trace. Native selected-file verifier binds exact bytes to the pinned contract at terminal completion. No new model grants or host sandbox; live model/provider acceptance remains separate.
 - Added an optional `doer.v1` mode to the exact-contract Loop v3 implementation action: fail-closed local Laya gate/judgment, bounded Hermes proposal/diagnosis/completion turns, at most three native Go-test passes, and content-addressed per-stage readback under the existing single-node Graph/Queue authority path. Operator-approved contract digest and separately configured local Laya interpreter/private home are required; model judgment never substitutes for native verification. No generic multi-step Loop interpreter, Jev backend, live-model acceptance, automatic Queue retry, or new host sandbox is claimed.
