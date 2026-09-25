@@ -129,10 +129,22 @@ func validateLoopValidationResult(result LoopValidationResult) error {
 }
 
 func canonicalRevision(value LoopRevision) LoopRevision {
+	if value.Doer != nil {
+		copyDoer := *value.Doer
+		if copyDoer.ExpectedText != nil {
+			expectedText := *copyDoer.ExpectedText
+			copyDoer.ExpectedText = &expectedText
+		}
+		value.Doer = &copyDoer
+	}
 	value.Inputs = canonicalPorts(value.Inputs)
 	value.Outputs = canonicalPorts(value.Outputs)
 	value.Steps = append([]Step(nil), value.Steps...)
 	for index := range value.Steps {
+		if binding := value.Steps[index].Executable; binding != nil {
+			copyBinding := *binding
+			value.Steps[index].Executable = &copyBinding
+		}
 		if contract := value.Steps[index].Implementation; contract != nil {
 			copyContract := *contract
 			copyContract.WritableFiles = append([]string(nil), contract.WritableFiles...)

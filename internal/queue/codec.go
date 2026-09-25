@@ -136,6 +136,7 @@ func validateTransition(v QueueTransition) error {
 		(v.From == StateQueued && v.To == StateCancelled && v.ClaimID == "") ||
 		(v.From == StateQueued && v.To == StateExpired && v.ClaimID == "") ||
 		(v.From == StateQueued && v.To == StateFailed && v.ClaimID == "") ||
+		(v.From == StateQueued && v.To == StateDenied && v.ClaimID == "") ||
 		(v.From == StateQueued && v.To == StateRevoked && v.ClaimID == "") ||
 		(v.From == StateClaimed && terminalState(v.To) && validID(v.ClaimID))
 	if v.SchemaVersion != TransitionSchemaVersion || !validID(v.TransitionID) || !validID(v.QueueItemID) || !legal || !validReason(v.Reason) || v.OccurredAt.IsZero() {

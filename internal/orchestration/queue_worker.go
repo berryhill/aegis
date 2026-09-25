@@ -182,8 +182,20 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 			return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 		}
 	}
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		if item.MaxAttempts != 1 || loopRevision.Doer == nil || worker.implementation.authorizeDoer(*loopRevision.Doer, participant) != nil {
+			return WorkResult{}, fmt.Errorf("%w: operator Doer authorization and single Queue attempt required", ErrWorkerDenied)
+		}
+	}
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionClaim, Subject: request.Subject, Authority: request.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph}); readiness.State != ReadinessReady {
 		return WorkResult{}, fmt.Errorf("%w: claim %s", ErrWorkerDenied, readiness.ReasonCode)
+	}
+	var doerGate LayaGate
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		doerGate, err = worker.preclaimDoerGate(ctx, request, item, loopRevision, node.Participant, node.Loop, snapshot.Graph)
+		if err != nil {
+			return WorkResult{}, err
+		}
 	}
 	now := worker.now()
 	// One LoopExecution identifies this immutable Graph node across all bounded
@@ -252,6 +264,9 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	}
 	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
 		return worker.processImplementation(runtimeCtx, request, base, runtimeRequest, actionID)
+	}
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		return worker.processDoer(runtimeCtx, request, base, runtimeRequest, doerGate)
 	}
 	runtimeResult, runtimeErr := worker.adapter.Execute(runtimeCtx, runtimeRequest)
 	if runtimeErr != nil {
@@ -325,12 +340,13 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 	}
 	completion := fleet.Completion{Claim: result.Claim, Artifact: artifact, Receipts: receipts, Disposition: dispositionRecord, Transition: transition}
 	if artifact != nil {
-		completion.Provenance, err = worker.verifier.AuthorizeCompletion(ctx, *artifact, receipts)
 		if len(implementationProof) == 1 {
 			completion.Provenance = implementationProof[0]
-		}
-		if err != nil {
-			return result, err
+		} else {
+			completion.Provenance, err = worker.verifier.AuthorizeCompletion(ctx, *artifact, receipts)
+			if err != nil {
+				return result, err
+			}
 		}
 	}
 	authority, mandate, identityOK := worker.service.authorityIdentity(ctx, request.Authority)
@@ -381,6 +397,12 @@ func evidenceClaims(revision loop.LoopRevision, actionID string) map[string]loop
 }
 
 func executableAction(revision loop.LoopRevision) (string, error) {
+	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		if loop.ValidateRevision(revision).Outcome != loop.ValidationValid || revision.Doer == nil {
+			return "", errors.New("exact v4 Doer revision required")
+		}
+		return "verify", nil
+	}
 	if revision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
 		for _, step := range revision.Steps {
 			if step.Implementation != nil {

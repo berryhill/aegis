@@ -130,6 +130,8 @@ type CompletionProvenance struct {
 	digest                 string
 	implementationCheck    func() error
 	implementationContract string
+	selectedFileCheck      func() error
+	selectedFileContract   string
 }
 
 // AuthorizeCompletion independently reloads the artifact and every receipt at
@@ -152,7 +154,7 @@ func (v *BlobVerifier) AuthorizeCompletion(ctx context.Context, artifact Runtime
 }
 
 func ValidateCompletionProvenance(provenance CompletionProvenance, artifact RuntimeArtifact, receipts []VerificationReceipt) bool {
-	return provenance.digest != "" && provenance.digest == completionProvenance(artifact, receipts).digest && (provenance.implementationCheck == nil || provenance.implementationCheck() == nil)
+	return provenance.digest != "" && provenance.digest == completionProvenance(artifact, receipts).digest && (provenance.implementationCheck == nil || provenance.implementationCheck() == nil) && (provenance.selectedFileCheck == nil || provenance.selectedFileCheck() == nil)
 }
 
 func completionProvenance(artifact RuntimeArtifact, receipts []VerificationReceipt) CompletionProvenance {

@@ -52,7 +52,7 @@ var classifiedTestOnlyFamilies = map[string]struct{}{"testprocess": {}}
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
 	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
-	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "manager": {}, "managergateway": {}, "migration": {},
+	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "looprun": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "skillbundle": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 	"userservice": {}, "localinference": {},

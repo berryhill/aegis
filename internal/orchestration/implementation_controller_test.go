@@ -47,7 +47,7 @@ func (r *implementationTestRepository) CompleteQueueItem(ctx context.Context, c 
 
 // The runtime is a protocol fixture; native checks and fleet completion are real.
 func TestImplementationQueueNativeCompletion(t *testing.T) {
-	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry"} {
+	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-needs-input", "v4-unauthorized", "v4-existing"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			root := t.TempDir()
@@ -108,6 +108,13 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 				t.Fatal(err)
 			}
 			lr, lv, err := loop.NewImplementationRevision("implementation", 1, "", contract)
+			if strings.HasPrefix(mode, "v4-") {
+				expected := "package fixture\nfunc Value() int {return 42}"
+				if mode == "v4-existing" {
+					expected = "package fixture\nfunc Value() int {return 0}"
+				}
+				lr, lv, err = loop.NewDoerRevision("implementation", 1, "", loop.DoerContract{Task: "Make value.go return 42", Workspace: workspace, WritableFiles: []string{"value.go"}, VerifyFile: "value.go", ExpectedText: &expected, MaxAttempts: 2})
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -134,7 +141,7 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			}
 			message := func(value string) string {
 				proposal := map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package fixture\nfunc Value() int {return " + value + "}\n")}}}
-				if mode == "doer-success" || mode == "doer-retry" {
+				if mode == "doer-success" || mode == "doer-retry" || strings.HasPrefix(mode, "v4-") {
 					proposal["report"] = "Implemented the requested value and ran relevant checks"
 				}
 				patch, _ := json.Marshal(proposal)
@@ -142,7 +149,7 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 				return string(event)
 			}
 			first := message("42")
-			if mode == "correction" || mode == "exhaustion" || mode == "doer-retry" {
+			if mode == "correction" || mode == "exhaustion" || mode == "doer-retry" || mode == "v4-retry" {
 				first = message("0")
 			}
 			second := message("42")
@@ -185,13 +192,16 @@ while read rest; do :; done
 				t.Fatal(err)
 			}
 			digest, _ := contract.Digest()
-			if mode != "unauthorized" {
+			if lr.Doer != nil {
+				digest, _ = lr.Doer.Digest()
+			}
+			if mode != "unauthorized" && mode != "v4-unauthorized" {
 				if err = worker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}}, filepath.Join(root, "state"), adapter.hermes); err != nil {
 					t.Fatal(err)
 				}
-				if contract.DecisionMode == "doer.v1" {
+				if contract.DecisionMode == "doer.v1" || strings.HasPrefix(mode, "v4-") {
 					worker.implementation.decision = NewLayaDecisionAdapter(fakeLayaProcess(func(_ context.Context, input []byte) ([]byte, error) {
-						if mode == "doer-needs-input" {
+						if mode == "doer-needs-input" || mode == "v4-needs-input" {
 							return []byte(`{"version":1,"kind":"gate","answers":{"specified":{"choice":"no","answer_confidence":0.9},"result_defined":{"choice":"yes","answer_confidence":0.9}}}`), nil
 						}
 						if strings.Contains(string(input), `"kind":"verdict"`) {
@@ -261,7 +271,7 @@ while read rest; do :; done
 				}
 				return
 			}
-			if mode == "unauthorized" {
+			if mode == "unauthorized" || mode == "v4-unauthorized" {
 				if err == nil || projection.State != queue.StateQueued {
 					t.Fatalf("unauthorized: %v %+v", err, projection)
 				}
@@ -270,6 +280,29 @@ while read rest; do :; done
 			if mode == "exhaustion" {
 				if err == nil || projection.State != queue.StateFailed {
 					t.Fatalf("exhaustion: %v %+v", err, projection)
+				}
+				return
+			}
+			if mode == "v4-needs-input" {
+				if err == nil || projection.State != queue.StateDenied || projection.Attempts != 0 || result.Claim.ClaimID != "" || result.Attempt.AttemptID != "" {
+					t.Fatalf("v4 needs-input: %+v %+v %v", result, projection, err)
+				}
+				dispositionRecord, readErr := repository.GetDispositionByGraphRun(ctx, "run")
+				if readErr != nil || dispositionRecord.ReasonCode != "doer_needs_input" || dispositionRecord.AttemptID != "" || dispositionRecord.LoopExecutionID != "" {
+					t.Fatalf("no-claim disposition: %+v %v", dispositionRecord, readErr)
+				}
+				attempts, readErr := repository.ListAttempts(ctx)
+				if readErr != nil || len(attempts) != 0 {
+					t.Fatalf("negative gate created attempt: %+v %v", attempts, readErr)
+				}
+				if data, readErr := os.ReadFile(filepath.Join(workspace, "value.go")); readErr != nil || !strings.Contains(string(data), "return 0") {
+					t.Fatalf("needs-input mutated file: %q %v", data, readErr)
+				}
+				return
+			}
+			if mode == "v4-existing" {
+				if err == nil || projection.State != queue.StateQueued || projection.Attempts != 0 || result.Claim.ClaimID != "" {
+					t.Fatalf("pre-existing output accepted or claimed: %+v %+v %v", result, projection, err)
 				}
 				return
 			}
@@ -289,6 +322,25 @@ while read rest; do :; done
 			}
 			if result.Disposition.State != execution.StateSucceeded || projection.State != queue.StateSucceeded || result.Artifact == nil {
 				t.Fatalf("completion: %+v %+v", result, projection)
+			}
+			if strings.HasPrefix(mode, "v4-") {
+				cursorStore := implementation.StepCheckpointStore{DB: repository.ImplementationStore(), RunID: "attempt", RevisionDigest: lr.Digest}
+				checkpoint, readErr := cursorStore.Load(ctx)
+				if readErr != nil || !strings.Contains(string(checkpoint.Payload), `"outcome":"succeeded"`) {
+					t.Fatalf("v4 cursor: %+v %v", checkpoint, readErr)
+				}
+				steps, traceErr := worker.DoerTrace(ctx, "attempt", lr.Digest)
+				if traceErr != nil || len(steps) < 7 || steps[0].StepID != "eligibility" || !steps[len(steps)-1].Terminal {
+					t.Fatalf("v4 readback trace: %+v %v", steps, traceErr)
+				}
+				for _, step := range steps {
+					if step.Digest == "" || step.StepID == "" {
+						t.Fatalf("incomplete trace checkpoint: %+v", step)
+					}
+				}
+				if len(result.Receipts) != 1 || result.Receipts[0].VerifierID != evidence.DoerFileVerifierID || result.Artifact.ActionID != "verify" {
+					t.Fatalf("v4 receipt: %+v %+v", result.Receipts, result.Artifact)
+				}
 			}
 			if mode == "doer-success" || mode == "doer-retry" {
 				kernel := &implementation.Executor{DB: repository.ImplementationStore()}
