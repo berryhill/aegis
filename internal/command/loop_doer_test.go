@@ -33,7 +33,9 @@ func TestDoerDraftCLISealsSelectedFileAndRejectsUnsafePath(t *testing.T) {
 		return out.Bytes(), err
 	}
 	save()
-	wire, err := run("loops", "doer", source)
+	// Local authoring must work on a fresh operator host without an Aegis
+	// authority/configuration installation; publication remains a later gate.
+	wire, err := run("loops", "doer", source, "--config", filepath.Join(root, "absent.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
