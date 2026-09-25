@@ -830,27 +830,29 @@ func bootstrapCertification(cmd *cobra.Command, build builder, input *terminalIn
 		}
 	}
 	approved, err := view.approve(cmd, input, bootstrapDecision{
-		Title:          "Run the next certification segment",
+		Title:          "Run end-to-end certification in bounded segments",
 		Recommendation: "Run now only when this workstation can sustain the exact local model workload.",
-		Consequence:    "May use substantial CPU, GPU, RAM, and time. A bounded pass prefix may be saved without granting readiness; each next segment requires fresh authentication and approval. Declining saves no certification.",
+		Consequence:    "May use substantial CPU, GPU, RAM, and time. This approval runs the finite corpus across bounded segments; each segment reauthenticates, verifies and cleans up independently. Pass prefixes grant no readiness. Any failure stops without publishing certification.",
 		Details:        fmt.Sprintf("candidate=%s; path=Hermes Agent -> authenticated Aegis proxy -> Ollama; every named corpus case must pass across exact validated segments; Aegis-created runtime resources are cleaned up afterward while pre-existing external runners are preserved", candidate),
 	})
 	if err != nil || !approved {
 		fmt.Fprintln(cmd.OutOrStdout(), "Certification declined; readiness was not reported.")
 		return false, err
 	}
-	checkpointed := false
-	err = runManagerCertificationSegment(cmd, build, candidate, func(stage string) {
-		fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
-	}, false, &checkpointed, false)
-	if err != nil {
-		return false, fmt.Errorf("%w; certification was not saved; resume the current segment with: aegis manager certify %s", err, candidate)
+	for segment := range managerdomain.ConformanceCorpus() {
+		checkpointed := false
+		err = runManagerCertificationSegment(cmd, build, candidate, func(stage string) {
+			fmt.Fprintln(cmd.OutOrStdout(), "  conformance:", stage)
+		}, false, &checkpointed, false)
+		if err != nil {
+			return false, fmt.Errorf("%w; certification was not saved; resume the current segment with: aegis manager certify %s", err, candidate)
+		}
+		if !checkpointed {
+			return true, nil
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Certification segment %d checkpointed; reauthenticating for the next bounded segment (not yet certified).\n", segment+1)
 	}
-	if checkpointed {
-		fmt.Fprintf(cmd.OutOrStdout(), "Certification progress saved, not certified. Run 'aegis init' again for the next freshly authenticated segment, or: aegis manager certify %s\n", candidate)
-		return false, nil
-	}
-	return true, nil
+	return false, errors.New("certification did not converge after the bounded corpus")
 }
 
 func renderReadiness(cmd *cobra.Command, snapshot onboarding.Snapshot) {
