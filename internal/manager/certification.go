@@ -82,8 +82,42 @@ func RunCertification(ctx context.Context, executor ConformanceExecutor, candida
 }
 
 func RunCertificationWithOptions(ctx context.Context, executor ConformanceExecutor, candidate Candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion string, contextLength int, now time.Time, options CertificationOptions) (Certification, error) {
+	cert, complete, err := runCertificationCases(ctx, executor, candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion, contextLength, now, nil, len(ConformanceCorpus()), options)
+	if err != nil {
+		return cert, err
+	}
+	if !complete {
+		return Certification{}, errors.New("complete certification did not run every case")
+	}
+	return cert, nil
+}
+
+// RunCertificationSegment runs only the next whole cases after a validated
+// pass prefix. A partial return is not a certification and cannot be saved by
+// SaveCertification or accepted by LoadCertification.
+func RunCertificationSegment(ctx context.Context, executor ConformanceExecutor, candidate Candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion string, contextLength int, now time.Time, previous []ConformanceResult, maximumNew int) (Certification, bool, error) {
+	return runCertificationCases(ctx, executor, candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion, contextLength, now, previous, maximumNew, CertificationOptions{})
+}
+
+func validateCertificationPrefix(results []ConformanceResult) error {
+	cases := ConformanceCorpus()
+	if len(results) > len(cases) {
+		return errors.New("conformance prefix exceeds corpus")
+	}
+	for index, result := range results {
+		if result.CaseID != cases[index].ID || !result.Passed || result.Reason != "passed" {
+			return errors.New("conformance prefix is not an exact ordered pass")
+		}
+	}
+	return nil
+}
+
+func runCertificationCases(ctx context.Context, executor ConformanceExecutor, candidate Candidate, artifactName, artifactDigest, quantization, hermesVersion, ollamaVersion string, contextLength int, now time.Time, previous []ConformanceResult, maximumNew int, options CertificationOptions) (Certification, bool, error) {
 	if executor == nil {
-		return Certification{}, errors.New("conformance executor is required")
+		return Certification{}, false, errors.New("conformance executor is required")
+	}
+	if maximumNew < 1 || maximumNew > len(ConformanceCorpus()) || validateCertificationPrefix(previous) != nil {
+		return Certification{}, false, errors.New("invalid certification segment or prior pass prefix")
 	}
 	known := false
 	for _, item := range Candidates() {
@@ -92,11 +126,17 @@ func RunCertificationWithOptions(ctx context.Context, executor ConformanceExecut
 		}
 	}
 	if !known || artifactName != candidate.OllamaName {
-		return Certification{}, errors.New("candidate is not in the traceable registry")
+		return Certification{}, false, errors.New("candidate is not in the traceable registry")
 	}
 	cert := Certification{SchemaVersion: "aegis.manager.certification.v1", CandidateID: candidate.ID, ArtifactName: artifactName, ArtifactDigest: artifactDigest, ContextLength: contextLength, Quantization: quantization, HermesVersion: hermesVersion, OllamaVersion: ollamaVersion, InstructionDigest: digestString(ManagerSystemInstruction()), ResponseSchema: ResponseSchemaVersion, CorpusDigest: CorpusDigest(), CertifiedAt: now.UTC()}
+	cert.Results = append(cert.Results, previous...)
 	var failures []error
-	for _, test := range ConformanceCorpus() {
+	cases := ConformanceCorpus()
+	end := len(previous) + maximumNew
+	if end > len(cases) {
+		end = len(cases)
+	}
+	for _, test := range cases[len(previous):end] {
 		result := ConformanceResult{CaseID: test.ID}
 		var caseFailure error
 		for attempt := 0; attempt < conversationalConformanceAttempts; attempt++ {
@@ -136,16 +176,21 @@ func RunCertificationWithOptions(ctx context.Context, executor ConformanceExecut
 		}
 		failures = append(failures, caseFailure)
 		if !options.ContinueOnError || ctx.Err() != nil {
-			return Certification{}, caseFailure
+			return Certification{}, false, caseFailure
 		}
 	}
 	if len(failures) != 0 {
-		return Certification{}, errors.Join(failures...)
+		return Certification{}, false, errors.Join(failures...)
 	}
-	if err := cert.Validate(); err != nil {
-		return Certification{}, fmt.Errorf("certification failed: %w", err)
+	complete := end == len(cases)
+	if complete {
+		if err := cert.Validate(); err != nil {
+			return Certification{}, false, fmt.Errorf("certification failed: %w", err)
+		}
+	} else if err := validateCertificationPrefix(cert.Results); err != nil {
+		return Certification{}, false, err
 	}
-	return cert, nil
+	return cert, complete, nil
 }
 
 func safeResponseFailureReason(err error) string {
