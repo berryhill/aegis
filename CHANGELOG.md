@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.13] - 2026-09-25
+
 ### Fixed
 
 - One approved interactive `aegis init`/bare bootstrap now continues the finite exact manager conformance corpus across independently authenticated, bounded four-case segments instead of exiting after the first nonauthorizing checkpoint. Each segment still rechecks the kernel principal, owns fresh Hermes/proxy custody, repeats model/identity admission, cleans up, audits, and persists only verified pass-prefix metadata; any failure stops without readiness or a partial certification. The explicit `aegis manager certify` command remains a single-segment/resume surface. A synthetic full bootstrap test proves one approval, all thirteen cases, three intermediate checkpoints, and final artifact/readiness; a real model run remains a separate gate.
