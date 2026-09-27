@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"github.com/berryhill/aegis/internal/loop"
 )
 
 templ Document(model PageModel) {
@@ -30,6 +31,8 @@ templ Document(model PageModel) {
 						if model.Authenticated {
 							if model.LoopComposer != nil {
 								@LoopComposerPage(*model.LoopComposer, model.CSRF)
+						} else if model.DoerComposer != nil {
+							@DoerComposerPage(*model.DoerComposer, model.CSRF)
 							} else if model.CommandPreview != nil {
 								@CommandPreviewPage(*model.CommandPreview, model.CSRF)
 							} else if model.CommandReceipt != nil {
@@ -206,6 +209,9 @@ templ Workspace(surface SurfaceModel) {
 			}
 		}
 		@DomainCollection(surface)
+		if surface.Domain == DomainLoops {
+			<section class="panel panel-body" aria-labelledby="included-loop-templates"><h2 id="included-loop-templates">Included templates</h2><p>Build-only recipes, not published Loop records or authority grants.</p><p><strong>{ loop.IncludedDoerTemplate().ID }</strong> · { loop.IncludedDoerTemplate().Version }</p><p>Recipe digest: <code>{ loop.IncludedDoerTemplate().Digest }</code></p><p>{ loop.IncludedDoerTemplate().Description }</p><p>Required operator inputs: { strings.Join(loop.IncludedDoerTemplate().RequiredInputs, ", ") }</p><a href="/console/loops/doer">Draft Doer Loop</a></section>
+		}
 		if surface.Domain != DomainCredentials {
 			if surface.Pagination.Label != "" {
 				@Pagination(surface.Pagination)
@@ -300,6 +306,22 @@ templ LoopComposerPage(model LoopComposerModel, csrf string) {
 	</section>
 }
 
+templ DoerComposerPage(model LoopComposerModel, csrf string) {
+	<section class="surface active"><h1>Draft selected-file Doer Loop</h1><p>Preview creates no Loop record. Confirmation repeats fresh authority admission.</p><a href="/console/loops">Back to Loops</a>
+	<form class="panel panel-body" method="post" action="/console/loops/doer/preview"><input type="hidden" name="csrf" value={ csrf }/>
+	<label>Enabled publisher<select name="publisher_id" required>
+		for _, publisher := range model.Publishers {
+			<option value={ publisher.ID }>{ publisher.ID }</option>
+		}
+	</select></label>
+	<label>Loop ID<input name="loop_id" required maxlength="128"/></label><label>Revision<input name="revision" type="number" min="1" required/></label>
+	<label>Previous digest<input name="previous_digest"/></label><label>Publication idempotency key<input name="publication_key" required maxlength="128"/></label>
+	<label>Task<textarea name="task" required maxlength="4096"></textarea></label><label>Absolute workspace<input name="workspace" required maxlength="1024"/></label>
+	<label>Writable relative files (one per line)<textarea name="writable_files" required></textarea></label><label>Selected verification file<input name="verify_file" required maxlength="255"/></label>
+	<label>File assertion<select name="assert_text"><option value="presence">File exists (presence only)</option><option value="exact">Expected UTF-8 text (blank means exact empty text)</option></select></label><label>Expected text<input name="expected_text" maxlength="4096"/></label><label>Maximum attempts (1–3)<input name="max_attempts" type="number" min="1" max="3" value="3" required/></label>
+	<button class="primary" type="submit" disabled?={ len(model.Publishers) == 0 }>Preview exact publication</button></form></section>
+}
+
 templ LoopTextarea(id, name, label, placeholder string, required bool) {
 	<div class="form-field"><label for={ id }>{ label }</label><p class="field-help">One { placeholder } record per line.</p><textarea id={ id } name={ name } rows="4" required?={ required } placeholder={ placeholder }></textarea></div>
 }
@@ -307,6 +329,26 @@ templ LoopTextarea(id, name, label, placeholder string, required bool) {
 templ CommandPreviewPage(model CommandPreviewModel, csrf string) {
 	<section class="surface active" aria-labelledby="command-preview-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Review exact command</span><h1 id="command-preview-title">Confirm Loop mutation</h1><p>Preview is non-persistent. Confirmation repeats fresh authority and exact target admission.</p></div></div>
 		<dl class="exact-reference"><dt>Command</dt><dd>{ model.CommandID }</dd><dt>Target</dt><dd>{ model.TargetID }</dd><dt>Target digest</dt><dd><code>{ model.TargetDigest }</code></dd><dt>Normalized input digest</dt><dd><code>{ model.InputDigest }</code></dd><dt>Expires</dt><dd>{ model.ExpiresAt }</dd></dl>
+		if model.DoerReview != nil {
+			<section class="panel panel-body" aria-label="Exact Doer contract review"><h2>Exact Doer publication</h2>
+				<dl class="spec"><dt>Publisher Agent</dt><dd>{ model.DoerReview.PublisherID }</dd><dt>Revision</dt><dd>{ strconv.FormatUint(model.DoerReview.Revision, 10) }</dd><dt>Previous digest</dt><dd>
+					if model.DoerReview.PreviousDigest == "" {
+						<span>(none — first revision)</span>
+					} else {
+						<code>{ model.DoerReview.PreviousDigest }</code>
+					}
+				</dd><dt>Publication idempotency key</dt><dd><code>{ model.DoerReview.PublicationKey }</code></dd></dl>
+				<h3>Exact Doer contract</h3><dl class="spec"><dt>Task</dt><dd><pre>{ model.DoerReview.Task }</pre></dd><dt>Workspace</dt><dd><code>{ model.DoerReview.Workspace }</code></dd><dt>Writable files</dt><dd><ul>
+					for _, file := range model.DoerReview.WritableFiles {
+						<li><code>{ file }</code></li>
+					}
+				</ul></dd><dt>Verify file</dt><dd><code>{ model.DoerReview.VerifyFile }</code></dd><dt>Assertion</dt><dd>{ model.DoerReview.Assertion }
+					if model.DoerReview.ExpectedText != nil {
+						<p>Exact expected text ({ strconv.Itoa(len(*model.DoerReview.ExpectedText)) } UTF-8 bytes):</p><pre>{ *model.DoerReview.ExpectedText }</pre>
+					}
+				</dd><dt>Maximum attempts</dt><dd>{ strconv.FormatUint(uint64(model.DoerReview.MaxAttempts), 10) }</dd><dt>Contract digest</dt><dd><code>{ model.DoerReview.ContractDigest }</code></dd></dl>
+			</section>
+		}
 		<form method="post" action="/console/loops/execute"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="intent_id" value={ model.IntentID }/>@Confirmation(ConfirmationModel{Title: "Confirm exact Loop mutation", Message: "Only the displayed digest-bound intent will execute. Closing or cancelling creates no Loop or lifecycle record.", ConfirmLabel: "Confirm and execute", CancelLabel: "Cancel", Dangerous: model.CommandID == "loop.lifecycle"})</form>
 	</section>
 }

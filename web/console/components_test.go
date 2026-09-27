@@ -398,6 +398,62 @@ func TestLoopComposerRendersStructuredBoundedContractWithoutAuthorityInputs(t *t
 	}
 }
 
+func TestDoerTemplateVisibleOutsideEmptyAuthoritativeLoopsAndComposer(t *testing.T) {
+	var output bytes.Buffer
+	model := PageModel{Authenticated: true, CSRF: "csrf-loop", Surface: SurfaceModel{
+		Domain: DomainLoops, Title: "Loops", State: "empty", Authoritative: true, TotalCount: 0,
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, required := range []string{"Included templates", "aegis.doer.selected-file", "/console/loops/doer", "No records", "zero records"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("missing %q from empty collection", required)
+		}
+	}
+	output.Reset()
+	model.DoerComposer = &LoopComposerModel{Publishers: []LoopPublisherModel{{ID: "existing-agent"}}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html = output.String()
+	for _, required := range []string{`action="/console/loops/doer/preview"`, `name="publisher_id"`, `name="assert_text"`, `name="expected_text"`, "Preview creates no Loop record"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Doer composer missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{`name="authority"`, `name="mandate"`, `name="principal"`} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("Doer composer exposed %q", forbidden)
+		}
+	}
+	output.Reset()
+	model.DoerComposer = nil
+	expected := "hello,\n  world"
+	model.CommandPreview = &CommandPreviewModel{CommandID: "loop.publish", DoerReview: &DoerReviewModel{
+		PublisherID: "agent-builder", Revision: 2, PreviousDigest: "sha256:previous", PublicationKey: "exact-key",
+		Task: "create <script>alert(1)</script>", Workspace: "/home/operator/work", WritableFiles: []string{"with,comma.txt", "result.txt"},
+		VerifyFile: "result.txt", Assertion: "exact UTF-8 text after trimming", ExpectedText: &expected, MaxAttempts: 3,
+		ContractDigest: "sha256:contract",
+	}}
+	if err := Document(model).Render(context.Background(), &output); err != nil {
+		t.Fatal(err)
+	}
+	html = output.String()
+	for _, required := range []string{"Exact Doer contract", "sha256:contract", "/home/operator/work", "result.txt", "&lt;script&gt;", "agent-builder", "sha256:previous", "exact-key", "with,comma.txt", "hello,\n  world", "UTF-8 bytes"} {
+		if !strings.Contains(html, required) {
+			t.Fatalf("Doer preview missing %q", required)
+		}
+	}
+	if strings.Contains(html, "<script>alert(1)</script>") {
+		t.Fatal("Doer task rendered without escaping")
+	}
+	if !strings.Contains(html, `<li><code>with,comma.txt</code></li>`) || !strings.Contains(html, "<pre>"+expected+"</pre>") {
+		t.Fatal("Doer review lost distinct file paths or exact expected-text whitespace")
+	}
+}
+
 func TestLoopLifecycleAndConfirmationRemainDigestBound(t *testing.T) {
 	var output bytes.Buffer
 	detail := &LoopDetailModel{

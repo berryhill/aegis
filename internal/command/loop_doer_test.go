@@ -59,3 +59,19 @@ func TestDoerDraftCLISealsSelectedFileAndRejectsUnsafePath(t *testing.T) {
 		t.Fatal("accepted escaping path")
 	}
 }
+
+func TestDoerTemplateCLIIsAvailableWithoutConfiguration(t *testing.T) {
+	var out, diag bytes.Buffer
+	command := NewRoot(Dependencies{Out: &out, Err: &diag})
+	command.SetArgs([]string{"loops", "templates", "--config", filepath.Join(t.TempDir(), "absent.yaml")})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var templates []loop.DoerTemplate
+	if err := json.Unmarshal(out.Bytes(), &templates); err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) != 1 || templates[0].ID != loop.DoerTemplateID || templates[0].Version != loop.DoerTemplateVersion || templates[0].Digest != loop.IncludedDoerTemplate().Digest || len(templates[0].Digest) != len("sha256:")+64 {
+		t.Fatalf("unexpected included templates: %s", out.String())
+	}
+}
