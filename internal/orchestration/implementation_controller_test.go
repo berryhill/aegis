@@ -47,7 +47,7 @@ func (r *implementationTestRepository) CompleteQueueItem(ctx context.Context, c 
 
 // The runtime is a protocol fixture; native checks and fleet completion are real.
 func TestImplementationQueueNativeCompletion(t *testing.T) {
-	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-needs-input", "v4-unauthorized", "v4-existing"} {
+	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-needs-input", "v4-unauthorized", "v4-existing", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			root := t.TempDir()
@@ -115,6 +115,9 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 				}
 				lr, lv, err = loop.NewDoerRevision("implementation", 1, "", loop.DoerContract{Task: "Make value.go return 42", Workspace: workspace, WritableFiles: []string{"value.go"}, VerifyFile: "value.go", ExpectedText: &expected, MaxAttempts: 2})
 			}
+			if strings.HasPrefix(mode, "v5-") {
+				lr, lv, err = loop.NewDoerReusableRevision("implementation", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +130,33 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			gr, gv, err := graph.NewRevision(graph.GraphRevision{GraphID: "graph", Revision: 1, Nodes: []graph.Node{{ID: "node", Participant: agentRef, Loop: loopRef}}})
+			graphDraft := graph.GraphRevision{GraphID: "graph", Revision: 1, Nodes: []graph.Node{{ID: "node", Participant: agentRef, Loop: loopRef}}}
+			var runInputs []graph.NormalizedInput
+			if strings.HasPrefix(mode, "v5-") {
+				for _, port := range lr.Inputs {
+					graphPort := graph.Port{ID: port.ID, Type: graph.ValueType(port.Type), Required: port.Required}
+					graphDraft.Inputs = append(graphDraft.Inputs, graphPort)
+					graphDraft.Nodes[0].Inputs = append(graphDraft.Nodes[0].Inputs, graphPort)
+					graphDraft.InputMappings = append(graphDraft.InputMappings, graph.InputMapping{GraphInput: port.ID, ToNodeID: "node", ToPort: port.ID})
+					var value json.RawMessage
+					switch port.ID {
+					case "task":
+						value = json.RawMessage(`"Make value.go return 42"`)
+					case "workspace":
+						value, _ = json.Marshal(workspace)
+					case "writable_files":
+						value = json.RawMessage(`["value.go"]`)
+					case "verify_file":
+						value = json.RawMessage(`"value.go"`)
+					case "expected_text":
+						value = json.RawMessage(`"package fixture\nfunc Value() int {return 42}"`)
+					}
+					if mode != "v5-missing" || port.ID != "task" {
+						runInputs = append(runInputs, graph.NormalizedInput{PortID: port.ID, Type: graph.ValueType(port.Type), Value: value})
+					}
+				}
+			}
+			gr, gv, err := graph.NewRevision(graphDraft)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,13 +164,19 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			decision, err := service.PrepareGraphRun(ctx, SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: revisionRef(gr.GraphID, gr.Revision, gr.Digest), SubmissionID: "submission", IdempotencyKey: "submit", SnapshotID: "snapshot", QueueItemID: "queue", GraphRunID: "run", TransitionID: "queued", RejectionID: "rejected", MaxAttempts: 1})
+			decision, err := service.PrepareGraphRun(ctx, SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: revisionRef(gr.GraphID, gr.Revision, gr.Digest), Inputs: runInputs, SubmissionID: "submission", IdempotencyKey: "submit", SnapshotID: "snapshot", QueueItemID: "queue", GraphRunID: "run", TransitionID: "queued", RejectionID: "rejected", MaxAttempts: 1})
+			if mode == "v5-missing" {
+				if err != nil || decision.Rejection == nil || decision.Accepted != nil {
+					t.Fatalf("missing typed input admitted: %+v %v", decision, err)
+				}
+				return
+			}
 			if err != nil || decision.Accepted == nil {
 				t.Fatalf("submission: %+v %v", decision, err)
 			}
 			message := func(value string) string {
 				proposal := map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package fixture\nfunc Value() int {return " + value + "}\n")}}}
-				if mode == "doer-success" || mode == "doer-retry" || strings.HasPrefix(mode, "v4-") {
+				if mode == "doer-success" || mode == "doer-retry" || strings.HasPrefix(mode, "v4-") || strings.HasPrefix(mode, "v5-") {
 					proposal["report"] = "Implemented the requested value and ran relevant checks"
 				}
 				patch, _ := json.Marshal(proposal)
@@ -195,11 +230,21 @@ while read rest; do :; done
 			if lr.Doer != nil {
 				digest, _ = lr.Doer.Digest()
 			}
-			if mode != "unauthorized" && mode != "v4-unauthorized" {
+			if lr.DoerReusable != nil {
+				bound, bindErr := loop.BindDoerGraphRun(lr, gr, gr.Nodes[0], decision.Accepted.Snapshot)
+				if bindErr != nil {
+					t.Fatal(bindErr)
+				}
+				digest, _ = bound.Digest()
+			}
+			if mode == "v5-wrong-digest" {
+				digest, _ = contract.Digest()
+			}
+			if mode != "unauthorized" && mode != "v4-unauthorized" && mode != "v5-unauthorized" {
 				if err = worker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}}, filepath.Join(root, "state"), adapter.hermes); err != nil {
 					t.Fatal(err)
 				}
-				if contract.DecisionMode == "doer.v1" || strings.HasPrefix(mode, "v4-") {
+				if contract.DecisionMode == "doer.v1" || strings.HasPrefix(mode, "v4-") || strings.HasPrefix(mode, "v5-") {
 					worker.implementation.decision = NewLayaDecisionAdapter(fakeLayaProcess(func(_ context.Context, input []byte) ([]byte, error) {
 						if mode == "doer-needs-input" || mode == "v4-needs-input" {
 							return []byte(`{"version":1,"kind":"gate","answers":{"specified":{"choice":"no","answer_confidence":0.9},"result_defined":{"choice":"yes","answer_confidence":0.9}}}`), nil
@@ -211,7 +256,7 @@ while read rest; do :; done
 					}))
 				}
 			}
-			if mode == "tamper" {
+			if mode == "tamper" || mode == "v5-tamper" {
 				wrapped.beforeComplete = func() {
 					if err := os.WriteFile(filepath.Join(workspace, "value.go"), []byte("package fixture\nfunc Value() int {return 0}\n"), 0600); err != nil {
 						t.Fatal(err)
@@ -259,7 +304,7 @@ while read rest; do :; done
 				}
 				return
 			}
-			if mode == "tamper" {
+			if mode == "tamper" || mode == "v5-tamper" {
 				if err == nil || projection.State == queue.StateSucceeded {
 					t.Fatalf("tampered completion accepted: %v %+v", err, projection)
 				}
@@ -271,8 +316,8 @@ while read rest; do :; done
 				}
 				return
 			}
-			if mode == "unauthorized" || mode == "v4-unauthorized" {
-				if err == nil || projection.State != queue.StateQueued {
+			if mode == "unauthorized" || mode == "v4-unauthorized" || mode == "v5-unauthorized" || mode == "v5-wrong-digest" {
+				if err == nil || projection.State != queue.StateQueued || projection.Attempts != 0 || result.Claim.ClaimID != "" {
 					t.Fatalf("unauthorized: %v %+v", err, projection)
 				}
 				return
@@ -322,6 +367,11 @@ while read rest; do :; done
 			}
 			if result.Disposition.State != execution.StateSucceeded || projection.State != queue.StateSucceeded || result.Artifact == nil {
 				t.Fatalf("completion: %+v %+v", result, projection)
+			}
+			if mode == "v5-success" {
+				if result.Artifact.MediaType != "application/json" || len(result.Receipts) != 1 || result.Receipts[0].MediaType != "application/json" {
+					t.Fatalf("v5 evidence: %+v %+v", result.Artifact, result.Receipts)
+				}
 			}
 			if strings.HasPrefix(mode, "v4-") {
 				cursorStore := implementation.StepCheckpointStore{DB: repository.ImplementationStore(), RunID: "attempt", RevisionDigest: lr.Digest}

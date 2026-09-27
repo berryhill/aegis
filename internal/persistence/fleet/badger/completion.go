@@ -10,6 +10,7 @@ import (
 	"github.com/berryhill/aegis/internal/disposition"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	queue "github.com/berryhill/aegis/internal/queue"
@@ -245,6 +246,54 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 					return false
 				}
 				return evidence.ValidateSelectedFileProvenance(completion.Provenance, contractDigest, *completion.Artifact, completion.Receipts)
+			}
+		}
+		return false
+	}
+	if revision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		if revision.DoerReusable == nil || completion.Artifact.ActionID != "verify" || len(revision.RequiredEvidence) != 1 ||
+			revision.RequiredEvidence[0].Claim != "selected-file-verified" || revision.RequiredEvidence[0].ProducerStepID != "verify" || len(completion.Receipts) != 1 {
+			return false
+		}
+		itemWire, err := get(txn, key(familyQueueItem, attempt.QueueItem.ID))
+		if err != nil {
+			return false
+		}
+		item, err := queue.UnmarshalItem(itemWire)
+		if err != nil || item.Digest != attempt.QueueItem.Digest || item.GraphRunID != attempt.GraphRunID {
+			return false
+		}
+		snapshotWire, err := get(txn, key(familySnapshot, item.Snapshot.ID))
+		if err != nil {
+			return false
+		}
+		snapshot, err := graph.UnmarshalRunSnapshot(snapshotWire)
+		if err != nil || snapshot.Digest != item.Snapshot.Digest {
+			return false
+		}
+		graphWire, err := get(txn, key(familyGraphRevision, snapshot.Graph.ID, revisionPart(snapshot.Graph.Revision)))
+		if err != nil {
+			return false
+		}
+		definition, err := graph.UnmarshalRevision(graphWire)
+		if err != nil || definition.Digest != snapshot.Graph.Digest || len(definition.Nodes) != 1 || definition.Nodes[0].ID != loopExecution.GraphNodeID {
+			return false
+		}
+		contract, err := loop.BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
+		if err != nil {
+			return false
+		}
+		contractDigest, err := contract.Digest()
+		if err != nil {
+			return false
+		}
+		for _, step := range revision.Steps {
+			if step.ID == "verify" {
+				if len(step.EvidenceClaims) != 1 || step.EvidenceClaims[0].Claim != "selected-file-verified" || step.EvidenceClaims[0].ExpectedDigest != "" ||
+					step.EvidenceClaims[0].VerifierID != loop.DoerVerifierID || step.EvidenceClaims[0].PolicyVersion != loop.DoerVerifierPolicy || step.EvidenceClaims[0].MediaType != "application/json" {
+					return false
+				}
+				return evidence.ValidateReusableDoerProvenance(completion.Provenance, contractDigest, *completion.Artifact, completion.Receipts)
 			}
 		}
 		return false
