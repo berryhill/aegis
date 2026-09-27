@@ -8,6 +8,8 @@ The optional Loop v3 `doer.v1` implementation mode requires an operator-allowlis
 
 The distinct Loop v4 selected-file path is bounded to one exact workspace and allowlisted writable files. Its preclaim Laya gate is not authority, an ineligible task records a no-claim `doer_needs_input` denial, and a passed Laya judgment does not complete a task without independent selected-file evidence. The controller checks current authority before effects and the store rechecks the pinned revision/receipt/file at successful disposition. Append-only step metadata is available through authenticated Queue readback; raw model reports and file bytes are not projected there. Model turns, local Laya and controller-applied file writes do not provide host confinement. See [Doer Loop](docs/DOER_LOOP.md).
 
+The v4 single-request queue boundary rejects missing exact provisioning, model, tool-free authority or approved local Doer prerequisites before newly activating or submitting execution work. This does not auto-approve host writes or certify future model access; claim and effect admission remain separate, fresh checks. A published draft, an included template and a passing source test are not executable runtime authority.
+
 ## Status and supported versions
 
 Aegis is pre-1.0 MVP software and is not supported for production use. Security fixes are applied to the current `main` branch and are included in subsequent stable releases; older published `0.1.x` releases do not receive backports. The latest published release must not be interpreted as a production-support commitment.

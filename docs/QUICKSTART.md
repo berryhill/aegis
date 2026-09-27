@@ -6,6 +6,8 @@ For code-task authoring rather than the no-key substrate demo, see [Verified imp
 
 For the included selected-file Doer Loop v4 authoring recipe, use the same build and `./aegis loops templates` (works before configuration); see [Doer Loop](DOER_LOOP.md). `./aegis loops doer --help` describes CLI draft authoring. The authenticated Loops console separately shows the included recipe and Doer-specific preview/confirmation form. Discovery and preview create no Loop record. Explicit operator configuration, exact authority and Queue admission remain separate from this no-key quickstart.
 
+An inactive published v4 draft is not ready to run. The single `loops queue FILE` action, with explicit `activate: true` when desired, now rejects missing verified provisioning, a `none` model, or missing exact Doer controller authorization before new activation/Graph/Queue work; it does not provision an Agent or select a provider for you. Do not present this no-key path as a live Doer execution demonstration.
+
 ## Prerequisites
 
 - Linux

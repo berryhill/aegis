@@ -183,8 +183,8 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		}
 	}
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
-		if item.MaxAttempts != 1 || loopRevision.Doer == nil || worker.implementation.authorizeDoer(*loopRevision.Doer, participant) != nil {
-			return WorkResult{}, fmt.Errorf("%w: operator Doer authorization and single Queue attempt required", ErrWorkerDenied)
+		if item.MaxAttempts != 1 || worker.ValidateLoopAdmission(loopRevision, participant) != nil {
+			return WorkResult{}, fmt.Errorf("%w: Doer readiness and single Queue attempt required", ErrWorkerDenied)
 		}
 	}
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionClaim, Subject: request.Subject, Authority: request.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph}); readiness.State != ReadinessReady {

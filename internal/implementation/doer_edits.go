@@ -13,6 +13,12 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 )
 
+// DoerTargetHasSingleLink shares the edit path's fail-closed regular-file
+// custody check with non-executing admission. Unsupported hosts deny.
+func DoerTargetHasSingleLink(info os.FileInfo) bool {
+	return info != nil && info.Mode().IsRegular() && singleLink(info)
+}
+
 // ApplyDoerEdits applies model-proposed bytes through the controller's exact
 // allowlist. The contract is policy data, not authority: admit must freshly
 // resolve authority for each file. This is not a host filesystem sandbox.

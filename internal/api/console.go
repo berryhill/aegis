@@ -553,6 +553,7 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 
 func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
+	doerV4 := revision.Doer != nil
 	lifecycle := string(view.Lifecycle.State)
 	readiness := "Draft; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
@@ -565,8 +566,19 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	} else if view.Lifecycle.State == "retired" {
 		readiness = "Retired; terminal lifecycle"
 	}
+	if doerV4 && view.Lifecycle.State != "retired" {
+		switch lifecycle {
+		case "active":
+			readiness = "Active exact Doer revision; execution readiness unverified until fresh provisioning, model, controller/Laya and workspace admission"
+		case "inactive":
+			readiness += "; historical Doer revision is not the active execution target"
+		default:
+			readiness = "Draft Doer revision; not execution-ready. Activation and fresh provisioning, model, controller/Laya and workspace admission are required"
+		}
+	}
 
 	detail := &consoleweb.LoopDetailModel{
+		DoerV4:   doerV4,
 		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
 		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,

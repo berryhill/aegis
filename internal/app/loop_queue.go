@@ -115,6 +115,12 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if e != nil || workspace.Agent != input.Agent {
 			return result, ErrDenied
 		}
+		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
+			return result, preflightErr
+		} else if reason != "" {
+			result.Reason = reason
+			return result, nil
+		}
 		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]))
 	}
 	// Rejections are immutable blocked intent, never fabricated executable work.
@@ -161,6 +167,18 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	}
 	if workspace.Agent != input.Agent {
 		return result, ErrDenied
+	}
+	// Preserve the durable activation-required rejection when activation was
+	// not requested. An actual v4 activation or run must preflight before any
+	// lifecycle, Graph, Queue, or runtime-preparation mutation.
+	if input.Activate || (lv.Lifecycle.State == loop.LifecycleActive && lv.Lifecycle.ActiveDigest == input.Loop.Digest) {
+		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
+			return result, preflightErr
+		} else if reason != "" {
+			result.QueueItemID = ""
+			result.Reason = reason
+			return result, nil
+		}
 	}
 	if lv.Lifecycle.State != loop.LifecycleActive || lv.Lifecycle.ActiveDigest != input.Loop.Digest {
 		if !input.Activate {
@@ -233,6 +251,47 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		return result, nil
 	}
 	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key)
+}
+
+// preflightDoerQueue reports missing foundational authority before any new
+// v4 execution mutation. It neither issues a mandate nor grants host writes;
+// runtime and effect admission repeat their independent checks.
+func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, input QueueLoopInput, view LoopView) (string, error) {
+	if view.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion {
+		return "", nil
+	}
+	agent, err := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
+	if err != nil {
+		return "", err
+	}
+	if agent.Digest != input.Agent.Digest {
+		return "", ErrDenied
+	}
+	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
+	if err != nil {
+		return "provisioning_receipt_unavailable", nil
+	}
+	if !verified {
+		return "provisioning_receipt_missing", nil
+	}
+	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
+	if err != nil || charter.Digest != agent.Charter.Digest {
+		return "exact_charter_unavailable", nil
+	}
+	selection, err := s.Select(charter, subject, "", core.Environment{Name: "local"})
+	if err != nil || selection.Selected == nil {
+		return "session_selection_" + selection.Reason, nil
+	}
+	if selection.Selected.Hermes.Model == "" || selection.Selected.Hermes.Model == "none" {
+		return "doer_model_required", nil
+	}
+	if len(selection.Selected.Hermes.Toolsets) != 0 || len(selection.Selected.Grant.Tools) != 0 || len(selection.Selected.Scopes.Credentials) != 0 {
+		return "doer_tool_free_authority_required", nil
+	}
+	if s.QueueWorker == nil || s.QueueWorker.ValidateLoopAdmission(view.Revision, agent) != nil {
+		return "implementation_prerequisite_required", nil
+	}
+	return "", nil
 }
 
 func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string) (QueueLoopResult, error) {
