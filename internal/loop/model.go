@@ -7,6 +7,7 @@ const (
 	RevisionSchemaVersion               = "aegis.loop.revision.v2"
 	ImplementationRevisionSchemaVersion = "aegis.loop.revision.v3"
 	DoerRevisionSchemaVersion           = "aegis.loop.revision.v4"
+	DoerReusableSchemaVersion           = "aegis.loop.revision.v5"
 	ValidationSchemaVersion             = "aegis.loop.validation.v2"
 	ValidatorID                         = "aegis.loop.validator"
 	ValidatorVersion                    = "1"
@@ -136,6 +137,7 @@ type ValidatorSpec struct {
 type LoopRevision struct {
 	SchemaVersion    string                `json:"schema_version"`
 	Doer             *DoerContract         `json:"doer,omitempty"`
+	DoerReusable     *DoerReusableContract `json:"doer_reusable,omitempty"`
 	LoopID           string                `json:"loop_id"`
 	Revision         uint64                `json:"revision"`
 	PreviousDigest   string                `json:"previous_digest,omitempty"`

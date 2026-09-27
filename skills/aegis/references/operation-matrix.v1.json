@@ -329,6 +329,7 @@
         "aegis loops implementation",
         "aegis loops hello",
         "aegis loops doer",
+        "aegis loops doer-reusable",
         "aegis loops queue"
       ],
       "http": [
