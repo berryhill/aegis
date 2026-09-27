@@ -330,6 +330,7 @@
         "aegis loops hello",
         "aegis loops doer",
         "aegis loops doer-reusable",
+        "aegis loops templates",
         "aegis loops queue"
       ],
       "http": [
@@ -340,7 +341,9 @@
         "GET /v1/loops/:loop/:revision",
         "GET /console/loops",
         "GET /console/loops/compose",
+        "GET /console/loops/doer",
         "POST /console/loops/preview",
+        "POST /console/loops/doer/preview",
         "POST /console/loops/lifecycle-preview",
         "POST /console/loops/execute",
         "POST /v1/loops/queue"

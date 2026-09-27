@@ -871,6 +871,29 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleAgents, agentID))
 	})
+	e.GET("/console/loops/doer", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			return consoleError(err)
+		}
+		page, err := loadConsole(c, subject, consoleLoops)
+		if err != nil {
+			return err
+		}
+		composer := &consoleweb.LoopComposerModel{Publishers: []consoleweb.LoopPublisherModel{}}
+		if binding, err := svc.FleetCommandAuthorityAs(c.Request().Context(), subject); err == nil {
+			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: binding.Publisher.ID, Revision: fmt.Sprintf("r%d", binding.Publisher.Revision), Digest: binding.Publisher.Digest, Runtime: binding.Runtime})
+		}
+		page.DoerComposer = composer
+		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "text/html; charset=utf-8", content)
+	})
 	e.GET("/console/loops/compose", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
@@ -1262,15 +1285,17 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Blob(status, "text/html; charset=utf-8", content)
 	}
-	e.POST("/console/loops/preview", func(c *echo.Context) error {
-		form, err := decodeLoopComposerForm(c.Request())
-		if err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-		}
+	previewLoopPublication := func(c *echo.Context, form loopComposerForm) error {
 		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
 		subject, sessionID, err := commandAdmission(c)
 		if err != nil {
 			return err
+		}
+		if form.Revision.Doer != nil {
+			binding, err := svc.FleetCommandAuthorityAs(c.Request().Context(), subject)
+			if err != nil || binding.Publisher.ID != form.PublisherID {
+				return app.ErrDenied
+			}
 		}
 		head := emptyLoopHeadDigest(form.Revision.LoopID)
 		revisions, err := svc.FleetRepository.ListLoopRevisions(c.Request().Context())
@@ -1291,8 +1316,34 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: &consoleweb.CommandPreviewModel{IntentID: preview.IntentID, CommandID: preview.CommandID, TargetID: preview.Target.ID, TargetDigest: preview.Target.Digest, InputDigest: preview.InputDigest, ExpiresAt: preview.ExpiresAt.UTC().Format(time.RFC3339)}}
+		model := &consoleweb.CommandPreviewModel{IntentID: preview.IntentID, CommandID: preview.CommandID, TargetID: preview.Target.ID, TargetDigest: preview.Target.Digest, InputDigest: preview.InputDigest, ExpiresAt: preview.ExpiresAt.UTC().Format(time.RFC3339)}
+		if contract := form.Revision.Doer; contract != nil {
+			digest, err := contract.Digest()
+			if err != nil {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid Doer contract")
+			}
+			assertion := "regular-file presence"
+			if contract.ExpectedText != nil {
+				assertion = "exact UTF-8 text after trimming"
+			}
+			model.DoerReview = &consoleweb.DoerReviewModel{PublisherID: form.PublisherID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey, Task: contract.Task, Workspace: contract.Workspace, WritableFiles: append([]string(nil), contract.WritableFiles...), VerifyFile: contract.VerifyFile, Assertion: assertion, ExpectedText: contract.ExpectedText, ContractDigest: digest, MaxAttempts: contract.MaxAttempts}
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: model}
 		return renderLoopCommandPage(c, page, http.StatusOK)
+	}
+	e.POST("/console/loops/doer/preview", func(c *echo.Context) error {
+		form, err := decodeDoerComposerForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		return previewLoopPublication(c, form)
+	})
+	e.POST("/console/loops/preview", func(c *echo.Context) error {
+		form, err := decodeLoopComposerForm(c.Request())
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+		return previewLoopPublication(c, form)
 	})
 	e.POST("/console/loops/lifecycle-preview", func(c *echo.Context) error {
 		form, err := decodeLoopLifecycleForm(c.Request())
