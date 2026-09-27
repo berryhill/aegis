@@ -6,6 +6,8 @@ For code-task authoring rather than the no-key substrate demo, see [Verified imp
 
 For the selected-file Doer Loop v4, use the same build and `./aegis loops doer --help`; see [Doer Loop](DOER_LOOP.md). Authoring produces a draft only. Explicit operator configuration, exact authority and Queue admission remain separate from this no-key quickstart.
 
+For a reusable typed v5 definition (not an executable v5 worker), use `./aegis loops doer-reusable --help` after the same build; see [the binding contract](DOER_LOOP.md#reusable-typed-v5-definition). This is outside the no-key demonstration.
+
 ## Prerequisites
 
 - Linux

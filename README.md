@@ -8,6 +8,8 @@ Verified implementation authoring: `aegis loops implementation FILE` builds an e
 
 For a selected-file one-task Loop rather than Go-only v3 checks, `aegis loops doer FILE` builds an immutable v4 draft with controller-bound Laya eligibility/judgment, bounded Hermes proposal/diagnosis, safe file verification and evidence-gated Queue completion. Exact operator configuration and fresh runtime authority remain required; no model or skill installation follows from publication. See [the bounded Doer Loop contract](docs/DOER_LOOP.md).
 
+`aegis loops doer-reusable FILE` builds a reusable typed v5 draft without a task, workspace, authority or execution grant. Its task-specific inputs require separate strict binding; the v5 definition is not supported by the v4 worker. See [the reusable draft and binding contract](docs/DOER_LOOP.md#reusable-typed-v5-definition).
+
 Aegis is a Go control plane for authenticated, trust-stanza-bound sessions over an explicit Hermes Agent runtime. It does not hide Hermes, infer authority from prompts, or treat the model as an approver or provisioner.
 
 Its security contract is: identity and authority are established outside the model; prompts, profile names, model conclusions, and stanza requests are not authentication. Each runtime session binds to exactly one authenticated trust stanza. Trust stanzas are security contexts, not personalities: zero or multiple authorized matches deny, grants are never unioned, and a stanza or material-authority change requires a new mandate and clean session.

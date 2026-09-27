@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Added `loops doer-reusable` for a closed reusable v5 Doer definition with required typed task bindings and strict normalization. It creates only a publication draft, not runtime or execution authority; the existing v4 path remains independently decodable and executable.
+
 ## [0.2.13] - 2026-09-25
 
 ### Fixed

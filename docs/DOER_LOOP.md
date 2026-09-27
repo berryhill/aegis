@@ -1,5 +1,11 @@
 # Bounded Doer Loop v4
 
+## Reusable typed v5 definition
+
+`aegis loops doer-reusable FILE [--output NEW_FILE]` accepts an existing `agent_id`, `loop_id`, positive `revision`, `idempotency_key`, optional exact `previous_digest`, and `doer_reusable: {"max_attempts": 2}` (one to three attempts). It prints a v5 publication draft, or creates a new private file without overwriting one. It does not bind a task or workspace, consult a configured authority, publish, activate, queue, or run. Publication still requires the authenticated service and its ordinary ownership/authority checks.
+
+The immutable v5 definition declares required typed ports `task` (string), `workspace` (string), `writable_files` (array), and `verify_file` (string); `expected_text` is an optional string. `loop.NormalizeDoerBinding` strictly validates a separate set of typed port ID/type/JSON values: missing, duplicate, unknown, null, mistyped, malformed, oversized or unsafe task/path values deny. An absent `expected_text` means presence-only; an explicitly empty string means an empty-text assertion. Successful normalization produces a bounded task contract, never authority. The v5 verifier claim leaves its expected digest open for runtime-selected content; unlike v4, this v5 definition is not admitted to the existing v4-only Queue worker, and no executable v5 binding route is claimed. Historical v4 definition decoding and its execution contract are unchanged.
+
 `aegis loops doer FILE [--output NEW_FILE]` builds a canonical immutable Loop revision v4 for one task. It does not publish, activate, authorize, configure Laya, queue or run the task. The existing authenticated `loops publish`, `loops activate`, Graph submission and Queue processing paths own those separate actions.
 
 An authoring document has `agent_id`, `loop_id`, positive `revision`, optional exact `previous_digest`, `idempotency_key`, and `doer`:
