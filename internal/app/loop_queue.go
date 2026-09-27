@@ -288,7 +288,22 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 	if len(selection.Selected.Hermes.Toolsets) != 0 || len(selection.Selected.Grant.Tools) != 0 || len(selection.Selected.Scopes.Credentials) != 0 {
 		return "doer_tool_free_authority_required", nil
 	}
-	if s.QueueWorker == nil || s.QueueWorker.ValidateLoopAdmission(view.Revision, agent) != nil {
+	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	runtime, runtimeErr := s.Runtime(runtimeCtx)
+	cancel()
+	if runtimeErr != nil {
+		return "runtime_unavailable_or_unsupported", nil
+	}
+	if runtimeSatisfies(runtime.Version, charter.Charter.Runtime.VersionConstraint) != nil {
+		return "runtime_version_unsupported", nil
+	}
+	if s.QueueWorker == nil {
+		return "implementation_prerequisite_required", nil
+	}
+	if err := s.QueueWorker.ValidateDoerAvailability(ctx, view.Revision, agent); err != nil {
+		if errors.Is(err, orchestration.ErrLocalLayaUnavailable) {
+			return "local_laya_unavailable", nil
+		}
 		return "implementation_prerequisite_required", nil
 	}
 	return "", nil

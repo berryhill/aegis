@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,28 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/registry"
 )
+
+var ErrLocalLayaUnavailable = errors.New("local Laya unavailable")
+
+// ValidateDoerAvailability checks that configured local Laya can answer the
+// typed helper protocol before a new v4 execution is submitted. Its verdict
+// is discarded: only the later preclaim gate judges the actual task. The
+// worker repeats structural admission and that gate before creating a claim.
+func (w *QueueWorker) ValidateDoerAvailability(ctx context.Context, value loop.LoopRevision, agent registry.AgentRevision) error {
+	if ctx == nil {
+		return ErrLocalLayaUnavailable
+	}
+	if err := w.ValidateLoopAdmission(value, agent); err != nil {
+		return err
+	}
+	if value.SchemaVersion != loop.DoerRevisionSchemaVersion {
+		return nil
+	}
+	if _, err := w.implementation.decision.Gate(ctx, value.Doer.Task); err != nil {
+		return ErrLocalLayaUnavailable
+	}
+	return nil
+}
 
 // validateDoerReadiness is controller-owned and non-executing. It is repeated
 // before claim; it is not a substitute for fresh runtime/effect admission.

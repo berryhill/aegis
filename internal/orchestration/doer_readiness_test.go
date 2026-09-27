@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,6 +52,16 @@ func TestDoerReadinessDeniesMissingPrerequisites(t *testing.T) {
 	}
 	if err := configured().ValidateLoopAdmission(revision, agent); err != nil {
 		t.Fatalf("configured readiness: %v", err)
+	}
+	if err := configured().ValidateDoerAvailability(context.Background(), revision, agent); err == nil {
+		t.Fatal("silent local Laya executable was mistaken for a working helper")
+	}
+	responding := configured()
+	responding.implementation.decision = NewLayaDecisionAdapter(fakeLayaProcess(func(context.Context, []byte) ([]byte, error) {
+		return []byte(`{"version":1,"kind":"gate","answers":{"specified":{"choice":"no","answer_confidence":0.9},"result_defined":{"choice":"no","answer_confidence":0.9}}}`), nil
+	}))
+	if err := responding.ValidateDoerAvailability(context.Background(), revision, agent); err != nil {
+		t.Fatalf("a typed negative verdict must not be confused with missing local Laya: %v", err)
 	}
 	tests := []struct {
 		name   string

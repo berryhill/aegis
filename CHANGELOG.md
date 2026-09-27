@@ -7,7 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Fixed
-- Check selected-file Doer v4 provisioning, usable model, tool-free authority and exact controller/local-workspace prerequisites before a new `loops queue` activation or execution submission. Missing foundations return a named inline blocker without a new Graph/Queue preparation; pending recovery repeats preflight and the worker still repeats claim/effect admission. Publication remains inactive and grants no runtime authority.
+- Check selected-file Doer v4 provisioning, usable model, tool-free authority, current Hermes runtime/version, exact controller/local-workspace prerequisites, and one typed local Laya response before a new `loops queue` activation or execution submission. The Laya verdict grants no authority. Missing foundations return a named inline blocker without a new Graph/Queue preparation; pending recovery repeats preflight and the worker still repeats claim/effect admission. Publication remains inactive and grants no runtime authority.
 
 ### Added
 - Added `loops doer-reusable` for a closed reusable v5 Doer definition with required typed task bindings and strict normalization. It creates only a publication draft, not runtime or execution authority; the existing v4 path remains independently decodable and executable.
