@@ -7,6 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Added
+- Bind reusable v5 Doer inputs from the exact immutable single-node Graph run before Queue claim, require the normalized task-contract digest in operator-controlled configuration, and independently recheck selected-file bytes, JSON artifact, receipt, and contract provenance at completion. Synthetic success and denial coverage does not qualify a live provider or host sandbox.
 - Added `loops doer-reusable` for a closed reusable v5 Doer definition with required typed task bindings and strict normalization. It creates only a publication draft, not runtime or execution authority; the existing v4 path remains independently decodable and executable.
 - Bundle the non-authorizing Doer Loop authoring template in the executable for configuration-free CLI discovery and authenticated Loops-console discovery, with a distinct v4 operator-input preview and explicit publication confirmation. Template discovery does not create an authoritative Loop record or runtime grant.
 

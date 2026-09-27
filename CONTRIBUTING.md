@@ -57,6 +57,14 @@ denial, terminal readback and actual authenticated Queue output separately.
 Synthetic gateway/model fixtures do not prove a live provider or local Laya
 checkpoint accepts a production task.
 
+For reusable v5 Graph-run binding, run the exact-input and synthetic Queue success/denial checks:
+
+```sh
+GOMAXPROCS=2 GOFLAGS=-p=1 GOMEMLIMIT=2GiB go test -parallel=2 ./internal/loop ./internal/evidence ./internal/orchestration ./internal/persistence/fleet/badger -run 'TestBindDoerGraphRun|TestImplementationQueueNativeCompletion/v5-' -count=1
+```
+
+The v5 worker additionally requires a separately configured operator digest and fresh runtime authority. These fixtures do not qualify live provider/model behavior or sandbox the controller OS user.
+
 
 Before opening or updating a pull request, commit the candidate and run the exact-head release-readiness gate used by CI:
 
