@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/berryhill/aegis/internal/app"
@@ -74,6 +75,10 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 	input := app.QueueLoopInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.AgentID, Revision: agent.Revision, Digest: agent.Digest},
 		Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: revision.Revision, Digest: published.Revision.Digest},
 		IdempotencyKey: "doer-no-authority-run", Activate: true}
+	activate := app.SetLoopLifecycleInput{AgentID: charter.AgentID, Loop: input.Loop, State: loop.LifecycleActive, EventID: "doer-direct-unready-activation"}
+	if _, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate); err == nil || !strings.Contains(err.Error(), "provisioning_receipt_missing") {
+		t.Fatalf("direct v4 activation did not return the receipt blocker: %v", err)
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		result, err := svc.QueueLoopAs(ctx, subject, input)
 		if err != nil || result.Reason != "provisioning_receipt_missing" || result.QueueItemID != "" || result.Execution != nil {

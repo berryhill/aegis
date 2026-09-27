@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/berryhill/aegis/internal/app"
@@ -131,6 +132,10 @@ func TestQueueDoerUnavailableRuntimeDoesNotActivateOrSubmit(t *testing.T) {
 	if err != nil || result.Reason != "local_laya_unavailable" || result.QueueItemID != "" || result.Execution != nil {
 		t.Fatalf("silent Laya reached execution mutation: %+v, err %v", result, err)
 	}
+	activate := app.SetLoopLifecycleInput{AgentID: charter.AgentID, Loop: input.Loop, State: loop.LifecycleActive, EventID: "doer-runtime-ready-activation"}
+	if _, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate); err == nil || !strings.Contains(err.Error(), "local_laya_unavailable") {
+		t.Fatalf("silent Laya bypassed direct activation gate: %v", err)
+	}
 	view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1)
 	if err != nil || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
 		t.Fatalf("unavailable runtime activated Loop: %+v, err %v", view.Lifecycle, err)
@@ -145,5 +150,20 @@ func TestQueueDoerUnavailableRuntimeDoesNotActivateOrSubmit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "result.txt")); !os.IsNotExist(err) {
 		t.Fatalf("unavailable runtime wrote selected file: %v", err)
+	}
+	response := `{"version":1,"kind":"gate","answers":{"specified":{"choice":"yes","answer_confidence":0.9},"result_defined":{"choice":"yes","answer_confidence":0.9}}}`
+	if err := os.WriteFile(silentLaya, []byte("#!/bin/sh\nprintf '%s\\n' '"+response+"'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	activation, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate)
+	if err != nil || activation.Idempotent || activation.Event.Digest == "" {
+		t.Fatalf("ready direct activation did not append one exact event: %+v, err %v", activation, err)
+	}
+	if err := os.WriteFile(silentLaya, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate)
+	if err != nil || !replayed.Idempotent || replayed.Event.Digest != activation.Event.Digest {
+		t.Fatalf("recorded activation did not replay after Laya became unavailable: %+v, err %v", replayed, err)
 	}
 }

@@ -10,7 +10,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     <dl class="meta-strip"><div><dt>Steps</dt><dd>{ fmt.Sprint(len(record.Loop.Steps)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Loop.Transitions)) }</dd></div><div><dt>Required inputs</dt><dd>{ fmt.Sprint(len(record.Loop.Inputs)) }</dd></div><div><dt>Latest version</dt><dd>{ loopLatestVersion(record) }</dd></div></dl>
    </div>
    <div class="loop-record-actions">
-    if !record.Loop.DoerV4 {
+    if !record.Loop.DoerV4 && !record.Loop.DoerV5 {
      <a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a>
     }
     <button class="secondary" type="button" data-loop-definition aria-controls="loop-context" aria-expanded="true">Definition details</button>
@@ -20,10 +20,14 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
    <p>{ record.Readiness }</p>
    if record.Loop.DoerV4 {
     <p>This published definition is not executable authority. Use an authenticated exact <code>aegis loops queue FILE</code> request with explicit activation intent to obtain a named prerequisite blocker or a bounded run. The request constructs its Graph internally; this page does not authorize host writes or prove runtime readiness.</p>
+   } else if record.Loop.DoerV5 {
+    <p>This reusable v5 definition is definition only. No Queue worker can execute it, and neither publication nor activation supplies runtime authority. This page offers no Graph or Loop execution action for v5.</p>
    } else {
     <p>This Loop can run only through a Graph that binds this exact revision and digest. Viewing the definition or its evidence contract grants no runtime authority.</p>
    }
-   <p>Graph-child execution explanation: { loopGraphChildSummary(record) }</p>
+   if !record.Loop.DoerV5 {
+    <p>Graph-child execution explanation: { loopGraphChildSummary(record) }</p>
+   }
    <p>Control-flow metrics: { loopRoleSummary(record.Loop) }.</p>
    @LoopIssues(topology.Issues)
   </section>

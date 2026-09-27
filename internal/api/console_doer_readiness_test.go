@@ -44,3 +44,25 @@ func TestDoerLoopConsoleDoesNotClaimExecutionReadiness(t *testing.T) {
 		})
 	}
 }
+
+func TestReusableDoerConsoleIsDefinitionOnly(t *testing.T) {
+	revision := loop.LoopRevision{SchemaVersion: loop.DoerReusableSchemaVersion, LoopID: "reusable-doer-console", Revision: 1,
+		Digest: "sha256:" + strings.Repeat("a", 64), DoerReusable: &loop.DoerReusableContract{}}
+	for _, state := range []loop.Lifecycle{
+		{LoopID: revision.LoopID, State: loop.LifecycleDraft},
+		{LoopID: revision.LoopID, State: loop.LifecycleActive, ActiveRevision: 1, ActiveDigest: revision.Digest},
+	} {
+		record := consoleLoopRecord(app.LoopView{Revision: revision, Lifecycle: state})
+		if record.Loop == nil || !record.Loop.DoerV5 || record.Loop.CanActivate || !strings.Contains(record.Readiness, "no Queue worker") {
+			t.Fatalf("reusable Doer was presented as executable: %+v", record)
+		}
+		html, err := renderConsole(context.Background(), consoleweb.LoopWorkspace(consoleweb.SurfaceModel{Domain: "loops"}, &record, consoleweb.LoopTopology{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := string(html)
+		if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || strings.Contains(content, "aegis loops queue FILE") || !strings.Contains(content, "definition only") {
+			t.Fatalf("reusable Doer detail offered an execution action: %s", content)
+		}
+	}
+}
