@@ -33,7 +33,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/disposition":       {"internal/execution", "internal/reference"},
 	"internal/store":             {"internal/core"},
 	"internal/persistence":       {"internal/core", "internal/persistence"},
-	"internal/persistence/fleet": {"internal/core", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
+	"internal/persistence/fleet": {"internal/core", "internal/disposition", "internal/doerbinding", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/principalauth":     {},
@@ -51,7 +51,7 @@ var classifiedTestOnlyFamilies = map[string]struct{}{"testprocess": {}}
 
 var classifiedProductionFamilies = map[string]struct{}{
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {},
-	"core": {}, "credentials": {}, "disposition": {}, "evidence": {}, "execution": {}, "graph": {},
+	"core": {}, "credentials": {}, "disposition": {}, "doerbinding": {}, "evidence": {}, "execution": {}, "graph": {},
 	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "looprun": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "skillbundle": {}, "slash": {}, "store": {}, "tui": {}, "update": {},

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/doerbinding"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
@@ -231,7 +232,7 @@ while read rest; do :; done
 				digest, _ = lr.Doer.Digest()
 			}
 			if lr.DoerReusable != nil {
-				bound, bindErr := loop.BindDoerGraphRun(lr, gr, gr.Nodes[0], decision.Accepted.Snapshot)
+				bound, bindErr := doerbinding.BindDoerGraphRun(lr, gr, gr.Nodes[0], decision.Accepted.Snapshot)
 				if bindErr != nil {
 					t.Fatal(bindErr)
 				}

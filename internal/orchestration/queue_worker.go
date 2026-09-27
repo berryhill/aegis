@@ -9,6 +9,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/doerbinding"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
@@ -187,7 +188,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion && loopRevision.Doer != nil {
 			doerContract = *loopRevision.Doer
 		} else if loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
-			doerContract, err = loop.BindDoerGraphRun(loopRevision, graphRevision, node, snapshot)
+			doerContract, err = doerbinding.BindDoerGraphRun(loopRevision, graphRevision, node, snapshot)
 			if err != nil {
 				return WorkResult{}, fmt.Errorf("%w: invalid exact Doer Graph binding: %v", ErrWorkerDenied, err)
 			}

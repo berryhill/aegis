@@ -1,15 +1,17 @@
-package loop
+package loop_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"github.com/berryhill/aegis/internal/doerbinding"
 	"github.com/berryhill/aegis/internal/graph"
+	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 )
 
 func TestBindDoerGraphRunExactMappedInputs(t *testing.T) {
-	revision, _, err := NewDoerReusableRevision("doer", 1, "", DoerReusableContract{MaxAttempts: 2})
+	revision, _, err := loop.NewDoerReusableRevision("doer", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +36,7 @@ func TestBindDoerGraphRunExactMappedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bound, err := BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
+	bound, err := doerbinding.BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
 	if err != nil || bound.Task != "Create result" || bound.VerifyFile != "result.txt" {
 		t.Fatalf("exact binding: %+v %v", bound, err)
 	}
@@ -44,7 +46,7 @@ func TestBindDoerGraphRunExactMappedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherBound, err := BindDoerGraphRun(revision, definition, definition.Nodes[0], other)
+	otherBound, err := doerbinding.BindDoerGraphRun(revision, definition, definition.Nodes[0], other)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,14 +69,14 @@ func TestBindDoerGraphRunExactMappedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	optionalBound, err := BindDoerGraphRun(revision, withOptional, withOptional.Nodes[0], optionalSnapshot)
+	optionalBound, err := doerbinding.BindDoerGraphRun(revision, withOptional, withOptional.Nodes[0], optionalSnapshot)
 	if err != nil || optionalBound.ExpectedText != nil {
 		t.Fatalf("absent optional input: %+v %v", optionalBound, err)
 	}
 	wrong := snapshot
 	wrong.Inputs = append([]graph.NormalizedInput(nil), snapshot.Inputs...)
 	wrong.Inputs[0].Value = json.RawMessage(`"different"`)
-	if _, err := BindDoerGraphRun(revision, definition, definition.Nodes[0], wrong); err == nil {
+	if _, err := doerbinding.BindDoerGraphRun(revision, definition, definition.Nodes[0], wrong); err == nil {
 		t.Fatal("modified immutable snapshot accepted")
 	}
 	for _, mutation := range []func(*graph.GraphRevision){
@@ -85,7 +87,7 @@ func TestBindDoerGraphRunExactMappedInputs(t *testing.T) {
 		changed := definition
 		changed.InputMappings = append([]graph.InputMapping(nil), definition.InputMappings...)
 		mutation(&changed)
-		if _, err := BindDoerGraphRun(revision, changed, changed.Nodes[0], snapshot); err == nil {
+		if _, err := doerbinding.BindDoerGraphRun(revision, changed, changed.Nodes[0], snapshot); err == nil {
 			t.Fatal("invalid mapping accepted")
 		}
 	}

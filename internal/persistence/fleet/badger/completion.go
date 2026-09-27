@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/doerbinding"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
@@ -279,7 +280,7 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 		if err != nil || definition.Digest != snapshot.Graph.Digest || len(definition.Nodes) != 1 || definition.Nodes[0].ID != loopExecution.GraphNodeID {
 			return false
 		}
-		contract, err := loop.BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
+		contract, err := doerbinding.BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
 		if err != nil {
 			return false
 		}
