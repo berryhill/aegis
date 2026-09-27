@@ -18,6 +18,7 @@ type PageModel struct {
 	CharterImport       bool
 	AgentOperation      *AgentOperationModel
 	LoopComposer        *LoopComposerModel
+	DoerComposer        *LoopComposerModel
 	CommandPreview      *CommandPreviewModel
 	CommandReceipt      *OperationReceiptModel
 	CredentialOperation *CredentialOperationModel
@@ -45,6 +46,16 @@ type LoopComposerModel struct {
 
 type CommandPreviewModel struct {
 	IntentID, CommandID, TargetID, TargetDigest, InputDigest, ExpiresAt string
+	DoerReview                                                          *DoerReviewModel
+}
+
+type DoerReviewModel struct {
+	PublisherID, PreviousDigest, PublicationKey            string
+	Task, Workspace, VerifyFile, Assertion, ContractDigest string
+	WritableFiles                                          []string
+	ExpectedText                                           *string
+	Revision                                               uint64
+	MaxAttempts                                            uint16
 }
 
 type AuthenticationModel struct {

@@ -696,7 +696,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	waitFor(t, "tcp", address)
 
-	client, _ := loginConsole(t, address)
+	client, csrf := loginConsole(t, address)
 
 	routes := []struct {
 		domain, title, eyebrow, hash, actionLabel, actionKey string
@@ -751,6 +751,13 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 					}
 				}
 			}
+			if route.domain == "loops" {
+				for _, want := range []string{"Included templates", "aegis.doer.selected-file", `href="/console/loops/doer"`} {
+					if !bytes.Contains(body, []byte(want)) {
+						t.Fatalf("Loops route missing bundled template %q", want)
+					}
+				}
+			}
 			if route.actionKey != "" {
 				if !bytes.Contains(body, []byte(route.actionLabel)) {
 					t.Fatalf("route %s missing action label %s", route.domain, route.actionLabel)
@@ -777,6 +784,48 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				t.Fatalf("route %s did not contain exactly the bounded same-origin navigation enhancement: %s", route.domain, body)
 			}
 		})
+	}
+	doerResponse, err := client.Get("http://" + address + "/console/loops/doer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doerBody, _ := io.ReadAll(doerResponse.Body)
+	_ = doerResponse.Body.Close()
+	if doerResponse.StatusCode != http.StatusOK || !bytes.Contains(doerBody, []byte(`action="/console/loops/doer/preview"`)) {
+		t.Fatalf("authenticated Doer composer status=%d body=%s", doerResponse.StatusCode, doerBody)
+	}
+	unauthDoer, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + address + "/console/loops/doer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthBody, _ := io.ReadAll(unauthDoer.Body)
+	_ = unauthDoer.Body.Close()
+	if bytes.Contains(unauthBody, []byte(`action="/console/loops/doer/preview"`)) {
+		t.Fatalf("unauthenticated Doer composer exposed publication form: status=%d", unauthDoer.StatusCode)
+	}
+	before, err := svc.FleetRepository.ListLoopRevisions(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := validDoerForm()
+	values.Set("csrf", csrf)
+	previewRequest, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/doer/preview", strings.NewReader(values.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previewRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	previewRequest.Header.Set("Origin", "http://"+address)
+	previewResponse, err := client.Do(previewRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = previewResponse.Body.Close()
+	if previewResponse.StatusCode < 400 || previewResponse.StatusCode >= 500 {
+		t.Fatalf("Doer preview without enabled publisher should deny, status=%d", previewResponse.StatusCode)
+	}
+	after, err := svc.FleetRepository.ListLoopRevisions(context.Background())
+	if err != nil || len(after) != len(before) {
+		t.Fatalf("denied preview changed authoritative Loop revisions: before=%d after=%d err=%v", len(before), len(after), err)
 	}
 
 	charterImportResponse, err := client.Get("http://" + address + "/console/agents/charter-import")

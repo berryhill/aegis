@@ -24,6 +24,7 @@ type (
 	LoopEvidenceRequirement = loop.EvidenceRequirement
 	LoopLifecycleState      = loop.LifecycleState
 	LoopValidatorSpec       = loop.ValidatorSpec
+	DoerContract            = loop.DoerContract
 )
 
 const (
@@ -43,6 +44,10 @@ const (
 
 func NewLoopRevision(candidate LoopCandidate) (LoopCandidate, LoopValidation, error) {
 	return loop.NewRevision(candidate)
+}
+
+func NewDoerLoopRevision(id string, revision uint64, previous string, contract DoerContract) (LoopCandidate, LoopValidation, error) {
+	return loop.NewDoerRevision(id, revision, previous, contract)
 }
 
 func RevisionReference(id string, revision uint64, digest string) reference.RevisionRef {

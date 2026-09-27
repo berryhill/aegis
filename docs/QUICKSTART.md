@@ -4,7 +4,7 @@ For fixed-output v2 authoring, see [Executable hello](EXECUTABLE_HELLO.md). Runt
 
 For code-task authoring rather than the no-key substrate demo, see [Verified implementation](VERIFIED_IMPLEMENTATION.md): build with `./scripts/build-source.sh ./aegis`, then `./aegis loops implementation --help`. Optional `doer.v1` is an exact-contract mode, not part of this no-key path; it requires separately approved controller configuration and a preinstalled local Laya checkpoint. Drafting and inactive publication require no execution authorization. Never use `go run` as a build-only check.
 
-For the selected-file Doer Loop v4, use the same build and `./aegis loops doer --help`; see [Doer Loop](DOER_LOOP.md). Authoring produces a draft only. Explicit operator configuration, exact authority and Queue admission remain separate from this no-key quickstart.
+For the included selected-file Doer Loop v4 authoring recipe, use the same build and `./aegis loops templates` (works before configuration); see [Doer Loop](DOER_LOOP.md). `./aegis loops doer --help` describes CLI draft authoring. The authenticated Loops console separately shows the included recipe and Doer-specific preview/confirmation form. Discovery and preview create no Loop record. Explicit operator configuration, exact authority and Queue admission remain separate from this no-key quickstart.
 
 ## Prerequisites
 

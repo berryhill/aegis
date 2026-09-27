@@ -1,5 +1,7 @@
 # Bounded Doer Loop v4
 
+`aegis loops templates` lists the included versioned Doer recipe and its non-authorizing recipe digest from the executable without opening an Aegis installation. The authenticated `/console/loops` page displays it under “Included templates” even when the published Loop count is zero. The “Draft Doer Loop” form offers only the currently admitted publisher Agent; without one, drafting remains visible but publication preview is disabled. It takes an exact operator-selected task, absolute workspace, distinct writable files, selected verification file, assertion, retry bound, Loop revision and publication key. Preview shows the selected publisher, revision, predecessor, key, selected-file contract and contract digest without persisting a Loop. Explicit confirmation repeats authority admission to publish; a published revision remains inactive and provides no execution authority. The template is never included in authoritative Loop records or counts.
+
 `aegis loops doer FILE [--output NEW_FILE]` builds a canonical immutable Loop revision v4 for one task. It does not publish, activate, authorize, configure Laya, queue or run the task. The existing authenticated `loops publish`, `loops activate`, Graph submission and Queue processing paths own those separate actions.
 
 An authoring document has `agent_id`, `loop_id`, positive `revision`, optional exact `previous_digest`, `idempotency_key`, and `doer`:

@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:5be314a70550902ab37188b19c7d62db841d8f34431e0697cacd2b90f87aa4b4",
+    "content_digest": "sha256:d9d139e70f4f80b1eee5970f1f92ed4bc13c31139e95f32887a8caed8a810de5",
     "source_revision": "repository"
   },
   "operations": [
@@ -100,7 +100,7 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:94d53ba46ec244de96e447877fc4734f2bf4f8490d2018160dc931ed6416e5fa",
+      "content_digest": "sha256:2d6daa199d3c0ce219bf1d3b03eaa0d655c864ba10a3f45935a878aaa4818f4c",
       "files": [
         {
           "path": "SKILL.md",
@@ -109,8 +109,8 @@
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:b88700d48c4f6c374149fa3ffa888fb464fa5a4b4f7d62193962fca7949df85a",
-          "size": 22294
+          "sha256": "sha256:23f7672700c42f4f10022bcf6b8f762b047cfce9da978b036b8559915c84d9cb",
+          "size": 22406
         }
       ]
     },

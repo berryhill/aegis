@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+- Bundle the non-authorizing Doer Loop authoring template in the executable for configuration-free CLI discovery and authenticated Loops-console discovery, with a distinct v4 operator-input preview and explicit publication confirmation. Template discovery does not create an authoritative Loop record or runtime grant.
+
 ## [0.2.13] - 2026-09-25
 
 ### Fixed

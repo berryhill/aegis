@@ -65,3 +65,10 @@ func loopDoerCmd() *cobra.Command {
 	cmd.Flags().StringVar(&destination, "output", "", "Create a new publication JSON file (default stdout; never overwrite)")
 	return cmd
 }
+
+// The catalog is build-only: discovery opens no config, service or fleet store.
+func loopTemplatesCmd() *cobra.Command {
+	return &cobra.Command{Use: "templates", Short: "List included non-authorizing Loop authoring recipes", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		return output(cmd, []loop.DoerTemplate{loop.IncludedDoerTemplate()})
+	}}
+}
