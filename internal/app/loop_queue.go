@@ -118,8 +118,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
-			result.Reason = reason
-			return result, nil
+			return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 		}
 		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]))
 	}
@@ -175,6 +174,9 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
+			if result.Execution != nil {
+				return s.queueLoopBlockedReadback(ctx, subject, result, reason)
+			}
 			result.QueueItemID = ""
 			result.Reason = reason
 			return result, nil
@@ -309,33 +311,38 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 	return "", nil
 }
 
+func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Subject, result QueueLoopResult, reason string) (QueueLoopResult, error) {
+	result.Reason = reason
+	v, err := s.GetQueueItemAs(ctx, subject, result.QueueItemID)
+	if err != nil {
+		return result, err
+	}
+	if v.Projection.State.IsPreparation() {
+		sink, ok := s.FleetRepository.(interface {
+			RecordPreparationDiagnostic(context.Context, queue.QueueTransition, fleet.AuditFact) error
+		})
+		if !ok {
+			return result, errors.New("preparation diagnostic custody unavailable")
+		}
+		sum := sha256.Sum256([]byte(v.Projection.LastTransitionID + "\x00" + reason))
+		tr, trErr := queue.NewTransition(queue.QueueTransition{TransitionID: "diagnostic-" + hex.EncodeToString(sum[:16]), QueueItemID: result.QueueItemID, From: v.Projection.State, To: v.Projection.State, Reason: reason, OccurredAt: s.Now()})
+		if trErr != nil {
+			return result, trErr
+		}
+		if len(v.Transitions) == 0 || v.Transitions[len(v.Transitions)-1].Reason != reason {
+			if trErr = sink.RecordPreparationDiagnostic(ctx, tr, fleet.AuditFact{Event: core.AuditEvent{Type: "fleet.preparation.blocked", Outcome: "denied", Reason: reason, SubjectID: subject.ID}}); trErr != nil {
+				return result, trErr
+			}
+		}
+		v, err = s.GetQueueItemAs(ctx, subject, result.QueueItemID)
+	}
+	result.Execution = &v
+	return result, err
+}
+
 func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string) (QueueLoopResult, error) {
 	readback := func(reason string) (QueueLoopResult, error) {
-		result.Reason = reason
-		v, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID)
-		if e == nil {
-			if v.Projection.State.IsPreparation() {
-				sink, ok := s.FleetRepository.(interface {
-					RecordPreparationDiagnostic(context.Context, queue.QueueTransition, fleet.AuditFact) error
-				})
-				if !ok {
-					return result, errors.New("preparation diagnostic custody unavailable")
-				}
-				sum := sha256.Sum256([]byte(v.Projection.LastTransitionID + "\x00" + reason))
-				tr, trErr := queue.NewTransition(queue.QueueTransition{TransitionID: "diagnostic-" + hex.EncodeToString(sum[:16]), QueueItemID: result.QueueItemID, From: v.Projection.State, To: v.Projection.State, Reason: reason, OccurredAt: s.Now()})
-				if trErr != nil {
-					return result, trErr
-				}
-				if len(v.Transitions) == 0 || v.Transitions[len(v.Transitions)-1].Reason != reason {
-					if trErr = sink.RecordPreparationDiagnostic(ctx, tr, fleet.AuditFact{Event: core.AuditEvent{Type: "fleet.preparation.blocked", Outcome: "denied", Reason: reason, SubjectID: subject.ID}}); trErr != nil {
-						return result, trErr
-					}
-				}
-				v, e = s.GetQueueItemAs(ctx, subject, result.QueueItemID)
-			}
-			result.Execution = &v
-		}
-		return result, e
+		return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 	}
 	agent, e := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
 	if e != nil {

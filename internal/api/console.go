@@ -681,9 +681,13 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 		detail.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
 	}
 
+	summary := fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions))
+	if doerV5 {
+		summary += " · definition only · no Queue worker"
+	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
-		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
+		Summary:   summary,
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,
 		Links: []consoleweb.LinkModel{{Label: "Publisher Agent", Detail: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest), URL: consoleAgentRevisionURL(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision)}},

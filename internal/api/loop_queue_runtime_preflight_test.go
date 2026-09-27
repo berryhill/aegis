@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -152,7 +154,8 @@ func TestQueueDoerUnavailableRuntimeDoesNotActivateOrSubmit(t *testing.T) {
 		t.Fatalf("unavailable runtime wrote selected file: %v", err)
 	}
 	response := `{"version":1,"kind":"gate","answers":{"specified":{"choice":"yes","answer_confidence":0.9},"result_defined":{"choice":"yes","answer_confidence":0.9}}}`
-	if err := os.WriteFile(silentLaya, []byte("#!/bin/sh\nprintf '%s\\n' '"+response+"'\n"), 0700); err != nil {
+	respondingLaya := []byte("#!/bin/sh\nprintf '%s\\n' '" + response + "'\n")
+	if err := os.WriteFile(silentLaya, respondingLaya, 0700); err != nil {
 		t.Fatal(err)
 	}
 	activation, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate)
@@ -165,5 +168,43 @@ func TestQueueDoerUnavailableRuntimeDoesNotActivateOrSubmit(t *testing.T) {
 	replayed, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate)
 	if err != nil || !replayed.Idempotent || replayed.Event.Digest != activation.Event.Digest {
 		t.Fatalf("recorded activation did not replay after Laya became unavailable: %+v, err %v", replayed, err)
+	}
+	if err := os.WriteFile(silentLaya, respondingLaya, 0700); err != nil {
+		t.Fatal(err)
+	}
+	reservation := sha256.Sum256([]byte(subject.ID + "\x00" + agent.Digest))
+	reservationID := hex.EncodeToString(reservation[:])
+	if err := svc.Store.Save("queue-session-preparation", reservationID, map[string]string{"fixture": "interrupted"}); err != nil {
+		t.Fatal(err)
+	}
+	pendingInput := input
+	pendingInput.Activate = false
+	pendingInput.IdempotencyKey = "runtime-doer-accepted-preparation"
+	pending, err := svc.QueueLoopAs(ctx, subject, pendingInput)
+	if err != nil || pending.Execution == nil || !pending.Execution.Projection.State.IsPreparation() || len(pending.Execution.Attempts) != 0 || len(pending.Execution.Claims) != 0 {
+		t.Fatalf("fixture did not produce one accepted preparation: %+v, err %v", pending, err)
+	}
+	if err := os.WriteFile(silentLaya, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	pendingInput.QueueItemID = pending.QueueItemID
+	blocked, err := svc.QueueLoopAs(ctx, subject, pendingInput)
+	if err != nil || blocked.Reason != "local_laya_unavailable" || blocked.QueueItemID != pending.QueueItemID || blocked.Execution == nil || len(blocked.Execution.Attempts) != 0 || len(blocked.Execution.Claims) != 0 {
+		t.Fatalf("recovery did not retain the accepted preparation: %+v, err %v", blocked, err)
+	}
+	readback, err := svc.GetQueueItemAs(ctx, subject, pending.QueueItemID)
+	if err != nil || len(readback.Transitions) == 0 || readback.Transitions[len(readback.Transitions)-1].Reason != "local_laya_unavailable" {
+		t.Fatalf("recovery blocker not durable on exact item: %+v, err %v", readback, err)
+	}
+	count := len(readback.Transitions)
+	again, err := svc.QueueLoopAs(ctx, subject, pendingInput)
+	if err != nil || again.Reason != blocked.Reason || again.QueueItemID != pending.QueueItemID || again.Execution == nil || len(again.Execution.Transitions) != count {
+		t.Fatalf("recovery diagnostic replay duplicated or lost history: %+v, err %v", again, err)
+	}
+	sameKey := pendingInput
+	sameKey.QueueItemID = ""
+	replayedPending, err := svc.QueueLoopAs(ctx, subject, sameKey)
+	if err != nil || replayedPending.QueueItemID != pending.QueueItemID || replayedPending.Execution == nil || len(replayedPending.Execution.Claims) != 0 || len(replayedPending.Execution.Transitions) != count || replayedPending.Execution.Transitions[count-1].Reason != "local_laya_unavailable" {
+		t.Fatalf("same-key accepted preparation did not retain exact identity: %+v, err %v", replayedPending, err)
 	}
 }

@@ -7,6 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Fixed
+- Preserve a newly discovered v4 prerequisite blocker on the same accepted preparation as a durable, idempotent diagnostic for both explicit-item and same-key recovery. Label reusable v5 Loops as definition-only with no Queue worker in the Console list as well as detail.
 - Check selected-file Doer v4 provisioning, usable model, tool-free authority, current Hermes runtime/version, exact controller/local-workspace prerequisites, and one typed local Laya response before a new queue request or direct lifecycle activation. The Laya verdict grants no authority. Missing foundations return a named inline blocker without a new Graph/Queue preparation; pending recovery repeats preflight and the worker still repeats claim/effect admission. Publication remains inactive and grants no runtime authority. Reusable v5 Console records are labeled definition-only with no worker or run/activation CTA.
 
 ### Added
