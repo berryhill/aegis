@@ -8,6 +8,8 @@ For the included selected-file Doer Loop v4 authoring recipe, use the same build
 
 An inactive published v4 draft is not ready to run. The single `loops queue FILE` action, with explicit `activate: true` when desired, now rejects missing verified provisioning, a `none` model, or missing exact Doer controller authorization before new activation/Graph/Queue work; it does not provision an Agent or select a provider for you. Do not present this no-key path as a live Doer execution demonstration.
 
+For a reusable typed v5 definition (not an executable v5 worker), use `./aegis loops doer-reusable --help` after the same build; see [the binding contract](DOER_LOOP.md#reusable-typed-v5-definition). This is outside the no-key demonstration.
+
 ## Prerequisites
 
 - Linux

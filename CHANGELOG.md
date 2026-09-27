@@ -10,6 +10,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Check selected-file Doer v4 provisioning, usable model, tool-free authority and exact controller/local-workspace prerequisites before a new `loops queue` activation or execution submission. Missing foundations return a named inline blocker without a new Graph/Queue preparation; pending recovery repeats preflight and the worker still repeats claim/effect admission. Publication remains inactive and grants no runtime authority.
 
 ### Added
+- Added `loops doer-reusable` for a closed reusable v5 Doer definition with required typed task bindings and strict normalization. It creates only a publication draft, not runtime or execution authority; the existing v4 path remains independently decodable and executable.
 - Bundle the non-authorizing Doer Loop authoring template in the executable for configuration-free CLI discovery and authenticated Loops-console discovery, with a distinct v4 operator-input preview and explicit publication confirmation. Template discovery does not create an authoritative Loop record or runtime grant.
 
 ## [0.2.13] - 2026-09-25

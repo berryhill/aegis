@@ -137,6 +137,10 @@ func canonicalRevision(value LoopRevision) LoopRevision {
 		}
 		value.Doer = &copyDoer
 	}
+	if value.DoerReusable != nil {
+		copyReusable := *value.DoerReusable
+		value.DoerReusable = &copyReusable
+	}
 	value.Inputs = canonicalPorts(value.Inputs)
 	value.Outputs = canonicalPorts(value.Outputs)
 	value.Steps = append([]Step(nil), value.Steps...)
