@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -650,6 +651,38 @@ func (s *Service) SetLoopLifecycleAs(ctx context.Context, subject core.Subject, 
 			return LoopLifecycleResult{}, workspaceErr
 		}
 		request.Workspace, request.Authority, request.Publisher = &workspace, workspace.Ref(), workspace.Agent
+	}
+	if input.State == loop.LifecycleActive {
+		view, err := s.GetLoopViewAs(ctx, subject, id, input.Loop.Revision)
+		if err != nil {
+			return LoopLifecycleResult{}, err
+		}
+		if view.Revision.Digest != input.Loop.Digest {
+			return LoopLifecycleResult{}, ErrDenied
+		}
+		if view.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+			if input.AgentID != "" && input.AgentID != view.Provenance.PublisherAgent.ID {
+				return LoopLifecycleResult{}, ErrDenied
+			}
+			replay := false
+			for _, event := range view.History {
+				if event.EventID == input.EventID && event.State == loop.LifecycleActive && event.Revision.Digest == input.Loop.Digest {
+					replay = true
+					break
+				}
+			}
+			if !replay {
+				agent := view.Provenance.PublisherAgent
+				ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.ID, Revision: agent.Revision, Digest: agent.Digest}
+				reason, err := s.preflightDoerQueue(ctx, subject, QueueLoopInput{Agent: ref, Loop: input.Loop}, view)
+				if err != nil {
+					return LoopLifecycleResult{}, err
+				}
+				if reason != "" {
+					return LoopLifecycleResult{}, fmt.Errorf("%w: %s", ErrDenied, reason)
+				}
+			}
+		}
 	}
 	event, idempotent, err := s.Fleet.SetLoopLifecycle(ctx, request)
 	return LoopLifecycleResult{Event: event, Idempotent: idempotent}, err

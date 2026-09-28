@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:85fdfdc1f242483b8ac31c546cc9fb809bdb0c32f654c695bdd86ee34a31f67c",
+    "content_digest": "sha256:1826dff9594f1c2ee0ae1a53cec41a7d6fcb4879f568343cd7e6dae4640e7b96",
     "source_revision": "repository"
   },
   "operations": [
@@ -314,12 +314,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:a40d32010af426d28a0fec5e031349a07cbb3593c1aa7a6151eee08da7bbf103",
+      "content_digest": "sha256:434c25c2257965a0da7f9bd5b64dddd4854d77dfa84480e72c8478d173b3b6e4",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:2cf73d6e7c6edf515b3f30f850924765db01c5fd58375a8a4a1dcfb741edeee3",
-          "size": 17556
+          "sha256": "sha256:fc49f39b5c71749eac640e6a90e631dcfcb05d463561281e0626c4ef88c0838a",
+          "size": 19217
         }
       ]
     },
