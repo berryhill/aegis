@@ -432,8 +432,10 @@ type LoopPosition struct {
 }
 
 type LoopLine struct {
-	Index int
-	Path  string
+	Index          int
+	Path           string
+	Back           bool
+	LabelX, LabelY int
 }
 
 // LoopIssueModel describes a presentation-time concern derived from a stored

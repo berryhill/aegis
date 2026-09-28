@@ -85,6 +85,13 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	if lv.Revision.Digest != input.Loop.Digest {
 		return result, ErrDenied
 	}
+	// The one-request shortcut is sealed to the v4 task definition. A v5 run
+	// requires an independently approved per-run contract bound through an
+	// exact typed Graph snapshot; do not create lifecycle or Queue preparation
+	// before that binding/approval exists.
+	if lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		return result, ErrDenied
+	}
 	if input.QueueItemID != "" {
 		prior, e := s.GetQueueItemAs(ctx, subject, input.QueueItemID)
 		if e != nil {

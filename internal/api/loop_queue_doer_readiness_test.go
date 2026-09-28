@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -125,5 +126,29 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workspace, "result.txt")); !os.IsNotExist(err) {
 		t.Fatalf("unready Doer wrote selected file: %v", err)
+	}
+	v5, _, err := loop.NewDoerReusableRevision("doer-typed-run", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v5Published, err := svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: charter.AgentID, Revision: v5, IdempotencyKey: "doer-typed-publication"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v5Input := app.QueueLoopInput{Agent: input.Agent, Loop: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: v5.LoopID, Revision: 1, Digest: v5Published.Revision.Digest}, IdempotencyKey: "doer-typed-must-use-graph", Activate: true}
+	if _, err := svc.QueueLoopAs(ctx, subject, v5Input); !errors.Is(err, app.ErrDenied) {
+		t.Fatalf("v5 masqueraded as the v4 shortcut: %v", err)
+	}
+	v5View, err := svc.GetLoopViewAs(ctx, subject, v5.LoopID, 1)
+	if err != nil || v5View.Lifecycle.State != loop.LifecycleDraft || len(v5View.History) != 0 {
+		t.Fatalf("v5 shortcut changed lifecycle: %+v, err %v", v5View.Lifecycle, err)
+	}
+	graphs, err = svc.ListGraphsAs(ctx, subject)
+	if err != nil || len(graphs) != 0 {
+		t.Fatalf("v5 shortcut published a Graph: %d, err %v", len(graphs), err)
+	}
+	items, err = svc.ListQueueAs(ctx, subject)
+	if err != nil || len(items) != 0 {
+		t.Fatalf("v5 shortcut submitted Queue work: %d, err %v", len(items), err)
 	}
 }

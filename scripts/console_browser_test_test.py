@@ -13,9 +13,11 @@ from scripts import console_browser_test
 
 class LoopGeometryTest(unittest.TestCase):
     def measurement(self):
-        return {"nodes": [{"id": "a", "left": 10, "right": 110, "top": 20, "bottom": 70},
-                          {"id": "b", "left": 150, "right": 250, "top": 80, "bottom": 130}],
-                "edges": [{"id": "ab", "start": [110, 45], "end": [150, 105]}]}
+        return {"nodes": [{"id": "a", "row": 1, "left": 10, "right": 110, "top": 20, "bottom": 70},
+                          {"id": "b", "row": 2, "left": 150, "right": 250, "top": 80, "bottom": 130}],
+                "edges": [{"id": "ab", "start": [110, 45], "end": [150, 105], "marker": "url(#loop-arrow)",
+                           "visible": True, "feedback": False, "labelOccluded": False, "intersectsNode": False}],
+                "labels": ["ab"], "legend": ["ab · a → b"]}
 
     def check(self, value):
         console_browser_test.validate_loop_geometry(value, ["a", "b"], [("ab", "a", "b")])
@@ -38,6 +40,9 @@ class LoopGeometryTest(unittest.TestCase):
                      lambda v: v["edges"][0].update(id="wrong"),
                      lambda v: v["edges"][0].update(start=[120, 45]),
                      lambda v: v["edges"][0].update(end=[float("nan"), 105]),
+                     lambda v: v["edges"][0].update(labelOccluded=True),
+                     lambda v: v["edges"][0].update(marker=None),
+                     lambda v: v.update(labels=[]),
                      lambda v: v["nodes"][0].update(right=10)]
         for mutate in mutations:
             with self.subTest(mutation=mutate):

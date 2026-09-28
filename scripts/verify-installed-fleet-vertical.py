@@ -513,6 +513,56 @@ def main() -> int:
                                   "digest": published_draft["revision"]["digest"],
                                   "steps": [s["id"] for s in draft["revision"]["steps"]],
                                   "transitions": [[t["id"], t["from_step_id"], t["to_step_id"]] for t in transitions]})
+    # A genuine validated Doer publication exercises the cyclic presentation.
+    # It remains draft: this proof does not configure Laya, grant host writes,
+    # or simulate an authorized model execution.
+    doer_workspace = root / "doer-workspace"
+    doer_workspace.mkdir(mode=0o700)
+    doer_source = fixtures / "doer-draft-input.json"
+    write_json(doer_source, {"agent_id": "proof-agent", "loop_id": "proof-doer-cycle", "revision": 1,
+                             "idempotency_key": "installed-proof-doer-cycle",
+                             "doer": {"task": "Create result.txt containing exactly hello", "workspace": str(doer_workspace),
+                                      "writable_files": ["result.txt"], "verify_file": "result.txt",
+                                      "expected_text": "hello", "max_attempts": 3}})
+    doer_draft = aegis("loops", "doer", input_file=doer_source)
+    doer_draft.pop("agent_id", None)  # Use the fixture's existing runtime authority, not workspace delegation.
+    doer_draft["authority"] = authority
+    doer_draft["publisher"] = ref(agent_revision, "proof-agent")
+    doer_file = fixtures / "doer-publication.json"
+    write_json(doer_file, doer_draft)
+    doer_published = aegis("loops", "publish", input_file=doer_file)
+    doer_revision = doer_published["revision"]
+    if doer_published.get("validation", {}).get("outcome") != "valid" or len(doer_revision["steps"]) != 9 or len(doer_revision["transitions"]) != 10:
+        fail("cyclic Doer fixture was not a valid nine-step/ten-transition publication")
+    geometry_manifest.append({"loop_id": "proof-doer-cycle", "digest": doer_revision["digest"],
+                              "steps": [s["id"] for s in doer_revision["steps"]],
+                              "transitions": [[t["id"], t["from_step_id"], t["to_step_id"]] for t in doer_revision["transitions"]],
+                              "feedback": ["verification-retry"], "conditions": {t["id"]: t.get("condition", "") for t in doer_revision["transitions"]}})
+    reusable_source = fixtures / "doer-reusable-draft-input.json"
+    write_json(reusable_source, {"agent_id": "proof-agent", "loop_id": "proof-doer-reusable", "revision": 1,
+                                 "idempotency_key": "installed-proof-doer-reusable", "doer_reusable": {"max_attempts": 3}})
+    reusable_draft = aegis("loops", "doer-reusable", input_file=reusable_source)
+    reusable_draft.pop("agent_id", None)
+    reusable_draft["authority"] = authority
+    reusable_draft["publisher"] = ref(agent_revision, "proof-agent")
+    reusable_file = fixtures / "doer-reusable-publication.json"
+    write_json(reusable_file, reusable_draft)
+    reusable_published = aegis("loops", "publish", input_file=reusable_file)
+    reusable_revision = reusable_published["revision"]
+    if reusable_published.get("validation", {}).get("outcome") != "valid" or len(reusable_revision["steps"]) != 9 or len(reusable_revision["transitions"]) != 10:
+        fail("reusable v5 Doer fixture was not a valid nine-step/ten-transition publication")
+    reusable_lifecycle = fixtures / "doer-reusable-activation.json"
+    write_json(reusable_lifecycle, {"authority": authority, "publisher": ref(agent_revision, "proof-agent"),
+                                    "loop": ref(reusable_revision, "proof-doer-reusable"),
+                                    "event_id": "activate-proof-doer-reusable"})
+    reusable_active = aegis("loops", "activate", "proof-doer-reusable", input_file=reusable_lifecycle)
+    if reusable_active.get("event", {}).get("state") != "active":
+        fail("reusable v5 lifecycle activation was not admitted")
+    geometry_manifest.append({"loop_id": "proof-doer-reusable", "digest": reusable_revision["digest"],
+                              "steps": [s["id"] for s in reusable_revision["steps"]],
+                              "transitions": [[t["id"], t["from_step_id"], t["to_step_id"]] for t in reusable_revision["transitions"]],
+                              "feedback": ["verification-retry"], "conditions": {t["id"]: t.get("condition", "") for t in reusable_revision["transitions"]},
+                              "reusable_active": True})
     write_json(root / "loop-geometry-manifest.json", geometry_manifest)
 
     evidence = {

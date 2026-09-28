@@ -59,7 +59,6 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 	adjacent := make([][]int, len(detail.Steps))
 	indegree, rank := make([]int, len(detail.Steps)), make([]int, len(detail.Steps))
 	drawable := make([]bool, len(detail.Transitions))
-	conditionFor := map[[2]int]string{}
 	for i, e := range detail.Transitions {
 		// Preserve all declared adjacency, including malformed edges, as text.
 		for j, s := range detail.Steps {
@@ -80,7 +79,41 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 		adjacent[a] = append(adjacent[a], b)
 		indegree[b]++
 		drawable[i] = true
-		conditionFor[[2]int{a, b}] = e.Condition
+	}
+	// Classify feedback arcs in declared order. Removing only those arcs
+	// leaves a DAG for placement; no stored transition is removed from the
+	// drawing. A malformed or ambiguous edge never participates in layout.
+	feedback := make([]bool, len(detail.Transitions))
+	color := make([]uint8, len(detail.Steps))
+	var visit func(int)
+	visit = func(a int) {
+		color[a] = 1
+		for i, e := range detail.Transitions {
+			if !drawable[i] || indices[e.FromStepID] != a {
+				continue
+			}
+			b := indices[e.ToStepID]
+			if color[b] == 1 {
+				feedback[i] = true
+			} else if color[b] == 0 {
+				visit(b)
+			}
+		}
+		color[a] = 2
+	}
+	for i := range detail.Steps {
+		if color[i] == 0 {
+			visit(i)
+		}
+	}
+	adjacent = make([][]int, len(detail.Steps))
+	indegree = make([]int, len(detail.Steps))
+	for i, e := range detail.Transitions {
+		if drawable[i] && !feedback[i] {
+			a, b := indices[e.FromStepID], indices[e.ToStepID]
+			adjacent[a] = append(adjacent[a], b)
+			indegree[b]++
+		}
 	}
 	ready := []int{}
 	for i, degree := range indegree {
@@ -98,18 +131,20 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 			}
 		}
 	}
-	cyclic := len(ready) != len(detail.Steps)
+	cyclic := false
+	for _, back := range feedback {
+		cyclic = cyclic || back
+	}
 	cycleIndices := map[int]bool{}
+	valid := make([]LoopTransitionModel, 0, len(detail.Transitions))
 	if cyclic {
-		t.Issues = append(t.Issues, LoopIssueModel{Code: "display.cycle", Path: "transitions", Message: "Cycle detected: directed layout withheld. Nodes are indexed below; all declared transitions remain in the textual equivalent."})
-		cycleIndices = loopDetectFirstSCC(detail.Steps, detail.Transitions, indices)
-		// Distribute cyclic nodes into the first four ranks so they remain
-		// selectable from the textual equivalent.
-		for i := range rank {
-			if cycleIndices[i] {
-				rank[i] = i % 4
+		t.Issues = append(t.Issues, LoopIssueModel{Code: "display.cycle", Path: "transitions", Message: "Bounded control-flow cycle: feedback transitions use the return gutter; all drawable stored transitions retain direction."})
+		for i, edge := range detail.Transitions {
+			if drawable[i] {
+				valid = append(valid, edge)
 			}
 		}
+		cycleIndices = loopDetectFirstSCC(detail.Steps, valid, indices)
 	}
 	// Group nodes by rank into rows. Each rank becomes a grid column; nodes
 	// inside the same rank stack into successive rows.
@@ -132,17 +167,18 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 	}
 	// Cycle analytics: members, exit condition, exhaustion destination.
 	if cyclic && len(cycleIndices) > 0 {
-		members, maxIter, exitCond, exhaustID := loopCycleAnalytics(detail, cycleIndices, conditionFor)
+		members, maxIter, exitCond, exhaustID := loopCycleAnalytics(detail, valid, cycleIndices)
 		t.CycleMembers = members
 		t.CycleMaxIterations = maxIter
 		t.CycleExitCondition = exitCond
 		t.CycleExhaustionToID = exhaustID
 		t.ExhaustionDestination = loopExhaustionDestination(detail, exhaustID)
 	}
-	if !cyclic {
+	{
 		// Track dimensions match the CSS grid in loop_workspace.css:
-		// 212px nodes with 32px column gap, 102px nodes with 32px row gap,
-		// and 32px padding around the stage. SVG paths use absolute pixel
+		// 212px nodes with 32px gaps. Reserve a 72px top gutter for the
+		// feedback condition and ordinary edge labels on separate lanes.
+		// SVG paths use absolute pixel
 		// coordinates inside a viewBox so the same coordinate system used
 		// by the Graph workspace remains consistent. CSS-grid places the
 		// buttons on the same tracks so SVG and HTML stay aligned without
@@ -151,30 +187,85 @@ func buildLoopTopology(detail *LoopDetailModel) LoopTopology {
 		nodeH := 102
 		gap := 32
 		pad := 32
+		padY := 72
 		colStride := nodeW + gap
 		rowStride := nodeH + gap
+		parallel := map[[2]int]int{}
 		for i, e := range detail.Transitions {
 			if !drawable[i] {
 				continue
 			}
-			a, b := t.Nodes[indices[e.FromStepID]], t.Nodes[indices[e.ToStepID]]
+			from, to := indices[e.FromStepID], indices[e.ToStepID]
+			a, b := t.Nodes[from], t.Nodes[to]
+			pair := [2]int{from, to}
+			laneIndex := parallel[pair]
+			parallel[pair]++
 			x1 := float64((a.GridColumn-1)*colStride + pad + nodeW)
-			y1 := float64((a.GridRow-1)*rowStride + pad + nodeH/2)
+			y1 := float64((a.GridRow-1)*rowStride + padY + nodeH/2)
 			x2 := float64((b.GridColumn-1)*colStride + pad)
-			y2 := float64((b.GridRow-1)*rowStride + pad + nodeH/2)
-			path := fmt.Sprintf("M %.2f %.2f C %.2f %.2f, %.2f %.2f, %.2f %.2f", x1, y1, x1+40, y1, x2-40, y2, x2, y2)
+			y2 := float64((b.GridRow-1)*rowStride + padY + nodeH/2)
+			if feedback[i] {
+				if a.GridRow == 1 && b.GridRow == 1 {
+					// Return above the first row instead of crossing the
+					// intervening nodes on a horizontal left-gutter route.
+					// Both anchors are on their top borders.
+					x1 = float64((a.GridColumn-1)*colStride + pad + nodeW/2)
+					x2 = float64((b.GridColumn-1)*colStride + pad + nodeW/2)
+					y1 = float64(padY)
+					y2 = float64(padY)
+					lane := float64(7 + (i%3)*3)
+					path := fmt.Sprintf("M %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f", x1, y1, x1, lane, x2, lane, x2, y2)
+					t.Edges = append(t.Edges, LoopLine{Index: i, Path: path, Back: true, LabelX: int((x1 + x2) / 2), LabelY: 28})
+					continue
+				}
+				// Attach to left borders and travel through the reserved
+				// viewport gutter. Index-based lanes distinguish parallel arcs.
+				x1 = float64((a.GridColumn-1)*colStride + pad)
+				lane := float64(8 + (i%3)*7)
+				path := fmt.Sprintf("M %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f", x1, y1, lane, y1, lane, y2, x2, y2)
+				t.Edges = append(t.Edges, LoopLine{Index: i, Path: path, Back: true, LabelX: int(lane) + 8, LabelY: int((y1 + y2) / 2)})
+				continue
+			}
+			// Parallel edges retain border anchors and separate the first
+			// three curves; the visible legend disambiguates larger bundles.
+			laneOffset := float64(min(laneIndex, 2) * 14)
+			path := fmt.Sprintf("M %.2f %.2f C %.2f %.2f, %.2f %.2f, %.2f %.2f", x1, y1, x1+40, y1+laneOffset, x2-40, y2+laneOffset, x2, y2)
 			if rank[indices[e.ToStepID]]-rank[indices[e.FromStepID]] > 1 {
 				// Skip-rank edges travel in the gutter above subsequent rows so
 				// they do not imply links to intermediate nodes. The gutter
 				// sits a fixed pixel offset from the viewBox top so the
 				// SVG geometry API can resolve the full path.
-				gutterY := float64(pad) - 8
+				gutterY := float64(padY) - 28 + laneOffset
 				path = fmt.Sprintf("M %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f", x1, y1, x1+28, y1, x1+28, gutterY, x2-28, gutterY, x2-28, y2, x2, y2)
 			}
-			t.Edges = append(t.Edges, LoopLine{Index: i, Path: path})
+			labelX := int((x1 + x2) / 2)
+			labelRow := max(a.GridRow, b.GridRow)
+			if a.GridRow != b.GridRow && b.GridRow < a.GridRow {
+				labelX += 70 // separate an upward branch from the lower-row exit
+			}
+			labelY := (labelRow-1)*rowStride + padY - 8
+			t.Edges = append(t.Edges, LoopLine{Index: i, Path: path, LabelX: labelX, LabelY: labelY})
 		}
 	}
 	return t
+}
+
+func loopEdgeClass(edge LoopLine) string {
+	if edge.Back {
+		return "loop-edge-path loop-edge-return"
+	}
+	return "loop-edge-path"
+}
+
+func loopTransitionLabel(t LoopTransitionModel) string {
+	label := t.ID
+	if t.Condition != "" {
+		label = t.Condition
+	}
+	if t.MaxTraversals > 0 {
+		label += fmt.Sprintf(" · max %d", t.MaxTraversals)
+	}
+	return label
 }
 
 func loopStepDisplayName(step LoopStepModel) string {
@@ -261,7 +352,7 @@ func loopDetectFirstSCC(steps []LoopStepModel, transitions []LoopTransitionModel
 // condition, and exhaustion destination for one SCC. It preserves the first
 // back-edge encountered in deterministic order so the presentation never
 // invents which loop a viewer sees.
-func loopCycleAnalytics(detail *LoopDetailModel, cycleIndices map[int]bool, conditionFor map[[2]int]string) (members []string, maxIter uint16, exitCondition, exhaustID string) {
+func loopCycleAnalytics(detail *LoopDetailModel, transitions []LoopTransitionModel, cycleIndices map[int]bool) (members []string, maxIter uint16, exitCondition, exhaustID string) {
 	ids := make([]int, 0, len(cycleIndices))
 	for v := range cycleIndices {
 		ids = append(ids, v)
@@ -270,7 +361,7 @@ func loopCycleAnalytics(detail *LoopDetailModel, cycleIndices map[int]bool, cond
 	for _, v := range ids {
 		members = append(members, detail.Steps[v].ID)
 	}
-	for _, t := range detail.Transitions {
+	for _, t := range transitions {
 		a, b, ok := loopLookupTransitionEndpoints(t, detail.Steps)
 		if !ok {
 			continue
@@ -281,10 +372,10 @@ func loopCycleAnalytics(detail *LoopDetailModel, cycleIndices map[int]bool, cond
 		// A transition whose source is in the SCC but target is outside
 		// is the cycle's exit edge.
 		if cycleIndices[a] && !cycleIndices[b] {
-			if cond := conditionFor[[2]int{a, b}]; cond != "" && exitCondition == "" {
-				exitCondition = cond
-				exhaustID = t.ToStepID
-			} else if exhaustID == "" {
+			if t.Condition != "" && exitCondition == "" {
+				exitCondition = t.Condition
+			}
+			if t.Condition == "exhausted" && exhaustID == "" {
 				exhaustID = t.ToStepID
 			}
 		}
@@ -320,12 +411,7 @@ func loopExhaustionDestination(detail *LoopDetailModel, exitStepID string) strin
 		}
 		return exitStepID
 	}
-	for _, s := range detail.Steps {
-		if s.TerminalOutcome != "" {
-			return s.ID + " · terminal " + s.TerminalOutcome
-		}
-	}
-	return "No terminal step declared"
+	return "Not declared"
 }
 
 // loopRoleSummary composes the headline row used by the page summary.

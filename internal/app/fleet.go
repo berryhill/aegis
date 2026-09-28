@@ -1138,7 +1138,7 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 					if revisionErr != nil || revision.Digest != child.Loop.Digest {
 						return nil, fleet.ErrCorrupt
 					}
-					if revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+					if revision.SchemaVersion == loop.DoerRevisionSchemaVersion || revision.SchemaVersion == loop.DoerReusableSchemaVersion {
 						steps, traceErr := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, revision.Digest)
 						if traceErr != nil {
 							return nil, traceErr

@@ -580,11 +580,11 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	if doerV5 && view.Lifecycle.State != "retired" {
 		switch lifecycle {
 		case "active":
-			readiness = "Active reusable v5 definition only; no Queue worker can execute it"
+			readiness = "Active reusable v5 definition; a typed Graph run requires an independently approved per-run contract digest and fresh runtime admission"
 		case "inactive":
-			readiness = "Historical reusable v5 definition only; no Queue worker can execute it"
+			readiness = "Historical reusable v5 definition; not the active execution target"
 		default:
-			readiness = "Draft reusable v5 definition only; no Queue worker can execute it"
+			readiness = "Draft reusable v5 definition; activate before a separately authorized typed Graph run"
 		}
 	}
 
@@ -593,7 +593,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 		DoerV5:   doerV5,
 		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
-		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: !doerV5 && view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
+		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
 		CanRetire:     view.Lifecycle.State != "retired",
 		LatestVersion: fmt.Sprintf("r%d", revision.Revision),
 		Validation:    "Unavailable", ValidationDigest: "Unavailable",
@@ -683,7 +683,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 
 	summary := fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions))
 	if doerV5 {
-		summary += " · definition only · no Queue worker"
+		summary += " · reusable typed-input definition · per-run Graph binding required"
 	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
