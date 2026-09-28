@@ -18,6 +18,46 @@ type doerMemoryCursor struct{ cursor looprun.Cursor }
 func (m *doerMemoryCursor) Load(context.Context) (looprun.Cursor, error)   { return m.cursor, nil }
 func (m *doerMemoryCursor) Save(_ context.Context, c looprun.Cursor) error { m.cursor = c; return nil }
 
+func TestDoerStepsFirstPassRequiresSelectedFileVerification(t *testing.T) {
+	workspace, expected := t.TempDir(), "hello"
+	contract := loop.DoerContract{Task: "Create result.txt", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &expected, MaxAttempts: 2}
+	revision, _, err := loop.NewDoerRevision("first-pass", 1, "", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, diagnosed := 0, false
+	roles := doerRoles{
+		Admit: func(context.Context, string) error { return nil },
+		Gate: func(context.Context, string) (LayaGate, error) {
+			return LayaGate{Specified: true, ResultDefined: true}, nil
+		},
+		Implement: func(context.Context, string, string, uint16) (implementation.Proposal, error) {
+			return implementation.Proposal{Edits: []implementation.Edit{{Path: "result.txt", Content: []byte(expected)}}, Report: "proposed selected-file edit"}, nil
+		},
+		Apply: func(_ context.Context, _ loop.DoerContract, edits []implementation.Edit) error {
+			return os.WriteFile(filepath.Join(workspace, edits[0].Path), edits[0].Content, 0600)
+		},
+		Judge: func(context.Context, string, string) (LayaVerdict, error) {
+			return LayaVerdict{Done: true, StaysInScope: true, Fulfills: true, Works: true, Practices: true}, nil
+		},
+		Verify: func(ctx context.Context) (evidence.SelectedFileResult, error) {
+			verified++
+			policy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: "result.txt", Mode: evidence.SelectedFileText, Text: expected}
+			digest, _ := policy.Digest()
+			return evidence.VerifySelectedFile(ctx, workspace, policy, digest, evidence.SelectedFileBinding{AttemptID: "attempt", ActionID: "verify", RunID: "run", OwnerID: "owner", AuthorityContextID: "authority", AuthorityContextDigest: "sha256:authority"})
+		},
+		Diagnose: func(context.Context, string, string, []string, uint16) (string, error) {
+			diagnosed = true
+			return "", nil
+		},
+	}
+	executor := &doerStepExecutor{contract: contract, roles: roles}
+	result, err := looprun.Run(context.Background(), "attempt", revision, looprun.Values{}, &doerMemoryCursor{}, executor, nil)
+	if err != nil || result.Outcome != loop.OutcomeSucceeded || executor.attempts != 1 || verified != 1 || diagnosed || executor.observation.Outcome != evidence.Passed {
+		t.Fatalf("first pass result=%+v err=%v attempts=%d verified=%d diagnosed=%t", result, err, executor.attempts, verified, diagnosed)
+	}
+}
+
 func TestDoerStepsVerifierFailureDiagnosesAndRetries(t *testing.T) {
 	workspace := t.TempDir()
 	expected := "hello"

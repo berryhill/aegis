@@ -31,8 +31,8 @@ func TestLoopTopologyCyclicBranchingTerminalAndHistoricalCases(t *testing.T) {
 	if len(topology.CycleMembers) == 0 {
 		t.Fatal("expected at least one cycle member")
 	}
-	if topology.ExhaustionDestination == "" || topology.ExhaustionDestination == "Not declared" {
-		t.Fatal("expected exhaustion destination to be populated")
+	if topology.ExhaustionDestination != "Not declared" {
+		t.Fatalf("an ordinary approved/rejected exit is not an exhaustion destination: %q", topology.ExhaustionDestination)
 	}
 	branching := &LoopDetailModel{Steps: []LoopStepModel{
 		{ID: "a", Kind: "action", Entry: true, MaxAttempts: 1},
@@ -75,6 +75,95 @@ func TestLoopTopologyCyclicBranchingTerminalAndHistoricalCases(t *testing.T) {
 	}
 	if p := buildLoopTopology(max); len(p.Issues) == 0 || p.Issues[0].Code != "display.bound_exceeded" {
 		t.Fatal("maximum-size overflow should be rejected")
+	}
+}
+
+func TestLoopTopologyPublishedDoerCycleDrawsExactTransitions(t *testing.T) {
+	// Match the owning instance's v4 nine-step/ten-transition shape.
+	ids := []string{"completion", "diagnosis", "done", "eligibility", "failed", "implement", "judgment", "missing-input", "verify"}
+	model := &LoopDetailModel{}
+	for _, id := range ids {
+		model.Steps = append(model.Steps, LoopStepModel{ID: id, Kind: "action", MaxAttempts: 1})
+	}
+	model.Steps[3].Entry = true
+	model.Steps[2].Kind, model.Steps[2].TerminalOutcome = "terminal", "succeeded"
+	model.Steps[4].Kind, model.Steps[4].TerminalOutcome = "terminal", "failed"
+	model.Transitions = []LoopTransitionModel{
+		{ID: "completed", FromStepID: "completion", ToStepID: "done"},
+		{ID: "diagnosed", FromStepID: "diagnosis", ToStepID: "implement", MaxTraversals: 3},
+		{ID: "eligible", FromStepID: "eligibility", ToStepID: "implement", Condition: "eligible"},
+		{ID: "implemented", FromStepID: "implement", ToStepID: "judgment", MaxTraversals: 3},
+		{ID: "judged", FromStepID: "judgment", ToStepID: "verify", MaxTraversals: 3},
+		{ID: "missing-input-failed", FromStepID: "missing-input", ToStepID: "failed"},
+		{ID: "needs-input", FromStepID: "eligibility", ToStepID: "missing-input", Condition: "needs_input"},
+		{ID: "verification-exhausted", FromStepID: "verify", ToStepID: "failed", Condition: "exhausted"},
+		{ID: "verification-retry", FromStepID: "verify", ToStepID: "diagnosis", Condition: "retry", MaxTraversals: 3},
+		{ID: "verified", FromStepID: "verify", ToStepID: "completion", Condition: "verified"},
+	}
+	topology := buildLoopTopology(model)
+	if len(topology.Edges) != len(model.Transitions) {
+		t.Fatalf("cycle lost stored edges: got %d want %d", len(topology.Edges), len(model.Transitions))
+	}
+	for i, e := range topology.Edges {
+		if e.Index != i || e.Path == "" {
+			t.Fatalf("transition %d not drawn at stored index: %+v", i, e)
+		}
+	}
+	if !topology.Edges[8].Back {
+		t.Fatalf("verified retry must return through the feedback gutter: %+v", topology.Edges[8])
+	}
+	if topology.Edges[8].LabelY >= 32 || !strings.Contains(topology.Edges[8].Path, " 13.00") {
+		t.Fatalf("retry label and path must stay above first-row nodes: %+v", topology.Edges[8])
+	}
+	if topology.CycleExhaustionToID != "failed" {
+		t.Fatalf("ordinary success exit mistaken for exhaustion: %q", topology.CycleExhaustionToID)
+	}
+	var out strings.Builder
+	record := &RecordModel{Key: "xander-doer:1", Label: "xander-doer", Revision: "1", Lifecycle: "draft", Loop: model}
+	if err := LoopWorkspace(SurfaceModel{Domain: DomainLoops}, record, topology).Render(context.Background(), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`data-transition-id="verification-retry"`, `retry · max 3`, `data-transition-id="verified"`, `data-transition-id="verification-exhausted"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("rendered cycle missing %q", want)
+		}
+	}
+	model.DoerV5 = true
+	out.Reset()
+	if err := LoopWorkspace(SurfaceModel{Domain: DomainLoops}, record, buildLoopTopology(model)).Render(context.Background(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), `<path class="loop-edge-path`) != 10 || !strings.Contains(out.String(), `data-transition-id="verification-retry"`) {
+		t.Fatal("v5 typed-input Loop lost its same immutable cyclic topology")
+	}
+}
+
+func TestLoopTopologyMalformedParallelSelfEdgeAndAcyclicPreservation(t *testing.T) {
+	model := &LoopDetailModel{Steps: []LoopStepModel{
+		{ID: "entry", Entry: true}, {ID: "check"}, {ID: "exit", Kind: "terminal", TerminalOutcome: "succeeded"},
+	}, Transitions: []LoopTransitionModel{
+		{ID: "forward", FromStepID: "entry", ToStepID: "check"},
+		{ID: "parallel", FromStepID: "entry", ToStepID: "check", Condition: "other"},
+		{ID: "end", FromStepID: "check", ToStepID: "exit"},
+		{ID: "self", FromStepID: "check", ToStepID: "check"},
+		{ID: "missing", FromStepID: "absent", ToStepID: "check"},
+		{ID: "duplicate", FromStepID: "entry", ToStepID: "exit"},
+		{ID: "duplicate", FromStepID: "entry", ToStepID: "exit"},
+	}}
+	topology := buildLoopTopology(model)
+	if len(topology.Edges) != 3 || topology.Edges[0].Index != 0 || topology.Edges[1].Index != 1 || topology.Edges[2].Index != 2 {
+		t.Fatalf("malformed edges drawn or parallel identities dropped: %+v", topology.Edges)
+	}
+	if topology.Edges[0].Path == topology.Edges[1].Path {
+		t.Fatal("parallel edges are geometrically indistinguishable")
+	}
+	for _, edge := range topology.Edges {
+		if edge.Back {
+			t.Fatalf("acyclic edge classified as feedback: %+v", edge)
+		}
+	}
+	if len(topology.Issues) != 4 {
+		t.Fatalf("expected one safe warning per invalid edge: %+v", topology.Issues)
 	}
 }
 

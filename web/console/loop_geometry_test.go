@@ -164,8 +164,8 @@ func TestLoopGeometryReverseDeclarationBranchAndJoin(t *testing.T) {
 	for _, edge := range topology.Edges {
 		transition := detail.Transitions[edge.Index]
 		a, b := positions[transition.FromStepID], positions[transition.ToStepID]
-		start := fmt.Sprintf("M %.2f %.2f ", float64((a.GridColumn-1)*244+244), float64((a.GridRow-1)*134+83))
-		end := fmt.Sprintf(", %.2f %.2f", float64((b.GridColumn-1)*244+32), float64((b.GridRow-1)*134+83))
+		start := fmt.Sprintf("M %.2f %.2f ", float64((a.GridColumn-1)*244+244), float64((a.GridRow-1)*134+123))
+		end := fmt.Sprintf(", %.2f %.2f", float64((b.GridColumn-1)*244+32), float64((b.GridRow-1)*134+123))
 		if !strings.HasPrefix(edge.Path, start) || !strings.HasSuffix(edge.Path, end) {
 			t.Fatalf("edge %s misses projected node border: %s", transition.ID, edge.Path)
 		}

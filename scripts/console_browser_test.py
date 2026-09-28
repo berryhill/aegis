@@ -545,23 +545,35 @@ LOOP_GEOMETRY_EXPRESSION = r"""(() => {
     const panel = document.querySelector('[data-loop-node-panel="' + node.dataset.loopNode + '"]');
     const label = [...panel.querySelectorAll('dt')].find(dt => dt.textContent === 'Step ID');
     const r = node.getBoundingClientRect();
-    return {id: label?.nextElementSibling?.textContent, left:r.left, right:r.right,
-            top:r.top, bottom:r.bottom};
+    return {id: label?.nextElementSibling?.textContent, row:Number(node.dataset.gridRow),
+            left:r.left, right:r.right, top:r.top, bottom:r.bottom};
   });
   const edges = [...document.querySelectorAll('.loop-edge-path')].map(path => {
     const matrix = path.getScreenCTM();
     const start = path.getPointAtLength(0).matrixTransform(matrix);
     const end = path.getPointAtLength(path.getTotalLength()).matrixTransform(matrix);
-    return {id:path.querySelector('title')?.textContent,
+    const label = [...document.querySelectorAll('.loop-edge-label')].find(n => n.dataset.transitionId === path.dataset.transitionId);
+    const labelBox = label?.getBoundingClientRect();
+    const labelOccluded = labelBox && nodes.some(n => labelBox.left < n.right && labelBox.right > n.left && labelBox.top < n.bottom && labelBox.bottom > n.top);
+    const intersectsNode = path.classList.contains('loop-edge-return') && [...Array(49).keys()].some(i => {
+      const pt = path.getPointAtLength(path.getTotalLength() * (i + 1) / 50).matrixTransform(matrix);
+      return nodes.some(n => pt.x > n.left + 1 && pt.x < n.right - 1 && pt.y > n.top + 1 && pt.y < n.bottom - 1);
+    });
+    return {id:path.dataset.transitionId, marker:path.getAttribute('marker-end'),
+            visible:getComputedStyle(path).stroke !== 'none',
+            feedback:path.classList.contains('loop-edge-return'),
+            labelOccluded:Boolean(labelOccluded), intersectsNode,
             start:[start.x,start.y], end:[end.x,end.y]};
   });
   const digestLabel = [...document.querySelectorAll('.loop-contract dt')].find(dt => dt.textContent === 'Revision digest');
-  return {nodes, edges, url:location.href, width:innerWidth, digest:digestLabel?.nextElementSibling?.textContent,
+  return {nodes, edges, labels:[...document.querySelectorAll('.loop-edge-label')].map(n => n.textContent),
+          legend:[...document.querySelectorAll('.loop-visible-transitions li')].map(n => n.textContent),
+          url:location.href, width:innerWidth, digest:digestLabel?.nextElementSibling?.textContent,
           scale:document.querySelector('[data-loop-scale]')?.textContent};
 })()"""
 
 
-def validate_loop_geometry(measurement, steps, transitions):
+def validate_loop_geometry(measurement, steps, transitions, feedback=(), conditions=None):
     """Require exact nonzero coverage before any numeric comparisons."""
     import math
 
@@ -571,6 +583,15 @@ def validate_loop_geometry(measurement, steps, transitions):
     require(len({edge[0] for edge in transitions}) == len(transitions), "duplicate expected edge")
     require(len(nodes) == len(steps) and {n["id"] for n in nodes} == set(steps), "missing or duplicate geometry nodes")
     require(len(edges) == len(transitions) and {e["id"] for e in edges} == {t[0] for t in transitions}, "missing or duplicate geometry edges")
+    require(len(measurement["labels"]) == len(transitions) and len(measurement["legend"]) == len(transitions), "SVG labels or visible legend omitted stored transitions")
+    for edge in edges:
+        require(edge["marker"] == "url(#loop-arrow)" and edge["visible"], "directed arrowhead is not visible")
+        require(edge["feedback"] == (edge["id"] in feedback), "return gutter misclassified stored transition")
+        require(not edge["labelOccluded"], "transition label is occluded by a node: " + edge["id"])
+        if edge["feedback"]:
+            require(not edge["intersectsNode"], "feedback route is occluded by a node: " + json.dumps(edge, sort_keys=True))
+    for edge_id, condition in (conditions or {}).items():
+        require(any(condition in label for label in measurement["labels"]) if condition else any(edge_id in label for label in measurement["legend"]), "stored condition/identity not visible")
     by_node = {node["id"]: node for node in nodes}
     by_edge = {edge["id"]: edge for edge in edges}
     for node in nodes:
@@ -578,8 +599,11 @@ def validate_loop_geometry(measurement, steps, transitions):
         require(node["right"] > node["left"] and node["bottom"] > node["top"], "zero-sized node")
     for edge_id, source, target in transitions:
         a, b = by_node[source], by_node[target]
-        expected = ((a["right"], (a["top"] + a["bottom"]) / 2),
-                    (b["left"], (b["top"] + b["bottom"]) / 2))
+        top_return = edge_id in feedback and a["row"] == b["row"] == 1
+        expected = (((a["left"] + a["right"]) / 2 if top_return else a["left"] if edge_id in feedback else a["right"],
+                     a["top"] if top_return else (a["top"] + a["bottom"]) / 2),
+                    ((b["left"] + b["right"]) / 2 if top_return else b["left"],
+                     b["top"] if top_return else (b["top"] + b["bottom"]) / 2))
         edge = by_edge[edge_id]
         for actual, border in zip((edge["start"], edge["end"]), expected):
             require(len(actual) == 2 and all(math.isfinite(v) for v in actual), "nonfinite SVG endpoint")
@@ -587,14 +611,14 @@ def validate_loop_geometry(measurement, steps, transitions):
                     "SVG endpoint misses node border: " + json.dumps({"edge": edge_id, "actual": actual, "border": border}))
 
 
-def measure_loop_geometry(devtools, workspace, name, steps, transitions, digest, width):
+def measure_loop_geometry(devtools, workspace, name, steps, transitions, digest, width, feedback=(), conditions=None):
     measurement = devtools.evaluate(LOOP_GEOMETRY_EXPRESSION)
     require(measurement["digest"] == digest and measurement["width"] == width,
             "geometry revision or viewport mismatch: " + json.dumps({
                 "phase": name, "expected_digest": digest, "actual_digest": measurement["digest"],
                 "expected_width": width, "actual_width": measurement["width"],
             }, sort_keys=True))
-    validate_loop_geometry(measurement, steps, transitions)
+    validate_loop_geometry(measurement, steps, transitions, feedback, conditions)
     # The caller owns durable custody; these files contain presentation data,
     # never the authenticated cookie or principal password.
     proof = workspace.parent / (workspace.name + "-loop-geometry")
@@ -824,16 +848,20 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-loop'", "reloaded exact Loop canonical URL")
         time.sleep(0.5)
         manifest = json.loads((workspace / "loop-geometry-manifest.json").read_text(encoding="utf-8"))
-        require(len(manifest) == 2, "missing Loop geometry fixture matrix")
+        require(len(manifest) == 4 and sum(len(f["transitions"]) == 10 and len(f["steps"]) == 9 for f in manifest) == 2, "missing validated v4/v5 cyclic Doer fixtures")
         for fixture in manifest:
             record_key = fixture["loop_id"] + ":1"
             navigate(devtools, origin + "/console/loops?record_key=" + urllib.parse.quote(record_key) + "#/loops/" + record_key)
             wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === " + json.dumps(fixture["loop_id"]), "exact geometry fixture")
+            if fixture.get("reusable_active"):
+                copy = devtools.evaluate("document.querySelector('#loop-detail')?.textContent")
+                require("reusable v5 definition carries no execution authority" in copy and "separately authorized exact single-node Graph run" in copy,
+                        "active reusable v5 lifecycle was misrepresented as execution readiness")
             for width, height in ((1440, 900), (390, 844)):
                 devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
                 for state, selector in (("fit", "[data-loop-fit]"), ("zoom-in", '[data-loop-zoom="in"]'), ("zoom-out", '[data-loop-zoom="out"]')):
                     click(devtools, selector)
-                    measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-" + state, fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                    measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-" + state, fixture["steps"], fixture["transitions"], fixture["digest"], width, fixture.get("feedback", ()), fixture.get("conditions"))
                 # Zoom through actual controls until horizontal pan is possible.
                 for _ in range(17):
                     if devtools.evaluate("document.querySelector('[data-loop-stage]').getBoundingClientRect().width > document.querySelector('[data-loop-viewport]').clientWidth + 160"):
@@ -844,7 +872,7 @@ def main() -> int:
                 before_pan = devtools.evaluate(scroll_left)
                 key(devtools, "ArrowRight")
                 wait_for(devtools, scroll_left + " > " + str(before_pan + 1), "actual keyboard pan displacement")
-                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-keyboard-pan", fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-keyboard-pan", fixture["steps"], fixture["transitions"], fixture["digest"], width, fixture.get("feedback", ()), fixture.get("conditions"))
                 # Locate visible canvas background, never drag a node/control.
                 point = devtools.evaluate("""(() => {
                     const v = document.querySelector('[data-loop-viewport]');
@@ -863,7 +891,7 @@ def main() -> int:
                 devtools.command("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": point["x"] - 60, "y": point["y"], "button": "left", "buttons": 1})
                 devtools.command("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": point["x"] - 60, "y": point["y"], "button": "left", "buttons": 0, "clickCount": 1})
                 wait_for(devtools, scroll_left + " > " + str(before_drag + 1), "actual pointer drag displacement")
-                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-pointer-drag", fixture["steps"], fixture["transitions"], fixture["digest"], width)
+                measure_loop_geometry(devtools, workspace, fixture["loop_id"] + f"-{width}-pointer-drag", fixture["steps"], fixture["transitions"], fixture["digest"], width, fixture.get("feedback", ()), fixture.get("conditions"))
                 devtools.evaluate("document.querySelector('[data-loop-node]').focus()")
                 key(devtools, "Enter")
                 wait_for(devtools, "document.querySelector('[data-loop-node]')?.getAttribute('aria-pressed') === 'true' && document.querySelector('[data-loop-node-panel]')?.checkVisibility()", "keyboard Loop node inspection")

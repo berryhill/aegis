@@ -7,6 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Fixed
+- Draw every unambiguous stored transition in cyclic Loop details, including the bounded Doer retry feedback path; show condition/traversal labels and reserve exhaustion for an explicit exhausted exit. Correct reusable v5 Console lifecycle/readiness copy and deny v5 through the v4 Loop-queue shortcut without mutating lifecycle, Graph, or Queue state. This is definition/UI and admission work, not a live Doer execution or an installed release.
 - Preserve a newly discovered v4 prerequisite blocker on the same accepted preparation as a durable, idempotent diagnostic for both explicit-item and same-key recovery. Reusable v5 definitions carry no execution authority or direct Console run action; separately authorized exact Graph runs can be processed by the Queue worker.
 - Check selected-file Doer v4 provisioning, usable model, tool-free authority, current Hermes runtime/version, exact controller/local-workspace prerequisites, and one typed local Laya response before a new queue request or direct lifecycle activation. The Laya verdict grants no authority. Missing foundations return a named inline blocker without a new Graph/Queue preparation; pending recovery repeats preflight and the worker still repeats claim/effect admission. Publication remains inactive and grants no runtime authority.
 

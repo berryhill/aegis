@@ -34,7 +34,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
   if len(topology.CycleMembers) > 0 {
    <section class="cycle-band" aria-label="Bounded cycle summary">
     <strong>Bounded cycle</strong>
-    <span>This Loop definition contains a control-flow cycle. The viewport omits the directed layout so the cycle is not misrepresented as a finite DAG.</span>
+    <span>Directed feedback uses the return gutter. Arrows describe stored control flow, not an execution schedule.</span>
     <dl>
      <div class="cycle-band-row"><dt>Members</dt><dd>{ loopCycleMembersLabel(topology.CycleMembers) }</dd></div>
      <div class="cycle-band-row"><dt>Maximum iterations</dt><dd>{ loopTraversalLabel(topology.CycleMaxIterations) }</dd></div>
@@ -49,9 +49,10 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     <p class="canvas-hint" id="loop-canvas-help">Read-only. Select a node to inspect. Scroll or drag to pan; use arrow keys on the canvas. Tab to nodes, Enter to select. Textual equivalent below.</p>
     <div class="loop-viewport" data-loop-viewport tabindex="0" role="region" aria-label="Directed Loop control flow" aria-describedby="loop-canvas-help">
      <div class="loop-stage" data-loop-stage="true" data-columns={ fmt.Sprint(topology.Columns) } data-rows={ fmt.Sprint(topology.Rows) }>
-      <svg class="loop-edge-layer" viewBox={ fmt.Sprintf("0 0 %d %d", topology.Columns*244+32, topology.Rows*134+32) } preserveAspectRatio="none" aria-hidden="true"><defs><marker id="loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
+      <svg class="loop-edge-layer" viewBox={ fmt.Sprintf("0 0 %d %d", topology.Columns*244+32, topology.Rows*134+72) } preserveAspectRatio="none" aria-hidden="true"><defs><marker id="loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker></defs>
        for _, edge := range topology.Edges {
-        <path class="loop-edge-path" d={ edge.Path } marker-end="url(#loop-arrow)"><title>{ record.Loop.Transitions[edge.Index].ID }</title></path>
+        <path class={ loopEdgeClass(edge) } data-transition-id={ record.Loop.Transitions[edge.Index].ID } d={ edge.Path } marker-end="url(#loop-arrow)"><title>{ record.Loop.Transitions[edge.Index].ID }</title></path>
+        <text class="loop-edge-label" data-transition-id={ record.Loop.Transitions[edge.Index].ID } x={ fmt.Sprint(edge.LabelX) } y={ fmt.Sprint(edge.LabelY) }>{ loopTransitionLabel(record.Loop.Transitions[edge.Index]) }</text>
        }
       </svg>
       for _, node := range topology.Nodes {
@@ -67,6 +68,11 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     }
    </div></aside>
   </div>
+  <div class="loop-visible-transitions" aria-label="Directed transition legend"><strong>Stored directed transitions</strong><ol>
+   for _, edge := range topology.Edges {
+    <li><strong>{ record.Loop.Transitions[edge.Index].ID }</strong> · { record.Loop.Transitions[edge.Index].FromStepID } → { record.Loop.Transitions[edge.Index].ToStepID } · { loopTransitionLabel(record.Loop.Transitions[edge.Index]) }</li>
+   }
+  </ol></div>
   <nav class="loop-tab-nav" aria-label="Loop supporting definition sections">
    <button type="button" data-loop-tab="inputs" aria-pressed="true">Required inputs</button>
    <button type="button" data-loop-tab="evidence" aria-pressed="false">Evidence and outcomes</button>

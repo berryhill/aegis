@@ -45,7 +45,7 @@ func TestDoerLoopConsoleDoesNotClaimExecutionReadiness(t *testing.T) {
 	}
 }
 
-func TestReusableDoerConsoleIsDefinitionOnly(t *testing.T) {
+func TestReusableDoerConsoleShowsBoundedWorkerWithoutClaimingAuthority(t *testing.T) {
 	revision := loop.LoopRevision{SchemaVersion: loop.DoerReusableSchemaVersion, LoopID: "reusable-doer-console", Revision: 1,
 		Digest: "sha256:" + strings.Repeat("a", 64), DoerReusable: &loop.DoerReusableContract{}}
 	for _, state := range []loop.Lifecycle{
@@ -53,19 +53,19 @@ func TestReusableDoerConsoleIsDefinitionOnly(t *testing.T) {
 		{LoopID: revision.LoopID, State: loop.LifecycleActive, ActiveRevision: 1, ActiveDigest: revision.Digest},
 	} {
 		record := consoleLoopRecord(app.LoopView{Revision: revision, Lifecycle: state})
-		if record.Loop == nil || !record.Loop.DoerV5 || record.Loop.CanActivate || !strings.Contains(record.Readiness, "no Queue worker") || !strings.Contains(record.Summary, "definition only · no Queue worker") {
-			t.Fatalf("reusable Doer was presented as executable: %+v", record)
+		if record.Loop == nil || !record.Loop.DoerV5 || record.Loop.CanActivate != (state.State == loop.LifecycleDraft) || !strings.Contains(record.Readiness, "per-run contract digest") && state.State == loop.LifecycleActive || !strings.Contains(record.Summary, "per-run Graph binding required") {
+			t.Fatalf("reusable Doer readiness/activation misrepresented: %+v", record)
 		}
 		list, err := renderConsole(context.Background(), consoleweb.QueueRecordPanel(consoleweb.SurfaceModel{Domain: "loops"}, []consoleweb.RecordModel{record}))
-		if err != nil || !strings.Contains(string(list), "definition only · no Queue worker") {
-			t.Fatalf("reusable Doer list hid non-executable status: %s, err %v", list, err)
+		if err != nil || !strings.Contains(string(list), "per-run Graph binding required") {
+			t.Fatalf("reusable Doer list hid binding requirement: %s, err %v", list, err)
 		}
 		html, err := renderConsole(context.Background(), consoleweb.LoopWorkspace(consoleweb.SurfaceModel{Domain: "loops"}, &record, consoleweb.LoopTopology{}))
 		if err != nil {
 			t.Fatal(err)
 		}
 		content := string(html)
-		if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || strings.Contains(content, "aegis loops queue FILE") || !strings.Contains(content, "definition only") {
+		if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || strings.Contains(content, "aegis loops queue FILE") || !strings.Contains(content, "no direct execution action") {
 			t.Fatalf("reusable Doer detail offered an execution action: %s", content)
 		}
 	}
