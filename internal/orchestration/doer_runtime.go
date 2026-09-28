@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -34,9 +35,8 @@ func (c *ImplementationController) authorizeDoer(contract loop.DoerContract, age
 	return errors.New("Doer contract not authorized by operator")
 }
 
-func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base WorkResult, runtime RuntimeRequest, preclaimGate LayaGate) (WorkResult, error) {
+func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base WorkResult, runtime RuntimeRequest, contract loop.DoerContract, preclaimGate LayaGate) (WorkResult, error) {
 	c := w.implementation
-	contract := *runtime.LoopRevision.Doer
 	if c == nil || c.decision == nil || c.adapter == nil {
 		return w.terminal(ctx, request, base, execution.StateDenied, "doer_runtime_unconfigured", nil, nil)
 	}
@@ -120,7 +120,16 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 	}
 	executor := &doerStepExecutor{contract: contract, roles: roles}
 	cursor := &doerCursorStore{facts: implementation.StepCheckpointStore{DB: custody.ImplementationStore(), RunID: base.Attempt.AttemptID, RevisionDigest: runtime.LoopRevision.Digest}}
-	result, runErr := looprun.Run(ctx, base.Attempt.AttemptID, runtime.LoopRevision, looprun.Values{}, cursor, executor, looprun.ReportFunc(func(ctx context.Context, r looprun.Result) error {
+	inputs := looprun.Values{}
+	if runtime.LoopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		for name, value := range map[string]any{"task": contract.Task, "workspace": contract.Workspace, "writable_files": contract.WritableFiles, "verify_file": contract.VerifyFile} {
+			inputs[name], _ = json.Marshal(value)
+		}
+		if contract.ExpectedText != nil {
+			inputs["expected_text"], _ = json.Marshal(*contract.ExpectedText)
+		}
+	}
+	result, runErr := looprun.Run(ctx, base.Attempt.AttemptID, runtime.LoopRevision, inputs, cursor, executor, looprun.ReportFunc(func(ctx context.Context, r looprun.Result) error {
 		if err := admit(ctx, "completion"); err != nil {
 			return err
 		}
@@ -156,7 +165,15 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 	if err := admit(ctx, "evidence"); err != nil {
 		return w.terminal(ctx, request, base, execution.StateDenied, "doer_evidence_admission_denied", nil, nil)
 	}
-	receipt, proof, err := verifier.VerifySelectedFileArtifact(ctx, artifact, contract.Workspace, policy, policyDigest, contractDigest, executor.selectedEditDigest, binding)
+	var receipt evidence.VerificationReceipt
+	var proof evidence.CompletionProvenance
+	if runtime.LoopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		// The v5 claim is JSON: retain the exact contract and selected bytes
+		// digest in a content-addressed proof, not a mutable definition.
+		artifact, receipt, proof, err = verifier.VerifyReusableDoerArtifact(ctx, artifact, contract.Workspace, policy, policyDigest, contractDigest, executor.selectedEditDigest, binding)
+	} else {
+		receipt, proof, err = verifier.VerifySelectedFileArtifact(ctx, artifact, contract.Workspace, policy, policyDigest, contractDigest, executor.selectedEditDigest, binding)
+	}
 	if err != nil {
 		return w.terminal(ctx, request, base, execution.StateFailed, "doer_evidence_failed", nil, nil)
 	}

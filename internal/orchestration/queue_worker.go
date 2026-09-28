@@ -9,6 +9,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/disposition"
+	"github.com/berryhill/aegis/internal/doerbinding"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
@@ -182,17 +183,29 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 			return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 		}
 	}
-	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
-		if item.MaxAttempts != 1 || worker.ValidateLoopAdmission(loopRevision, participant) != nil {
-			return WorkResult{}, fmt.Errorf("%w: Doer readiness and single Queue attempt required", ErrWorkerDenied)
+	var doerContract loop.DoerContract
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion && loopRevision.Doer != nil {
+			doerContract = *loopRevision.Doer
+			if worker.ValidateLoopAdmission(loopRevision, participant) != nil {
+				return WorkResult{}, fmt.Errorf("%w: Doer readiness required", ErrWorkerDenied)
+			}
+		} else if loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+			doerContract, err = doerbinding.BindDoerGraphRun(loopRevision, graphRevision, node, snapshot)
+			if err != nil {
+				return WorkResult{}, fmt.Errorf("%w: invalid exact Doer Graph binding: %v", ErrWorkerDenied, err)
+			}
+		}
+		if item.MaxAttempts != 1 || worker.implementation.authorizeDoer(doerContract, participant) != nil {
+			return WorkResult{}, fmt.Errorf("%w: operator Doer authorization and single Queue attempt required", ErrWorkerDenied)
 		}
 	}
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionClaim, Subject: request.Subject, Authority: request.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph}); readiness.State != ReadinessReady {
 		return WorkResult{}, fmt.Errorf("%w: claim %s", ErrWorkerDenied, readiness.ReasonCode)
 	}
 	var doerGate LayaGate
-	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
-		doerGate, err = worker.preclaimDoerGate(ctx, request, item, loopRevision, node.Participant, node.Loop, snapshot.Graph)
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		doerGate, err = worker.preclaimDoerGate(ctx, request, item, doerContract, node.Participant, node.Loop, snapshot.Graph)
 		if err != nil {
 			return WorkResult{}, err
 		}
@@ -265,8 +278,8 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
 		return worker.processImplementation(runtimeCtx, request, base, runtimeRequest, actionID)
 	}
-	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion {
-		return worker.processDoer(runtimeCtx, request, base, runtimeRequest, doerGate)
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		return worker.processDoer(runtimeCtx, request, base, runtimeRequest, doerContract, doerGate)
 	}
 	runtimeResult, runtimeErr := worker.adapter.Execute(runtimeCtx, runtimeRequest)
 	if runtimeErr != nil {
@@ -397,9 +410,9 @@ func evidenceClaims(revision loop.LoopRevision, actionID string) map[string]loop
 }
 
 func executableAction(revision loop.LoopRevision) (string, error) {
-	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
-		if loop.ValidateRevision(revision).Outcome != loop.ValidationValid || revision.Doer == nil {
-			return "", errors.New("exact v4 Doer revision required")
+	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion || revision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		if loop.ValidateRevision(revision).Outcome != loop.ValidationValid || (revision.Doer == nil && revision.DoerReusable == nil) {
+			return "", errors.New("exact Doer revision required")
 		}
 		return "verify", nil
 	}

@@ -8,7 +8,7 @@ For the included selected-file Doer Loop v4 authoring recipe, use the same build
 
 An inactive published v4 draft is not ready to run. The single `loops queue FILE` action with explicit `activate: true`, and direct lifecycle activation, check the current Hermes runtime/version and one typed local Laya response and reject missing verified provisioning, a `none` model, or missing exact Doer controller authorization before new activation/Graph/Queue work. They do not provision an Agent, select a provider, or use Laya's preflight verdict as authority. Do not present this no-key path as a live Doer execution demonstration.
 
-For a reusable typed v5 definition (not an executable v5 worker), use `./aegis loops doer-reusable --help` after the same build; see [the binding contract](DOER_LOOP.md#reusable-typed-v5-definition). This is outside the no-key demonstration.
+For a reusable typed v5 definition, use `./aegis loops doer-reusable --help` after the same build; see [the exact Graph-run binding and operator authorization contract](DOER_LOOP.md#reusable-typed-v5-definition). Definition authoring does not grant execution authority and is outside the no-key demonstration.
 
 ## Prerequisites
 

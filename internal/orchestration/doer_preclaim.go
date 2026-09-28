@@ -17,14 +17,14 @@ import (
 // preclaimDoerGate assesses task eligibility before any claim or Attempt is
 // created. It is a model proposal, not authentication or effect admission.
 // The controller repeats fresh authority admission around the local call.
-func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkRequest, item queue.Item, revision loop.LoopRevision, agentRef, loopRef, graphRef reference.RevisionRef) (LayaGate, error) {
-	if revision.Doer == nil || worker.implementation == nil || worker.implementation.decision == nil {
+func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkRequest, item queue.Item, contract loop.DoerContract, agentRef, loopRef, graphRef reference.RevisionRef) (LayaGate, error) {
+	if worker.implementation == nil || worker.implementation.decision == nil {
 		return LayaGate{}, fmt.Errorf("%w: Doer decision backend unavailable", ErrWorkerDenied)
 	}
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionRuntimeEffect, Subject: request.Subject, Authority: request.Authority, Agent: agentRef, Loop: loopRef, Graph: graphRef}); readiness.State != ReadinessReady {
 		return LayaGate{}, fmt.Errorf("%w: preclaim gate admission %s", ErrWorkerDenied, readiness.ReasonCode)
 	}
-	contract := revision.Doer
+
 	// A pre-existing artifact already satisfying the pinned assertion cannot
 	// prove this invocation produced it. Deny before claim rather than
 	// manufacturing a success from old bytes.

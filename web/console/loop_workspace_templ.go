@@ -242,7 +242,7 @@ func LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopol
 				return templ_7745c5c3_Err
 			}
 		} else if record.Loop.DoerV5 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p>This reusable v5 definition is definition only. No Queue worker can execute it, and neither publication nor activation supplies runtime authority. This page offers no Graph or Loop execution action for v5.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<p>This reusable v5 definition carries no execution authority. A separately authorized exact single-node Graph run can bind its inputs for the Queue worker, subject to the operator-approved per-run contract digest and fresh runtime admission. This page offers no direct execution action for v5.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
