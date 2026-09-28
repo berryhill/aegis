@@ -187,6 +187,9 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion && loopRevision.Doer != nil {
 			doerContract = *loopRevision.Doer
+			if worker.ValidateLoopAdmission(loopRevision, participant) != nil {
+				return WorkResult{}, fmt.Errorf("%w: Doer readiness required", ErrWorkerDenied)
+			}
 		} else if loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
 			doerContract, err = doerbinding.BindDoerGraphRun(loopRevision, graphRevision, node, snapshot)
 			if err != nil {

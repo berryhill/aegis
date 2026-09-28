@@ -184,7 +184,7 @@ type LoopDetailModel struct {
 	EntryStepID, Validation, ValidationDigest                              string
 	Description, LatestVersion, GraphChildSummary                          string
 	CycleSummary, ExitCondition, ExhaustionDestination                     string
-	CanActivate, CanRetire                                                 bool
+	CanActivate, CanRetire, DoerV4, DoerV5                                 bool
 	CanvasWidth, CanvasHeight                                              int
 	Inputs, Outputs                                                        []LoopPortModel
 	Steps                                                                  []LoopStepModel

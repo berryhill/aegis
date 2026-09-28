@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+- Preserve a newly discovered v4 prerequisite blocker on the same accepted preparation as a durable, idempotent diagnostic for both explicit-item and same-key recovery. Reusable v5 definitions carry no execution authority or direct Console run action; separately authorized exact Graph runs can be processed by the Queue worker.
+- Check selected-file Doer v4 provisioning, usable model, tool-free authority, current Hermes runtime/version, exact controller/local-workspace prerequisites, and one typed local Laya response before a new queue request or direct lifecycle activation. The Laya verdict grants no authority. Missing foundations return a named inline blocker without a new Graph/Queue preparation; pending recovery repeats preflight and the worker still repeats claim/effect admission. Publication remains inactive and grants no runtime authority.
+
 ### Added
 - Bind reusable v5 Doer inputs from the exact immutable single-node Graph run before Queue claim, require the normalized task-contract digest in operator-controlled configuration, and independently recheck selected-file bytes, JSON artifact, receipt, and contract provenance at completion. Synthetic success and denial coverage does not qualify a live provider or host sandbox.
 - Added `loops doer-reusable` for a closed reusable v5 Doer definition with required typed task bindings and strict normalization. It creates only a publication draft, not runtime or execution authority; the existing v4 path remains independently decodable and executable.

@@ -19,6 +19,9 @@ func (w *QueueWorker) ValidateLoopAdmission(value loop.LoopRevision, agent regis
 	if _, err := executableAction(value); err != nil {
 		return err
 	}
+	if value.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		return w.validateDoerReadiness(value, agent)
+	}
 	for _, step := range value.Steps {
 		if step.Implementation != nil {
 			if err := w.implementation.authorize([]loop.Step{step}, agent); err != nil {

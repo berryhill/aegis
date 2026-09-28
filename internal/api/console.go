@@ -553,6 +553,8 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 
 func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
+	doerV4 := revision.Doer != nil
+	doerV5 := revision.DoerReusable != nil
 	lifecycle := string(view.Lifecycle.State)
 	readiness := "Draft; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
@@ -565,11 +567,33 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	} else if view.Lifecycle.State == "retired" {
 		readiness = "Retired; terminal lifecycle"
 	}
+	if doerV4 && view.Lifecycle.State != "retired" {
+		switch lifecycle {
+		case "active":
+			readiness = "Active exact Doer revision; execution readiness unverified until fresh provisioning, model, controller/Laya and workspace admission"
+		case "inactive":
+			readiness += "; historical Doer revision is not the active execution target"
+		default:
+			readiness = "Draft Doer revision; not execution-ready. Activation and fresh provisioning, model, controller/Laya and workspace admission are required"
+		}
+	}
+	if doerV5 && view.Lifecycle.State != "retired" {
+		switch lifecycle {
+		case "active":
+			readiness = "Active reusable v5 definition only; no Queue worker can execute it"
+		case "inactive":
+			readiness = "Historical reusable v5 definition only; no Queue worker can execute it"
+		default:
+			readiness = "Draft reusable v5 definition only; no Queue worker can execute it"
+		}
+	}
 
 	detail := &consoleweb.LoopDetailModel{
+		DoerV4:   doerV4,
+		DoerV5:   doerV5,
 		TargetID: loopRevisionTargetID(revision.LoopID, revision.Revision), Digest: revision.Digest,
 		PreviousDigest: fallback(revision.PreviousDigest, "Genesis revision"), EntryStepID: revision.EntryStepID,
-		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
+		PublisherID: view.Provenance.PublisherAgent.ID, CanActivate: !doerV5 && view.Lifecycle.State != "retired" && view.Lifecycle.ActiveDigest != revision.Digest,
 		CanRetire:     view.Lifecycle.State != "retired",
 		LatestVersion: fmt.Sprintf("r%d", revision.Revision),
 		Validation:    "Unavailable", ValidationDigest: "Unavailable",
@@ -657,9 +681,13 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 		detail.ExpectedLifecycleDigest = view.History[len(view.History)-1].Digest
 	}
 
+	summary := fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions))
+	if doerV5 {
+		summary += " · definition only · no Queue worker"
+	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
-		Summary:   fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions)),
+		Summary:   summary,
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,
 		Links: []consoleweb.LinkModel{{Label: "Publisher Agent", Detail: exactRevisionLabel(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision, view.Provenance.PublisherAgent.Digest), URL: consoleAgentRevisionURL(view.Provenance.PublisherAgent.ID, view.Provenance.PublisherAgent.Revision)}},

@@ -115,6 +115,11 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if e != nil || workspace.Agent != input.Agent {
 			return result, ErrDenied
 		}
+		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
+			return result, preflightErr
+		} else if reason != "" {
+			return s.queueLoopBlockedReadback(ctx, subject, result, reason)
+		}
 		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]))
 	}
 	// Rejections are immutable blocked intent, never fabricated executable work.
@@ -161,6 +166,21 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	}
 	if workspace.Agent != input.Agent {
 		return result, ErrDenied
+	}
+	// Preserve the durable activation-required rejection when activation was
+	// not requested. An actual v4 activation or run must preflight before any
+	// lifecycle, Graph, Queue, or runtime-preparation mutation.
+	if input.Activate || (lv.Lifecycle.State == loop.LifecycleActive && lv.Lifecycle.ActiveDigest == input.Loop.Digest) {
+		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
+			return result, preflightErr
+		} else if reason != "" {
+			if result.Execution != nil {
+				return s.queueLoopBlockedReadback(ctx, subject, result, reason)
+			}
+			result.QueueItemID = ""
+			result.Reason = reason
+			return result, nil
+		}
 	}
 	if lv.Lifecycle.State != loop.LifecycleActive || lv.Lifecycle.ActiveDigest != input.Loop.Digest {
 		if !input.Activate {
@@ -235,33 +255,94 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key)
 }
 
+// preflightDoerQueue reports missing foundational authority before any new
+// v4 execution mutation. It neither issues a mandate nor grants host writes;
+// runtime and effect admission repeat their independent checks.
+func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, input QueueLoopInput, view LoopView) (string, error) {
+	if view.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion {
+		return "", nil
+	}
+	agent, err := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
+	if err != nil {
+		return "", err
+	}
+	if agent.Digest != input.Agent.Digest {
+		return "", ErrDenied
+	}
+	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
+	if err != nil {
+		return "provisioning_receipt_unavailable", nil
+	}
+	if !verified {
+		return "provisioning_receipt_missing", nil
+	}
+	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
+	if err != nil || charter.Digest != agent.Charter.Digest {
+		return "exact_charter_unavailable", nil
+	}
+	selection, err := s.Select(charter, subject, "", core.Environment{Name: "local"})
+	if err != nil || selection.Selected == nil {
+		return "session_selection_" + selection.Reason, nil
+	}
+	if selection.Selected.Hermes.Model == "" || selection.Selected.Hermes.Model == "none" {
+		return "doer_model_required", nil
+	}
+	if len(selection.Selected.Hermes.Toolsets) != 0 || len(selection.Selected.Grant.Tools) != 0 || len(selection.Selected.Scopes.Credentials) != 0 {
+		return "doer_tool_free_authority_required", nil
+	}
+	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	runtime, runtimeErr := s.Runtime(runtimeCtx)
+	cancel()
+	if runtimeErr != nil {
+		return "runtime_unavailable_or_unsupported", nil
+	}
+	if runtimeSatisfies(runtime.Version, charter.Charter.Runtime.VersionConstraint) != nil {
+		return "runtime_version_unsupported", nil
+	}
+	if s.QueueWorker == nil {
+		return "implementation_prerequisite_required", nil
+	}
+	if err := s.QueueWorker.ValidateDoerAvailability(ctx, view.Revision, agent); err != nil {
+		if errors.Is(err, orchestration.ErrLocalLayaUnavailable) {
+			return "local_laya_unavailable", nil
+		}
+		return "implementation_prerequisite_required", nil
+	}
+	return "", nil
+}
+
+func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Subject, result QueueLoopResult, reason string) (QueueLoopResult, error) {
+	result.Reason = reason
+	v, err := s.GetQueueItemAs(ctx, subject, result.QueueItemID)
+	if err != nil {
+		return result, err
+	}
+	if v.Projection.State.IsPreparation() {
+		sink, ok := s.FleetRepository.(interface {
+			RecordPreparationDiagnostic(context.Context, queue.QueueTransition, fleet.AuditFact) error
+		})
+		if !ok {
+			return result, errors.New("preparation diagnostic custody unavailable")
+		}
+		sum := sha256.Sum256([]byte(v.Projection.LastTransitionID + "\x00" + reason))
+		tr, trErr := queue.NewTransition(queue.QueueTransition{TransitionID: "diagnostic-" + hex.EncodeToString(sum[:16]), QueueItemID: result.QueueItemID, From: v.Projection.State, To: v.Projection.State, Reason: reason, OccurredAt: s.Now()})
+		if trErr != nil {
+			return result, trErr
+		}
+		if len(v.Transitions) == 0 || v.Transitions[len(v.Transitions)-1].Reason != reason {
+			if trErr = sink.RecordPreparationDiagnostic(ctx, tr, fleet.AuditFact{Event: core.AuditEvent{Type: "fleet.preparation.blocked", Outcome: "denied", Reason: reason, SubjectID: subject.ID}}); trErr != nil {
+				return result, trErr
+			}
+		}
+		v, err = s.GetQueueItemAs(ctx, subject, result.QueueItemID)
+	}
+	result.Execution = &v
+	return result, err
+}
+
 func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string) (QueueLoopResult, error) {
 	readback := func(reason string) (QueueLoopResult, error) {
-		result.Reason = reason
-		v, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID)
-		if e == nil {
-			if v.Projection.State.IsPreparation() {
-				sink, ok := s.FleetRepository.(interface {
-					RecordPreparationDiagnostic(context.Context, queue.QueueTransition, fleet.AuditFact) error
-				})
-				if !ok {
-					return result, errors.New("preparation diagnostic custody unavailable")
-				}
-				sum := sha256.Sum256([]byte(v.Projection.LastTransitionID + "\x00" + reason))
-				tr, trErr := queue.NewTransition(queue.QueueTransition{TransitionID: "diagnostic-" + hex.EncodeToString(sum[:16]), QueueItemID: result.QueueItemID, From: v.Projection.State, To: v.Projection.State, Reason: reason, OccurredAt: s.Now()})
-				if trErr != nil {
-					return result, trErr
-				}
-				if len(v.Transitions) == 0 || v.Transitions[len(v.Transitions)-1].Reason != reason {
-					if trErr = sink.RecordPreparationDiagnostic(ctx, tr, fleet.AuditFact{Event: core.AuditEvent{Type: "fleet.preparation.blocked", Outcome: "denied", Reason: reason, SubjectID: subject.ID}}); trErr != nil {
-						return result, trErr
-					}
-				}
-				v, e = s.GetQueueItemAs(ctx, subject, result.QueueItemID)
-			}
-			result.Execution = &v
-		}
-		return result, e
+		return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 	}
 	agent, e := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
 	if e != nil {

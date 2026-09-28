@@ -242,7 +242,18 @@ while read rest; do :; done
 				digest, _ = contract.Digest()
 			}
 			if mode != "unauthorized" && mode != "v4-unauthorized" && mode != "v5-unauthorized" {
-				if err = worker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}}, filepath.Join(root, "state"), adapter.hermes); err != nil {
+				configuration := config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}}
+				if strings.HasPrefix(mode, "v4-") {
+					configuration.LayaHome = filepath.Join(root, "laya-home")
+					configuration.LayaPython = filepath.Join(root, "laya-python")
+					if err := os.Mkdir(configuration.LayaHome, 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(configuration.LayaPython, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err = worker.ConfigureImplementation(configuration, filepath.Join(root, "state"), adapter.hermes); err != nil {
 					t.Fatal(err)
 				}
 				if contract.DecisionMode == "doer.v1" || strings.HasPrefix(mode, "v4-") || strings.HasPrefix(mode, "v5-") {
