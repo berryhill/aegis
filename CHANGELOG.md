@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.14] - 2026-09-29
+
 ### Fixed
 - Draw every unambiguous stored transition in cyclic Loop details, including the bounded Doer retry feedback path; show condition/traversal labels and reserve exhaustion for an explicit exhausted exit. Correct reusable v5 Console lifecycle/readiness copy and deny v5 through the v4 Loop-queue shortcut without mutating lifecycle, Graph, or Queue state. This is definition/UI and admission work, not a live Doer execution or an installed release.
 - Preserve a newly discovered v4 prerequisite blocker on the same accepted preparation as a durable, idempotent diagnostic for both explicit-item and same-key recovery. Reusable v5 definitions carry no execution authority or direct Console run action; separately authorized exact Graph runs can be processed by the Queue worker.
