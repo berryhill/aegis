@@ -17,17 +17,33 @@ import (
 )
 
 const (
-	loopPublishCommandID   = "loop.publish"
-	loopLifecycleCommandID = "loop.lifecycle"
-	loopHeadTargetType     = "loop-head"
-	loopRevisionTargetType = "loop-revision"
+	loopPublishCommandID       = "loop.publish"
+	loopDoerWorkspaceCommandID = "loop.doer.workspace.publish"
+	loopLifecycleCommandID     = "loop.lifecycle"
+	loopHeadTargetType         = "loop-head"
+	loopRevisionTargetType     = "loop-revision"
 )
 
 type loopPublishCommandInput struct {
 	PublisherID            string            `json:"publisher_id"`
+	PublisherRevision      uint64            `json:"publisher_revision,omitempty"`
+	PublisherDigest        string            `json:"publisher_digest,omitempty"`
 	Revision               app.LoopCandidate `json:"revision"`
 	ExpectedPreviousDigest string            `json:"expected_previous_digest,omitempty"`
 	PublicationKey         string            `json:"publication_key"`
+}
+
+// Only template parameters enter browser intent. Fixed controller step
+// bindings are derived after browser authority fields have been rejected.
+type doerTemplatePublishInput struct {
+	PublisherID       string           `json:"publisher_id"`
+	PublisherRevision uint64           `json:"publisher_revision"`
+	PublisherDigest   string           `json:"publisher_digest"`
+	LoopID            string           `json:"loop_id"`
+	Revision          uint64           `json:"revision_number"`
+	PreviousDigest    string           `json:"previous_digest,omitempty"`
+	Doer              app.DoerContract `json:"doer"`
+	PublicationKey    string           `json:"publication_key"`
 }
 
 type loopLifecycleCommandInput struct {
@@ -203,11 +219,74 @@ func loopCommandDefinitions(svc *app.Service) []console.CommandDefinition {
 		}
 		return console.CommandReceipt{SchemaVersion: console.CommandCatalogVersion, IntentID: invocation.IntentID, CommandID: invocation.CommandID, Target: invocation.Target, Outcome: "committed", ReasonCode: reason, CommittedAt: svc.Now().UTC(), Readback: readback}, nil
 	}
-	return []console.CommandDefinition{publish, lifecycle}
+	// The Doer form has a distinct authority requirement. The existing generic
+	// Loop command and lifecycle command retain their runtime admission rules.
+	doer := publish
+	doer.ID = loopDoerWorkspaceCommandID
+	doer.AuthorityRequirement = "fleet.loop.publish.workspace"
+	doer.Normalize = func(raw json.RawMessage) ([]byte, error) {
+		var input doerTemplatePublishInput
+		if err := console.DecodeCommandRequest(raw, &input); err != nil || input.PublisherID == "" || input.PublisherRevision == 0 || input.PublisherDigest == "" || input.PublicationKey == "" {
+			return nil, console.ErrInvalidInput
+		}
+		revision, validation, err := app.NewDoerLoopRevision(input.LoopID, input.Revision, input.PreviousDigest, input.Doer)
+		if err != nil || validation.Outcome != app.LoopValidationValid {
+			return nil, console.ErrInvalidInput
+		}
+		wire, err := json.Marshal(loopPublishCommandInput{PublisherID: input.PublisherID, PublisherRevision: input.PublisherRevision, PublisherDigest: input.PublisherDigest, Revision: revision, ExpectedPreviousDigest: input.PreviousDigest, PublicationKey: input.PublicationKey})
+		if err != nil {
+			return nil, err
+		}
+		return publish.Normalize(wire)
+	}
+	doer.Commit = func(ctx context.Context, invocation console.CommandInvocation) (console.CommandReceipt, error) {
+		var input loopPublishCommandInput
+		if err := console.DecodeCommandRequest(invocation.NormalizedInput, &input); err != nil {
+			return console.CommandReceipt{}, err
+		}
+		workspace, err := svc.RegisteredAgentWorkspaceAs(ctx, invocation.Subject, input.PublisherID)
+		if err != nil || workspace.Agent.Revision != input.PublisherRevision || workspace.Agent.Digest != input.PublisherDigest {
+			return console.CommandReceipt{}, console.ErrDenied
+		}
+		published, err := svc.PublishLoopAs(ctx, invocation.Subject, app.PublishLoopInput{
+			AgentID: input.PublisherID, Revision: input.Revision,
+			ExpectedPreviousDigest: input.ExpectedPreviousDigest, IdempotencyKey: input.PublicationKey,
+		})
+		if err != nil {
+			return console.CommandReceipt{}, err
+		}
+		view, err := svc.GetLoopViewAs(ctx, invocation.Subject, published.Revision.LoopID, published.Revision.Revision)
+		if err != nil {
+			return console.CommandReceipt{}, err
+		}
+		readback, err := json.Marshal(struct {
+			Published app.PublishedLoop `json:"published"`
+			View      app.LoopView      `json:"view"`
+		}{published, view})
+		if err != nil {
+			return console.CommandReceipt{}, err
+		}
+		reason := "loop_revision_published"
+		if published.Decision.Idempotent {
+			reason = "loop_revision_replayed"
+		}
+		return console.CommandReceipt{SchemaVersion: console.CommandCatalogVersion, IntentID: invocation.IntentID, CommandID: invocation.CommandID, Target: invocation.Target, Outcome: "committed", ReasonCode: reason, CommittedAt: svc.Now().UTC(), Readback: readback}, nil
+	}
+	return []console.CommandDefinition{publish, lifecycle, doer}
 }
 
 func loopCommandAuthorityProvider(svc *app.Service) console.CommandAuthorityProvider {
 	return console.CommandAuthorityProviderFunc(func(ctx context.Context, subject core.Subject, sessionID, requirement string) (console.CommandAuthorityBinding, error) {
+		if requirement == "fleet.loop.publish.workspace" {
+			if err := svc.RequirePrincipal(subject); err != nil {
+				return console.CommandAuthorityBinding{}, console.ErrDenied
+			}
+			// This is a command-intent binding to the authenticated browser session,
+			// not a runtime mandate. Commit resolves the selected exact workspace
+			// again; no value here is passed to the application as authority.
+			sum := sha256.Sum256([]byte("aegis.console.workspace-intent\x00" + subject.ID + "\x00" + subject.PrincipalID + "\x00" + sessionID))
+			return console.CommandAuthorityBinding{SubjectID: subject.ID, SessionID: sessionID, StanzaID: "workspace-control", MandateID: "workspace-intent", AuthorityID: "workspace-intent", AuthorityDigest: "sha256:" + hex.EncodeToString(sum[:]), Runtime: "workspace-control", ExpiresAt: subject.ExpiresAt}, nil
+		}
 		if requirement != "fleet.loop.publish" && requirement != "fleet.loop.lifecycle" {
 			return console.CommandAuthorityBinding{}, console.ErrDenied
 		}

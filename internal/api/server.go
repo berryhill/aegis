@@ -890,8 +890,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		composer := &consoleweb.LoopComposerModel{Publishers: []consoleweb.LoopPublisherModel{}}
-		if binding, err := svc.FleetCommandAuthorityAs(c.Request().Context(), subject); err == nil {
-			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: binding.Publisher.ID, Revision: fmt.Sprintf("r%d", binding.Publisher.Revision), Digest: binding.Publisher.Digest, Runtime: binding.Runtime})
+		agents, err := svc.ListFleetAgentsAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		for _, agent := range agents {
+			workspace, err := svc.RegisteredAgentWorkspaceAs(c.Request().Context(), subject, agent.Revision.AgentID)
+			if err != nil {
+				continue
+			}
+			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: workspace.Agent.ID, Revision: fmt.Sprintf("r%d", workspace.Agent.Revision), Digest: workspace.Agent.Digest, Runtime: agent.Revision.Runtime.Runtime})
 		}
 		page.DoerComposer = composer
 		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
@@ -1298,11 +1306,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
+		commandID := loopPublishCommandID
+		var publisherRevision uint64
+		var publisherDigest string
 		if form.Revision.Doer != nil {
-			binding, err := svc.FleetCommandAuthorityAs(c.Request().Context(), subject)
-			if err != nil || binding.Publisher.ID != form.PublisherID {
+			workspace, err := svc.RegisteredAgentWorkspaceAs(c.Request().Context(), subject, form.PublisherID)
+			if err != nil {
 				return app.ErrDenied
 			}
+			commandID = loopDoerWorkspaceCommandID
+			publisherRevision, publisherDigest = workspace.Agent.Revision, workspace.Agent.Digest
 		}
 		head := emptyLoopHeadDigest(form.Revision.LoopID)
 		revisions, err := svc.FleetRepository.ListLoopRevisions(c.Request().Context())
@@ -1315,11 +1328,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				latest, head = revision.Revision, revision.Digest
 			}
 		}
-		input, err := json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
+		var input []byte
+		if commandID == loopDoerWorkspaceCommandID {
+			input, err = json.Marshal(doerTemplatePublishInput{PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Doer: *form.Revision.Doer, PublicationKey: form.PublicationKey})
+		} else {
+			input, err = json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
+		}
 		if err != nil {
 			return err
 		}
-		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: loopPublishCommandID, TargetID: form.Revision.LoopID, ExpectedDigest: head, IdempotencyKey: form.PublicationKey, Input: input})
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: commandID, TargetID: form.Revision.LoopID, ExpectedDigest: head, IdempotencyKey: form.PublicationKey, Input: input})
 		if err != nil {
 			return consoleError(err)
 		}
