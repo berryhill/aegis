@@ -163,6 +163,11 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	if replay.QueueItemID != got.QueueItemID {
 		t.Fatal("duplicate execution")
 	}
+	sameKeyExplicit := input
+	sameKeyExplicit.QueueItemID = got.QueueItemID
+	if _, err := svc.QueueLoopAs(ctx, subject, sameKeyExplicit); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("accepted request key allowed changed explicit-item payload: %v", err)
+	}
 	if mode == "console" {
 		assertPreparationHTTP(t, consoleClient, svc.Config.API.Console.Origin, got.QueueItemID, string(queue.StatePreparationPending))
 		_, err := svc.CancelQueueItemAs(ctx, subject, app.TerminalQueueItemInput{WorkspaceAgentID: agent.AgentID, QueueItemID: got.QueueItemID, CancellationID: "console-cancel", TransitionID: "console-cancelled", ReasonCode: orchestration.ReasonOperatorCancelled})
@@ -383,6 +388,12 @@ while read rest; do :; done
 	replay, err = queueRequest(input)
 	if err != nil || replay.Execution == nil || len(replay.Execution.Attempts) != 1 || len(replay.Execution.Claims) != 1 || replay.Execution.Disposition.Digest != got.Execution.Disposition.Digest {
 		t.Fatalf("replay: %+v %v", replay, err)
+	}
+	terminalSubstitution := input
+	terminalSubstitution.IdempotencyKey = "exact-loop-test"
+	terminalSubstitution.QueueItemID = got.QueueItemID
+	if _, err := svc.QueueLoopAs(ctx, subject, terminalSubstitution); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("terminal item bypassed original reserved request payload: %v", err)
 	}
 	if online != nil {
 		online.assertReadback(t, input, got)
