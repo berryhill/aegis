@@ -270,6 +270,7 @@ type QueueDetailModel struct {
 	Inputs    []QueueInputModel
 	Outputs   []QueueOutputModel
 	Timeline  []QueueTimelineModel
+	DoerSteps []QueueDoerStepModel // Verified metadata-only cursor, not a verdict.
 	Authority []FieldModel
 	Evidence  []QueueEvidenceModel
 	Admission []FieldModel
@@ -342,6 +343,11 @@ type QueueEvidenceModel struct {
 
 type QueueTimelineModel struct {
 	Title, State, At, Detail, Cause string
+}
+
+type QueueDoerStepModel struct {
+	AttemptID, StepID, Digest      string
+	AttemptNumber, Sequence, Visit uint32
 }
 
 type QueueControlModel struct {

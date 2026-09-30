@@ -213,6 +213,20 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 					</ol>
 				}
 			</section>
+			if len(record.Queue.DoerSteps) > 0 {
+				<section class="queue-support-section">
+					<h4>Doer step cursor</h4>
+					<p class="inline-notice">Verified step metadata records traversal, not success. The Queue disposition and independent verifier receipts determine the outcome.</p>
+					<ol class="queue-timeline" aria-label="Doer step cursor">
+						for _, step := range record.Queue.DoerSteps {
+							<li data-doer-step={ step.StepID }>
+								<header><strong>{ step.StepID }</strong><span>visit { fmt.Sprint(step.Visit) }</span></header>
+								<p>Attempt { step.AttemptID } · sequence { fmt.Sprint(step.Sequence) } · <code>{ step.Digest }</code></p>
+							</li>
+						}
+					</ol>
+				</section>
+			}
 		</div>
 		<div class="qw-tab-panel" data-queue-tab-panel="authority" hidden>
 			<section class="queue-support-section">
