@@ -224,6 +224,17 @@ func loopCommandDefinitions(svc *app.Service) []console.CommandDefinition {
 	doer := publish
 	doer.ID = loopDoerWorkspaceCommandID
 	doer.AuthorityRequirement = "fleet.loop.publish.workspace"
+	doer.PreviewAdmission = func(ctx context.Context, subject core.Subject, normalized []byte) error {
+		var input loopPublishCommandInput
+		if err := console.DecodeCommandRequest(normalized, &input); err != nil {
+			return console.ErrInvalidInput
+		}
+		workspace, err := svc.RegisteredAgentWorkspaceAs(ctx, subject, input.PublisherID)
+		if err != nil || workspace.Agent.Revision != input.PublisherRevision || workspace.Agent.Digest != input.PublisherDigest {
+			return console.ErrDenied
+		}
+		return nil
+	}
 	doer.Normalize = func(raw json.RawMessage) ([]byte, error) {
 		var input doerTemplatePublishInput
 		if err := console.DecodeCommandRequest(raw, &input); err != nil || input.PublisherID == "" || input.PublisherRevision == 0 || input.PublisherDigest == "" || input.PublicationKey == "" {

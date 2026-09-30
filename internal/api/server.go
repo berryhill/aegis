@@ -1352,7 +1352,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if contract.ExpectedText != nil {
 				assertion = "exact UTF-8 text after trimming"
 			}
-			model.DoerReview = &consoleweb.DoerReviewModel{PublisherID: form.PublisherID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey, Task: contract.Task, Workspace: contract.Workspace, WritableFiles: append([]string(nil), contract.WritableFiles...), VerifyFile: contract.VerifyFile, Assertion: assertion, ExpectedText: contract.ExpectedText, ContractDigest: digest, MaxAttempts: contract.MaxAttempts}
+			model.DoerReview = &consoleweb.DoerReviewModel{PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey, Task: contract.Task, Workspace: contract.Workspace, WritableFiles: append([]string(nil), contract.WritableFiles...), VerifyFile: contract.VerifyFile, Assertion: assertion, ExpectedText: contract.ExpectedText, ContractDigest: digest, MaxAttempts: contract.MaxAttempts}
 		}
 		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: model}
 		return renderLoopCommandPage(c, page, http.StatusOK)

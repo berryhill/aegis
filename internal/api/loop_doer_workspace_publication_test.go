@@ -133,11 +133,8 @@ func TestDoerWorkspacePublicationDeniesForeignDisabledAndStale(t *testing.T) {
 	foreign := subject
 	foreign.PrincipalID = "foreign-principal"
 	preview, err := previewDoerWorkspace(t, svc, commands, foreign, agent, "foreign-key")
-	if err == nil {
-		_, err = commands.Execute(context.Background(), foreign, "browser-session", console.CommandExecuteRequest{SchemaVersion: console.CommandCatalogVersion, IntentID: preview.IntentID})
-	}
-	if err == nil {
-		t.Fatal("foreign principal published")
+	if err == nil || preview.IntentID != "" {
+		t.Fatal("foreign principal received admitted publication preview")
 	}
 	preview, err = previewDoerWorkspace(t, svc, commands, subject, agent, "disabled-key")
 	if err != nil {
@@ -152,6 +149,9 @@ func TestDoerWorkspacePublicationDeniesForeignDisabledAndStale(t *testing.T) {
 	}
 	if _, err := commands.Execute(context.Background(), subject, "browser-session", console.CommandExecuteRequest{SchemaVersion: console.CommandCatalogVersion, IntentID: preview.IntentID}); err == nil {
 		t.Fatal("disabled/stale Agent committed preview")
+	}
+	if fresh, err := previewDoerWorkspace(t, svc, commands, subject, agent, "disabled-after-key"); err == nil || fresh.IntentID != "" {
+		t.Fatal("disabled Agent received admitted publication preview")
 	}
 	if _, err := svc.RegisteredAgentWorkspaceAs(context.Background(), subject, agent.Revision.AgentID); err == nil {
 		t.Fatal("disabled Agent passed handler workspace admission")

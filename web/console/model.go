@@ -50,12 +50,12 @@ type CommandPreviewModel struct {
 }
 
 type DoerReviewModel struct {
-	PublisherID, PreviousDigest, PublicationKey            string
-	Task, Workspace, VerifyFile, Assertion, ContractDigest string
-	WritableFiles                                          []string
-	ExpectedText                                           *string
-	Revision                                               uint64
-	MaxAttempts                                            uint16
+	PublisherID, PublisherDigest, PreviousDigest, PublicationKey string
+	Task, Workspace, VerifyFile, Assertion, ContractDigest       string
+	WritableFiles                                                []string
+	ExpectedText                                                 *string
+	Revision, PublisherRevision                                  uint64
+	MaxAttempts                                                  uint16
 }
 
 type AuthenticationModel struct {

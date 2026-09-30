@@ -24,7 +24,7 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	registerDoerWorkspaceAgent(t, svc, subject, "existing-agent", "owner-one")
+	agent := registerDoerWorkspaceAgent(t, svc, subject, "existing-agent", "owner-one")
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -71,6 +71,9 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 	_ = preview.Body.Close()
 	if err != nil || preview.StatusCode != http.StatusOK {
 		t.Fatalf("template preview status=%d err=%v body=%s", preview.StatusCode, err, body)
+	}
+	if !bytes.Contains(body, []byte("Agent revision")) || !bytes.Contains(body, []byte("Agent digest")) || !bytes.Contains(body, []byte(agent.Revision.Digest)) {
+		t.Fatal("confirmation omitted exact publisher Agent revision or digest")
 	}
 	match := regexp.MustCompile(`name="intent_id" value="([A-Za-z0-9-]+)"`).FindSubmatch(body)
 	if len(match) != 2 {
