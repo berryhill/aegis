@@ -344,13 +344,6 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 	if agent.Digest != input.Agent.Digest {
 		return "", ErrDenied
 	}
-	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
-	if err != nil {
-		return "provisioning_receipt_unavailable", nil
-	}
-	if !verified {
-		return "provisioning_receipt_missing", nil
-	}
 	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
 	if err != nil || charter.Digest != agent.Charter.Digest {
 		return "exact_charter_unavailable", nil
@@ -364,6 +357,16 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 	}
 	if len(selection.Selected.Hermes.Toolsets) != 0 || len(selection.Selected.Grant.Tools) != 0 || len(selection.Selected.Scopes.Credentials) != 0 {
 		return "doer_tool_free_authority_required", nil
+	}
+	// A receipt for an unusable exact charter cannot make this task run.
+	// Report the foundational charter action before suggesting an approval
+	// for that obsolete authority; no activation or Queue item is created.
+	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
+	if err != nil {
+		return "provisioning_receipt_unavailable", nil
+	}
+	if !verified {
+		return "provisioning_receipt_missing", nil
 	}
 	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	runtime, runtimeErr := s.Runtime(runtimeCtx)
