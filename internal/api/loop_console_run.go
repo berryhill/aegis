@@ -88,7 +88,7 @@ func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.Hand
 			return err
 		}
 		ctx := c.Request().Context()
-		view, err := svc.GetLoopViewAs(ctx, subject, c.Param("loop"), form.Revision)
+		view, err := svc.GetLoopViewAs(ctx, subject, c.QueryParam("loop_id"), form.Revision)
 		if err != nil {
 			return err
 		}
@@ -111,6 +111,9 @@ func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.Hand
 		if err != nil {
 			outcome, message = "uncertain", "Request interrupted or failed after admission may have begun. Read back or resume this exact request before starting another. Request ID: "+result.RequestID
 		}
+		if result.Rejection != nil {
+			outcome, message = "rejected", fmt.Sprintf("Durable submission rejection %s · request_id: %s · reason: %s", result.Rejection.RejectionID, result.RequestID, result.Rejection.ReasonCode)
+		}
 		if result.RequiredCharter != nil {
 			message += fmt.Sprintf(" · required_charter: %s r%d @ %s", result.RequiredCharter.ID, result.RequiredCharter.Revision, result.RequiredCharter.Digest)
 		}
@@ -131,7 +134,7 @@ func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.Hand
 				resultURL = consoleRecordURL(consoleQueue, execution.Item.ItemID)
 			}
 		}
-		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: "loops", Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: "Doer Loop Run", Outcome: outcome, OperationID: result.RequestID, ReasonCode: result.Reason, Message: message, ResultURL: resultURL, ResultLabel: "View authoritative Queue execution", RetryURL: "/console/loops/" + url.PathEscape(view.Revision.LoopID) + "/run", RetryCSRF: form.CSRF, RetryKey: form.IdempotencyKey, RetryDigest: form.Digest, RetryRevision: form.Revision}}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: "loops", Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: "Doer Loop Run", Outcome: outcome, OperationID: result.RequestID, ReasonCode: result.Reason, Message: message, ResultURL: resultURL, ResultLabel: "View authoritative Queue execution", RetryURL: "/console/loops/run?loop_id=" + url.QueryEscape(view.Revision.LoopID), RetryCSRF: form.CSRF, RetryKey: form.IdempotencyKey, RetryDigest: form.Digest, RetryRevision: form.Revision}}
 		content, err := renderConsole(ctx, consoleweb.Document(page))
 		if err != nil {
 			return err

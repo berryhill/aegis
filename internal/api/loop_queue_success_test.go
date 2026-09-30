@@ -134,6 +134,25 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	if _, err := svc.QueueLoopAs(ctx, subject, blockedInput); err == nil {
 		t.Fatal("changed request replay accepted")
 	}
+	invalidInput := input
+	invalidInput.IdempotencyKey = "submission-invalid-input"
+	invalidInput.Inputs = []graph.NormalizedInput{{PortID: "unknown", Type: graph.TypeString, Value: json.RawMessage(`"not-declared"`)}}
+	rejected, err := svc.QueueLoopAs(ctx, subject, invalidInput)
+	if err != nil || rejected.Rejection == nil || rejected.QueueItemID != "" || rejected.Reason != rejected.Rejection.ReasonCode {
+		t.Fatalf("submission denial must expose durable rejection without phantom Queue item: %+v %v", rejected, err)
+	}
+	if _, err := store.GetRejection(ctx, rejected.Rejection.RejectionID); err != nil {
+		t.Fatal(err)
+	}
+	replayedRejection, err := svc.QueueLoopAs(ctx, subject, invalidInput)
+	if err != nil || replayedRejection.Rejection == nil || replayedRejection.Rejection.Digest != rejected.Rejection.Digest || replayedRejection.QueueItemID != "" {
+		t.Fatalf("denied submission replay changed identity: %+v %v", replayedRejection, err)
+	}
+	changedRejection := invalidInput
+	changedRejection.Inputs = []graph.NormalizedInput{{PortID: "unknown", Type: graph.TypeString, Value: json.RawMessage(`"changed"`)}}
+	if _, err := svc.QueueLoopAs(ctx, subject, changedRejection); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("changed rejected payload reused idempotency identity: %v", err)
+	}
 	queueRequest := func(in app.QueueLoopInput) (app.QueueLoopResult, error) { return svc.QueueLoopAs(ctx, subject, in) }
 	var online *installedLoopQueueClient
 	if mode == "online" {

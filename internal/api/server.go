@@ -1265,7 +1265,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
-	e.POST("/console/loops/:loop/run", consoleLoopRunHandler(svc, consoleManager))
+	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput

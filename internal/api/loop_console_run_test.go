@@ -46,7 +46,7 @@ func TestConsoleLoopRunFormIsBoundedAndClosed(t *testing.T) {
 }
 
 func TestConsoleDoerRunAffordanceOnlyOnV4(t *testing.T) {
-	revision, _, err := loop.NewDoerRevision("doer-console-run", 1, "", loop.DoerContract{Task: "Write selected", Workspace: t.TempDir(), WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", MaxAttempts: 1})
+	revision, _, err := loop.NewDoerRevision("team/doer-console-run", 1, "", loop.DoerContract{Task: "Write selected", Workspace: t.TempDir(), WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", MaxAttempts: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestConsoleDoerRunAffordanceOnlyOnV4(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`action="/console/loops/doer-console-run/run"`, `name="idempotency_key"`, `name="csrf"`, `name="revision"`, `name="digest"`} {
+	for _, want := range []string{`action="/console/loops/run?loop_id=team%2Fdoer-console-run"`, `name="idempotency_key"`, `name="csrf"`, `name="revision"`, `name="digest"`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("missing %s", want)
 		}

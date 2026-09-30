@@ -82,7 +82,8 @@ func TestConsoleLoopRunRouteBlockedIntentAndAuthentication(t *testing.T) {
 	if _, _, err = svc.RegisterFleetAgentAs(ctx, subject, app.NewRegisterFleetAgentInput(fixture, "console-run-fleet", "console-run-source")); err != nil {
 		t.Fatal(err)
 	}
-	revision, _, err := loop.NewDoerRevision("console-run-loop", 1, "", loop.DoerContract{Task: "Create selected file", Workspace: t.TempDir(), WritableFiles: []string{"selected.txt"}, VerifyFile: "selected.txt", MaxAttempts: 1})
+	loopID := "console-run/team"
+	revision, _, err := loop.NewDoerRevision(loopID, 1, "", loop.DoerContract{Task: "Create selected file", Workspace: t.TempDir(), WritableFiles: []string{"selected.txt"}, VerifyFile: "selected.txt", MaxAttempts: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +97,10 @@ func TestConsoleLoopRunRouteBlockedIntentAndAuthentication(t *testing.T) {
 		status, code, message := classifyError(err)
 		_ = c.JSON(status, envelope{Code: code, Message: message, RequestID: "test-request"})
 	}
-	e.POST("/console/loops/:loop/run", consoleLoopRunHandler(svc, manager))
+	e.POST("/console/loops/run", consoleLoopRunHandler(svc, manager))
 	invoke := func(key, token, digest string, authenticated bool) *httptest.ResponseRecorder {
 		form := url.Values{"csrf": {token}, "revision": {"1"}, "digest": {digest}, "idempotency_key": {key}}
-		request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/loops/console-run-loop/run", strings.NewReader(form.Encode()))
+		request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/loops/run?loop_id="+url.QueryEscape(loopID), strings.NewReader(form.Encode()))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		request.Header.Set("Origin", "http://127.0.0.1")
 		if authenticated {

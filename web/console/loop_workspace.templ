@@ -2,6 +2,7 @@ package consoleweb
 
 import (
  "fmt"
+ "net/url"
  "strings"
 )
 
@@ -23,7 +24,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
    <p>{ record.Readiness }</p>
    if record.Loop.DoerV4 {
     <p>This published definition is not executable authority. A native authenticated Run request asks the existing bounded Queue controller for prerequisite admission and explicit activation. A mismatched runtime authentication stanza is denied; this page does not authorize host writes or prove runtime readiness.</p>
-    <form method="post" action={ "/console/loops/" + record.Label + "/run" }>
+    <form method="post" action={ "/console/loops/run?loop_id=" + url.QueryEscape(record.Label) }>
      <input type="hidden" name="csrf" value={ surface.CSRF }/>
      <input type="hidden" name="revision" value={ strings.TrimPrefix(record.Revision, "r") }/>
      <input type="hidden" name="digest" value={ record.Digest }/>
