@@ -53,6 +53,7 @@ type CommandDefinition struct {
 	Timeout              time.Duration
 	MaxBodyBytes         int64
 	Normalize            func(json.RawMessage) ([]byte, error)
+	PreviewAdmission     func(context.Context, core.Subject, []byte) error
 	ResolveTarget        func(context.Context, string) (CommandTargetState, error)
 	Commit               func(context.Context, CommandInvocation) (CommandReceipt, error)
 }
@@ -218,6 +219,11 @@ func (s *CommandService) Preview(ctx context.Context, subject core.Subject, sess
 	normalized, err := definition.Normalize(append(json.RawMessage(nil), request.Input...))
 	if err != nil || len(normalized) == 0 || int64(len(normalized)) > definition.MaxBodyBytes || !json.Valid(normalized) {
 		return CommandPreview{}, ErrInvalidInput
+	}
+	if definition.PreviewAdmission != nil {
+		if err := definition.PreviewAdmission(ctx, subject, normalized); err != nil {
+			return CommandPreview{}, err
+		}
 	}
 	inputDigest := digestBytes(normalized)
 	requestDigest := digestStrings(definition.ID, definition.Version, request.TargetID, request.ExpectedDigest, inputDigest)

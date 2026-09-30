@@ -104,7 +104,7 @@ func TestLoopRevisionTargetRoundTripsSlashAndColonIdentifiers(t *testing.T) {
 
 func TestLoopCommandDefinitionsNormalizeTypedInputAndRejectBrowserAuthority(t *testing.T) {
 	definitions := loopCommandDefinitions(&app.Service{})
-	if len(definitions) != 2 || definitions[0].ID != loopPublishCommandID || definitions[1].ID != loopLifecycleCommandID {
+	if len(definitions) != 3 || definitions[0].ID != loopPublishCommandID || definitions[1].ID != loopLifecycleCommandID || definitions[2].ID != loopDoerWorkspaceCommandID {
 		t.Fatalf("unexpected closed Loop command catalog: %+v", definitions)
 	}
 	form, err := decodeLoopComposerForm(composerRequest(validLoopComposerValues()))

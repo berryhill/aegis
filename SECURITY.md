@@ -12,6 +12,8 @@ Reusable Loop v5 resolves typed inputs from one immutable single-node Graph run 
 
 The v4 queue and direct lifecycle-activation boundaries check the current Hermes runtime/version and a typed response from approved local Laya, and reject missing exact provisioning, model, tool-free authority or Doer prerequisites before newly activating or submitting execution work. That response's yes/no verdict is discarded at preflight. This does not auto-approve host writes or certify future model access; claim and effect admission remain separate, fresh checks. A published draft, an included template and a passing source test are not executable runtime authority.
 
+The authenticated Console may publish a v4 selected-file definition through an exact registered-Agent workspace without a runtime session. Its native Run form does not confer one: it submits only the pinned Loop, server-resolved publisher and one stable request identity through the existing typed controller. A password subject must match the charter's own authentication rule; local-OS-only identity is not inherited from the host process. A blocked response creates neither a Graph nor executable Queue item, and a Queue readback is not evidence of success without the exact verifier receipt and terminal disposition.
+
 ## Status and supported versions
 
 Aegis is pre-1.0 MVP software and is not supported for production use. Security fixes are applied to the current `main` branch and are included in subsequent stable releases; older published `0.1.x` releases do not receive backports. The latest published release must not be interpreted as a production-support commitment.

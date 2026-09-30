@@ -54,6 +54,8 @@ func (r *QueueLoopResult) blockedDoer(reason string) {
 		r.RequiredAction = "plan_preview_exact_charter"
 	case "doer_model_required":
 		r.RequiredAction = "review_charter_successor_with_usable_model"
+	case "session_selection_zero_authorized_matches":
+		r.RequiredAction = "review_charter_successor_with_matching_authentication"
 	}
 }
 
@@ -179,7 +181,12 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	// Rejections are immutable blocked intent, never fabricated executable work.
 	if prior, e := s.FleetRepository.GetRejection(ctx, key+"-reject"); e == nil {
 		if prior.Reason != "request_sha256:"+identity {
-			return result, fleet.ErrConflict
+			// A Graph-admission rejection keeps its diagnostic reason. Its
+			// exact request identity is sealed in the same durable intent slot.
+			var reserved string
+			if loadErr := s.Store.Load("queue-loop-intent", key, &reserved); loadErr != nil || reserved != identity {
+				return result, fleet.ErrConflict
+			}
 		}
 		result.QueueItemID = ""
 		result.Reason, result.Rejection = prior.ReasonCode, &prior
@@ -327,7 +334,12 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		return result, e
 	}
 	if decision.Accepted == nil {
-		result.Reason = "submission_denied"
+		if decision.Rejection == nil {
+			return result, fleet.ErrConflict
+		}
+		result.QueueItemID = ""
+		result.Rejection = decision.Rejection
+		result.Reason = decision.Rejection.ReasonCode
 		return result, nil
 	}
 	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key)

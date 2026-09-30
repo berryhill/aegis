@@ -582,6 +582,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{}, consoleError(err)
 		}
 		model.CSRF = csrf
+
 		if model.CollectionURL == "" {
 			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
 		}
@@ -611,6 +612,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if recordKey := c.QueryParam("record_key"); recordKey != "" && domain != consoleAgents {
 				if err = selectConsoleRecord(&model.Surface, recordKey); err != nil {
 					return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+				}
+			}
+			if domain == consoleLoops && model.Surface.Inspector != nil && model.Surface.Inspector.Loop.DoerV4 {
+				model.Surface.LoopRunKey, err = consoleLoopRunKey(c, subject, model.Surface.Inspector)
+				if err != nil {
+					return err
 				}
 			}
 		}
@@ -884,8 +891,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		composer := &consoleweb.LoopComposerModel{Publishers: []consoleweb.LoopPublisherModel{}}
-		if binding, err := svc.FleetCommandAuthorityAs(c.Request().Context(), subject); err == nil {
-			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: binding.Publisher.ID, Revision: fmt.Sprintf("r%d", binding.Publisher.Revision), Digest: binding.Publisher.Digest, Runtime: binding.Runtime})
+		agents, err := svc.ListFleetAgentsAs(c.Request().Context(), subject)
+		if err != nil {
+			return err
+		}
+		for _, agent := range agents {
+			workspace, err := svc.RegisteredAgentWorkspaceAs(c.Request().Context(), subject, agent.Revision.AgentID)
+			if err != nil {
+				continue
+			}
+			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: workspace.Agent.ID, Revision: fmt.Sprintf("r%d", workspace.Agent.Revision), Digest: workspace.Agent.Digest, Runtime: agent.Revision.Runtime.Runtime})
 		}
 		page.DoerComposer = composer
 		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
@@ -1250,6 +1265,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
+	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput
@@ -1291,11 +1307,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return err
 		}
+		commandID := loopPublishCommandID
+		var publisherRevision uint64
+		var publisherDigest string
 		if form.Revision.Doer != nil {
-			binding, err := svc.FleetCommandAuthorityAs(c.Request().Context(), subject)
-			if err != nil || binding.Publisher.ID != form.PublisherID {
+			workspace, err := svc.RegisteredAgentWorkspaceAs(c.Request().Context(), subject, form.PublisherID)
+			if err != nil {
 				return app.ErrDenied
 			}
+			commandID = loopDoerWorkspaceCommandID
+			publisherRevision, publisherDigest = workspace.Agent.Revision, workspace.Agent.Digest
 		}
 		head := emptyLoopHeadDigest(form.Revision.LoopID)
 		revisions, err := svc.FleetRepository.ListLoopRevisions(c.Request().Context())
@@ -1308,11 +1329,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				latest, head = revision.Revision, revision.Digest
 			}
 		}
-		input, err := json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
+		var input []byte
+		if commandID == loopDoerWorkspaceCommandID {
+			input, err = json.Marshal(doerTemplatePublishInput{PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Doer: *form.Revision.Doer, PublicationKey: form.PublicationKey})
+		} else {
+			input, err = json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
+		}
 		if err != nil {
 			return err
 		}
-		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: loopPublishCommandID, TargetID: form.Revision.LoopID, ExpectedDigest: head, IdempotencyKey: form.PublicationKey, Input: input})
+		preview, err := commandService.Preview(c.Request().Context(), subject, sessionID, console.CommandPreviewRequest{SchemaVersion: console.CommandCatalogVersion, CommandID: commandID, TargetID: form.Revision.LoopID, ExpectedDigest: head, IdempotencyKey: form.PublicationKey, Input: input})
 		if err != nil {
 			return consoleError(err)
 		}
@@ -1326,7 +1352,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if contract.ExpectedText != nil {
 				assertion = "exact UTF-8 text after trimming"
 			}
-			model.DoerReview = &consoleweb.DoerReviewModel{PublisherID: form.PublisherID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey, Task: contract.Task, Workspace: contract.Workspace, WritableFiles: append([]string(nil), contract.WritableFiles...), VerifyFile: contract.VerifyFile, Assertion: assertion, ExpectedText: contract.ExpectedText, ContractDigest: digest, MaxAttempts: contract.MaxAttempts}
+			model.DoerReview = &consoleweb.DoerReviewModel{PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey, Task: contract.Task, Workspace: contract.Workspace, WritableFiles: append([]string(nil), contract.WritableFiles...), VerifyFile: contract.VerifyFile, Assertion: assertion, ExpectedText: contract.ExpectedText, ContractDigest: digest, MaxAttempts: contract.MaxAttempts}
 		}
 		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: model}
 		return renderLoopCommandPage(c, page, http.StatusOK)
@@ -1380,7 +1406,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback)}}
+		resultURL, resultLabel := "", ""
+		if receipt.CommandID == loopDoerWorkspaceCommandID {
+			var readback struct {
+				Published app.PublishedLoop `json:"published"`
+			}
+			if err := json.Unmarshal(receipt.Readback, &readback); err != nil || readback.Published.Revision.Digest == "" {
+				return console.ErrCommandFailed
+			}
+			resultURL = consoleRecordURL(consoleLoops, readback.Published.Revision.LoopID+":"+strconv.FormatUint(readback.Published.Revision.Revision, 10))
+			resultLabel = "Open published Loop to run it"
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback), ResultURL: resultURL, ResultLabel: resultLabel}}
 		return renderLoopCommandPage(c, page, http.StatusOK)
 	})
 	e.POST("/console/api/commands/preview", func(c *echo.Context) error {

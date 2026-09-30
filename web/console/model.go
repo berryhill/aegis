@@ -50,12 +50,12 @@ type CommandPreviewModel struct {
 }
 
 type DoerReviewModel struct {
-	PublisherID, PreviousDigest, PublicationKey            string
-	Task, Workspace, VerifyFile, Assertion, ContractDigest string
-	WritableFiles                                          []string
-	ExpectedText                                           *string
-	Revision                                               uint64
-	MaxAttempts                                            uint16
+	PublisherID, PublisherDigest, PreviousDigest, PublicationKey string
+	Task, Workspace, VerifyFile, Assertion, ContractDigest       string
+	WritableFiles                                                []string
+	ExpectedText                                                 *string
+	Revision, PublisherRevision                                  uint64
+	MaxAttempts                                                  uint16
 }
 
 type AuthenticationModel struct {
@@ -67,6 +67,7 @@ type AuthenticationModel struct {
 type SurfaceModel struct {
 	Domain        string
 	CSRF          string
+	LoopRunKey    string
 	Title         string
 	Eyebrow       string
 	Description   string
@@ -493,7 +494,11 @@ type ExactReferenceModel struct{ Label, ID, Revision, Digest, Lifecycle, Provena
 // admission readback, never an input or selector.
 type AuthorityContextModel struct{ Identity, Stanza, Mandate, State, ReasonCode string }
 
-type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message string }
+type OperationReceiptModel struct {
+	Title, Outcome, OperationID, RecordedAt, ReasonCode, Message, ResultURL, ResultLabel string
+	RetryURL, RetryCSRF, RetryKey, RetryDigest                                           string
+	RetryRevision                                                                        uint64
+}
 type FilterOptionModel struct{ Value, Label string }
 type FilterModel struct {
 	ID, Label, Name, Value string

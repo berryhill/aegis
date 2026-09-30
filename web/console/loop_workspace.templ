@@ -1,6 +1,10 @@
 package consoleweb
 
-import "fmt"
+import (
+ "fmt"
+ "net/url"
+ "strings"
+)
 
 templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopology) {
  <div data-loop-workspace>
@@ -19,7 +23,15 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
   <section class="loop-admission" aria-label="Loop admission and Graph-child execution">
    <p>{ record.Readiness }</p>
    if record.Loop.DoerV4 {
-    <p>This published definition is not executable authority. Use an authenticated exact <code>aegis loops queue FILE</code> request with explicit activation intent to obtain a named prerequisite blocker or a bounded run. The request constructs its Graph internally; this page does not authorize host writes or prove runtime readiness.</p>
+    <p>This published definition is not executable authority. A native authenticated Run request asks the existing bounded Queue controller for prerequisite admission and explicit activation. A mismatched runtime authentication stanza is denied; this page does not authorize host writes or prove runtime readiness.</p>
+    <form method="post" action={ "/console/loops/run?loop_id=" + url.QueryEscape(record.Label) }>
+     <input type="hidden" name="csrf" value={ surface.CSRF }/>
+     <input type="hidden" name="revision" value={ strings.TrimPrefix(record.Revision, "r") }/>
+     <input type="hidden" name="digest" value={ record.Digest }/>
+     <input type="hidden" name="idempotency_key" value={ surface.LoopRunKey }/>
+     <button type="submit" class="primary">Run exact selected-file Loop</button>
+    </form>
+    <p>The request key is retained across reloads so an interrupted response can be recovered without creating another run. <a href={ strings.SplitN(detailRoute(surface, record.Key), "#", 2)[0] + "&new_run=1" }>Start a distinct run</a> only when you intend another execution.</p>
    } else if record.Loop.DoerV5 {
     <p>This reusable v5 definition carries no execution authority. A separately authorized exact single-node Graph run can bind its inputs for the Queue worker, subject to the operator-approved per-run contract digest and fresh runtime admission. This page offers no direct execution action for v5.</p>
    } else {

@@ -331,7 +331,7 @@ templ CommandPreviewPage(model CommandPreviewModel, csrf string) {
 		<dl class="exact-reference"><dt>Command</dt><dd>{ model.CommandID }</dd><dt>Target</dt><dd>{ model.TargetID }</dd><dt>Target digest</dt><dd><code>{ model.TargetDigest }</code></dd><dt>Normalized input digest</dt><dd><code>{ model.InputDigest }</code></dd><dt>Expires</dt><dd>{ model.ExpiresAt }</dd></dl>
 		if model.DoerReview != nil {
 			<section class="panel panel-body" aria-label="Exact Doer contract review"><h2>Exact Doer publication</h2>
-				<dl class="spec"><dt>Publisher Agent</dt><dd>{ model.DoerReview.PublisherID }</dd><dt>Revision</dt><dd>{ strconv.FormatUint(model.DoerReview.Revision, 10) }</dd><dt>Previous digest</dt><dd>
+				<dl class="spec"><dt>Publisher Agent</dt><dd>{ model.DoerReview.PublisherID }</dd><dt>Agent revision</dt><dd>{ strconv.FormatUint(model.DoerReview.PublisherRevision, 10) }</dd><dt>Agent digest</dt><dd><code>{ model.DoerReview.PublisherDigest }</code></dd><dt>Loop revision</dt><dd>{ strconv.FormatUint(model.DoerReview.Revision, 10) }</dd><dt>Previous digest</dt><dd>
 					if model.DoerReview.PreviousDigest == "" {
 						<span>(none — first revision)</span>
 					} else {

@@ -1,6 +1,9 @@
 package consoleweb
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Dialog and Drawer use the browser's native modal command contract. Chrome
 // owns focus containment, background inertness, Escape, and focus restoration;
@@ -98,6 +101,19 @@ templ OperationReceipt(receipt OperationReceiptModel) {
 				<dt>Reason</dt><dd><code>{ receipt.ReasonCode }</code></dd>
 			}
 		</dl><p>{ receipt.Message }</p>
+		if receipt.ResultURL != "" {
+			<a href={ templ.SafeURL(receipt.ResultURL) }>{ receipt.ResultLabel }</a>
+		}
+		if receipt.RetryURL != "" {
+			<p>Request key: <code>{ receipt.RetryKey }</code>. Reuse this exact key after an interrupted response; a new key may start a distinct run.</p>
+			<form method="post" action={ receipt.RetryURL }>
+				<input type="hidden" name="csrf" value={ receipt.RetryCSRF }/>
+				<input type="hidden" name="revision" value={ fmt.Sprint(receipt.RetryRevision) }/>
+				<input type="hidden" name="digest" value={ receipt.RetryDigest }/>
+				<input type="hidden" name="idempotency_key" value={ receipt.RetryKey }/>
+				<button type="submit" class="secondary">Read back or resume this request</button>
+			</form>
+		}
 	</article>
 }
 
