@@ -978,7 +978,23 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	}
 	for _, attempt := range view.Attempts {
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: fmt.Sprintf("Attempt %d", attempt.AttemptNumber), State: string(attempt.State), At: consoleTime(attempt.CreatedAt), Detail: attempt.AttemptID + " · claim " + fallback(attempt.ClaimID, "unavailable"), Cause: attempt.LoopExecutionID})
+		for _, step := range view.DoerSteps[attempt.AttemptID] {
+			detail.DoerSteps = append(detail.DoerSteps, consoleweb.QueueDoerStepModel{
+				AttemptID: attempt.AttemptID, StepID: step.StepID, Digest: step.Digest,
+				AttemptNumber: attempt.AttemptNumber, Sequence: step.Sequence, Visit: step.Visit,
+			})
+		}
 	}
+	sort.SliceStable(detail.DoerSteps, func(i, j int) bool {
+		a, b := detail.DoerSteps[i], detail.DoerSteps[j]
+		if a.AttemptNumber != b.AttemptNumber {
+			return a.AttemptNumber < b.AttemptNumber
+		}
+		if a.AttemptID != b.AttemptID {
+			return a.AttemptID < b.AttemptID
+		}
+		return a.Sequence < b.Sequence
+	})
 	for _, claim := range view.Claims {
 		detail.Timeline = append(detail.Timeline, consoleweb.QueueTimelineModel{Title: "Claimed by " + claim.WorkerID, State: "claimed", At: consoleTime(claim.ClaimedAt), Detail: claim.ClaimID, Cause: claim.WorkerID})
 	}
