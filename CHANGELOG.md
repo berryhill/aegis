@@ -7,7 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Fixed
-- Bind a blocked exact-Loop request's idempotency slot to its canonical payload before v4 prerequisite denial; return its stable request ID, exact charter reference, and typed next review action without fabricating a Graph, Queue item, receipt, or runtime authority. Distinguish same-charter receipt recovery from a successor-charter request. This does not qualify or execute the existing Xander Doer task.
+- Bind a blocked exact-Loop request's idempotency slot to its canonical execution payload before v4 prerequisite denial; permit only its exact accepted Queue item as an optional same-key recovery selector. Return its stable request ID, exact charter reference, and typed next review action without fabricating a Graph, Queue item, receipt, or runtime authority. Distinguish same-charter receipt recovery from a successor-charter request. This does not qualify or execute the existing Xander Doer task.
 
 ## [0.2.14] - 2026-09-29
 

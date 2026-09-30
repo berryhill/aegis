@@ -93,7 +93,11 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		input.Inputs[i].Value = valueWire
 	}
 	sort.Slice(input.Inputs, func(i, j int) bool { return input.Inputs[i].PortID < input.Inputs[j].PortID })
-	wire, marshalErr := json.Marshal(input)
+	// queue_item_id is a recovery selector, not part of the requested work.
+	// It may be added only for this key's exact accepted Queue item.
+	identityInput := input
+	identityInput.QueueItemID = ""
+	wire, marshalErr := json.Marshal(identityInput)
 	if marshalErr != nil {
 		return result, marshalErr
 	}
@@ -119,7 +123,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		// already reserved key must never bypass its exact payload binding.
 		var reserved string
 		if loadErr := s.Store.Load("queue-loop-intent", key, &reserved); loadErr == nil {
-			if reserved != identity {
+			if reserved != identity || input.QueueItemID != key+"-queue" {
 				return result, fleet.ErrConflict
 			}
 		} else if !errors.Is(loadErr, os.ErrNotExist) {
