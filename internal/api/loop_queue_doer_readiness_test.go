@@ -14,6 +14,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 )
@@ -85,11 +86,33 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 		if err != nil || result.Reason != "provisioning_receipt_missing" || result.QueueItemID != "" || result.Execution != nil {
 			t.Fatalf("attempt %d: expected pre-mutation prerequisite blocker, got %+v, err %v", attempt, result, err)
 		}
+		if result.RequestID == "" || result.RequiredCharter == nil || result.RequiredCharter.ID != charter.AgentID || result.RequiredCharter.Revision != 1 || result.RequiredCharter.Digest != canonical.Digest || result.RequiredAction != "plan_preview_exact_charter" {
+			t.Fatalf("attempt %d: blocker omitted exact resumable intent or charter: %+v", attempt, result)
+		}
 	}
 	var viaHTTP app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &viaHTTP, http.StatusOK)
 	if viaHTTP.Reason != "provisioning_receipt_missing" || viaHTTP.QueueItemID != "" || viaHTTP.Execution != nil {
 		t.Fatalf("HTTP hid the pre-mutation blocker: %+v", viaHTTP)
+	}
+	if viaHTTP.RequestID == "" || viaHTTP.RequiredCharter == nil || viaHTTP.RequiredCharter.Digest != canonical.Digest || viaHTTP.RequiredAction != "plan_preview_exact_charter" {
+		t.Fatalf("HTTP omitted exact prerequisite identity: %+v", viaHTTP)
+	}
+	var sealedRequestDigest string
+	if err := svc.Store.Load("queue-loop-intent", viaHTTP.RequestID, &sealedRequestDigest); err != nil || len(sealedRequestDigest) != 64 {
+		t.Fatalf("blocked request intent not durably sealed: %q, %v", sealedRequestDigest, err)
+	}
+	substituted := input
+	substituted.Activate = false
+	if _, err := svc.QueueLoopAs(ctx, subject, substituted); !errors.Is(err, fleet.ErrConflict) {
+		// The principal-scoped request slot is reserved even when there is no
+		// executable Queue item. Changing the intent requires a different key.
+		t.Fatalf("blocked request key accepted substituted activation intent: %v", err)
+	}
+	substituted = input
+	substituted.QueueItemID = "some-existing-queue-item"
+	if _, err := svc.QueueLoopAs(ctx, subject, substituted); !errors.Is(err, fleet.ErrConflict) {
+		t.Fatalf("explicit-item recovery bypassed blocked request reservation: %v", err)
 	}
 	withoutActivation := input
 	withoutActivation.IdempotencyKey = "doer-activation-required"
@@ -111,6 +134,9 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 	result, err := svc.QueueLoopAs(ctx, subject, input)
 	if err != nil || result.Reason != "doer_model_required" || result.QueueItemID != "" || result.Execution != nil {
 		t.Fatalf("provider/model none was presented as executable: %+v, err %v", result, err)
+	}
+	if result.RequestID != viaHTTP.RequestID || result.RequiredCharter == nil || result.RequiredCharter.Digest != canonical.Digest || result.RequiredAction != "review_charter_successor_with_usable_model" {
+		t.Fatalf("resume changed intent or charter binding: %+v", result)
 	}
 	view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1)
 	if err != nil || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {

@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
+	"github.com/berryhill/aegis/internal/store"
 )
 
 // QueueLoopInput grants one bounded foreground operation, not foundational authority.
@@ -34,6 +35,26 @@ type QueueLoopResult struct {
 	QueueItemID string                `json:"queue_item_id"`
 	Reason      string                `json:"reason"`
 	Execution   *QueueExecutionView   `json:"execution,omitempty"`
+	// RequestID is the stable, principal-scoped intent slot. A prerequisite
+	// denial can be retried with the same payload and idempotency key after an
+	// independently approved change; it is not a Queue item or an approval.
+	RequestID string `json:"request_id,omitempty"`
+	// RequiredCharter identifies the exact authority revision that blocked a
+	// v4 Doer run. Never infer a new charter or provisioning approval from it.
+	RequiredCharter *reference.RevisionRef `json:"required_charter,omitempty"`
+	// RequiredAction names the next typed review boundary, not permission to
+	// perform it. A plan preview is not an approval or a provisioning receipt.
+	RequiredAction string `json:"required_action,omitempty"`
+}
+
+func (r *QueueLoopResult) blockedDoer(reason string) {
+	r.Reason = reason
+	switch reason {
+	case "provisioning_receipt_missing":
+		r.RequiredAction = "plan_preview_exact_charter"
+	case "doer_model_required":
+		r.RequiredAction = "review_charter_successor_with_usable_model"
+	}
 }
 
 func loopLifecyclePrevious(view LoopView) string {
@@ -62,6 +83,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	// changed request payloads; phase IDs are recoverable without client files.
 	sum := sha256.Sum256([]byte(subject.PrincipalID + "\x00" + input.IdempotencyKey))
 	key := "loopq-" + hex.EncodeToString(sum[:16])
+	result.RequestID = key
 	input.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
 	for i := range input.Inputs {
 		valueWire, err := graph.CanonicalInputJSON(input.Inputs[i].Value)
@@ -71,7 +93,11 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		input.Inputs[i].Value = valueWire
 	}
 	sort.Slice(input.Inputs, func(i, j int) bool { return input.Inputs[i].PortID < input.Inputs[j].PortID })
-	wire, marshalErr := json.Marshal(input)
+	// queue_item_id is a recovery selector, not part of the requested work.
+	// It may be added only for this key's exact accepted Queue item.
+	identityInput := input
+	identityInput.QueueItemID = ""
+	wire, marshalErr := json.Marshal(identityInput)
 	if marshalErr != nil {
 		return result, marshalErr
 	}
@@ -93,6 +119,16 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		return result, ErrDenied
 	}
 	if input.QueueItemID != "" {
+		// A different key may recover a compatible legacy item, but an
+		// already reserved key must never bypass its exact payload binding.
+		var reserved string
+		if loadErr := s.Store.Load("queue-loop-intent", key, &reserved); loadErr == nil {
+			if reserved != identity || input.QueueItemID != key+"-queue" {
+				return result, fleet.ErrConflict
+			}
+		} else if !errors.Is(loadErr, os.ErrNotExist) {
+			return result, loadErr
+		}
 		prior, e := s.GetQueueItemAs(ctx, subject, input.QueueItemID)
 		if e != nil {
 			return result, e
@@ -122,9 +158,17 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if e != nil || workspace.Agent != input.Agent {
 			return result, ErrDenied
 		}
+		if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+			agent, loadErr := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
+			if loadErr != nil || agent.Digest != input.Agent.Digest {
+				return result, ErrDenied
+			}
+			result.RequiredCharter = &agent.Charter
+		}
 		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
+			result.blockedDoer(reason)
 			return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 		}
 		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]))
@@ -174,6 +218,29 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	if workspace.Agent != input.Agent {
 		return result, ErrDenied
 	}
+	// A preflight denial must still seal the exact request to this key. A
+	// later approval cannot turn a substituted payload into the original run.
+	var reserved string
+	if e := s.Store.Load("queue-loop-intent", key, &reserved); errors.Is(e, os.ErrNotExist) {
+		if createErr := s.Store.Create("queue-loop-intent", key, identity); createErr != nil && !errors.Is(createErr, store.ErrAlreadyExists) {
+			return result, createErr
+		}
+		if e = s.Store.Load("queue-loop-intent", key, &reserved); e != nil {
+			return result, e
+		}
+	} else if e != nil {
+		return result, e
+	}
+	if reserved != identity {
+		return result, fleet.ErrConflict
+	}
+	if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		agent, loadErr := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
+		if loadErr != nil || agent.Digest != input.Agent.Digest {
+			return result, ErrDenied
+		}
+		result.RequiredCharter = &agent.Charter
+	}
 	// Preserve the durable activation-required rejection when activation was
 	// not requested. An actual v4 activation or run must preflight before any
 	// lifecycle, Graph, Queue, or runtime-preparation mutation.
@@ -182,10 +249,11 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 			return result, preflightErr
 		} else if reason != "" {
 			if result.Execution != nil {
+				result.blockedDoer(reason)
 				return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 			}
 			result.QueueItemID = ""
-			result.Reason = reason
+			result.blockedDoer(reason)
 			return result, nil
 		}
 	}
@@ -319,7 +387,7 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 }
 
 func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Subject, result QueueLoopResult, reason string) (QueueLoopResult, error) {
-	result.Reason = reason
+	result.blockedDoer(reason)
 	v, err := s.GetQueueItemAs(ctx, subject, result.QueueItemID)
 	if err != nil {
 		return result, err

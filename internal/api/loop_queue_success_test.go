@@ -163,6 +163,12 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	if replay.QueueItemID != got.QueueItemID {
 		t.Fatal("duplicate execution")
 	}
+	sameKeyExplicit := input
+	sameKeyExplicit.QueueItemID = got.QueueItemID
+	selected, err := svc.QueueLoopAs(ctx, subject, sameKeyExplicit)
+	if err != nil || selected.QueueItemID != got.QueueItemID || selected.Execution == nil || len(selected.Execution.Attempts) != 0 {
+		t.Fatalf("exact-item recovery changed accepted preparation: %+v %v", selected, err)
+	}
 	if mode == "console" {
 		assertPreparationHTTP(t, consoleClient, svc.Config.API.Console.Origin, got.QueueItemID, string(queue.StatePreparationPending))
 		_, err := svc.CancelQueueItemAs(ctx, subject, app.TerminalQueueItemInput{WorkspaceAgentID: agent.AgentID, QueueItemID: got.QueueItemID, CancellationID: "console-cancel", TransitionID: "console-cancelled", ReasonCode: orchestration.ReasonOperatorCancelled})
@@ -383,6 +389,13 @@ while read rest; do :; done
 	replay, err = queueRequest(input)
 	if err != nil || replay.Execution == nil || len(replay.Execution.Attempts) != 1 || len(replay.Execution.Claims) != 1 || replay.Execution.Disposition.Digest != got.Execution.Disposition.Digest {
 		t.Fatalf("replay: %+v %v", replay, err)
+	}
+	terminalSubstitution := input
+	terminalSubstitution.IdempotencyKey = "exact-loop-test"
+	terminalSubstitution.QueueItemID = got.QueueItemID
+	terminalReadback, err := svc.QueueLoopAs(ctx, subject, terminalSubstitution)
+	if err != nil || terminalReadback.QueueItemID != got.QueueItemID || terminalReadback.Execution == nil || terminalReadback.Execution.Disposition.Digest != got.Execution.Disposition.Digest || len(terminalReadback.Execution.Attempts) != 1 {
+		t.Fatalf("exact-item terminal readback changed execution: %+v %v", terminalReadback, err)
 	}
 	if online != nil {
 		online.assertReadback(t, input, got)
