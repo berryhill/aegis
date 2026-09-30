@@ -111,6 +111,21 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 	if readback.Published.Revision.Doer == nil || readback.View.Revision.Digest != readback.Published.Revision.Digest || readback.View.Lifecycle.State != "draft" {
 		t.Fatalf("publication readback not exact inactive Doer: %+v", readback.View)
 	}
+	confirmation, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/execute", strings.NewReader("csrf="+csrf+"&intent_id="+string(match[1])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmation.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	confirmation.Header.Set("Origin", "http://"+address)
+	confirmed, err := client.Do(confirmation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmationBody, err := io.ReadAll(confirmed.Body)
+	_ = confirmed.Body.Close()
+	if err != nil || confirmed.StatusCode != http.StatusOK || !bytes.Contains(confirmationBody, []byte("Open published Loop to run it")) || !bytes.Contains(confirmationBody, []byte("record_key=doer-task%3A1")) {
+		t.Fatalf("exact published Loop link missing: status=%d err=%v", confirmed.StatusCode, err)
+	}
 	if _, err := svc.FleetCommandAuthorityAs(context.Background(), subject); err == nil {
 		t.Fatal("template publication silently granted runtime authority")
 	}

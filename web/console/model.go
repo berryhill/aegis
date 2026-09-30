@@ -494,7 +494,7 @@ type ExactReferenceModel struct{ Label, ID, Revision, Digest, Lifecycle, Provena
 // admission readback, never an input or selector.
 type AuthorityContextModel struct{ Identity, Stanza, Mandate, State, ReasonCode string }
 
-type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message, ResultURL string }
+type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message, ResultURL, ResultLabel string }
 type FilterOptionModel struct{ Value, Label string }
 type FilterModel struct {
 	ID, Label, Name, Value string

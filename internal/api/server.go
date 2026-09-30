@@ -1405,7 +1405,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback)}}
+		resultURL, resultLabel := "", ""
+		if receipt.CommandID == loopDoerWorkspaceCommandID {
+			var readback struct {
+				Published app.PublishedLoop `json:"published"`
+			}
+			if err := json.Unmarshal(receipt.Readback, &readback); err != nil || readback.Published.Revision.Digest == "" {
+				return console.ErrCommandFailed
+			}
+			resultURL = consoleRecordURL(consoleLoops, readback.Published.Revision.LoopID+":"+strconv.FormatUint(readback.Published.Revision.Revision, 10))
+			resultLabel = "Open published Loop to run it"
+		}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback), ResultURL: resultURL, ResultLabel: resultLabel}}
 		return renderLoopCommandPage(c, page, http.StatusOK)
 	})
 	e.POST("/console/api/commands/preview", func(c *echo.Context) error {

@@ -99,7 +99,7 @@ templ OperationReceipt(receipt OperationReceiptModel) {
 			}
 		</dl><p>{ receipt.Message }</p>
 		if receipt.ResultURL != "" {
-			<a href={ templ.SafeURL(receipt.ResultURL) }>View authoritative Queue execution</a>
+			<a href={ templ.SafeURL(receipt.ResultURL) }>{ receipt.ResultLabel }</a>
 		}
 	</article>
 }

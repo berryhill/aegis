@@ -101,7 +101,7 @@ func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.Hand
 			}
 			resultURL = consoleRecordURL(consoleQueue, execution.Item.ItemID)
 		}
-		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: "loops", Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: "Doer Loop Run", Outcome: outcome, OperationID: result.RequestID, ReasonCode: result.Reason, Message: message, ResultURL: resultURL}}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: "loops", Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: "Doer Loop Run", Outcome: outcome, OperationID: result.RequestID, ReasonCode: result.Reason, Message: message, ResultURL: resultURL, ResultLabel: "View authoritative Queue execution"}}
 		content, err := renderConsole(ctx, consoleweb.Document(page))
 		if err != nil {
 			return err
