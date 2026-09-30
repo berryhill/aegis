@@ -20,6 +20,19 @@ import (
 )
 
 func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
+	for _, model := range []string{"none", "local-model"} {
+		t.Run(model, func(t *testing.T) { testQueueDoerPrerequisiteOrder(t, model) })
+	}
+}
+
+func testQueueDoerPrerequisiteOrder(t *testing.T, model string) {
+	reason, action := "doer_model_required", "review_charter_successor_with_usable_model"
+	hermes := core.HermesConfig{Model: "none", Provider: "none"}
+	if model != "none" {
+		reason, action = "provisioning_receipt_missing", "plan_preview_exact_charter"
+		hermes = core.HermesConfig{Model: "exact:1", Provider: "ollama", LocalInference: &core.LocalInference{
+			Kind: "ollama", Endpoint: "http://127.0.0.1:11434", ModelDigest: "sha256:" + strings.Repeat("a", 64)}}
+	}
 	svc := apiService(t)
 	configureAPIFleet(t, svc)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -43,7 +56,7 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 			Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{"local-uid:" + strconv.Itoa(os.Getuid())}, PrincipalIDs: []string{svc.Config.Principal.ID}, Issuers: []string{"linux-so-peercred"}, Environments: []string{"local"}}}, RequireFresh: true, MaxAuthAgeSec: 60},
 			Grant:          core.Grant{}, Scopes: core.Scopes{}, Session: core.SessionPolicy{MaximumLifetimeSec: 60, RequireReauth: true},
 			Approval: core.ApprovalPolicy{RequiredOperations: []string{"provision"}, MaximumLifetimeSec: 60, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"},
-			Hermes: core.HermesConfig{Model: "none", Provider: "none"}}}, CreatedBy: svc.Config.Principal.ID, CreatedAt: svc.Now()}
+			Hermes: hermes}}, CreatedBy: svc.Config.Principal.ID, CreatedAt: svc.Now()}
 	wire, err := json.Marshal(charter)
 	if err != nil {
 		t.Fatal(err)
@@ -78,24 +91,24 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 		Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: revision.Revision, Digest: published.Revision.Digest},
 		IdempotencyKey: "doer-no-authority-run", Activate: true}
 	activate := app.SetLoopLifecycleInput{AgentID: charter.AgentID, Loop: input.Loop, State: loop.LifecycleActive, EventID: "doer-direct-unready-activation"}
-	if _, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate); err == nil || !strings.Contains(err.Error(), "provisioning_receipt_missing") {
-		t.Fatalf("direct v4 activation did not return the receipt blocker: %v", err)
+	if _, err := svc.SetLoopLifecycleAs(ctx, subject, revision.LoopID, activate); err == nil || !strings.Contains(err.Error(), reason) {
+		t.Fatalf("direct v4 activation did not return the foundational blocker: %v", err)
 	}
 	for attempt := 0; attempt < 2; attempt++ {
 		result, err := svc.QueueLoopAs(ctx, subject, input)
-		if err != nil || result.Reason != "provisioning_receipt_missing" || result.QueueItemID != "" || result.Execution != nil {
+		if err != nil || result.Reason != reason || result.QueueItemID != "" || result.Execution != nil {
 			t.Fatalf("attempt %d: expected pre-mutation prerequisite blocker, got %+v, err %v", attempt, result, err)
 		}
-		if result.RequestID == "" || result.RequiredCharter == nil || result.RequiredCharter.ID != charter.AgentID || result.RequiredCharter.Revision != 1 || result.RequiredCharter.Digest != canonical.Digest || result.RequiredAction != "plan_preview_exact_charter" {
+		if result.RequestID == "" || result.RequiredCharter == nil || result.RequiredCharter.ID != charter.AgentID || result.RequiredCharter.Revision != 1 || result.RequiredCharter.Digest != canonical.Digest || result.RequiredAction != action {
 			t.Fatalf("attempt %d: blocker omitted exact resumable intent or charter: %+v", attempt, result)
 		}
 	}
 	var viaHTTP app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &viaHTTP, http.StatusOK)
-	if viaHTTP.Reason != "provisioning_receipt_missing" || viaHTTP.QueueItemID != "" || viaHTTP.Execution != nil {
+	if viaHTTP.Reason != reason || viaHTTP.QueueItemID != "" || viaHTTP.Execution != nil {
 		t.Fatalf("HTTP hid the pre-mutation blocker: %+v", viaHTTP)
 	}
-	if viaHTTP.RequestID == "" || viaHTTP.RequiredCharter == nil || viaHTTP.RequiredCharter.Digest != canonical.Digest || viaHTTP.RequiredAction != "plan_preview_exact_charter" {
+	if viaHTTP.RequestID == "" || viaHTTP.RequiredCharter == nil || viaHTTP.RequiredCharter.Digest != canonical.Digest || viaHTTP.RequiredAction != action {
 		t.Fatalf("HTTP omitted exact prerequisite identity: %+v", viaHTTP)
 	}
 	var sealedRequestDigest string
@@ -120,6 +133,9 @@ func TestQueueDoerMissingPrerequisitesDoesNotActivateOrSubmit(t *testing.T) {
 	denied, err := svc.QueueLoopAs(ctx, subject, withoutActivation)
 	if err != nil || denied.Reason != "exact_loop_activation_required" || denied.Rejection == nil {
 		t.Fatalf("explicit activation intent no longer required: %+v, err %v", denied, err)
+	}
+	if model != "none" {
+		return // Usable charter still needs its independently verified receipt.
 	}
 	var review core.Review
 	apiRequest(t, client, http.MethodPost, "/v1/plans/preview", map[string]any{"agent": charter.AgentID, "revision": 1, "environment": core.Environment{Name: "local"}}, &review, http.StatusCreated)
