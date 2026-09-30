@@ -31,12 +31,12 @@ import (
 )
 
 func TestExactLoopQueueImplementationSuccessReplay(t *testing.T) {
-	for _, mode := range []string{"auto", "legacy", "ready", "ready-legacy", "failed-launch", "interrupted"} {
+	for _, mode := range []string{"auto", "ready", "failed-launch", "interrupted"} {
 		t.Run(mode, func(t *testing.T) { exactLoopQueueImplementationSuccessReplay(t, mode) })
 	}
 }
 func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
-	ready := mode == "ready" || mode == "ready-legacy"
+	ready := mode == "ready"
 	svc := apiService(t)
 	store := configureAPIFleet(t, svc)
 	if mode == "console" {
@@ -277,16 +277,11 @@ while read rest; do :; done
 			t.Fatal(e)
 		}
 	}
-	if mode == "legacy" || mode == "ready-legacy" {
-		// Recover an explicitly selected parked ID with a different caller key:
-		// no new graph, submission, snapshot, or authority history is minted.
-		input.QueueItemID = got.QueueItemID
-		input.IdempotencyKey = "explicit-legacy-recovery"
-		bad := input
-		bad.Inputs = []graph.NormalizedInput{{PortID: "unexpected", Type: graph.TypeString, Value: json.RawMessage(`"x"`)}}
-		if _, e := svc.QueueLoopAs(ctx, subject, bad); e == nil {
-			t.Fatal("mismatched legacy inputs accepted")
-		}
+	crossKey := input
+	crossKey.QueueItemID = got.QueueItemID
+	crossKey.IdempotencyKey = "unrelated-request"
+	if _, e := svc.QueueLoopAs(ctx, subject, crossKey); !errors.Is(e, fleet.ErrConflict) {
+		t.Fatalf("different request adopted existing Queue item: %v", e)
 	}
 	if mode == "failed-launch" {
 		// Fail inside Launch, after authority activation, without starting a process.

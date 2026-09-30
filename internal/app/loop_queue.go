@@ -119,11 +119,14 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		return result, ErrDenied
 	}
 	if input.QueueItemID != "" {
-		// A different key may recover a compatible legacy item, but an
-		// already reserved key must never bypass its exact payload binding.
+		// Explicit recovery selects only this request's exact Queue item.
+		// Different keys must not adopt prior execution authority or history.
+		if input.QueueItemID != result.QueueItemID {
+			return result, fleet.ErrConflict
+		}
 		var reserved string
 		if loadErr := s.Store.Load("queue-loop-intent", key, &reserved); loadErr == nil {
-			if reserved != identity || input.QueueItemID != key+"-queue" {
+			if reserved != identity {
 				return result, fleet.ErrConflict
 			}
 		} else if !errors.Is(loadErr, os.ErrNotExist) {

@@ -44,7 +44,7 @@ Forwarded identity headers are not trusted by default. Errors, telemetry, and co
 
 ## Single authenticated Loop execution request
 
-`aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` explicitly selects a compatible legacy preparation for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
+`aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` selects only the same request key's exact accepted Queue item for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
 
 The controller composes the minimal exact Graph, prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
 
