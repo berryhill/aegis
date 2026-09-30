@@ -30,6 +30,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
      <input type="hidden" name="idempotency_key" value={ surface.LoopRunKey }/>
      <button type="submit" class="primary">Run exact selected-file Loop</button>
     </form>
+    <p>The request key is retained across reloads so an interrupted response can be recovered without creating another run. <a href={ strings.SplitN(detailRoute(surface, record.Key), "#", 2)[0] + "&new_run=1" }>Start a distinct run</a> only when you intend another execution.</p>
    } else if record.Loop.DoerV5 {
     <p>This reusable v5 definition carries no execution authority. A separately authorized exact single-node Graph run can bind its inputs for the Queue worker, subject to the operator-approved per-run contract digest and fresh runtime admission. This page offers no direct execution action for v5.</p>
    } else {

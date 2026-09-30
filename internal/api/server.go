@@ -582,12 +582,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{}, consoleError(err)
 		}
 		model.CSRF = csrf
-		if domain == consoleLoops {
-			model.LoopRunKey, err = randomConsoleID("loop-run")
-			if err != nil {
-				return consoleweb.PageModel{}, err
-			}
-		}
+
 		if model.CollectionURL == "" {
 			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
 		}
@@ -617,6 +612,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if recordKey := c.QueryParam("record_key"); recordKey != "" && domain != consoleAgents {
 				if err = selectConsoleRecord(&model.Surface, recordKey); err != nil {
 					return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+				}
+			}
+			if domain == consoleLoops && model.Surface.Inspector != nil && model.Surface.Inspector.Loop.DoerV4 {
+				model.Surface.LoopRunKey, err = consoleLoopRunKey(c, subject, model.Surface.Inspector)
+				if err != nil {
+					return err
 				}
 			}
 		}

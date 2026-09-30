@@ -16,8 +16,40 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
+	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
+
+func TestConsoleLoopRunKeySurvivesLostResponseUntilExplicitNewRun(t *testing.T) {
+	identity := core.Subject{PrincipalID: "principal"}
+	record := &consoleweb.RecordModel{Label: "selected", Revision: "r1", Digest: "sha256:exact"}
+	request := func(path string, cookie *http.Cookie) (string, *http.Cookie) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		response := httptest.NewRecorder()
+		key, err := consoleLoopRunKey(echo.New().NewContext(req, response), identity, record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cookies := response.Result().Cookies()
+		if len(cookies) == 0 {
+			return key, cookie
+		}
+		if !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
+			t.Fatalf("unsafe request identity cookie: %+v", cookies[0])
+		}
+		return key, cookies[0]
+	}
+	first, cookie := request("http://127.0.0.1/console/loops?record_key=selected:1", nil)
+	reloaded, _ := request("http://127.0.0.1/console/loops?record_key=selected:1", cookie)
+	rotated, _ := request("http://127.0.0.1/console/loops?record_key=selected:1&new_run=1", cookie)
+	if first == "" || first != reloaded || first == rotated {
+		t.Fatalf("lost-response retry changed identity or explicit new run did not: %q %q %q", first, reloaded, rotated)
+	}
+}
 
 func TestConsoleLoopRunRouteBlockedIntentAndAuthentication(t *testing.T) {
 	svc := apiService(t)
@@ -83,7 +115,7 @@ func TestConsoleLoopRunRouteBlockedIntentAndAuthentication(t *testing.T) {
 		}
 	}
 	first := invoke("stable-key", csrf, published.Revision.Digest, true)
-	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "session_selection_zero_authorized_matches") || !strings.Contains(first.Body.String(), "review_charter_successor_with_matching_authentication") || !strings.Contains(first.Body.String(), "required_charter:") {
+	if first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "session_selection_zero_authorized_matches") || !strings.Contains(first.Body.String(), "review_charter_successor_with_matching_authentication") || !strings.Contains(first.Body.String(), "required_charter:") || !strings.Contains(first.Body.String(), "Request key:") || !strings.Contains(first.Body.String(), "stable-key") || !strings.Contains(first.Body.String(), "Read back or resume this request") {
 		t.Fatalf("blocked request status=%d stanza_denial=%t", first.Code, strings.Contains(first.Body.String(), "session_selection_zero_authorized_matches"))
 	}
 	second := invoke("stable-key", csrf, published.Revision.Digest, true)
