@@ -54,6 +54,8 @@ func (r *QueueLoopResult) blockedDoer(reason string) {
 		r.RequiredAction = "plan_preview_exact_charter"
 	case "doer_model_required":
 		r.RequiredAction = "review_charter_successor_with_usable_model"
+	case "session_selection_zero_authorized_matches":
+		r.RequiredAction = "review_charter_successor_with_matching_authentication"
 	}
 }
 

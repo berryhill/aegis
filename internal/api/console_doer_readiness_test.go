@@ -38,7 +38,7 @@ func TestDoerLoopConsoleDoesNotClaimExecutionReadiness(t *testing.T) {
 				t.Fatal(err)
 			}
 			content := string(html)
-			if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || !strings.Contains(content, "aegis loops queue FILE") || !strings.Contains(content, tc.want) {
+			if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || !strings.Contains(content, `action="/console/loops/doer-console/run"`) || !strings.Contains(content, tc.want) {
 				t.Fatalf("Doer detail offered the wrong execution action/status: %s", content)
 			}
 		})

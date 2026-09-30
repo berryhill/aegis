@@ -582,6 +582,12 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{}, consoleError(err)
 		}
 		model.CSRF = csrf
+		if domain == consoleLoops {
+			model.LoopRunKey, err = randomConsoleID("loop-run")
+			if err != nil {
+				return consoleweb.PageModel{}, err
+			}
+		}
 		if model.CollectionURL == "" {
 			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
 		}
@@ -1250,6 +1256,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
+	e.POST("/console/loops/:loop/run", consoleLoopRunHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput

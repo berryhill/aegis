@@ -67,6 +67,7 @@ type AuthenticationModel struct {
 type SurfaceModel struct {
 	Domain        string
 	CSRF          string
+	LoopRunKey    string
 	Title         string
 	Eyebrow       string
 	Description   string
@@ -493,7 +494,7 @@ type ExactReferenceModel struct{ Label, ID, Revision, Digest, Lifecycle, Provena
 // admission readback, never an input or selector.
 type AuthorityContextModel struct{ Identity, Stanza, Mandate, State, ReasonCode string }
 
-type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message string }
+type OperationReceiptModel struct{ Title, Outcome, OperationID, RecordedAt, ReasonCode, Message, ResultURL string }
 type FilterOptionModel struct{ Value, Label string }
 type FilterModel struct {
 	ID, Label, Name, Value string

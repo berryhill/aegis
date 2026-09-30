@@ -346,6 +346,7 @@
         "POST /console/loops/doer/preview",
         "POST /console/loops/lifecycle-preview",
         "POST /console/loops/execute",
+        "POST /console/loops/:loop/run",
         "POST /v1/loops/queue"
       ],
       "transport_classification": "shipped"
