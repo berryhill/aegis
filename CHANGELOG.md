@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.15] - 2026-09-30
+
 ### Fixed
 - Show the verified metadata-only Doer step cursor on the Queue detail, in recorded attempt/sequence order, including verify → diagnosis → implement retries. Neither traversal nor a model verdict upgrades the authoritative Queue disposition. Exercise the authenticated v4 blocked request, exact approval/receipt resume, one worker attempt, artifact, verifier receipt, terminal state and selected-file bytes with an isolated synthetic owning-service fixture; this is not live Xander Doer acceptance.
 - Reject cross-key adoption of an existing exact-Loop Queue item. Explicit recovery now requires the original request key and its exact item; historical execution records remain readable without a compatibility mutation path. This does not execute an unready Loop or change its authority prerequisites.
