@@ -98,6 +98,10 @@ func TestObserveExecutableImageRequiresExactLoadedUnit(t *testing.T) {
 	if got := ObserveExecutableImage(ctx, runner, executable, configPath); got != "stopped" {
 		t.Fatalf("stopped = %s", got)
 	}
+	runner.activeState = "activating"
+	if got := ObserveExecutableImage(ctx, runner, executable, configPath); got != "unknown" {
+		t.Fatalf("transitional state = %s", got)
+	}
 	runner.activeState = "active"
 	if got := ObserveExecutableImage(ctx, runner, executable, configPath); got != "unknown" {
 		t.Fatalf("unobservable process = %s", got)
