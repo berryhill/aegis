@@ -7,6 +7,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Fixed
+- Retain the real-Chrome touch/navigation release gate when one pre-DevTools Chrome startup stalls: reclaim that browser, retry once with a fresh profile, and report bounded startup diagnostics if both attempts fail. No browser assertion or production readiness gate is skipped.
 - Show a read-only, fail-closed gateway process-image observation in direct-update results so replacing the executable cannot be mistaken for updating the running gateway. Only proven stale images request a separate explicit gateway restart; no update path performs a lifecycle mutation.
 
 ## [0.2.16] - 2026-09-30

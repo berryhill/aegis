@@ -355,13 +355,31 @@ class NativeTouchTest(unittest.TestCase):
     def test_real_chrome_touch_gesture_activates_anchor_navigation(self):
         self._assert_real_chrome_touch_navigation(page_scale=1)
 
+    def test_real_chrome_touch_recovers_one_pre_ready_startup_failure(self):
+        real_popen = subprocess.Popen
+        attempts = 0
+
+        def launch(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                failed = mock.MagicMock()
+                failed.poll.return_value = 1
+                failed.wait.return_value = 1
+                failed.pid = 99999999
+                return failed
+            return real_popen(*args, **kwargs)
+
+        with mock.patch.object(subprocess, "Popen", side_effect=launch):
+            self._assert_real_chrome_touch_navigation(page_scale=1)
+        self.assertEqual(attempts, 2)
+
     def test_real_chrome_touch_with_panned_visual_viewport(self):
         self._assert_real_chrome_touch_navigation(page_scale=2)
 
     def _assert_real_chrome_touch_navigation(self, page_scale):
         with tempfile.TemporaryDirectory(prefix="aegis-touch-browser-") as temporary:
             fixture_root = pathlib.Path(temporary)
-            chrome_home = fixture_root / "chrome"
             fixture = fixture_root / "touch.html"
             fixture.write_text(
                 '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -369,33 +387,54 @@ class NativeTouchTest(unittest.TestCase):
                 'style="display:block;width:180px;height:48px;margin-top:1200px">Open Agent</a>',
                 encoding="utf-8",
             )
-            process = subprocess.Popen(
-                [
-                    "/usr/bin/google-chrome",
-                    "--headless=new",
-                    "--incognito",
-                    "--disable-gpu",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "--remote-debugging-port=0",
-                    "--remote-allow-origins=http://localhost",
-                    f"--user-data-dir={chrome_home}",
-                    fixture.as_uri(),
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                env=console_browser_test.chrome_environment(),
-                start_new_session=True,
-            )
-            devtools = None
-            try:
+            # The CI runner can leave one Chrome process alive without ever
+            # publishing DevToolsActivePort. Reclaim that startup-only attempt
+            # and retry once with an independent profile. The actual browser
+            # gesture and every assertion below still run in full.
+            process = None
+            startup_errors = []
+            for startup_attempt in range(2):
+                chrome_home = fixture_root / f"chrome-{startup_attempt}"
+                stderr_path = fixture_root / f"chrome-{startup_attempt}.stderr"
+                with stderr_path.open("w", encoding="utf-8") as chrome_stderr:
+                    process = subprocess.Popen(
+                        [
+                            "/usr/bin/google-chrome",
+                            "--headless=new",
+                            "--incognito",
+                            "--disable-gpu",
+                            "--no-first-run",
+                            "--no-default-browser-check",
+                            "--remote-debugging-port=0",
+                            "--remote-allow-origins=http://localhost",
+                            f"--user-data-dir={chrome_home}",
+                            fixture.as_uri(),
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=chrome_stderr,
+                        env=console_browser_test.chrome_environment(),
+                        start_new_session=True,
+                    )
                 active_port = chrome_home / "DevToolsActivePort"
                 deadline = time.monotonic() + console_browser_test.CHROME_START_TIMEOUT
-                while time.monotonic() < deadline and not active_port.exists():
-                    self.assertIsNone(process.poll(), "Chrome exited before DevTools readiness")
+                while time.monotonic() < deadline and not active_port.exists() and process.poll() is None:
                     time.sleep(0.05)
-                self.assertTrue(active_port.exists(), "Chrome did not become ready")
+                if active_port.exists() and process.poll() is None:
+                    break
+                with stderr_path.open("rb") as chrome_stderr:
+                    chrome_stderr.seek(0, os.SEEK_END)
+                    chrome_stderr.seek(max(0, chrome_stderr.tell() - 2048))
+                    diagnostic = chrome_stderr.read(2048).decode("utf-8", errors="replace")
+                startup_errors.append(f"attempt {startup_attempt + 1}: exit={process.poll()} stderr={diagnostic}")
+                console_browser_test.stop_chrome(process, None)
+                process = None
+            else:
+                self.fail("Chrome did not become ready after two fresh startup attempts: " + " | ".join(startup_errors))
+            if startup_errors:
+                print("Chrome startup recovered after: " + " | ".join(startup_errors), file=sys.stderr)
+            devtools = None
+            try:
                 port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
                 websocket = console_browser_test.page_websocket(
                     port, time.monotonic() + console_browser_test.PAGE_TARGET_TIMEOUT, process
