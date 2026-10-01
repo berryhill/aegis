@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.16] - 2026-09-30
+
 ### Changed
 - Permit the authenticated selected-file Doer template to publish an inactive v4 Loop using exact registered-Agent workspace ownership without first creating a runtime session. Derive the fixed Doer step authority markers after rejecting browser-supplied authority; revalidate the Agent and immutable Loop head on confirmation.
 - Add a native v4 Loop detail Run action through the existing typed Loop/Graph/Queue controller. Generate a per-form request key, keep activation explicit, show resumable prerequisite reasons and exact charter, and link authoritative Queue evidence after admission. A password subject cannot borrow a local-OS-only stanza; `none` model, receipt, contract and fresh runtime admission remain fail-closed. V5 retains its separate typed Graph binding.
