@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:8537dec7b3f790e3a497c69b52646d77e408d7277f13e77d4c39e96e81fcc449",
+    "content_digest": "sha256:0cdfb335debe1f715f4ba00db37e2f0c7070a17a9427014e384af7defc8ba052",
     "source_revision": "repository"
   },
   "operations": [
@@ -532,12 +532,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:999d6230e4c4d204d7ec2fa581ef4d0810b904c614cabbe17260cb6da2f21aca",
+      "content_digest": "sha256:b5ced61b966a85b4c1d48b27f829d0dfacce0c1ba65418bb5856f3833c259852",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:29eaf3830a14a5ac7c035866649672dde44b3bac10b1bb0c51b604ffe628fd3a",
-          "size": 16762
+          "sha256": "sha256:3c5eba0cafcd84b6d7e4b12aca4fe28d5b28d0af8e1868362da3af3f492bc5a4",
+          "size": 17404
         },
         {
           "path": "references/lifecycle-fixtures.json",

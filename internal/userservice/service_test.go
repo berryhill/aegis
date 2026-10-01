@@ -29,6 +29,9 @@ type recordingRunner struct {
 	execStart           string
 	restartFragmentPath string
 	restartExecStart    string
+	mainPID             string
+	nextMainPID         string
+	mainPIDReads        int
 }
 
 func (r *recordingRunner) Run(_ context.Context, args ...string) error {
@@ -69,6 +72,12 @@ func (r *recordingRunner) Output(_ context.Context, args ...string) ([]byte, err
 			return []byte(r.fragmentPath + "\n"), nil
 		case "ExecStart":
 			return []byte(r.execStart + "\n"), nil
+		case "MainPID":
+			r.mainPIDReads++
+			if r.mainPIDReads > 1 && r.nextMainPID != "" {
+				return []byte(r.nextMainPID + "\n"), nil
+			}
+			return []byte(r.mainPID + "\n"), nil
 		}
 	}
 	return nil, fmt.Errorf("unexpected output call: %v", args)
