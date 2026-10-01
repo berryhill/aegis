@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+- Show a read-only, fail-closed gateway process-image observation in direct-update results so replacing the executable cannot be mistaken for updating the running gateway. Only proven stale images request a separate explicit gateway restart; no update path performs a lifecycle mutation.
+
 ## [0.2.16] - 2026-09-30
 
 ### Changed

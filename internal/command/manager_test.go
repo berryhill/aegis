@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/tui"
 	selfupdate "github.com/berryhill/aegis/internal/update"
+	"github.com/berryhill/aegis/internal/userservice"
 )
 
 func TestManagerMissingCredentialReferenceIsCollectedLocally(t *testing.T) {
@@ -532,6 +534,36 @@ func TestUpdateAliasAndSubcommandUseSameInjectedServiceAndOutput(t *testing.T) {
 	}
 	if len(updater.calls) != 2 || updater.calls[0] || updater.calls[1] || outputs[0] != outputs[1] {
 		t.Fatalf("calls=%v outputs=%q", updater.calls, outputs)
+	}
+}
+
+func TestUpdateReportsStaleGatewayWithoutRestartingIt(t *testing.T) {
+	isolatedPaths(t)
+	for _, args := range [][]string{{"--update"}, {"update"}, {"update", "--check"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var out bytes.Buffer
+			updater := &fakeUpdater{result: selfupdate.Result{CurrentVersion: "0.2.15", LatestVersion: "0.2.16", Updated: true, Executable: "/isolated/aegis"}}
+			observerCalls := 0
+			root := NewRoot(Dependencies{In: strings.NewReader(""), Out: &out, Err: io.Discard, Version: "test", Updater: updater,
+				GatewayImageObserver: func(_ context.Context, _ userservice.Runner, executable, _ string) string {
+					observerCalls++
+					if executable != "/isolated/aegis" {
+						t.Fatalf("observed %s", executable)
+					}
+					return "running_stale_image"
+				}, IsTerminal: func(io.Reader, io.Writer) bool { return false }})
+			root.SetArgs(args)
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			var result selfupdate.Result
+			if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			if result.GatewayImage != "running_stale_image" || !result.GatewayRestartRequired || result.RequiredAction != "aegis gateway restart" || observerCalls != 1 {
+				t.Fatalf("result=%+v calls=%d", result, observerCalls)
+			}
+		})
 	}
 }
 

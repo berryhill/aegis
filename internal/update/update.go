@@ -31,11 +31,14 @@ const (
 )
 
 type Result struct {
-	CurrentVersion  string `json:"current_version"`
-	LatestVersion   string `json:"latest_version"`
-	UpdateAvailable bool   `json:"update_available"`
-	Updated         bool   `json:"updated"`
-	Executable      string `json:"executable,omitempty"`
+	CurrentVersion         string `json:"current_version"`
+	LatestVersion          string `json:"latest_version"`
+	UpdateAvailable        bool   `json:"update_available"`
+	Updated                bool   `json:"updated"`
+	Executable             string `json:"executable,omitempty"`
+	GatewayImage           string `json:"gateway_image,omitempty"`
+	GatewayRestartRequired bool   `json:"gateway_restart_required"`
+	RequiredAction         string `json:"required_action,omitempty"`
 }
 
 type Updater struct {

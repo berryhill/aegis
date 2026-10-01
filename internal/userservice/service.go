@@ -255,6 +255,38 @@ func ObserveExactGateway(ctx context.Context, runner Runner, plan Plan) GatewayO
 	return GatewayObservation{State: GatewayHealthy, Reason: "authenticated_exact_gateway_ready"}
 }
 
+// ObserveExecutableImage is a read-only post-update hint. It never admits
+// authority or asserts authenticated readiness. Only an exact installed and
+// loaded unit may be classified as a current or stale running image.
+func ObserveExecutableImage(ctx context.Context, runner Runner, executable, configPath string) string {
+	plan, err := Preview(executable, configPath)
+	if err != nil {
+		return "unknown"
+	}
+	installed, err := Installed(plan)
+	if err != nil {
+		return "unknown"
+	}
+	if !installed {
+		return "not_installed"
+	}
+	if runner == nil || validateLoadedIdentity(ctx, runner, plan) != nil {
+		return "unknown"
+	}
+	active, err := serviceState(ctx, runner, "ActiveState")
+	if err != nil {
+		return "unknown"
+	}
+	if !active {
+		return "stopped"
+	}
+	image := observeProcessImage(ctx, runner, plan.Executable)
+	if validateLoadedIdentity(ctx, runner, plan) != nil {
+		return "unknown"
+	}
+	return image
+}
+
 func Apply(ctx context.Context, plan Plan, runner Runner, timeout time.Duration) error {
 	if runner == nil {
 		return errors.New("user service manager is unavailable")

@@ -38,18 +38,19 @@ import (
 )
 
 type Dependencies struct {
-	In             io.Reader
-	Out, Err       io.Writer
-	Logger         *slog.Logger
-	Version        string
-	SourceRevision string
-	IsTerminal     func(io.Reader, io.Writer) bool
-	Updater        UpdateService
-	Initializer    *initialize.Service
-	Resetter       *resetdomain.Service
-	Migrator       *migration.Service
-	Passphrases    AuthorityPassphraseProvider
-	UserService    userservice.Runner
+	In                   io.Reader
+	Out, Err             io.Writer
+	Logger               *slog.Logger
+	Version              string
+	SourceRevision       string
+	IsTerminal           func(io.Reader, io.Writer) bool
+	Updater              UpdateService
+	GatewayImageObserver func(context.Context, userservice.Runner, string, string) string
+	Initializer          *initialize.Service
+	Resetter             *resetdomain.Service
+	Migrator             *migration.Service
+	Passphrases          AuthorityPassphraseProvider
+	UserService          userservice.Runner
 
 	Profile         ExecutionProfile
 	DevelopmentRoot string
@@ -107,6 +108,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	if deps.Updater == nil {
 		deps.Updater = selfupdate.New(deps.Version)
+	}
+	if deps.GatewayImageObserver == nil {
+		deps.GatewayImageObserver = userservice.ObserveExecutableImage
 	}
 	if deps.Initializer == nil {
 		deps.Initializer = initialize.New()
@@ -386,7 +390,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		if updateAlias {
-			return runUpdate(cmd, deps.Updater, false)
+			return runUpdate(cmd, deps.Updater, deps.UserService, deps.GatewayImageObserver, o.configFile, false)
 		}
 		if !deps.IsTerminal(cmd.InOrStdin(), cmd.OutOrStdout()) {
 			inspection := config.Inspect(o.configFile)
@@ -491,7 +495,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, deps.Profile), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, func(cmd *cobra.Command) error {
 		return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
-	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater), credentialBridgeCmd())
+	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater, deps.UserService, deps.GatewayImageObserver, o), credentialBridgeCmd())
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {
@@ -605,22 +609,37 @@ func versionCmd(version, sourceRevision string) *cobra.Command {
 	return command
 }
 
-func runUpdate(cmd *cobra.Command, updater UpdateService, checkOnly bool) error {
+func runUpdate(cmd *cobra.Command, updater UpdateService, runner userservice.Runner, observe func(context.Context, userservice.Runner, string, string) string, configPath string, checkOnly bool) error {
 	result, err := updater.Run(cmd.Context(), checkOnly)
 	if err != nil {
 		return err
 	}
+	// Release replacement and gateway lifecycle are independent. Observation
+	// never changes service state, even when the old process image is stale.
+	executable := result.Executable
+	if executable == "" {
+		executable, err = os.Executable()
+	}
+	if err != nil {
+		result.GatewayImage = "unknown"
+	} else {
+		result.GatewayImage = observe(cmd.Context(), runner, executable, configPath)
+	}
+	if result.GatewayImage == "running_stale_image" {
+		result.GatewayRestartRequired = true
+		result.RequiredAction = "aegis gateway restart"
+	}
 	return output(cmd, result)
 }
 
-func updateCmd(updater UpdateService) *cobra.Command {
+func updateCmd(updater UpdateService, runner userservice.Runner, observe func(context.Context, userservice.Runner, string, string) string, options *rootOptions) *cobra.Command {
 	var checkOnly bool
 	command := &cobra.Command{
 		Use:   "update",
 		Short: "Update Aegis from the latest verified GitHub release",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runUpdate(cmd, updater, checkOnly)
+			return runUpdate(cmd, updater, runner, observe, options.configFile, checkOnly)
 		},
 	}
 	command.Flags().BoolVar(&checkOnly, "check", false, "check for an update without installing it")

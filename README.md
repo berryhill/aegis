@@ -52,6 +52,8 @@ aegis --update
 
 `aegis --update` is a strict root-only alias for `aegis update`; ambiguous combinations with subcommands or other root actions are rejected. Both forms use the same checksum-verifying updater before atomically replacing the exact current executable. Package-manager-owned or non-writable executables should be updated through their original installation method.
 
+Update output separates `updated` (replacement of the on-disk executable) from `gateway_image` (read-only running-process observation). On Linux an exact owned, loaded and active user unit is compared to the installed image by process/file identity: `running_current_image`, `running_stale_image`, `stopped`, `not_installed`, or `unknown` when evidence is insufficient. Only proven stale image reports `gateway_restart_required: true` and `required_action: "aegis gateway restart"`. `--check` performs the same read-only observation without replacing the executable. Neither update form restarts the gateway or proves authenticated readiness; restart remains a separate explicit terminal operation, followed by gateway readiness verification. `current_version` is the invoking CLI version, not the running gateway version. On platforms without a qualified process-image check, an active gateway reports `unknown` rather than a guessed match.
+
 The updater selects only the latest exact published stable GitHub release and fails closed if its repository identity, publication metadata, archive, or matching `SHA256SUMS` entry is unavailable or invalid. A local or remote Git tag alone is not an available update; the tag-triggered workflow must finish publishing the GitHub release.
 
 ## Build
