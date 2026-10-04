@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.17] - 2026-10-04
+
 ### Changed
 - Source candidate: retain principal-owned Doer drafts with version CAS and stable publication keys, expose candidate readiness separately from authoring, and add independent exact successor/provisioning/host-contract review. Add opt-in raw UTF-8 byte assertions (`exact_bytes`) without changing legacy trimmed contracts. Native continuation/confirmation integration and final browser/live-model acceptance remain pending; no installed release, automatic approval, credential/model grant or host confinement is claimed. See [issue 281 launch review](docs/implementation/issue-281-launch-review.md).
 
