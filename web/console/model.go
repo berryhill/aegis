@@ -19,6 +19,8 @@ type PageModel struct {
 	AgentOperation      *AgentOperationModel
 	LoopComposer        *LoopComposerModel
 	DoerComposer        *LoopComposerModel
+	DoerSetup           *DoerSetupModel
+	DoerContinuation    *DoerContinuationModel
 	CommandPreview      *CommandPreviewModel
 	CommandReceipt      *OperationReceiptModel
 	CredentialOperation *CredentialOperationModel
@@ -42,6 +44,12 @@ type LoopPublisherModel struct {
 type LoopComposerModel struct {
 	Publishers []LoopPublisherModel
 	Errors     []string
+	DoerDraft  DoerDraftModel
+}
+
+type DoerDraftModel struct {
+	ID, Version, PublisherID, LoopID, Revision, PreviousDigest, PublicationKey       string
+	Task, Workspace, WritableFiles, VerifyFile, Assertion, ExpectedText, MaxAttempts string
 }
 
 type CommandPreviewModel struct {
@@ -52,11 +60,30 @@ type CommandPreviewModel struct {
 type DoerReviewModel struct {
 	PublisherID, PublisherDigest, PreviousDigest, PublicationKey string
 	Task, Workspace, VerifyFile, Assertion, ContractDigest       string
+	CandidateDigest                                              string
 	WritableFiles                                                []string
 	ExpectedText                                                 *string
 	Revision, PublisherRevision                                  uint64
 	MaxAttempts                                                  uint16
+	DraftURL, SetupURL, ReadinessReason                          string
+	Prerequisites                                                []FieldModel
+	CanAuthor, CanExecute                                        bool
 }
+
+type DoerContinuationModel struct {
+	ID, DraftID, Details, Status string
+	Run                          PublishedDoerRunModel
+	CanRun                       bool
+	RunBlocker                   string
+}
+
+type DoerSetupModel struct {
+	DraftID, DraftURL, SetupURL, Current, Message, Preview, Approval, Receipt, ConfirmLabel string
+	Contract, HostStatus                                                                    string
+	Charters                                                                                []DoerSetupCharterModel
+	Provisioned                                                                             bool
+}
+type DoerSetupCharterModel struct{ Ref, Details string }
 
 type AuthenticationModel struct {
 	Status     string
@@ -498,6 +525,14 @@ type OperationReceiptModel struct {
 	Title, Outcome, OperationID, RecordedAt, ReasonCode, Message, ResultURL, ResultLabel string
 	RetryURL, RetryCSRF, RetryKey, RetryDigest                                           string
 	RetryRevision                                                                        uint64
+	PublishedDoerRun                                                                     *PublishedDoerRunModel
+}
+
+// PublishedDoerRunModel binds an explicit Run action to publication readback.
+// It contains no caller-selectable Agent, subject, stanza or runtime authority.
+type PublishedDoerRunModel struct {
+	URL, CSRF, Key, Digest string
+	Revision               uint64
 }
 type FilterOptionModel struct{ Value, Label string }
 type FilterModel struct {

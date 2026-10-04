@@ -18,6 +18,9 @@ const loopComposerBytesMax = 64 << 10
 type loopComposerForm struct {
 	CSRF, PublisherID, PublicationKey string
 	Revision                          app.LoopCandidate
+	DraftID                           string
+	DraftVersion                      uint64
+	RetainDraft                       bool
 }
 
 type loopLifecycleForm struct {

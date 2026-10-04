@@ -1,5 +1,7 @@
 # No-Key Demonstration
 
+This existing demo does not exercise the guided Doer retained-draft/approval/Run journey, a native confirmation companion, or live task completion. It invokes a real disposable Hermes design boundary, so it was inspected but not run during the documentation-only launch review. Fake-Hermes installed fixtures and historical recordings are not live-model proof; see [the candidate evidence ledger](implementation/issue-281-launch-review.md).
+
 This demonstration does not cover registered-Agent workspace delegation, stable-owner Loop/Graph self-service, shared-definition use, participant submission, runtime-authority binding, Queue processing, credential access, native agent transport, or automatic execution. Those claims require typed service readback and focused tests; a provisioning receipt or session is not a prerequisite for the definition-management contract.
 
 Run from a clean checkout with Go 1.26.6+ and stable Hermes `>=0.18.0` installed. There is no arbitrary upper cap, but the exact runtime must still satisfy protocol/capability checks; this no-key demonstration does not qualify every accepted or future release:

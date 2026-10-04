@@ -1025,6 +1025,15 @@ def main() -> int:
         wait_for(devtools, "document.readyState === 'complete' && location.hash === '#/agents' && !document.querySelector('#agent-inline-detail') && !!document.querySelector('#record-proof-agent')", "closed Agent Registry detail into retained collection")
         time.sleep(1.0)
 
+        # Extend the installed fixture only after inventory/count/filter checks.
+        # This browser-password subject must remain distinct from local OS
+        # authority: no native approval or fake OS identity is supplied.
+        from doer_browser_journey_test import run_journey
+        doer_journey = run_journey(devtools, origin, workspace, sys.modules[__name__])
+        navigate(devtools, origin + "/console/agents")
+        wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#logout') && !!document.querySelector('#record-proof-agent')", "Agent collection after isolated Doer blocker proof")
+        time.sleep(1.0)
+
         # Exercise native declarative modal commands through real Chrome input.
         # This fixture has no credential, authority selector, mutation endpoint,
         # or executable product behavior.
@@ -1193,6 +1202,9 @@ def main() -> int:
             "old_session_invalidation": "pass",
             "domains": list(expected.values()),
             "inspection": "pass",
+            "guided_doer": doer_journey,
+            "synthetic_provider_transport": True,
+            "live_human_operator_acceptance": False,
             "interaction_foundation": {
                 "dialog_initial_focus": "pass",
                 "tab_containment": "pass",

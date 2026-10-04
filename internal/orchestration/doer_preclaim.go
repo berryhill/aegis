@@ -31,6 +31,9 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 	filePolicy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: contract.VerifyFile, Mode: evidence.SelectedFilePresence}
 	if contract.ExpectedText != nil {
 		filePolicy.Mode, filePolicy.Text = evidence.SelectedFileText, *contract.ExpectedText
+		if contract.ExactBytes {
+			filePolicy.Mode = evidence.SelectedFileExactBytes
+		}
 	}
 	policyDigest, err := filePolicy.Digest()
 	if err != nil {

@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,8 +21,9 @@ const (
 type SelectedFileMode string
 
 const (
-	SelectedFileText     SelectedFileMode = "trimmed-utf8-equals"
-	SelectedFilePresence SelectedFileMode = "regular-file-present"
+	SelectedFileText       SelectedFileMode = "trimmed-utf8-equals"
+	SelectedFileExactBytes SelectedFileMode = "raw-utf8-bytes-equals"
+	SelectedFilePresence   SelectedFileMode = "regular-file-present"
 )
 
 // SelectedFilePolicy is a controller-pinned, single-file assertion. Digest must
@@ -66,7 +68,7 @@ func (p SelectedFilePolicy) Validate() error {
 		}
 	}
 	switch p.Mode {
-	case SelectedFileText:
+	case SelectedFileText, SelectedFileExactBytes:
 		if !utf8.ValidString(p.Text) || len(p.Text) > SelectedFileMaxBytes {
 			return errors.New("invalid selected-file expected text")
 		}
@@ -187,12 +189,12 @@ func VerifySelectedFile(ctx context.Context, workspace string, policy SelectedFi
 		return SelectedFileResult{}, err
 	}
 	r.ContentDigest = sha256Reference(data)
-	if policy.Mode == SelectedFileText {
+	if policy.Mode == SelectedFileText || policy.Mode == SelectedFileExactBytes {
 		if !utf8.Valid(data) {
 			r.FailureCategory = "invalid_utf8"
 			return r, nil
 		}
-		if strings.TrimSpace(string(data)) != strings.TrimSpace(policy.Text) {
+		if (policy.Mode == SelectedFileExactBytes && !bytes.Equal(data, []byte(policy.Text))) || (policy.Mode == SelectedFileText && strings.TrimSpace(string(data)) != strings.TrimSpace(policy.Text)) {
 			r.FailureCategory = "text_mismatch"
 			return r, nil
 		}

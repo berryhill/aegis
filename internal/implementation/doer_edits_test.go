@@ -33,7 +33,7 @@ func TestApplyDoerEditsWritesOnlyAllowedFile(t *testing.T) {
 	if got, err := os.ReadFile(protected); err != nil || string(got) != "untouched" {
 		t.Fatalf("protected %q: %v", got, err)
 	}
-	if len(calls) != 1 || calls[0] != "write:result.txt" {
+	if len(calls) != 2 || calls[0] != "write:result.txt" || calls[1] != "write:result.txt" {
 		t.Fatalf("admissions: %v", calls)
 	}
 }
@@ -135,12 +135,12 @@ func TestApplyDoerEditsFreshAdmissionPerWriteAndRegularReplacement(t *testing.T)
 	calls := 0
 	err := ApplyDoerEdits(context.Background(), c, []Edit{{Path: "first.txt", Content: []byte("first")}, {Path: "result.txt", Content: []byte("bad")}}, func(context.Context, string) error {
 		calls++
-		if calls == 2 {
+		if calls == 3 {
 			return &Halt{State: "denied"}
 		}
 		return nil
 	})
-	if err == nil || calls != 2 {
+	if err == nil || calls != 3 {
 		t.Fatalf("admission error=%v calls=%d", err, calls)
 	}
 	if got, err := os.ReadFile(filepath.Join(c.Workspace, "result.txt")); err != nil || string(got) != "original" {

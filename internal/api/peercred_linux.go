@@ -26,5 +26,6 @@ func unixPeerContext(ctx context.Context, connection net.Conn) context.Context {
 	if err != nil || credential == nil {
 		return ctx
 	}
+	ctx = context.WithValue(ctx, peerPIDKey{}, int(credential.Pid))
 	return context.WithValue(ctx, peerUIDKey{}, credential.Uid)
 }

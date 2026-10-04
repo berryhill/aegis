@@ -2,6 +2,10 @@
 
 These are repository-local proposals, not remote GitHub issues.
 
+## Guided Doer follow-on acceptance material
+
+The issue 281 source candidate needs exact-candidate native companion/browser integration, keyboard/responsive visual review, and an explicitly authorized live source journey with selected-file artifact, receipt and disposition readback. Focused contributor work may extend hermetic cancellation/no-decision, stale draft CAS, exact-byte mismatch and peer-substitution regressions, but fixtures cannot close the live gate. Preserve independent successor/provision/host decisions, immutable bindings and zero credential/model grants. This is local preparation only: no new remote issue, release or recording is implied. See [the launch ledger](../implementation/issue-281-launch-review.md).
+
 ## 1. Add mTLS certificate-to-subject mapping
 
 Scope: add strict configured certificate identity mapping for TCP API callers without treating TLS or bearer labels as principal identity. Relevant files: `internal/config`, `internal/api`, `internal/app`. Acceptance: unknown/ambiguous certificates deny; 401/403 semantics and adversarial tests; Unix behavior unchanged. Security: never map a display name or arbitrary certificate field implicitly.

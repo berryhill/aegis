@@ -13,6 +13,16 @@ import (
 )
 
 var ErrLocalLayaUnavailable = errors.New("local Laya unavailable")
+var ErrDoerHostApprovalRequired = errors.New("exact Doer host-write approval required")
+var ErrDoerUnsafeWorkspace = errors.New("unsafe Doer workspace or file")
+
+// ValidateDoerHostWorkspace performs bounded, non-writing no-follow checks.
+func ValidateDoerHostWorkspace(c loop.DoerContract) error {
+	if doerWorkspacePolicy(c) != nil {
+		return ErrDoerUnsafeWorkspace
+	}
+	return nil
+}
 
 // ValidateDoerAvailability checks that configured local Laya can answer the
 // typed helper protocol before a new v4 execution is submitted. Its verdict
@@ -37,12 +47,12 @@ func (w *QueueWorker) ValidateDoerAvailability(ctx context.Context, value loop.L
 // validateDoerReadiness is controller-owned and non-executing. It is repeated
 // before claim; it is not a substitute for fresh runtime/effect admission.
 func (w *QueueWorker) validateDoerReadiness(value loop.LoopRevision, agent registry.AgentRevision) error {
-	if value.Doer == nil || w.implementation == nil || w.implementation.authorizeDoer(*value.Doer, agent) != nil {
-		return errors.New("exact operator Doer authorization required")
+	if value.Doer == nil || w.implementation == nil || w.authorizeDoer(context.Background(), *value.Doer, agent) != nil {
+		return ErrDoerHostApprovalRequired
 	}
 	c := w.implementation
 	if c.adapter == nil || c.decision == nil || c.decision.process == nil || c.root == "" || c.config.LayaPython == "" || c.config.LayaHome == "" {
-		return errors.New("local Doer decision and runtime prerequisites required")
+		return ErrLocalLayaUnavailable
 	}
 	if err := trustedExecutable(c.config.GoBinary); err != nil {
 		return err
@@ -57,7 +67,7 @@ func (w *QueueWorker) validateDoerReadiness(value loop.LoopRevision, agent regis
 	if err != nil || !home.IsDir() || home.Mode().Perm()&0077 != 0 {
 		return errors.New("private Laya home unavailable")
 	}
-	return doerWorkspacePolicy(*value.Doer)
+	return ValidateDoerHostWorkspace(*value.Doer)
 }
 
 func trustedExecutable(name string) error {
@@ -100,7 +110,7 @@ func doerWorkspacePolicy(c loop.DoerContract) error {
 			return errors.New("writable Doer parent required")
 		}
 		info, err = root.Lstat(name)
-		if err == nil && !implementation.DoerTargetHasSingleLink(info) {
+		if err == nil && (!implementation.DoerTargetHasSingleLink(info) || info.Size() > 1024*1024) {
 			return errors.New("Doer target must be a regular, single-link file")
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
