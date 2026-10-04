@@ -6,7 +6,7 @@ import (
 	"errors"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
- "github.com/berryhill/aegis/internal/evidence"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/hostapproval"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
@@ -75,12 +75,14 @@ func TestDoerHostApprovalIndependentExactAndFresh(t *testing.T) {
 		t.Fatal("readback", e)
 	}
 	if e = s.resolveDoerHostApproval(ctx, draft.Contract, repo.latest); e != nil {
-        t.Fatal(e)
-    }
-    policy := evidence.SelectedFilePolicy{Version:evidence.SelectedFilePolicyV1,RelativePath:draft.Contract.VerifyFile,Mode:evidence.SelectedFilePresence}
-    pd,_:=policy.Digest()
-    result,e:=evidence.VerifySelectedFile(ctx,draft.Contract.Workspace,policy,pd,evidence.SelectedFileBinding{AttemptID:"attempt",ActionID:"verify",RunID:"run",OwnerID:"agent",AuthorityContextID:"authority",AuthorityContextDigest:"sha256:authority"})
-    if e!=nil || result.Outcome==evidence.Passed { t.Fatal("host approval mistaken for file verification",e) }
+		t.Fatal(e)
+	}
+	policy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: draft.Contract.VerifyFile, Mode: evidence.SelectedFilePresence}
+	pd, _ := policy.Digest()
+	result, e := evidence.VerifySelectedFile(ctx, draft.Contract.Workspace, policy, pd, evidence.SelectedFileBinding{AttemptID: "attempt", ActionID: "verify", RunID: "run", OwnerID: "agent", AuthorityContextID: "authority", AuthorityContextDigest: "sha256:authority"})
+	if e != nil || result.Outcome == evidence.Passed {
+		t.Fatal("host approval mistaken for file verification", e)
+	}
 	again, e := s.ApproveDoerHostWriteAs(ctx, subject, input)
 	if e != nil || !again.ApprovedAt.Equal(signed.ApprovedAt) {
 		t.Fatal("repeat", e)
@@ -179,7 +181,9 @@ func TestDoerHostApprovalWorkerResolvesFreshWithoutAllowlist(t *testing.T) {
 	}
 	executable := filepath.Join(s.Store.Root(), "explicit-test-helper")
 	e := os.WriteFile(executable, []byte("#!/bin/sh\nexit 1\n"), 0700)
-	if e != nil { t.Fatal(e) }
+	if e != nil {
+		t.Fatal(e)
+	}
 	home := t.TempDir()
 	if e = os.Chmod(home, 0700); e != nil {
 		t.Fatal(e)
