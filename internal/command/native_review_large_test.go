@@ -35,6 +35,8 @@ func TestLargeNativeReviewFixture(t *testing.T) {
 		os.Exit(1)
 	case "unknown":
 		os.Stdout.WriteString("arbitrary reply")
+	case "timeout":
+		time.Sleep(time.Minute)
 	}
 	os.Exit(0)
 }
@@ -44,10 +46,15 @@ func TestLargeNativeReviewDoesNotTruncateScope(t *testing.T) {
 	if confirmationDataSafe(data) || !nativeReviewDataSafe(data) {
 		t.Fatal("large native review bounds are not distinct from pinentry line bounds")
 	}
-	for _, scenario := range []struct{ mode, want string }{{"approve", "confirmed"}, {"deny", "denied"}, {"cancel", "cancelled"}, {"unknown", "malformed_protocol"}} {
+	for _, scenario := range []struct{ mode, want string }{{"approve", "confirmed"}, {"deny", "denied"}, {"cancel", "cancelled"}, {"unknown", "malformed_protocol"}, {"timeout", "timeout"}} {
 		t.Run(scenario.mode, func(t *testing.T) {
 			s := newNativeConfirmation()
-			s.timeout = time.Second
+			// The instrumented child sleeps at exit under Go's race detector.
+			// Bound fixture execution separately from the production approval TTL.
+			s.timeout = 5 * time.Second
+			if scenario.mode == "timeout" {
+				s.timeout = 50 * time.Millisecond
+			}
 			s.command = func(ctx context.Context, _ string, args ...string) *exec.Cmd {
 				cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=^TestLargeNativeReviewFixture$", "--", "--aegis-review-fixture=" + scenario.mode}, args...)...)
 				return cmd
