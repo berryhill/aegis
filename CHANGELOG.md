@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.18] - 2026-10-04
+
+### Fixed
+- Replace the unpublished v0.2.17 release candidate signed by an untrusted legacy key with a release signed by the existing trusted Xander release identity. Preserve the v0.2.17 tag; its publication workflow was cancelled and no release assets were published. Functional source remains the independently reviewed guided Doer journey from PR #290; live operator/model acceptance remains unproven.
+
 ## [0.2.17] - 2026-10-04
 
 ### Changed
