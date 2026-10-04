@@ -20,6 +20,7 @@ type DoerContract struct {
 	WritableFiles []string `json:"writable_files"`
 	VerifyFile    string   `json:"verify_file"`
 	ExpectedText  *string  `json:"expected_text,omitempty"` // nil means presence-only; pointer to empty string means exact empty text
+	ExactBytes    bool     `json:"exact_bytes,omitempty"`   // additive; false preserves historical trimmed-text contracts
 	MaxAttempts   uint16   `json:"max_attempts"`
 }
 
@@ -67,6 +68,9 @@ func validDoerContract(c DoerContract) bool {
 		return false
 	}
 	if c.ExpectedText != nil && (!utf8.ValidString(*c.ExpectedText) || len(*c.ExpectedText) > 4096) {
+		return false
+	}
+	if c.ExactBytes && c.ExpectedText == nil {
 		return false
 	}
 	if len(c.WritableFiles) == 0 || len(c.WritableFiles) > 128 {

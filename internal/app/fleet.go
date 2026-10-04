@@ -340,6 +340,8 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 		return ErrFleetUnavailable
 	}
 	s.FleetRepository, s.Fleet, s.QueueWorker = repository, service, worker
+	worker.SetDoerHostApprovalResolver(s.resolveDoerHostApproval)
+	worker.SetDoerProtectedPaths(s.doerControllerProtectedPaths())
 	return nil
 }
 

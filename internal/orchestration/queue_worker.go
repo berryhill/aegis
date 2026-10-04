@@ -86,13 +86,15 @@ func (NoKeyAdapter) Execute(ctx context.Context, request RuntimeRequest) (Runtim
 }
 
 type QueueWorker struct {
-	repository     fleet.Repository
-	service        *FleetService
-	blobs          BlobStore
-	verifier       EvidenceVerifier
-	adapter        RuntimeAdapter
-	now            func() time.Time
-	implementation *ImplementationController
+	repository         fleet.Repository
+	service            *FleetService
+	blobs              BlobStore
+	verifier           EvidenceVerifier
+	adapter            RuntimeAdapter
+	now                func() time.Time
+	implementation     *ImplementationController
+	doerHostApproval   func(context.Context, loop.DoerContract, registry.AgentRevision) error
+	doerProtectedPaths []string
 }
 
 func NewQueueWorker(repository fleet.Repository, service *FleetService, blobs BlobStore, verifier EvidenceVerifier, adapter RuntimeAdapter, now func() time.Time) (*QueueWorker, error) {
@@ -196,7 +198,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 				return WorkResult{}, fmt.Errorf("%w: invalid exact Doer Graph binding: %v", ErrWorkerDenied, err)
 			}
 		}
-		if item.MaxAttempts != 1 || worker.implementation.authorizeDoer(doerContract, participant) != nil {
+		if item.MaxAttempts != 1 || worker.authorizeDoer(ctx, doerContract, participant) != nil {
 			return WorkResult{}, fmt.Errorf("%w: operator Doer authorization and single Queue attempt required", ErrWorkerDenied)
 		}
 	}
@@ -205,7 +207,13 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	}
 	var doerGate LayaGate
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		if err = worker.authorizeDoer(ctx, doerContract, participant); err != nil {
+			return WorkResult{}, err
+		}
 		doerGate, err = worker.preclaimDoerGate(ctx, request, item, doerContract, node.Participant, node.Loop, snapshot.Graph)
+		if err == nil {
+			err = worker.authorizeDoer(ctx, doerContract, participant)
+		}
 		if err != nil {
 			return WorkResult{}, err
 		}
@@ -246,6 +254,11 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	claimTransition, err := queue.NewTransition(queue.QueueTransition{TransitionID: request.ClaimTransitionID, QueueItemID: item.ItemID, From: queue.StateQueued, To: queue.StateClaimed, ClaimID: claim.ClaimID, Reason: "worker lease acquired", OccurredAt: now})
 	if err != nil {
 		return WorkResult{}, err
+	}
+	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
+		if err = worker.authorizeDoer(ctx, doerContract, participant); err != nil {
+			return WorkResult{}, err
+		}
 	}
 	if err = worker.repository.ClaimQueueItem(ctx, claim, attempt, claimTransition, worker.service.auditFact("fleet.queue.claimed", request.Subject, "worker lease acquired", node.Participant.ID, "", "")); err != nil {
 		return WorkResult{}, err

@@ -25,7 +25,7 @@ type ImplementationController struct {
 }
 
 func (w *QueueWorker) ConfigureImplementation(c config.Implementation, stateRoot string, adapter *hermesruntime.Adapter) error {
-	if len(c.AuthorizedContracts) == 0 {
+	if len(c.AuthorizedContracts) == 0 && c.GoBinary == "" && c.LayaPython == "" && c.LayaHome == "" {
 		return nil
 	}
 	if !filepath.IsAbs(c.GoBinary) || !filepath.IsAbs(stateRoot) || adapter == nil {
@@ -42,6 +42,14 @@ func (w *QueueWorker) ConfigureImplementation(c config.Implementation, stateRoot
 		decision = NewLayaDecisionAdapter(LocalLayaProcess{PythonExecutable: c.LayaPython, Home: c.LayaHome})
 	}
 	c.AuthorizedContracts = append([]string(nil), c.AuthorizedContracts...)
+	if len(w.doerProtectedPaths) == 0 {
+		w.doerProtectedPaths = []string{stateRoot, c.GoBinary}
+		for _, p := range []string{c.LayaPython, c.LayaHome} {
+			if p != "" {
+				w.doerProtectedPaths = append(w.doerProtectedPaths, p)
+			}
+		}
+	}
 	w.implementation = &ImplementationController{config: c, root: filepath.Join(stateRoot, "persistence", "fleet-v1"), adapter: adapter, decision: decision}
 	return nil
 }

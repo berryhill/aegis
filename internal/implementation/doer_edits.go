@@ -159,6 +159,13 @@ func applyOneDoerEdit(ctx context.Context, root *os.Root, edit Edit, admit Admit
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	// Temporary bytes are not an authority grant to publish the target.
+	if err := admit(ctx, "write:"+edit.Path); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := parent.Rename(temp, name); err != nil {
 		return fmt.Errorf("rename Doer edit: %w", err)
 	}

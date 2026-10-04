@@ -1,0 +1,58 @@
+package consoleweb
+
+templ DoerSetupPage(m DoerSetupModel, csrf string) {
+ <section aria-label="Contextual Doer setup">
+  <h1>Set up this retained Doer draft</h1>
+  <p>No setup action publishes a Loop or creates a Run intent. Each consent and Apply is separate.</p>
+  <a href={ templ.URL(m.DraftURL) }>Return to the same retained draft</a>
+  <a href={ templ.URL(m.SetupURL) }>Review fresh setup</a>
+	@DoerContinuationEntry(m.DraftID, csrf)
+	if m.Contract != "" {
+		<h2>Retained task and output contract</h2><pre>{ m.Contract }</pre>
+	}
+	if m.HostStatus != "" {
+		<h2>Independent host-write decision</h2><p>{ m.HostStatus }</p>
+		<form method="post" action="/console/loops/doer/setup"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="draft_id" value={ m.DraftID }/><input type="hidden" name="action" value="host-review"/><button type="submit">Review exact host-write contract</button></form>
+	}
+  if m.Message != "" {
+   <p role="status">{ m.Message }</p>
+  }
+  if m.Current != "" {
+   <h2>Exact current Agent and charter binding</h2><pre>{ m.Current }</pre>
+  }
+  for _, ch := range m.Charters {
+   <details><summary>Imported canonical successor charter</summary><pre>{ ch.Details }</pre></details>
+   <form method="post" action="/console/loops/doer/setup">
+    <input type="hidden" name="csrf" value={ csrf }/>
+    <input type="hidden" name="draft_id" value={ m.DraftID }/>
+    <input type="hidden" name="action" value="successor-review"/>
+    <input type="hidden" name="charter" value={ ch.Ref }/>
+    <button type="submit">Review exact successor and retained draft rebind</button>
+   </form>
+  }
+  if m.Preview != "" {
+   <h2>Exact proposal: all effects and per-stanza grants</h2><pre>{ m.Preview }</pre>
+  }
+  if m.Approval != "" {
+   <h2>Authoritative independent decision</h2><pre>{ m.Approval }</pre>
+  }
+  if m.Receipt != "" {
+   <form method="post" action="/console/loops/doer/setup">
+    <input type="hidden" name="csrf" value={ csrf }/>
+    <input type="hidden" name="draft_id" value={ m.DraftID }/>
+    <input type="hidden" name="receipt" value={ m.Receipt }/>
+    <button name="action" value="confirm" type="submit">{ m.ConfirmLabel }</button>
+    if m.ConfirmLabel == "Approve this exact provisioning plan" {
+     <button name="action" value="reject" type="submit">Reject exact plan</button>
+    }
+   </form>
+  } else if !m.Provisioned {
+   <form method="post" action="/console/loops/doer/setup">
+    <input type="hidden" name="csrf" value={ csrf }/>
+    <input type="hidden" name="draft_id" value={ m.DraftID }/>
+    <input type="hidden" name="action" value="preview"/>
+    <button type="submit">Preview exact current provisioning plan (no consent)</button>
+   </form>
+  }
+ </section>
+}

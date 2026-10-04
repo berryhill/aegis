@@ -1,5 +1,7 @@
 # Five-Minute Quickstart
 
+The guided Agent → Doer journey is a [source candidate](DOER_LOOP.md#guided-authoring-and-readiness-source-candidate), not part of the five-minute no-key proof. Retained drafts, readiness and each contextual approval remain separate from publication and Run. Do not start a real companion, model or service just to validate this quickstart; [remaining acceptance gates](implementation/issue-281-launch-review.md) are explicit.
+
 For fixed-output v2 authoring, see [Executable hello](EXECUTABLE_HELLO.md). Runtime preparation and execution remain separate authenticated operations; the five-minute no-key path below is unchanged.
 
 For code-task authoring rather than the no-key substrate demo, see [Verified implementation](VERIFIED_IMPLEMENTATION.md): build with `./scripts/build-source.sh ./aegis`, then `./aegis loops implementation --help`. Optional `doer.v1` is an exact-contract mode, not part of this no-key path; it requires separately approved controller configuration and a preinstalled local Laya checkpoint. Drafting and inactive publication require no execution authorization. Never use `go run` as a build-only check.

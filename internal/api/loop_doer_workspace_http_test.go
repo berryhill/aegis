@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 
 	"os"
 	"regexp"
@@ -57,6 +58,8 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 	values.Set("csrf", csrf)
 	values.Set("workspace", t.TempDir())
 	values.Set("publication_key", "http-doer-publish")
+	values.Set("draft_id", "")
+	values.Set("draft_version", "0")
 	request, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/doer/preview", strings.NewReader(values.Encode()))
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +77,30 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 	}
 	if !bytes.Contains(body, []byte("Agent revision")) || !bytes.Contains(body, []byte("Agent digest")) || !bytes.Contains(body, []byte(agent.Revision.Digest)) {
 		t.Fatal("confirmation omitted exact publisher Agent revision or digest")
+	}
+	// This Registry-only fixture intentionally has no imported exact charter.
+	for _, want := range []string{"Before publication", "This candidate is not advertised as runnable", "exact_charter_unavailable", "Return to this retained draft"} {
+		if !bytes.Contains(body, []byte(want)) {
+			t.Fatalf("registry-only preview omitted readiness or retention: %s", want)
+		}
+	}
+	draftLink := regexp.MustCompile(`href="(/console/loops/doer\?draft_id=doerdraft-[a-f0-9]{32})"`).FindSubmatch(body)
+	if len(draftLink) != 2 {
+		t.Fatal("review did not retain a principal-scoped draft")
+	}
+	resumed, err := client.Get("http://" + address + string(draftLink[1]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumedBody, err := io.ReadAll(resumed.Body)
+	_ = resumed.Body.Close()
+	if err != nil || resumed.StatusCode != http.StatusOK {
+		t.Fatalf("draft resume status=%d err=%v", resumed.StatusCode, err)
+	}
+	for _, want := range []string{values.Get("task"), values.Get("workspace"), values.Get("verify_file"), `name="draft_version" value="1"`, `name="max_attempts"`, `name="publication_key" value="doerpub-`} {
+		if !bytes.Contains(resumedBody, []byte(want)) {
+			t.Fatalf("resumed draft lost operator input or stable publication identity: %s", want)
+		}
 	}
 	match := regexp.MustCompile(`name="intent_id" value="([A-Za-z0-9-]+)"`).FindSubmatch(body)
 	if len(match) != 2 {
@@ -126,8 +153,73 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 	}
 	confirmationBody, err := io.ReadAll(confirmed.Body)
 	_ = confirmed.Body.Close()
-	if err != nil || confirmed.StatusCode != http.StatusOK || !bytes.Contains(confirmationBody, []byte("Open published Loop to run it")) || !bytes.Contains(confirmationBody, []byte("record_key=doer-task%3A1")) {
+	if err != nil || confirmed.StatusCode != http.StatusOK || !bytes.Contains(confirmationBody, []byte("Inspect exact published Loop")) || !bytes.Contains(confirmationBody, []byte("record_key=doer-task%3A1")) {
 		t.Fatalf("exact published Loop link missing: status=%d err=%v", confirmed.StatusCode, err)
+	}
+	for _, want := range []string{`action="/console/loops/run?loop_id=doer-task"`, `Run published Loop`, `name="digest" value="` + readback.Published.Revision.Digest + `"`, `name="revision" value="1"`, `name="csrf" value="` + csrf + `"`} {
+		if !bytes.Contains(confirmationBody, []byte(want)) {
+			t.Fatalf("publication did not retain exact inline Run binding: %s", want)
+		}
+	}
+	runKey := regexp.MustCompile(`name="idempotency_key" value="(loop-run-[a-f0-9]{32})"`).FindSubmatch(confirmationBody)
+	if len(runKey) != 2 {
+		t.Fatal("inline Run has no recovery identity")
+	}
+	inspector, err := client.Get("http://" + address + consoleRecordURL(consoleLoops, "doer-task:1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspectorBody, err := io.ReadAll(inspector.Body)
+	_ = inspector.Body.Close()
+	if err != nil || inspector.StatusCode != http.StatusOK || !bytes.Contains(inspectorBody, runKey[1]) {
+		t.Fatal("publication-to-inspector navigation substituted the retained Run identity")
+	}
+	inlineValues := url.Values{"csrf": {csrf}, "revision": {"1"}, "digest": {readback.Published.Revision.Digest}, "idempotency_key": {string(runKey[1])}}
+	var blockedOperation []byte
+	for n := 0; n < 2; n++ {
+		run, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/run?loop_id=doer-task", strings.NewReader(inlineValues.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		run.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		run.Header.Set("Origin", "http://"+address)
+		result, err := client.Do(run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resultBody, err := io.ReadAll(result.Body)
+		_ = result.Body.Close()
+		if err != nil || result.StatusCode != http.StatusOK || !bytes.Contains(resultBody, []byte("exact_charter_unavailable")) || !bytes.Contains(resultBody, runKey[1]) {
+			t.Fatalf("inline Run failed to return its authoritative blocker/key: status=%d err=%v", result.StatusCode, err)
+		}
+		operation := regexp.MustCompile(`request_id: (loopq-[a-f0-9]{32})`).FindSubmatch(resultBody)
+		if len(operation) != 2 {
+			t.Fatalf("blocked Run lacks authoritative request identity: %s", resultBody)
+		}
+		if n == 0 {
+			blockedOperation = append([]byte(nil), operation[1]...)
+		} else if !bytes.Equal(blockedOperation, operation[1]) {
+			t.Fatal("same-key Run replay created another request")
+		}
+	}
+	view, err := svc.GetLoopViewAs(context.Background(), subject, "doer-task", 1)
+	if err != nil || view.Lifecycle.State != "draft" || len(view.History) != 0 {
+		t.Fatal("registry-only Run activated an immutable draft")
+	}
+	confirmationAgain, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/execute", strings.NewReader("csrf="+csrf+"&intent_id="+string(match[1])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmationAgain.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	confirmationAgain.Header.Set("Origin", "http://"+address)
+	again, err := client.Do(confirmationAgain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	againBody, err := io.ReadAll(again.Body)
+	_ = again.Body.Close()
+	if err != nil || again.StatusCode != http.StatusOK || !bytes.Contains(againBody, runKey[1]) {
+		t.Fatal("confirmation replay rotated the execution identity")
 	}
 	if _, err := svc.FleetCommandAuthorityAs(context.Background(), subject); err == nil {
 		t.Fatal("template publication silently granted runtime authority")

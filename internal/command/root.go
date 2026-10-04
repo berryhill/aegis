@@ -248,6 +248,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		openedAuthority = authority
 		h := hermes.New(cfg.HermesExecutable, deps.Logger)
 		service := app.New(cfg, st, authority, authority, h, deps.Logger)
+		service.ConfigFile = o.configFile
 		// A configured credential authority is part of the serve/manager authority
 		// contract. It may not be silently erased when custody or repository open
 		// fails: doing so would publish process readiness while deterministic
@@ -316,6 +317,14 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		if err := validateExecutionProfile(deps.Profile, profileLayout, o, cmd.Name() == "reset"); err != nil {
 			return usage(err)
+		}
+		if cmd.Name() == "doer-approval-companion" && cmd.Parent() == root {
+			// Narrow internal IPC adapter: no lifecycle/store constructor. Profile
+			// validation above and the adapter's exact config/transport gates remain.
+			if o.target != "" || updateAlias {
+				return usage(errors.New("internal approval companion cannot select a target or root action"))
+			}
+			return nil
 		}
 		if o.target != "" {
 			return nil // Online commands must not inspect or open local authority stores.
@@ -496,6 +505,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, deps.Profile), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, func(cmd *cobra.Command) error {
 		return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
 	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater, deps.UserService, deps.GatewayImageObserver, o), credentialBridgeCmd())
+	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {

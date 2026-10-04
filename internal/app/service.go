@@ -40,6 +40,7 @@ var (
 
 type Service struct {
 	Config            config.Config
+	ConfigFile        string // exact owning config path; non-secret companion instance selector
 	Store             *store.Store
 	Authority         core.AuthorityRepository
 	AuthorityCommands core.AuthorityCommandRepository

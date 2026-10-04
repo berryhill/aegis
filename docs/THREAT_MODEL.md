@@ -1,5 +1,11 @@
 # Aegis MVP Threat Model
 
+## Guided Doer draft and contextual approval threats
+
+A stale tab must not overwrite a newer retained draft: edits use version CAS and publication reloads exact Agent/Loop bindings and the server-held key. A readiness result cannot authorize execution or silently repair an unusable model. An independently approved successor preserves immutable predecessors and creates new exact draft publication bindings; old rejected/accepted Run intents are not retargeted. Host consent separately binds the exact selected-file contract and expires within 24 hours, with signed custody reloaded before effects; changing the task, workspace, paths or assertion changes the contract. Existing configured allowlists are not rewritten by this path.
+
+Native continuation must retain the password-authenticated browser requester and the original genuinely authenticated Unix human as separate identities. A separate companion confirmation process and protected Unix transport are required; relabeling cookies, deriving consent from a model or calling the daemon through its own socket cannot substitute. Integration and human/browser acceptance remain pending in the source candidate. No credential/model grant, complete same-account isolation or host confinement is claimed. Raw UTF-8 byte assertions must reject extra newline/whitespace; legacy trimmed contracts keep their existing meaning. See [Doer source contract](DOER_LOOP.md#guided-authoring-and-readiness-source-candidate) and [launch gates](implementation/issue-281-launch-review.md).
+
 ## Local inference drift and process custody
 
 Local model digest rechecks detect drift but do not atomically pin the server model through inference. Host processes and disposable homes are not sandboxes. Hello claims bind exact UTF-8 output without newline before execution; only independently verified persisted artifacts may satisfy them.

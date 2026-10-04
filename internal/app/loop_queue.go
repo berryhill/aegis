@@ -359,49 +359,9 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 	if agent.Digest != input.Agent.Digest {
 		return "", ErrDenied
 	}
-	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
-	if err != nil || charter.Digest != agent.Charter.Digest {
-		return "exact_charter_unavailable", nil
-	}
-	selection, err := s.Select(charter, subject, "", core.Environment{Name: "local"})
-	if err != nil || selection.Selected == nil {
-		return "session_selection_" + selection.Reason, nil
-	}
-	if selection.Selected.Hermes.Model == "" || selection.Selected.Hermes.Model == "none" {
-		return "doer_model_required", nil
-	}
-	if len(selection.Selected.Hermes.Toolsets) != 0 || len(selection.Selected.Grant.Tools) != 0 || len(selection.Selected.Scopes.Credentials) != 0 {
-		return "doer_tool_free_authority_required", nil
-	}
-	// A receipt for an unusable exact charter cannot make this task run.
-	// Report the foundational charter action before suggesting an approval
-	// for that obsolete authority; no activation or Queue item is created.
-	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
-	if err != nil {
-		return "provisioning_receipt_unavailable", nil
-	}
-	if !verified {
-		return "provisioning_receipt_missing", nil
-	}
-	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	runtime, runtimeErr := s.Runtime(runtimeCtx)
-	cancel()
-	if runtimeErr != nil {
-		return "runtime_unavailable_or_unsupported", nil
-	}
-	if runtimeSatisfies(runtime.Version, charter.Charter.Runtime.VersionConstraint) != nil {
-		return "runtime_version_unsupported", nil
-	}
-	if s.QueueWorker == nil {
-		return "implementation_prerequisite_required", nil
-	}
-	if err := s.QueueWorker.ValidateDoerAvailability(ctx, view.Revision, agent); err != nil {
-		if errors.Is(err, orchestration.ErrLocalLayaUnavailable) {
-			return "local_laya_unavailable", nil
-		}
-		return "implementation_prerequisite_required", nil
-	}
-	return "", nil
+	readiness := newDoerReadiness()
+	s.checkDoerExecutionReadiness(ctx, subject, view.Revision, agent, true, &readiness)
+	return readiness.Reason, nil
 }
 
 func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Subject, result QueueLoopResult, reason string) (QueueLoopResult, error) {

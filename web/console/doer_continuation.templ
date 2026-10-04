@@ -1,0 +1,37 @@
+package consoleweb
+
+import "net/url"
+import "strconv"
+
+templ DoerContinuationEntry(draftID, csrf string) {
+ if draftID != "" {
+ <form method="post" action="/console/loops/doer/continuation"><input type="hidden" name="csrf" value={ csrf }/><input type="hidden" name="draft_id" value={ draftID }/><input type="hidden" name="action" value="review"/><button type="submit">Review exact Run continuation (no dialog)</button></form>
+ }
+}
+
+templ DoerContinuationPage(m DoerContinuationModel, csrf string) {
+ <section aria-label="Exact independent Doer continuation">
+  <h1>Review this exact Doer Run continuation</h1>
+  <p>This browser review is not approval. Only the independent installed native companion can request explicit human confirmation. Approval does not grant host writes or bypass runtime prerequisites.</p>
+  <pre>{ m.Details }</pre>
+  <p role="status">{ m.Status }</p>
+  <a href={ templ.URL("/console/loops/doer?draft_id="+url.QueryEscape(m.DraftID)) }>Return to the same retained draft</a>
+  <form method="post" action="/console/loops/doer/continuation">
+   <input type="hidden" name="csrf" value={ csrf }/>
+   <input type="hidden" name="intent_id" value={ m.ID }/>
+   <button type="submit" name="action" value="request-local-review">Request independent local review</button>
+   <button type="submit" name="action" value="observe">Observe signed decision (no dialog)</button>
+  </form>
+  if m.CanRun {
+   <form method="post" action={ templ.URL(m.Run.URL) }>
+    <input type="hidden" name="csrf" value={ csrf }/>
+    <input type="hidden" name="revision" value={ strconv.FormatUint(m.Run.Revision,10) }/>
+    <input type="hidden" name="digest" value={ m.Run.Digest }/>
+    <input type="hidden" name="idempotency_key" value={ m.Run.Key }/>
+    <button type="submit">Run exact published Loop with original request key</button>
+   </form>
+  } else {
+   <p>Run is not advertised as ready: { m.RunBlocker }. Return to this same draft for any remaining independent prerequisite or publication.</p>
+  }
+ </section>
+}

@@ -13,6 +13,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -878,6 +879,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleAgents, agentID))
 	})
+	registerDoerSetupRoutes(e, svc, consoleManager)
+	doerPortal := NewDoerContinuationPortal(svc, consoleManager)
+	doerPortal.RegisterBrowser(e)
 	e.GET("/console/loops/doer", func(c *echo.Context) error {
 		if err := consoleHeaders(c, false); err != nil {
 			return consoleError(err)
@@ -901,6 +905,23 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				continue
 			}
 			composer.Publishers = append(composer.Publishers, consoleweb.LoopPublisherModel{ID: workspace.Agent.ID, Revision: fmt.Sprintf("r%d", workspace.Agent.Revision), Digest: workspace.Agent.Digest, Runtime: agent.Revision.Runtime.Runtime})
+		}
+		if id := c.QueryParam("draft_id"); id != "" {
+			draft, err := svc.ReadDoerDraftAs(c.Request().Context(), subject, id)
+			if err != nil {
+				return err
+			}
+			composer.DoerDraft = consoleDoerDraft(draft)
+		} else {
+			loopID, err := randomConsoleID("doer")
+			if err != nil {
+				return err
+			}
+			publicationKey, err := randomConsoleID("doer-draft")
+			if err != nil {
+				return err
+			}
+			composer.DoerDraft = consoleweb.DoerDraftModel{Version: "0", LoopID: loopID, Revision: "1", PublicationKey: publicationKey, Assertion: "bytes", MaxAttempts: "2"}
 		}
 		page.DoerComposer = composer
 		content, err := renderConsole(c.Request().Context(), consoleweb.Document(page))
@@ -1265,7 +1286,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
-	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager))
+	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput
@@ -1310,6 +1331,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		commandID := loopPublishCommandID
 		var publisherRevision uint64
 		var publisherDigest string
+		var doerReadiness app.DoerCandidateReadiness
 		if form.Revision.Doer != nil {
 			workspace, err := svc.RegisteredAgentWorkspaceAs(c.Request().Context(), subject, form.PublisherID)
 			if err != nil {
@@ -1317,6 +1339,36 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			}
 			commandID = loopDoerWorkspaceCommandID
 			publisherRevision, publisherDigest = workspace.Agent.Revision, workspace.Agent.Digest
+			if form.DraftID != "" {
+				stored, err := svc.ReadDoerDraftAs(c.Request().Context(), subject, form.DraftID)
+				if err != nil || stored.Version != form.DraftVersion || stored.Agent != workspace.Agent || stored.PublicationKey != form.PublicationKey {
+					return app.ErrConflict
+				}
+			}
+			if form.RetainDraft {
+				creationKey := ""
+				if form.DraftID == "" {
+					creationKey = form.PublicationKey
+				}
+				draft, err := svc.SaveDoerDraftAs(c.Request().Context(), subject, app.DoerDraftInput{CreationKey: creationKey, ID: form.DraftID, ExpectedVersion: form.DraftVersion, Agent: workspace.Agent, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Contract: *form.Revision.Doer})
+				if err != nil {
+					return err
+				}
+				form.DraftID, form.DraftVersion, form.PublicationKey = draft.ID, draft.Version, draft.PublicationKey
+			}
+			doerReadiness, err = svc.ReadDoerCandidateReadinessAs(c.Request().Context(), subject, app.DoerCandidateReadinessInput{Agent: workspace.Agent, Candidate: form.Revision})
+			if err != nil {
+				return err
+			}
+			if form.DraftID != "" {
+				stored, readErr := svc.ReadDoerDraftAs(c.Request().Context(), subject, form.DraftID)
+				if readErr != nil {
+					return readErr
+				}
+				if admitted, ok := doerPortal.ApprovedDraftReadiness(c.Request().Context(), subject, sessionID, stored); ok {
+					doerReadiness = admitted
+				}
+			}
 		}
 		head := emptyLoopHeadDigest(form.Revision.LoopID)
 		revisions, err := svc.FleetRepository.ListLoopRevisions(c.Request().Context())
@@ -1351,8 +1403,13 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			assertion := "regular-file presence"
 			if contract.ExpectedText != nil {
 				assertion = "exact UTF-8 text after trimming"
+				if contract.ExactBytes {
+					assertion = "exact raw UTF-8 bytes (no trimming)"
+				}
 			}
 			model.DoerReview = &consoleweb.DoerReviewModel{PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey, Task: contract.Task, Workspace: contract.Workspace, WritableFiles: append([]string(nil), contract.WritableFiles...), VerifyFile: contract.VerifyFile, Assertion: assertion, ExpectedText: contract.ExpectedText, ContractDigest: digest, MaxAttempts: contract.MaxAttempts}
+			consoleDoerReadiness(model.DoerReview, doerReadiness, form.DraftID)
+			model.DoerReview.CandidateDigest = form.Revision.Digest
 		}
 		page := consoleweb.PageModel{Authenticated: true, CSRF: form.CSRF, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandPreview: model}
 		return renderLoopCommandPage(c, page, http.StatusOK)
@@ -1407,6 +1464,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleError(err)
 		}
 		resultURL, resultLabel := "", ""
+		var publishedRun *consoleweb.PublishedDoerRunModel
 		if receipt.CommandID == loopDoerWorkspaceCommandID {
 			var readback struct {
 				Published app.PublishedLoop `json:"published"`
@@ -1415,9 +1473,16 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				return console.ErrCommandFailed
 			}
 			resultURL = consoleRecordURL(consoleLoops, readback.Published.Revision.LoopID+":"+strconv.FormatUint(readback.Published.Revision.Revision, 10))
-			resultLabel = "Open published Loop to run it"
+			resultLabel = "Inspect exact published Loop"
+			revision := readback.Published.Revision
+			record := &consoleweb.RecordModel{Label: revision.LoopID, Revision: "r" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest}
+			key, err := consoleLoopRunKey(c, subject, record)
+			if err != nil {
+				return err
+			}
+			publishedRun = &consoleweb.PublishedDoerRunModel{URL: "/console/loops/run?loop_id=" + url.QueryEscape(revision.LoopID), CSRF: csrf, Key: key, Digest: revision.Digest, Revision: revision.Revision}
 		}
-		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback), ResultURL: resultURL, ResultLabel: resultLabel}}
+		page := consoleweb.PageModel{Authenticated: true, CSRF: csrf, Surface: consoleweb.SurfaceModel{Domain: string(consoleLoops), Title: "Loops"}, CommandReceipt: &consoleweb.OperationReceiptModel{Title: receipt.CommandID, Outcome: receipt.Outcome, OperationID: receipt.IntentID, RecordedAt: receipt.CommittedAt.UTC().Format(time.RFC3339), ReasonCode: receipt.ReasonCode, Message: "Exact authoritative readback: " + string(receipt.Readback), ResultURL: resultURL, ResultLabel: resultLabel, PublishedDoerRun: publishedRun}}
 		return renderLoopCommandPage(c, page, http.StatusOK)
 	})
 	e.POST("/console/api/commands/preview", func(c *echo.Context) error {
@@ -1529,6 +1594,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	e.POST("/console/logout", logout)
 	g := e.Group("/v1")
 	g.Use(protected)
+	doerPortal.RegisterNative(g)
 	g.POST("/manager/sessions", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {

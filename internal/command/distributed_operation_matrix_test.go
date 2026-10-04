@@ -163,7 +163,13 @@ func TestDistributedOperationMatrix(t *testing.T) {
 
 func distributedSameKeys(t *testing.T, label string, declared, actual map[string]string) {
 	t.Helper()
-	var missing, stale []string
+	missing, stale := distributedKeyDrift(declared, actual)
+	if len(missing)+len(stale) > 0 {
+		t.Errorf("%s coverage drift; missing=%q stale=%q", label, missing, stale)
+	}
+}
+
+func distributedKeyDrift(declared, actual map[string]string) (missing, stale []string) {
 	for key := range actual {
 		if _, ok := declared[key]; !ok {
 			missing = append(missing, key)
@@ -176,8 +182,19 @@ func distributedSameKeys(t *testing.T, label string, declared, actual map[string
 	}
 	sort.Strings(missing)
 	sort.Strings(stale)
-	if len(missing)+len(stale) > 0 {
-		t.Errorf("%s coverage drift; missing=%q stale=%q", label, missing, stale)
+	return missing, stale
+}
+
+func TestDistributedCoverageRejectsNewAndRemovedRoutes(t *testing.T) {
+	declared := map[string]string{"GET /console/loops/doer/setup": "reviewed"}
+	actual := map[string]string{"GET /console/loops/doer/new": "new literal registration"}
+	missing, stale := distributedKeyDrift(declared, actual)
+	if len(missing) != 1 || missing[0] != "GET /console/loops/doer/new" || len(stale) != 1 || stale[0] != "GET /console/loops/doer/setup" {
+		t.Fatalf("route drift escaped coverage: missing=%q stale=%q", missing, stale)
+	}
+	missing, stale = distributedKeyDrift(declared, declared)
+	if len(missing)+len(stale) != 0 {
+		t.Fatalf("unchanged routes drifted: missing=%q stale=%q", missing, stale)
 	}
 }
 
@@ -295,6 +312,14 @@ func distributedHTTPRegistrations(t *testing.T, repo string) map[string]string {
 					t.Fatal(err)
 				}
 				routePaths = append(routePaths, value)
+			} else if variable, ok := call.Args[0].(*ast.Ident); ok {
+				// Only the reviewed function-local setup constant is supported.
+				// Do not resolve arbitrary variables from the package-wide map.
+				value, ok := distributedDoerSetupPath(file, call, variable, receiver.Name, method)
+				if !ok {
+					t.Fatal("unreviewed dynamic route")
+				}
+				routePaths = append(routePaths, value)
 			} else {
 				expression, ok := call.Args[0].(*ast.BinaryExpr)
 				if !ok || expression.Op != token.ADD || receiver.Name != "e" || method != "GET" {
@@ -332,4 +357,98 @@ func distributedHTTPRegistrations(t *testing.T, repo string) map[string]string {
 		t.Fatalf("registration layout drift: /v1 groups=%d dynamic console loops=%d", groups, dynamic)
 	}
 	return routes
+}
+
+// Resolve only the exact reviewed, lexically bound const declaration. A new
+// route, mutable binding, shadow or registration layout requires fresh review.
+func distributedDoerSetupPath(file *ast.File, call *ast.CallExpr, variable *ast.Ident, receiver, method string) (string, bool) {
+	if receiver != "e" || (method != "GET" && method != "POST") || variable.Name != "base" || variable.Obj == nil || variable.Obj.Kind != ast.Con {
+		return "", false
+	}
+	for _, declaration := range file.Decls {
+		fn, ok := declaration.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "registerDoerSetupRoutes" || fn.Body == nil {
+			continue
+		}
+		// Registrations and the binding must be direct children of this function,
+		// not an unrelated function, nested loop or shadowing handler closure.
+		registered := false
+		for _, statement := range fn.Body.List {
+			if expression, ok := statement.(*ast.ExprStmt); ok && expression.X == call {
+				registered = true
+			}
+		}
+		if !registered {
+			continue
+		}
+		for _, statement := range fn.Body.List {
+			decl, ok := statement.(*ast.DeclStmt)
+			if !ok {
+				continue
+			}
+			gen, ok := decl.Decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.CONST || len(gen.Specs) != 1 {
+				continue
+			}
+			spec, ok := gen.Specs[0].(*ast.ValueSpec)
+			if !ok || variable.Obj.Decl != spec || len(spec.Names) != 1 || spec.Names[0].Name != "base" || len(spec.Values) != 1 {
+				continue
+			}
+			literal, ok := spec.Values[0].(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING || spec.Pos() >= call.Pos() {
+				return "", false
+			}
+			value, err := strconv.Unquote(literal.Value)
+			return value, err == nil && value == "/console/loops/doer/setup"
+		}
+	}
+	return "", false
+}
+
+func TestDistributedDoerSetupPathFailsClosed(t *testing.T) {
+	for _, test := range []struct {
+		name, source string
+		accepted     bool
+	}{
+		{"get", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/setup"; e.GET(base, handler) }`, true},
+		{"post", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/setup"; e.POST(base, handler) }`, true},
+		{"new-route", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/new"; e.GET(base, handler) }`, false},
+		{"mutable", `func registerDoerSetupRoutes() { var base = "/console/loops/doer/setup"; e.GET(base, handler) }`, false},
+		{"package-constant", `const base = "/console/loops/doer/setup"; func registerDoerSetupRoutes() { e.GET(base, handler) }`, false},
+		{"other-function", `func other() { const base = "/console/loops/doer/setup"; e.GET(base, handler) }`, false},
+		{"new-method", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/setup"; e.DELETE(base, handler) }`, false},
+		{"new-receiver", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/setup"; g.GET(base, handler) }`, false},
+		{"loop", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/setup"; for range values { e.GET(base, handler) } }`, false},
+		{"shadow", `func registerDoerSetupRoutes() { const base = "/console/loops/doer/setup"; { const base = "/console/loops/doer/new"; e.GET(base, handler) } }`, false},
+		{"computed", `func registerDoerSetupRoutes() { const base = "/console/loops/" + "doer/setup"; e.GET(base, handler) }`, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			file, err := parser.ParseFile(token.NewFileSet(), "fixture.go", "package api; "+test.source, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seen := 0
+			ast.Inspect(file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				selector, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				receiver := selector.X.(*ast.Ident)
+				variable := call.Args[0].(*ast.Ident)
+				path, accepted := distributedDoerSetupPath(file, call, variable, receiver.Name, selector.Sel.Name)
+				if accepted != test.accepted || (accepted && path != "/console/loops/doer/setup") {
+					t.Fatalf("path=%q accepted=%v want=%v", path, accepted, test.accepted)
+				}
+				seen++
+				return true
+			})
+			if seen != 1 {
+				t.Fatalf("want one route, got %d", seen)
+			}
+		})
+	}
 }

@@ -1,5 +1,9 @@
 # Security Policy
 
+## Guided Doer source-candidate boundary
+
+Retained drafts and readiness observations grant no authority. Successor charter/Agent, exact provisioning and host-write consent require independent fresh authenticated decisions. Signed host consent is bounded to the exact deployment, stable owner, Agent and selected-file contract for at most 24 hours, reloaded before effects; the existing explicit controller allowlist remains supported. It grants no model, credential, session or native-test authority. Native continuation must preserve the browser requester separately from the human confirmed by a separate process over protected Linux Unix peer credentials; neither cookie relabeling nor a daemon self-connection is authentication. Companion integration is still a source acceptance gate, not an installed capability claim. See [contract and pending evidence](docs/DOER_LOOP.md#guided-authoring-and-readiness-source-candidate). These same-account controls do not provide complete host confinement.
+
 ## Local inference and hello boundary
 
 Fixed-output hello policy is precommitted, not model-issued evidence. Exact local model rechecks are drift detection, not atomic pinning across inference. Disposable homes and process-group cleanup are process custody, not a host sandbox. Live provider/model acceptance remains unverified.

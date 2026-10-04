@@ -35,6 +35,30 @@ func (c *ImplementationController) authorizeDoer(contract loop.DoerContract, age
 	return errors.New("Doer contract not authorized by operator")
 }
 
+// SetDoerHostApprovalResolver is startup-only controller wiring. It does not
+// derive a grant; nil denies unless the unchanged config allowlist matches.
+func (w *QueueWorker) SetDoerHostApprovalResolver(resolve func(context.Context, loop.DoerContract, registry.AgentRevision) error) {
+	w.doerHostApproval = resolve
+}
+func (w *QueueWorker) authorizeDoer(ctx context.Context, c loop.DoerContract, a registry.AgentRevision) error {
+	if ctx == nil || ctx.Err() != nil {
+		return ErrDoerHostApprovalRequired
+	}
+	if w.implementation == nil || a.Runtime.Adapter != "hermes" || a.Runtime.Runtime != "hermes-agent" {
+		return ErrDoerHostApprovalRequired
+	}
+	if ValidateDoerProtectedWorkspace(c, w.effectiveDoerProtectedPaths()) != nil {
+		return ErrDoerUnsafeWorkspace
+	}
+	if w.implementation.authorizeDoer(c, a) == nil {
+		return nil
+	}
+	if w.doerHostApproval != nil && w.doerHostApproval(ctx, c, a) == nil {
+		return nil
+	}
+	return ErrDoerHostApprovalRequired
+}
+
 func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base WorkResult, runtime RuntimeRequest, contract loop.DoerContract, preclaimGate LayaGate) (WorkResult, error) {
 	c := w.implementation
 	if c == nil || c.decision == nil || c.adapter == nil {
@@ -54,6 +78,9 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 	policy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: contract.VerifyFile, Mode: evidence.SelectedFilePresence}
 	if contract.ExpectedText != nil {
 		policy.Mode, policy.Text = evidence.SelectedFileText, *contract.ExpectedText
+		if contract.ExactBytes {
+			policy.Mode = evidence.SelectedFileExactBytes
+		}
 	}
 	policyDigest, err := policy.Digest()
 	if err != nil {
@@ -77,7 +104,7 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 		if p.State != queue.StateClaimed || p.ActiveClaimID != base.Claim.ClaimID || !w.now().Before(base.Claim.ExpiresAt) {
 			return &implementation.Halt{State: "expired"}
 		}
-		if err := c.authorizeDoer(contract, runtime.Participant); err != nil {
+		if err := w.authorizeDoer(ctx, contract, runtime.Participant); err != nil {
 			return err
 		}
 		decision, err := runtime.Admission.CheckRuntimeAdmission(ctx, runtime.Launch, w.now())

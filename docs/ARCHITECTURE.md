@@ -1,5 +1,30 @@
 # Aegis MVP Architecture
 
+## Guided Doer source-candidate approval boundaries
+
+```mermaid
+flowchart TD
+  Principal[Authenticated browser principal] --> Draft[Retained exact Agent/task/assertion draft + version CAS + publication key]
+  Draft --> Readiness[Authoring and execution readiness observation]
+  Readiness --> Reviews[Independent exact charter/Agent successor and provisioning reviews]
+  Reviews --> NewBinding[Archived predecessor + new exact draft publication bindings when authority changes]
+  Draft --> Host[Independent signed exact host-contract consent; at most 24h]
+  NewBinding --> Publish[Separate authenticated publication; inactive immutable Loop]
+  Draft --> Publish
+  Publish --> Run[Explicit exact-key Run request]
+  Principal -. pending integrated acceptance .-> Companion[Separate native CONFIRM companion process]
+  Companion -. protected Unix + original human SO_PEERCRED .-> Continuation[Signed exact continuation; browser requester kept separate]
+  Continuation -. no host/model/credential grant .-> Run
+  Host --> Reload[Reload signed custody or existing configured contract allowlist before effects]
+  Run --> Admission[Fresh exact runtime and claim/effect admission]
+  Reload --> Admission
+  Admission --> Worker[Bounded Laya/Hermes selected-file worker]
+  Worker --> Evidence[Independent artifact + receipt + pinned binding reload]
+  Evidence --> Disposition[Authoritative terminal disposition]
+```
+
+This additive diagram describes the issue 281 source candidate. Dashed companion edges are **pending integration proof**, not installed or live-source acceptance. Drafts/readiness are non-authorizing; contextual successor, provisioning, host and continuation decisions are independent. Immutable predecessors and old Run intents are never retargeted. `exact_bytes` binds raw UTF-8 comparisons, while omitted/false retains legacy trimming. No edge grants credentials/model access or complete host confinement. See [the source contract](DOER_LOOP.md#guided-authoring-and-readiness-source-candidate) and [remaining gates](implementation/issue-281-launch-review.md).
+
 ## Fixed-output v2 hello path
 
 ```text
@@ -27,7 +52,7 @@ Optional `doer.v1` on the same v3 action adds a configured local Laya pre-gate a
 
 The separate selected-file v4 path begins with an executable-bundled, non-authorizing authoring template: CLI discovery or authenticated Loops-console discovery → operator inputs → canonical candidate preview → separately confirmed authenticated registered-Agent workspace publication of an inactive revision, without a runtime session. Template discovery does not seed fleet-v1 or change published Loop counts. A separate native v4 detail action sends one exact digest-bound, CSRF-protected request through the existing Loop/Graph/Queue controller and returns either a named blocker or authoritative Queue readback; a browser password subject cannot borrow a local-OS-only stanza. The closed immutable geometry then supports a bounded step runner: preclaim local Laya eligibility, Hermes edit proposal → Laya report judgment → independently verified selected file → diagnosis/retry or evidence-gated terminal disposition. Its cursor facts share the existing fleet-v1 implementation custody and project content-free ordered step metadata through authenticated Queue readback and the Queue detail's Doer cursor list. The Console preserves recorded verify → diagnosis → implement order without promoting a cursor step into success; only reloaded receipts and the terminal disposition decide that. A negative preclaim gate durably denies without creating an attempt; valid work retains one GraphRun, LoopExecution and Queue attempt. This is not general multi-node Graph scheduling or independent protected evidence custody. See [Doer Loop](DOER_LOOP.md).
 
-The single-request v4 queue path and direct lifecycle activation preflight an exact verified charter receipt, selectable tool-free model context, current Hermes runtime/version, controller contract allowlist, local checker/Laya custody, workspace path policy, and one bounded typed Laya response before a new activation, Graph or Queue mutation. That response's verdict grants no authority. A missing prerequisite returns a named non-executable blocker instead of manufacturing preparation; compatible recovery repeats the check, and worker admission independently repeats contract and runtime authority checks. Preflight does not issue a mandate or prove future model availability.
+The single-request v4 queue path and direct lifecycle activation preflight an exact verified charter receipt, selectable tool-free model context, current Hermes runtime/version, exact host-contract authorization (existing configured allowlist or independently signed consent), local checker/Laya custody, workspace path policy, and one bounded typed Laya response before a new activation, Graph or Queue mutation. That response's verdict grants no authority. A missing prerequisite returns a named non-executable blocker instead of manufacturing preparation; compatible recovery repeats the check, and worker admission independently repeats contract and runtime authority checks. Preflight does not issue a mandate or prove future model availability.
 
 The reusable v5 definition instead contains closed typed input ports and a fixed attempt budget, with no embedded task or workspace. The single-node Queue worker resolves exact Graph-run inputs into an operator-digest-authorized task contract before claim and rechecks that binding against immutable records at completion. The local draft builder never opens the authority store. The v4 Loop-queue shortcut rejects v5 before mutation; v5 still needs an independently approved exact per-run contract and Graph submission. The Console projects every drawable stored Loop transition, including cyclic feedback, from the immutable revision; SVG geometry and lifecycle display do not participate in execution admission. See [reusable typed v5](DOER_LOOP.md#reusable-typed-v5-definition).
 

@@ -72,7 +72,7 @@ func decodeConsoleLoopRunForm(request *http.Request) (consoleLoopRunForm, error)
 	return consoleLoopRunForm{CSRF: values.Get("csrf"), Revision: revision, Digest: values.Get("digest"), IdempotencyKey: key}, nil
 }
 
-func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.HandlerFunc {
+func consoleLoopRunHandler(svc *app.Service, manager *console.Manager, portals ...*DoerContinuationPortal) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		manager.ApplySecurityHeaders(c.Response().Header(), true)
 		form, err := decodeConsoleLoopRunForm(c.Request())
@@ -80,7 +80,7 @@ func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.Hand
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid Loop run form")
 		}
 		c.Request().Header.Set("X-CSRF-Token", form.CSRF)
-		subject, err := manager.AuthorizeMutation(c.Request())
+		subject, sessionID, err := manager.AuthorizeCommand(c.Request())
 		if err != nil {
 			return mapConsoleError(err)
 		}
@@ -100,10 +100,20 @@ func consoleLoopRunHandler(svc *app.Service, manager *console.Manager) echo.Hand
 		if err != nil || agent.Digest != publisher.Digest {
 			return app.ErrDenied
 		}
-		result, err := svc.QueueLoopAs(ctx, subject, app.QueueLoopInput{
+		run := app.QueueLoopInput{
 			Agent: app.RevisionReference(publisher.ID, publisher.Revision, publisher.Digest), Loop: app.RevisionReference(view.Revision.LoopID, view.Revision.Revision, view.Revision.Digest),
 			IdempotencyKey: form.IdempotencyKey, Activate: true,
-		})
+		}
+		var result app.QueueLoopResult
+		if len(portals) > 0 {
+			if pending, ok := portals[0].exact(ctx, subject, sessionID, run); ok {
+				result, err = svc.QueueDoerContinuationAs(ctx, subject, sessionID, pending.ApprovalID, pending.Review.Intent)
+			} else {
+				result, err = svc.QueueLoopAs(ctx, subject, run)
+			}
+		} else {
+			result, err = svc.QueueLoopAs(ctx, subject, run)
+		}
 		if err != nil && (result.RequestID == "" || errors.Is(err, app.ErrDenied) || app.IsFleetDenied(err) || errors.Is(err, app.ErrConflict) || app.IsFleetConflict(err)) {
 			return err
 		}

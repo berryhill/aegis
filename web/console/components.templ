@@ -29,10 +29,15 @@ templ Document(model PageModel) {
 				<main class="content" id="main" tabindex="-1">
 					<div id="workspace">
 						if model.Authenticated {
-							if model.LoopComposer != nil {
+							if model.DoerContinuation != nil {
+ @DoerContinuationPage(*model.DoerContinuation, model.CSRF)
+ } else if model.DoerSetup != nil {
+								@DoerSetupPage(*model.DoerSetup, model.CSRF)
+							} else if model.LoopComposer != nil {
 								@LoopComposerPage(*model.LoopComposer, model.CSRF)
 						} else if model.DoerComposer != nil {
 							@DoerComposerPage(*model.DoerComposer, model.CSRF)
+ @DoerContinuationEntry(model.DoerComposer.DoerDraft.ID, model.CSRF)
 							} else if model.CommandPreview != nil {
 								@CommandPreviewPage(*model.CommandPreview, model.CSRF)
 							} else if model.CommandReceipt != nil {
@@ -307,18 +312,18 @@ templ LoopComposerPage(model LoopComposerModel, csrf string) {
 }
 
 templ DoerComposerPage(model LoopComposerModel, csrf string) {
-	<section class="surface active"><h1>Draft selected-file Doer Loop</h1><p>Preview creates no Loop record. Confirmation repeats fresh authority admission.</p><a href="/console/loops">Back to Loops</a>
+	<section class="surface active"><h1>Write a Loop with an Agent</h1><p>Template: Doer · choose an Agent, enter one bounded task and output assertion, then review. Preview creates no Loop record. Review retains your draft but grants no execution authority.</p><a href="/console/loops">Back to Loops</a>
 	<form class="panel panel-body" method="post" action="/console/loops/doer/preview"><input type="hidden" name="csrf" value={ csrf }/>
-	<label>Enabled publisher<select name="publisher_id" required>
+	<input type="hidden" name="draft_id" value={ model.DoerDraft.ID }/><input type="hidden" name="draft_version" value={ model.DoerDraft.Version }/>
+	<label>Agent<select name="publisher_id" required>
 		for _, publisher := range model.Publishers {
-			<option value={ publisher.ID }>{ publisher.ID }</option>
+			<option value={ publisher.ID } selected?={ publisher.ID == model.DoerDraft.PublisherID }>{ publisher.ID }</option>
 		}
 	</select></label>
-	<label>Loop ID<input name="loop_id" required maxlength="128"/></label><label>Revision<input name="revision" type="number" min="1" required/></label>
-	<label>Previous digest<input name="previous_digest"/></label><label>Publication idempotency key<input name="publication_key" required maxlength="128"/></label>
-	<label>Task<textarea name="task" required maxlength="4096"></textarea></label><label>Absolute workspace<input name="workspace" required maxlength="1024"/></label>
-	<label>Writable relative files (one per line)<textarea name="writable_files" required></textarea></label><label>Selected verification file<input name="verify_file" required maxlength="255"/></label>
-	<label>File assertion<select name="assert_text"><option value="presence">File exists (presence only)</option><option value="exact">Expected UTF-8 text (blank means exact empty text)</option></select></label><label>Expected text<input name="expected_text" maxlength="4096"/></label><label>Maximum attempts (1–3)<input name="max_attempts" type="number" min="1" max="3" value="3" required/></label>
+	<input type="hidden" name="loop_id" value={ model.DoerDraft.LoopID }/><input type="hidden" name="revision" value={ model.DoerDraft.Revision }/><input type="hidden" name="previous_digest" value={ model.DoerDraft.PreviousDigest }/><input type="hidden" name="publication_key" value={ model.DoerDraft.PublicationKey }/>
+	<label>Task<textarea name="task" required maxlength="4096">{ model.DoerDraft.Task }</textarea></label><label>Absolute disposable workspace<input name="workspace" required maxlength="1024" value={ model.DoerDraft.Workspace }/></label>
+	<label>Writable relative files (one per line)<textarea name="writable_files" required>{ model.DoerDraft.WritableFiles }</textarea></label><label>Selected verification file<input name="verify_file" required maxlength="255" value={ model.DoerDraft.VerifyFile }/></label>
+	<label>File assertion<select name="assert_text"><option value="bytes" selected?={ model.DoerDraft.Assertion == "bytes" }>Exact raw UTF-8 bytes (no newline or whitespace added)</option><option value="presence" selected?={ model.DoerDraft.Assertion == "presence" }>File exists (presence only)</option><option value="exact" selected?={ model.DoerDraft.Assertion == "exact" }>Expected UTF-8 text after trimming (legacy)</option></select></label><label>Expected text<input name="expected_text" maxlength="4096" value={ model.DoerDraft.ExpectedText }/></label><label>Maximum attempts (1–3)<input name="max_attempts" type="number" min="1" max="3" value={ model.DoerDraft.MaxAttempts } required/></label>
 	<button class="primary" type="submit" disabled?={ len(model.Publishers) == 0 }>Preview exact publication</button></form></section>
 }
 
@@ -327,10 +332,33 @@ templ LoopTextarea(id, name, label, placeholder string, required bool) {
 }
 
 templ CommandPreviewPage(model CommandPreviewModel, csrf string) {
-	<section class="surface active" aria-labelledby="command-preview-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Review exact command</span><h1 id="command-preview-title">Confirm Loop mutation</h1><p>Preview is non-persistent. Confirmation repeats fresh authority and exact target admission.</p></div></div>
+	<section class="surface active" aria-labelledby="command-preview-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Review exact command</span><h1 id="command-preview-title">Confirm Loop mutation</h1>
+		if model.DoerReview != nil && model.DoerReview.DraftURL != "" {
+			<p>Your draft is retained. This short-lived confirmation grants no execution authority and repeats fresh exact target admission.</p>
+		} else {
+			<p>Preview is non-persistent. Confirmation repeats fresh authority and exact target admission.</p>
+		}
+	</div></div>
 		<dl class="exact-reference"><dt>Command</dt><dd>{ model.CommandID }</dd><dt>Target</dt><dd>{ model.TargetID }</dd><dt>Target digest</dt><dd><code>{ model.TargetDigest }</code></dd><dt>Normalized input digest</dt><dd><code>{ model.InputDigest }</code></dd><dt>Expires</dt><dd>{ model.ExpiresAt }</dd></dl>
 		if model.DoerReview != nil {
+			<section class="panel panel-body" aria-label="Doer authoring and execution readiness"><h2>Before publication</h2><p>Can author: { strconv.FormatBool(model.DoerReview.CanAuthor) } · Can request execution: { strconv.FormatBool(model.DoerReview.CanExecute) }</p>
+				if !model.DoerReview.CanExecute {
+					<p>This candidate is not advertised as runnable. Current blocker: <code>{ model.DoerReview.ReadinessReason }</code>. Unchecked prerequisites are not passing checks. Publication creates only an immutable draft.</p>
+				}
+				<dl class="spec">
+					for _, prerequisite := range model.DoerReview.Prerequisites {
+						<dt>{ prerequisite.Label }</dt><dd>{ prerequisite.Value }</dd>
+					}
+				</dl><p>Readiness is not execution. A helper probe qualifies only local protocol availability, not task success. Model, charter, provisioning, Agent-successor, local controller continuation, and exact host-write decisions remain independent authenticated gates.</p>
+				if model.DoerReview.DraftURL != "" {
+					<a href={ model.DoerReview.DraftURL }>Return to this retained draft</a>
+				}
+				if model.DoerReview.SetupURL != "" {
+					<a class="primary" href={ model.DoerReview.SetupURL }>Review prerequisites for this same draft</a>
+				}
+			</section>
 			<section class="panel panel-body" aria-label="Exact Doer contract review"><h2>Exact Doer publication</h2>
+				<dl class="spec"><dt>Loop digest</dt><dd><code>{ model.DoerReview.CandidateDigest }</code></dd></dl>
 				<dl class="spec"><dt>Publisher Agent</dt><dd>{ model.DoerReview.PublisherID }</dd><dt>Agent revision</dt><dd>{ strconv.FormatUint(model.DoerReview.PublisherRevision, 10) }</dd><dt>Agent digest</dt><dd><code>{ model.DoerReview.PublisherDigest }</code></dd><dt>Loop revision</dt><dd>{ strconv.FormatUint(model.DoerReview.Revision, 10) }</dd><dt>Previous digest</dt><dd>
 					if model.DoerReview.PreviousDigest == "" {
 						<span>(none — first revision)</span>
@@ -354,7 +382,13 @@ templ CommandPreviewPage(model CommandPreviewModel, csrf string) {
 }
 
 templ CommandReceiptPage(model OperationReceiptModel) {
-	<section class="surface active" aria-labelledby="command-receipt-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Authoritative readback</span><h1 id="command-receipt-title">Loop operation receipt</h1></div><a class="primary" href="/console/loops">Return to Loops</a></div>@OperationReceipt(model)</section>
+	<section class="surface active" aria-labelledby="command-receipt-title"><div class="page-head"><div class="surface-header"><span class="eyebrow">Authoritative readback</span><h1 id="command-receipt-title">Loop operation receipt</h1></div><a class="primary" href="/console/loops">Return to Loops</a></div>@OperationReceipt(model)
+		if model.PublishedDoerRun != nil {
+			<section class="panel panel-body" aria-labelledby="published-doer-run"><h2 id="published-doer-run">Use this exact published Loop</h2><p>Publication is not execution. Run repeats fresh admission, activates only this exact revision, and returns the authoritative execution result or blocker here. Independent authority decisions are never inferred from publication.</p>
+				<form method="post" action={ model.PublishedDoerRun.URL }><input type="hidden" name="csrf" value={ model.PublishedDoerRun.CSRF }/><input type="hidden" name="revision" value={ strconv.FormatUint(model.PublishedDoerRun.Revision, 10) }/><input type="hidden" name="digest" value={ model.PublishedDoerRun.Digest }/><input type="hidden" name="idempotency_key" value={ model.PublishedDoerRun.Key }/><button class="primary" type="submit">Run published Loop</button></form>
+			</section>
+		}
+	</section>
 }
 
 templ ActionReadiness(actions []ActionModel) {

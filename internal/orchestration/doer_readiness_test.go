@@ -46,7 +46,7 @@ func TestDoerReadinessDeniesMissingPrerequisites(t *testing.T) {
 	configured := func() *QueueWorker {
 		return &QueueWorker{implementation: &ImplementationController{
 			config: config.Implementation{GoBinary: goBinary, LayaPython: python, LayaHome: home, AuthorizedContracts: []string{digest}},
-			root:   filepath.Join(root, "state"), adapter: adapter.hermes,
+			root:   filepath.Join(root, "state", "persistence", "fleet-v1"), adapter: adapter.hermes,
 			decision: NewLayaDecisionAdapter(LocalLayaProcess{PythonExecutable: python, Home: home}),
 		}}
 	}

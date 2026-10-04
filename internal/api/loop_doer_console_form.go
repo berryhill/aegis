@@ -24,6 +24,9 @@ func decodeDoerComposerForm(request *http.Request) (loopComposerForm, error) {
 	}
 	values, err := url.ParseQuery(string(body))
 	keys := []string{"csrf", "publisher_id", "publication_key", "loop_id", "revision", "previous_digest", "task", "workspace", "writable_files", "verify_file", "assert_text", "expected_text", "max_attempts"}
+	if len(values) == len(keys)+2 {
+		keys = append(keys, "draft_id", "draft_version")
+	}
 	if err != nil || len(values) != len(keys) {
 		return form, errors.New("invalid Doer fields")
 	}
@@ -50,9 +53,10 @@ func decodeDoerComposerForm(request *http.Request) (loopComposerForm, error) {
 		if values.Get("expected_text") != "" {
 			return form, errors.New("presence assertion cannot have expected text")
 		}
-	case "exact":
+	case "exact", "bytes":
 		text := values.Get("expected_text")
 		contract.ExpectedText = &text
+		contract.ExactBytes = values.Get("assert_text") == "bytes"
 	default:
 		return form, errors.New("invalid Doer assertion")
 	}
@@ -61,6 +65,14 @@ func decodeDoerComposerForm(request *http.Request) (loopComposerForm, error) {
 		return form, errors.New("invalid Doer operator inputs")
 	}
 	form = loopComposerForm{CSRF: values.Get("csrf"), PublisherID: values.Get("publisher_id"), PublicationKey: values.Get("publication_key"), Revision: candidate}
+	if len(keys) == 15 {
+		form.RetainDraft = true
+		form.DraftID = values.Get("draft_id")
+		form.DraftVersion, err = strconv.ParseUint(values.Get("draft_version"), 10, 64)
+		if err != nil || (form.DraftID == "") != (form.DraftVersion == 0) {
+			return loopComposerForm{}, errors.New("invalid Doer draft version")
+		}
+	}
 	if form.CSRF == "" || form.PublisherID == "" || form.PublicationKey == "" {
 		return loopComposerForm{}, errors.New("CSRF, publisher and publication key required")
 	}

@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Changed
+- Source candidate: retain principal-owned Doer drafts with version CAS and stable publication keys, expose candidate readiness separately from authoring, and add independent exact successor/provisioning/host-contract review. Add opt-in raw UTF-8 byte assertions (`exact_bytes`) without changing legacy trimmed contracts. Native continuation/confirmation integration and final browser/live-model acceptance remain pending; no installed release, automatic approval, credential/model grant or host confinement is claimed. See [issue 281 launch review](docs/implementation/issue-281-launch-review.md).
+
 ### Fixed
 - Retain the real-Chrome touch/navigation release gate when one pre-DevTools Chrome startup stalls: reclaim that browser, retry once with a fresh profile, and report bounded startup diagnostics if both attempts fail. No browser assertion or production readiness gate is skipped.
 - Show a read-only, fail-closed gateway process-image observation in direct-update results so replacing the executable cannot be mistaken for updating the running gateway. Only proven stale images request a separate explicit gateway restart; no update path performs a lifecycle mutation.

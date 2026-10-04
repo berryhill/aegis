@@ -8,6 +8,7 @@ import (
 // Loop command adapters use these application-layer aliases so transports do
 // not bypass the app boundary to depend directly on the Loop domain package.
 type (
+	ExactRevisionReference  = reference.RevisionRef
 	LoopCandidate           = loop.LoopRevision
 	LoopValidation          = loop.LoopValidationResult
 	LoopPort                = loop.Port
