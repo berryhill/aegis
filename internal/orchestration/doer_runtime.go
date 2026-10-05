@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/implementation"
@@ -64,8 +65,8 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 	if c == nil || c.decision == nil || c.adapter == nil {
 		return w.terminal(ctx, request, base, execution.StateDenied, "doer_runtime_unconfigured", nil, nil)
 	}
-	if len(runtime.Launch.AuthorityContext.Authority.Tools) != 0 || len(runtime.Launch.AuthorityContext.Authority.Credentials) != 0 {
-		return w.terminal(ctx, request, base, execution.StateDenied, "doer_tools_denied", nil, nil)
+	if err := w.checkDoerProviderAuthority(ctx, runtime.Launch.AuthorityContext.Authority); err != nil {
+		return w.terminal(ctx, request, base, execution.StateDenied, err.Error(), nil, nil)
 	}
 	custody, ok := w.repository.(interface{ ImplementationStore() implementation.Store })
 	if !ok {
@@ -105,6 +106,9 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 			return &implementation.Halt{State: "expired"}
 		}
 		if err := w.authorizeDoer(ctx, contract, runtime.Participant); err != nil {
+			return err
+		}
+		if err := w.checkDoerProviderAuthority(ctx, runtime.Launch.AuthorityContext.Authority); err != nil {
 			return err
 		}
 		decision, err := runtime.Admission.CheckRuntimeAdmission(ctx, runtime.Launch, w.now())
@@ -165,6 +169,12 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 	}))
 	if runErr != nil || result.Outcome != loop.OutcomeSucceeded {
 		state, reason := execution.StateFailed, "doer_loop_failed"
+		for _, authErr := range []error{hermesruntime.ErrProviderAuthAbsent, hermesruntime.ErrProviderAuthInvalid, hermesruntime.ErrProviderAuthExpired, hermesruntime.ErrProviderAuthUnauthorized} {
+			if errors.Is(runErr, authErr) {
+				state, reason = execution.StateDenied, authErr.Error()
+				break
+			}
+		}
 		if errors.Is(runErr, context.DeadlineExceeded) {
 			state, reason = execution.StateExpired, "doer_lease_expired"
 		} else if errors.Is(runErr, context.Canceled) {
@@ -205,4 +215,27 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 		return w.terminal(ctx, request, base, execution.StateFailed, "doer_evidence_failed", nil, nil)
 	}
 	return w.terminal(ctx, request, base, execution.StateSucceeded, "doer_verified", &artifact, []evidence.VerificationReceipt{receipt}, proof)
+}
+
+func (w *QueueWorker) checkDoerProviderAuthority(ctx context.Context, a core.EffectiveAuthority) error {
+	if len(a.Tools) != 0 || len(a.Hermes.Toolsets) != 0 {
+		return errors.New("doer_tool_free_authority_required")
+	}
+	if len(a.Credentials) != 0 {
+		return errors.New("doer_agent_credentials_denied")
+	}
+	if a.Hermes.Model == "" || a.Hermes.Model == "none" {
+		return errors.New("doer_model_required")
+	}
+	if a.Hermes.ProviderAuthentication != nil {
+		if w.implementation == nil || w.implementation.adapter == nil {
+			return hermesruntime.ErrProviderAuthAbsent
+		}
+		_, err := w.implementation.adapter.ResolveProviderAuthentication(ctx, a.Hermes)
+		return err
+	}
+	if a.Hermes.LocalInference == nil && a.Hermes.Provider != "none" {
+		return hermesruntime.ErrProviderAuthAbsent
+	}
+	return nil
 }

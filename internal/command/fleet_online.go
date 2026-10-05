@@ -104,6 +104,31 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		path = "/v1/agents/" + url.PathEscape(args[0]) + fmt.Sprintf("?revision=%d", revision)
 	case "agents history":
 		path = "/v1/agents/" + url.PathEscape(args[0]) + "/revisions"
+	case "loops readiness":
+		var proposal app.DoerReadinessInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		probe, _ := cmd.Flags().GetBool("probe")
+		proposal.Probe = proposal.Probe || probe
+		method, path, input = http.MethodPost, "/v1/loops/doer/readiness", proposal
+	case "loops draft-save":
+		var proposal app.DoerDraftInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		method, path, input = http.MethodPost, "/v1/loops/doer/drafts", proposal
+	case "loops draft-show":
+		path = "/v1/loops/doer/drafts/" + url.PathEscape(args[0])
+	case "loops draft-continue":
+		var proposal app.ContinueDoerDraftInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.ID == "" {
+			return usage(errors.New("draft id is required"))
+		}
+		method, path, input = http.MethodPost, "/v1/loops/doer/drafts/"+url.PathEscape(proposal.ID)+"/continue", proposal
 	case "loops queue":
 		var proposal app.QueueLoopInput
 		if err := decodeJSONFile(args[0], &proposal); err != nil {

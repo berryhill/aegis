@@ -1,5 +1,8 @@
 # Contributing to Aegis
 
+Source candidate: typed Doer candidate readiness and retained-draft save/read/CAS/successor adapters now support the configured owning-service Unix transport. Optional controller-owned Codex inference authentication is separate from zero Agent credential/tool authority. Independent security review, exact successor/provisioning/host consent and installed/live acceptance remain gates. See [Doer Loop](docs/DOER_LOOP.md) and [launch impact review](docs/implementation/provider-auth-readiness-launch-review.md).
+
+
 ## Prerequisites
 
 - Go 1.26.6 or newer

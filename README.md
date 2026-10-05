@@ -1,5 +1,8 @@
 # Aegis
 
+Source candidate: typed Doer candidate readiness and retained-draft save/read/CAS/successor adapters now support the configured owning-service Unix transport. Optional controller-owned Codex inference authentication is separate from zero Agent credential/tool authority. Independent security review, exact successor/provisioning/host consent and installed/live acceptance remain gates. See [Doer Loop](docs/DOER_LOOP.md) and [launch impact review](docs/implementation/provider-auth-readiness-launch-review.md).
+
+
 Source work for the guided Agent → Doer draft → readiness → independent approvals → publication → Run journey is described in [Doer Loop](docs/DOER_LOOP.md#guided-authoring-and-readiness-source-candidate). This is an unreleased candidate, not installed or live-model acceptance; see the [launch review and remaining gates](docs/implementation/issue-281-launch-review.md).
 
 `aegis loops queue FILE` performs one authenticated exact-Loop request within already approved scope, including session preparation and a bounded foreground worker. Exact blockers return inline on the same action, with no Preparation page or management handoff. Missing prerequisites remain outside executable Queue as `preparation-pending`; historical `awaiting-runtime` records retain their IDs. Explicit recovery requires the original request key and exact item; a different key cannot adopt it. See [execution admission and recovery boundaries](specs/EXECUTION_PREPARATION.md).

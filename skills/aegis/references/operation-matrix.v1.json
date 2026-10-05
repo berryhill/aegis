@@ -315,7 +315,9 @@
         "internal/command/loop_doer.go",
         "internal/api/doer_setup.go",
         "internal/api/doer_continuation_portal.go",
-        "internal/api/doer_companion_launch.go"
+        "internal/api/doer_companion_launch.go",
+        "internal/command/loop_doer_services.go",
+        "internal/app/doer_adapter_inputs.go"
       ],
       "tests": [
         "internal/api/workspace_skill_contract_test.go",
@@ -326,7 +328,10 @@
         "internal/api/doer_setup_test.go",
         "internal/api/doer_continuation_portal_test.go",
         "internal/api/doer_continuation_recovery_intent_test.go",
-        "internal/api/doer_companion_launch_test.go"
+        "internal/api/doer_companion_launch_test.go",
+        "internal/api/doer_draft_adapter_test.go",
+        "internal/api/doer_services_test.go",
+        "internal/command/doer_online_test.go"
       ],
       "cli": [
         "aegis loops",
@@ -342,7 +347,11 @@
         "aegis loops doer",
         "aegis loops doer-reusable",
         "aegis loops templates",
-        "aegis loops queue"
+        "aegis loops queue",
+        "aegis loops readiness",
+        "aegis loops draft-save",
+        "aegis loops draft-show",
+        "aegis loops draft-continue"
       ],
       "http": [
         "GET /v1/loops",
@@ -363,7 +372,11 @@
         "POST /console/loops/doer/continuation",
         "GET /v1/doer-continuations/pending/:id",
         "POST /v1/doer-continuations/pending/:id/decision",
-        "POST /v1/loops/queue"
+        "POST /v1/loops/queue",
+        "POST /v1/loops/doer/readiness",
+        "POST /v1/loops/doer/drafts",
+        "GET /v1/loops/doer/drafts/:id",
+        "POST /v1/loops/doer/drafts/:id/continue"
       ],
       "transport_classification": "shipped"
     },

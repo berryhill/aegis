@@ -115,6 +115,22 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return AttemptTurnResult{}, err
 	}
 	defer os.RemoveAll(home) //nolint:errcheck
+	var providerToken ProviderAccessToken
+	if authority.Authority.Hermes.ProviderAuthentication != nil {
+		providerToken, err = a.ResolveProviderAuthentication(turnContext, authority.Authority.Hermes)
+		if err != nil {
+			return AttemptTurnResult{}, err
+		}
+		authContext, authCancel := context.WithDeadline(turnContext, providerToken.expiresAt.Add(-ProviderTokenRefreshMargin))
+		defer authCancel()
+		turnContext = authContext
+		if err = checkAdmission(turnContext, request, time.Now().UTC()); err != nil {
+			return AttemptTurnResult{}, err
+		}
+		if err = writeProviderAuthentication(home, providerToken); err != nil {
+			return AttemptTurnResult{}, err
+		}
+	}
 
 	toolsets := launchToolsets(tools)
 	command := exec.CommandContext(turnContext, python, "-m", "tui_gateway.entry")
@@ -127,6 +143,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		"HERMES_DISABLE_AUTO_SKILLS=1",
 	)
 	command.Env = append(command.Env, "HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1")
+	if authority.Authority.Hermes.ProviderAuthentication != nil {
+		command.Env = providerAuthenticationEnv(command.Env)
+	}
 	if request.Model != "" {
 		command.Env = append(command.Env, "HERMES_TUI_MODEL="+request.Model)
 	}
@@ -160,6 +179,11 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	startedAt := time.Now().UTC()
 	if err = checkAdmission(ctx, request, startedAt); err != nil {
 		return AttemptTurnResult{}, err
+	}
+	if authority.Authority.Hermes.ProviderAuthentication != nil {
+		if err = a.qualifyProviderDescriptor(descriptor); err != nil {
+			return AttemptTurnResult{}, err
+		}
 	}
 	attempt := execution.Turn{
 		ID:                 request.AttemptID,
@@ -286,6 +310,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 				return finishAttemptAt(attempt, execution.StateDenied, "authority_no_longer_effective", finishedAt, err)
 			}
 			result, finishErr := finishAttemptAt(attempt, execution.StateSucceeded, "turn_completed", finishedAt, nil)
+			if providerToken.value != "" && strings.Contains(output.String(), providerToken.value) {
+				return finishAttemptAt(attempt, execution.StateDenied, "provider_auth_disclosure_denied", finishedAt, ErrProviderAuthInvalid)
+			}
 			result.Output = output.String()
 			return result, finishErr
 		}
@@ -303,6 +330,9 @@ func validateAttemptRequest(request AttemptTurnRequest) error {
 		return fmt.Errorf("%w: authority binding is invalid: %v", ErrAttemptDenied, err)
 	}
 	hermesBinding := request.Launch.AuthorityContext.Authority.Hermes
+	if hermesBinding.ProviderAuthentication != nil && (core.ValidateProviderAuthentication(hermesBinding, request.Launch.AuthorityContext.Authority.Tools, request.Launch.AuthorityContext.Authority.Credentials) != nil || len(request.Credentials) != 0) {
+		return ErrProviderAuthUnauthorized
+	}
 	if hermesBinding.LocalInference != nil && len(request.Credentials) != 0 {
 		return fmt.Errorf("%w: local inference forbids credentials", ErrAttemptDenied)
 	}

@@ -16,6 +16,14 @@ from scripts import console_browser_test as browser
 from scripts.verification_process import run_owned
 
 
+def process_exited(status):
+    try:
+        return status.read_text().split()[2] == 'Z'
+    except FileNotFoundError:
+        # Reaping may remove /proc between observation and the read.
+        return True
+
+
 class ResourceTests(unittest.TestCase):
     def client(self):
         client = DevTools.__new__(DevTools)
@@ -79,11 +87,26 @@ class ResourceTests(unittest.TestCase):
             # A killed orphan may be a zombie until the system reaper collects it.
             for _ in range(50):
                 status = Path(f'/proc/{pid}/stat')
-                if not status.exists() or status.read_text().split()[2] == 'Z':
+                if process_exited(status):
                     break
                 time.sleep(.02)
             else:
                 self.fail('owned grandchild survived timeout')
+
+    def test_reaped_grandchild_missing_stat_is_exited(self):
+        status = mock.Mock()
+        status.read_text.side_effect = FileNotFoundError
+        self.assertTrue(process_exited(status))
+
+    def test_grandchild_exit_check_preserves_live_and_error_denials(self):
+        status = mock.Mock()
+        status.read_text.return_value = '123 (sleep) S'
+        self.assertFalse(process_exited(status))
+        status.read_text.return_value = '123 (sleep) Z'
+        self.assertTrue(process_exited(status))
+        status.read_text.side_effect = PermissionError
+        with self.assertRaises(PermissionError):
+            process_exited(status)
 
     def test_supervisor_no_unbounded_fallback(self):
         spec = importlib.util.spec_from_file_location('budget', Path(__file__).with_name('verify-budget.py'))
