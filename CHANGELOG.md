@@ -1,13 +1,14 @@
 # Changelog
 
-Source candidate: typed Doer candidate readiness and retained-draft save/read/CAS/successor adapters now support the configured owning-service Unix transport. Optional controller-owned Codex inference authentication is separate from zero Agent credential/tool authority. Independent security review, exact successor/provisioning/host consent and installed/live acceptance remain gates. See [Doer Loop](docs/DOER_LOOP.md) and [launch impact review](docs/implementation/provider-auth-readiness-launch-review.md).
-
-
 Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
 
 ## Unreleased
+
+### Added
+- Add authenticated typed Doer candidate readiness and retained-draft save/read/CAS/successor adapters through the configured owning-service Unix transport. Keep authoring separate from execution readiness and preserve exact immutable references and independent approvals.
+- Add an explicit controller-owned Codex access-only authentication mode separate from Agent credential/tool authority, qualified for the adapter's exact Hermes 0.21.3 transport sources. Enforce the provider's 120-second refresh margin, fresh pre-start admission, bounded process lifetime, cleanup and disclosure denial. Existing credential scopes are not migrated; installed/live provider acceptance still requires separately approved bindings. See [Doer Loop](docs/DOER_LOOP.md) and [launch impact review](docs/implementation/provider-auth-readiness-launch-review.md).
 
 ## [0.2.18] - 2026-10-04
 
