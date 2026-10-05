@@ -162,7 +162,10 @@ func TestDoerCandidateReadinessRequiresToolAndCredentialFreeStanza(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			s, subject, input := candidateReadinessFixture(t, "proof-no-key", test.modify)
 			r, err := s.ReadDoerCandidateReadinessAs(context.Background(), subject, input)
-     wantReason:="doer_tool_free_authority_required";if test.blocked=="credential"{wantReason="doer_agent_credentials_denied"}
+			wantReason := "doer_tool_free_authority_required"
+			if test.blocked == "credential" {
+				wantReason = "doer_agent_credentials_denied"
+			}
 			if err != nil || !r.CanAuthor || r.CanExecute || r.Reason != wantReason || r.Receipt.State != "not_checked" {
 				t.Fatalf("unsafe stanza accepted: %+v %v", r, err)
 			}
