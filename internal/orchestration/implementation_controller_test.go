@@ -48,7 +48,7 @@ func (r *implementationTestRepository) CompleteQueueItem(ctx context.Context, c 
 
 // The runtime is a protocol fixture; native checks and fleet completion are real.
 func TestImplementationQueueNativeCompletion(t *testing.T) {
-	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-needs-input", "v4-unauthorized", "v4-existing", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper"} {
+	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-needs-input", "v4-unauthorized", "v4-existing", "v4-toolset-denied", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper", "v5-toolset-denied"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			root := t.TempDir()
@@ -81,6 +81,10 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			subject.ExpiresAt = now.Add(time.Hour)
 			auth.mandate.Subject = subject
 			auth.mandate.Hermes = core.HermesConfig{Toolsets: []string{"no_mcp"}, Model: "proof-no-key", Provider: "none"}
+			// Selected-file Doer requires zero toolset authority, unlike v3.
+			if (strings.HasPrefix(mode, "v4-") || strings.HasPrefix(mode, "v5-")) && !strings.HasSuffix(mode, "toolset-denied") {
+				auth.mandate.Hermes.Toolsets = nil
+			}
 			auth.authority.Authority.Hermes = auth.mandate.Hermes
 			auth.authority.IssuedAt = auth.mandate.IssuedAt
 			auth.authority.ExpiresAt = auth.mandate.ExpiresAt
@@ -300,6 +304,12 @@ while read rest; do :; done
 			projection, readErr := repository.GetQueueProjection(ctx, "queue")
 			if readErr != nil {
 				t.Fatal(readErr)
+			}
+			if strings.HasSuffix(mode, "toolset-denied") {
+				if err == nil || !strings.Contains(err.Error(), "doer_tool_free_authority_required") || projection.State != queue.StateQueued || projection.Attempts != 0 || result.Claim.ClaimID != "" {
+					t.Fatalf("toolset authority was not denied before claim: %v %+v", err, projection)
+				}
+				return
 			}
 			if mode == "expired" {
 				if err == nil || projection.State != queue.StateExpired || projection.ActiveClaimID != "" {

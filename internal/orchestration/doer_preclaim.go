@@ -24,6 +24,13 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionRuntimeEffect, Subject: request.Subject, Authority: request.Authority, Agent: agentRef, Loop: loopRef, Graph: graphRef}); readiness.State != ReadinessReady {
 		return LayaGate{}, fmt.Errorf("%w: preclaim gate admission %s", ErrWorkerDenied, readiness.ReasonCode)
 	}
+	authority, _, admission := worker.service.resolveAuthority(ctx, request.Subject, request.Authority)
+	if admission.State != ReadinessReady {
+		return LayaGate{}, ErrWorkerDenied
+	}
+	if err := worker.checkDoerProviderAuthority(ctx, authority.Authority); err != nil {
+		return LayaGate{}, fmt.Errorf("%w: %w", ErrWorkerDenied, err)
+	}
 
 	// A pre-existing artifact already satisfying the pinned assertion cannot
 	// prove this invocation produced it. Deny before claim rather than

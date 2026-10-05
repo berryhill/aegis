@@ -1,5 +1,8 @@
 # Aegis MVP Architecture
 
+Controller-owned Codex transport is an optional, independently reviewed source contract, not Agent credential authority. Explicit charter approval requires zero Agent tools/credentials; the controller resolves only the configured environment binding and materializes bounded expiring access-token state in a disposable runtime home without refresh. JWT shape/expiry validation is not issuer authentication. No provider secret is returned by readiness or draft adapters. Retained proposals/readiness are non-authorizing; exact successor, provisioning, clean-session and host-write gates remain independent. See [source boundary](DOER_LOOP.md#controller-owned-codex-transport-and-typed-doer-proposal-adapters-source-candidate).
+
+
 ## Guided Doer source-candidate approval boundaries
 
 ```mermaid

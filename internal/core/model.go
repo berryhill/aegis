@@ -72,14 +72,15 @@ type InformationFlowPolicy struct {
 	CrossStanza string `json:"cross_stanza"`
 }
 type HermesConfig struct {
-	LocalInference *LocalInference `json:"local_inference,omitempty"`
-	Profile        string          `json:"profile"`
-	PersistentHome bool            `json:"persistent_home"`
-	MCPServers     []string        `json:"mcp_servers"`
-	Plugins        []string        `json:"plugins"`
-	Toolsets       []string        `json:"toolsets"`
-	Model          string          `json:"model"`
-	Provider       string          `json:"provider"`
+	ProviderAuthentication *ProviderAuthentication `json:"provider_authentication,omitempty"`
+	LocalInference         *LocalInference         `json:"local_inference,omitempty"`
+	Profile                string                  `json:"profile"`
+	PersistentHome         bool                    `json:"persistent_home"`
+	MCPServers             []string                `json:"mcp_servers"`
+	Plugins                []string                `json:"plugins"`
+	Toolsets               []string                `json:"toolsets"`
+	Model                  string                  `json:"model"`
+	Provider               string                  `json:"provider"`
 }
 type TrustStanza struct {
 	ID              string                `json:"id"`
@@ -506,7 +507,10 @@ func ValidateCharter(c Charter) error {
 			add(p + " " + err.Error())
 		}
 		expectedCredential := "provider:" + s.Hermes.Provider
-		if s.Hermes.LocalInference == nil && s.Hermes.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential)) {
+		if err := ValidateProviderAuthentication(s.Hermes, s.Grant.Tools, s.Scopes.Credentials); err != nil {
+			add(p + " " + err.Error())
+		}
+		if s.Hermes.ProviderAuthentication == nil && s.Hermes.LocalInference == nil && s.Hermes.Provider != "none" && (len(s.Scopes.Credentials) == 0 || !containsString(s.Scopes.Credentials, expectedCredential)) {
 			add(p + " credential scopes must include " + expectedCredential)
 		}
 		for _, x := range append(append([]string{}, s.Grant.Tools...), s.Grant.Capabilities...) {

@@ -44,10 +44,13 @@ type processState struct {
 	cancel context.CancelFunc
 }
 type Adapter struct {
-	executable string
-	log        *slog.Logger
-	mu         sync.Mutex
-	processes  map[string]*processState
+	// Synthetic process-test seam, not a configurable production bypass.
+	providerTransportQualifier func(core.RuntimeDescriptor) error
+	providerAuthentication     ProviderAuthenticationResolver
+	executable                 string
+	log                        *slog.Logger
+	mu                         sync.Mutex
+	processes                  map[string]*processState
 }
 
 // Credential is a resolved, explicitly selected environment credential. The
@@ -186,7 +189,26 @@ func ResolveTools(requested []string) ([]string, error) {
 	}
 	return out, nil
 }
-func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, model, provider string, credentials []Credential, bridge BrokerBridge, expectedRuntime *core.RuntimeDescriptor) (int, []string, error) {
+
+type providerLaunchGuard struct {
+	fresh  func(context.Context) error
+	cutoff time.Time
+}
+
+func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, model, provider string, credentials []Credential, bridge BrokerBridge, expectedRuntime *core.RuntimeDescriptor, guards ...providerLaunchGuard) (int, []string, error) {
+	controllerAuth := len(guards) == 1
+	var cancel context.CancelFunc
+	if controllerAuth {
+		ctx, cancel = context.WithDeadline(ctx, guards[0].cutoff)
+	} else {
+		cancel = func() {}
+	}
+	started := false
+	defer func() {
+		if !started {
+			cancel()
+		}
+	}()
 	resolved, err := ResolveTools(tools)
 	if err != nil {
 		return 0, nil, err
@@ -201,6 +223,11 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	// Adapter-wide support never widens the runtime bound to an issued mandate.
 	if expectedRuntime != nil && (desc.Runtime != expectedRuntime.Runtime || desc.Version != expectedRuntime.Version) {
 		return 0, nil, errors.New("runtime binding does not match authority context")
+	}
+	if controllerAuth {
+		if err = a.qualifyProviderDescriptor(desc); err != nil {
+			return 0, nil, err
+		}
 	}
 	args := []string{"--safe-mode", "--tui", "--toolsets"}
 	if bridge.Enabled {
@@ -227,7 +254,12 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	if provider != "" {
 		args = append(args, "--provider", provider)
 	}
+	// Existing persistent sessions outlive the request that launches them.
+	// Only the explicitly approved controller-auth path is caller-bound.
 	cmd := exec.Command(desc.Executable, args...)
+	if controllerAuth {
+		cmd = exec.CommandContext(ctx, desc.Executable, args...)
+	}
 	if bridge.Enabled {
 		python := gatewayPython(desc)
 		if python == "" {
@@ -237,10 +269,17 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	}
 	cmd.Dir = home
 	cmd.Env = minimalEnv(home, credentials)
+	if controllerAuth {
+		cmd.Env = providerAuthenticationEnv(cmd.Env)
+	}
 	if bridge.Enabled {
 		cmd.Env = append(cmd.Env, "HERMES_PYTHON_SRC_ROOT="+desc.Installation, "HERMES_TUI_TOOLSETS=aegis", "HERMES_TUI_SKILLS=", "HERMES_DISABLE_AUTO_SKILLS=1")
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if controllerAuth {
+		cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	}
+	cmd.WaitDelay = time.Second
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return 0, nil, err
@@ -253,15 +292,44 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	if err != nil {
 		return 0, nil, err
 	}
+	// Repeat admission after discovery and tool probing, immediately before
+	// releasing the token-bearing runtime. Historical admission is not authority.
+	if err = ctx.Err(); err != nil {
+		return 0, nil, err
+	}
+	if controllerAuth {
+		if guards[0].fresh == nil || guards[0].fresh(ctx) != nil {
+			return 0, nil, ErrProviderAuthUnauthorized
+		}
+		if err = a.qualifyProviderDescriptor(desc); err != nil {
+			return 0, nil, err
+		}
+	}
+	if err = ctx.Err(); err != nil {
+		return 0, nil, err
+	}
 	if err = cmd.Start(); err != nil {
 		return 0, nil, err
 	}
-	ps := &processState{cmd: cmd, stdin: stdin, home: home, done: make(chan error, 1)}
+	started = true
+	ps := &processState{cmd: cmd, stdin: stdin, home: home, done: make(chan error, 1), cancel: cancel}
 	a.mu.Lock()
 	a.processes[id] = ps
 	a.mu.Unlock()
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
-	go func() { ps.done <- cmd.Wait(); close(ps.done); a.mu.Lock(); delete(a.processes, id); a.mu.Unlock() }()
+	go func() {
+		waitErr := cmd.Wait()
+		cancel()
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if controllerAuth {
+			_ = os.RemoveAll(home)
+		}
+		ps.done <- waitErr
+		close(ps.done)
+		a.mu.Lock()
+		delete(a.processes, id)
+		a.mu.Unlock()
+	}()
 	if bridge.Enabled {
 		messages := make(chan gatewayMessage, 32)
 		readErrors := make(chan error, 1)
@@ -297,7 +365,7 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		}
 		return 0, nil, fmt.Errorf("Hermes startup: %w", waitErr)
 	case <-ctx.Done():
-		_ = cmd.Process.Kill()
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		return 0, nil, ctx.Err()
 	case <-time.After(300 * time.Millisecond):
 	}
@@ -466,6 +534,10 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 	if authority.Authority.Hermes.LocalInference != nil && (len(fresh) != 1 || fresh[0] == nil || len(credentials) != 0 || bridge.Enabled) {
 		return "", "", 0, nil, errors.New("local inference transport requires fresh authority and no credentials or bridge")
 	}
+	controllerAuth := m.Hermes.ProviderAuthentication != nil
+	if controllerAuth && (core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials) != nil || len(credentials) != 0 || bridge.Enabled || len(fresh) != 1 || fresh[0] == nil) {
+		return "", "", 0, nil, ErrProviderAuthUnauthorized
+	}
 	id := store.ID("hermes-session")
 	runtimeRoot := filepath.Join(stateRoot, "runtime")
 	if err := os.MkdirAll(runtimeRoot, 0700); err != nil {
@@ -477,10 +549,31 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 	}
 	var pid int
 	var configuredToolsets []string
+	if controllerAuth {
+		cutoff := m.ExpiresAt
+		if authority.ExpiresAt.Before(cutoff) {
+			cutoff = authority.ExpiresAt
+		}
+		prepareContext, cancel := context.WithDeadline(ctx, cutoff)
+		err = a.prepareProviderAuthentication(prepareContext, home, m.Hermes, fresh[0], cutoff)
+		cancel()
+		if err != nil {
+			_ = os.RemoveAll(home)
+			return "", "", 0, nil, err
+		}
+	}
 	if authority.Authority.Hermes.LocalInference != nil {
 		pid, err = a.launchLocal(ctx, id, home, authority, fresh[0])
 	} else {
-		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge, &m.Runtime)
+		var guards []providerLaunchGuard
+		if controllerAuth {
+			cutoff := m.ExpiresAt
+			if authority.ExpiresAt.Before(cutoff) {
+				cutoff = authority.ExpiresAt
+			}
+			guards = []providerLaunchGuard{{fresh: fresh[0], cutoff: cutoff}}
+		}
+		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge, &m.Runtime, guards...)
 	}
 	if err != nil {
 		_ = os.RemoveAll(home)

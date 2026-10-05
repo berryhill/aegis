@@ -1,5 +1,8 @@
 # Aegis MVP Threat Model
 
+Controller-owned Codex transport is an optional, independently reviewed source contract, not Agent credential authority. Explicit charter approval requires zero Agent tools/credentials; the controller resolves only the configured environment binding and materializes bounded expiring access-token state in a disposable runtime home without refresh. JWT shape/expiry validation is not issuer authentication. No provider secret is returned by readiness or draft adapters. Retained proposals/readiness are non-authorizing; exact successor, provisioning, clean-session and host-write gates remain independent. See [source boundary](DOER_LOOP.md#controller-owned-codex-transport-and-typed-doer-proposal-adapters-source-candidate).
+
+
 ## Guided Doer draft and contextual approval threats
 
 A stale tab must not overwrite a newer retained draft: edits use version CAS and publication reloads exact Agent/Loop bindings and the server-held key. A readiness result cannot authorize execution or silently repair an unusable model. An independently approved successor preserves immutable predecessors and creates new exact draft publication bindings; old rejected/accepted Run intents are not retargeted. Host consent separately binds the exact selected-file contract and expires within 24 hours, with signed custody reloaded before effects; changing the task, workspace, paths or assertion changes the contract. Existing configured allowlists are not rewritten by this path.

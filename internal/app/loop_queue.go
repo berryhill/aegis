@@ -54,6 +54,10 @@ func (r *QueueLoopResult) blockedDoer(reason string) {
 		r.RequiredAction = "plan_preview_exact_charter"
 	case "doer_model_required":
 		r.RequiredAction = "review_charter_successor_with_usable_model"
+	case "doer_agent_credentials_denied", "doer_tool_free_authority_required":
+		r.RequiredAction = "review_charter_successor_with_zero_agent_authority"
+	case "doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired", "doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":
+		r.RequiredAction = "review_controller_provider_authentication"
 	case "session_selection_zero_authorized_matches":
 		r.RequiredAction = "review_charter_successor_with_matching_authentication"
 	}

@@ -29,32 +29,33 @@ type DoerCandidateReadinessInput struct {
 // the candidate may request execution preparation; fresh admission still applies.
 // Helper success qualifies protocol availability, NOT actual task eligibility.
 type DoerCandidateReadiness struct {
-	Agent               reference.RevisionRef  `json:"agent"`
-	Candidate           reference.RevisionRef  `json:"candidate"`
-	ContractDigest      string                 `json:"contract_digest,omitempty"`
-	RequiredCharter     *reference.RevisionRef `json:"required_charter,omitempty"`
-	CanAuthor           bool                   `json:"can_author"`
-	CanExecute          bool                   `json:"can_execute"`
-	Reason              string                 `json:"reason,omitempty"`
-	RequiredAction      string                 `json:"required_action,omitempty"`
-	Subject             DoerPrerequisiteStatus `json:"subject"`
-	AgentReference      DoerPrerequisiteStatus `json:"agent_reference"`
-	CanonicalCandidate  DoerPrerequisiteStatus `json:"canonical_candidate"`
-	Charter             DoerPrerequisiteStatus `json:"charter"`
-	Selection           DoerPrerequisiteStatus `json:"selection"`
-	Model               DoerPrerequisiteStatus `json:"model"`
-	ToolFree            DoerPrerequisiteStatus `json:"tool_free"`
-	CredentialFree      DoerPrerequisiteStatus `json:"credential_free"`
-	Receipt             DoerPrerequisiteStatus `json:"receipt"`
-	Runtime             DoerPrerequisiteStatus `json:"runtime"`
-	Controller          DoerPrerequisiteStatus `json:"controller"`
-	Helper              DoerPrerequisiteStatus `json:"helper"`
-	HelperQualification string                 `json:"helper_qualification"`
+	Agent                  reference.RevisionRef  `json:"agent"`
+	Candidate              reference.RevisionRef  `json:"candidate"`
+	ContractDigest         string                 `json:"contract_digest,omitempty"`
+	RequiredCharter        *reference.RevisionRef `json:"required_charter,omitempty"`
+	CanAuthor              bool                   `json:"can_author"`
+	CanExecute             bool                   `json:"can_execute"`
+	Reason                 string                 `json:"reason,omitempty"`
+	RequiredAction         string                 `json:"required_action,omitempty"`
+	Subject                DoerPrerequisiteStatus `json:"subject"`
+	AgentReference         DoerPrerequisiteStatus `json:"agent_reference"`
+	CanonicalCandidate     DoerPrerequisiteStatus `json:"canonical_candidate"`
+	Charter                DoerPrerequisiteStatus `json:"charter"`
+	Selection              DoerPrerequisiteStatus `json:"selection"`
+	Model                  DoerPrerequisiteStatus `json:"model"`
+	ToolFree               DoerPrerequisiteStatus `json:"tool_free"`
+	CredentialFree         DoerPrerequisiteStatus `json:"credential_free"`
+	ProviderAuthentication DoerPrerequisiteStatus `json:"provider_authentication"`
+	Receipt                DoerPrerequisiteStatus `json:"receipt"`
+	Runtime                DoerPrerequisiteStatus `json:"runtime"`
+	Controller             DoerPrerequisiteStatus `json:"controller"`
+	Helper                 DoerPrerequisiteStatus `json:"helper"`
+	HelperQualification    string                 `json:"helper_qualification"`
 }
 
 func newDoerReadiness() DoerCandidateReadiness {
 	pending := DoerPrerequisiteStatus{State: "not_checked"}
-	return DoerCandidateReadiness{Subject: pending, AgentReference: pending, CanonicalCandidate: pending, Charter: pending, Selection: pending, Model: pending, ToolFree: pending, CredentialFree: pending, Receipt: pending, Runtime: pending, Controller: pending, Helper: pending, HelperQualification: "protocol_availability_only_not_task_eligibility"}
+	return DoerCandidateReadiness{Subject: pending, AgentReference: pending, CanonicalCandidate: pending, Charter: pending, Selection: pending, Model: pending, ToolFree: pending, CredentialFree: pending, ProviderAuthentication: pending, Receipt: pending, Runtime: pending, Controller: pending, Helper: pending, HelperQualification: "protocol_availability_only_not_task_eligibility"}
 }
 
 func (r *DoerCandidateReadiness) block(status *DoerPrerequisiteStatus, reason string) {
@@ -162,10 +163,20 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 	}
 	r.ToolFree = ready
 	if len(selection.Selected.Scopes.Credentials) != 0 {
-		r.block(&r.CredentialFree, "doer_tool_free_authority_required")
+		r.block(&r.CredentialFree, "doer_agent_credentials_denied")
 		return
 	}
 	r.CredentialFree = ready
+	if selection.Selected.Hermes.ProviderAuthentication != nil {
+		if _, err := s.resolveControllerProviderAuthentication(ctx, selection.Selected.Hermes); err != nil {
+			r.block(&r.ProviderAuthentication, err.Error())
+			return
+		}
+	} else if selection.Selected.Hermes.LocalInference == nil && selection.Selected.Hermes.Provider != "none" {
+		r.block(&r.ProviderAuthentication, "doer_provider_auth_absent")
+		return
+	}
+	r.ProviderAuthentication = ready
 	verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
 	if err != nil {
 		r.block(&r.Receipt, "provisioning_receipt_unavailable")
@@ -188,6 +199,12 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		return
 	}
 	r.Runtime = ready
+	if selection.Selected.Hermes.ProviderAuthentication != nil {
+		if err := s.Hermes.QualifyProviderTransport(ctx); err != nil {
+			r.block(&r.ProviderAuthentication, err.Error())
+			return
+		}
+	}
 	if s.QueueWorker == nil {
 		r.block(&r.Controller, "implementation_prerequisite_required")
 		return

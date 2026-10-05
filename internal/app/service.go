@@ -78,7 +78,11 @@ type AuditDeliveryAuthority interface {
 }
 
 func New(cfg config.Config, st *store.Store, authority core.AuthorityRepository, authorityCommands core.AuthorityCommandRepository, h *hermes.Adapter, log *slog.Logger) *Service {
-	return &Service{Config: cfg, Store: st, Authority: authority, AuthorityCommands: authorityCommands, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, LocalHermesHome: localHermesDefaultHome, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
+	s := &Service{Config: cfg, Store: st, Authority: authority, AuthorityCommands: authorityCommands, Audit: st, Hermes: h, Log: log.With("component", "app"), Now: func() time.Time { return time.Now().UTC() }, Current: user.Current, LookupEnv: os.LookupEnv, LocalHermesHome: localHermesDefaultHome, capabilities: make(map[[32]byte]broker.Capability), brokerRequests: make(map[[32]byte]map[[32]byte]struct{})}
+	if h != nil {
+		h.SetProviderAuthenticationResolver(s.resolveControllerProviderAuthentication)
+	}
+	return s
 }
 
 func (s *Service) resolveProviderCredential(provider string, scopes []string) ([]hermes.Credential, error) {
@@ -1246,7 +1250,12 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		return core.Session{}, err
 	}
 	var credentials []hermes.Credential
-	if m.Hermes.LocalInference != nil {
+	if m.Hermes.ProviderAuthentication != nil {
+		if core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials) != nil {
+			return core.Session{}, hermes.ErrProviderAuthUnauthorized
+		}
+		_, err = s.resolveControllerProviderAuthentication(ctx, m.Hermes)
+	} else if m.Hermes.LocalInference != nil {
 		err = core.ValidateLocalInferenceAuthority(m.Hermes, m.Tools, m.Scopes.Credentials)
 	} else {
 		credentials, err = s.resolveProviderCredential(m.Hermes.Provider, m.Scopes.Credentials)

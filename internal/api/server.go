@@ -1753,6 +1753,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusCreated, value)
 	})
+	registerDoerServiceRoutes(g, svc)
 	g.GET("/loops", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -2681,6 +2682,74 @@ func fleetSurfaceAggregateState(readiness map[string]app.SurfaceReadiness) (stri
 		return "unavailable", http.StatusServiceUnavailable
 	}
 	return "ready", http.StatusOK
+}
+
+func registerDoerServiceRoutes(g *echo.Group, svc *app.Service) {
+	g.POST("/loops/doer/readiness", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.DoerReadinessInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		candidate := app.DoerCandidateReadinessInput{Agent: input.Agent, Candidate: input.Candidate}
+		var value app.DoerCandidateReadiness
+		if input.Probe {
+			value, err = svc.ProbeDoerCandidateReadinessAs(c.Request().Context(), subject, candidate)
+		} else {
+			value, err = svc.ReadDoerCandidateReadinessAs(c.Request().Context(), subject, candidate)
+		}
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/loops/doer/drafts", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.DoerDraftInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		value, err := svc.SaveDoerDraftAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.GET("/loops/doer/drafts/:id", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.ReadDoerDraftAs(c.Request().Context(), subject, c.Param("id"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.POST("/loops/doer/drafts/:id/continue", func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.ContinueDoerDraftInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.ID != "" && input.ID != c.Param("id") {
+			return echo.NewHTTPError(http.StatusBadRequest, "draft path and body must match")
+		}
+		value, err := svc.ContinueDoerDraftSuccessorAs(c.Request().Context(), subject, c.Param("id"), input.ExpectedVersion, input.Expected, input.Charter)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
 }
 
 func requestSubject(c *echo.Context) (core.Subject, error) {
