@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.20] - 2026-10-05
+
+### Fixed
+- Replace the unpublished v0.2.19 release candidate signed by an untrusted key with a release signed by the existing trusted Xander release identity. Preserve the v0.2.19 tag; its publication workflow was cancelled. Functional source remains the authenticated Doer candidate and controller-owned Codex access-only authentication changes recorded in v0.2.19; installed/live provider acceptance remains separately gated.
+
 ## [0.2.19] - 2026-10-05
 
 ### Added
