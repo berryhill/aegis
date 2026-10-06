@@ -2685,6 +2685,7 @@ func fleetSurfaceAggregateState(readiness map[string]app.SurfaceReadiness) (stri
 }
 
 func registerDoerServiceRoutes(g *echo.Group, svc *app.Service) {
+	registerDoerSetupServiceRoutes(g, svc)
 	g.POST("/loops/doer/readiness", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {

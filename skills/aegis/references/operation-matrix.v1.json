@@ -306,7 +306,7 @@
     {
       "skill": "aegis-loop-authoring",
       "classification": "shipped",
-      "authority": "Exact authenticated workspace or runtime authority; stable owner controls publication/lifecycle, immutable definitions remain fleet-shared. Console mutations require authenticated same-origin CSRF and exact preview/execute contract. Retained Doer drafts and setup bind exact draft versions and single-use review receipts; successor, provisioning and signed expiring host-write approval remain separate decisions. Native continuation review/decision additionally require protected Unix local-OS principal authentication, the exact owning origin and product-launched companion peer PID; approval binds the exact browser session, requester, draft, candidate and Run intent, never browser-to-local identity promotion.",
+      "authority": "Exact authenticated workspace or runtime authority; stable owner controls publication/lifecycle, immutable definitions remain fleet-shared. Console mutations require authenticated same-origin CSRF and exact preview/execute contract. Retained Doer drafts and setup bind exact draft versions and single-use review receipts; successor, provisioning and signed expiring host-write approval remain separate decisions. Native continuation review/decision additionally require protected Unix local-OS principal authentication, the exact owning origin and product-launched companion peer PID; approval binds the exact browser session, requester, draft, candidate and Run intent, never browser-to-local identity promotion. Typed Doer setup review hands off via confirmation_url to protected browser review. Typed approve-successor denies (no independent proof adapter); typed reject has no authority effects. The model must not operate human confirmation.",
       "sources": [
         "internal/command/fleet.go",
         "internal/api/server.go",
@@ -351,7 +351,9 @@
         "aegis loops readiness",
         "aegis loops draft-save",
         "aegis loops draft-show",
-        "aegis loops draft-continue"
+        "aegis loops draft-continue",
+        "aegis loops setup-review",
+        "aegis loops setup-decide"
       ],
       "http": [
         "GET /v1/loops",
@@ -376,7 +378,9 @@
         "POST /v1/loops/doer/readiness",
         "POST /v1/loops/doer/drafts",
         "GET /v1/loops/doer/drafts/:id",
-        "POST /v1/loops/doer/drafts/:id/continue"
+        "POST /v1/loops/doer/drafts/:id/continue",
+        "POST /v1/loops/doer/drafts/:id/setup-review",
+        "POST /v1/loops/doer/drafts/:id/setup-decision"
       ],
       "transport_classification": "shipped"
     },

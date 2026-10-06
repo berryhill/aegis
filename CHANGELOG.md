@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add protected browser exact confirmation and typed owning-service review/browser handoff plus no-effect rejection for credential-only Doer successors; typed approval fails closed without independent human proof, reusing compatible imported canonical revisions and retaining the same task. Preserve zero tools/scopes and original model/provider/authentication selectors; reject unrelated authority instead of stripping it. Keep provisioning, host consent, continuation and execution independently gated.
+
 ## [0.2.20] - 2026-10-05
 
 ### Fixed
