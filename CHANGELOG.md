@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+- Wait for a complete, valid Chrome `DevToolsActivePort` port line instead of treating file existence as readiness. Installed-console and focused touch-browser verification tolerate transient missing, empty and partially written files within the existing startup deadline, deny invalid ports or exited Chrome, and retain independent page-target readiness and process-group cleanup.
+
 ## [0.2.21] - 2026-10-05
 
 - Add protected browser exact confirmation and typed owning-service review/browser handoff plus no-effect rejection for credential-only Doer successors; typed approval fails closed without independent human proof, reusing compatible imported canonical revisions and retaining the same task. Preserve zero tools/scopes and original model/provider/authentication selectors; reject unrelated authority instead of stripping it. Keep provisioning, host consent, continuation and execution independently gated.
