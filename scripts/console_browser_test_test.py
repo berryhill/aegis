@@ -104,6 +104,106 @@ class ProcessStub:
         return self.status
 
 
+class DevToolsActivePortReadinessTest(unittest.TestCase):
+    def test_main_empty_published_file_does_not_index_missing_port(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            workspace = pathlib.Path(directory)
+            (workspace / "passwords.json").write_text(
+                '{"initial":"synthetic-initial-password","replacement":"synthetic-replacement-password"}'
+            )
+            chrome_home = workspace / "chrome-inspection"
+            process = mock.MagicMock()
+            process.poll.return_value = None
+            def launch(*args, **kwargs):
+                (chrome_home / "DevToolsActivePort").write_text("")
+                return process
+            clock = [0.0]
+            def monotonic():
+                clock[0] += 1.0
+                return clock[0]
+            with (mock.patch.object(sys, "argv", ["console_browser_test.py", "http://localhost", str(workspace / "passwords.json"), str(workspace)]),
+                  mock.patch.object(console_browser_test.subprocess, "Popen", side_effect=launch),
+                  mock.patch.object(console_browser_test, "stop_chrome"),
+                  mock.patch.object(console_browser_test.time, "monotonic", side_effect=monotonic),
+                  mock.patch.object(console_browser_test.time, "sleep")):
+                with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready"):
+                    console_browser_test.main()
+
+    def test_waits_for_missing_empty_partial_then_complete_port(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            path = pathlib.Path(directory) / "DevToolsActivePort"
+            states = ["", "1", "12", "123", "123\n/devtools/browser/proof"]
+            clock = [0.0]
+            def sleep(_):
+                path.write_text(states.pop(0))
+                clock[0] += 0.1
+            with (mock.patch.object(console_browser_test.time, "monotonic", side_effect=lambda: clock[0]),
+                  mock.patch.object(console_browser_test.time, "sleep", side_effect=sleep)):
+                self.assertEqual(console_browser_test.wait_for_active_port(path, 1.0, ProcessStub(None)), 123)
+            self.assertEqual(states, [])
+
+    def test_never_ready_times_out_and_chrome_exit_denies(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            path = pathlib.Path(directory) / "DevToolsActivePort"
+            clock = [0.0]
+            with (mock.patch.object(console_browser_test.time, "monotonic", side_effect=lambda: clock[0]),
+                  mock.patch.object(console_browser_test.time, "sleep", side_effect=lambda _: clock.__setitem__(0, clock[0] + 0.1))):
+                with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready"):
+                    console_browser_test.wait_for_active_port(path, 0.25, ProcessStub(None))
+                with self.assertRaisesRegex(RuntimeError, "Chrome exited before DevTools readiness"):
+                    console_browser_test.wait_for_active_port(path, 1.0, ProcessStub(17))
+
+    def test_complete_port_line_does_not_require_browser_path_termination(self):
+        path = mock.Mock()
+        for publication in ("123\n", "123\n/devtools/browser/proof", "123\n/devtools/browser/proof\n"):
+            with self.subTest(publication=publication):
+                path.read_text.return_value = publication
+                self.assertEqual(console_browser_test.wait_for_active_port(path, time.monotonic() + 1, ProcessStub(None)), 123)
+
+    def test_process_exit_during_publication_read_denies_ready_port(self):
+        path = mock.Mock()
+        path.read_text.return_value = "123\n/devtools/browser/proof"
+        process = mock.Mock()
+        process.poll.side_effect = [None, 17]
+        with self.assertRaisesRegex(RuntimeError, "Chrome exited before DevTools readiness"):
+            console_browser_test.wait_for_active_port(path, time.monotonic() + 1, process)
+
+    def test_deadline_expiring_during_publication_read_denies_ready_port(self):
+        path = mock.Mock()
+        path.read_text.return_value = "123\n/devtools/browser/proof"
+        with mock.patch.object(console_browser_test.time, "monotonic", side_effect=[0, 1]):
+            with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready"):
+                console_browser_test.wait_for_active_port(path, 1, ProcessStub(None))
+
+    def test_incomplete_or_malformed_publication_has_bounded_timeout(self):
+        for publication in ("", "123", "abc", "/devtools/browser/proof"):
+            with self.subTest(publication=publication):
+                path = mock.Mock()
+                path.read_text.return_value = publication
+                clock = [0.0]
+                def sleep(interval):
+                    clock[0] += interval
+                with (mock.patch.object(console_browser_test.time, "monotonic", side_effect=lambda: clock[0]),
+                      mock.patch.object(console_browser_test.time, "sleep", side_effect=sleep)):
+                    with self.assertRaisesRegex(RuntimeError, "Chrome did not become ready"):
+                        console_browser_test.wait_for_active_port(path, 0.12, ProcessStub(None))
+                self.assertEqual(clock[0], 0.12)
+                self.assertEqual(path.read_text.call_count, 3)
+
+    def test_malformed_ports_fail_closed_and_valid_boundaries_pass(self):
+        with tempfile.TemporaryDirectory(dir=pathlib.Path.cwd()) as directory:
+            path = pathlib.Path(directory) / "DevToolsActivePort"
+            for value in ("abc", "0", "65536", "-1", "+1", "1x", " 1"):
+                with self.subTest(value=value):
+                    path.write_text(value + "\n/devtools/browser/proof\n")
+                    with self.assertRaisesRegex(RuntimeError, "invalid DevTools port"):
+                        console_browser_test.wait_for_active_port(path, time.monotonic() + 1, ProcessStub(None))
+            for value in ("1", "65535"):
+                with self.subTest(value=value):
+                    path.write_text(value + "\n/devtools/browser/proof\n")
+                    self.assertEqual(console_browser_test.wait_for_active_port(path, time.monotonic() + 1, ProcessStub(None)), int(value))
+
+
 class PageWebsocketTest(unittest.TestCase):
     def test_queue_evidence_requires_real_inspector_navigation(self):
         source = pathlib.Path(console_browser_test.__file__).read_text()
@@ -418,10 +518,13 @@ class NativeTouchTest(unittest.TestCase):
                     )
                 active_port = chrome_home / "DevToolsActivePort"
                 deadline = time.monotonic() + console_browser_test.CHROME_START_TIMEOUT
-                while time.monotonic() < deadline and not active_port.exists() and process.poll() is None:
-                    time.sleep(0.05)
-                if active_port.exists() and process.poll() is None:
+                try:
+                    port = console_browser_test.wait_for_active_port(active_port, deadline, process)
                     break
+                except RuntimeError as error:
+                    if str(error) not in ("Chrome did not become ready", "Chrome exited before DevTools readiness"):
+                        console_browser_test.stop_chrome(process, None)
+                        raise
                 with stderr_path.open("rb") as chrome_stderr:
                     chrome_stderr.seek(0, os.SEEK_END)
                     chrome_stderr.seek(max(0, chrome_stderr.tell() - 2048))
@@ -435,7 +538,6 @@ class NativeTouchTest(unittest.TestCase):
                 print("Chrome startup recovered after: " + " | ".join(startup_errors), file=sys.stderr)
             devtools = None
             try:
-                port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
                 websocket = console_browser_test.page_websocket(
                     port, time.monotonic() + console_browser_test.PAGE_TARGET_TIMEOUT, process
                 )

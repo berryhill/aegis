@@ -193,6 +193,29 @@ def page_websocket(port: int, deadline: float, process: ProcessState) -> str:
     raise RuntimeError("Chrome did not expose a debuggable console page")
 
 
+def wait_for_active_port(path: pathlib.Path, deadline: float, process: ProcessState) -> int:
+    """Wait for Chrome's complete port line, not merely the file's existence.
+
+    Chrome terminates the port line, but not necessarily the browser-path line.
+    The path is not consumed here; page_websocket independently polls targets.
+    """
+    while True:
+        require(process.poll() is None, "Chrome exited before DevTools readiness")
+        require(time.monotonic() < deadline, "Chrome did not become ready")
+        try:
+            publication = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            publication = ""
+        port_text, separator, _ = publication.partition("\n")
+        if separator:
+            require(port_text.isascii() and port_text.isdecimal() and 1 <= int(port_text) <= 65535,
+                    "Chrome published an invalid DevTools port")
+            require(process.poll() is None, "Chrome exited before DevTools readiness")
+            require(time.monotonic() < deadline, "Chrome did not become ready")
+            return int(port_text)
+        time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+
+
 _BROWSER_PROOF_START = time.monotonic()
 
 
@@ -703,12 +726,7 @@ def main() -> int:
     try:
         active_port = chrome_home / "DevToolsActivePort"
         startup_deadline = time.monotonic() + CHROME_START_TIMEOUT
-        while time.monotonic() < startup_deadline and not active_port.exists():
-            require(process.poll() is None, "Chrome exited before DevTools readiness")
-            time.sleep(0.05)
-        require(active_port.exists(), "Chrome did not become ready")
-        require(process.poll() is None, "Chrome exited after DevTools readiness")
-        port = int(active_port.read_text(encoding="utf-8").splitlines()[0])
+        port = wait_for_active_port(active_port, startup_deadline, process)
         # DevToolsActivePort can appear before Chrome's first page target is
         # queryable. This stage needs a fresh budget, not startup's remainder.
         page_deadline = time.monotonic() + PAGE_TARGET_TIMEOUT
