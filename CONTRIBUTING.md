@@ -1,5 +1,7 @@
 # Contributing to Aegis
 
+Source candidate: typed owning-service credential-only successor review hands off to the existing protected browser setup for an independent human decision. Typed approval is unavailable and fails closed; typed rejection has no authority effects. See [successor launch review](docs/implementation/guided-doer-successor-launch-review.md).
+
 Source candidate: typed Doer candidate readiness and retained-draft save/read/CAS/successor adapters now support the configured owning-service Unix transport. Optional controller-owned Codex inference authentication is separate from zero Agent credential/tool authority. Independent security review, exact successor/provisioning/host consent and installed/live acceptance remain gates. See [Doer Loop](docs/DOER_LOOP.md) and [launch impact review](docs/implementation/provider-auth-readiness-launch-review.md).
 
 

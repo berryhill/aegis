@@ -120,6 +120,24 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		method, path, input = http.MethodPost, "/v1/loops/doer/drafts", proposal
 	case "loops draft-show":
 		path = "/v1/loops/doer/drafts/" + url.PathEscape(args[0])
+	case "loops setup-review":
+		var proposal app.DoerSetupReviewInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.ID == "" {
+			return usage(errors.New("draft id is required"))
+		}
+		method, path, input = http.MethodPost, "/v1/loops/doer/drafts/"+url.PathEscape(proposal.ID)+"/setup-review", proposal
+	case "loops setup-decide":
+		var proposal app.DoerSetupDecisionInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.ID == "" {
+			return usage(errors.New("draft id is required"))
+		}
+		method, path, input = http.MethodPost, "/v1/loops/doer/drafts/"+url.PathEscape(proposal.ID)+"/setup-decision", proposal
 	case "loops draft-continue":
 		var proposal app.ContinueDoerDraftInput
 		if err := decodeJSONFile(args[0], &proposal); err != nil {

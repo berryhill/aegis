@@ -21,6 +21,7 @@ type doerSetupIntent struct {
 	Charter                        app.ExactRevisionReference
 	PlanID, PlanDigest, ApprovalID string
 	Host                           app.DoerHostApprovalInput
+	Proposal                       *app.DoerSetupProposal
 }
 
 // registerDoerSetupRoutes is intentionally wired by the server owner. All
@@ -98,7 +99,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 			}
 		}
 		if len(m.Charters) == 0 {
-			m.Message = "No imported compatible successor charter is available. This setup cannot import a charter or create/configure a model."
+			m.Message = "No imported compatible successor charter is available. Review a native zero-authority Codex successor below; unsupported providers and ambiguous authentication remain blocked."
 		}
 		return render(c, m)
 	})
@@ -161,6 +162,15 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 			m.Preview = "Exact host-write contract:\n" + setupJSON(d.Contract) + "\nCandidate digest: " + candidate.Digest + "\nContract digest: " + digest + "\nMaximum approval lifetime: 24 hours. No model, credential, provisioning, session, Graph, or native-test authority is granted."
 			return issue(in, "Approve this exact host-write contract (maximum 24 hours)")
 		}
+		if action == "propose-review" {
+			proposal, err := svc.ProposeDoerSetupSuccessorAs(req.Context(), sub, d.ID, d.Version)
+			if err != nil {
+				return fail(err)
+			}
+			in.Action, in.Proposal = "proposed-successor", &proposal
+			m.Preview = "Original exact authority:\n" + setupJSON(proposal.Original) + "\nProposed exact authority:\n" + setupJSON(proposal.Proposed) + "\nThe sole enabled, already tool-free stanza removes only credential scope provider:codex and replaces provider_authentication with controller-codex-access-token.v1. No other grants, scopes, integrations, runtime, model, provider, authentication selectors or stanzas change. Controller Codex authentication is a requested transport mode, not verified readiness. No provisioning, host-write consent, publication or Run is included."
+			return issue(in, "Approve exact proposed successor and retain this task")
+		}
 		if action == "successor-review" {
 			if err := json.Unmarshal([]byte(values.Get("charter")), &in.Charter); err != nil || in.Charter.Validate() != nil {
 				return fail(app.ErrConflict)
@@ -205,8 +215,24 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 		if err = json.Unmarshal(payload, &in); err != nil || in.Draft.ID != d.ID || in.Draft.Version != d.Version || in.Draft.Agent != d.Agent {
 			return fail(app.ErrConflict)
 		}
-		if in.Action != "decision" && action != "confirm" {
+		if in.Action != "decision" && action != "confirm" && !(in.Action == "proposed-successor" && action == "reject") {
 			return fail(app.ErrConflict)
+		}
+		if in.Action == "proposed-successor" {
+			if action == "reject" {
+				m.Message = "Exact proposed successor rejected; retained draft unchanged."
+				return render(c, m)
+			}
+			if in.Proposal == nil {
+				return fail(app.ErrConflict)
+			}
+			next, err := svc.ConfirmDoerSetupSuccessorAs(req.Context(), sub, *in.Proposal)
+			if err != nil {
+				return fail(err)
+			}
+			m = modelFor(next)
+			m.Message = "Exact proposed successor and same retained task read back. No provider readiness, provisioning, host-write approval, publication or Run granted. Review fresh setup for remaining blockers."
+			return render(c, m)
 		}
 		if in.Action == "successor" {
 			next, err := svc.ApproveDoerDraftSuccessorAs(req.Context(), sub, d.ID, d.Version, app.ApproveAgentCharterInput{Expected: d.Agent, Charter: in.Charter})

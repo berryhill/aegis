@@ -20,6 +20,13 @@ templ DoerSetupPage(m DoerSetupModel, csrf string) {
   if m.Current != "" {
    <h2>Exact current Agent and charter binding</h2><pre>{ m.Current }</pre>
   }
+  <form method="post" action="/console/loops/doer/setup">
+   <input type="hidden" name="csrf" value={ csrf }/>
+   <input type="hidden" name="draft_id" value={ m.DraftID }/>
+   <input type="hidden" name="action" value="propose-review"/>
+   <button type="submit">Review zero-authority Codex successor for this draft</button>
+  </form>
+  <p>Only an already zero-tool, zero-capability, zero-memory stanza with sole credential scope provider:codex is eligible. The proposal removes that scope and requests controller-owned Codex inference authentication. All other declarations stay unchanged. An exact compatible imported successor is reused for review, never automatically approved. Review is not approval or provider readiness.</p>
   for _, ch := range m.Charters {
    <details><summary>Imported canonical successor charter</summary><pre>{ ch.Details }</pre></details>
    <form method="post" action="/console/loops/doer/setup">
@@ -42,6 +49,9 @@ templ DoerSetupPage(m DoerSetupModel, csrf string) {
     <input type="hidden" name="draft_id" value={ m.DraftID }/>
     <input type="hidden" name="receipt" value={ m.Receipt }/>
     <button name="action" value="confirm" type="submit">{ m.ConfirmLabel }</button>
+    if m.ConfirmLabel == "Approve exact proposed successor and retain this task" {
+     <button name="action" value="reject" type="submit">Reject exact proposed successor</button>
+    }
     if m.ConfirmLabel == "Approve this exact provisioning plan" {
      <button name="action" value="reject" type="submit">Reject exact plan</button>
     }

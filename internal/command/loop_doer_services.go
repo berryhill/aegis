@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/spf13/cobra"
 )
@@ -87,5 +88,11 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	return []*cobra.Command{readiness, save, show, continuation}
+	review := &cobra.Command{Use: "setup-review FILE", Short: "Review a credential-only successor through the owning service", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("setup review requires --target owning-service transport")
+	}}
+	decision := &cobra.Command{Use: "setup-decide FILE", Short: "Reject a setup review; approval requires protected human browser confirmation", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("setup decision requires --target owning-service transport")
+	}}
+	return []*cobra.Command{readiness, save, show, continuation, review, decision}
 }
