@@ -18,7 +18,7 @@ import (
 // Owning-service reviews are process-local, bounded, single-use and bound to
 // authenticated transport identity. Restart loses reviews, never grants approval.
 // Transport account identity is not an independent human decision. Typed reviews
-// hand off to browser setup, which retains its session-bound CSRF/receipt boundary.
+// hand off to independent browser or protected-terminal password authentication.
 func registerDoerSetupServiceRoutes(g *echo.Group, svc *app.Service) {
 	type review struct {
 		Subject core.Subject
@@ -89,7 +89,7 @@ func registerDoerSetupServiceRoutes(g *echo.Group, svc *app.Service) {
 		// adapter. A model-held review token or SO_PEERCRED account identity
 		// cannot authorize import, Agent approval or draft rebinding.
 		if in.Decision == "approve-successor" {
-			return echo.NewHTTPError(http.StatusForbidden, "independent human confirmation required: open the setup review confirmation_url; typed approval is unavailable")
+			return echo.NewHTTPError(http.StatusForbidden, "independent human confirmation required: use loops setup-approve in a protected terminal or open the setup review confirmation_url; generic typed approval is unavailable")
 		}
 		mu.Lock()
 		r, ok := reviews[in.Receipt]

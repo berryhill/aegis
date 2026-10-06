@@ -880,6 +880,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleAgents, agentID))
 	})
 	registerDoerSetupRoutes(e, svc, consoleManager)
+	registerDoerProtectedSetupRoutes(e, svc, consoleManager)
 	doerPortal := NewDoerContinuationPortal(svc, consoleManager)
 	doerPortal.RegisterBrowser(e)
 	e.GET("/console/loops/doer", func(c *echo.Context) error {
@@ -1754,6 +1755,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.JSON(http.StatusCreated, value)
 	})
 	registerDoerServiceRoutes(g, svc)
+	registerDoerProtectedInvokeRoutes(g, svc, nil)
 	g.GET("/loops", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {

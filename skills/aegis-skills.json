@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:c6af199d2c1ca9cbeb2950340dda990b9d68f2b3b2062ca2d9d6a93a51bd8e57",
+    "content_digest": "sha256:44927eeecfdb747ef8669097b7148dc26860f258547838dd75919033cdb7b199",
     "source_revision": "repository"
   },
   "operations": [
@@ -100,7 +100,7 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:fde184098212ea98046755ec8c4b7f8789ebc41a751853da477330d245790976",
+      "content_digest": "sha256:a78e241893a48ebec53dc6aee445fbf1c69ca2a6c3bd4c6a1d79ad6f5446799b",
       "files": [
         {
           "path": "SKILL.md",
@@ -109,8 +109,8 @@
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:f96160770ed114ea64a87e2c1bc8a6f0fcb3e61c3952b012428dbaf9b671b7cf",
-          "size": 24778
+          "sha256": "sha256:9f4e308efcd64f7bb3fb4c072e34d7520693912ea2c8b932f5faedfea6e8f71c",
+          "size": 26137
         }
       ]
     },
@@ -219,12 +219,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:b2d64567acafb885c4968e8a73e56e1e4a48440bc8ce2324374d9cbca591d57f",
+      "content_digest": "sha256:d3ea632594148ba764b68ae8d9c539f9df619a4db309126f09c7c55937d36d80",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:d9f537743fba0b85b8a64e337cc495d8d592665735bde134431170dde422d7e9",
-          "size": 9513
+          "sha256": "sha256:b6f21afc1638d92d55f9f7a4f0975c9d5078afffde47d41d6a8a2fba84ff7e26",
+          "size": 11054
         },
         {
           "path": "references/provisioning-fixtures.json",
@@ -314,12 +314,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:5447e7582541126e161f43253e66482e0db1acf5b719d16798fa1153d54af2ee",
+      "content_digest": "sha256:660659185cc394f77d3b4010958d73a52f6673a8a755dbb00a15cd6799009f1d",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:55ee98922f1fcc2570aed69780afd8462711b2f1c3657756d0faf8dceba36417",
-          "size": 27635
+          "sha256": "sha256:1ea163235d42b869be750335428506b669122768c8fdfdcbdb8af795ffafed63",
+          "size": 31876
         }
       ]
     },

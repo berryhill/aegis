@@ -1,5 +1,21 @@
 # Official Hermes skill suite
 
+## Retained Doer protected setup (source candidate)
+
+`loops setup-protected FILE` routes only exact draft ID/version and independent
+scope to the owning service. The product launches its pinned hidden companion,
+which captures the enrolled principal password and exact native human review
+through trusted desktop helpers, never agent stdin or a tool PTY. Missing GUI
+is unavailable, not a typed-decision fallback. `setup-approve` is genuine
+operator-only terminal entry, not an agent approval tool. Server-side enrolled
+password session, origin/CSRF, single-use receipt and exact current draft checks
+remain mandatory; companion exit text is insufficient without canonical target
+readback. Successor, provisioning and host consent do not imply publication or
+Run. Tests use private synthetic state/helpers only. Installed independent human
+interaction and real provider/selected-file terminal proof remain separate gates.
+See [the supported field workflow](DOER_LOOP.md#protected-setup-through-installed-skills-source-candidate).
+
+
 The repository-root `skills/` directory is the canonical reviewed source for the official portable Aegis Hermes skills. Each installable skill is one immediate child directory containing `SKILL.md`. The bundle ships fifteen skills:
 
 - `skills/aegis/SKILL.md` is a thin discovery and routing skill.

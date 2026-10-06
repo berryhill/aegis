@@ -91,8 +91,16 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 	review := &cobra.Command{Use: "setup-review FILE", Short: "Review a credential-only successor through the owning service", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return errors.New("setup review requires --target owning-service transport")
 	}}
-	decision := &cobra.Command{Use: "setup-decide FILE", Short: "Reject a setup review; approval requires protected human browser confirmation", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	decision := &cobra.Command{Use: "setup-decide FILE", Short: "Reject a setup review; approval requires independent protected human confirmation", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return errors.New("setup decision requires --target owning-service transport")
 	}}
-	return []*cobra.Command{readiness, save, show, continuation, review, decision}
+	protected := &cobra.Command{Use: "setup-approve ID", Short: "Authenticate and review exact retained setup in a protected terminal (no browser)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("protected setup requires --target owning-service transport")
+	}}
+	protected.Flags().Uint64("expected-version", 0, "exact retained draft version")
+	protected.Flags().String("action", "successor", "independent exact scope: successor, provision, or host")
+	invoke := &cobra.Command{Use: "setup-protected FILE", Short: "Request independent protected desktop setup review from the owning service", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("protected setup invocation requires --target owning-service transport")
+	}}
+	return []*cobra.Command{readiness, save, show, continuation, review, decision, protected, invoke}
 }

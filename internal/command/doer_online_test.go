@@ -66,6 +66,7 @@ func TestDoerOnlineServicesUseOwningUnixTransport(t *testing.T) {
 		{"draft-save", `{}`, "POST /v1/loops/doer/drafts", nil},
 		{"draft-show", "example", "GET /v1/loops/doer/drafts/example", nil},
 		{"draft-continue", `{"id":"example","expected_version":1}`, "POST /v1/loops/doer/drafts/example/continue", nil},
+		{"setup-protected", `{"id":"example","expected_version":1,"action":"host"}`, "POST /v1/loops/doer/drafts/example/setup-protected", nil},
 		{"setup-review", `{"id":"example","expected_version":1}`, "POST /v1/loops/doer/drafts/example/setup-review", nil},
 		{"setup-decide", `{"id":"example","receipt":"review","decision":"reject"}`, "POST /v1/loops/doer/drafts/example/setup-decision", nil},
 	} {

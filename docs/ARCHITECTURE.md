@@ -1,5 +1,21 @@
 # Aegis MVP Architecture
 
+## Retained Doer protected setup (source candidate)
+
+`loops setup-protected FILE` routes only exact draft ID/version and independent
+scope to the owning service. The product launches its pinned hidden companion,
+which captures the enrolled principal password and exact native human review
+through trusted desktop helpers, never agent stdin or a tool PTY. Missing GUI
+is unavailable, not a typed-decision fallback. `setup-approve` is genuine
+operator-only terminal entry, not an agent approval tool. Server-side enrolled
+password session, origin/CSRF, single-use receipt and exact current draft checks
+remain mandatory; companion exit text is insufficient without canonical target
+readback. Successor, provisioning and host consent do not imply publication or
+Run. Tests use private synthetic state/helpers only. Installed independent human
+interaction and real provider/selected-file terminal proof remain separate gates.
+See [the supported field workflow](DOER_LOOP.md#protected-setup-through-installed-skills-source-candidate).
+
+
 Guided successor setup is a credential-only design proposal, never runtime stanza selection: it denies unrelated grants/scopes and preserves model/provider and authentication selectors. Exact original/proposed canonical artifacts precede a separate authenticated decision. Browser receipts are session-bound; typed owning-service reviews return a protected browser handoff and five-minute transport-identity-bound rejection receipts. Typed approve-successor always denies: account authentication and model-held tokens do not establish a human decision. Exact compatible imported successors are reused without automatic approval. Import/Agent-successor/draft rebind may partially persist; recovery pins those exact facts. Provisioning, host consent, native continuation, publication and Run remain separate. See [the typed setup contract](DOER_LOOP.md#guided-credential-only-successor-review).
 
 Controller-owned Codex transport is an optional, independently reviewed source contract, not Agent credential authority. Explicit charter approval requires zero Agent tools/credentials; the controller resolves only the configured environment binding and materializes bounded expiring access-token state in a disposable runtime home without refresh. JWT shape/expiry validation is not issuer authentication. No provider secret is returned by readiness or draft adapters. Retained proposals/readiness are non-authorizing; exact successor, provisioning, clean-session and host-write gates remain independent. See [source boundary](DOER_LOOP.md#controller-owned-codex-transport-and-typed-doer-proposal-adapters-source-candidate).

@@ -36,6 +36,7 @@ const (
 	AuthorityPassphraseCreate AuthorityPassphraseIntent = iota + 1
 	AuthorityPassphraseUnlock
 	PrincipalPasswordCreate
+	PrincipalPasswordAuthenticate
 )
 
 type AuthorityPassphraseRequest struct {
@@ -108,11 +109,14 @@ func newAuthorityPassphraseService(explicit func() string) *authorityPassphraseS
 }
 
 func (s *authorityPassphraseService) Acquire(ctx context.Context, request AuthorityPassphraseRequest) ([]byte, error) {
-	if request.Intent != AuthorityPassphraseCreate && request.Intent != AuthorityPassphraseUnlock && request.Intent != PrincipalPasswordCreate {
+	if request.Intent != AuthorityPassphraseCreate && request.Intent != AuthorityPassphraseUnlock && request.Intent != PrincipalPasswordCreate && request.Intent != PrincipalPasswordAuthenticate {
 		return nil, &PassphraseError{Kind: PassphrasePolicy, reason: "invalid protected secret intent"}
 	}
 	for attempt := 0; attempt < passphraseRetryLimit; attempt++ {
 		mode := "unlock"
+		if request.Intent == PrincipalPasswordAuthenticate {
+			mode = "principal-authenticate"
+		}
 		if request.Intent == AuthorityPassphraseCreate {
 			mode = "create"
 		} else if request.Intent == PrincipalPasswordCreate {
@@ -126,7 +130,7 @@ func (s *authorityPassphraseService) Acquire(ctx context.Context, request Author
 			}
 			return nil, err
 		}
-		if request.Intent == AuthorityPassphraseUnlock {
+		if request.Intent == AuthorityPassphraseUnlock || request.Intent == PrincipalPasswordAuthenticate {
 			return first, nil
 		}
 		confirmMode := "confirm"
@@ -278,6 +282,11 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 		description = "Confirm the new Aegis credential authority passphrase. Minimum 12 bytes; it is not persisted."
 		prompt = "Confirm authority passphrase:"
 		okText = "Confirm"
+	} else if mode == "principal-authenticate" {
+		title = "Aegis principal authentication"
+		description = "Authenticate the enrolled Aegis principal for exact Doer setup review. This is not the credential authority passphrase."
+		prompt = "Enrolled principal password:"
+		okText = "Authenticate"
 	} else if mode == "principal-create" {
 		title = "Aegis principal authentication"
 		description = "Create the Aegis principal login password. Minimum 12 bytes; only a salted verifier is persisted."
@@ -398,6 +407,8 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 		prompt = "New authority passphrase (minimum 12 bytes): "
 	} else if mode == "confirm" {
 		prompt = "Confirm authority passphrase: "
+	} else if mode == "principal-authenticate" {
+		prompt = "Enrolled principal password: "
 	} else if mode == "principal-create" {
 		prompt = "Principal password (minimum 12 bytes): "
 	} else if mode == "principal-confirm" {
@@ -430,7 +441,7 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 }
 
 func protectedSecretCancellationReason(intent AuthorityPassphraseIntent) string {
-	if intent == PrincipalPasswordCreate {
+	if intent == PrincipalPasswordCreate || intent == PrincipalPasswordAuthenticate {
 		return "principal password entry cancelled"
 	}
 	return "authority passphrase entry cancelled"
@@ -440,14 +451,14 @@ func protectedSecretContextFailure(parent context.Context, intent AuthorityPassp
 	if errors.Is(parent.Err(), context.Canceled) {
 		return PassphraseCancelled, protectedSecretCancellationReason(intent)
 	}
-	if intent == PrincipalPasswordCreate {
+	if intent == PrincipalPasswordCreate || intent == PrincipalPasswordAuthenticate {
 		return PassphraseTimeout, "principal password request timed out"
 	}
 	return PassphraseTimeout, "authority passphrase request timed out"
 }
 
 func validateProtectedSecret(intent AuthorityPassphraseIntent, value []byte) error {
-	if intent == PrincipalPasswordCreate {
+	if intent == PrincipalPasswordCreate || intent == PrincipalPasswordAuthenticate {
 		if len(value) < authorityPassphraseMinimum || len(value) > authorityPassphraseMaximum {
 			return &PassphraseError{Kind: PassphrasePolicy, Interaction: true, reason: "principal password must be between 12 and 1024 bytes"}
 		}
