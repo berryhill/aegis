@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.22] - 2026-10-06
+
 ### Fixed
 - Wait for a complete, valid Chrome `DevToolsActivePort` port line instead of treating file existence as readiness. Installed-console and focused touch-browser verification tolerate transient missing, empty and partially written files within the existing startup deadline, deny invalid ports or exited Chrome, and retain independent page-target readiness and process-group cleanup.
 
