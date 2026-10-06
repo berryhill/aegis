@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+- Add typed `loops setup-protected FILE` owning-service invocation for retained Doer setup with independently captured enrolled-password authentication and exact native review. Keep successor, exact provisioning and signed host consent separate; hidden product-launched companion has no terminal/PTY fallback. Operator-only `loops setup-approve` rejects piped input. Reload exact target facts rather than trusting companion status; setup does not publish or Run. Installed human/provider/end-to-end execution acceptance remains pending. See [Doer workflow](docs/DOER_LOOP.md).
+
 ## [0.2.22] - 2026-10-06
 
 ### Fixed

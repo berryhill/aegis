@@ -35,6 +35,9 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 	if cmd.Parent() != nil {
 		operation = cmd.Parent().Name() + " " + cmd.Name()
 	}
+	if operation == "loops setup-approve" {
+		return runDoerProtectedSetup(cmd, args, options)
+	}
 	method, path := http.MethodGet, ""
 	var input any
 	switch operation {
@@ -120,6 +123,15 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		method, path, input = http.MethodPost, "/v1/loops/doer/drafts", proposal
 	case "loops draft-show":
 		path = "/v1/loops/doer/drafts/" + url.PathEscape(args[0])
+	case "loops setup-protected":
+		var proposal app.DoerProtectedSetupInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.ID == "" || proposal.ExpectedVersion == 0 || (proposal.Action != "successor" && proposal.Action != "host" && proposal.Action != "provision") {
+			return usage(errors.New("exact draft id/version and action successor, host or provision required"))
+		}
+		method, path, input = http.MethodPost, "/v1/loops/doer/drafts/"+url.PathEscape(proposal.ID)+"/setup-protected", proposal
 	case "loops setup-review":
 		var proposal app.DoerSetupReviewInput
 		if err := decodeJSONFile(args[0], &proposal); err != nil {
@@ -285,7 +297,7 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		}
 		timeout := controlTimeout
 		processing := method != http.MethodGet
-		if processing && (strings.HasSuffix(path, "/process") || path == "/v1/loops/queue" || path == "/v1/provision" || path == "/v1/sessions/start") {
+		if processing && (strings.HasSuffix(path, "/process") || path == "/v1/loops/queue" || path == "/v1/provision" || path == "/v1/sessions/start" || strings.HasSuffix(path, "/setup-protected")) {
 			timeout = executionTimeout
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)

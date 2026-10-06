@@ -18,6 +18,10 @@
     {
       "path": "aegis doer-approval-companion",
       "reason": "Hidden product-launched native approval companion with inherited private transport and exact peer/process binding; not a manual builder command or public skill transport."
+    },
+    {
+      "path": "aegis doer-setup-companion",
+      "reason": "Hidden product-launched independent password/native-review companion; not an agent-operated terminal or public skill transport."
     }
   ],
   "framework_exclusions": [
@@ -306,7 +310,7 @@
     {
       "skill": "aegis-loop-authoring",
       "classification": "shipped",
-      "authority": "Exact authenticated workspace or runtime authority; stable owner controls publication/lifecycle, immutable definitions remain fleet-shared. Console mutations require authenticated same-origin CSRF and exact preview/execute contract. Retained Doer drafts and setup bind exact draft versions and single-use review receipts; successor, provisioning and signed expiring host-write approval remain separate decisions. Native continuation review/decision additionally require protected Unix local-OS principal authentication, the exact owning origin and product-launched companion peer PID; approval binds the exact browser session, requester, draft, candidate and Run intent, never browser-to-local identity promotion. Typed Doer setup review hands off via confirmation_url to protected browser review. Typed approve-successor denies (no independent proof adapter); typed reject has no authority effects. The model must not operate human confirmation.",
+      "authority": "Exact authenticated workspace or runtime authority; stable owner controls publication/lifecycle, immutable definitions remain fleet-shared. Console mutations require authenticated same-origin CSRF and exact preview/execute contract. Retained Doer drafts and setup bind exact draft versions and single-use review receipts; successor, provisioning and signed expiring host-write approval remain separate decisions. Native continuation review/decision additionally require protected Unix local-OS principal authentication, the exact owning origin and product-launched companion peer PID; approval binds the exact browser session, requester, draft, candidate and Run intent, never browser-to-local identity promotion. Typed setup-review retains the legacy independent browser handoff; setup-protected launches the product-owned independent password/native review surface. Typed approve-successor denies (no independent proof adapter); typed reject has no authority effects. The model must not operate human confirmation. Protected setup invocation launches independent enrolled-password and exact native review, never accepts model password/decision. Direct setup-approve is operator-only; no GUI-to-terminal fallback in the product-launched companion. Companion status alone is not authority; exact service readback is required.",
       "sources": [
         "internal/command/fleet.go",
         "internal/api/server.go",
@@ -317,7 +321,12 @@
         "internal/api/doer_continuation_portal.go",
         "internal/api/doer_companion_launch.go",
         "internal/command/loop_doer_services.go",
-        "internal/app/doer_adapter_inputs.go"
+        "internal/app/doer_adapter_inputs.go",
+        "internal/api/doer_protected_setup.go",
+        "internal/api/doer_protected_invoke.go",
+        "internal/command/doer_protected_setup.go",
+        "internal/command/doer_setup_companion.go",
+        "internal/command/doer_protected_result.go"
       ],
       "tests": [
         "internal/api/workspace_skill_contract_test.go",
@@ -331,7 +340,10 @@
         "internal/api/doer_companion_launch_test.go",
         "internal/api/doer_draft_adapter_test.go",
         "internal/api/doer_services_test.go",
-        "internal/command/doer_online_test.go"
+        "internal/command/doer_online_test.go",
+        "internal/api/doer_protected_setup_test.go",
+        "internal/api/doer_protected_invoke_test.go",
+        "internal/command/doer_protected_setup_test.go"
       ],
       "cli": [
         "aegis loops",
@@ -353,7 +365,9 @@
         "aegis loops draft-show",
         "aegis loops draft-continue",
         "aegis loops setup-review",
-        "aegis loops setup-decide"
+        "aegis loops setup-decide",
+        "aegis loops setup-approve",
+        "aegis loops setup-protected"
       ],
       "http": [
         "GET /v1/loops",
@@ -380,7 +394,12 @@
         "GET /v1/loops/doer/drafts/:id",
         "POST /v1/loops/doer/drafts/:id/continue",
         "POST /v1/loops/doer/drafts/:id/setup-review",
-        "POST /v1/loops/doer/drafts/:id/setup-decision"
+        "POST /v1/loops/doer/drafts/:id/setup-decision",
+        "POST /v1/loops/doer/drafts/:id/setup-protected",
+        "POST /console/loops/doer/setup-native/login",
+        "POST /console/loops/doer/setup-native/logout",
+        "POST /console/loops/doer/setup-native/review",
+        "POST /console/loops/doer/setup-native/decision"
       ],
       "transport_classification": "shipped"
     },

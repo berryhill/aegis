@@ -66,6 +66,11 @@ func (b *boundedCompanionOutput) Write(p []byte) (int, error) {
 }
 
 func launchDoerCompanion(ctx context.Context, socket, origin, id, bearer string, bind func(int), configFiles ...string) string {
+	args := []string{"doer-approval-companion", "--socket", socket, "--origin", origin, "--intent-id", id, "--transport-fd", "3"}
+	return launchProtectedDoerCompanion(ctx, args, bearer, bind, configFiles...)
+}
+
+func launchProtectedDoerCompanion(ctx context.Context, args []string, bearer string, bind func(int), configFiles ...string) string {
 	if bearer == "" || len(bearer) > 4096 || strings.IndexFunc(bearer, func(r rune) bool { return r <= 32 || r >= 127 }) >= 0 {
 		return "transport_unavailable"
 	}
@@ -84,7 +89,7 @@ func launchDoerCompanion(ctx context.Context, socket, origin, id, bearer string,
 	defer cancel()
 	// Descriptor 4 pins the validated inode across rename/path races. Descriptor 3
 	// alone carries the bearer; neither argv, environment, stdout nor stderr does.
-	args := []string{"doer-approval-companion", "--socket", socket, "--origin", origin, "--intent-id", id, "--transport-fd", "3"}
+	// The caller selects one of the fixed product-owned companion commands.
 	if len(configFiles) > 0 && configFiles[0] != "" {
 		args = append(args, "--config", configFiles[0])
 	}
@@ -132,7 +137,7 @@ func launchDoerCompanion(ctx context.Context, socket, origin, id, bearer string,
 		return "unknown_response"
 	}
 	switch response.Status {
-	case "approved", "cancelled", "no_decision", "timeout", "unavailable", "dialog_unavailable", "denied", "expired", "transport_unavailable", "unknown_response", "policy_rejected", "transport_custody_rejected", "malformed_protocol", "response_drift", "sensitive_body_rejected":
+	case "approved", "cancelled", "no_decision", "timeout", "unavailable", "dialog_unavailable", "denied", "expired", "transport_unavailable", "unknown_response", "policy_rejected", "transport_custody_rejected", "malformed_protocol", "response_drift", "sensitive_body_rejected", "outcome_unknown", "response_unverified":
 		return response.Status
 	default:
 		return "unknown_response"
