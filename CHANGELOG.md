@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.24] - 2026-10-07
+
+### Fixed
+- Publish the skill-native protected Doer setup continuation from #294 under the existing trusted release signer. This supersedes the unpublished v0.2.23 tag, whose asset-publication workflow was cancelled after signer-policy verification failed; the immutable tag is preserved. The repair enables supported no-browser setup requests while retaining independent authority decisions. Live provider execution acceptance remains separate from release publication.
+
 ## [0.2.23] - 2026-10-07
 
 ### Added
