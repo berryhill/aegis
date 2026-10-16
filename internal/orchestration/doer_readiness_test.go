@@ -96,6 +96,27 @@ func TestDoerReadinessDeniesMissingPrerequisites(t *testing.T) {
 	})
 }
 
+func TestTrustedExecutableRejectsWritableToolchain(t *testing.T) {
+	binary := filepath.Join(t.TempDir(), "go")
+	if err := os.WriteFile(binary, []byte("not executed"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []os.FileMode{0775, 0757, 0777} {
+		if err := os.Chmod(binary, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := trustedExecutable(binary); err == nil {
+			t.Fatalf("writable executable admitted: %o", mode)
+		}
+	}
+	if err := os.Chmod(binary, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := trustedExecutable(binary); err != nil {
+		t.Fatalf("hardened executable rejected: %v", err)
+	}
+}
+
 func TestDoerWorkspacePolicyRejectsExistingHardlink(t *testing.T) {
 	workspace := t.TempDir()
 	target := filepath.Join(workspace, "value.go")

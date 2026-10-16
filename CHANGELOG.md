@@ -10,6 +10,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Offline `aegis authority recover-interrupted`: enrolled-principal authentication, preserved original evidence, independently validated complete Badger WAL transactions, working-copy replay with canonical-state comparison, and Linux atomic exchange with exact resumable recovery receipts. Ambiguous/torn state refuses; non-Linux recovery refuses before mutation. See [the procedure and limits](docs/AUTHORITY_RECOVERY.md).
 
 ### Fixed
+- Remove group/other write permissions from the CI/release Go executable after toolchain setup, preserving fail-closed executable trust checks in implementation and Doer readiness.
 - Raise the development, CI, and release Go toolchain floor to 1.26.9 to address standard-library vulnerabilities reported by govulncheck; retain the vulnerability and resource-budget gates.
 - Doer readiness now displays controller provider authentication, qualifies its transport once before downstream prerequisites, and keeps approved-draft inspection helper-free. Explicit probes and fresh execution admission remain separate.
 - `aegis gateway status` now reports `ready`, `readiness_state`, and `readiness_reason` separately from service activity, using exact installed/loaded unit identity and authenticated audit-current readiness without repair.

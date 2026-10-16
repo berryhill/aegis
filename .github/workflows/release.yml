@@ -21,6 +21,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+      - name: Harden installed Go executable permissions
+        run: chmod go-w "$(go env GOROOT)/bin/go"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"

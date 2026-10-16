@@ -21,6 +21,20 @@ func TestPreflightFailsClosedWithoutExecution(t *testing.T) {
 	if err := Preflight(c, checker); err == nil {
 		t.Fatal("non executable checker admitted")
 	}
+	for _, mode := range []os.FileMode{0775, 0757, 0777} {
+		if err := os.Chmod(checker, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := Preflight(c, checker); err == nil {
+			t.Fatalf("writable executable admitted: %o", mode)
+		}
+	}
+	if err := os.Chmod(checker, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Preflight(c, checker); err != nil {
+		t.Fatalf("hardened executable rejected: %v", err)
+	}
 	original := c.Workspace
 	c.Workspace = filepath.Join(t.TempDir(), "missing")
 	if err := Preflight(c, e.GoBinary); err == nil {

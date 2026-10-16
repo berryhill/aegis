@@ -36,6 +36,18 @@ class ResourceTests(unittest.TestCase):
                 self.assertIn('  GO_VERSION: "' + version + '"',
                               (root / '.github/workflows' / workflow).read_text().splitlines())
 
+    def test_ci_hardens_go_before_verification(self):
+        root = Path(__file__).resolve().parent.parent
+        for workflow in ('ci.yml', 'release.yml'):
+            text = (root / '.github/workflows' / workflow).read_text()
+            # Every setup-go job must remove archive-supplied write access
+            # before any product tests apply the executable trust policy.
+            jobs = text.split('      - uses: actions/setup-go@v6')[1:]
+            self.assertTrue(jobs)
+            for job in jobs:
+                self.assertIn('run: chmod go-w "$(go env GOROOT)/bin/go"',
+                              job.split('      - name: Prepare verification')[0])
+
     def client(self):
         client = DevTools.__new__(DevTools)
         client.sock = mock.Mock()
