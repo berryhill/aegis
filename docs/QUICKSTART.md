@@ -17,7 +17,7 @@ For a reusable typed v5 definition, use `./aegis loops doer-reusable --help` aft
 ## Prerequisites
 
 - Linux
-- Go 1.26.6+
+- Go 1.26.9+
 - Stable Hermes Agent `>=0.18.0` on `PATH` (no arbitrary upper cap; exact-version protocol checks still apply, and acceptance does not guarantee future-release compatibility)
 - A compatible `pinentry` in the operator's desktop session for protected authority prompts, or a real terminal for the no-echo fallback
 

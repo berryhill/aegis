@@ -25,6 +25,17 @@ def process_exited(status):
 
 
 class ResourceTests(unittest.TestCase):
+    def test_go_toolchain_pins_match_security_floor(self):
+        root = Path(__file__).resolve().parent.parent
+        version = '1.26.9'
+        self.assertIn('go ' + version, (root / 'go.mod').read_text().splitlines())
+        self.assertIn('export GOTOOLCHAIN := go' + version,
+                      (root / 'Makefile').read_text().splitlines())
+        for workflow in ('ci.yml', 'release.yml'):
+            with self.subTest(workflow=workflow):
+                self.assertIn('  GO_VERSION: "' + version + '"',
+                              (root / '.github/workflows' / workflow).read_text().splitlines())
+
     def client(self):
         client = DevTools.__new__(DevTools)
         client.sock = mock.Mock()
