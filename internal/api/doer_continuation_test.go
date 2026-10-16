@@ -22,9 +22,13 @@ import (
 	"github.com/berryhill/aegis/internal/reference"
 )
 
-func continuationFixture(t *testing.T) (*app.Service, core.Subject, app.DoerContinuationIntent) {
+func continuationFixture(t *testing.T, models ...string) (*app.Service, core.Subject, app.DoerContinuationIntent) {
 	t.Helper()
-	svc, controller, candidateInput := candidateReadinessFixture(t, "none")
+	model := "none"
+	if len(models) > 0 {
+		model = models[0]
+	}
+	svc, controller, candidateInput := candidateReadinessFixture(t, model)
 	now := controller.AuthenticatedAt
 	svc.Now = func() time.Time { return now }
 	svc.Config.Credentials.Authority.DeploymentID = "continuation-deployment"

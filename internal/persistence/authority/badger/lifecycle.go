@@ -273,6 +273,9 @@ func Inspect(ctx context.Context, root string) Inspection {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0700 || !ownedByCurrentEUID(info) {
 		return Inspection{State: StateInvalid, Err: errors.New("operational authority root is unsafe")}
 	}
+	if err := requireRecoveryComplete(clean); err != nil {
+		return Inspection{State: StateInvalid, Err: err}
+	}
 	generation, err := inspectClosedGeneration(clean)
 	if err != nil {
 		return Inspection{State: StateInvalid, Err: err}
@@ -387,24 +390,22 @@ func Open(ctx context.Context, root string) (*Store, error) {
 			lease.release()
 		}
 	}()
-	generation, err := readMarker(filepath.Join(root, "ACTIVE"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, ErrNotInitialized
+	// Direct callers must not bypass the startup CLEAN/DIRTY gate.
+	if err := requireRecoveryComplete(root); err != nil {
+		return nil, err
 	}
+	generation, err := inspectClosedGeneration(root)
 	if err != nil {
-		return nil, err
-	}
-	if err = validateGeneration(generation); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrCorruptGeneration, err)
 	}
 	selected := filepath.Join(root, "stores", generation.Directory)
-	if err = verifyStoreIdentity(selected, generation); err != nil {
+	if err = writeMarker(root, "DIRTY", generation); err != nil {
 		return nil, err
 	}
 	if err = removeFileAt(root, "CLEAN"); err != nil {
 		return nil, err
 	}
-	if err = writeMarker(root, "DIRTY", generation); err != nil {
+	if err = syncDirectory(root); err != nil {
 		return nil, err
 	}
 	db, err := badgerdb.Open(options(selected))
@@ -434,6 +435,16 @@ func (s *Store) Close() error {
 	if err := normalizeGenerationModes(filepath.Join(s.root, "stores", s.generation.Directory)); err != nil {
 		s.closeErr = err
 		return err
+	}
+	if _, err := os.Lstat(filepath.Join(s.root, "CLEAN")); !errors.Is(err, os.ErrNotExist) {
+		s.closeErr = errors.New("unexpected CLEAN marker while authority was open")
+		return s.closeErr
+	}
+	dirty, err := readMarker(filepath.Join(s.root, "DIRTY"))
+	active, activeErr := readMarker(filepath.Join(s.root, "ACTIVE"))
+	if err != nil || activeErr != nil || dirty != s.generation || active != s.generation {
+		s.closeErr = errors.New("authority lifecycle markers changed while open")
+		return s.closeErr
 	}
 	if err := removeFileAt(s.root, "DIRTY"); err != nil {
 		s.closeErr = err

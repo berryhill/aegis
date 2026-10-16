@@ -44,7 +44,16 @@ func validServerRequest() Request {
 
 func startTestBroker(t *testing.T, authorizer Authorizer, destination string, uid, gid uint32) (string, context.CancelFunc) {
 	t.Helper()
-	directory := t.TempDir()
+	// Keep socket paths below the kernel limit even with a long test TMPDIR.
+	directory, err := os.MkdirTemp(os.TempDir(), "sock-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(directory); err != nil {
+			t.Errorf("remove test socket directory: %v", err)
+		}
+	})
 	if err := os.Chmod(directory, 0700); err != nil {
 		t.Fatal(err)
 	}

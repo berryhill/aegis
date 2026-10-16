@@ -199,12 +199,6 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		return
 	}
 	r.Runtime = ready
-	if selection.Selected.Hermes.ProviderAuthentication != nil {
-		if err := s.Hermes.QualifyProviderTransport(ctx); err != nil {
-			r.block(&r.ProviderAuthentication, err.Error())
-			return
-		}
-	}
 	if s.QueueWorker == nil {
 		r.block(&r.Controller, "implementation_prerequisite_required")
 		return

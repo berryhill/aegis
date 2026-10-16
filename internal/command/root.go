@@ -505,6 +505,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	root.AddCommand(managerCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, deps.Profile), initCmd(build, deps.IsTerminal, deps.Initializer, o, deps.Logger, deps.UserService, func(cmd *cobra.Command) error {
 		return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
 	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater, deps.UserService, deps.GatewayImageObserver, o), credentialBridgeCmd())
+	root.AddCommand(authorityRecoveryCmd(o, deps.Profile))
 	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
 	root.AddCommand(NewDoerSetupCompanionCommand(func() string { return o.configFile }))
 	var wrapAuthorityCleanup func(*cobra.Command)

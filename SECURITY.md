@@ -1,5 +1,9 @@
 # Security Policy
 
+## Interrupted operational authority
+
+Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves physical evidence, independently proves pinned Badger WAL framing/checksums/complete transactions, removes only proven zero padding in a working copy, validates all canonical records before and after replay, and publishes through atomic directory exchange. Strict private operation receipts support exact pre/post-exchange retries and retain immutable per-operation history. Ambiguity and damaged/torn logs refuse; Darwin recovery fails closed before mutation. See [the procedure and limits](docs/AUTHORITY_RECOVERY.md).
+
 ## Retained Doer protected setup (source candidate)
 
 `loops setup-protected FILE` routes only exact draft ID/version and independent

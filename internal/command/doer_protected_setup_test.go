@@ -45,7 +45,7 @@ func TestDoerProtectedCLIPrivateSessionAndExactReadback(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg := config.Defaults()
-			cfg.API.UnixSocket = filepath.Join(root, "owner.sock")
+			cfg.API.UnixSocket = filepath.Join(socketTestDir(t), "owner.sock")
 			cfg.Credentials.Authority.DeploymentID = "synthetic-deployment"
 			cfg.StateDir = filepath.Join(root, "must-not-exist")
 			contract := loop.DoerContract{Task: "Create result.txt", Workspace: root, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", MaxAttempts: 1}
@@ -75,7 +75,7 @@ func TestDoerProtectedCLIPrivateSessionAndExactReadback(t *testing.T) {
 			}
 			if !companionSocketSafe(cfg.API.UnixSocket) {
 				info, _ := os.Lstat(cfg.API.UnixSocket)
-				parent, _ := os.Lstat(root)
+				parent, _ := os.Lstat(filepath.Dir(cfg.API.UnixSocket))
 				t.Fatalf("unsafe fixture socket: socket=%v parent=%v", info.Mode(), parent.Mode())
 			}
 			decisions, logouts := 0, 0
