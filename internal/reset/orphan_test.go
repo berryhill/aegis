@@ -14,7 +14,16 @@ import (
 
 func orphanFixture(t *testing.T) (fixture, string, *net.UnixListener) {
 	t.Helper()
-	f := newFixture(t)
+	root, err := os.MkdirTemp(os.TempDir(), "sock-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(root); err != nil {
+			t.Errorf("remove test socket fixture: %v", err)
+		}
+	})
+	f := newFixtureAt(t, root)
 	// Short Unix path independent of the test name length.
 	f.service.RepositoryResetRoot = filepath.Join(f.home, "repo", ".aegis")
 	f.config = filepath.Join(f.service.RepositoryResetRoot, "aegis.yaml")
