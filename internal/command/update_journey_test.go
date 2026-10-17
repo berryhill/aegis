@@ -77,7 +77,7 @@ func TestUpgradeConsoleReadbackAndOffOriginDenial(t *testing.T) {
 					http.Redirect(w, r, "https://example.invalid/", 302)
 					return
 				}
-				w.Write([]byte("<html>Console</html>"))
+				w.Write([]byte(upgradeConsoleHTML(false)))
 			}))
 			defer server.Close()
 			err := verifyUpgradeConsole(context.Background(), server.URL)

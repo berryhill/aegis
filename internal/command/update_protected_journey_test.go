@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"github.com/berryhill/aegis/internal/config"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
@@ -21,7 +22,7 @@ import (
 // Exercise the production retained-journey authentication and recovery methods,
 // not a callback that assumes authentication. No terminal emulation is used.
 func TestInstalledJourneyProtectedRecovery(t *testing.T) {
-	for _, scenario := range []string{"healthy", "interrupted", "mismatched-clean", "socket", "cancelled", "verifier-drift", "config-drift", "expired"} {
+	for _, scenario := range []string{"healthy", "interrupted", "mismatched-clean", "socket", "cancelled", "verifier-drift", "config-drift", "expired", "recovery-deadline"} {
 		t.Run(scenario, func(t *testing.T) {
 			path, state := validConfigWithoutOperationalAuthority(t)
 			b, err := os.ReadFile(path)
@@ -111,6 +112,28 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 				j.password = []byte("expired")
 				j.verifier = verifier
 				j.expires = time.Now().Add(-time.Second)
+			}
+			if scenario == "recovery-deadline" {
+				if err = j.admit(cmd.Context()); err != nil {
+					t.Fatal(err)
+				}
+				store, openErr := authoritybadger.Open(context.Background(), root)
+				if openErr != nil {
+					t.Fatal(openErr)
+				}
+				defer store.Close()
+				j.expires = time.Now().Add(250 * time.Millisecond)
+				outer, cancel := context.WithTimeout(cmd.Context(), 2*time.Second)
+				defer cancel()
+				started := time.Now()
+				err = j.Recover(outer)
+				if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) >= time.Second {
+					t.Fatalf("recovery exceeded retained authentication: elapsed=%s err=%v", time.Since(started), err)
+				}
+				if _, err = os.Stat(filepath.Join(root, "recovery-evidence")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("expired recovery created evidence: %v", err)
+				}
+				return
 			}
 			err = j.Recover(cmd.Context())
 			wantSuccess := scenario == "healthy" || scenario == "interrupted" || scenario == "expired"

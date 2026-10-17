@@ -1302,7 +1302,10 @@ func TestOperatorLifecycleDiagnosticsSkill(t *testing.T) {
 	for _, required := range []string{
 		"Read-only diagnosis is the default",
 		"Every mutation follows its shipped command-specific boundary",
-		"does not authenticate the principal or present a separate apply preview/confirmation",
+		"protected enrolled-principal authentication inside the retained operation",
+		"upgrade_complete: true",
+		"resume_required: false",
+		"never edit its journal",
 		"Never reboot the workstation",
 		"aegis version --provenance",
 		"aegis runtime",

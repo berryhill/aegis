@@ -93,6 +93,11 @@ func RunJourney(ctx context.Context, binary BinaryUpdater, j Journey) (r Result,
 		return r, err
 	}
 	defer p.Close()
+	if receiver, ok := j.(interface {
+		BindPreparedValidation(func(context.Context) error)
+	}); ok {
+		receiver.BindPreparedValidation(p.Validate)
+	}
 	identity, err := p.Identity()
 	if err != nil {
 		return r, err
@@ -119,7 +124,8 @@ func RunJourney(ctx context.Context, binary BinaryUpdater, j Journey) (r Result,
 	if err = j.Preflight(ctx, identity); err != nil {
 		return r, err
 	}
-	// A current healthy exact image requires neither auth nor a restart.
+	// A current healthy exact image needs no lifecycle mutation or restart.
+	// Verification may still require protected authentication for Console data.
 	if !r.UpdateAvailable && j.Healthy(ctx) {
 		r.Phase = "verification"
 		if err = j.Verify(ctx); err != nil {

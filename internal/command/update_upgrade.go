@@ -8,7 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
+
 	"os"
 	"path/filepath"
 	"reflect"
@@ -36,6 +36,18 @@ type installedJourney struct {
 	expires                time.Time
 	journal                *upgradeJournal
 	identity               selfupdate.CandidateIdentity
+	candidateCheck         func(context.Context) error
+}
+
+func (j *installedJourney) BindPreparedValidation(check func(context.Context) error) {
+	j.candidateCheck = check
+}
+
+func (j *installedJourney) validatePrepared(ctx context.Context) error {
+	if j.candidateCheck == nil {
+		return errors.New("prepared installation validation unavailable")
+	}
+	return j.candidateCheck(ctx)
 }
 
 func (j *installedJourney) Preflight(ctx context.Context, identity selfupdate.CandidateIdentity) error {
@@ -147,9 +159,15 @@ func (j *installedJourney) Stop(ctx context.Context) error {
 	if err := j.admit(ctx); err != nil {
 		return err
 	}
+	if err := j.validatePrepared(ctx); err != nil {
+		return err
+	}
 	// Reload the exact approved timeout policy before asking systemd to stop:
 	// otherwise a legacy manager would still enforce its HTTP-only budget.
 	if err := j.migrateUnit(ctx); err != nil {
+		return err
+	}
+	if err := j.validatePrepared(ctx); err != nil {
 		return err
 	}
 	_, err := userservice.Action(ctx, j.runner, j.plan, "stop", userservice.StopBudget(j.plan))
@@ -159,6 +177,10 @@ func (j *installedJourney) Recover(ctx context.Context) error {
 	if err := j.admit(ctx); err != nil {
 		return err
 	}
+	// Recovery must not renew the lifetime of a password retained earlier in
+	// this journey. The persistence layer checks this deadline before effects.
+	ctx, cancel := context.WithDeadline(ctx, j.expires)
+	defer cancel()
 	if _, err := os.Lstat(j.cfg.API.UnixSocket); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("offline upgrade requires absent protected Unix transport")
 	}
@@ -168,12 +190,16 @@ func (j *installedJourney) Recover(ctx context.Context) error {
 		// The recovery service itself admits only exact eligible interruption or an
 		// exact private recovery receipt. Arbitrary CLEAN failures remain denials.
 		recovery, err := initialize.RecoverInterruptedAuthority(ctx, j.cfg, append([]byte(nil), j.password...))
-		if err != nil {
-			return errors.Join(inspection.Err, err)
+		var evidenceErr error
+		if recovery.EvidencePath != "" {
+			j.journal.receipt.RecoveryEvidence = recovery.EvidencePath
+			evidenceErr = j.journal.save()
 		}
-		j.journal.receipt.RecoveryEvidence = recovery.EvidencePath
-		if err = j.journal.save(); err != nil {
-			return err
+		if err != nil {
+			return errors.Join(inspection.Err, err, evidenceErr)
+		}
+		if evidenceErr != nil {
+			return evidenceErr
 		}
 		inspection = authoritybadger.Inspect(ctx, root)
 	}
@@ -214,6 +240,11 @@ func (j *installedJourney) Activate(ctx context.Context) error {
 	return nil
 }
 func (j *installedJourney) Verify(ctx context.Context) error {
+	if err := j.admit(ctx); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithDeadline(ctx, j.expires)
+	defer cancel()
 	configBytes, configErr := os.ReadFile(j.plan.ConfigPath)
 	if configErr != nil || sha256.Sum256(configBytes) != j.configDigest {
 		return errors.New("upgrade configuration changed before completion")
@@ -233,7 +264,7 @@ func (j *installedJourney) Verify(ctx context.Context) error {
 	if !j.Healthy(ctx) {
 		return errors.New("exact current gateway image and authenticated audit-current readiness required")
 	}
-	if err := verifyUpgradeConsole(ctx, j.plan.Origin); err != nil {
+	if err := verifyAuthenticatedUpgradeConsole(ctx, j.plan.Origin, j.password); err != nil {
 		return err
 	}
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -255,7 +286,11 @@ func (j *installedJourney) Verify(ctx context.Context) error {
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("authenticated owning-service Agent read failed: HTTP %d", response.StatusCode)
 	}
-	return readErr
+	if readErr != nil {
+		return readErr
+	}
+	// Console login/logout produces audit facts; attest readiness afterward.
+	return userservice.EnsureUpgradeReadiness(ctx, j.runner, j.plan, 10*time.Second)
 }
 func (j *installedJourney) Record(ctx context.Context, phase string) error {
 	if err := ctx.Err(); err != nil {
@@ -270,36 +305,7 @@ func (j *installedJourney) Record(ctx context.Context, phase string) error {
 	return j.journal.save()
 }
 func verifyUpgradeConsole(ctx context.Context, origin string) error {
-	base, err := url.Parse(origin)
-	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
-		return errors.New("configured Console origin unavailable")
-	}
-	client := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) > 3 || req.URL.Scheme != base.Scheme || req.URL.Host != base.Host {
-			return errors.New("Console redirect escaped configured origin")
-		}
-		return nil
-	}}
-	for _, path := range []string{"/console", "/console/agents"} {
-		target := *base
-		target.Path = path
-		target.RawQuery = ""
-		target.Fragment = ""
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-		if err != nil {
-			return err
-		}
-		response, err := client.Do(req)
-		if err != nil {
-			return fmt.Errorf("Console verification: %w", err)
-		}
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-		response.Body.Close()
-		if readErr != nil || response.StatusCode != http.StatusOK || len(body) == 0 {
-			return fmt.Errorf("Console verification failed at %s: HTTP %d", path, response.StatusCode)
-		}
-	}
-	return nil
+	return verifyUpgradeConsoleShell(ctx, origin)
 }
 func runInstalledUpgrade(cmd *cobra.Command, updater UpdateService, runner userservice.Runner, configPath string) error {
 	executable, err := os.Executable()

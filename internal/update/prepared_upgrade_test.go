@@ -22,9 +22,9 @@ func candidateFixture(t *testing.T, version string) []byte {
 		return data.([]byte)
 	}
 	path := filepath.Join(t.TempDir(), "candidate")
-	flags := "-X github.com/berryhill/aegis/internal/buildinfo.Version=" + version + " -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=0123456789abcdef0123456789abcdef01234567"
+	flags := "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=" + version + " -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=0123456789abcdef0123456789abcdef01234567"
 	if version == "missing-source" {
-		flags = "-X github.com/berryhill/aegis/internal/buildinfo.Version=1.2.0"
+		flags = "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=1.2.0"
 	}
 	cmd := exec.Command("go", "build", "-buildvcs=false", "-ldflags="+flags, "-o", path, "../../cmd/aegis")
 	if out, err := cmd.CombinedOutput(); err != nil {

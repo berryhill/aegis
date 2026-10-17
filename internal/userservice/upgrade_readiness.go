@@ -9,6 +9,24 @@ import (
 	"time"
 )
 
+// EnsureUpgradeReadiness belongs to an admitted upgrade, not read-only status.
+// It may deliver narrowly classified pending audit through the owning service.
+func EnsureUpgradeReadiness(ctx context.Context, runner Runner, plan Plan, timeout time.Duration) error {
+	if err := PreflightStop(ctx, runner, plan); err != nil {
+		return err
+	}
+	if err := inspectUnit(plan.UnitPath, plan.unit); err != nil {
+		return err
+	}
+	cfg, err := config.Load(plan.ConfigPath, nil)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return waitServiceReady(ctx, runner, cfg)
+}
+
 // Watch the service while readiness is pending: a crashed process is not an
 // audit-delivery timeout. Context cancellation bounds both manager calls and HTTP.
 func waitServiceReady(ctx context.Context, runner Runner, cfg config.Config) error {
