@@ -6,6 +6,18 @@ import subprocess
 import time
 
 
+def process_exited(status):
+    """Observe a Linux proc stat without racing the kernel's process reaper.
+
+    Both ENOENT and ESRCH mean the observed process is gone. Other read errors
+    remain errors, and a live process must never satisfy the cleanup assertion.
+    """
+    try:
+        return status.read_text().split()[2] == 'Z'
+    except (FileNotFoundError, ProcessLookupError):
+        return True
+
+
 def run_owned(command, *, timeout, max_output=32 * 1024 * 1024, **kwargs):
     """Kill the owned group on success, failure, timeout and output overflow.
 

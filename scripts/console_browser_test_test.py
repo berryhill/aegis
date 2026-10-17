@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts import console_browser_test
+from scripts.verification_process import process_exited
 
 
 class LoopGeometryTest(unittest.TestCase):
@@ -340,7 +341,7 @@ class ChromeShutdownTest(unittest.TestCase):
                 console_browser_test.stop_chrome(process, None)
                 for _ in range(100):
                     status = pathlib.Path(f"/proc/{pid}/stat")
-                    if not status.exists() or status.read_text().split()[2] == "Z":
+                    if process_exited(status):
                         break
                     time.sleep(.01)
                 else:
