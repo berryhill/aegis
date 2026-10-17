@@ -22,6 +22,10 @@ mkdir -p "$root/bin"
 cat >"$root/bin/git" <<'EOF'
 #!/bin/sh
 if [ "${1:-}" = verify-tag ]; then
+    if [ "${2:-}" = v9.8.7 ] && [ "${TEST_BAD_FINAL_SIGNATURE:-0}" = 1 ]; then
+        printf 'fixture final signer policy failure\n' >&2
+        exit 81
+    fi
     if [ "${TEST_BAD_SIGNATURE:-0}" = 1 ]; then
         printf 'fixture signature verification failure\n' >&2
         exit 81
@@ -392,6 +396,28 @@ setup_repo signing-preflight
     [ "$("$real_git" rev-parse HEAD)" = "$before" ] || fail_test 'signing preflight created a commit'
     "$real_git" diff --quiet && "$real_git" diff --cached --quiet || fail_test 'signing preflight left changes'
     ! "$real_git" show-ref --verify --quiet refs/tags/v9.8.7 || fail_test 'signing preflight created a tag'
+)
+
+setup_repo signer-policy-preflight
+(
+    cd "$repo"
+    snapshot "$root/signer-policy-before"
+    expect_failure 'signed-tag preflight failed signer-policy verification' env TEST_BAD_SIGNATURE=1 \
+        PATH="$root/bin:$PATH" REAL_GIT="$real_git" TEST_PUSH_LOG="$push_log" RELEASE_SKIP_GITHUB_STATUS=1 sh scripts/release.sh 9.8.7
+    snapshot "$root/signer-policy-after"
+    cmp "$root/signer-policy-before" "$root/signer-policy-after" || fail_test 'signer-policy preflight changed refs or source'
+    [ ! -s "$push_log" ] || fail_test 'untrusted preflight signer reached publication'
+)
+
+setup_repo signer-policy-drift
+(
+    cd "$repo"
+    before=$("$real_git" ls-remote --heads --tags origin)
+    expect_failure 'new signed tag failed signature or signer-policy verification' env TEST_BAD_FINAL_SIGNATURE=1 \
+        PATH="$root/bin:$PATH" REAL_GIT="$real_git" TEST_PUSH_LOG="$push_log" RELEASE_SKIP_GITHUB_STATUS=1 sh scripts/release.sh 9.8.7
+    [ "$("$real_git" ls-remote --heads --tags origin)" = "$before" ] || fail_test 'untrusted final signer changed remote refs'
+    [ ! -s "$push_log" ] || fail_test 'untrusted final signer reached publication'
+    "$real_git" show-ref --verify --quiet refs/tags/v9.8.7 || fail_test 'failed final tag was not preserved for inspection'
 )
 
 setup_repo recovery-verification
