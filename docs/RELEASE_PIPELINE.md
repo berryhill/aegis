@@ -30,6 +30,12 @@ results.
 `make release VERSION=MAJOR.MINOR.PATCH` retains its explicit publication authority,
 configured signing identity, signing preflight, immutable signed tag, deterministic
 changelog transformation, atomic push and bounded recovery rules. On the canonical
+signing path, both the disposable preflight tag and the final newly created tag
+must pass signature and configured signer-policy verification before publication.
+A cryptographically valid signature from an unenrolled signer is not sufficient.
+Preflight failure leaves real refs unchanged; later signer drift preserves the
+unpublished commit/tag for inspection without moving an immutable remote tag.
+On the canonical
 GitHub origin it reads GitHub-owned CI evidence for the exact source revision.
 It accepts only the latest canonical main push CI run, completed successfully,
 with successful complete job readback and all required aggregates. Missing, failed,

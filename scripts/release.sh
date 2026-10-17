@@ -214,6 +214,10 @@ run_verification() {
                 printf 'signed-tag preflight failed; no release commit, tag, or push was performed\n' >&2
                 exit 1
             fi
+            if ! git verify-tag "$preflight_tag"; then
+                printf 'signed-tag preflight failed signer-policy verification; no release commit, tag, or push was performed\n' >&2
+                exit 1
+            fi
             git tag -d "$preflight_tag" >/dev/null
         fi
         if [ "$reuse_ci" = false ]; then
@@ -303,6 +307,9 @@ if [ "$local_tag" = false ]; then
     committed=true
     release_commit=$(git rev-parse HEAD)
     git tag -s "$tag" -m "Aegis $tag"
+    if ! git verify-tag "$tag"; then
+        fail "new signed tag failed signature or signer-policy verification; local release commit $release_commit and tag $tag were preserved for inspection; no refs were pushed"
+    fi
     if ! git push --atomic origin refs/heads/main:refs/heads/main "refs/tags/$tag:refs/tags/$tag"; then
         fail "atomic publication failed; local signed tag $tag and release commit $release_commit were preserved for verified retry"
     fi

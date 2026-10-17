@@ -141,8 +141,12 @@ before those same bytes are published. Published asset identity, size and digest
 are read back independently; this is GitHub service trust and consistency proof,
 not independent signing or transparency. Local caller JSON and an old green
 attempt cannot authorize release. The CLI executes its evidence verifier from
-the clean committed clone, never an unstaged working-tree helper. Signed-tag,
-signer-policy and atomic recovery controls remain unchanged. See
+the clean committed clone, never an unstaged working-tree helper. Fresh release
+preflight verifies the disposable signature against configured signer policy
+before a real release commit is created, and the final newly created tag is
+independently verified immediately before atomic push. Cryptographic validity
+without a matching trusted principal denies. Immutable-tag and atomic recovery
+controls remain enforced. See
 [release pipeline](docs/RELEASE_PIPELINE.md).
 
 ## Execution Queue lifecycle boundary
