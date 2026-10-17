@@ -17,15 +17,16 @@ import (
 )
 
 type upgradeReceipt struct {
-	Schema           string `json:"schema"`
-	Executable       string `json:"executable"`
-	ConfigDigest     string `json:"config_digest"`
-	Version          string `json:"version"`
-	Source           string `json:"source"`
-	Digest           string `json:"digest"`
-	UnitDigest       string `json:"unit_digest"`
-	Stage            string `json:"stage"`
-	RecoveryEvidence string `json:"recovery_evidence,omitempty"`
+	Schema             string `json:"schema"`
+	Executable         string `json:"executable"`
+	ConfigDigest       string `json:"config_digest"`
+	Version            string `json:"version"`
+	Source             string `json:"source"`
+	Digest             string `json:"digest"`
+	UnitDigest         string `json:"unit_digest"`
+	PreviousUnitDigest string `json:"previous_unit_digest,omitempty"`
+	Stage              string `json:"stage"`
+	RecoveryEvidence   string `json:"recovery_evidence,omitempty"`
 }
 type upgradeJournal struct {
 	root    *os.Root
@@ -88,6 +89,9 @@ func openUpgradeJournal(plan userservice.Plan, state string, digest [sha256.Size
 		return fail(errors.New("noncanonical upgrade journal"))
 	}
 	expected := j.receipt
+	if previous.PreviousUnitDigest != "" && previous.PreviousUnitDigest == plan.LegacyUnitDigest {
+		expected.PreviousUnitDigest = previous.PreviousUnitDigest
+	}
 	expected.Stage = previous.Stage
 	expected.RecoveryEvidence = previous.RecoveryEvidence
 	if previous != expected {
@@ -115,7 +119,7 @@ func openUpgradeJournal(plan userservice.Plan, state string, digest [sha256.Size
 		return j, nil
 	}
 	switch previous.Stage {
-	case "prepared", "gateway_stop", "binary_install", "authority_validation", "gateway_activation", "verification", "complete":
+	case "unit_migration", "prepared", "gateway_stop", "binary_install", "authority_validation", "gateway_activation", "verification", "complete":
 	default:
 		return fail(errors.New("unknown upgrade journal stage"))
 	}

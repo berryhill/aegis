@@ -59,7 +59,17 @@ func (j *installedJourney) Preflight(ctx context.Context, identity selfupdate.Ca
 	j.configDigest = sha256.Sum256(data)
 	j.identity = identity
 	j.journal, err = openUpgradeJournal(plan, cfg.StateDir, j.configDigest, identity)
-	return err
+	if err != nil {
+		return err
+	}
+	digest, err := userservice.InstalledDigest(plan)
+	if err != nil {
+		return err
+	}
+	if digest == plan.LegacyUnitDigest {
+		j.journal.receipt.PreviousUnitDigest = digest
+	}
+	return nil
 }
 func (j *installedJourney) admit(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
@@ -79,6 +89,15 @@ func (j *installedJourney) admit(ctx context.Context) error {
 	}
 	if !reflect.DeepEqual(plan, j.plan) || sha256.Sum256(data) != j.configDigest || !reflect.DeepEqual(cfg, j.cfg) {
 		return errors.New("upgrade configuration or principal drifted")
+	}
+	if j.journal != nil {
+		digest, err := userservice.InstalledDigest(plan)
+		if err != nil {
+			return err
+		}
+		if digest != plan.UnitDigest && digest != j.journal.receipt.PreviousUnitDigest {
+			return userservice.ErrForeignUnit
+		}
 	}
 	current, err := principalauth.Load(filepath.Join(j.cfg.StateDir, "auth", principalauth.FileName))
 	if err != nil {
@@ -118,13 +137,22 @@ func (j *installedJourney) admit(ctx context.Context) error {
 	return nil
 }
 func (j *installedJourney) Healthy(ctx context.Context) bool {
+	digest, err := userservice.InstalledDigest(j.plan)
+	if err != nil || digest != j.plan.UnitDigest {
+		return false
+	}
 	return userservice.ObserveExactGateway(ctx, j.runner, j.plan).State == userservice.GatewayHealthy && userservice.ObserveExecutableImage(ctx, j.runner, j.executable, j.configPath) == "running_current_image"
 }
 func (j *installedJourney) Stop(ctx context.Context) error {
 	if err := j.admit(ctx); err != nil {
 		return err
 	}
-	_, err := userservice.Action(ctx, j.runner, j.plan, "stop", 30*time.Second)
+	// Reload the exact approved timeout policy before asking systemd to stop:
+	// otherwise a legacy manager would still enforce its HTTP-only budget.
+	if err := j.migrateUnit(ctx); err != nil {
+		return err
+	}
+	_, err := userservice.Action(ctx, j.runner, j.plan, "stop", userservice.StopBudget(j.plan))
 	return err
 }
 func (j *installedJourney) Recover(ctx context.Context) error {
@@ -154,17 +182,33 @@ func (j *installedJourney) Recover(ctx context.Context) error {
 	}
 	return nil
 }
+func (j *installedJourney) migrateUnit(ctx context.Context) error {
+	if j.journal.receipt.PreviousUnitDigest == "" {
+		return nil
+	}
+	j.journal.receipt.Stage = "unit_migration"
+	if err := j.journal.save(); err != nil {
+		return err
+	}
+	if err := userservice.MigrateOwnedUnit(ctx, j.runner, j.plan, j.journal.receipt.PreviousUnitDigest); err != nil {
+		return err
+	}
+	return j.admit(ctx)
+}
 func (j *installedJourney) Activate(ctx context.Context) error {
 	if err := j.admit(ctx); err != nil {
+		return err
+	}
+	if err := j.migrateUnit(ctx); err != nil {
 		return err
 	}
 	_, err := userservice.Action(ctx, j.runner, j.plan, "start", 30*time.Second)
 	if err != nil {
 		// Stop only the still-exact owned service. Never restore the old binary after
 		// recovery or other state effects. Cleanup has an independent bounded budget.
-		cleanup, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cleanup, cancel := context.WithTimeout(context.Background(), userservice.StopBudget(j.plan))
 		defer cancel()
-		_, stopErr := userservice.Action(cleanup, j.runner, j.plan, "stop", 30*time.Second)
+		_, stopErr := userservice.Action(cleanup, j.runner, j.plan, "stop", userservice.StopBudget(j.plan))
 		return errors.Join(err, stopErr)
 	}
 	return nil
