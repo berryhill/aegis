@@ -36,6 +36,9 @@ setup_repo() {
   mkdir -p "$fixture/scripts"
   cp "$repo/scripts/verify-release-readiness.sh" "$fixture/scripts/verify-release-readiness.sh"
   cp "$repo/scripts/prepare-release-changelog.py" "$fixture/scripts/prepare-release-changelog.py"
+  if [ -f "$repo/scripts/release-readiness-mode.py" ]; then
+    cp "$repo/scripts/release-readiness-mode.py" "$fixture/scripts/release-readiness-mode.py"
+  fi
   cat >"$fixture/CHANGELOG.md" <<'EOF'
 # Changelog
 
@@ -51,6 +54,7 @@ setup_repo() {
 EOF
   cat >"$fixture/Makefile" <<'EOF'
 verify:
+	@if [ "$$TEST_READINESS_VERIFY_FAIL" = 1 ]; then echo 'fixture verification denied' >&2; exit 1; fi
 	@test -z "$$(git status --porcelain=v1)"
 	@test -n "$$AEGIS_PROOF_SOCKET_DIR"
 	@test -d "$$AEGIS_PROOF_SOCKET_DIR"
@@ -172,4 +176,73 @@ revision=$(git -C "$fixture" rev-parse HEAD)
 expect_failure 'CHANGELOG.md has no unreleased entries' \
   sh -c 'cd "$1" && ./scripts/verify-release-readiness.sh 1.2.3 "$2"' sh "$fixture" "$revision"
 
+# Prepared releases must verify the exact unchanged commit, on main and tags.
+setup_repo prepared
+python3 "$fixture/scripts/prepare-release-changelog.py" "$fixture/CHANGELOG.md" "$root/prepared-changelog" 1.2.3 "$(date +%F)"
+cp "$root/prepared-changelog" "$fixture/CHANGELOG.md"
+git -C "$fixture" add CHANGELOG.md
+git -C "$fixture" -c user.name=Test -c user.email=test@example.invalid commit -q -m 'Prepare v1.2.3 release'
+revision=$(git -C "$fixture" rev-parse HEAD)
+for mode in prepared auto; do
+  expect_failure 'fixture verification denied' env TEST_READINESS_VERIFY_FAIL=1 sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 1.2.3 "$2" "$3"' sh "$fixture" "$revision" "$mode"
+  (cd "$fixture"; ./scripts/verify-release-readiness.sh 1.2.3 "$revision" "$mode") >"$root/prepared-output"
+  grep -Fq 'fixture verification passed' "$root/prepared-output" || fail_test 'prepared verification omitted'
+  grep -Fq "candidate_revision=$revision" "$root/prepared-output" || fail_test 'prepared source transformed'
+done
+(cd "$fixture"; ./scripts/verify-release-readiness.sh 999.0.1 "$revision" auto v1.2.3) >"$root/tag-output"
+grep -Fq 'version=1.2.3' "$root/tag-output" || fail_test 'tag version not bound'
+expect_failure 'prepared version mismatch' sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 9.9.9 "$2" prepared' sh "$fixture" "$revision"
+expect_failure 'prepared version mismatch' sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 999.0.1 "$2" auto v9.9.9' sh "$fixture" "$revision"
+# A later ordinary commit with stale empty Unreleased is not a prepared release.
+printf 'extra\n' >"$fixture/extra"
+git -C "$fixture" add extra
+git -C "$fixture" -c user.name=Test -c user.email=test@example.invalid commit -q -m 'Prepare v1.2.3 release'
+revision=$(git -C "$fixture" rev-parse HEAD)
+expect_failure 'prepared commit must change only CHANGELOG.md' sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 1.2.3 "$2" auto' sh "$fixture" "$revision"
+setup_repo ordinary-auto
+revision=$(git -C "$fixture" rev-parse HEAD)
+(cd "$fixture"; ./scripts/verify-release-readiness.sh 1.2.3 "$revision" auto) >"$root/ordinary-output"
+grep -Fq 'fixture verification passed' "$root/ordinary-output" || fail_test 'ordinary auto verification omitted'
+expect_failure 'prepared changelog must have empty Unreleased' sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 1.2.3 "$2" prepared' sh "$fixture" "$revision"
+# Invalid/ambiguous headings must not become a prepared-source escape hatch.
+for invalid in duplicate malformed empty bad-release bad-date duplicate-release empty-release; do
+  setup_repo "invalid-$invalid"
+  python3 - "$fixture/CHANGELOG.md" "$invalid" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+s = p.read_text()
+if sys.argv[2] == 'duplicate':
+    s += '\n## Unreleased\n'
+elif sys.argv[2] == 'malformed':
+    s = s.replace('## Unreleased', '## Unreleased invalid')
+elif sys.argv[2] == 'bad-release':
+    s = s.replace('## [0.1.0]', '## [invalid]')
+elif sys.argv[2] == 'bad-date':
+    s = s.replace('2026-01-01', '2026-99-99')
+elif sys.argv[2] == 'duplicate-release':
+    s += '\n## [0.1.0] - 2026-01-01\n\n- Duplicate.\n'
+elif sys.argv[2] == 'empty-release':
+    s = '# Changelog\n\n## Unreleased\n\n## [1.2.3] - 2026-01-01\n'
+else:
+    s = '# Changelog\n\n## Unreleased\n'
+p.write_text(s)
+PY
+  git -C "$fixture" add CHANGELOG.md
+  git -C "$fixture" -c user.name=Test -c user.email=test@example.invalid commit -q -m invalid
+  revision=$(git -C "$fixture" rev-parse HEAD)
+  expect_failure 'CHANGELOG.md' sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 1.2.3 "$2" auto' sh "$fixture" "$revision"
+done
+# Exercise the production Make recipe: hostile Git tags must remain literal
+# input, and neither shell nor recursive Make expansion may mask a denial.
+setup_repo hostile-tag
+hostile='v1.2.3";true;#'
+git check-ref-format "refs/tags/$hostile"
+expect_failure 'source revision mismatch' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 SOURCE_REVISION=0000000000000000000000000000000000000000 READINESS_MODE=auto "RELEASE_TAG=$hostile"
+revision=$(git -C "$fixture" rev-parse HEAD)
+expect_failure 'release tag must be' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 "SOURCE_REVISION=$revision" READINESS_MODE=auto "RELEASE_TAG=$hostile"
+expect_failure 'release tag must be' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 "SOURCE_REVISION=$revision" READINESS_MODE=auto 'RELEASE_TAG=$(shell touch injected)'
+[ ! -e "$fixture/injected" ] || fail_test 'Make expanded tag input as code'
+expect_failure 'unknown readiness mode' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 "SOURCE_REVISION=$revision" 'READINESS_MODE=$(shell touch injected)'
+[ ! -e "$fixture/injected" ] || fail_test 'Make expanded mode input as code'
 printf 'release readiness tests passed\n'
