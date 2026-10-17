@@ -45,6 +45,19 @@ The reusable v5 definition removes task-specific paths and declares typed ports.
 
 ## Scope and assets
 
+Release-source evidence is a separate GitHub service boundary: only complete
+successful canonical main CI for the exact parent source revision may be reused
+by a reproducible single-parent changelog-only release child. A forged local
+verdict, PR/fork run, missing/failed/skipped gate, changed source or rerun drift
+denies. Failed-jobs-only retries may retain successful job results within that
+same service-owned run, but the latest complete run/attempt must remain successful
+through readback. The CLI loads its verifier from the committed clone to exclude
+unstaged helper substitution. The tag workflow tests the actual final archive
+version/revision, publishes only those bytes and compares GitHub's asset digests.
+This retains GitHub/operator publisher trust rather than providing independent
+artifact attestation; signing controls and runtime authorization are unchanged.
+See [release pipeline](RELEASE_PIPELINE.md).
+
 The MVP protects principal identity, canonical charters, immutable registered-Agent provenance and revisions, bounded workspace delegations and stable ownership, immutable Loop and Graph definitions and validation records, exact Graph participant/Loop bindings and run snapshots, durable submission outcomes and runtime bindings, queue/claim/run causality, content-addressed runtime output, verification receipts, terminal dispositions, stanza-specific authority, mandates, approval evidence, provider credentials, isolated Hermes state, provisioning artifacts, sessions, and audit history. It covers one configured principal, local Linux/CLI operation, and stable Hermes Agent `>=0.18.0` without an arbitrary upper cap. Version acceptance is not blanket qualification of later releases: strict runtime identity, protocol, capability, and authority checks remain fail-closed, and live-runtime claims require exact-version evidence.
 
 ## Actors

@@ -7,7 +7,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 ### Fixed
-- Verify already prepared release commits at their unchanged exact revision in CI, binding the actual changelog/tag version and deterministic parent transformation instead of attempting a second release. Ordinary source commits still prepare a release candidate; both paths retain full verification and fail-closed source checks.
+- Verify already prepared release commits at their unchanged exact revision, binding the actual changelog/tag version and deterministic parent transformation instead of attempting a second release. The full local rehearsal retains ordinary candidate preparation and fail-closed source checks.
+- Replace repeated serial release verification with coverage-complete parallel source CI and exact-source CI evidence reuse for changelog-only releases. Final versioned archives still receive complete installed/browser verification before publication and uploaded-byte digest readback; signed tags and immutable recovery remain required. CI workers have ten-minute job deadlines without weakening per-worker resource limits; actual elapsed-time acceptance remains separately measured.
 
 ## [0.2.26] - 2026-10-17
 

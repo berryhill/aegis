@@ -38,8 +38,20 @@ skillbundle-verify:
 verify:
 	python3 scripts/verify-budget.py $(MAKE) verify-stages
 
-.PHONY: verify-stages
+.PHONY: verify-stages verify-repository verify-repository-stages
 verify-stages:
+	@python3 scripts/verify-budget-stage.py --check
+	$(MAKE) verify-repository-stages
+	./scripts/verify-installed-mvi.sh
+	go test -timeout=10m ./...
+	go test -race -timeout=15m ./...
+	go vet ./...
+	$(GOVULNCHECK) ./...
+
+verify-repository:
+	python3 scripts/verify-budget.py $(MAKE) verify-repository-stages
+
+verify-repository-stages:
 	@python3 scripts/verify-budget-stage.py --check
 	$(MAKE) skillbundle-verify
 	$(MAKE) console-verify
@@ -57,11 +69,7 @@ verify-stages:
 	./scripts/verify_release_readiness_test.sh
 	./scripts/verify_installed_mvi_test.sh
 	./scripts/verify_release_candidate_test.sh
-	./scripts/verify-installed-mvi.sh
-	go test -timeout=10m ./...
-	go test -race -timeout=15m ./...
-	go vet ./...
-	$(GOVULNCHECK) ./...
+	python3 -m unittest scripts/verify_go_shard_test.py scripts/verify_ci_evidence_test.py scripts/verify_release_publication_test.py scripts/fast_release_test.py scripts/release_pipeline_test.py
 
 release-readiness:
 	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)" "$$READINESS_MODE" "$$RELEASE_TAG"
