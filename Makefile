@@ -59,7 +59,7 @@ verify-stages:
 	$(GOVULNCHECK) ./...
 
 release-readiness:
-	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)"
+	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)" "$(or $(READINESS_MODE),prepare)" "$(RELEASE_TAG)"
 
 authority-denial-matrix:
 	./scripts/verify-authority-denial-matrix.sh

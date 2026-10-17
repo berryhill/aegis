@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+- Verify already prepared release commits at their unchanged exact revision in CI, binding the actual changelog/tag version and deterministic parent transformation instead of attempting a second release. Ordinary source commits still prepare a release candidate; both paths retain full verification and fail-closed source checks.
+
 ## [0.2.26] - 2026-10-17
 
 ### Fixed

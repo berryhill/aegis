@@ -18,8 +18,8 @@ fail() {
   exit 1
 }
 
-[ "$#" -eq 2 ] || {
-  printf 'usage: verify-release-readiness.sh VERSION SOURCE_REVISION\n' >&2
+[ "$#" -ge 2 ] && [ "$#" -le 4 ] || {
+  printf 'usage: verify-release-readiness.sh VERSION SOURCE_REVISION [prepare|prepared|auto] [TAG]\n' >&2
   exit 2
 }
 printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' || {
@@ -39,17 +39,23 @@ git -C "$work_root/candidate" -c core.hooksPath=/dev/null \
 [ "$(git -C "$work_root/candidate" rev-parse HEAD)" = "$expected_revision" ] || fail 'candidate source revision mismatch'
 [ -z "$(git -C "$work_root/candidate" status --porcelain=v1)" ] || fail 'candidate source snapshot is dirty before release transformation'
 
-release_date=$(date +%F)
-python3 "$work_root/candidate/scripts/prepare-release-changelog.py" \
-  "$work_root/candidate/CHANGELOG.md" "$work_root/candidate/CHANGELOG.prepared.md" \
-  "$version" "$release_date"
-mv "$work_root/candidate/CHANGELOG.prepared.md" "$work_root/candidate/CHANGELOG.md"
-git -C "$work_root/candidate" add CHANGELOG.md
-git -C "$work_root/candidate" \
-  -c core.hooksPath=/dev/null \
-  -c user.name='Aegis Release Readiness' \
-  -c user.email='release-readiness@aegis.invalid' \
-  commit --quiet -m "Prepare v$version release readiness candidate"
+selection=$(PYTHONDONTWRITEBYTECODE=1 python3 "$work_root/candidate/scripts/release-readiness-mode.py" \
+  "$work_root/candidate" "${3:-prepare}" "$version" "${4:-}")
+mode=${selection%% *}
+version=${selection#* }
+if [ "$mode" = prepare ]; then
+  release_date=$(date +%F)
+  python3 "$work_root/candidate/scripts/prepare-release-changelog.py" \
+    "$work_root/candidate/CHANGELOG.md" "$work_root/candidate/CHANGELOG.prepared.md" \
+    "$version" "$release_date"
+  mv "$work_root/candidate/CHANGELOG.prepared.md" "$work_root/candidate/CHANGELOG.md"
+  git -C "$work_root/candidate" add CHANGELOG.md
+  git -C "$work_root/candidate" \
+    -c core.hooksPath=/dev/null \
+    -c user.name='Aegis Release Readiness' \
+    -c user.email='release-readiness@aegis.invalid' \
+    commit --quiet -m "Prepare v$version release readiness candidate"
+fi
 candidate_revision=$(git -C "$work_root/candidate" rev-parse HEAD)
 [ -z "$(git -C "$work_root/candidate" status --porcelain=v1)" ] || fail 'release candidate snapshot is dirty'
 
