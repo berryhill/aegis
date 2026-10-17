@@ -622,6 +622,9 @@ func versionCmd(version, sourceRevision string) *cobra.Command {
 }
 
 func runUpdate(cmd *cobra.Command, updater UpdateService, runner userservice.Runner, observe func(context.Context, userservice.Runner, string, string) string, configPath string, checkOnly bool) error {
+	if !checkOnly {
+		return runInstalledUpgrade(cmd, updater, runner, configPath)
+	}
 	result, err := updater.Run(cmd.Context(), checkOnly)
 	if err != nil {
 		return err

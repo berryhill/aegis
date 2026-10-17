@@ -1183,7 +1183,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				passwordBytes[index] = 0
 			}
 		}()
-		sessionValue, _, expires, subject, err := consoleManager.Login(c.Request(), sourceKey(c.Request()), passwordBytes)
+		sessionValue, sessionCSRF, expires, subject, err := consoleManager.Login(c.Request(), sourceKey(c.Request()), passwordBytes)
 		if err != nil {
 			if auditErr := svc.AuditConsoleSession(c.Request().Context(), core.Subject{}, "denied", "principal_password_authentication_denied"); auditErr != nil {
 				return auditErr
@@ -1198,6 +1198,10 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		// old identity and invalidates its session-bound pending reviews.
 		consoleManager.Revoke(c.Request())
 		consoleManager.SetCookieUntil(c.Response(), sessionValue, expires)
+		// Authenticated native verification can revoke its own probe session even
+		// if subsequent page rendering fails. This is session-bound CSRF, not a
+		// bearer or approval, and remains on the exact-origin no-store response.
+		c.Response().Header().Set("X-Aegis-Session-CSRF", sessionCSRF)
 		return c.Redirect(http.StatusSeeOther, "/console/agents#/agents")
 	})
 	e.POST("/console/password", func(c *echo.Context) error {

@@ -410,7 +410,13 @@ func testReleaseJSON(request *http.Request, tag string, draft, prerelease bool) 
 func testArchive(t *testing.T, binary []byte) []byte {
 	t.Helper()
 	var archive bytes.Buffer
-	gzipWriter := gzip.NewWriter(&archive)
+	// Fixture generation is not a compressor benchmark. Keep the real archive
+	// and executable checks without repeatedly deflating debug binaries at the
+	// default level under the race detector.
+	gzipWriter, err := gzip.NewWriterLevel(&archive, gzip.BestSpeed)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tarWriter := tar.NewWriter(gzipWriter)
 	if err := tarWriter.WriteHeader(&tar.Header{Name: "aegis", Mode: 0755, Size: int64(len(binary)), Typeflag: tar.TypeReg}); err != nil {
 		t.Fatal(err)
