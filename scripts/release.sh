@@ -164,6 +164,22 @@ Path(os.environ["SOURCE_FILE"]).write_text(source)
 run_verification() {
     commit=$1
     mode=$2
+    # Source tests belong to the exact canonical main revision, not to three
+    # serial copies of the same suite. Only a changelog-only release child may
+    # consume this evidence; its actual versioned archives are still built and
+    # installed-tested by the tag workflow before publication.
+    reuse_ci=false
+    origin_url=$(git remote get-url origin)
+    case "$origin_url" in
+        https://github.com/berryhill/aegis|https://github.com/berryhill/aegis.git|git@github.com:berryhill/aegis.git)
+            source_revision=$commit
+            if [ "$mode" != fresh ]; then
+                source_revision=$release_parent
+            fi
+            reuse_ci=true
+            ;;
+        *github.com*) fail 'release origin is not the canonical berryhill/aegis repository' ;;
+    esac
     if [ -n "$verify_root" ]; then
         rm -rf "$verify_root"
     fi
@@ -186,6 +202,12 @@ run_verification() {
     (
         cd "$verify_root/repo"
         sh -n scripts/release.sh
+        if [ "$reuse_ci" = true ]; then
+            # Execute only the committed helper from the clean snapshot; an
+            # unstaged working-tree verifier must never authorize publication.
+            python3 scripts/verify-ci-evidence.py "$source_revision" ||
+                fail 'exact source CI is not verified; wait for or repair that CI run before releasing'
+        fi
         if [ "$mode" = fresh ] && [ "$dry_run" != 1 ]; then
             preflight_tag="aegis-signing-preflight-$$"
             if ! git tag -s "$preflight_tag" -m 'Aegis release signing preflight'; then
@@ -194,9 +216,13 @@ run_verification() {
             fi
             git tag -d "$preflight_tag" >/dev/null
         fi
-        RELEASE_DRY_RUN=0 make verify
-        make release-review VERSION="$version" || \
-            printf 'advisory release-review unavailable; proceeding with deterministic verification\n' >&2
+        if [ "$reuse_ci" = false ]; then
+            # Non-GitHub/local repositories retain the complete local verifier;
+            # they cannot borrow canonical GitHub release evidence.
+            RELEASE_DRY_RUN=0 make verify
+        else
+            printf 'exact source CI reused; final versioned archive and installed proof remain mandatory before publication.\n'
+        fi
         git diff --check
     )
 }

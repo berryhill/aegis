@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 env:
   GO_VERSION: "1.26.9"
@@ -15,8 +16,11 @@ env:
 jobs:
   build-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -27,7 +31,9 @@ jobs:
         run: |
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
-      - name: Test source
+      - name: Validate exact release and previously verified source
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
           case "$GITHUB_REF_NAME" in
@@ -38,7 +44,10 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           [ "v$version" = "$GITHUB_REF_NAME" ]
           printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          make verify
+          # A release may reuse CI only for its exact unchanged source parent.
+          # The classifier proves the child changes only the release changelog.
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/release-readiness-mode.py . prepared "$version" ''
+          python3 scripts/verify-ci-evidence.py "$(git rev-parse HEAD^)"
       - name: Build release archives
         run: |
           set -eu
@@ -48,4 +57,7 @@ jobs:
       - name: Publish GitHub release assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" > release-publication.json
+          python3 scripts/verify-release-publication.py release-publication.json "$GITHUB_REF_NAME" dist

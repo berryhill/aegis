@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 permissions:
@@ -9,13 +10,16 @@ permissions:
 
 env:
   GO_VERSION: "1.26.9"
+  GOTOOLCHAIN: "go1.26.9"
   GOFLAGS: "-p=1"
   GOMAXPROCS: "2"
+  GOMEMLIMIT: "512MiB"
 
 jobs:
-  release-readiness:
-    name: Exact-head release readiness
+  repository-checks:
+    name: Repository checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,16 +35,28 @@ jobs:
         run: |
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
-      - name: Verify exact source is releasable
-        env:
-          READINESS_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-        run: make release-readiness VERSION="999.0.${{ github.run_number }}" SOURCE_REVISION="$(git rev-parse HEAD)" READINESS_MODE=auto RELEASE_TAG="$READINESS_RELEASE_TAG"
+      - run: make verify-repository
+      - name: Classify changelog without changing source
+        run: python3 scripts/verify-budget.py python3 scripts/release-readiness-mode.py . auto "999.0.${{ github.run_number }}" ""
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
 
-  race:
-    name: Race tests
+  go-shards:
+    name: Go ${{ matrix.mode }} / ${{ matrix.group }}
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [normal, race]
+        group: [api, execution, cli, persistence, remainder]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -51,13 +67,82 @@ jobs:
         run: |
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
-      - run: python3 scripts/verify-budget.py go test -race -timeout=15m ./...
+      - name: Run complete deterministic shard
+        env:
+          SHARD_GROUP: ${{ matrix.group }}
+          TEST_MODE: ${{ matrix.mode }}
+        run: |
+          set -eu
+          if [ "$TEST_MODE" = race ]; then
+            python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP" --race
+          else
+            python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP"
+          fi
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+  installed-proof:
+    name: Release package and installed proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Harden installed Go executable permissions
+        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare verification cgroup supervisor
+        run: |
+          sudo systemctl start "user@$(id -u).service"
+          printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
+      - name: Package exact revision and exercise installed archives once
+        run: python3 scripts/verify-budget.py ./scripts/verify-installed-mvi.sh "999.0.${{ github.run_number }}" "" "$(git rev-parse HEAD)"
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+  vet:
+    name: Go vet
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Harden installed Go executable permissions
+        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare verification cgroup supervisor
+        run: |
+          sudo systemctl start "user@$(id -u).service"
+          printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
+      - run: python3 scripts/verify-budget.py go vet ./...
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
 
   authority-denial-matrix:
     name: Authority denial matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -69,12 +154,20 @@ jobs:
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
       - run: python3 scripts/verify-budget.py ./scripts/verify-authority-denial-matrix.sh
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
 
   vulnerability-scan:
     name: Vulnerability scan
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -88,3 +181,37 @@ jobs:
       - name: Install govulncheck
         run: python3 scripts/verify-budget.py go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
       - run: python3 scripts/verify-budget.py govulncheck ./...
+      - name: Source metadata unchanged
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain=v1 --untracked-files=no)"
+
+  race:
+    name: Race tests
+    if: ${{ always() }}
+    needs: [go-shards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require every normal and race shard
+        env:
+          SHARDS_RESULT: ${{ needs.go-shards.result }}
+        run: test "$SHARDS_RESULT" = success
+
+  release-readiness:
+    name: Exact-head release readiness
+    if: ${{ always() }}
+    needs: [repository-checks, go-shards, installed-proof, vet, authority-denial-matrix, vulnerability-scan, race]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require all exact-head gates, including non-skipped matrix success
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['NEEDS_JSON'])
+          assert len(results) == 7, results
+          assert all(job['result'] == 'success' for job in results.values()), results
+          PY
