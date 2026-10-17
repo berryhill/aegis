@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.28] - 2026-10-17
+
 ### Fixed
 - Verify the fresh signing-preflight signature against configured signer policy before creating a release commit, and independently verify the final signed tag before atomic push. Preserve failed immutable tags rather than publishing under an untrusted signer; v0.2.27 remains unpublished after its signing-policy failure.
 
