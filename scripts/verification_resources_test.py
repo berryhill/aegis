@@ -13,15 +13,7 @@ from unittest import mock
 
 from scripts.console_browser_test import DevTools, MAX_FRAME_BYTES
 from scripts import console_browser_test as browser
-from scripts.verification_process import run_owned
-
-
-def process_exited(status):
-    try:
-        return status.read_text().split()[2] == 'Z'
-    except FileNotFoundError:
-        # Reaping may remove /proc between observation and the read.
-        return True
+from scripts.verification_process import process_exited, run_owned
 
 
 class ResourceTests(unittest.TestCase):
@@ -119,6 +111,11 @@ class ResourceTests(unittest.TestCase):
     def test_reaped_grandchild_missing_stat_is_exited(self):
         status = mock.Mock()
         status.read_text.side_effect = FileNotFoundError
+        self.assertTrue(process_exited(status))
+
+    def test_reaped_grandchild_process_lookup_is_exited(self):
+        status = mock.Mock()
+        status.read_text.side_effect = ProcessLookupError(3, 'No such process')
         self.assertTrue(process_exited(status))
 
     def test_grandchild_exit_check_preserves_live_and_error_denials(self):

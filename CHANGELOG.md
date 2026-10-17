@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+- Handle both Linux ENOENT and ESRCH when the process reaper removes a verification descendant during `/proc` observation. Resource-timeout and browser-cleanup checks share the same observer; live-process and unrelated I/O-error denials remain enforced.
+
 ## [0.2.28] - 2026-10-17
 
 ### Fixed

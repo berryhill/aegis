@@ -53,6 +53,10 @@ remains the aggregate hard limit. It collects retired integration-fixture heaps
 without changing Badger storage/cache/durability options. This is resource
 custody, not a filesystem or credential sandbox.
 
+Linux cleanup assertions treat both ENOENT and ESRCH during `/proc` observation as
+an already-reaped process. Resource-timeout and Chrome-descendant checks use the
+same observer; a live process or unrelated read error still fails verification.
+
 Run focused commands under the same budget, for example:
 
 ```sh
