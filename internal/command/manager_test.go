@@ -527,19 +527,19 @@ func TestUpdateAliasAndSubcommandUseSameInjectedServiceAndOutput(t *testing.T) {
 		var out bytes.Buffer
 		root := NewRoot(Dependencies{In: strings.NewReader(""), Out: &out, Err: io.Discard, Version: "test", Updater: updater, IsTerminal: func(io.Reader, io.Writer) bool { return false }})
 		root.SetArgs(args)
-		if err := root.Execute(); err != nil {
-			t.Fatal(err)
+		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "upgrade incomplete at preflight") {
+			t.Fatalf("expected protected upgrade admission failure, got %v", err)
 		}
 		outputs = append(outputs, out.String())
 	}
-	if len(updater.calls) != 2 || updater.calls[0] || updater.calls[1] || outputs[0] != outputs[1] {
+	if len(updater.calls) != 0 || outputs[0] != outputs[1] {
 		t.Fatalf("calls=%v outputs=%q", updater.calls, outputs)
 	}
 }
 
 func TestUpdateReportsStaleGatewayWithoutRestartingIt(t *testing.T) {
 	isolatedPaths(t)
-	for _, args := range [][]string{{"--update"}, {"update"}, {"update", "--check"}} {
+	for _, args := range [][]string{{"update", "--check"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			var out bytes.Buffer
 			updater := &fakeUpdater{result: selfupdate.Result{CurrentVersion: "0.2.15", LatestVersion: "0.2.16", Updated: true, Executable: "/isolated/aegis"}}
@@ -574,7 +574,7 @@ func TestUpdateAliasAndSubcommandHaveEquivalentErrors(t *testing.T) {
 	for _, args := range [][]string{{"--update"}, {"update"}} {
 		root := NewRoot(Dependencies{In: strings.NewReader(""), Out: io.Discard, Err: io.Discard, Version: "test", Updater: updater, IsTerminal: func(io.Reader, io.Writer) bool { return false }})
 		root.SetArgs(args)
-		if err := root.Execute(); !errors.Is(err, want) || ExitCode(err) != 1 {
+		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "upgrade incomplete at preflight") || ExitCode(err) != 1 || len(updater.calls) != 0 {
 			t.Fatalf("args=%v error=%v exit=%d", args, err, ExitCode(err))
 		}
 	}

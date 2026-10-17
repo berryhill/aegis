@@ -193,7 +193,12 @@ flowchart TB
   Authority --> Broker[Session-bound GitHub repository broker]
   Broker -->|SO_PEERCRED + capability; sanitized result| Bridge[Aegis-owned MCP bridge]
   Bridge -->|exact live one-tool registration| Adapter
-  Updater[CLI self-updater] -->|GitHub release + SHA256SUMS| Binary[Aegis executable]
+  Updater[CLI self-updater source candidate] -->|release + checksum + executable provenance; no execution| PreparedBinary[Exact installation-bound prepared candidate]
+  PreparedBinary -->|protected principal authentication + exact-unit admission| UpgradeStop[Shared exact gateway stop]
+  UpgradeStop -->|repeat target and candidate validation; root-relative atomic rename| Binary[Aegis executable]
+  Binary -->|closed authority inspection or strictly eligible protected recovery| UpgradeRecovery[Authority validation + private evidence]
+  UpgradeRecovery -->|exact start; bounded manager calls| UpgradeReadiness[Current inode + authenticated audit-current readiness + Console GETs + Agent read]
+  Updater -->|private exact-intent journal; phases never authorize skips| UpgradeJournal[Durable operation ownership and reobservation]
   Updater -.->|read-only exact-unit process-image observation; no restart| API
   ReleaseVerifier[Repository-owned installed-MVI verifier] -->|four exact single-file 0755 archives + verified SHA256SUMS| Binary
   ReleaseVerifier -->|extract native archive; isolated non-TTY first run| Layout

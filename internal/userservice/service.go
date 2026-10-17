@@ -450,7 +450,48 @@ func serviceState(ctx context.Context, runner Runner, property string) (bool, er
 	}
 }
 
+// PreflightStop proves installed and loaded identity without probing readiness
+// or opening authority stores. Failed gateways remain eligible for exact stop.
+func PreflightStop(ctx context.Context, runner Runner, plan Plan) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if runner == nil {
+		return errors.New("user service manager is unavailable")
+	}
+	current, err := Preview(plan.Executable, plan.ConfigPath)
+	if err != nil {
+		return err
+	}
+	if !samePlan(current, plan) {
+		return ErrForeignUnit
+	}
+	info, err := os.Lstat(plan.Executable)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return ErrForeignUnit
+	}
+	installed, err := Installed(plan)
+	if err != nil {
+		return err
+	}
+	if !installed {
+		return ErrServiceNotInstalled
+	}
+	return validateLoadedIdentity(ctx, runner, plan)
+}
+
 func Action(ctx context.Context, runner Runner, plan Plan, action string, timeout time.Duration) (LifecycleResult, error) {
+	if timeout <= 0 {
+		timeout = 15 * time.Second
+	}
+	ctx, actionCancel := context.WithTimeout(ctx, timeout)
+	defer actionCancel()
+	if err := ctx.Err(); err != nil {
+		return LifecycleResult{}, err
+	}
 	if runner == nil {
 		return LifecycleResult{}, errors.New("user service manager is unavailable")
 	}
@@ -481,6 +522,9 @@ func Action(ctx context.Context, runner Runner, plan Plan, action string, timeou
 	if err = validateLoadedIdentity(ctx, runner, plan); err != nil {
 		return LifecycleResult{}, activationFailure("exact_unit_validation", err, nil)
 	}
+	if err = ctx.Err(); err != nil {
+		return LifecycleResult{}, err
+	}
 	if err = runner.Run(ctx, action, UnitName); err != nil {
 		return LifecycleResult{}, activationFailure(action, err, nil)
 	}
@@ -504,7 +548,7 @@ func Action(ctx context.Context, runner Runner, plan Plan, action string, timeou
 	if err != nil {
 		return LifecycleResult{}, activationFailure("authenticated_readiness", err, nil)
 	}
-	if err = waitReady(observeCtx, cfg); err != nil {
+	if err = waitServiceReady(observeCtx, runner, cfg); err != nil {
 		return LifecycleResult{}, activationFailure("audit_current_readiness", err, nil)
 	}
 	result.Ready = true
@@ -631,6 +675,17 @@ func waitActiveState(ctx context.Context, runner Runner, wantActive bool) error 
 		active, err := serviceState(ctx, runner, "ActiveState")
 		if err == nil && active == wantActive {
 			return nil
+		}
+		if wantActive && !active && err == nil {
+			state, stateErr := runner.Output(ctx, "show", UnitName, "--property", "ActiveState", "--value")
+			if stateErr != nil {
+				return stateErr
+			}
+			if strings.TrimSpace(string(state)) == "failed" {
+				status, statusErr := runner.Output(ctx, "show", UnitName, "--property", "ExecMainStatus", "--value")
+				result, resultErr := runner.Output(ctx, "show", UnitName, "--property", "Result", "--value")
+				return errors.Join(fmt.Errorf("gateway startup failed: result=%q exit_status=%q", strings.TrimSpace(string(result)), strings.TrimSpace(string(status))), statusErr, resultErr)
+			}
 		}
 		select {
 		case <-ctx.Done():

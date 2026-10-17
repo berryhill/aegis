@@ -31,6 +31,9 @@ const (
 )
 
 type Result struct {
+	Phase                  string `json:"phase,omitempty"`
+	UpgradeComplete        bool   `json:"upgrade_complete"`
+	ResumeRequired         bool   `json:"resume_required"`
 	CurrentVersion         string `json:"current_version"`
 	LatestVersion          string `json:"latest_version"`
 	UpdateAvailable        bool   `json:"update_available"`
@@ -73,6 +76,38 @@ func New(currentVersion string) *Updater {
 }
 
 func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
+	p := &Prepared{}
+	defer p.Close()
+	r, err := u.prepare(ctx, checkOnly, p)
+	if err != nil || checkOnly || !r.UpdateAvailable {
+		return r, err
+	}
+	p.result = r
+	return p.Install(ctx)
+}
+
+// Prepare resolves and verifies release bytes and the exact installation without
+// replacing it. The returned candidate is private to this upgrade invocation.
+func (u *Updater) Prepare(ctx context.Context) (*Prepared, error) {
+	p := &Prepared{requireProvenance: true}
+	r, err := u.prepare(ctx, false, p)
+	if err == nil && p.targetInfo == nil {
+		var executable string
+		executable, err = u.Executable()
+		if err == nil {
+			err = p.bindTarget(executable)
+			r.Executable = executable
+		}
+	}
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+	p.result = r
+	return p, nil
+}
+
+func (u *Updater) prepare(ctx context.Context, checkOnly bool, p *Prepared) (Result, error) {
 	if err := u.validateEndpoints(); err != nil {
 		return Result{}, err
 	}
@@ -92,9 +127,17 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 		return Result{}, fmt.Errorf("latest published release %s is older than current version %s; refusing downgrade", latest, result.CurrentVersion)
 	}
 	result.UpdateAvailable = !comparable || comparison < 0
-	if !result.UpdateAvailable || checkOnly {
+	if checkOnly || !result.UpdateAvailable {
 		return result, nil
 	}
+	executable, err := u.Executable()
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve current executable: %w", err)
+	}
+	if err = p.bindTarget(executable); err != nil {
+		return Result{}, err
+	}
+	result.Executable = executable
 
 	asset := fmt.Sprintf("aegis_%s_%s_%s.tar.gz", tag, u.GOOS, u.GOARCH)
 	checksums, err := u.download(ctx, u.DownloadURL+"/"+tag+"/SHA256SUMS", 1<<20, true)
@@ -117,15 +160,17 @@ func (u *Updater) Run(ctx context.Context, checkOnly bool) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	executable, err := u.Executable()
-	if err != nil {
-		return Result{}, fmt.Errorf("resolve current executable: %w", err)
+	if p.requireProvenance {
+		if err = validateCandidate(binary, latest, u.GOOS, u.GOARCH); err != nil {
+			return Result{}, err
+		}
 	}
-	if err = replaceExecutable(executable, binary); err != nil {
-		return Result{}, fmt.Errorf("replace %s: %w (install manually if this executable is managed by a package manager or requires elevated permissions)", executable, err)
+	if err = ctx.Err(); err != nil {
+		return Result{}, err
 	}
-	result.Updated = true
-	result.Executable = executable
+	if err = p.stage(binary); err != nil {
+		return Result{}, err
+	}
 	return result, nil
 }
 
