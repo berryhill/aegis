@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.29] - 2026-10-17
+
 ### Fixed
 - Source candidate: integrate verified preparation, retained protected authentication, exact stop/install, strictly eligible interrupted-authority recovery, activation, current-inode/audit-current readiness, Console reachability and authenticated Agent read into the installed-gateway update path. Add a private exact-intent durable journal with operation ownership and real-state reobservation. CLI-only updates remain explicitly binary-only. Service-manager action calls are bounded; failed startup observation reports service result/exit status and upgrade activation failure stops the exact owned unit. Full command-level adversarial/installed/live coverage and legacy-unit stop-budget migration remain release gates; no generic migration, binary rollback, publisher-signature authentication or same-UID sandbox is claimed.
 - Handle both Linux ENOENT and ESRCH when the process reaper removes a verification descendant during `/proc` observation. Resource-timeout and browser-cleanup checks share the same observer; live-process and unrelated I/O-error denials remain enforced.
