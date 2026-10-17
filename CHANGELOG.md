@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.26] - 2026-10-17
+
+### Fixed
+- Republish the interrupted-authority recovery and Doer readiness repair under the existing trusted Xander release signer. The v0.2.25 tag is preserved but its asset-publication run was stopped after signer-policy verification failed. Live recovery and provider-backed Loop execution remain separate acceptance gates.
+
 ## [0.2.25] - 2026-10-17
 
 ### Added
