@@ -13,6 +13,11 @@ export GOMEMLIMIT ?= 512MiB
 
 VERSION ?= 0.2.2
 GOVULNCHECK ?= go run golang.org/x/vuln/cmd/govulncheck@v1.6.0
+READINESS_MODE ?= prepare
+# Treat external mode/tag strings as literal environment data, including values
+# supplied on make's command line. Do not recursively expand embedded Make code.
+override export READINESS_MODE := $(value READINESS_MODE)
+override export RELEASE_TAG := $(value RELEASE_TAG)
 
 .PHONY: verify skillbundle-verify release-readiness console-generate console-verify authority-denial-matrix release-review release
 
@@ -59,7 +64,7 @@ verify-stages:
 	$(GOVULNCHECK) ./...
 
 release-readiness:
-	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)" "$(or $(READINESS_MODE),prepare)" "$(RELEASE_TAG)"
+	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)" "$$READINESS_MODE" "$$RELEASE_TAG"
 
 authority-denial-matrix:
 	./scripts/verify-authority-denial-matrix.sh

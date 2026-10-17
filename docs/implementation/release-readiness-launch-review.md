@@ -48,6 +48,15 @@ revision checks. `sh scripts/release_test.sh` passes its isolated recovery suite
 its pushes are to disposable local bare fixtures, never the real origin.
 Shell syntax and `git diff --check` pass.
 
+Independent review caught shell interpolation of the newly introduced tag value
+in the Make recipe: a valid hostile Git tag could mask a source-revision denial.
+Parent reproduced exit 0 before repair. Mode/tag values now cross the recipe via
+literal exported environment variables (including command-line Make values),
+never Make-expanded shell source. Production-Make regression cases prove a valid
+hostile tag cannot mask failure and embedded Make shell expressions in either
+input are rejected without execution. The parent reran the full readiness
+regression script successfully after this correction.
+
 Full resource-supervised verification and exact committed-head CI are delegated
 to the parent/publication owner. No source commit, real push, release, issue,
 credential or live runtime operation is performed here. Existing private security

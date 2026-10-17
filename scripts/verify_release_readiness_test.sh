@@ -233,4 +233,16 @@ PY
   revision=$(git -C "$fixture" rev-parse HEAD)
   expect_failure 'CHANGELOG.md' sh -c 'cd "$1"; ./scripts/verify-release-readiness.sh 1.2.3 "$2" auto' sh "$fixture" "$revision"
 done
+# Exercise the production Make recipe: hostile Git tags must remain literal
+# input, and neither shell nor recursive Make expansion may mask a denial.
+setup_repo hostile-tag
+hostile='v1.2.3";true;#'
+git check-ref-format "refs/tags/$hostile"
+expect_failure 'source revision mismatch' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 SOURCE_REVISION=0000000000000000000000000000000000000000 READINESS_MODE=auto "RELEASE_TAG=$hostile"
+revision=$(git -C "$fixture" rev-parse HEAD)
+expect_failure 'release tag must be' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 "SOURCE_REVISION=$revision" READINESS_MODE=auto "RELEASE_TAG=$hostile"
+expect_failure 'release tag must be' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 "SOURCE_REVISION=$revision" READINESS_MODE=auto 'RELEASE_TAG=$(shell touch injected)'
+[ ! -e "$fixture/injected" ] || fail_test 'Make expanded tag input as code'
+expect_failure 'unknown readiness mode' make -s -C "$fixture" -f "$repo/Makefile" SHELL=/bin/sh release-readiness VERSION=1.2.3 "SOURCE_REVISION=$revision" 'READINESS_MODE=$(shell touch injected)'
+[ ! -e "$fixture/injected" ] || fail_test 'Make expanded mode input as code'
 printf 'release readiness tests passed\n'
