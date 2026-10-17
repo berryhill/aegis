@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.25] - 2026-10-17
+
 ### Added
 - Offline `aegis authority recover-interrupted`: enrolled-principal authentication, preserved original evidence, independently validated complete Badger WAL transactions, working-copy replay with canonical-state comparison, and Linux atomic exchange with exact resumable recovery receipts. Ambiguous/torn state refuses; non-Linux recovery refuses before mutation. See [the procedure and limits](docs/AUTHORITY_RECOVERY.md).
 
