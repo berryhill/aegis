@@ -103,17 +103,21 @@
       "sources": [
         "internal/command/root.go",
         "internal/command/userservice.go",
+        "internal/command/authority_recovery.go",
         "internal/command/reset.go",
         "internal/command/migrate_layout.go",
         "internal/api/server.go"
       ],
       "tests": [
         "internal/command/userservice_action_test.go",
+        "internal/command/authority_recovery_test.go",
         "internal/command/reset_test.go",
         "internal/command/migrate_layout_test.go"
       ],
       "cli": [
         "aegis version",
+        "aegis authority",
+        "aegis authority recover-interrupted",
         "aegis runtime",
         "aegis config",
         "aegis update",

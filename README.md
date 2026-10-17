@@ -1,5 +1,7 @@
 # Aegis
 
+Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves the original physical evidence, validates complete Badger transactions and zero padding before working-copy replay, and retains exact resumable recovery receipts. Ambiguous or damaged logs refuse. See [the recovery procedure and limits](docs/AUTHORITY_RECOVERY.md).
+
 Source candidate: `loops setup-protected FILE` requests independent enrolled-password/native exact review through the owning service for retained Doer successor, provisioning or host consent. The hidden product-launched companion never borrows an agent terminal/PTY; generic typed approval still denies. Setup does not publish or Run; installed human/provider acceptance remains pending. See [the workflow](docs/DOER_LOOP.md#protected-setup-through-installed-skills-source-candidate).
 
 Source candidate: typed Doer candidate readiness and retained-draft save/read/CAS/successor adapters now support the configured owning-service Unix transport. Optional controller-owned Codex inference authentication is separate from zero Agent credential/tool authority. Independent security review, exact successor/provisioning/host consent and installed/live acceptance remain gates. See [Doer Loop](docs/DOER_LOOP.md) and [launch impact review](docs/implementation/provider-auth-readiness-launch-review.md).
@@ -69,7 +71,7 @@ The updater selects only the latest exact published stable GitHub release and fa
 ./scripts/build-source.sh ./aegis
 ```
 
-Go 1.26.6 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Executables built into the verified source checkout report `dev` and are mechanically bound to the ignored `<repository>/.aegis` profile beside `./aegis`, even when Go embeds the checkout's clean release tag as its module version. Tagged release archives and stable versioned `go install` binaries outside a worktree use the `production` profile at `~/.aegis`. Each profile has separate configuration, encrypted authority, deployment identifier, audit/checkpoint state, manager certification, and runtime state. Development refuses paths outside its verified repository profile, and destructive reset is restricted to each binary's own exact profile layout.
+Go 1.26.9 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Executables built into the verified source checkout report `dev` and are mechanically bound to the ignored `<repository>/.aegis` profile beside `./aegis`, even when Go embeds the checkout's clean release tag as its module version. Tagged release archives and stable versioned `go install` binaries outside a worktree use the `production` profile at `~/.aegis`. Each profile has separate configuration, encrypted authority, deployment identifier, audit/checkpoint state, manager certification, and runtime state. Development refuses paths outside its verified repository profile, and destructive reset is restricted to each binary's own exact profile layout.
 
 The source builder pins Git subprocesses to the verified checkout and checks Go's embedded revision, commit time, and dirty flag before publishing the binary. Use it for linked worktrees nested inside another Git repository: plain Go builds on toolchains that ignore `.git` files can stamp the enclosing repository. A truthful dirty development build is not clean release-candidate acceptance.
 
@@ -129,6 +131,8 @@ aegis gateway uninstall
 aegis console
 aegis manager
 ```
+
+`aegis gateway status` reports raw service `active` separately from `ready`, `readiness_state`, and `readiness_reason`. Only `ready: true` proves the exact installed/loaded unit passed authenticated, audit-current `/readyz` at observation time; activity alone is not readiness. Status never starts/restarts the service or delivers pending audit events. This is gateway health, not Doer execution authorization or provider entitlement.
 
 `aegis service` is a compatibility alias for `aegis gateway`; it delegates to the same lifecycle implementation and does not create a second authority surface.
 

@@ -31,7 +31,7 @@ func consoleDoerReadiness(model *consoleweb.DoerReviewModel, readiness app.DoerC
 		name   string
 		status app.DoerPrerequisiteStatus
 	}{
-		{"Authenticated requester", readiness.Subject}, {"Exact enabled Agent", readiness.AgentReference}, {"Canonical candidate", readiness.CanonicalCandidate}, {"Exact charter", readiness.Charter}, {"Authenticated stanza", readiness.Selection}, {"Usable configured model", readiness.Model}, {"Tool-free scope", readiness.ToolFree}, {"Credential-free scope", readiness.CredentialFree}, {"Provisioning receipt", readiness.Receipt}, {"Supported Hermes runtime", readiness.Runtime}, {"Exact host-write contract and local controller", readiness.Controller}, {"Local Laya helper", readiness.Helper},
+		{"Authenticated requester", readiness.Subject}, {"Exact enabled Agent", readiness.AgentReference}, {"Canonical candidate", readiness.CanonicalCandidate}, {"Exact charter", readiness.Charter}, {"Authenticated stanza", readiness.Selection}, {"Usable configured model", readiness.Model}, {"Tool-free scope", readiness.ToolFree}, {"Credential-free scope", readiness.CredentialFree}, {"Controller provider authentication", readiness.ProviderAuthentication}, {"Provisioning receipt", readiness.Receipt}, {"Supported Hermes runtime", readiness.Runtime}, {"Exact host-write contract and local controller", readiness.Controller}, {"Local Laya helper", readiness.Helper},
 	} {
 		value := check.status.State
 		if check.status.Reason != "" {

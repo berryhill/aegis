@@ -59,6 +59,9 @@ func TestDoerProviderReadinessSeparatesControllerAuthFromAgentCredentials(t *tes
 			if r.ToolFree.State != "ready" || r.CredentialFree.State != "ready" {
 				t.Fatal("provider transport became agent authority")
 			}
+			if r.ProviderAuthentication.State != "blocked" || r.Receipt.State != "not_checked" || r.Runtime.State != "not_checked" || r.Controller.State != "not_checked" || r.Helper.State != "not_checked" {
+				t.Fatalf("provider blocker left downstream readiness: %+v", r)
+			}
 			data, _ := json.Marshal(r)
 			if value != "" && strings.Contains(string(data), value) {
 				t.Fatal("auth disclosed")

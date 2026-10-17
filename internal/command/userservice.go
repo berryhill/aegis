@@ -47,7 +47,7 @@ func userServiceCmd(runner userservice.Runner, isTerminal func(io.Reader, io.Wri
 		}
 		return output(cmd, userservice.LifecycleResult{Action: "install", Unit: userservice.UnitName, UnitPath: plan.UnitPath, UnitDigest: plan.UnitDigest, Active: true, Ready: true, AuditCurrent: true})
 	}})
-	command.AddCommand(&cobra.Command{Use: "status", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	command.AddCommand(&cobra.Command{Use: "status", Short: "Observe service activity and exact authenticated gateway readiness without repair", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		plan, err := preview()
 		if err != nil {
 			return err

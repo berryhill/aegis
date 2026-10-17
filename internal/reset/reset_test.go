@@ -26,11 +26,16 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
+	return newFixtureAt(t, t.TempDir())
+}
+
+func newFixtureAt(t *testing.T, root string) fixture {
+	t.Helper()
 	current, err := user.Current()
 	if err != nil {
 		t.Fatal(err)
 	}
-	home := filepath.Join(t.TempDir(), "home")
+	home := filepath.Join(root, "home")
 	if err = os.Mkdir(home, 0700); err != nil {
 		t.Fatal(err)
 	}

@@ -33,7 +33,7 @@ func (p *DoerContinuationPortal) ApprovedDraftReadiness(ctx context.Context, req
 		if err != nil {
 			continue
 		}
-		readiness, err := p.svc.ProbeDoerCandidateReadinessAs(ctx, executor, app.DoerCandidateReadinessInput{Agent: draft.Agent, Candidate: candidate})
+		readiness, err := p.svc.ReadDoerCandidateReadinessAs(ctx, executor, app.DoerCandidateReadinessInput{Agent: draft.Agent, Candidate: candidate})
 		if err == nil {
 			return readiness, true
 		}

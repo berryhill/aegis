@@ -641,6 +641,9 @@ func waitActiveState(ctx context.Context, runner Runner, wantActive bool) error 
 }
 
 func Status(ctx context.Context, runner Runner, plan Plan) (map[string]any, error) {
+	if runner == nil {
+		return nil, errors.New("user service manager is unavailable")
+	}
 	if err := inspectUnit(plan.UnitPath, plan.unit); err != nil {
 		return nil, err
 	}
@@ -651,7 +654,8 @@ func Status(ctx context.Context, runner Runner, plan Plan) (map[string]any, erro
 			linger = strings.TrimSpace(string(output))
 		}
 	}
-	return map[string]any{"unit": UnitName, "unit_path": plan.UnitPath, "unit_digest": plan.UnitDigest, "active": strings.TrimSpace(string(active)), "active_error": activeErr != nil, "linger": linger, "logout_survival_claimed": linger == "yes"}, nil
+	observation := ObserveExactGateway(ctx, runner, plan)
+	return map[string]any{"unit": UnitName, "unit_path": plan.UnitPath, "unit_digest": plan.UnitDigest, "active": strings.TrimSpace(string(active)), "active_error": activeErr != nil, "ready": observation.State == GatewayHealthy, "readiness_state": observation.State, "readiness_reason": observation.Reason, "linger": linger, "logout_survival_claimed": linger == "yes"}, nil
 }
 
 func Uninstall(ctx context.Context, plan Plan, runner Runner) error {

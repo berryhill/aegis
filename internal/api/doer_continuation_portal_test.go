@@ -130,7 +130,7 @@ func TestDoerPortalNativeSOPEERPIDOriginDigestAndSignedReadback(t *testing.T) {
 		}
 	})
 	p.RegisterNative(g)
-	path := t.TempDir() + "/portal.sock"
+	path := socketTestDir(t) + "/portal.sock"
 	listener, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatal(err)
