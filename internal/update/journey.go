@@ -1,11 +1,13 @@
 package update
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"debug/buildinfo"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -19,14 +21,27 @@ func (p *Prepared) Identity() (CandidateIdentity, error) {
 	if path == "" {
 		path = p.target
 	}
-	b, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return CandidateIdentity{}, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxBinarySize+1))
+	if err != nil || len(b) > maxBinarySize {
+		return CandidateIdentity{}, errors.New("candidate identity bytes unavailable or oversized")
+	}
+	expected := p.candidateDigest
+	if p.candidate == "" {
+		expected = p.targetDigest
+	}
+	identityDigest := sha256.Sum256(b)
+	if identityDigest != expected {
+		return CandidateIdentity{}, errors.New("candidate identity differs from prepared bytes")
 	}
 	if err = validateCandidate(b, p.result.LatestVersion, runtime.GOOS, runtime.GOARCH); err != nil {
 		return CandidateIdentity{}, err
 	}
-	info, err := buildinfo.ReadFile(path)
+	info, err := buildinfo.Read(bytes.NewReader(b))
 	if err != nil {
 		return CandidateIdentity{}, err
 	}
@@ -40,11 +55,10 @@ func (p *Prepared) Identity() (CandidateIdentity, error) {
 			}
 		}
 	}
-	sum := sha256.Sum256(b)
 	if source == "" {
 		return CandidateIdentity{}, errors.New("installed candidate source proof unavailable")
 	}
-	return CandidateIdentity{p.target, p.result.LatestVersion, source, hex.EncodeToString(sum[:])}, nil
+	return CandidateIdentity{p.target, p.result.LatestVersion, source, hex.EncodeToString(identityDigest[:])}, nil
 }
 
 // Journey is the production application boundary. Preparation always precedes
@@ -83,6 +97,22 @@ func RunJourney(ctx context.Context, binary BinaryUpdater, j Journey) (r Result,
 	if err != nil {
 		return r, err
 	}
+	complete := func() Result {
+		r.Phase = "complete"
+		r.UpgradeComplete = true
+		r.ResumeRequired = false
+		r.RunningVersion = identity.Version
+		r.RunningSourceRevision = identity.Source
+		r.GatewayImage = "running_current_image"
+		r.GatewayRestartRequired = false
+		r.AuditCurrent = true
+		r.ConsoleVerified = true
+		r.RequiredAction = ""
+		if report, ok := j.(interface{ VerifiedConsoleURL() string }); ok {
+			r.ConsoleURL = report.VerifiedConsoleURL()
+		}
+		return r
+	}
 	r = p.result
 	r.ResumeRequired = true
 	r.Phase = "preflight"
@@ -98,16 +128,19 @@ func RunJourney(ctx context.Context, binary BinaryUpdater, j Journey) (r Result,
 		if err = j.Record(ctx, "complete"); err != nil {
 			return r, err
 		}
-		r.Phase = "complete"
-		r.UpgradeComplete = true
-		r.ResumeRequired = false
-		return r, nil
+		return complete(), nil
 	}
 	for _, step := range []struct {
 		name string
 		run  func(context.Context) error
 	}{
-		{"gateway_stop", j.Stop},
+		{"gateway_stop", func(ctx context.Context) error {
+			// Protected input may take time. Recheck before interrupting a gateway.
+			if err := p.Validate(ctx); err != nil {
+				return err
+			}
+			return j.Stop(ctx)
+		}},
 		{"binary_install", func(ctx context.Context) error {
 			if e := p.Validate(ctx); e != nil {
 				return e
@@ -131,13 +164,9 @@ func RunJourney(ctx context.Context, binary BinaryUpdater, j Journey) (r Result,
 			return r, err
 		}
 	}
-	r.Phase = "complete"
+	r.Phase = "completion_record"
 	if err = j.Record(ctx, "complete"); err != nil {
 		return r, err
 	}
-	r.UpgradeComplete = true
-	r.ResumeRequired = false
-	r.GatewayImage = "current"
-	r.RequiredAction = ""
-	return r, nil
+	return complete(), nil
 }

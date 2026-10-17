@@ -37,6 +37,9 @@ func snapshot(path string) (os.FileInfo, [sha256.Size]byte, error) {
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
 		return nil, zero, errors.New("executable is not a regular executable file")
 	}
+	if info.Size() > maxBinarySize {
+		return nil, zero, errors.New("executable exceeds inspection bound")
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, zero, err
@@ -46,9 +49,12 @@ func snapshot(path string) (os.FileInfo, [sha256.Size]byte, error) {
 	if err != nil || !os.SameFile(info, opened) {
 		return nil, zero, errors.New("executable changed during inspection")
 	}
-	data, err := io.ReadAll(f)
+	data, err := io.ReadAll(io.LimitReader(f, maxBinarySize+1))
 	if err != nil {
 		return nil, zero, err
+	}
+	if len(data) > maxBinarySize {
+		return nil, zero, errors.New("executable changed beyond inspection bound")
 	}
 	after, err := os.Lstat(path)
 	if err != nil || !os.SameFile(info, after) || info.Mode() != after.Mode() {

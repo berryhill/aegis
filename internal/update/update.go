@@ -34,6 +34,11 @@ type Result struct {
 	Phase                  string `json:"phase,omitempty"`
 	UpgradeComplete        bool   `json:"upgrade_complete"`
 	ResumeRequired         bool   `json:"resume_required"`
+	RunningVersion         string `json:"running_version,omitempty"`
+	RunningSourceRevision  string `json:"running_source_revision,omitempty"`
+	AuditCurrent           bool   `json:"audit_current,omitempty"`
+	ConsoleVerified        bool   `json:"console_verified,omitempty"`
+	ConsoleURL             string `json:"console_url,omitempty"`
 	CurrentVersion         string `json:"current_version"`
 	LatestVersion          string `json:"latest_version"`
 	UpdateAvailable        bool   `json:"update_available"`
