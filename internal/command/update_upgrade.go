@@ -70,7 +70,22 @@ func (j *installedJourney) Preflight(ctx context.Context, identity selfupdate.Ca
 	j.plan = plan
 	j.configDigest = sha256.Sum256(data)
 	j.identity = identity
-	j.journal, err = openUpgradeJournal(plan, cfg.StateDir, j.configDigest, identity)
+	j.journal, err = openUpgradeJournalWithReconcile(plan, cfg.StateDir, j.configDigest, identity, func() error {
+		if err := j.admit(ctx); err != nil {
+			return err
+		}
+		if err := j.validatePrepared(ctx); err != nil {
+			return err
+		}
+		installed, err := userservice.InstalledDigest(plan)
+		if err != nil {
+			return err
+		}
+		if installed != plan.UnitDigest && installed != plan.LegacyUnitDigest {
+			return userservice.ErrForeignUnit
+		}
+		return nil
+	})
 	if err != nil {
 		return err
 	}

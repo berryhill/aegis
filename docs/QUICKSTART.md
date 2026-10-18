@@ -14,6 +14,12 @@ An inactive published v4 draft is not ready to run. The single `loops queue FILE
 
 For a reusable typed v5 definition, use `./aegis loops doer-reusable --help` after the same build; see [the exact Graph-run binding and operator authorization contract](DOER_LOOP.md#reusable-typed-v5-definition). Definition authoring does not grant execution authority and is outside the no-key demonstration.
 
+## Update diagnostic boundary
+
+Check-only results now separate `gateway_readiness` and `gateway_repair_required` from image identity and release availability. A valid unfinished journal reports `resume_required: true` and its phase even when the invoking CLI is current. Checks never authenticate, create a journal/lock, or mutate lifecycle. A journal is not readiness or authority. A verified later stable candidate may reconcile an exact pending intent only after fresh principal/configuration/unit/candidate admission; immutable content-addressed ancestor bytes are retained and revalidated, and the new intent starts at `prepared`. Unknown/config-drifted intent or missing/substituted history denies. A complete receipt for the one recognized legacy unit requires exact installed-image evidence and the same fresh admission before migration. Older installed coordinators do not acquire these fixes by publication: a conflicting pending intent can block before newer code runs; retain it and use only a separately verified supported transition.
+
+Protected principal prompts are operation-neutral. Pinentry binds a validated display and, when supplied, the actual terminal descriptor identity rather than trusting `GPG_TTY`. Diagnostics expose only typed protocol stage and numeric Assuan ERR code, never helper text/stderr. Cancellation remains distinct; no terminal fallback follows any attempted `GETPIN`. A process without desktop context and without terminal-backed input/diagnostic output needs operator-owned protected input; this is not permission to emulate a terminal or copy display credentials. Missing CLEAN with retained ACTIVE/DIRTY is not by itself proof of unsupported state: only the existing authenticated interrupted-recovery validator decides eligibility.
+
 ## Prerequisites
 
 - Linux

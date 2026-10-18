@@ -41,6 +41,10 @@ This path needs neither a provisioning receipt nor a running session. Processing
 
 ## Install and update
 
+`aegis update --check` is read-only: release currency, pending upgrade intent and
+authenticated gateway readiness are separate results. A current CLI does not prove
+a working Console. See [the update diagnostic and recovery boundaries](docs/QUICKSTART.md#update-diagnostic-boundary), including protected-input and older-client bootstrap limitations.
+
 The [official skill suite guide](docs/HERMES_SKILLS.md#managed-exact-artifact-inventory-explicit-opt-in) also documents the source-built exact-artifact inventory tool. Its explicit install/update/rollback path is separate from executable updates, refuses unmanaged inventories and local edits, and grants no Aegis authority; supported-runtime and public-distribution qualification remain separate.
 
 Tagged releases use stable Semantic Versioning tags (`vMAJOR.MINOR.PATCH`). Install directly with Go:

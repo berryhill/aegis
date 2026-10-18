@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,10 +14,21 @@ import (
 
 // The test binary is the inert protocol fixture, never a live native prompt.
 func TestCompanionPinentryFixture(t *testing.T) {
-	if len(os.Args) < 3 || os.Args[len(os.Args)-2] != "--confirm-fixture" {
+	index := -1
+	for i, arg := range os.Args {
+		if arg == "--confirm-fixture" {
+			index = i
+			break
+		}
+	}
+	if index < 0 || index+1 >= len(os.Args) {
 		return
 	}
-	scenario := os.Args[len(os.Args)-1]
+	scenario := os.Args[index+1]
+	capture := ""
+	if index+2 < len(os.Args) {
+		capture = os.Args[index+2]
+	}
 	fmt.Println("OK fixture")
 	reader := bufio.NewScanner(os.Stdin)
 	for reader.Scan() {
@@ -32,6 +44,13 @@ func TestCompanionPinentryFixture(t *testing.T) {
 		}
 		if line == "CONFIRM" {
 			switch scenario {
+			case "require-display":
+				data, _ := os.ReadFile(capture)
+				if strings.Contains(string(data), "OPTION display=:77\n") {
+					fmt.Println("OK")
+				} else {
+					fmt.Println("ERR 83886179 cancelled")
+				}
 			case "approve":
 				fmt.Println("OK")
 			case "cancel":
@@ -51,6 +70,13 @@ func TestCompanionPinentryFixture(t *testing.T) {
 				time.Sleep(time.Minute)
 			}
 		} else {
+			if capture != "" {
+				file, err := os.OpenFile(capture, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+				if err == nil {
+					_, _ = fmt.Fprintln(file, line)
+					_ = file.Close()
+				}
+			}
 			fmt.Println("OK")
 		}
 	}
@@ -76,6 +102,30 @@ func TestCompanionNativeConfirmation(t *testing.T) {
 		})
 	}
 }
+func TestConfirmationGraphicalContextWithoutTTY(t *testing.T) {
+	capture := filepath.Join(t.TempDir(), "protocol")
+	service := newNativeConfirmation()
+	service.getenv = func(name string) string {
+		if name == "DISPLAY" {
+			return ":77"
+		}
+		return ""
+	}
+	service.command = func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCompanionPinentryFixture$", "--", "--confirm-fixture", "require-display", capture)
+	}
+	if got := service.run(context.Background(), "/fixture", "Review exact scope"); got != "confirmed" {
+		t.Fatal(got)
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "OPTION display=:77\n") || strings.Contains(string(data), "GETPIN") {
+		t.Fatalf("transcript=%q", data)
+	}
+}
+
 func TestCompanionConfirmationRejectsUnsafeData(t *testing.T) {
 	for _, data := range []string{"", strings.Repeat("x", pinentryLineLimit), "task\x00CONFIRM", "task\rCONFIRM", "task\u202eOK", string([]byte{0xff})} {
 		if confirmationDataSafe(data) {

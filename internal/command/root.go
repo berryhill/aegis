@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -633,7 +634,11 @@ func runUpdate(cmd *cobra.Command, updater UpdateService, runner userservice.Run
 	// never changes service state, even when the old process image is stale.
 	executable := result.Executable
 	if executable == "" {
-		executable, err = os.Executable()
+		if concrete, ok := updater.(*selfupdate.Updater); ok {
+			executable, err = concrete.Executable()
+		} else {
+			executable, err = os.Executable()
+		}
 	}
 	if err != nil {
 		result.GatewayImage = "unknown"
@@ -643,6 +648,35 @@ func runUpdate(cmd *cobra.Command, updater UpdateService, runner userservice.Run
 	if result.GatewayImage == "running_stale_image" {
 		result.GatewayRestartRequired = true
 		result.RequiredAction = "aegis gateway restart"
+	}
+	if configPath != "" {
+		cfg, loadErr := config.Load(configPath, nil)
+		if loadErr != nil {
+			return fmt.Errorf("inspect upgrade journal configuration: %w", loadErr)
+		}
+		plan, planErr := userservice.Preview(executable, configPath)
+		if planErr != nil {
+			return fmt.Errorf("inspect upgrade journal plan: %w", planErr)
+		}
+		gateway := userservice.ObserveExactGateway(cmd.Context(), runner, plan)
+		result.GatewayReadiness = string(gateway.State)
+		result.GatewayRepairRequired = gateway.State != userservice.GatewayHealthy && gateway.State != userservice.GatewayNotInstalled
+		if result.GatewayRepairRequired {
+			result.RequiredAction = "aegis update: gateway is not authenticated ready; supported same-version repair requires protected principal authentication"
+		}
+		data, readErr := os.ReadFile(plan.ConfigPath)
+		if readErr != nil {
+			return readErr
+		}
+		receipt, found, journalErr := inspectUpgradeJournal(plan, cfg.StateDir, sha256.Sum256(data))
+		if journalErr != nil {
+			return fmt.Errorf("unsafe upgrade journal; readiness unavailable: %w", journalErr)
+		}
+		if found && receipt.Stage != "complete" {
+			result.ResumeRequired = true
+			result.Phase = receipt.Stage
+			result.RequiredAction = "aegis update: resume the retained intent or authenticate verified later-release reconciliation; no gateway readiness claimed"
+		}
 	}
 	return output(cmd, result)
 }

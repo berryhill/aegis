@@ -1,0 +1,7 @@
+# Workstation update diagnostic slice — launch review
+
+Changed: README, quickstart, threat model, changelog and shipped operator lifecycle skill. Reviewed LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, architecture diagram, no-key demo, recording recipe, release pipeline and contributor backlog: existing authority boundaries and fixture-only policies remain applicable. Architecture still separates journal from authority and readiness. No-key demo and historical recording do not exercise this slice; no replacement recording is claimed.
+
+Focused Go tests/build are local source evidence only. Full suite, clean-source four-platform release packaging/checksum verification, published-release checks, browser/installed proof, publication and live supported transition remain parent-owned gates. Local downloaded `.release-assets-v0.2.30`, scratch Doer contracts/logs and build outputs are not launch assets and must not enter publication commits. Do not equate downloaded checksums with installed readiness.
+
+No host lifecycle/authentication attempts or executable replacement are part of this review. In particular old installed code cannot learn new pending-intent reconciliation until a supported transition reaches it; publication alone does not fix that bootstrap dependency. Preserve exact pending intent and recovery artifacts. Generic CLEAN errors do not determine interrupted recovery eligibility.

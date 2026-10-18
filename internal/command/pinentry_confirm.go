@@ -133,7 +133,21 @@ func (s *nativeConfirmation) run(parent context.Context, helper, description str
 	line, e := reader.line()
 	if e == nil && validOK(line) {
 		setup := true
+		for _, option := range protectedPinentryOptions(nil, s.getenv) {
+			if _, e = io.WriteString(stdin, option+"\n"); e != nil {
+				setup = false
+				break
+			}
+			line, e = reader.line()
+			if e != nil || !validOK(line) {
+				setup = false
+				break
+			}
+		}
 		for _, request := range []string{"SETTITLE Aegis exact Doer approval", "SETDESC " + assuanEncode([]byte(description)), "SETOK Approve exact scope", "SETCANCEL Cancel", "SETNOTOK Deny"} {
+			if !setup {
+				break
+			}
 			if _, e = io.WriteString(stdin, request+"\n"); e != nil {
 				setup = false
 				break

@@ -4,13 +4,14 @@ import (
 	"crypto/sha256"
 	selfupdate "github.com/berryhill/aegis/internal/update"
 	"github.com/berryhill/aegis/internal/userservice"
+	"strings"
 	"testing"
 )
 
 func TestUpgradeJournalBindsKnownUnitMigrationAcrossCrash(t *testing.T) {
 	state := t.TempDir()
-	plan := userservice.Plan{UnitDigest: "desired", LegacyUnitDigest: "known-legacy"}
-	id := selfupdate.CandidateIdentity{Executable: "/exact/aegis", Version: "1", Source: "source", Digest: "image"}
+	plan := userservice.Plan{Executable: "/exact/aegis", UnitDigest: "desired", LegacyUnitDigest: "known-legacy"}
+	id := selfupdate.CandidateIdentity{Executable: "/exact/aegis", Version: "1.0.0", Source: strings.Repeat("a", 40), Digest: strings.Repeat("b", 64)}
 	d := sha256.Sum256([]byte("config"))
 	j, err := openUpgradeJournal(plan, state, d, id)
 	if err != nil {

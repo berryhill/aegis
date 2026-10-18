@@ -9,13 +9,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 func TestUpgradeJournalResumeAndSubstitutionDenial(t *testing.T) {
 	state := t.TempDir()
-	plan := userservice.Plan{UnitDigest: "unit"}
-	id := selfupdate.CandidateIdentity{Executable: "/exact/aegis", Version: "1.0.0", Source: "source", Digest: "digest"}
+	plan := userservice.Plan{Executable: "/exact/aegis", UnitDigest: "unit"}
+	id := selfupdate.CandidateIdentity{Executable: "/exact/aegis", Version: "1.0.0", Source: strings.Repeat("a", 40), Digest: strings.Repeat("b", 64)}
 	d := sha256.Sum256([]byte("config"))
 	j, err := openUpgradeJournal(plan, state, d, id)
 	if err != nil {
@@ -49,8 +50,8 @@ func TestUpgradeJournalResumeAndSubstitutionDenial(t *testing.T) {
 }
 func TestUpgradeJournalConflictingIntentDenied(t *testing.T) {
 	state := t.TempDir()
-	plan := userservice.Plan{UnitDigest: "unit"}
-	id := selfupdate.CandidateIdentity{Executable: "/exact/aegis", Version: "1", Source: "source", Digest: "digest"}
+	plan := userservice.Plan{Executable: "/exact/aegis", UnitDigest: "unit"}
+	id := selfupdate.CandidateIdentity{Executable: "/exact/aegis", Version: "1.0.0", Source: strings.Repeat("a", 40), Digest: strings.Repeat("b", 64)}
 	j, err := openUpgradeJournal(plan, state, [32]byte{}, id)
 	if err != nil {
 		t.Fatal(err)
