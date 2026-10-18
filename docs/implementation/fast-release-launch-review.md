@@ -48,6 +48,24 @@ security suites are explicit verify-repository-stage dependencies. Same-run
 failed-jobs-only retries use GitHub's latest-job projection with stable green
 run/attempt readback before and after; old-run fallback remains denied.
 
+## Remainder headroom follow-up
+
+The original race/remainder job exhausted its ten-minute deadline again. Replace
+only that group's topology: sort the exact unassigned package set and alternate
+entries into remainder-a and remainder-b (currently 24 and 23 packages). Both
+normal and race matrices and canonical evidence require both names. Regression
+coverage requires sorted disjoint exact-once coverage, exact matrix equality and
+fail-closed evidence when any new mode/shard is missing. Ten-minute job deadlines,
+cgroup budgets, complete uncached package-test flags and every required aggregate
+gate remain unchanged. No original remainder retry or deadline increase is used.
+
+Reviewed the launch assets listed above for this topology-only follow-up: only
+CHANGELOG.md and this existing review require changes. Runtime behavior, public
+commands, supported versions, security boundaries, diagrams, quickstart, no-key
+demo, recording and contributor materials are unaffected. Existing released
+binaries/checksums are not regenerated or represented as candidate delivery proof.
+Hosted timing, merge and release remain parent-owned acceptance, not local claims.
+
 ## Remaining acceptance
 
 Exact-head hosted CI must exercise every group, repository stage, authority and

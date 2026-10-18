@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Split the sorted unassigned Go packages alternately into `remainder-a` and
+  `remainder-b` in both normal and race CI. Require exact coverage and evidence
+  for both shards; retain ten-minute job deadlines, resource budgets and gates.
+
 - Add verified private coordinator acquisition and public `update --installed` for
   older owned installations blocked by pending intent. Bind installed provenance
   to one inspected inode/mode/digest through Prepare; reject same-byte substitution.
