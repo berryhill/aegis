@@ -97,6 +97,8 @@ func serviceFixture(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
+	// Preview resolves the user unit through XDG; never inherit the workstation's unit directory.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
 	state := filepath.Join(root, "state")
 	token := filepath.Join(state, "transport", "api.token")
 	if err = os.MkdirAll(filepath.Dir(token), 0700); err != nil {
