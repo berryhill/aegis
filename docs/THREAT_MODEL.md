@@ -1,5 +1,19 @@
 # Aegis MVP Threat Model
 
+## Verified installed coordinator bootstrap (source candidate)
+
+The product acquisition script verifies canonical official platform archive checksums,
+rejects unsafe archive members and retains a private coordinator plus evidence. It
+execs public `update --installed` with inherited terminal/display/environment; it
+never replaces the installed executable or edits its journal. Owned-unit discovery,
+exact inspected inode/mode/digest and same-descriptor provenance precede Prepare;
+existing Prepared commit seals and fresh principal authentication remain mandatory.
+The coordinator performs stop/recovery/restart and authenticated Console readback.
+Checksums trust the official HTTPS release publisher, not an independent signature;
+same-UID hostile writers remain outside a complete confinement guarantee. This is
+not part of the no-key demo. [Procedure and gates](INSTALLED_UPDATE_BOOTSTRAP.md).
+
+
 ## In-place upgrade source candidate
 
 Check-only results now separate `gateway_readiness` and `gateway_repair_required` from image identity and release availability. A valid unfinished journal reports `resume_required: true` and its phase even when the invoking CLI is current. Checks never authenticate, create a journal/lock, or mutate lifecycle. A journal is not readiness or authority. A verified later stable candidate may reconcile an exact pending intent only after fresh principal/configuration/unit/candidate admission; immutable content-addressed ancestor bytes are retained and revalidated, and the new intent starts at `prepared`. Unknown/config-drifted intent or missing/substituted history denies. A complete receipt for the one recognized legacy unit requires exact installed-image evidence and the same fresh admission before migration. Older installed coordinators do not acquire these fixes by publication: a conflicting pending intent can block before newer code runs; retain it and use only a separately verified supported transition.
@@ -292,3 +306,5 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 ## Online Loop publication boundary
 
 The installed `--target` adapter selects an existing console origin, uses only its configured authenticated Unix API, and compares `/v1/config` identity before Agent reads or Loop validation/publication/readback. It never opens a local-store fallback, starts a service, activates a Loop or queues work. Template validation is structural, not execution verification. See [online publication](ONLINE_LOOP_PUBLICATION.md).
+
+Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](INSTALLED_UPDATE_BOOTSTRAP.md).

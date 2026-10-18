@@ -682,15 +682,22 @@ func runUpdate(cmd *cobra.Command, updater UpdateService, runner userservice.Run
 }
 
 func updateCmd(updater UpdateService, runner userservice.Runner, observe func(context.Context, userservice.Runner, string, string) string, options *rootOptions) *cobra.Command {
-	var checkOnly bool
+	var checkOnly, installed bool
 	command := &cobra.Command{
 		Use:   "update",
 		Short: "Update Aegis from the latest verified GitHub release",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if installed {
+				if checkOnly {
+					return errors.New("--installed cannot be combined with --check")
+				}
+				return runBootstrapUpgrade(cmd, updater, runner, options.configFile)
+			}
 			return runUpdate(cmd, updater, runner, observe, options.configFile, checkOnly)
 		},
 	}
+	command.Flags().BoolVar(&installed, "installed", false, "bootstrap the exact owned installed gateway using this newer coordinator")
 	command.Flags().BoolVar(&checkOnly, "check", false, "check for an update without installing it")
 	return command
 }

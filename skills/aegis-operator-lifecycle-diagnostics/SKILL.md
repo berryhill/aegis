@@ -14,6 +14,20 @@ metadata:
 
 # Aegis operator lifecycle diagnostics
 
+## Verified coordinator bootstrap (source candidate)
+
+For an old coordinator blocked before reconciliation, retain the journal. From a
+trusted source checkout run `./scripts/bootstrap-installed-update.sh VERSION`,
+selecting an official coordinator release that ships `update --installed`.
+The script checks the official archive/checksum, retains a private coordinator and
+execs that public command with caller TTY/display/environment unchanged. It neither
+replaces installed bytes nor edits journals. Exact owned unit/config discovery,
+installed inode/mode/digest/provenance admission and fresh enrolled principal
+input precede normal stop/recovery/restart/authenticated Console verification.
+Do not emulate input, collect passwords, widen TTLs or modify model config.
+A coordinator download or healthy PID is not completed update evidence. See
+`docs/INSTALLED_UPDATE_BOOTSTRAP.md`; publication/live acceptance are separate.
+
 ## Source-candidate diagnostic and reconciliation contract
 
 Check-only results now separate `gateway_readiness` and `gateway_repair_required` from image identity and release availability. A valid unfinished journal reports `resume_required: true` and its phase even when the invoking CLI is current. Checks never authenticate, create a journal/lock, or mutate lifecycle. A journal is not readiness or authority. A verified later stable candidate may reconcile an exact pending intent only after fresh principal/configuration/unit/candidate admission; immutable content-addressed ancestor bytes are retained and revalidated, and the new intent starts at `prepared`. Unknown/config-drifted intent or missing/substituted history denies. A complete receipt for the one recognized legacy unit requires exact installed-image evidence and the same fresh admission before migration. Older installed coordinators do not acquire these fixes by publication: a conflicting pending intent can block before newer code runs; retain it and use only a separately verified supported transition.
@@ -124,3 +138,5 @@ Report: requested scope; operator-known installation method; version and source 
 - `internal/update/update.go` — official stable release and atomic direct-binary update policy.
 - `internal/migration/migration_linux.go` and `internal/reset/reset.go` — descriptor-anchored migration/reset controls.
 - Installed `aegis --help`, `aegis gateway --help`, `aegis update --help`, `aegis migrate-layout --help`, and `aegis reset --help` — authoritative syntax for the installed version.
+
+Acquisition prerequisite: a trusted installed Go toolchain (`go version -m`), Python 3, and Linux `/proc` with fd-based exec support. No automatic Go installation or toolchain download occurs. Before execution the helper checks ELF architecture, exact Aegis main package/module and release version, and clean Git provenance with a 40-hex revision without executing the artifact. Inspection and launch use the same open inode. Evidence/coordinator live in a fresh private directory directly under the actual passwd operator home, never HOME/TMPDIR or authority state; symlink and writable/unowned ancestors are denied without chmod or deletion. Same-user/root hostile mutation is not a sandbox boundary.

@@ -52,14 +52,16 @@ type Result struct {
 }
 
 type Updater struct {
-	CurrentVersion string
-	APIURL         string
-	DownloadURL    string
-	RepositoryURL  string
-	Client         *http.Client
-	Executable     func() (string, error)
-	GOOS           string
-	GOARCH         string
+	installedDigest *[sha256.Size]byte
+	installedInfo   os.FileInfo
+	CurrentVersion  string
+	APIURL          string
+	DownloadURL     string
+	RepositoryURL   string
+	Client          *http.Client
+	Executable      func() (string, error)
+	GOOS            string
+	GOARCH          string
 }
 
 type httpStatusError struct {
@@ -105,6 +107,9 @@ func (u *Updater) Prepare(ctx context.Context) (*Prepared, error) {
 			err = p.bindTarget(executable)
 			r.Executable = executable
 		}
+	}
+	if err == nil && u.installedDigest != nil && (p.targetDigest != *u.installedDigest || !os.SameFile(u.installedInfo, p.targetInfo) || u.installedInfo.Mode() != p.targetInfo.Mode()) {
+		err = errors.New("installed executable changed after bootstrap inspection")
 	}
 	if err != nil {
 		p.Close()

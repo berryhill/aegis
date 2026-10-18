@@ -343,6 +343,9 @@ func runInstalledUpgrade(cmd *cobra.Command, updater UpdateService, runner users
 			}
 		}
 		if !present {
+			if copy.InstalledBootstrap() {
+				return errors.New("installed bootstrap requires the exact owned gateway; binary-only fallback denied")
+			}
 			prepared, err := copy.Prepare(cmd.Context())
 			if err != nil {
 				return err

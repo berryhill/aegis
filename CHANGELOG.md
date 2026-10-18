@@ -6,6 +6,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add verified private coordinator acquisition and public `update --installed` for
+  older owned installations blocked by pending intent. Bind installed provenance
+  to one inspected inode/mode/digest through Prepare; reject same-byte substitution.
+  Isolated official v0.2.29 subprocess regression reproduces the pending-v0.2.30
+  preflight conflict before the new coordinator completes and verifies Console.
+  Publication and real workstation authentication remain separate acceptance gates.
+
+
 ## [0.2.31] - 2026-10-18
 
 - Add an offline built-binary public CLI/owning-service v4 Doer exact-byte success regression, including prerequisite denial, independently prepared synthetic approval/runtime fixtures, durable terminal evidence, raw `hello` bytes and unchanged-key replay. Add protected setup unavailable-input classification coverage; neither test establishes real-provider or human approval success.
@@ -752,3 +760,5 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - Audit append/checkpoint authority needs a separately protected deployment boundary for stronger tamper resistance.
 - TCP TLS has no certificate-to-subject mapper; principal API operations require Unix peer credentials.
 - The broker is not yet exposed as a verified model-visible Hermes tool because Hermes 0.18.x safe-mode bridge registration remains unresolved. Production service/runtime user provisioning, systemd unit/TPM recovery, selective fleet projections, network confinement, and Infisical migration remain external work. Operational Hermes provider credentials remain environment-backed.
+
+Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](docs/INSTALLED_UPDATE_BOOTSTRAP.md).

@@ -185,6 +185,9 @@ func upgradeWrite(t *testing.T, path string, b []byte, mode os.FileMode) {
 	}
 }
 func newUpgradeCommandFixture(t *testing.T, old, candidate string) *upgradeCommandFixture {
+	return newVersionedUpgradeCommandFixture(t, old, candidate, "0.2.29")
+}
+func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVersion string) *upgradeCommandFixture {
 	t.Helper()
 	path, state := validConfigWithoutOperationalAuthority(t)
 	home := filepath.Dir(path)
@@ -258,16 +261,16 @@ func newUpgradeCommandFixture(t *testing.T, old, candidate string) *upgradeComma
 	if err = gz.Close(); err != nil {
 		t.Fatal(err)
 	}
-	asset := fmt.Sprintf("aegis_v0.2.29_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	asset := fmt.Sprintf("aegis_v%s_%s_%s.tar.gz", releaseVersion, runtime.GOOS, runtime.GOARCH)
 	sum := sha256.Sum256(archive.Bytes())
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/latest":
-			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.2.29", "html_url": server.URL + "/releases/tag/v0.2.29", "published_at": "2026-10-01T00:00:00Z"})
-		case "/download/v0.2.29/SHA256SUMS":
+			_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v" + releaseVersion, "html_url": server.URL + "/releases/tag/v" + releaseVersion, "published_at": "2026-10-01T00:00:00Z"})
+		case "/download/v" + releaseVersion + "/SHA256SUMS":
 			fmt.Fprintf(w, "%x  %s\n", sum, asset)
-		case "/download/v0.2.29/" + asset:
+		case "/download/v" + releaseVersion + "/" + asset:
 			_, _ = w.Write(archive.Bytes())
 		default:
 			http.NotFound(w, r)

@@ -1,5 +1,19 @@
 # Five-Minute Quickstart
 
+## Verified installed coordinator bootstrap (source candidate)
+
+The product acquisition script verifies canonical official platform archive checksums,
+rejects unsafe archive members and retains a private coordinator plus evidence. It
+execs public `update --installed` with inherited terminal/display/environment; it
+never replaces the installed executable or edits its journal. Owned-unit discovery,
+exact inspected inode/mode/digest and same-descriptor provenance precede Prepare;
+existing Prepared commit seals and fresh principal authentication remain mandatory.
+The coordinator performs stop/recovery/restart and authenticated Console readback.
+Checksums trust the official HTTPS release publisher, not an independent signature;
+same-UID hostile writers remain outside a complete confinement guarantee. This is
+not part of the no-key demo. [Procedure and gates](INSTALLED_UPDATE_BOOTSTRAP.md).
+
+
 The guided Agent → Doer journey is a [source candidate](DOER_LOOP.md#guided-authoring-and-readiness-source-candidate), not part of the five-minute no-key proof. Retained drafts, readiness and each contextual approval remain separate from publication and Run. Do not start a real companion, model or service just to validate this quickstart; [remaining acceptance gates](implementation/issue-281-launch-review.md) are explicit.
 
 For fixed-output v2 authoring, see [Executable hello](EXECUTABLE_HELLO.md). Runtime preparation and execution remain separate authenticated operations; the five-minute no-key path below is unchanged.
@@ -270,3 +284,5 @@ The `/console/queue#/queue` page provides lifecycle filters, provenance, depende
 ## Online Loop publication boundary
 
 The installed `--target` adapter selects an existing console origin, uses only its configured authenticated Unix API, and compares `/v1/config` identity before Agent reads or Loop validation/publication/readback. It never opens a local-store fallback, starts a service, activates a Loop or queues work. Template validation is structural, not execution verification. See [online publication](ONLINE_LOOP_PUBLICATION.md).
+
+Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](INSTALLED_UPDATE_BOOTSTRAP.md).

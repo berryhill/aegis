@@ -61,6 +61,7 @@ verify-repository-stages:
 	test -z "$$(gofmt -l ./cmd ./internal ./web)"
 	./scripts/build-source.sh ./aegis
 	python3 scripts/build_source_test.py
+	python3 scripts/bootstrap_installed_update_test.py
 	python3 -m unittest scripts/console_browser_test_test.py scripts/verification_resources_test.py
 	python3 -m unittest scripts/demo_no_key_test.py
 	python3 -m unittest scripts/operator_acceptance_poc_test.py

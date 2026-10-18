@@ -1,5 +1,30 @@
 # Aegis MVP Architecture
 
+## Verified installed coordinator bootstrap (source candidate)
+
+The product acquisition script verifies canonical official platform archive checksums,
+rejects unsafe archive members and retains a private coordinator plus evidence. It
+execs public `update --installed` with inherited terminal/display/environment; it
+never replaces the installed executable or edits its journal. Owned-unit discovery,
+exact inspected inode/mode/digest and same-descriptor provenance precede Prepare;
+existing Prepared commit seals and fresh principal authentication remain mandatory.
+The coordinator performs stop/recovery/restart and authenticated Console readback.
+Checksums trust the official HTTPS release publisher, not an independent signature;
+same-UID hostile writers remain outside a complete confinement guarantee. This is
+not part of the no-key demo. [Procedure and gates](INSTALLED_UPDATE_BOOTSTRAP.md).
+
+
+```mermaid
+flowchart LR
+  Official[Official HTTPS release + SHA256SUMS] --> Verify[Bounded strict archive verification]
+  Verify --> Private[Private retained coordinator]
+  Private --> Public[update --installed]
+  Public --> Owned[Exact owned unit + installed inode/mode/digest]
+  Owned --> Auth[Fresh principal authentication]
+  Auth --> Journey[Existing stop / recover / replace / restart]
+  Journey --> Proof[Authenticated Console + audit readback]
+```
+
 ## Retained Doer protected setup (source candidate)
 
 `loops setup-protected FILE` routes only exact draft ID/version and independent
@@ -343,3 +368,5 @@ The installed `--target` adapter selects an existing console origin, uses only i
 ## Verified implementation dependency boundary
 
 The native `internal/implementation` kernel depends on the Loop contract and an opaque custody port. Only `internal/persistence/fleet/badger` implements that port against the existing fleet-v1 writer. Orchestration connects independent native-check reloads to an evidence-owned callback DTO; `internal/evidence` imports neither Loop nor the executor. Terminal completion rechecks the immutable Loop contract, stored test evidence and current workspace, not an in-memory PASS. No second implementation database is opened.
+
+Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](INSTALLED_UPDATE_BOOTSTRAP.md).
