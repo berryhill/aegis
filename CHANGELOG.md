@@ -13,13 +13,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   `remainder-b` in both normal and race CI. Require exact coverage and evidence
   for both shards; retain ten-minute job deadlines, resource budgets and gates.
 
+## [0.2.32] - 2026-10-18
+
 - Add verified private coordinator acquisition and public `update --installed` for
   older owned installations blocked by pending intent. Bind installed provenance
   to one inspected inode/mode/digest through Prepare; reject same-byte substitution.
   Isolated official v0.2.29 subprocess regression reproduces the pending-v0.2.30
   preflight conflict before the new coordinator completes and verifies Console.
   Publication and real workstation authentication remain separate acceptance gates.
-
 
 ## [0.2.31] - 2026-10-18
 
