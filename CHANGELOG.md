@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.33] - 2026-10-18
+
 - Preserve all existing changelog whitespace when inserting a release heading so
   changelog-only release commits pass the same strict final prepared-mode gate.
 
