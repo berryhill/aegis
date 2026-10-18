@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.34] - 2026-10-18
+
 - Added Linux stopped foreign-unit recovery preview/apply with protected principal approval, inode/digest binding, retained evidence, and no readiness/start claim. See `docs/SERVICE_RECOVERY.md`.
 
 ## [0.2.33] - 2026-10-18
