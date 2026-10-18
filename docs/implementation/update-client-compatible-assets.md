@@ -2,7 +2,7 @@
 
 Official four-platform assets omit only top-level `-trimpath`: Go 1.26.9
 otherwise omits the actual `-ldflags` build setting needed by the installed
-v0.2.29 updater to authenticate Version and SourceRevision. The real unchanged
+v0.2.29 updater to validate Version and SourceRevision. The real unchanged
 `-s -w -X ...Version=... -X ...SourceRevision=...` linker arguments remain.
 No binary bytes, module versions or VCS metadata are forged or patched.
 
