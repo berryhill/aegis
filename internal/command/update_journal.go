@@ -253,29 +253,8 @@ func openUpgradeJournalWithReconcile(plan userservice.Plan, state string, digest
 			historyDigest := sha256.Sum256(b)
 			history := hex.EncodeToString(historyDigest[:])
 			archive := "superseded-" + history + ".json"
-			f, createErr := root.OpenFile(archive, os.O_CREATE|os.O_EXCL|os.O_WRONLY|syscall.O_NOFOLLOW, 0600)
-			if errors.Is(createErr, os.ErrExist) {
-				f, createErr = root.OpenFile(archive, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
-				if createErr != nil {
-					return fail(createErr)
-				}
-				info, statErr := f.Stat()
-				stored, readErr := io.ReadAll(io.LimitReader(f, 64<<10))
-				f.Close()
-				if statErr != nil || !privateUpgradeFile(info) || readErr != nil || !bytes.Equal(stored, b) {
-					return fail(errors.New("upgrade history collision"))
-				}
-			} else if createErr != nil {
-				return fail(createErr)
-			} else {
-				_, writeErr := f.Write(b)
-				if writeErr == nil {
-					writeErr = f.Sync()
-				}
-				writeErr = errors.Join(writeErr, f.Close())
-				if writeErr != nil {
-					return fail(writeErr)
-				}
+			if err := publishUpgradeHistory(root, archive, b); err != nil {
+				return fail(err)
 			}
 			directory, openErr := root.Open(".")
 			if openErr != nil {
@@ -303,6 +282,46 @@ func openUpgradeJournalWithReconcile(plan userservice.Plan, state string, digest
 	j.prior = b
 	return j, nil
 }
+
+// The exclusive upgrade lock serializes supported publishers. Never expose a
+// partially written archive at its final content-addressed name. Retained
+// staging files from a crash are not authoritative and do not block a retry.
+func publishUpgradeHistory(root *os.Root, archive string, content []byte) error {
+	f, err := root.OpenFile(archive, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err == nil {
+		defer f.Close()
+		info, statErr := f.Stat()
+		stored, readErr := io.ReadAll(io.LimitReader(f, (64<<10)+1))
+		if statErr != nil || !privateUpgradeFile(info) || readErr != nil || !bytes.Equal(stored, content) {
+			return errors.New("upgrade history collision")
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var nonce [16]byte
+	if _, err = rand.Read(nonce[:]); err != nil {
+		return err
+	}
+	name := ".history-" + hex.EncodeToString(nonce[:])
+	f, err = root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY|syscall.O_NOFOLLOW, 0600)
+	if err != nil {
+		return err
+	}
+	defer root.Remove(name)
+	if _, err = f.Write(content); err == nil {
+		err = f.Sync()
+	}
+	err = errors.Join(err, f.Close())
+	if err != nil {
+		return err
+	}
+	// All supported writers hold LOCK; hostile same-UID races remain outside
+	// this filesystem trust boundary, as with journal publication itself.
+	return root.Rename(name, archive)
+}
+
 func (j *upgradeJournal) read() ([]byte, error) {
 	f, err := j.root.OpenFile("journal.json", os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
