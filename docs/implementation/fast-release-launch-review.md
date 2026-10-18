@@ -66,6 +66,23 @@ demo, recording and contributor materials are unaffected. Existing released
 binaries/checksums are not regenerated or represented as candidate delivery proof.
 Hosted timing, merge and release remain parent-owned acceptance, not local claims.
 
+## Prepared changelog whitespace repair
+
+Inspected immutable v0.2.32 commit 3ad44ed601a8923a184be05287fb41f92f99a3ff
+and its parent: preparation removed one blank line before the existing 0.2.31
+heading. Preparation now inserts only the new heading, retaining the complete
+source suffix rather than stripping pending-section newlines. The strict final
+classifier and immutable-tag recovery validation are unchanged; arbitrary
+historical edits remain denied. Regression tests prepare a real changelog-only
+fixture commit and run final prepared classification with two, three and four
+separator newlines, then reject a historical edit.
+
+Reviewed every asset in the Assets inventory above: only CHANGELOG.md and this
+ledger change. No runtime, authority, API, installation, quickstart, no-key demo,
+recording, license, conduct, contributor-issue or architecture claim changes.
+Existing release binaries/checksums are untouched; final immutable 0.2.33 archive,
+checksum and hosted-publication evidence remain parent-owned, not local proof.
+
 ## Remaining acceptance
 
 Exact-head hosted CI must exercise every group, repository stage, authority and

@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Preserve all existing changelog whitespace when inserting a release heading so
+  changelog-only release commits pass the same strict final prepared-mode gate.
+
 - Split the sorted unassigned Go packages alternately into `remainder-a` and
   `remainder-b` in both normal and race CI. Require exact coverage and evidence
   for both shards; retain ten-minute job deadlines, resource budgets and gates.
