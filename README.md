@@ -1,5 +1,16 @@
 # Aegis
 
+## Installed updater bootstrap (source candidate)
+
+When an older installed updater refuses a retained conflicting intent, use the
+product-owned `./scripts/bootstrap-installed-update.sh VERSION` from this trusted
+source checkout (Python 3 required). VERSION is an explicitly selected stable
+coordinator release containing `update --installed`, not an arbitrary URL and
+not necessarily the target release: the coordinator discovers latest itself.
+Do not select an older published coordinator that lacks this command.
+See [the supported procedure](docs/INSTALLED_UPDATE_BOOTSTRAP.md).
+
+
 Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves the original physical evidence, validates complete Badger transactions and zero padding before working-copy replay, and retains exact resumable recovery receipts. Ambiguous or damaged logs refuse. See [the recovery procedure and limits](docs/AUTHORITY_RECOVERY.md).
 
 Source candidate: `loops setup-protected FILE` requests independent enrolled-password/native exact review through the owning service for retained Doer successor, provisioning or host consent. The hidden product-launched companion never borrows an agent terminal/PTY; generic typed approval still denies. Setup does not publish or Run; installed human/provider acceptance remains pending. See [the workflow](docs/DOER_LOOP.md#protected-setup-through-installed-skills-source-candidate).
@@ -290,3 +301,5 @@ One approval at the interactive `aegis init`/bare `aegis` certification decision
 ### Publish to an existing gateway
 
 See [online Loop publication](docs/ONLINE_LOOP_PUBLICATION.md) for `--target`, authenticated validation and exact readback. `loops example` is a structural publication template, not an executable implementation/verification workflow.
+
+Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](docs/INSTALLED_UPDATE_BOOTSTRAP.md).

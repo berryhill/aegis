@@ -29,7 +29,13 @@ type Prepared struct {
 }
 
 func snapshot(path string) (os.FileInfo, [sha256.Size]byte, error) {
-	var zero [sha256.Size]byte
+	info, data, err := snapshotBytes(path)
+	return info, sha256.Sum256(data), err
+}
+
+// snapshotBytes returns exactly the bytes read through the identity-checked descriptor.
+func snapshotBytes(path string) (os.FileInfo, []byte, error) {
+	var zero []byte
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, zero, err
@@ -60,7 +66,7 @@ func snapshot(path string) (os.FileInfo, [sha256.Size]byte, error) {
 	if err != nil || !os.SameFile(info, after) || info.Mode() != after.Mode() {
 		return nil, zero, errors.New("executable changed during inspection")
 	}
-	return info, sha256.Sum256(data), nil
+	return info, data, nil
 }
 
 func (p *Prepared) bindTarget(path string) error {

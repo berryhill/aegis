@@ -1,5 +1,19 @@
 # Security Policy
 
+## Verified installed coordinator bootstrap (source candidate)
+
+The product acquisition script verifies canonical official platform archive checksums,
+rejects unsafe archive members and retains a private coordinator plus evidence. It
+execs public `update --installed` with inherited terminal/display/environment; it
+never replaces the installed executable or edits its journal. Owned-unit discovery,
+exact inspected inode/mode/digest and same-descriptor provenance precede Prepare;
+existing Prepared commit seals and fresh principal authentication remain mandatory.
+The coordinator performs stop/recovery/restart and authenticated Console readback.
+Checksums trust the official HTTPS release publisher, not an independent signature;
+same-UID hostile writers remain outside a complete confinement guarantee. This is
+not part of the no-key demo. [Procedure and gates](docs/INSTALLED_UPDATE_BOOTSTRAP.md).
+
+
 ## Interrupted operational authority
 
 Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves physical evidence, independently proves pinned Badger WAL framing/checksums/complete transactions, removes only proven zero padding in a working copy, validates all canonical records before and after replay, and publishes through atomic directory exchange. Strict private operation receipts support exact pre/post-exchange retries and retain immutable per-operation history. Ambiguity and damaged/torn logs refuse; Darwin recovery fails closed before mutation. See [the procedure and limits](docs/AUTHORITY_RECOVERY.md).
@@ -154,3 +168,5 @@ controls remain enforced. See
 Queue retry/reclaim and terminal lifecycle operations are controller-side, principal-authenticated actions. Aegis reloads the immutable queue item and repeats fresh admission of its exact authority context before every consequential mutation; a caller-supplied prompt, reason, authority reference, or browser state cannot grant or substitute authority. Live work cannot be preempted by an unauthoritative retry assertion. Reclaim requires an expired lease, lease duration is bounded to 1 second through 1 hour, retry backoff is bounded to 24 hours, and the immutable submission attempt budget remains authoritative.
 
 Cancellation, expiry, authority revocation, retry exhaustion, denial, failure, and success are distinct durable outcomes. Lifecycle transitions, claims, attempts, retries, cancellations, evidence, and dispositions are authoritative Aegis facts and remain historical read data, not future grants. Once authentication and fresh admission succeed, only the bounded atomic terminal commit is detached from caller cancellation so an admitted cancellation or expiry cannot disappear midway. Browser queue controls are authenticated controller requests, not authority inputs: the closed form accepts only CSRF plus an operation, reloads the exact item, derives authority and identifiers server-side, and repeats fresh admission. Missing session, bad CSRF, malformed operation, ambiguous binding/authority, invalid transition, stale state, and unsupported live retry deny distinctly. The MVP still has no automated lifecycle scheduler, distributed lease coordinator, or general multi-node scheduler.
+
+Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](docs/INSTALLED_UPDATE_BOOTSTRAP.md).
