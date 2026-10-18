@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.35] - 2026-10-18
+
 - Fixed protected principal-password and authority-passphrase entry over interactive SSH on Linux: default to the foreground Aegis no-echo terminal route when stdin and diagnostic stderr are terminals, avoiding background curses pinentry job-control stops. Explicit helper selection still wins; no fallback follows GETPIN. Both routes retain the two-minute per-request bound, cancellation, confirmation, secret validation, and existing authentication. Added real controlling-PTY success, confirmation, cancellation, timeout, no-terminal, no-second-prompt, restoration and redaction regressions.
 
 ## [0.2.34] - 2026-10-18
