@@ -1,16 +1,13 @@
 package update
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"debug/buildinfo"
 	"encoding/hex"
 	"errors"
 	"io"
 	"os"
 	"runtime"
-	"strings"
 )
 
 // CandidateIdentity is derived from the sealed image, never from a journal.
@@ -38,27 +35,11 @@ func (p *Prepared) Identity() (CandidateIdentity, error) {
 	if identityDigest != expected {
 		return CandidateIdentity{}, errors.New("candidate identity differs from prepared bytes")
 	}
-	if err = validateCandidate(b, p.result.LatestVersion, runtime.GOOS, runtime.GOARCH); err != nil {
-		return CandidateIdentity{}, err
-	}
-	info, err := buildinfo.Read(bytes.NewReader(b))
+	claims, err := inspectCandidate(b, p.result.LatestVersion, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return CandidateIdentity{}, err
 	}
-	var source string
-	for _, s := range info.Settings {
-		if s.Key == "-ldflags" {
-			for _, f := range strings.Fields(s.Value) {
-				if v, ok := strings.CutPrefix(f, "github.com/berryhill/aegis/internal/buildinfo.SourceRevision="); ok {
-					source = v
-				}
-			}
-		}
-	}
-	if source == "" {
-		return CandidateIdentity{}, errors.New("installed candidate source proof unavailable")
-	}
-	return CandidateIdentity{p.target, p.result.LatestVersion, source, hex.EncodeToString(identityDigest[:])}, nil
+	return CandidateIdentity{p.target, claims.Version, claims.Source, hex.EncodeToString(identityDigest[:])}, nil
 }
 
 // Journey is the production application boundary. Preparation always precedes
