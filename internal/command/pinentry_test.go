@@ -61,11 +61,24 @@ func TestFakePinentryProcess(t *testing.T) {
 		switch {
 		case strings.HasPrefix(line, "SET"):
 			fmt.Fprintln(os.Stdout, "OK")
+		case strings.HasPrefix(line, "OPTION "):
+			fmt.Fprintln(os.Stdout, "OK")
 		case line == "GETPIN":
 			switch scenario {
+			case "require-display":
+				data, _ := os.ReadFile(capture)
+				if bytes.Contains(data, []byte("OPTION display=:77\n")) {
+					fmt.Fprintln(os.Stdout, "D "+assuanEncode([]byte(payload)))
+					fmt.Fprintln(os.Stdout, "OK")
+				} else {
+					fmt.Fprintln(os.Stdout, "ERR 83886179")
+				}
 			case "success":
 				fmt.Fprintln(os.Stdout, "D "+assuanEncode([]byte(payload)))
 				fmt.Fprintln(os.Stdout, "OK")
+			case "numeric-error":
+				fmt.Fprintln(os.Stderr, "private-helper-diagnostic")
+				fmt.Fprintln(os.Stdout, "ERR "+payload+" private-helper-diagnostic")
 			case "cancel":
 				fmt.Fprintln(os.Stdout, "ERR 83886179")
 			case "malformed-escape":
@@ -144,6 +157,58 @@ func TestPinentryProtocolSuccessEscapingAndStaticChrome(t *testing.T) {
 	}
 	if bytes.Contains(transcript, []byte(canary)) {
 		t.Fatal("passphrase leaked into client command transcript")
+	}
+}
+
+func TestPinentryGraphicalContextWithoutTTY(t *testing.T) {
+	capture := filepath.Join(t.TempDir(), "protocol")
+	service := testPassphraseService(t, func() string { return "require-display" }, func() string { return "long-enough-value" }, capture)
+	service.getenv = func(name string) string {
+		if name == "DISPLAY" {
+			return ":77"
+		}
+		return ""
+	}
+	value, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: AuthorityPassphraseUnlock, Input: bytes.NewReader(nil), Diagnostic: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wipeSecret(value)
+	if string(value) != "long-enough-value" {
+		t.Fatal("wrong protected value")
+	}
+	transcript, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(transcript, []byte("OPTION display=:77\n")) || bytes.Contains(transcript, []byte("OPTION ttyname=")) {
+		t.Fatalf("incorrect no-TTY options: %s", transcript)
+	}
+}
+
+func TestPinentryContextOptionRejectsInjection(t *testing.T) {
+	capture := filepath.Join(t.TempDir(), "protocol")
+	service := testPassphraseService(t, func() string { return "success" }, func() string { return "long-enough-value" }, capture)
+	service.getenv = func(name string) string {
+		if name == "DISPLAY" {
+			return ":77\nGETPIN"
+		}
+		if name == "TERM" {
+			return "xterm\rCONFIRM"
+		}
+		return ""
+	}
+	value, err := service.Acquire(context.Background(), AuthorityPassphraseRequest{Intent: AuthorityPassphraseUnlock, Input: bytes.NewReader(nil), Diagnostic: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wipeSecret(value)
+	transcript, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(transcript, []byte("OPTION ")) || bytes.Count(transcript, []byte("GETPIN\n")) != 1 {
+		t.Fatalf("unsafe option emitted: %s", transcript)
 	}
 }
 
@@ -233,7 +298,7 @@ func TestPrincipalPasswordCancellationUsesPrincipalSpecificError(t *testing.T) {
 	if err == nil || !IsPassphraseError(err, PassphraseCancelled) {
 		t.Fatalf("error=%v", err)
 	}
-	if got := err.Error(); got != "principal password entry cancelled" {
+	if got := err.Error(); !strings.HasPrefix(got, "principal password entry cancelled") || strings.Contains(got, "authority passphrase") {
 		t.Fatalf("error=%q", got)
 	}
 }

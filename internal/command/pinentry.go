@@ -70,14 +70,32 @@ const (
 	PassphrasePolicy      PassphraseErrorKind = "policy_failure"
 )
 
+type PinentryStage string
+
+const (
+	PinentryGreeting PinentryStage = "greeting"
+	PinentryContext  PinentryStage = "context_setup"
+	PinentryPrompt   PinentryStage = "prompt_setup"
+	PinentryGetPIN   PinentryStage = "getpin"
+)
+
 type PassphraseError struct {
-	Kind        PassphraseErrorKind
-	Interaction bool
-	reason      string
+	Stage         PinentryStage
+	AssuanCode    uint64
+	HasAssuanCode bool
+	Kind          PassphraseErrorKind
+	Interaction   bool
+	reason        string
 }
 
 func (e *PassphraseError) Error() string {
 	if e.reason != "" {
+		if e.Stage != "" {
+			if e.HasAssuanCode {
+				return fmt.Sprintf("%s (stage=%s code=%d)", e.reason, e.Stage, e.AssuanCode)
+			}
+			return fmt.Sprintf("%s (stage=%s)", e.reason, e.Stage)
+		}
 		return e.reason
 	}
 	return "authority passphrase intake failed"
@@ -175,7 +193,7 @@ func (s *authorityPassphraseService) acquireOnce(ctx context.Context, request Au
 	executable, discoveryErr := s.resolve()
 	var pinentryErr *PassphraseError
 	if discoveryErr == nil {
-		value, err := s.pinentry(ctx, executable, request.Intent, mode)
+		value, err := s.pinentry(ctx, executable, request, mode)
 		if err == nil {
 			return value, nil
 		}
@@ -193,7 +211,7 @@ func (s *authorityPassphraseService) acquireOnce(ctx context.Context, request Au
 	}
 	value, fallbackErr := s.terminalFallback(ctx, request, mode)
 	if fallbackErr != nil && pinentryErr != nil && IsPassphraseError(fallbackErr, PassphraseUnavailable) {
-		return nil, &PassphraseError{Kind: pinentryErr.Kind, reason: pinentryErr.reason + "; no terminal fallback is available"}
+		return nil, &PassphraseError{Kind: pinentryErr.Kind, Stage: pinentryErr.Stage, AssuanCode: pinentryErr.AssuanCode, HasAssuanCode: pinentryErr.HasAssuanCode, reason: pinentryErr.reason + "; no terminal fallback is available"}
 	}
 	return value, fallbackErr
 }
@@ -220,7 +238,8 @@ func (s *authorityPassphraseService) resolve() (string, error) {
 	return path, nil
 }
 
-func (s *authorityPassphraseService) pinentry(parent context.Context, executable string, intent AuthorityPassphraseIntent, mode string) ([]byte, error) {
+func (s *authorityPassphraseService) pinentry(parent context.Context, executable string, request AuthorityPassphraseRequest, mode string) ([]byte, error) {
+	intent := request.Intent
 	ctx, cancel := context.WithTimeout(parent, s.timeout)
 	defer cancel()
 	cmd := s.command(ctx, executable)
@@ -252,6 +271,8 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 
 	reader := &protocolReader{reader: bufio.NewReaderSize(stdout, pinentryLineLimit+1)}
 	interaction := false
+	stage := PinentryGreeting
+	var line string
 	fail := func(kind PassphraseErrorKind, reason string) ([]byte, error) {
 		_ = stdin.Close()
 		terminateProtectedProcess(cmd)
@@ -263,13 +284,29 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 		if stderr.total > pinentryStderrLimit {
 			kind, reason = PassphraseProtocol, "pinentry exceeded the diagnostic output bound"
 		}
-		return nil, &PassphraseError{Kind: kind, Interaction: interaction, reason: reason}
+		code, hasCode := assuanErrorCode(line)
+		if hasCode && code&0xffff == 99 && ctx.Err() == nil && stderr.total <= pinentryStderrLimit {
+			kind, reason = PassphraseCancelled, protectedSecretCancellationReason(intent)
+		}
+		return nil, &PassphraseError{Kind: kind, Interaction: interaction, Stage: stage, AssuanCode: code, HasAssuanCode: hasCode, reason: reason}
 	}
-	line, readErr := reader.line()
+	var readErr error
+	line, readErr = reader.line()
 	if readErr != nil || !strings.HasPrefix(line, "OK") || (len(line) > 2 && line[2] != ' ') {
 		return fail(PassphraseProtocol, "pinentry returned an invalid greeting")
 	}
+	stage = PinentryContext
+	for _, option := range protectedPinentryOptions(request.Input, s.getenv) {
+		if _, err = io.WriteString(stdin, option+"\n"); err != nil {
+			return fail(PassphraseProtocol, "pinentry context setup failed")
+		}
+		line, readErr = reader.line()
+		if readErr != nil || !validOK(line) {
+			return fail(PassphraseProtocol, "pinentry rejected protected context setup")
+		}
+	}
 
+	stage = PinentryPrompt
 	title := "Aegis credential authority"
 	description := "Unlock the Aegis credential authority. Minimum 12 bytes; the passphrase is not persisted."
 	prompt := "Authority passphrase:"
@@ -284,7 +321,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 		okText = "Confirm"
 	} else if mode == "principal-authenticate" {
 		title = "Aegis principal authentication"
-		description = "Authenticate the enrolled Aegis principal for exact Doer setup review. This is not the credential authority passphrase."
+		description = "Authenticate the enrolled Aegis principal for the requested protected operation. This is not the credential authority passphrase."
 		prompt = "Enrolled principal password:"
 		okText = "Authenticate"
 	} else if mode == "principal-create" {
@@ -321,6 +358,7 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 	// From this point the helper may have observed GETPIN even if the pipe write
 	// reports a short/failed write, so a second input surface is never safe.
 	interaction = true
+	stage = PinentryGetPIN
 	if _, err = io.WriteString(stdin, "GETPIN\n"); err != nil {
 		return fail(PassphraseProtocol, "pinentry could not request protected input")
 	}
@@ -397,7 +435,7 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 	output, outputOK := request.Diagnostic.(*os.File)
 	if !inputOK || !outputOK || !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) {
 		reason := "authority passphrase intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"
-		if request.Intent == PrincipalPasswordCreate {
+		if request.Intent == PrincipalPasswordCreate || request.Intent == PrincipalPasswordAuthenticate {
 			reason = "principal password intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"
 		}
 		return nil, &PassphraseError{Kind: PassphraseUnavailable, reason: reason}
@@ -423,7 +461,7 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 		} else if errors.Is(err, context.DeadlineExceeded) {
 			kind, reason = PassphraseTimeout, "authority passphrase request timed out"
 		}
-		if request.Intent == PrincipalPasswordCreate {
+		if request.Intent == PrincipalPasswordCreate || request.Intent == PrincipalPasswordAuthenticate {
 			reason = "principal password intake failed"
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 				reason = "principal password entry cancelled"
@@ -482,6 +520,33 @@ func validateAuthorityPassphrase(value []byte) error {
 		}
 	}
 	return nil
+}
+
+// Child environment alone does not set the helper's Assuan display or tty.
+func protectedPinentryOptions(input io.Reader, getenv func(string) string) []string {
+	var options []string
+	if display := safePinentryOption(getenv("DISPLAY")); display != "" {
+		options = append(options, "OPTION display="+display)
+	}
+	if tty := protectedInputTTY(input); tty != "" {
+		options = append(options, "OPTION ttyname="+tty)
+		if ttytype := safePinentryOption(getenv("TERM")); ttytype != "" {
+			options = append(options, "OPTION ttytype="+ttytype)
+		}
+	}
+	return options
+}
+
+func safePinentryOption(value string) string {
+	if len(value) == 0 || len(value) > 256 {
+		return ""
+	}
+	for i := 0; i < len(value); i++ {
+		if value[i] < '!' || value[i] > '~' || value[i] == '%' {
+			return ""
+		}
+	}
+	return value
 }
 
 func (s *authorityPassphraseService) environment() []string {

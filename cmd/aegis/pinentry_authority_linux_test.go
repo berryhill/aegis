@@ -261,7 +261,7 @@ func main(){
  f,_:=os.OpenFile(%q,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600); fmt.Fprintln(f,"request"); f.Close()
  r:=bufio.NewReader(os.Stdin); fmt.Fprintln(os.Stdout,"OK fake")
  for { line,err:=r.ReadString('\n'); if err!=nil{return}; line=strings.TrimSpace(line)
-  if strings.HasPrefix(line,"SET"){fmt.Fprintln(os.Stdout,"OK");continue}
+  if strings.HasPrefix(line,"SET") || strings.HasPrefix(line,"OPTION "){fmt.Fprintln(os.Stdout,"OK");continue}
   if line=="GETPIN"{fmt.Fprintln(os.Stdout,%q);fmt.Fprintln(os.Stdout,"OK");continue}
   if line=="BYE"{fmt.Fprintln(os.Stdout,"OK");return}
  }
@@ -284,7 +284,7 @@ func main(){
  f,_:=os.OpenFile(%q,os.O_CREATE|os.O_APPEND|os.O_WRONLY,0600);fmt.Fprintln(f,"request");f.Close()
  data,_:=os.ReadFile(%q);request:=len(strings.Fields(string(data)))
  r:=bufio.NewReader(os.Stdin);fmt.Fprintln(os.Stdout,"OK fake")
- for{line,err:=r.ReadString('\n');if err!=nil{return};line=strings.TrimSpace(line);if strings.HasPrefix(line,"SET"){fmt.Fprintln(os.Stdout,"OK")}else if line=="GETPIN"{if request<=2{fmt.Fprintln(os.Stdout,"D test-principal-password");fmt.Fprintln(os.Stdout,"OK")}else{fmt.Fprintln(os.Stdout,"ERR 83886179")}}else if line=="BYE"{return}}
+ for{line,err:=r.ReadString('\n');if err!=nil{return};line=strings.TrimSpace(line);if strings.HasPrefix(line,"SET") || strings.HasPrefix(line,"OPTION "){fmt.Fprintln(os.Stdout,"OK")}else if line=="GETPIN"{if request<=2{fmt.Fprintln(os.Stdout,"D test-principal-password");fmt.Fprintln(os.Stdout,"OK")}else{fmt.Fprintln(os.Stdout,"ERR 83886179")}}else if line=="BYE"{return}}
 }`, countFile, countFile)
 	if err := os.WriteFile(source, []byte(program), 0600); err != nil {
 		t.Fatal(err)

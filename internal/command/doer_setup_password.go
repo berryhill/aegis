@@ -18,5 +18,5 @@ func acquireDoerSetupPassword(ctx context.Context) ([]byte, error) {
 	default:
 		return nil, &PassphraseError{Kind: PassphraseUnavailable, reason: "independent protected desktop password helper unavailable"}
 	}
-	return provider.pinentry(ctx, helper, PrincipalPasswordAuthenticate, "principal-authenticate")
+	return provider.pinentry(ctx, helper, AuthorityPassphraseRequest{Intent: PrincipalPasswordAuthenticate}, "principal-authenticate")
 }

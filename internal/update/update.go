@@ -44,6 +44,8 @@ type Result struct {
 	UpdateAvailable        bool   `json:"update_available"`
 	Updated                bool   `json:"updated"`
 	Executable             string `json:"executable,omitempty"`
+	GatewayReadiness       string `json:"gateway_readiness,omitempty"`
+	GatewayRepairRequired  bool   `json:"gateway_repair_required"`
 	GatewayImage           string `json:"gateway_image,omitempty"`
 	GatewayRestartRequired bool   `json:"gateway_restart_required"`
 	RequiredAction         string `json:"required_action,omitempty"`
@@ -377,6 +379,10 @@ func replaceExecutable(path string, binary []byte) error {
 }
 
 func normalize(version string) string { return strings.TrimPrefix(strings.TrimSpace(version), "v") }
+
+// CompareVersions compares strict stable release numbers; callers must deny
+// incomparable values rather than treating them as equivalent.
+func CompareVersions(left, right string) (int, bool) { return compare(left, right) }
 
 func compare(left, right string) (int, bool) {
 	a, ok := parse(left)

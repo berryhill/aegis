@@ -2,7 +2,12 @@
 
 package command
 
-import "os/exec"
+import (
+	"io"
+	"os/exec"
+)
+
+func protectedInputTTY(io.Reader) string { return "" }
 
 func configureProtectedProcess(*exec.Cmd) {}
 

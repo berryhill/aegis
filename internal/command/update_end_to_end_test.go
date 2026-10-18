@@ -304,9 +304,16 @@ func TestInstalledUpgradeFullCommand(t *testing.T) {
 	builds := t.TempDir()
 	old := upgradeReleaseBuild(t, builds, "0.2.28")
 	candidate := upgradeReleaseBuild(t, builds, "0.2.29")
-	for _, scenario := range []string{"healthy", "already-stopped", "interrupted-authority", "legacy-unit", "migration-failure-resume", "cancelled-auth", "unavailable-auth", "startup-failure-resume", "socket-denial", "open-writer-denial", "stale-image", "journal-tamper", "journal-link", "journal-identity"} {
+	for _, scenario := range []string{"healthy", "current-cli-stopped", "already-stopped", "interrupted-authority", "legacy-unit", "migration-failure-resume", "cancelled-auth", "unavailable-auth", "startup-failure-resume", "socket-denial", "open-writer-denial", "stale-image", "journal-tamper", "journal-link", "journal-identity"} {
 		t.Run(scenario, func(t *testing.T) {
-			f := newUpgradeCommandFixture(t, old, candidate)
+			installed := old
+			if scenario == "current-cli-stopped" {
+				installed = candidate
+			}
+			f := newUpgradeCommandFixture(t, installed, candidate)
+			if scenario == "current-cli-stopped" {
+				f.updater.CurrentVersion = "0.2.29"
+			}
 			budget := 45 * time.Second
 			if scenario == "open-writer-denial" {
 				budget = 2 * time.Second
@@ -393,9 +400,55 @@ func TestInstalledUpgradeFullCommand(t *testing.T) {
 					upgradeWrite(t, journal, bytes.ReplaceAll(mustCommandRead(t, journal), []byte(id.Digest), []byte(strings.Repeat("f", 64))), 0600)
 				}
 			}
+			if scenario == "current-cli-stopped" {
+				prepared, e := f.updater.Prepare(ctx)
+				if e != nil {
+					t.Fatal(e)
+				}
+				id, e := prepared.Identity()
+				prepared.Close()
+				if e != nil {
+					t.Fatal(e)
+				}
+				j, e := openUpgradeJournal(f.runner.plan, f.state, sha256.Sum256(mustCommandRead(t, f.path)), id)
+				if e != nil {
+					t.Fatal(e)
+				}
+				j.receipt.Stage = "gateway_stop"
+				if e = j.save(); e != nil {
+					t.Fatal(e)
+				}
+				j.close()
+				journalPath := filepath.Join(f.state, "upgrade", "journal.json")
+				original := mustCommandRead(t, journalPath)
+				var checked bytes.Buffer
+				checkCmd := &cobra.Command{}
+				checkCmd.SetContext(ctx)
+				checkCmd.SetOut(&checked)
+				checkCmd.SetErr(io.Discard)
+				f.runner.calls = nil
+				if e = runUpdate(checkCmd, f.updater, f.runner, userservice.ObserveExecutableImage, f.path, true); e != nil {
+					t.Fatal(e)
+				}
+				var status selfupdate.Result
+				if e = json.Unmarshal(checked.Bytes(), &status); e != nil {
+					t.Fatal(e)
+				}
+				if status.UpdateAvailable || !status.ResumeRequired || status.Phase != "gateway_stop" || !status.GatewayRepairRequired || status.GatewayReadiness == string(userservice.GatewayHealthy) {
+					t.Fatalf("dishonest current check: %+v", status)
+				}
+				if !bytes.Equal(original, mustCommandRead(t, journalPath)) {
+					t.Fatal("check mutated journal")
+				}
+				for _, call := range f.runner.calls {
+					if call[0] == "stop" || call[0] == "start" || call[0] == "daemon-reload" {
+						t.Fatalf("check mutated lifecycle: %q", call)
+					}
+				}
+			}
 			before := sha256.Sum256(mustCommandRead(t, f.target))
 			result, err := f.run(t, ctx, auth)
-			success := scenario == "healthy" || scenario == "already-stopped" || scenario == "interrupted-authority" || scenario == "legacy-unit"
+			success := scenario == "current-cli-stopped" || scenario == "healthy" || scenario == "already-stopped" || scenario == "interrupted-authority" || scenario == "legacy-unit"
 			if success {
 				if err != nil || !result.UpgradeComplete || result.ResumeRequired {
 					t.Fatalf("real upgrade failed: result=%+v err=%v", result, err)
@@ -406,6 +459,21 @@ func TestInstalledUpgradeFullCommand(t *testing.T) {
 			} else {
 				if err == nil || result.UpgradeComplete {
 					t.Fatalf("unsafe upgrade accepted: result=%+v err=%v", result, err)
+				}
+			}
+			if scenario == "current-cli-stopped" {
+				if userservice.ObserveExactGateway(ctx, f.runner, f.runner.plan).State != userservice.GatewayHealthy {
+					t.Fatal("current CLI did not repair stopped gateway")
+				}
+				f.runner.calls = nil
+				again, err := f.run(t, ctx, provider)
+				if err != nil || !again.UpgradeComplete || again.ResumeRequired {
+					t.Fatalf("healthy current retry: %+v %v", again, err)
+				}
+				for _, call := range f.runner.calls {
+					if call[0] == "stop" || call[0] == "start" {
+						t.Fatalf("healthy current retry mutated lifecycle: %q", call)
+					}
 				}
 			}
 			if strings.HasSuffix(scenario, "auth") {
