@@ -308,3 +308,7 @@ Protect production `~/.aegis` and repository-local `.aegis` roots and their stat
 The installed `--target` adapter selects an existing console origin, uses only its configured authenticated Unix API, and compares `/v1/config` identity before Agent reads or Loop validation/publication/readback. It never opens a local-store fallback, starts a service, activates a Loop or queues work. Template validation is structural, not execution verification. See [online publication](ONLINE_LOOP_PUBLICATION.md).
 
 Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](INSTALLED_UPDATE_BOOTSTRAP.md).
+
+## Stopped foreign-unit recovery
+
+Linux `gateway recover` is a separate preview/apply coordinator for a canonical production deployment. It authenticates the enrolled principal, binds confirmation to foreign bytes/device/inode and the deterministic desired unit, preserves owner-only evidence before atomic exchange, refuses running foreign services, and reloads/verifies identity without activation or readiness claims. Normal install/bootstrap ownership checks remain unchanged. A source coordinator explicitly binds an existing inspected release and canonical production configuration; no executable overwrite, reset, authority change, or expiry extension is provided. See [service recovery](SERVICE_RECOVERY.md).

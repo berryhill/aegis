@@ -62,6 +62,8 @@ func (r *recordingRunner) Output(_ context.Context, args ...string) ([]byte, err
 	r.calls = append(r.calls, append([]string(nil), args...))
 	if len(args) >= 4 && args[0] == "show" && args[2] == "--property" {
 		switch args[3] {
+		case "DropInPaths":
+			return nil, nil
 		case "ActiveState":
 			return []byte(defaultString(r.activeState, "inactive") + "\n"), nil
 		case "UnitFileState":

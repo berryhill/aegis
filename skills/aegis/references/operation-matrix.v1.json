@@ -127,6 +127,7 @@
         "aegis console",
         "aegis gateway",
         "aegis gateway preview",
+        "aegis gateway recover",
         "aegis gateway install",
         "aegis gateway status",
         "aegis gateway start",

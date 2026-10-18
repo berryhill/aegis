@@ -1,5 +1,7 @@
 # Changelog
 
+- Added Linux stopped foreign-unit recovery preview/apply with protected principal approval, inode/digest binding, retained evidence, and no readiness/start claim. See `docs/SERVICE_RECOVERY.md`.
+
 Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
