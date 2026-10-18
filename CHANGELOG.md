@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add an offline built-binary public CLI/owning-service v4 Doer exact-byte success regression, including prerequisite denial, independently prepared synthetic approval/runtime fixtures, durable terminal evidence, raw `hello` bytes and unchanged-key replay. Add protected setup unavailable-input classification coverage; neither test establishes real-provider or human approval success.
+
 - Report pending upgrade intent independently of CLI currency and authenticated gateway readiness in read-only checks. Preserve exact authenticated later-release reconciliation history (including recognized completed legacy units), recursively validate ancestry, and restart no phase from journal claims. Pinentry diagnostics retain typed stage/numeric ERR only, bind validated display/actual TTY context and use operation-neutral principal prompts; GETPIN never permits cross-surface fallback. Older installed coordinators still require a separately verified supported bootstrap transition.
 
 ## [0.2.30] - 2026-10-17

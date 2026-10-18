@@ -294,7 +294,11 @@ func TestConsoleQueueOperationDenialsAreDistinctAndFailClosed(t *testing.T) {
 
 func apiService(t *testing.T) *app.Service {
 	t.Helper()
-	root := t.TempDir()
+	return apiServiceAt(t, t.TempDir())
+}
+
+func apiServiceAt(t *testing.T, root string) *app.Service {
+	t.Helper()
 	installation := filepath.Join(root, "hermes-install")
 	if err := os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700); err != nil {
 		t.Fatal(err)

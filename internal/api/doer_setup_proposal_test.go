@@ -24,7 +24,11 @@ import (
 
 func nativeSetupFixture(t *testing.T) (*app.Service, core.Subject, core.Charter, core.CanonicalCharter, app.DoerDraft) {
 	t.Helper()
-	s := apiService(t)
+	return nativeSetupFixtureAt(t, apiService(t), t.TempDir())
+}
+
+func nativeSetupFixtureAt(t *testing.T, s *app.Service, workspace string) (*app.Service, core.Subject, core.Charter, core.CanonicalCharter, app.DoerDraft) {
+	t.Helper()
 	configureAPIFleet(t, s)
 	ctx := context.Background()
 	sub, err := s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
@@ -43,7 +47,7 @@ func nativeSetupFixture(t *testing.T) (*app.Service, core.Subject, core.Charter,
 		t.Fatal(err)
 	}
 	text := "retained exact text"
-	draft, err := s.SaveDoerDraftAs(ctx, sub, app.DoerDraftInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: c.AgentID, Revision: agent.Revision.Revision, Digest: agent.Revision.Digest}, LoopID: "native-loop", Revision: 1, Contract: loop.DoerContract{Task: "Retain exact task", Workspace: t.TempDir(), WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 2}})
+	draft, err := s.SaveDoerDraftAs(ctx, sub, app.DoerDraftInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: c.AgentID, Revision: agent.Revision.Revision, Digest: agent.Revision.Digest}, LoopID: "native-loop", Revision: 1, Contract: loop.DoerContract{Task: "Retain exact task", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 2}})
 	if err != nil {
 		t.Fatal(err)
 	}

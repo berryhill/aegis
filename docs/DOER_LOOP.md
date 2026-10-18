@@ -1,5 +1,15 @@
 # Bounded Doer Loop v4
 
+## Real-daemon protected setup negative regression
+
+On Linux, in a checkout under the operator home with no group/other-writable executable ancestors:
+
+```sh
+go test ./internal/api -run '^TestInstalledDaemonDoerProtectedSetupNoDisplay$' -count=1 -v
+```
+
+This builds a private source-root executable, closes fixture stores before real `serve`, and requests public successor/host/provision setup through the default pinned companion without DISPLAY/WAYLAND_DISPLAY. It requires `unavailable` and independently reloads unchanged durable draft/Agent state and absence of authority grants. Fake fixture enrollment is test-only; there is no human approval or provider inference. Untrusted checkout ancestry produces an explicit prerequisite skip, not acceptance; review directory custody before hardening permissions. See `docs/implementation/offline-doer-public-success-launch-review.md` for actual execution evidence and scope.
+
 ## Controller-owned Codex transport and typed Doer proposal adapters (source candidate)
 
 The optional charter field `hermes.provider_authentication: {"mode":"controller-codex-access-token.v1"}` separates controller-owned inference transport from Agent credential authority. It accepts only an explicit Codex provider/model with zero Agent tools, toolsets, credential scopes, plugins, MCP servers or persistent/profile home. Historical omitted fields preserve canonical encoding; existing provider credential scopes are not reclassified or removed. An exact successor, authenticated approval, provisioning receipt and fresh session admission remain independent gates.
@@ -20,6 +30,8 @@ Use this workflow only when installed `aegis loops --help` lists `setup-protecte
 5. Only with separate owner intent, invoke the same command with `action: "provision"` and the new exact draft version. The human reviews the complete canonical charter/plan/effects and independently approves that exact plan for deterministic apply. Require its returned verified receipt, exact plan/charter digests and verified artifacts. Then independently invoke `action: "host"` to review the exact task/workspace/paths/assertion/retry contract and signed expiring host grant. Each action requires its own fresh password/native review. Neither action runs the task.
 6. Resume authoring from the returned draft: build a private Doer authoring file using `agent_id: draft.agent.id`, `loop_id`, `revision`, optional `previous_digest`, `idempotency_key: draft.publication_key`, and `doer: draft.contract`; `loops doer FILE --output NEW_FILE`, authenticated `loops validate NEW_FILE`, then explicitly authorized `loops publish NEW_FILE`. Read back the exact immutable revision via `loops show LOOP REVISION`.
 7. For separately requested Run, prepare `loops queue FILE` with exact readback `agent` and `loop` revision references, a stable owner-approved `idempotency_key`, and `activate: true` only if intended. The owning service repeats all current runtime/provider/Laya/host/receipt prerequisites. Require Queue attempt, independently checked selected-file artifact, verifier receipt and successful terminal disposition; `approved`, readiness or publication is not execution.
+
+No-display acquisition classification and the real daemon → pinned companion → no-display `setup-protected` boundary are covered offline. The latter requires a private trusted checkout and must actually pass, not skip. Genuine desktop approval and provider execution remain separate unverified boundaries; an injected launcher or manual hidden-companion invocation is not public-boundary proof.
 
 Preserve `denied`, `cancelled`, `timeout`, `unavailable`, `outcome_unknown` and `response_unverified` distinctly. On uncertain mutation, read retained draft, exact Agent history, receipts and signed host consent through supported owning-service readback before any retry; do not rotate intent or manufacture a human decision. Provider/model authentication, independent desktop interaction and real selected-file Run remain installed/live acceptance gates, not unit-test claims.
 
@@ -51,6 +63,16 @@ Host consent remains bounded to at most 24 hours. While an exact-scope approval 
 ### Exact raw bytes versus legacy text
 
 The new Console builder defaults to **exact raw UTF-8 bytes**, encoded in a v4 contract as `"exact_bytes": true` with `expected_text`. For `"hello"`, `hello` passes but `hello\n` or surrounding spaces fail. An explicit empty expected string with this flag requires an empty file. Omission/false preserves historical trimming of both expected and observed UTF-8 text; omitting `expected_text` is presence-only and cannot be combined with `exact_bytes: true`. The assertion mode is sealed in the contract/Loop digests and selected-file evidence; it does not rewrite historical definitions. CLI JSON authoring must select the flag explicitly, rather than assuming the Console default. These are selected regular-file assertions, not arbitrary binary or multi-file proof.
+
+Offline public CLI/owning-service success regression (builds the real Aegis binary; Go and a short private socket path required):
+
+```sh
+mkdir -p .t
+TMPDIR="$PWD/.t" GOMAXPROCS=2 go test -p=1 ./internal/api -run '^TestInstalledOnlineDoerExactBytesSuccess$' -count=1
+GOMAXPROCS=2 go test -p=1 ./internal/command -run '^TestDoerProtectedSetupUnavailableClassification$' -count=1
+```
+
+The first test registers an Agent through the public API, authors an exact-byte `hello` v4 Loop through a real CLI process, validates/publishes/shows it through the owning service, checks prerequisite denial without work or file effects, then separately prepares synthetic approved runtime/host fixtures and resumes the unchanged queue key. Fresh public Queue readback checks artifact, verifier receipt, disposition, raw file bytes and replay without another attempt. The service is hosted by the Go fixture; Hermes, Laya and approval input are explicitly synthetic offline integration, not real-provider execution, native human consent, or installed-service qualification. The second test verifies that missing display/helper acquisition becomes `protected_setup_unavailable` before network or confirmation; it does not launch a desktop helper.
 
 Safe local preparation checks (no operator helper, live model or service):
 
