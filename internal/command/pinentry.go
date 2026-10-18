@@ -190,6 +190,13 @@ func metadataFeedback(output io.Writer, err error) {
 }
 
 func (s *authorityPassphraseService) acquireOnce(ctx context.Context, request AuthorityPassphraseRequest, mode string) ([]byte, error) {
+	// Own the foreground terminal directly when available. A pinentry child is
+	// deliberately isolated in a process group for cancellation; curses helpers
+	// in that background group can stop on SIGTTIN even with correct tty options.
+	// An explicitly selected helper still wins. Never change surfaces after GETPIN.
+	if protectedIntakeCancellationSafe && (s.explicit == nil || s.explicit() == "") && protectedTerminalPair(request) {
+		return s.terminalFallback(ctx, request, mode)
+	}
 	executable, discoveryErr := s.resolve()
 	var pinentryErr *PassphraseError
 	if discoveryErr == nil {
@@ -430,10 +437,16 @@ func (s *authorityPassphraseService) pinentry(parent context.Context, executable
 	}
 }
 
-func (s *authorityPassphraseService) terminalFallback(ctx context.Context, request AuthorityPassphraseRequest, mode string) ([]byte, error) {
+func protectedTerminalPair(request AuthorityPassphraseRequest) bool {
 	input, inputOK := request.Input.(*os.File)
 	output, outputOK := request.Diagnostic.(*os.File)
-	if !inputOK || !outputOK || !term.IsTerminal(int(input.Fd())) || !term.IsTerminal(int(output.Fd())) {
+	return inputOK && outputOK && term.IsTerminal(int(input.Fd())) && term.IsTerminal(int(output.Fd()))
+}
+
+func (s *authorityPassphraseService) terminalFallback(parent context.Context, request AuthorityPassphraseRequest, mode string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(parent, s.timeout)
+	defer cancel()
+	if !protectedTerminalPair(request) {
 		reason := "authority passphrase intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"
 		if request.Intent == PrincipalPasswordCreate || request.Intent == PrincipalPasswordAuthenticate {
 			reason = "principal password intake requires protected pinentry or terminal-backed no-echo input and diagnostic output"
@@ -452,7 +465,7 @@ func (s *authorityPassphraseService) terminalFallback(ctx context.Context, reque
 	} else if mode == "principal-confirm" {
 		prompt = "Confirm principal password: "
 	}
-	value, err := readTerminalSecretBounded(ctx, input, output, prompt, authorityPassphraseMaximum)
+	value, err := readTerminalSecretBounded(ctx, request.Input.(*os.File), request.Diagnostic, prompt, authorityPassphraseMaximum)
 	if err != nil {
 		kind := PassphraseProtocol
 		reason := "protected terminal authority passphrase intake failed"
