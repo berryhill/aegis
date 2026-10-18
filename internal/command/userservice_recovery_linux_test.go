@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"github.com/berryhill/aegis/internal/principalauth"
 	"github.com/berryhill/aegis/internal/userservice"
 	"io"
@@ -28,10 +29,9 @@ func (r *recoveryCLIRunner) Output(_ context.Context, a ...string) ([]byte, erro
 	return nil, nil
 }
 func TestRecoveryCLIApprovalRejections(t *testing.T) {
-	old, err := os.ReadFile("../../.proof-old-release/aegis-v0.2.29")
-	if err != nil {
-		t.Fatal("official old release fixture required", err)
-	}
+	// Build release metadata locally; approval rejection coverage needs no
+	// downloaded historical release or operator-owned proof artifacts.
+	old := mustCommandRead(t, upgradeReleaseBuild(t, t.TempDir(), "0.2.29"))
 	for _, scenario := range []string{"noninteractive", "missing-auth", "wrong-password", "confirmation"} {
 		t.Run(scenario, func(t *testing.T) {
 			original, state := validConfigWithoutOperationalAuthority(t)
@@ -73,6 +73,20 @@ func TestRecoveryCLIApprovalRejections(t *testing.T) {
 			e = root.Execute()
 			if e == nil {
 				t.Fatal("approval rejection accepted")
+			}
+			switch scenario {
+			case "noninteractive":
+				if !strings.Contains(e.Error(), "interactive protected principal approval") {
+					t.Fatalf("did not reach interactive admission: %v", e)
+				}
+			case "missing-auth":
+				if !errors.Is(e, os.ErrNotExist) {
+					t.Fatalf("did not reach verifier load: %v", e)
+				}
+			case "wrong-password":
+				if !errors.Is(e, principalauth.ErrAuthentication) {
+					t.Fatalf("did not reach password verification: %v", e)
+				}
 			}
 			if scenario == "confirmation" && !strings.Contains(e.Error(), "confirmation rejected") {
 				t.Fatalf("did not reach confirmation: %v", e)
