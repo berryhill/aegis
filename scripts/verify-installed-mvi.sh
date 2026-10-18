@@ -74,7 +74,9 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
   name="aegis_v${version}_${os}_${arch}"
   stage=$proof/$name
   mkdir "$stage"
-  CGO_ENABLED=0 GOOS=$os GOARCH=$arch "$repo/scripts/build-source.sh" "$stage/aegis" -trimpath \
+  # Go 1.26 omits -ldflags metadata with top-level -trimpath. Keep the real
+  # linker bindings visible to installed v0.2.29 clients; never synthesize them.
+  CGO_ENABLED=0 GOOS=$os GOARCH=$arch "$repo/scripts/build-source.sh" "$stage/aegis" \
     -ldflags="-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=$version -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=$expected_revision"
   build_revision=$(go version -m "$stage/aegis" 2>/dev/null | sed -n 's/^[[:space:]]*build[[:space:]]*vcs.revision=//p')
   [ -n "$build_revision" ] || deny_provenance "built $os/$arch binary omitted Go VCS revision metadata"
@@ -96,6 +98,14 @@ go run ./internal/skillbundle/cmd verify "$dist/aegis-skills_v${version}.tar.gz"
   cd "$dist"
   sha256sum *.tar.gz >SHA256SUMS
   sha256sum -c SHA256SUMS
+)
+
+# Publication is forbidden unless the unchanged installed-client implementation
+# accepts every platform and derives the exact native candidate identity.
+(
+  cd "$repo/scripts/testdata/update-v0.2.29"
+  AEGIS_COMPAT_DIST=$dist AEGIS_COMPAT_VERSION=$version AEGIS_COMPAT_REVISION=$expected_revision \
+    go test -count=1 -v .
 )
 
 native_os=$(go env GOOS)

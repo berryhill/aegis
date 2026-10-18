@@ -33,6 +33,13 @@ The private canonical no-follow/single-link journal is operational evidence outs
 exact intent/recovery evidence; it does not trust a stage or assume old-binary
 rollback is safe after state effects. Unknown-schema migration is not fabricated.
 
+Candidate identity and admission share one extractor over the same sealed byte
+buffer. Explicit linker claims must be complete and unambiguous. Go release
+builds with `-trimpath` may omit `-ldflags` from build metadata; only in that
+absence, an exact release-tagged main module plus a clean Git revision (40
+lowercase hexadecimal characters) supplies version/source claims. Explicit bad
+linker claims never fall back. These remain checksum-bound claims, not signatures.
+
 ## Evidence layers
 
 Source regressions cover ordinary and already-stopped gateways, actual binary
