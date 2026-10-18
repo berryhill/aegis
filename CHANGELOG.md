@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.30] - 2026-10-17
+
 ### Fixed
 - Accept the real Go release-trimpath metadata format using exact release-tagged module and clean VCS provenance when linker metadata is omitted, while rejecting missing, conflicting, dirty or ambiguous claims. Candidate identity uses the same validated sealed bytes. Exercise real tagged trimpath builds and published v0.2.29 archive regressions.
 - Keep official release assets consumable by installed v0.2.29 updaters by retaining truthful linker-binding metadata; the publication verifier tests all four archives and native Prepare/Identity against unchanged frozen v0.2.29 code. Signature, checksum, archive, exact clean VCS and installed/browser gates remain required. Binary build-path privacy/location-independent reproducibility is not claimed; skill archive reproducibility is unchanged.
