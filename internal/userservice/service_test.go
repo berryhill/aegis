@@ -62,6 +62,8 @@ func (r *recordingRunner) Output(_ context.Context, args ...string) ([]byte, err
 	r.calls = append(r.calls, append([]string(nil), args...))
 	if len(args) >= 4 && args[0] == "show" && args[2] == "--property" {
 		switch args[3] {
+		case "DropInPaths":
+			return nil, nil
 		case "ActiveState":
 			return []byte(defaultString(r.activeState, "inactive") + "\n"), nil
 		case "UnitFileState":
@@ -97,6 +99,8 @@ func serviceFixture(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
+	// Preview resolves the user unit through XDG; never inherit the workstation's unit directory.
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
 	state := filepath.Join(root, "state")
 	token := filepath.Join(state, "transport", "api.token")
 	if err = os.MkdirAll(filepath.Dir(token), 0700); err != nil {

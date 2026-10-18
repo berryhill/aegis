@@ -313,6 +313,12 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
+		if cmd.Name() == "recover" && cmd.Parent() != nil && cmd.Parent().Name() == "gateway" {
+			if o.target != "" || updateAlias || cmd.Flags().Changed("state-dir") || cmd.InheritedFlags().Changed("state-dir") {
+				return usage(errors.New("gateway recovery cannot select target, state override, or root action"))
+			}
+			return nil // Dedicated coordinator binds canonical production paths; no application stores.
+		}
 		if profileErr != nil {
 			return usage(profileErr)
 		}
@@ -507,6 +513,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
 	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater, deps.UserService, deps.GatewayImageObserver, o), credentialBridgeCmd())
 	root.AddCommand(authorityRecoveryCmd(o, deps.Profile))
+	addGatewayRecovery(root, deps, o)
 	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
 	root.AddCommand(NewDoerSetupCompanionCommand(func() string { return o.configFile }))
 	var wrapAuthorityCleanup func(*cobra.Command)

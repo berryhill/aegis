@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+func TestServiceFixtureIsolatesUnitPath(t *testing.T) {
+	inherited := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", inherited)
+	exe, cfg := serviceFixture(t)
+	privateConfig := filepath.Join(filepath.Dir(exe), "config")
+	if got := os.Getenv("XDG_CONFIG_HOME"); got != privateConfig {
+		t.Fatalf("fixture inherited external config home: got %q, want %q", got, privateConfig)
+	}
+	p, err := Preview(exe, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(privateConfig, "systemd", "user", UnitName)
+	if p.UnitPath != want {
+		t.Fatalf("unit escaped fixture's private temp: got %q, want %q", p.UnitPath, want)
+	}
+}
+
 func TestDiscoverInstalledExecutable(t *testing.T) {
 	exe, cfg := serviceFixture(t)
 	p, err := Preview(exe, cfg)

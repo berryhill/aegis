@@ -303,3 +303,5 @@ One approval at the interactive `aegis init`/bare `aegis` certification decision
 See [online Loop publication](docs/ONLINE_LOOP_PUBLICATION.md) for `--target`, authenticated validation and exact readback. `loops example` is a structural publication template, not an executable implementation/verification workflow.
 
 Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](docs/INSTALLED_UPDATE_BOOTSTRAP.md).
+
+For a stopped foreign user-service unit, see [bounded service recovery](docs/SERVICE_RECOVERY.md); recovery never force-updates a binary or claims authenticated readiness.

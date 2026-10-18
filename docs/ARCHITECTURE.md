@@ -370,3 +370,7 @@ The installed `--target` adapter selects an existing console origin, uses only i
 The native `internal/implementation` kernel depends on the Loop contract and an opaque custody port. Only `internal/persistence/fleet/badger` implements that port against the existing fleet-v1 writer. Orchestration connects independent native-check reloads to an evidence-owned callback DTO; `internal/evidence` imports neither Loop nor the executor. Terminal completion rechecks the immutable Loop contract, stored test evidence and current workspace, not an in-memory PASS. No second implementation database is opened.
 
 Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](INSTALLED_UPDATE_BOOTSTRAP.md).
+
+## Stopped foreign-unit recovery
+
+Linux `gateway recover` is a separate preview/apply coordinator for a canonical production deployment. It authenticates the enrolled principal, binds confirmation to foreign bytes/device/inode and the deterministic desired unit, preserves owner-only evidence before atomic exchange, refuses running foreign services, and reloads/verifies identity without activation or readiness claims. Normal install/bootstrap ownership checks remain unchanged. A source coordinator explicitly binds an existing inspected release and canonical production configuration; no executable overwrite, reset, authority change, or expiry extension is provided. See [service recovery](SERVICE_RECOVERY.md).
