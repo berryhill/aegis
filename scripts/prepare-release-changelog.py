@@ -32,10 +32,11 @@ def prepare(source: pathlib.Path, destination: pathlib.Path, version: str, relea
     pending = after if next_release < 0 else after[:next_release]
     if not pending.strip():
         raise SystemExit("CHANGELOG.md has no unreleased entries")
-    tail = "" if next_release < 0 else after[next_release:]
-    pending_text = pending.strip("\n")
+    # Insert only the release heading. In particular, trailing blank lines in
+    # pending belong to the parent snapshot and must survive the exact inverse
+    # used by prepared-mode readiness and immutable-tag recovery.
     destination.write_text(
-        before + marker + "\n\n" + heading + "\n\n" + pending_text + "\n" + tail,
+        before + marker + "\n\n" + heading + after,
         encoding="utf-8",
     )
 

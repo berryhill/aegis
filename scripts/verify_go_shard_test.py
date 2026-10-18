@@ -23,8 +23,20 @@ class ShardTests(unittest.TestCase):
         union = [p for group in grouped.values() for p in group]
         self.assertCountEqual(union, packages)
         self.assertEqual(len(union), len(set(union)))
-        self.assertEqual(grouped['remainder'], [shard.ROOT + 'empty', shard.ROOT + 'new'])
+        self.assertEqual(grouped['remainder-a'], [shard.ROOT + 'empty'])
+        self.assertEqual(grouped['remainder-b'], [shard.ROOT + 'new'])
         self.assertEqual(grouped, shard.groups(list(reversed(packages))))
+
+    def test_odd_remainder_is_sorted_alternating_and_exact_once(self):
+        named = [shard.ROOT + p for paths in shard.GROUPS.values() for p in paths]
+        remainder = [shard.ROOT + f'new-{i:02d}' for i in range(47)]
+        grouped = shard.groups(list(reversed(named + remainder)))
+        self.assertEqual(grouped['remainder-a'], remainder[::2])
+        self.assertEqual(grouped['remainder-b'], remainder[1::2])
+        self.assertEqual([len(grouped[n]) for n in ('remainder-a', 'remainder-b')], [24, 23])
+        union = [p for group in grouped.values() for p in group]
+        self.assertCountEqual(union, named + remainder)
+        self.assertEqual(len(union), len(set(union)))
 
     def test_empty_unknown_malformed_and_duplicate_listing_fail(self):
         for text in ['', '\n', '{}', 'other/module', shard.ROOT, shard.ROOT + 'bad name', '\n'.join([shard.ROOT + 'p'] * 2)]:
@@ -79,7 +91,7 @@ func FuzzSeed(f *testing.F) { f.Add("seed"); f.Fuzz(func(t *testing.T, s string)
 ''')
             result = subprocess.run(['go', 'list', './...'], cwd=root, capture_output=True, text=True, check=True)
             packages = shard.inventory(result.stdout)
-            with mock.patch.object(shard, 'GROUPS', {'fixture': ('fixture',), 'remainder': ()}):
+            with mock.patch.object(shard, 'GROUPS', {'fixture': ('fixture',), 'remainder-a': (), 'remainder-b': ()}):
                 self.assertEqual(shard.groups(packages)['fixture'], packages)
             result = subprocess.run(['go', 'test', '-count=1', '-json', *packages], cwd=root, capture_output=True, text=True, check=True)
             seen = [event['Test'] for line in result.stdout.splitlines() if (event := json.loads(line)).get('Action') == 'run' and '/' not in event.get('Test', '')]

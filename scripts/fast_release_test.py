@@ -117,6 +117,40 @@ print(json.dumps(result))
         self.assertIn("not the canonical", result.stderr)
         self.assertEqual(before, self.snapshot())
 
+    def test_prepare_then_final_classify_preserves_historical_separator(self):
+        # v0.2.32's parent had three newlines before the old release heading.
+        # Preparation must be an insertion, not normalize unrelated blank lines.
+        for separator in ("\n\n", "\n\n\n", "\n\n\n\n"):
+            with self.subTest(separator=repr(separator)):
+                original = ("# Changelog\n\n## Unreleased\n\n- Pending entry."
+                            + separator + "## [0.2.31] - 2026-10-18\n\n- Historical entry.\n")
+                source = self.repo / "CHANGELOG.md"
+                source.write_text(original)
+                self.run_git("add", "CHANGELOG.md")
+                self.run_git("commit", "-qm", "source fixture")
+                date = self.run_git("show", "-s", "--format=%cs", "HEAD").strip()
+                output = self.root / "prepared"
+                subprocess.run(["python3", str(ROOT / "scripts/prepare-release-changelog.py"),
+                                str(source), str(output), "0.2.33", date], check=True)
+                prepared = output.read_text()
+                source.write_text(prepared)
+                self.run_git("add", "CHANGELOG.md")
+                self.run_git("commit", "-qm", "Prepare v0.2.33 release")
+                result = subprocess.run(["python3", str(ROOT / "scripts/release-readiness-mode.py"),
+                                         str(self.repo), "prepared", "0.2.33", ""],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(prepared.replace(f"\n\n## [0.2.33] - {date}", "", 1), original)
+                # An unrelated historical edit must still fail closed.
+                source.write_text(prepared.replace("- Historical entry.", "- Tampered history.", 1))
+                self.run_git("add", "CHANGELOG.md")
+                self.run_git("commit", "--amend", "--no-edit", "-q")
+                denied = subprocess.run(["python3", str(ROOT / "scripts/release-readiness-mode.py"),
+                                         str(self.repo), "prepared", "0.2.33", ""],
+                                        capture_output=True, text=True)
+                self.assertNotEqual(denied.returncode, 0)
+                self.assertIn("does not preserve parent", denied.stderr)
+
     def test_recovery_reuses_exact_parent_and_preserves_existing_tag(self):
         source = self.repo / "CHANGELOG.md"
         output = self.root / "prepared"

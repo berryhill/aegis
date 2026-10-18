@@ -52,6 +52,17 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 MODULE.validate(run, jobs, SHA, 456)
 
+    def test_each_remainder_shard_is_required_in_both_modes(self):
+        for mode in ('normal', 'race'):
+            for group in ('remainder-a', 'remainder-b'):
+                name = f'Go {mode} / {group}'
+                with self.subTest(name=name):
+                    self.assertIn(name, MODULE.REQUIRED_JOBS)
+                    run, jobs = self.fixture()
+                    jobs = [job for job in jobs if job['name'] != name]
+                    with self.assertRaisesRegex(ValueError, 'missing'):
+                        MODULE.validate(run, jobs, SHA, 456)
+
     def test_latest_attempt_selected_without_falling_back_to_green(self):
         older, _ = self.fixture()
         newer = dict(older, id=124, status="in_progress", conclusion=None)

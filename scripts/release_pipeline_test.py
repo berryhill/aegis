@@ -29,8 +29,8 @@ class PipelineTests(unittest.TestCase):
         shard = load("shards", "verify-go-shard.py")
         evidence = load("evidence", "verify-ci-evidence.py")
         matrix = self.jobs["go-shards"]
-        for group in shard.GROUPS:
-            self.assertIn(group, matrix.split("group: [", 1)[1].split("]", 1)[0].split(", "))
+        groups = matrix.split("group: [", 1)[1].split("]", 1)[0].split(", ")
+        self.assertEqual(groups, list(shard.GROUPS))
         self.assertIn("mode: [normal, race]", matrix)
         self.assertIn("fail-fast: false", matrix)
         names = {re.search(r"^    name: (.+)$", block, re.M)[1] for key, block in self.jobs.items() if key != "go-shards"}

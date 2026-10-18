@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exact-once bounded Go package groups; invoke through verify-budget.py.
 
-Five groups isolate measured slow packages without duplicating compilation or
+Six groups isolate measured slow packages without duplicating compilation or
 splitting TestMain, examples, fuzz seeds, or subtests. The remainder is exact set
 subtraction from `go list ./...`; new packages cannot silently escape coverage.
 """
@@ -16,7 +16,8 @@ GROUPS = {
     'execution': ('internal/implementation', 'internal/orchestration'),
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
-    'remainder': (),
+    'remainder-a': (),
+    'remainder-b': (),
 }
 
 
@@ -37,7 +38,9 @@ def groups(packages):
     assigned = [package for names in selected.values() for package in names]
     if len(assigned) != len(set(assigned)) or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
-    selected['remainder'] = sorted(set(packages) - set(assigned))
+    remainder = sorted(set(packages) - set(assigned))
+    selected['remainder-a'] = remainder[::2]
+    selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
     if len(union) != len(packages) or set(union) != set(packages):
         raise ValueError('package coverage mismatch')
