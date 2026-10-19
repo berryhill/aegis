@@ -80,7 +80,7 @@ func TestInstalledOnlineDoerExactBytesSuccess(t *testing.T) {
 	apiRequest(t, client, http.MethodPost, "/v1/agents", app.NewRegisterFleetAgentInput(fixture, "journey-fleet", "journey-source"), &registered, http.StatusCreated)
 	workspace := t.TempDir()
 	text := "hello"
-	contract := loop.DoerContract{Task: "Create result.txt", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 1, ExactBytes: true}
+	contract := loop.DoerContract{Task: "Create result.txt", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 2, ExactBytes: true}
 	// Public authoring is a separate real process; stderr carries draft diagnostics.
 	write := func(name string, value any) string {
 		t.Helper()
@@ -228,6 +228,11 @@ printf '%%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"section
 while IFS= read -r create; do
   printf '%%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"fixture"}}'
   IFS= read -r prompt || exit 0
+  case "$prompt" in
+    *'Return only JSON edits'*)
+      case "$prompt" in *expected_text*hello*exact_bytes*true*max_attempts*2*) ;; *) exit 91 ;; esac
+      ;;
+  esac
   printf '%%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
   printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"fixture","payload":{}}}'
   printf '%%s\n' '%s'
@@ -307,6 +312,10 @@ done
 	}
 	if !verifiedStep {
 		t.Fatalf("independent Queue readback omitted verified cursor: %+v", steps)
+	}
+	entries, err := os.ReadDir(workspace)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "result.txt" || entries[0].IsDir() {
+		t.Fatalf("unexpected implementation or agent-written acceptance output: %v %v", entries, err)
 	}
 	bytes, err := os.ReadFile(filepath.Join(workspace, "result.txt"))
 	if err != nil || string(bytes) != text {
