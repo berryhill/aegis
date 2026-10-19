@@ -19,6 +19,7 @@ import (
 	"github.com/berryhill/aegis/internal/initialize"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/berryhill/aegis/internal/principalauth"
+	"github.com/berryhill/aegis/internal/reset"
 	selfupdate "github.com/berryhill/aegis/internal/update"
 	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
@@ -196,9 +197,15 @@ func (j *installedJourney) Recover(ctx context.Context) error {
 	// this journey. The persistence layer checks this deadline before effects.
 	ctx, cancel := context.WithDeadline(ctx, j.expires)
 	defer cancel()
-	if _, err := os.Lstat(j.cfg.API.UnixSocket); !errors.Is(err, os.ErrNotExist) {
-		return errors.New("offline upgrade requires absent protected Unix transport")
-	}
+	return reset.WithOfflineTransport(ctx, j.cfg.API.UnixSocket, func() error {
+		if err := j.admit(ctx); err != nil {
+			return err
+		}
+		return userservice.RequireStopped(ctx, j.runner, j.plan)
+	}, func() error { return j.validateAuthority(ctx) })
+}
+
+func (j *installedJourney) validateAuthority(ctx context.Context) error {
 	root := filepath.Join(j.cfg.StateDir, "persistence", "authority-v1")
 	inspection := authoritybadger.Inspect(ctx, root)
 	if inspection.State != authoritybadger.StateReady {

@@ -222,7 +222,8 @@ flowchart TB
   Updater[CLI self-updater source candidate] -->|release + checksum + executable provenance; no execution| PreparedBinary[Exact installation-bound prepared candidate]
   PreparedBinary -->|protected principal authentication + exact-unit admission| UpgradeStop[Shared exact gateway stop]
   UpgradeStop -->|repeat target and candidate validation; root-relative atomic rename| Binary[Aegis executable]
-  Binary -->|closed authority inspection or strictly eligible protected recovery| UpgradeRecovery[Authority validation + private evidence]
+  Binary -->|exact stopped plan + MainPID=0 + startup flock| OfflineTransport[Kernel VFS unbound proof + no-replace orphan quarantine]
+  OfflineTransport -->|retain startup flock through validation| UpgradeRecovery[Authority validation + private evidence]
   UpgradeRecovery -->|exact start; bounded manager calls| UpgradeReadiness[Current inode + authenticated audit-current readiness + Console GETs + Agent read]
   Updater -->|private exact-intent journal; phases never authorize skips| UpgradeJournal[Durable operation ownership and reobservation]
   Updater -.->|read-only exact-unit process-image observation; no restart| API

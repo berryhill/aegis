@@ -1,5 +1,11 @@
 # Security Policy
 
+Authenticated Linux upgrade recovery now holds the exact API startup lock through
+closed-authority validation. Only exact stopped-service/MainPID=0 admission and a
+complete kernel VFS unbound proof permit no-replace orphan quarantine; evidence is
+retained. This grants no reset authority and does not protect against hostile
+same-UID/root or cross-network-namespace interference. See `docs/INPLACE_UPGRADE.md`.
+
 ## Verified installed coordinator bootstrap (source candidate)
 
 The product acquisition script verifies canonical official platform archive checksums,
