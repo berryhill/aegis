@@ -6,7 +6,7 @@ templ DoerSetupPage(m DoerSetupModel, csrf string) {
   <p>Independent setup decisions apply only to the exact scope shown. Your task and output contract stay retained; the requesting agent continues the original create/run request through its authenticated local-OS transport. No desktop companion is required.</p>
   <a href={ templ.URL(m.DraftURL) }>Return to the same retained task</a>
   <a href={ templ.URL(m.SetupURL) }>Review fresh setup</a>
-	<h2>Continue the original request</h2><p>Retained task: <code>{ m.DraftID }</code> · exact version: <code>{ m.Version }</code></p><p>The agent reads this exact retained version with <code>loops task-show ID</code>, then resumes the original create/run request using the retained publication key and original Run idempotency key. Setup is not task completion. If a mutation outcome is uncertain, read back and retry the same key, never create another request.</p>
+	<h2>Continue the original request</h2><p>Exact task version: <code>{ m.Version }</code></p><p>The agent resumes the original create/run request using the retained task identity, publication key and original Run idempotency key. Setup is not task completion. If a mutation outcome is uncertain, read back and retry the same key, never create another request.</p>
 	if m.Contract != "" {
 		<h2>Retained task and output contract</h2><pre>{ m.Contract }</pre>
 	}

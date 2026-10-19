@@ -11,7 +11,7 @@ import (
 
 func TestDoerSetupVisibleCopyAndHeadlessContinuation(t *testing.T) {
 	var out bytes.Buffer
-	if err := DoerSetupPage(DoerSetupModel{DraftID: "internal-task-id", Version: "7", Contract: "retained task", HostStatus: "review required"}, "csrf").Render(context.Background(), &out); err != nil {
+	if err := DoerSetupPage(DoerSetupModel{DraftID: "doerdraft-internal-task-id", Version: "7", Contract: "retained task", HostStatus: "review required"}, "csrf").Render(context.Background(), &out); err != nil {
 		t.Fatal(err)
 	}
 	doc, err := html.Parse(strings.NewReader(out.String()))
@@ -34,7 +34,7 @@ func TestDoerSetupVisibleCopyAndHeadlessContinuation(t *testing.T) {
 	if strings.Contains(strings.ToLower(text), "draft") {
 		t.Fatal("storage terminology leaked into visible setup")
 	}
-	for _, want := range []string{"Set up this Loop", "No desktop companion is required", "exact version:", "loops task-show ID", "original Run idempotency key", "Setup is not task completion"} {
+	for _, want := range []string{"Set up this Loop", "No desktop companion is required", "Exact task version:", "original Run idempotency key", "Setup is not task completion"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q", want)
 		}
