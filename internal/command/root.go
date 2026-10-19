@@ -313,6 +313,31 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
+		if cmd.Name() == "update" && cmd.Parent() == root {
+			installed, _ := cmd.Flags().GetBool("installed")
+			if installed {
+				// Only the dedicated installed coordinator may cross the source
+				// profile boundary. It discovers and validates the exact owned unit;
+				// it must never inherit development config or application overrides.
+				for _, name := range []string{"target", "state-dir", "runtime", "hermes-executable", "update", "check"} {
+					if cmd.Flags().Changed(name) || cmd.InheritedFlags().Changed(name) {
+						return usage(fmt.Errorf("installed update cannot select --%s", name))
+					}
+				}
+				if selectedAction != "" {
+					return usage(errors.New("installed update cannot select a root action"))
+				}
+				installedLayout, err := resolveExecutionProfile(ProductionProfile, "")
+				if err != nil {
+					return usage(err)
+				}
+				if (cmd.Flags().Changed("config") || cmd.InheritedFlags().Changed("config")) && o.configFile != installedLayout.Config {
+					return usage(errors.New("installed update requires the canonical production configuration"))
+				}
+				o.configFile = installedLayout.Config
+				return nil // No lifecycle classification or application stores here.
+			}
+		}
 		if cmd.Name() == "recover" && cmd.Parent() != nil && cmd.Parent().Name() == "gateway" {
 			if o.target != "" || updateAlias || cmd.Flags().Changed("state-dir") || cmd.InheritedFlags().Changed("state-dir") {
 				return usage(errors.New("gateway recovery cannot select target, state override, or root action"))
