@@ -1,5 +1,7 @@
 # Bounded Doer Loop v4
 
+Implementation turns receive the exact selected-file assertion (`verify_file`, optional `expected_text`, `exact_bytes`) and retry bound alongside task prose and allowlisted paths. Raw-byte assertions do not imply a trailing newline. This is input to the tool-free implementer, not model-written acceptance evidence; the controller still independently reloads and verifies the file. Host workspace paths are not included in that turn. Publication and exact same-Loop execution remain distinct supported actions; no approval or credential authority is inferred from these inputs.
+
 ## Real-daemon protected setup negative regression
 
 On Linux, in a checkout under the operator home with no group/other-writable executable ancestors:

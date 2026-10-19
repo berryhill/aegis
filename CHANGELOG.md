@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Preserve selected-file acceptance assertions in Doer implementation turns instead
+  of dropping exact expected bytes, whitespace policy and retry bounds. Independent
+  verification and all runtime/credential/host authority checks remain unchanged.
+
 - Preserve the known optional fleet-recovery evidence reference when inspecting or
   resuming upgrade journals. Same-intent resume retains the exact receipt bytes;
   a separately authenticated later upgrade archives the full prior receipt.
