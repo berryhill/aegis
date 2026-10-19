@@ -6,6 +6,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add the hard GitHub Trigger-to-Graph acceptance contract and project-context
+  routing; no Trigger runtime implementation or activation is claimed.
+
 - Document repository-scoped Hermes implementation/delivery expectations and hard
   Loop/Graph acceptance contracts, routed from AGENTS.md. These define engineering
   obligations and test targets, not newly implemented runtime capabilities.

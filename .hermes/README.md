@@ -10,8 +10,9 @@ Read [Implementation and delivery contract](implementation-delivery-contract.md)
 | --- | --- | --- |
 | [Loop happy path](loop-happy-path-hard-acceptance.md) | Authoring, admission, runtime execution, retries, verification or disposition for a Doer Loop changes | Separately publish and execute the same exact immutable Loop; runtime-produced exact bytes, bounded attempts and independently verified disposition |
 | [Graph happy path](graph-happy-path-hard-acceptance.md) | Graph authoring, typed inputs, multi-node execution, artifact handoff, dependency gating or aggregate disposition changes | Separately publish and execute the same exact immutable two-node Graph with verified producer-to-consumer dataflow |
+| [GitHub Trigger happy path](trigger-happy-path-hard-acceptance.md) | Connector intake, visual Trigger logic, Graph Trigger-entry composition, activation bindings or event-driven invocation changes | One real GitHub label event automatically drives the exact admitted Graph to independently verified completion |
 
-Read the relevant full document before defining acceptance or modifying affected behavior. Changes spanning both contracts require both documents. These are hard acceptance targets, not claims of installed capability or historical passing tests. Do not run live operations solely because an acceptance document describes them.
+Read the relevant full document before defining acceptance or modifying affected behavior. Changes spanning multiple contracts require all applicable documents. The Trigger case builds on the Loop and Graph cases; it does not replace their independent proof. These are hard acceptance targets, not claims of installed capability or historical passing tests. Do not run live operations solely because an acceptance document describes them.
 
 ## Working and evidence rules
 
