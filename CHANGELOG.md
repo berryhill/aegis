@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.36] - 2026-10-18
+
 - Authenticated Linux upgrade recovery quarantines only kernel-proven unbound protected Unix sockets under the exact API startup lock, retaining evidence and the lock through authority validation. Exact stopped service, MainPID=0, principal/configuration and original authentication expiry remain mandatory; no reset authority is granted.
 
 - Fixed source-built `aegis update --installed` routing before development-profile isolation: only the dedicated installed coordinator binds canonical `~/.aegis/aegis.yaml`, with or without explicit `--config`. Ordinary update remains isolated; target/state/runtime/Hermes overrides, root actions and `--check` are rejected. Existing installed-unit, protected authentication, journal and upgrade gates remain unchanged.
