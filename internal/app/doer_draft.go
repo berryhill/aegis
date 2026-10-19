@@ -72,20 +72,21 @@ func (input *DoerDraftInput) UnmarshalJSON(data []byte) error {
 // at creation and is not extended by edits. Exact Agent identity is retained
 // even if later Registry changes make publication inadmissible.
 type DoerDraft struct {
-	CreationKey    string                `json:"creation_key,omitempty"`
-	CreationDigest string                `json:"creation_digest,omitempty"`
-	ID             string                `json:"id"`
-	PrincipalID    string                `json:"principal_id"`
-	PublicationKey string                `json:"publication_key"`
-	Version        uint64                `json:"version"`
-	Agent          reference.RevisionRef `json:"agent"`
-	LoopID         string                `json:"loop_id"`
-	Revision       uint64                `json:"revision"`
-	PreviousDigest string                `json:"previous_digest,omitempty"`
-	Contract       loop.DoerContract     `json:"contract"`
-	CreatedAt      time.Time             `json:"created_at"`
-	UpdatedAt      time.Time             `json:"updated_at"`
-	ExpiresAt      time.Time             `json:"expires_at"`
+	ExecutionDigest string                `json:"execution_digest,omitempty"`
+	CreationKey     string                `json:"creation_key,omitempty"`
+	CreationDigest  string                `json:"creation_digest,omitempty"`
+	ID              string                `json:"id"`
+	PrincipalID     string                `json:"principal_id"`
+	PublicationKey  string                `json:"publication_key"`
+	Version         uint64                `json:"version"`
+	Agent           reference.RevisionRef `json:"agent"`
+	LoopID          string                `json:"loop_id"`
+	Revision        uint64                `json:"revision"`
+	PreviousDigest  string                `json:"previous_digest,omitempty"`
+	Contract        loop.DoerContract     `json:"contract"`
+	CreatedAt       time.Time             `json:"created_at"`
+	UpdatedAt       time.Time             `json:"updated_at"`
+	ExpiresAt       time.Time             `json:"expires_at"`
 }
 
 // One bounded principal record lets Store.Update's interprocess lock serialize
@@ -261,6 +262,9 @@ func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, inp
 			if input.LoopID == result.LoopID && input.Revision == result.Revision && input.PreviousDigest == result.PreviousDigest && reflect.DeepEqual(input.Contract, result.Contract) {
 				return set, nil
 			}
+		}
+		if result.ExecutionDigest != "" {
+			return nil, ErrConflict
 		}
 		result.Version++
 		result.UpdatedAt = now

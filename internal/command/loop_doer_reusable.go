@@ -23,7 +23,7 @@ type doerReusableDraftInput struct {
 
 func loopDoerReusableCmd() *cobra.Command {
 	var destination string
-	cmd := &cobra.Command{Use: "doer-reusable FILE", Short: "Build a reusable typed Doer Loop v5 draft (no authority or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "doer-reusable FILE", Short: "Build a reusable typed Doer Loop v5 proposal (no authority or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input doerReusableDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
@@ -57,7 +57,7 @@ func loopDoerReusableCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintln(cmd.ErrOrStderr(), "Draft only; no task inputs, authority, publication, activation or execution.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Proposal only; no task inputs, authority, publication, activation or execution.")
 		return nil
 	}}
 	cmd.Flags().StringVar(&destination, "output", "", "Create a new publication JSON file (default stdout; never overwrite)")

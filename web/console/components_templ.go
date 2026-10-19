@@ -1076,7 +1076,7 @@ func Workspace(surface SurfaceModel) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</p><a href=\"/console/loops/doer\">Draft Doer Loop</a></section>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 84, "</p><a href=\"/console/loops/doer\">Create Doer Loop</a></section>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -1698,7 +1698,7 @@ func DoerComposerPage(model LoopComposerModel, csrf string) templ.Component {
 			templ_7745c5c3_Var79 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<section class=\"surface active\"><h1>Write a Loop with an Agent</h1><p>Template: Doer · choose an Agent, enter one bounded task and output assertion, then review. Preview creates no Loop record. Review retains your draft but grants no execution authority.</p><a href=\"/console/loops\">Back to Loops</a><form class=\"panel panel-body\" method=\"post\" action=\"/console/loops/doer/preview\"><input type=\"hidden\" name=\"csrf\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 132, "<section class=\"surface active\"><h1>Write a Loop with an Agent</h1><p>Template: Doer · choose an Agent, enter one bounded task and output assertion, then review. Preview creates no Loop record. Review retains your task but grants no execution authority.</p><a href=\"/console/loops\">Back to Loops</a><form class=\"panel panel-body\" method=\"post\" action=\"/console/loops/doer/preview\"><input type=\"hidden\" name=\"csrf\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -2104,7 +2104,7 @@ func CommandPreviewPage(model CommandPreviewModel, csrf string) templ.Component 
 			return templ_7745c5c3_Err
 		}
 		if model.DoerReview != nil && model.DoerReview.DraftURL != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<p>Your draft is retained. This short-lived confirmation grants no execution authority and repeats fresh exact target admission.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 170, "<p>Your task is retained. This short-lived confirmation grants no execution authority and repeats fresh exact target admission.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -2228,7 +2228,7 @@ func CommandPreviewPage(model CommandPreviewModel, csrf string) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "</code>. Unchecked prerequisites are not passing checks. Publication creates only an immutable draft.</p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 182, "</code>. Unchecked prerequisites are not passing checks. Publication creates only an inactive immutable definition, not a completed task.</p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2287,7 +2287,7 @@ func CommandPreviewPage(model CommandPreviewModel, csrf string) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "\">Return to this retained draft</a> ")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 189, "\">Return to this retained task</a> ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -2306,7 +2306,7 @@ func CommandPreviewPage(model CommandPreviewModel, csrf string) templ.Component 
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "\">Review prerequisites for this same draft</a>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 191, "\">Review prerequisites for this same task</a>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -3326,9 +3326,9 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var171 string
-			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+			templ_7745c5c3_Var171, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 474, Col: 306}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 474, Col: 320}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var171))
 			if templ_7745c5c3_Err != nil {
@@ -3341,7 +3341,7 @@ func QueueRecordPanel(surface SurfaceModel, records []RecordModel) templ.Compone
 			var templ_7745c5c3_Var172 string
 			templ_7745c5c3_Var172, templ_7745c5c3_Err = templ.JoinStringErrs(record.Runtime)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 474, Col: 337}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 474, Col: 351}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var172))
 			if templ_7745c5c3_Err != nil {
@@ -3608,9 +3608,9 @@ func AgentCard(surface SurfaceModel, record RecordModel) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var187 string
-			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+			templ_7745c5c3_Var187, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 497, Col: 70}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 497, Col: 84}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var187))
 			if templ_7745c5c3_Err != nil {
@@ -4210,9 +4210,9 @@ func AgentInlineDetail(surface SurfaceModel, record *RecordModel) templ.Componen
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var223 string
-		templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+		templ_7745c5c3_Var223, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 244}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 258}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var223))
 		if templ_7745c5c3_Err != nil {
@@ -4225,7 +4225,7 @@ func AgentInlineDetail(surface SurfaceModel, record *RecordModel) templ.Componen
 		var templ_7745c5c3_Var224 templ.SafeURL
 		templ_7745c5c3_Var224, templ_7745c5c3_Err = templ.JoinURLErrs(agentRevisionRoute(surface, record))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 354}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 368}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var224))
 		if templ_7745c5c3_Err != nil {
@@ -4238,7 +4238,7 @@ func AgentInlineDetail(surface SurfaceModel, record *RecordModel) templ.Componen
 		var templ_7745c5c3_Var225 templ.SafeURL
 		templ_7745c5c3_Var225, templ_7745c5c3_Err = templ.JoinURLErrs(collectionRoute(surface))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 460}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 539, Col: 474}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var225))
 		if templ_7745c5c3_Err != nil {
@@ -4871,9 +4871,9 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var258 string
-				templ_7745c5c3_Var258, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+				templ_7745c5c3_Var258, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 608, Col: 193}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 608, Col: 207}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var258))
 				if templ_7745c5c3_Err != nil {
@@ -4886,7 +4886,7 @@ func Inspector(surface SurfaceModel, record *RecordModel, open bool) templ.Compo
 				var templ_7745c5c3_Var259 templ.SafeURL
 				templ_7745c5c3_Var259, templ_7745c5c3_Err = templ.JoinURLErrs(registryURL(surface))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 608, Col: 281}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 608, Col: 295}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var259))
 				if templ_7745c5c3_Err != nil {
@@ -7096,9 +7096,9 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var361 string
-					templ_7745c5c3_Var361, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+					templ_7745c5c3_Var361, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 970, Col: 498}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 970, Col: 512}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var361))
 					if templ_7745c5c3_Err != nil {
@@ -7111,7 +7111,7 @@ func CredentialWorkspace(surface SurfaceModel) templ.Component {
 					var templ_7745c5c3_Var362 string
 					templ_7745c5c3_Var362, templ_7745c5c3_Err = templ.JoinStringErrs(record.Revision)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 970, Col: 533}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 970, Col: 547}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var362))
 					if templ_7745c5c3_Err != nil {
@@ -7282,9 +7282,9 @@ func CredentialInspector(surface SurfaceModel, record *RecordModel) templ.Compon
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var370 string
-			templ_7745c5c3_Var370, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+			templ_7745c5c3_Var370, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1000, Col: 201}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `components.templ`, Line: 1000, Col: 215}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var370))
 			if templ_7745c5c3_Err != nil {
@@ -7875,6 +7875,9 @@ func graphRunURL(record *RecordModel) string {
 	return "/console/graphs/run?graph=" + url.QueryEscape(record.Label) + "&revision=" + strings.TrimPrefix(record.Revision, "r") + "&digest=" + url.QueryEscape(record.Graph.Digest)
 }
 func stateHeading(state string) string {
+	if state == "draft" {
+		return "Not activated"
+	}
 	if state == "" {
 		return "Unknown"
 	}

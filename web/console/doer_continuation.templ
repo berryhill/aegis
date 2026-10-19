@@ -15,7 +15,7 @@ templ DoerContinuationPage(m DoerContinuationModel, csrf string) {
   <p>This browser review is not approval. Only the independent installed native companion can request explicit human confirmation. Approval does not grant host writes or bypass runtime prerequisites.</p>
   <pre>{ m.Details }</pre>
   <p role="status">{ m.Status }</p>
-  <a href={ templ.URL("/console/loops/doer?draft_id="+url.QueryEscape(m.DraftID)) }>Return to the same retained draft</a>
+  <a href={ templ.URL("/console/loops/doer?draft_id="+url.QueryEscape(m.DraftID)) }>Return to the same retained task</a>
   <form method="post" action="/console/loops/doer/continuation">
    <input type="hidden" name="csrf" value={ csrf }/>
    <input type="hidden" name="intent_id" value={ m.ID }/>
@@ -31,7 +31,7 @@ templ DoerContinuationPage(m DoerContinuationModel, csrf string) {
     <button type="submit">Run exact published Loop with original request key</button>
    </form>
   } else {
-   <p>Run is not advertised as ready: { m.RunBlocker }. Return to this same draft for any remaining independent prerequisite or publication.</p>
+   <p>Run is not advertised as ready: { m.RunBlocker }. Return to this same task for any remaining independent prerequisite or publication.</p>
   }
  </section>
 }

@@ -556,7 +556,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	doerV4 := revision.Doer != nil
 	doerV5 := revision.DoerReusable != nil
 	lifecycle := string(view.Lifecycle.State)
-	readiness := "Draft; activation requires authenticated lifecycle admission"
+	readiness := "Inactive definition; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
 		if view.Lifecycle.ActiveRevision == revision.Revision && view.Lifecycle.ActiveDigest == revision.Digest {
 			readiness = "Active exact revision; fresh authority admission still required at execution"
@@ -574,7 +574,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 		case "inactive":
 			readiness += "; historical Doer revision is not the active execution target"
 		default:
-			readiness = "Draft Doer revision; not execution-ready. Activation and fresh provisioning, model, controller/Laya and workspace admission are required"
+			readiness = "Inactive Doer revision; not execution-ready. Activation and fresh provisioning, model, controller/Laya and workspace admission are required"
 		}
 	}
 	if doerV5 && view.Lifecycle.State != "retired" {
@@ -584,7 +584,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 		case "inactive":
 			readiness = "Historical reusable v5 definition; not the active execution target"
 		default:
-			readiness = "Draft reusable v5 definition; activate before a separately authorized typed Graph run"
+			readiness = "Inactive reusable v5 definition; activate before a separately authorized typed Graph run"
 		}
 	}
 
@@ -878,7 +878,7 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 		detail.RejectedSubmissions = append(detail.RejectedSubmissions, consoleweb.FieldModel{Label: rejection.SubmissionID, Value: rejection.ReasonCode + " · " + rejection.Reason})
 	}
 	lifecycle := string(view.Lifecycle.State)
-	readiness := "Draft; activation requires authenticated lifecycle admission"
+	readiness := "Inactive definition; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
 		if view.Lifecycle.ActiveRevision == revision.Revision && view.Lifecycle.ActiveDigest == revision.Digest {
 			readiness = "Active exact revision; fresh authority admission still required at execution"

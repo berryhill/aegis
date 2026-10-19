@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/labstack/echo/v5"
+	"html"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/berryhill/aegis/internal/app"
@@ -121,7 +127,7 @@ func loopQueueOneRequestJourney(t *testing.T, usable bool) {
 	}
 	fixture, err := json.Marshal(registry.CurrentFleetFixture{SchemaVersion: registry.CurrentFleetFixtureSchemaVersion, FleetID: "journey-fleet", Agents: []registry.CurrentFleetAgent{{SourceID: "journey-source", AgentID: charter.AgentID,
 		Runtime:   registry.RuntimeBinding{Adapter: charter.Runtime.Adapter, Runtime: charter.Runtime.Runtime, Target: charter.Runtime.Target},
-		Ownership: registry.Ownership{OwnerID: "journey-owner", AccountabilityID: "journey-owner"}, Lifecycle: registry.LifecycleEnabled,
+		Ownership: registry.Ownership{OwnerID: subject.PrincipalID, AccountabilityID: subject.PrincipalID}, Lifecycle: registry.LifecycleEnabled,
 		Charter: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: charter.AgentID, Revision: 1, Digest: canonical.Digest}}}})
 	if err != nil {
 		t.Fatal(err)
@@ -137,14 +143,22 @@ func loopQueueOneRequestJourney(t *testing.T, usable bool) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	published, err := svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: charter.AgentID, Revision: revision, IdempotencyKey: "journey-publish"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	agent := registered.Agent.Revision
-	input := app.QueueLoopInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.AgentID, Revision: agent.Revision, Digest: agent.Digest},
-		Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: 1, Digest: published.Revision.Digest},
-		IdempotencyKey: "journey-request", Activate: true}
+	var published app.PublishedLoop
+	var input app.QueueLoopInput
+	if !usable {
+		published, err = svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: charter.AgentID, Revision: revision, IdempotencyKey: "journey-publish"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent := registered.Agent.Revision
+		input = app.QueueLoopInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.AgentID, Revision: agent.Revision, Digest: agent.Digest},
+			Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: 1, Digest: published.Revision.Digest},
+			IdempotencyKey: "journey-request", Activate: true}
+	}
+	var retained app.ExecuteDoerTaskResult
+	var resume app.ExecuteDoerTaskInput
+
 	if !usable {
 		var first, replay app.QueueLoopResult
 		apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &first, http.StatusOK)
@@ -178,13 +192,33 @@ func loopQueueOneRequestJourney(t *testing.T, usable bool) {
 		}
 		return
 	}
-	var pending app.QueueLoopResult
-	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &pending, http.StatusOK)
-	if pending.Reason != "provisioning_receipt_missing" || pending.RequiredAction != "plan_preview_exact_charter" || pending.RequiredCharter == nil || pending.RequiredCharter.Digest != canonical.Digest || pending.RequestID == "" || pending.QueueItemID != "" || pending.Execution != nil {
-		t.Fatalf("missing receipt advanced execution: %+v", pending)
+
+	create := app.ExecuteDoerTaskInput{Create: &app.DoerDraftInput{CreationKey: "synthetic-task", Agent: app.RevisionReference(agent.AgentID, agent.Revision, agent.Digest), LoopID: revision.LoopID, Revision: 1, Contract: contract}}
+	apiRequest(t, client, http.MethodPost, "/v1/loops/doer/tasks/execute", create, &retained, http.StatusOK)
+	var repeated app.ExecuteDoerTaskResult
+	apiRequest(t, client, http.MethodPost, "/v1/loops/doer/tasks/execute", create, &repeated, http.StatusOK)
+	if retained.Task.ID == "" || retained.Task.ID != repeated.Task.ID || retained.ConfirmationURL != repeated.ConfirmationURL || retained.Readiness.Reason != "provisioning_receipt_missing" {
+		t.Fatalf("block: %+v %+v", retained, repeated)
 	}
-	if view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1); err != nil || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
-		t.Fatalf("missing receipt activated Loop: %+v %v", view.Lifecycle, err)
+	loops, e := svc.ListLoopsAs(ctx, subject)
+	if e != nil || len(loops) != 0 {
+		t.Fatal("blocked publication", e)
+	}
+	resume = app.ExecuteDoerTaskInput{ID: retained.Task.ID, ExpectedVersion: retained.Task.Version}
+	stale := resume
+	stale.ExpectedVersion++
+	if _, e = svc.ExecuteDoerTaskAs(ctx, subject, stale); !errors.Is(e, app.ErrConflict) {
+		t.Fatal("stale accepted", e)
+	}
+	foreign := subject
+	foreign.PrincipalID = "foreign"
+	if _, e = svc.ExecuteDoerTaskAs(ctx, foreign, resume); e == nil {
+		t.Fatal("foreign accepted")
+	}
+	changed := *create.Create
+	changed.Contract.Task += " changed"
+	if _, e = svc.ExecuteDoerTaskAs(ctx, subject, app.ExecuteDoerTaskInput{Create: &changed}); !errors.Is(e, app.ErrConflict) {
+		t.Fatal("changed accepted", e)
 	}
 
 	// Explicit synthetic operator contract allowlist and local Laya process,
@@ -220,18 +254,48 @@ esac
 	if err := svc.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}, LayaPython: laya, LayaHome: layaHome}, svc.Config.StateDir, svc.Hermes); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.QueueWorker.ValidateLoopAdmission(published.Revision, agent); err != nil {
+	if err := svc.QueueWorker.ValidateLoopAdmission(revision, agent); err != nil {
 		t.Fatalf("Doer controller fixture prerequisites: %v", err)
 	}
-	var review core.Review
-	apiRequest(t, client, http.MethodPost, "/v1/plans/preview", map[string]any{"agent": charter.AgentID, "revision": 1, "environment": core.Environment{Name: "local"}}, &review, http.StatusCreated)
-	var approval core.Approval
-	apiRequest(t, client, http.MethodPost, "/v1/approvals", map[string]any{"plan_id": review.Plan.ID, "ttl": "1m"}, &approval, http.StatusCreated)
-	apiRequest(t, client, http.MethodPost, "/v1/approvals/"+approval.ID+"/decision", map[string]bool{"approve": true}, &approval, http.StatusOK)
-	var receipt core.Receipt
-	apiRequest(t, client, http.MethodPost, "/v1/provision", map[string]string{"plan_id": review.Plan.ID, "approval_id": approval.ID}, &receipt, http.StatusCreated)
-	if receipt.Status != "verified" {
-		t.Fatalf("fixture receipt not verified: %s", receipt.Status)
+
+	// Real isolated password-authenticated Manager + setup handlers; independent
+	// human-simulated decisions. Synthetic runtime only, not live provider proof.
+	svc.Config.Credentials.Authority.DeploymentID = "synthetic-task-deployment"
+	manager, cookie, csrf := consoleQueueRouteFixture(t, svc)
+	browser := echo.New()
+	registerDoerSetupRoutes(browser, svc, manager)
+	post := func(action, receipt string) *httptest.ResponseRecorder {
+		v := url.Values{"csrf": {csrf}, "draft_id": {retained.Task.ID}, "action": {action}}
+		if receipt != "" {
+			v.Set("receipt", receipt)
+		}
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/loops/doer/setup", strings.NewReader(v.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://127.0.0.1")
+		req.AddCookie(cookie)
+		rr := httptest.NewRecorder()
+		browser.ServeHTTP(rr, req)
+		return rr
+	}
+	token := func(rr *httptest.ResponseRecorder) string {
+		t.Helper()
+		m := regexp.MustCompile(`name="receipt" value="([^"]+)"`).FindStringSubmatch(rr.Body.String())
+		if rr.Code != 200 || len(m) != 2 {
+			t.Fatalf("review: %d %s", rr.Code, rr.Body.String())
+		}
+		return html.UnescapeString(m[1])
+	}
+	review := token(post("preview", ""))
+	decision := token(post("confirm", review))
+	apply := token(post("confirm", decision))
+	rr := post("confirm", apply)
+	if !strings.Contains(rr.Body.String(), "Authoritative provisioning receipt:") {
+		t.Fatalf("provision: %s", rr.Body.String())
+	}
+	host := token(post("host-review", ""))
+	rr = post("confirm", host)
+	if !strings.Contains(rr.Body.String(), "Authoritative signed host-write approval read back:") {
+		t.Fatalf("host: %s", rr.Body.String())
 	}
 
 	// The gateway fixture returns a patch, never a verification claim. The
@@ -269,11 +333,52 @@ done
 		t.Fatal(err)
 	}
 
-	var result app.QueueLoopResult
-	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &result, http.StatusOK)
-	if result.RequestID != pending.RequestID || result.QueueItemID == "" || result.Execution == nil || result.Execution.Projection.State != queue.StateSucceeded {
-		t.Fatalf("exact one-request v4 execution blocked: %+v", result)
+	// Concurrent initial handler requests share publication and Run identities.
+	var initialWG sync.WaitGroup
+	initialErrors := make(chan error, 3)
+	for i := 0; i < 3; i++ {
+		initialWG.Add(1)
+		go func() {
+			defer initialWG.Done()
+			raw, _ := json.Marshal(resume)
+			req, _ := http.NewRequest(http.MethodPost, "http://unix/v1/loops/doer/tasks/execute", strings.NewReader(string(raw)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer transport-secret")
+			response, e := client.Do(req)
+			if e != nil {
+				initialErrors <- e
+				return
+			}
+			defer response.Body.Close()
+			var result app.ExecuteDoerTaskResult
+			if response.StatusCode != 200 {
+				initialErrors <- fmt.Errorf("concurrent status %d", response.StatusCode)
+				return
+			}
+			if e = json.NewDecoder(response.Body).Decode(&result); e != nil {
+				initialErrors <- e
+				return
+			}
+			if result.Run == nil || result.Run.Execution == nil || result.Run.Execution.Projection.State != queue.StateSucceeded {
+				initialErrors <- fmt.Errorf("concurrent execution: %+v", result)
+			}
+		}()
 	}
+	initialWG.Wait()
+	close(initialErrors)
+	for e := range initialErrors {
+		t.Error(e)
+	}
+	var executed app.ExecuteDoerTaskResult
+	apiRequest(t, client, http.MethodPost, "/v1/loops/doer/tasks/execute", resume, &executed, http.StatusOK)
+	if executed.Publication == nil || executed.Run == nil || executed.Task.ID != retained.Task.ID || executed.Task.Version != retained.Task.Version || executed.Task.Agent != retained.Task.Agent || executed.Task.PublicationKey != retained.Task.PublicationKey {
+		t.Fatalf("task: %+v", executed)
+	}
+	result := *executed.Run
+	if result.Execution == nil || result.Execution.Projection.State != queue.StateSucceeded {
+		t.Fatalf("execution: %+v", result)
+	}
+
 	view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1)
 	if err != nil || view.Lifecycle.State != loop.LifecycleActive || len(view.History) != 1 {
 		t.Fatalf("activation: %+v %v", view.Lifecycle, err)
@@ -316,8 +421,38 @@ done
 	if err != nil || string(bytes) != text {
 		t.Fatalf("selected file: %q %v", bytes, err)
 	}
-	replayed, err := svc.QueueLoopAs(ctx, subject, input)
-	if err != nil || replayed.QueueItemID != result.QueueItemID || replayed.RequestID != result.RequestID || len(replayed.Execution.Attempts) != 1 {
-		t.Fatalf("same-key replay duplicated execution: %+v %v", replayed, err)
+
+	var wg sync.WaitGroup
+	failures := make(chan error, 4)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, e := svc.ExecuteDoerTaskAs(ctx, subject, resume)
+			if e != nil {
+				failures <- e
+				return
+			}
+			if r.Run == nil || r.Run.QueueItemID != result.QueueItemID || r.Run.Execution == nil || len(r.Run.Execution.Attempts) != 1 {
+				failures <- fmt.Errorf("duplicate: %+v", r)
+			}
+		}()
+	}
+	wg.Wait()
+	close(failures)
+	for e := range failures {
+		t.Error(e)
+	}
+	loops, err = svc.ListLoopsAs(ctx, subject)
+	if err != nil || len(loops) != 1 {
+		t.Fatal("duplicate publication", len(loops), err)
+	}
+	edit := *create.Create
+	edit.CreationKey = ""
+	edit.ID = retained.Task.ID
+	edit.ExpectedVersion = retained.Task.Version
+	edit.Contract.Task += " changed"
+	if _, err = svc.SaveDoerDraftAs(ctx, subject, edit); !errors.Is(err, app.ErrConflict) {
+		t.Fatal("executed task changed", err)
 	}
 }

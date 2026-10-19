@@ -35,7 +35,7 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 		return output(cmd, value)
 	}}
 	readiness.Flags().Bool("probe", false, "Explicitly probe the bounded local helper protocol")
-	save := &cobra.Command{Use: "draft-save FILE", Short: "Retain a Doer proposal using its exact version guard", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	save := &cobra.Command{Use: "task-save FILE", Short: "Retain a Doer proposal using its exact version guard", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.DoerDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
@@ -54,7 +54,7 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	show := &cobra.Command{Use: "draft-show ID", Short: "Read one retained Doer proposal", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	show := &cobra.Command{Use: "task-show ID", Short: "Read one retained Doer proposal", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		svc, err := build(cmd)
 		if err != nil {
 			return err
@@ -69,7 +69,7 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 		}
 		return output(cmd, value)
 	}}
-	continuation := &cobra.Command{Use: "draft-continue FILE", Short: "Rebind a retained proposal to an already approved successor", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	continuation := &cobra.Command{Use: "task-continue FILE", Short: "Rebind a retained proposal to an already approved successor", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.ContinueDoerDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
@@ -97,10 +97,19 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 	protected := &cobra.Command{Use: "setup-approve ID", Short: "Authenticate and review exact retained setup in a protected terminal (no browser)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return errors.New("protected setup requires --target owning-service transport")
 	}}
-	protected.Flags().Uint64("expected-version", 0, "exact retained draft version")
+	protected.Flags().Uint64("expected-version", 0, "exact retained task version")
 	protected.Flags().String("action", "successor", "independent exact scope: successor, provision, or host")
 	invoke := &cobra.Command{Use: "setup-protected FILE", Short: "Request independent protected desktop setup review from the owning service", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return errors.New("protected setup invocation requires --target owning-service transport")
 	}}
-	return []*cobra.Command{readiness, save, show, continuation, review, decision, protected, invoke}
+	browser := &cobra.Command{Use: "setup-browser FILE", Short: "Open independent browser setup for the exact retained task (no desktop required)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("browser setup requires --target owning-service transport")
+	}}
+	execute := &cobra.Command{Use: "task-execute FILE", Short: "Create or resume one retained task and execute in the owning service", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		return errors.New("task execution requires --target owning-service transport")
+	}}
+	legacySave, legacyShow, legacyContinue := *save, *show, *continuation
+	legacySave.Use, legacyShow.Use, legacyContinue.Use = "draft-save FILE", "draft-show ID", "draft-continue FILE"
+	legacySave.Hidden, legacyShow.Hidden, legacyContinue.Hidden = true, true, true
+	return []*cobra.Command{readiness, execute, save, show, continuation, &legacySave, &legacyShow, &legacyContinue, review, decision, protected, invoke, browser}
 }

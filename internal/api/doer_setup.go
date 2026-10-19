@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/berryhill/aegis/internal/app"
@@ -41,7 +42,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 		return c.HTMLBlob(200, data)
 	}
 	modelFor := func(d app.DoerDraft) consoleweb.DoerSetupModel {
-		return consoleweb.DoerSetupModel{DraftID: d.ID, DraftURL: "/console/loops/doer?draft_id=" + url.QueryEscape(d.ID), SetupURL: base + "?draft_id=" + url.QueryEscape(d.ID), Contract: setupJSON(d.Contract)}
+		return consoleweb.DoerSetupModel{DraftID: d.ID, DraftURL: "/console/loops/doer?draft_id=" + url.QueryEscape(d.ID), SetupURL: base + "?draft_id=" + url.QueryEscape(d.ID), Version: strconv.FormatUint(d.Version, 10), HostStatus: "Review the exact host-write contract independently. Setup never executes the task.", Contract: setupJSON(d.Contract)}
 	}
 	e.GET(base, func(c *echo.Context) error {
 		sub, err := manager.Authenticate(c.Request())
@@ -50,7 +51,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 		}
 		d, err := svc.ReadDoerDraftAs(c.Request().Context(), sub, c.QueryParam("draft_id"))
 		if err != nil {
-			return c.String(403, "Draft unavailable")
+			return c.String(403, "Retained task unavailable")
 		}
 		m := modelFor(d)
 		exact, err := svc.GetFleetAgentAs(c.Request().Context(), sub, d.Agent.ID, d.Agent.Revision)
@@ -99,7 +100,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 			}
 		}
 		if len(m.Charters) == 0 {
-			m.Message = "No imported compatible successor charter is available. Review a native zero-authority Codex successor below; unsupported providers and ambiguous authentication remain blocked."
+			m.Message = "No imported compatible successor charter is available. Review a zero-authority Codex successor below; unsupported providers and ambiguous authentication remain blocked."
 		}
 		return render(c, m)
 	})
@@ -128,7 +129,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 		}
 		d, err := svc.ReadDoerDraftAs(req.Context(), sub, values.Get("draft_id"))
 		if err != nil {
-			return c.String(403, "Draft unavailable")
+			return c.String(403, "Retained task unavailable")
 		}
 		m := modelFor(d)
 		fail := func(err error) error {
@@ -181,7 +182,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 			}
 			m.Preview = setupJSON(ch.Charter)
 			in.Action = "successor"
-			return issue(in, "Approve exact Agent successor and rebind this retained draft")
+			return issue(in, "Approve exact Agent successor and rebind this retained task")
 		}
 		if action == "preview" {
 			exact, err := svc.ValidateDoerDraftPublicationAs(req.Context(), sub, d.ID, d.Version)
@@ -220,7 +221,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 		}
 		if in.Action == "proposed-successor" {
 			if action == "reject" {
-				m.Message = "Exact proposed successor rejected; retained draft unchanged."
+				m.Message = "Exact proposed successor rejected; retained task unchanged."
 				return render(c, m)
 			}
 			if in.Proposal == nil {
@@ -240,7 +241,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 				return fail(err)
 			}
 			m = modelFor(next)
-			m.Message = "Exact successor and retained draft binding read back. Prior binding archived; no Run intent changed. Fresh provisioning/publication preview required."
+			m.Message = "Exact successor and retained task binding read back. Prior binding archived; no Run intent changed. Fresh provisioning/publication preview required."
 			return render(c, m)
 		}
 		if in.Action == "host-approve" {
@@ -310,7 +311,8 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 			if err != nil || r.PlanID != plan.ID || r.PlanDigest != plan.Digest || r.ApprovalID != a.ID || r.CharterDigest != plan.CharterDigest {
 				return fail(app.ErrConflict)
 			}
-			m.Message = "Authoritative provisioning receipt: " + setupJSON(r) + ". Return to the same draft and create a fresh preview."
+			m.Provisioned = r.Status == "verified"
+			m.Message = "Authoritative provisioning receipt: " + setupJSON(r) + ". Return to the same task; the requesting agent can now read the exact retained version and continue the original create/run request."
 			return render(c, m)
 		}
 		return fail(errors.New("invalid setup stage"))

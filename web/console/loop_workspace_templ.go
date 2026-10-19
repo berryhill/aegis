@@ -114,9 +114,9 @@ func LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopol
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_workspace.templ`, Line: 13, Col: 244}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_workspace.templ`, Line: 13, Col: 258}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -129,7 +129,7 @@ func LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopol
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(record.Loop.Validation)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_workspace.templ`, Line: 13, Col: 304}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `loop_workspace.templ`, Line: 13, Col: 318}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {

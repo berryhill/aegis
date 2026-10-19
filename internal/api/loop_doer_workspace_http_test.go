@@ -79,7 +79,7 @@ func TestConsoleDoerTemplatePublishesWithoutRuntimeSession(t *testing.T) {
 		t.Fatal("confirmation omitted exact publisher Agent revision or digest")
 	}
 	// This Registry-only fixture intentionally has no imported exact charter.
-	for _, want := range []string{"Before publication", "This candidate is not advertised as runnable", "exact_charter_unavailable", "Return to this retained draft"} {
+	for _, want := range []string{"Before publication", "This candidate is not advertised as runnable", "exact_charter_unavailable", "Return to this retained task"} {
 		if !bytes.Contains(body, []byte(want)) {
 			t.Fatalf("registry-only preview omitted readiness or retention: %s", want)
 		}

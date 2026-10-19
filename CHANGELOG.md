@@ -6,6 +6,15 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Added one typed owning-service Doer create/execute operation (`loops task-execute`,
+  `POST /v1/loops/doer/tasks/execute`). Full readiness precedes publication and
+  execution; exact resume preserves publication/Run identities and freezes executed
+  tasks against edits or successor rebinding. Reused independent browser setup
+  without a desktop companion and removed operator-facing Draft terminology.
+  Isolated integration covers independent decisions, actual verifier/disposition,
+  concurrency and replay under synthetic Hermes/provider fixtures; live execution
+  remains a separate acceptance boundary.
+
 ## [0.2.36] - 2026-10-18
 
 - Authenticated Linux upgrade recovery quarantines only kernel-proven unbound protected Unix sockets under the exact API startup lock, retaining evidence and the lock through authority validation. Exact stopped service, MainPID=0, principal/configuration and original authentication expiry remain mandatory; no reset authority is granted.

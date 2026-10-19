@@ -110,9 +110,9 @@ func GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTop
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(record.Lifecycle)
+		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(stateHeading(record.Lifecycle))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `graph_workspace.templ`, Line: 9, Col: 253}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `graph_workspace.templ`, Line: 9, Col: 267}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 		if templ_7745c5c3_Err != nil {
@@ -125,7 +125,7 @@ func GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTop
 		var templ_7745c5c3_Var9 string
 		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.Validation)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `graph_workspace.templ`, Line: 9, Col: 314}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `graph_workspace.templ`, Line: 9, Col: 328}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 		if templ_7745c5c3_Err != nil {
