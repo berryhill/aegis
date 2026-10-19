@@ -40,6 +40,14 @@ input, ambiguous history or substituted image fails closed. Caller TTY/display
 are inherited, not invented; unavailable input is an operator gate. The acquired
 coordinator version is distinct from the latest target release it discovers.
 
+A source-built coordinator also supports `./aegis update --installed` (or the same
+command with `--config "$HOME/.aegis/aegis.yaml"`). This dedicated route always
+selects the canonical installed production configuration, never the checkout's
+development configuration. It rejects other config paths, target/state/runtime/
+Hermes overrides, root actions and `--check`; ordinary source `update` remains
+subject to development-profile isolation. It does not open application stores
+before the installed coordinator's own admission gates.
+
 ## Isolated official old-release reproduction
 
 `TestInstalledBootstrapOfficialOld` is opt-in using `AEGIS_TEST_OLD_RELEASE` pointing
