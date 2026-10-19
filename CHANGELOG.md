@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.37] - 2026-10-19
+
 - Added one typed owning-service Doer create/execute operation (`loops task-execute`,
   `POST /v1/loops/doer/tasks/execute`). Full readiness precedes publication and
   execution; exact resume preserves publication/Run identities and freezes executed
