@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Preserve the known optional fleet-recovery evidence reference when inspecting or
+  resuming upgrade journals. Same-intent resume retains the exact receipt bytes;
+  a separately authenticated later upgrade archives the full prior receipt.
+  Unknown fields, malformed paths and substituted deployment bindings still deny.
+
 ## [0.2.37] - 2026-10-19
 
 - Added one typed owning-service Doer create/execute operation (`loops task-execute`,

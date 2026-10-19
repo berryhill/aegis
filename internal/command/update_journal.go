@@ -18,17 +18,18 @@ import (
 )
 
 type upgradeReceipt struct {
-	Schema             string `json:"schema"`
-	Executable         string `json:"executable"`
-	ConfigDigest       string `json:"config_digest"`
-	Version            string `json:"version"`
-	Source             string `json:"source"`
-	Digest             string `json:"digest"`
-	UnitDigest         string `json:"unit_digest"`
-	PreviousUnitDigest string `json:"previous_unit_digest,omitempty"`
-	Stage              string `json:"stage"`
-	RecoveryEvidence   string `json:"recovery_evidence,omitempty"`
-	SupersededDigest   string `json:"superseded_digest,omitempty"`
+	Schema                string `json:"schema"`
+	Executable            string `json:"executable"`
+	ConfigDigest          string `json:"config_digest"`
+	Version               string `json:"version"`
+	Source                string `json:"source"`
+	Digest                string `json:"digest"`
+	UnitDigest            string `json:"unit_digest"`
+	PreviousUnitDigest    string `json:"previous_unit_digest,omitempty"`
+	Stage                 string `json:"stage"`
+	RecoveryEvidence      string `json:"recovery_evidence,omitempty"`
+	FleetRecoveryEvidence string `json:"fleet_recovery_evidence,omitempty"`
+	SupersededDigest      string `json:"superseded_digest,omitempty"`
 }
 type upgradeJournal struct {
 	root    *os.Root
@@ -73,8 +74,10 @@ func validUpgradeReceipt(r upgradeReceipt, plan userservice.Plan, digest [sha256
 	if r.PreviousUnitDigest != "" && r.PreviousUnitDigest != plan.LegacyUnitDigest {
 		return false
 	}
-	if r.RecoveryEvidence != "" && (!filepath.IsAbs(r.RecoveryEvidence) || strings.Contains(r.RecoveryEvidence, "..")) {
-		return false
+	for _, evidence := range []string{r.RecoveryEvidence, r.FleetRecoveryEvidence} {
+		if evidence != "" && (!filepath.IsAbs(evidence) || strings.Contains(evidence, "..")) {
+			return false
+		}
 	}
 	if r.SupersededDigest != "" {
 		if b, err := hex.DecodeString(r.SupersededDigest); err != nil || len(b) != 32 || hex.EncodeToString(b) != r.SupersededDigest {
@@ -227,6 +230,7 @@ func openUpgradeJournalWithReconcile(plan userservice.Plan, state string, digest
 	}
 	expected.Stage = previous.Stage
 	expected.RecoveryEvidence = previous.RecoveryEvidence
+	expected.FleetRecoveryEvidence = previous.FleetRecoveryEvidence
 	expected.SupersededDigest = previous.SupersededDigest
 	if previous != expected {
 		{
