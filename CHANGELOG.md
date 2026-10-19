@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Document repository-scoped Hermes implementation/delivery expectations and hard
+  Loop/Graph acceptance contracts, routed from AGENTS.md. These define engineering
+  obligations and test targets, not newly implemented runtime capabilities.
+
 ## [0.2.39] - 2026-10-19
 
 - Preserve selected-file acceptance assertions in Doer implementation turns instead
