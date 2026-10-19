@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.38] - 2026-10-19
+
 - Preserve the known optional fleet-recovery evidence reference when inspecting or
   resuming upgrade journals. Same-intent resume retains the exact receipt bytes;
   a separately authenticated later upgrade archives the full prior receipt.
