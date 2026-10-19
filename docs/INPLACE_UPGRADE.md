@@ -45,6 +45,13 @@ The private canonical no-follow/single-link journal is operational evidence outs
 exact intent/recovery evidence; it does not trust a stage or assume old-binary
 rollback is safe after state effects. Unknown-schema migration is not fabricated.
 
+The optional `fleet_recovery_evidence` reference is retained compatibility metadata,
+not recovery authority. Read-only inspection and same-intent resume preserve it;
+authenticated later-release reconciliation archives the exact previous receipt,
+including that reference. Accepting this known field neither opens the referenced
+path nor grants fleet repair or reset. Unknown fields and invalid evidence paths
+remain denied rather than silently discarded.
+
 Candidate identity and admission share one extractor over the same sealed byte
 buffer. Explicit linker claims must be complete and unambiguous. Go release
 builds with `-trimpath` may omit `-ldflags` from build metadata; only in that
