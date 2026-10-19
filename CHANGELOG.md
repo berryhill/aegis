@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+## [0.2.39] - 2026-10-19
+
 - Preserve selected-file acceptance assertions in Doer implementation turns instead
   of dropping exact expected bytes, whitespace policy and retry bounds. Independent
   verification and all runtime/credential/host authority checks remain unchanged.
