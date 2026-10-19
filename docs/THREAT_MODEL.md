@@ -1,5 +1,12 @@
 # Aegis MVP Threat Model
 
+Offline upgrade transport recovery reuses all-states Linux VFS diagnostics and
+the startup lifecycle flock: non-listening, relative and aliased binds deny.
+Fresh exact stopped-plan/MainPID=0 admission precedes quarantine and authority
+validation; the lock spans both. Orphans are renamed without replacement and
+retained. Diagnostics failure, unsafe lock/socket or identity drift denies.
+This is current-network-namespace coordination, not hostile same-UID isolation.
+
 ## Verified installed coordinator bootstrap (source candidate)
 
 The product acquisition script verifies canonical official platform archive checksums,

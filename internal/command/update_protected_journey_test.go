@@ -12,6 +12,7 @@ import (
 	"github.com/berryhill/aegis/internal/userservice"
 	"github.com/spf13/cobra"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,7 +23,7 @@ import (
 // Exercise the production retained-journey authentication and recovery methods,
 // not a callback that assumes authentication. No terminal emulation is used.
 func TestInstalledJourneyProtectedRecovery(t *testing.T) {
-	for _, scenario := range []string{"healthy", "interrupted", "mismatched-clean", "socket", "cancelled", "verifier-drift", "config-drift", "expired", "recovery-deadline"} {
+	for _, scenario := range []string{"healthy", "stopped-orphan", "missing-parent", "interrupted", "mismatched-clean", "socket", "cancelled", "verifier-drift", "config-drift", "expired", "recovery-deadline"} {
 		t.Run(scenario, func(t *testing.T) {
 			path, state := validConfigWithoutOperationalAuthority(t)
 			b, err := os.ReadFile(path)
@@ -33,7 +34,11 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 			if err = os.WriteFile(token, []byte("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			socket := filepath.Join(filepath.Dir(path), "gateway.sock")
+			transport := filepath.Join(filepath.Dir(path), "transport")
+			if err = os.Mkdir(transport, 0700); err != nil {
+				t.Fatal(err)
+			}
+			socket := filepath.Join(transport, "gateway.sock")
 			b = append(b, []byte(fmt.Sprintf("api:\n  token_file: %q\n  unix_socket: %q\n", token, socket))...)
 			if err = os.WriteFile(path, b, 0600); err != nil {
 				t.Fatal(err)
@@ -54,6 +59,17 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 			if scenario == "mismatched-clean" {
 				if err = os.WriteFile(filepath.Join(root, "CLEAN"), []byte("{}\n"), 0600); err != nil {
 					t.Fatal(err)
+				}
+			}
+			if scenario == "stopped-orphan" {
+				l, e := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
+				if e != nil {
+					t.Fatal(e)
+				}
+				l.SetUnlinkOnClose(false)
+				l.Close()
+				if e = os.Chmod(socket, 0600); e != nil {
+					t.Fatal(e)
 				}
 			}
 			if scenario == "socket" {
@@ -95,8 +111,16 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 			}
 			defer journal.close()
 			journal.receipt.PreviousUnitDigest = plan.LegacyUnitDigest
-			j := &installedJourney{cmd: cmd, executable: executable, configPath: path, plan: plan, cfg: cfg, configDigest: sha256.Sum256(b), journal: journal}
+			j := &installedJourney{cmd: cmd, runner: &upgradeProcessRunner{plan: plan}, executable: executable, configPath: path, plan: plan, cfg: cfg, configDigest: sha256.Sum256(b), journal: journal}
 			defer func() { clear(j.password) }()
+			if scenario == "missing-parent" {
+				if err = os.Chmod(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err = os.Remove(transport); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if scenario == "verifier-drift" {
 				j.password = []byte("synthetic-recovery-password")
 				j.verifier = verifier
@@ -136,12 +160,21 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 				return
 			}
 			err = j.Recover(cmd.Context())
-			wantSuccess := scenario == "healthy" || scenario == "interrupted" || scenario == "expired"
+			wantSuccess := scenario == "healthy" || scenario == "stopped-orphan" || scenario == "missing-parent" || scenario == "interrupted" || scenario == "expired"
 			if (err == nil) != wantSuccess {
 				t.Fatalf("scenario=%s err=%v", scenario, err)
 			}
 			if scenario == "interrupted" && journal.receipt.RecoveryEvidence == "" {
 				t.Fatal("missing durable recovery evidence binding")
+			}
+			if scenario == "stopped-orphan" {
+				matches, e := filepath.Glob(socket + ".upgrade-orphan-*")
+				if e != nil || len(matches) != 1 {
+					t.Fatalf("quarantine evidence: %v %v", matches, e)
+				}
+				if e = j.Recover(cmd.Context()); e != nil {
+					t.Fatalf("resume: %v", e)
+				}
 			}
 			if wantSuccess && authoritybadger.Inspect(context.Background(), root).State != authoritybadger.StateReady {
 				t.Fatal("authority not closed/qualified")

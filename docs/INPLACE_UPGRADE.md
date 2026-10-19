@@ -18,7 +18,19 @@ is not complete merely because the executable was replaced.
    time. Foreign units remain denied.
 4. Stop only the exact owned service, install verified bytes, inspect qualified
    closed authority and invoke existing authenticated evidence-preserving recovery
-   only through its strict admission. Mismatched CLEAN/ambiguous state refuses.
+   only through its strict admission. On Linux, freshly re-admit the exact stopped
+   installed/loaded plan and MainPID=0, then hold the API startup lifecycle lock
+   through authority validation. A private operator-owned orphan socket is renamed
+   without replacement to `<socket>.upgrade-orphan-<device>-<inode>` beside the
+   original; evidence is never deleted. Complete all-states kernel VFS diagnostics
+   must prove it unbound (including relative/alias non-listening binds). Unsafe
+   locks, changed identities, unavailable diagnostics and foreign services deny.
+   An absent socket still requires the same lock and stopped-service admission.
+   If a never-started gateway has no transport directory, prepare only its
+   configured missing directories mode 0700 beneath an owned non-writable
+   anchor after fresh admission; unsafe anchors and cancelled requests deny.
+   This is current-network-namespace maintenance, not same-UID/root confinement
+   or reset authorization. Mismatched CLEAN/ambiguous state refuses.
    Cached authentication cannot extend recovery past its original expiry.
 5. Activate, verify the current process inode against the installed release digest,
    require authenticated audit-current readiness, verify authenticated Console
