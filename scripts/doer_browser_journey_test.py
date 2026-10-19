@@ -151,8 +151,10 @@ def run_journey(browser, origin, workspace, driver):
         settled("!!document.querySelector('[aria-label=\"Contextual Doer setup\"]')", "contextual independent Doer setup")
         setup = browser.evaluate("document.querySelector('[aria-label=\"Contextual Doer setup\"]').innerText")
         actions = browser.evaluate("[...document.querySelectorAll('main form input[name=action]')].map(n=>n.value)")
-        require({"review", "host-review"}.issubset(set(actions)), "independent continuation/host review controls missing")
-        require("No setup action publishes a Loop or creates a Run intent" in setup and "Independent host-write decision" in setup and "hello" in setup, "contextual setup lost independent contract")
+        require({"propose-review", "host-review"}.issubset(set(actions)), "independent successor/host review controls missing")
+        require("request-local-review" not in actions and "review" not in actions, "headless setup requires a desktop continuation")
+        require("No desktop companion is required" in setup and "Independent host-write decision" in setup and "hello" in setup and "Setup is not task completion" in setup, "contextual setup lost independent contract")
+        require("draft" not in setup.lower(), "setup exposes a Draft workflow")
         report["setup"] = {"text": setup, "available_review_actions": actions, "decisions_submitted": 0}
         report["captures"]["setup"] = capture(browser, proof, "setup", require, report["failures"])
         require(return_draft() == retained, "setup changed retained draft/version/inputs")
