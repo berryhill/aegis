@@ -24,7 +24,7 @@ type doerDraftInput struct {
 
 func loopDoerCmd() *cobra.Command {
 	var destination string
-	cmd := &cobra.Command{Use: "doer FILE", Short: "Build a bounded selected-file Doer Loop v4 draft (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "doer FILE", Short: "Build a bounded selected-file Doer Loop v4 proposal (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input doerDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
@@ -59,7 +59,7 @@ func loopDoerCmd() *cobra.Command {
 			return err
 		}
 		digest, _ := input.Doer.Digest()
-		fmt.Fprintf(cmd.ErrOrStderr(), "Draft only; Doer contract digest: %s. Not published, activated, authorized or queued.\n", digest)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Proposal only; Doer contract digest: %s. Not published, activated, authorized or queued.\n", digest)
 		return nil
 	}}
 	cmd.Flags().StringVar(&destination, "output", "", "Create a new publication JSON file (default stdout; never overwrite)")

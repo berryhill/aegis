@@ -12,6 +12,18 @@
   "coverage": "Canonical constructor-built Cobra nodes including groups and bare root; aliases inherit their canonical owner's contract. Cobra-generated help/completion are framework discovery, not product operations. HTTP entries are METHOD PATH, including console and health/static routes. Structural source registration coverage is not live HTTP or installed-agent acceptance.",
   "excluded_cli": [
     {
+      "path": "aegis loops draft-save",
+      "reason": "Hidden backward-compatible alias for task-save; not a public operator workflow."
+    },
+    {
+      "path": "aegis loops draft-show",
+      "reason": "Hidden backward-compatible alias for task-show; not a public operator workflow."
+    },
+    {
+      "path": "aegis loops draft-continue",
+      "reason": "Hidden backward-compatible alias for task-continue; not a public operator workflow."
+    },
+    {
       "path": "aegis credential-bridge",
       "reason": "Hidden internal broker stdio entrypoint; not a public skill transport."
     },
@@ -331,7 +343,8 @@
         "internal/api/doer_protected_invoke.go",
         "internal/command/doer_protected_setup.go",
         "internal/command/doer_setup_companion.go",
-        "internal/command/doer_protected_result.go"
+        "internal/command/doer_protected_result.go",
+        "internal/app/doer_task_execute.go"
       ],
       "tests": [
         "internal/api/workspace_skill_contract_test.go",
@@ -366,13 +379,15 @@
         "aegis loops templates",
         "aegis loops queue",
         "aegis loops readiness",
-        "aegis loops draft-save",
-        "aegis loops draft-show",
-        "aegis loops draft-continue",
+        "aegis loops task-save",
+        "aegis loops task-show",
+        "aegis loops task-continue",
         "aegis loops setup-review",
         "aegis loops setup-decide",
         "aegis loops setup-approve",
-        "aegis loops setup-protected"
+        "aegis loops setup-protected",
+        "aegis loops setup-browser",
+        "aegis loops task-execute"
       ],
       "http": [
         "GET /v1/loops",
@@ -401,10 +416,12 @@
         "POST /v1/loops/doer/drafts/:id/setup-review",
         "POST /v1/loops/doer/drafts/:id/setup-decision",
         "POST /v1/loops/doer/drafts/:id/setup-protected",
+        "POST /v1/loops/doer/drafts/:id/setup-browser",
         "POST /console/loops/doer/setup-native/login",
         "POST /console/loops/doer/setup-native/logout",
         "POST /console/loops/doer/setup-native/review",
-        "POST /console/loops/doer/setup-native/decision"
+        "POST /console/loops/doer/setup-native/decision",
+        "POST /v1/loops/doer/tasks/execute"
       ],
       "transport_classification": "shipped"
     },

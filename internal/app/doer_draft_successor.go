@@ -63,6 +63,9 @@ func (s *Service) ContinueDoerDraftSuccessorAs(ctx context.Context, subject core
 			if err != nil || agentRevisionRef(fresh) != agentRevisionRef(latest) {
 				return nil, ErrConflict
 			}
+			if d.ExecutionDigest != "" {
+				return nil, ErrConflict
+			}
 			d.Agent = agentRevisionRef(latest)
 			d.LoopID, d.PublicationKey = store.ID("doer"), store.ID("doerpub")
 			d.Revision, d.PreviousDigest = 1, ""

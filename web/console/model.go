@@ -78,10 +78,10 @@ type DoerContinuationModel struct {
 }
 
 type DoerSetupModel struct {
-	DraftID, DraftURL, SetupURL, Current, Message, Preview, Approval, Receipt, ConfirmLabel string
-	Contract, HostStatus                                                                    string
-	Charters                                                                                []DoerSetupCharterModel
-	Provisioned                                                                             bool
+	DraftID, DraftURL, SetupURL, Current, Message, Preview, Approval, Receipt, ConfirmLabel, Version string
+	Contract, HostStatus                                                                             string
+	Charters                                                                                         []DoerSetupCharterModel
+	Provisioned                                                                                      bool
 }
 type DoerSetupCharterModel struct{ Ref, Details string }
 

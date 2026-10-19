@@ -85,6 +85,22 @@ func TestDoerSetupIndependentConsentRetainsDraftAndNoAutoEffects(t *testing.T) {
 	}
 	rr := post(form("preview", ""), "http://127.0.0.1")
 	review := token(rr)
+	// A second genuinely authenticated browser session cannot use this review.
+	ownerCookie, ownerCSRF := cookie, csrf
+	login := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/login", nil)
+	login.Header.Set("Origin", "http://127.0.0.1")
+	session, secondCSRF, _, _, err := manager.Login(login, "second-client", []byte("test-principal-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookies := httptest.NewRecorder()
+	manager.SetCookie(cookies, session)
+	cookie, csrf = cookies.Result().Cookies()[0], secondCSRF
+	cross := post(form("confirm", review), "http://127.0.0.1")
+	if strings.Contains(cross.Body.String(), "name=\"receipt\"") {
+		t.Fatal("cross-session review accepted")
+	}
+	cookie, csrf = ownerCookie, ownerCSRF
 	if !strings.Contains(rr.Body.String(), "Complete per-stanza declarations") || !strings.Contains(rr.Body.String(), ch.Digest) {
 		t.Fatal("incomplete plan preview")
 	}
@@ -167,5 +183,20 @@ func TestDoerSetupIndependentConsentRetainsDraftAndNoAutoEffects(t *testing.T) {
 	got, err = s.ReadDoerDraftAs(ctx, browser, draft.ID)
 	if err != nil || !reflect.DeepEqual(got, draft) {
 		t.Fatal("host approval changed retained inputs")
+	}
+	staleReview := token(post(form("host-review", ""), "http://127.0.0.1"))
+	changedContract := draft.Contract
+	changedContract.Task += " updated"
+	updated, err := s.SaveDoerDraftAs(ctx, sub, app.DoerDraftInput{ID: draft.ID, ExpectedVersion: draft.Version, Agent: draft.Agent, LoopID: draft.LoopID, Revision: draft.Revision, Contract: changedContract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleResponse := post(form("confirm", staleReview), "http://127.0.0.1")
+	if !strings.Contains(staleResponse.Body.String(), "Setup did not complete:") {
+		t.Fatal("stale reviewed version accepted")
+	}
+	got, err = s.ReadDoerDraftAs(ctx, sub, draft.ID)
+	if err != nil || !reflect.DeepEqual(got, updated) {
+		t.Fatal("stale denial changed retained task", err)
 	}
 }

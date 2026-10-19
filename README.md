@@ -1,5 +1,17 @@
 # Aegis
 
+## Retained task execution (source candidate)
+
+For an owner-requested Doer create-and-execute operation, use the owning-service
+`loops task-execute FILE` surface. It retains an idempotent task, returns the same
+contextual setup URL when independent authority is missing, and resumes from an
+exact task ID/version after human setup. The service publishes the immutable Loop
+and calls the existing foreground Queue worker; no publication/reference/Run files
+or separate worker invocation are needed. See `skills/aegis-loop-authoring/SKILL.md`
+for strict create/resume inputs and evidence requirements. Synthetic regression
+execution is not live-provider acceptance.
+
+
 ## Installed updater bootstrap (source candidate)
 
 When an older installed updater refuses a retained conflicting intent, use the

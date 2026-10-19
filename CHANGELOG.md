@@ -1,5 +1,13 @@
 # Changelog
 
+Retained Doer tasks now have a single typed owning-service create/execute operation
+(`loops task-execute`, `POST /v1/loops/doer/tasks/execute`). Full readiness precedes
+publication/execution mutations. Independent browser setup remains separate; exact
+resume derives stable publication/Run keys and freezes the executed task against
+edits or successor rebinding. The regression includes independently authenticated
+browser decisions and actual verifier/disposition under a synthetic gateway fixture.
+
+
 Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.

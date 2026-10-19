@@ -21,7 +21,7 @@ const DoerTemplateVersion = "v1"
 func IncludedDoerTemplate() DoerTemplate {
 	template := DoerTemplate{
 		ID: DoerTemplateID, Version: DoerTemplateVersion,
-		Description:    "Build a bounded Doer Loop v4 draft for one operator-selected task and independently verified workspace file; publication and execution require separate authority.",
+		Description:    "Build a bounded Doer Loop v4 proposal for one operator-selected task and independently verified workspace file; publication and execution require separate authority.",
 		RequiredInputs: []string{"agent_id", "loop_id", "revision", "idempotency_key", "doer.task", "doer.workspace", "doer.writable_files", "doer.verify_file", "doer.max_attempts"},
 	}
 	// The digest identifies these static recipe bytes; it is not a revision,

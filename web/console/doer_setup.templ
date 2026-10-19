@@ -2,11 +2,11 @@ package consoleweb
 
 templ DoerSetupPage(m DoerSetupModel, csrf string) {
  <section aria-label="Contextual Doer setup">
-  <h1>Set up this retained Doer draft</h1>
-  <p>No setup action publishes a Loop or creates a Run intent. Each consent and Apply is separate.</p>
-  <a href={ templ.URL(m.DraftURL) }>Return to the same retained draft</a>
+  <h1>Set up this Loop</h1>
+  <p>Independent setup decisions apply only to the exact scope shown. Your task and output contract stay retained; the requesting agent continues the original create/run request through its authenticated local-OS transport. No desktop companion is required.</p>
+  <a href={ templ.URL(m.DraftURL) }>Return to the same retained task</a>
   <a href={ templ.URL(m.SetupURL) }>Review fresh setup</a>
-	@DoerContinuationEntry(m.DraftID, csrf)
+	<h2>Continue the original request</h2><p>Retained task: <code>{ m.DraftID }</code> · exact version: <code>{ m.Version }</code></p><p>The agent reads this exact retained version with <code>loops task-show ID</code>, then resumes the original create/run request using the retained publication key and original Run idempotency key. Setup is not task completion. If a mutation outcome is uncertain, read back and retry the same key, never create another request.</p>
 	if m.Contract != "" {
 		<h2>Retained task and output contract</h2><pre>{ m.Contract }</pre>
 	}
@@ -24,7 +24,7 @@ templ DoerSetupPage(m DoerSetupModel, csrf string) {
    <input type="hidden" name="csrf" value={ csrf }/>
    <input type="hidden" name="draft_id" value={ m.DraftID }/>
    <input type="hidden" name="action" value="propose-review"/>
-   <button type="submit">Review zero-authority Codex successor for this draft</button>
+   <button type="submit">Review zero-authority Codex successor for this task</button>
   </form>
   <p>Only an already zero-tool, zero-capability, zero-memory stanza with sole credential scope provider:codex is eligible. The proposal removes that scope and requests controller-owned Codex inference authentication. All other declarations stay unchanged. An exact compatible imported successor is reused for review, never automatically approved. Review is not approval or provider readiness.</p>
   for _, ch := range m.Charters {
@@ -34,7 +34,7 @@ templ DoerSetupPage(m DoerSetupModel, csrf string) {
     <input type="hidden" name="draft_id" value={ m.DraftID }/>
     <input type="hidden" name="action" value="successor-review"/>
     <input type="hidden" name="charter" value={ ch.Ref }/>
-    <button type="submit">Review exact successor and retained draft rebind</button>
+    <button type="submit">Review exact successor and retained task rebind</button>
    </form>
   }
   if m.Preview != "" {

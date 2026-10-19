@@ -28,7 +28,7 @@ type helloDraftInput struct {
 
 func loopHelloCmd() *cobra.Command {
 	var destination string
-	cmd := &cobra.Command{Use: "hello FILE", Short: "Build a fixed-output executable v2 hello draft locally (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "hello FILE", Short: "Build a fixed-output executable v2 hello proposal locally (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input helloDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
@@ -67,7 +67,7 @@ func loopHelloCmd() *cobra.Command {
 		if closeErr != nil {
 			return closeErr
 		}
-		fmt.Fprintf(cmd.ErrOrStderr(), "Draft only; expected UTF-8 output %q without newline (%s). Agent existence requires online validation. Not published, activated, authorized, or queued.\n", helloOutput, digest)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Proposal only; expected UTF-8 output %q without newline (%s). Agent existence requires online validation. Not published, activated, authorized, or queued.\n", helloOutput, digest)
 		return nil
 	}}
 	cmd.Flags().StringVar(&destination, "output", "", "Create a new publication JSON file (required; never overwrite)")

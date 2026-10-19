@@ -24,7 +24,7 @@ type implementationDraftInput struct {
 
 func loopImplementationCmd() *cobra.Command {
 	var destination string
-	cmd := &cobra.Command{Use: "implementation FILE", Short: "Build a verified implementation publication draft locally (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "implementation FILE", Short: "Build a verified implementation publication proposal locally (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input implementationDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)
@@ -59,7 +59,7 @@ func loopImplementationCmd() *cobra.Command {
 			return err
 		}
 		digest, _ := input.Implementation.Digest()
-		fmt.Fprintf(cmd.ErrOrStderr(), "Draft only; Agent existence requires online validation. Contract digest: %s. Not published, activated, authorized, or queued.\n", digest)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Proposal only; Agent existence requires online validation. Contract digest: %s. Not published, activated, authorized, or queued.\n", digest)
 		return nil
 	}}
 	cmd.Flags().StringVar(&destination, "output", "", "Create a new publication JSON file (default stdout; never overwrite)")

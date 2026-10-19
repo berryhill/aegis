@@ -6,7 +6,7 @@ templ GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTo
  <div data-graph-workspace>
   <nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Graphs</a></nav>
   <div class="record-head graph-record-head">
-   <div><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Graph.GraphID } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span><span>Stored validation · { record.Graph.Validation }</span></div>
+   <div><span class="eyebrow">Exact Graph revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Graph.GraphID } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>Stored validation · { record.Graph.Validation }</span></div>
     <dl class="meta-strip"><div><dt>Nodes</dt><dd>{ fmt.Sprint(len(record.Graph.Nodes)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Graph.Edges)) }</dd></div><div><dt>Loops referenced</dt><dd>{ fmt.Sprint(topology.LoopCount) }</dd></div><div><dt>Latest version</dt><dd>{ record.Graph.LatestVersion }</dd></div></dl>
    </div>
    <div class="graph-record-actions"><a class="primary" href={ graphRunURL(record) }>Prepare execution request</a><button class="secondary" type="button" data-graph-definition aria-controls="graph-context" aria-expanded="true">Definition details</button></div>

@@ -20,6 +20,21 @@ import (
 // Transport account identity is not an independent human decision. Typed reviews
 // hand off to independent browser or protected-terminal password authentication.
 func registerDoerSetupServiceRoutes(g *echo.Group, svc *app.Service) {
+	g.POST("/loops/doer/tasks/execute", func(c *echo.Context) error {
+		sub, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var in app.ExecuteDoerTaskInput
+		if err = decode(c, &in); err != nil {
+			return err
+		}
+		out, err := svc.ExecuteDoerTaskAs(c.Request().Context(), sub, in)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, out)
+	})
 	type review struct {
 		Subject core.Subject
 		Payload []byte
@@ -32,6 +47,33 @@ func registerDoerSetupServiceRoutes(g *echo.Group, svc *app.Service) {
 		s.ExpiresAt = time.Time{}
 		return s
 	}
+	// Headless-safe handoff is a read: it neither launches a companion nor
+	// infers an approval, successor eligibility, or runtime authority.
+	g.POST("/loops/doer/drafts/:id/setup-browser", func(c *echo.Context) error {
+		sub, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var in app.DoerSetupReviewInput
+		if err := decode(c, &in); err != nil {
+			return err
+		}
+		if in.ID != c.Param("id") {
+			return app.ErrConflict
+		}
+		d, err := svc.ReadDoerDraftAs(c.Request().Context(), sub, in.ID)
+		if err != nil {
+			return err
+		}
+		if in.ExpectedVersion == 0 || d.Version != in.ExpectedVersion {
+			return app.ErrConflict
+		}
+		return c.JSON(http.StatusOK, struct {
+			Task            app.DoerDraft `json:"task"`
+			ConfirmationURL string        `json:"confirmation_url"`
+			Status          string        `json:"status"`
+		}{d, "/console/loops/doer/setup?draft_id=" + url.QueryEscape(d.ID), "independent_setup_required"})
+	})
 	g.POST("/loops/doer/drafts/:id/setup-review", func(c *echo.Context) error {
 		sub, err := requestSubject(c)
 		if err != nil {

@@ -10,7 +10,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
  <div data-loop-workspace>
   <nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Loops</a></nav>
   <div class="record-head loop-record-head">
-   <div><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Label } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ record.Lifecycle }</span><span>Stored validation · { record.Loop.Validation }</span></div>
+   <div><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Label } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>Stored validation · { record.Loop.Validation }</span></div>
     <dl class="meta-strip"><div><dt>Steps</dt><dd>{ fmt.Sprint(len(record.Loop.Steps)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Loop.Transitions)) }</dd></div><div><dt>Required inputs</dt><dd>{ fmt.Sprint(len(record.Loop.Inputs)) }</dd></div><div><dt>Latest version</dt><dd>{ loopLatestVersion(record) }</dd></div></dl>
    </div>
    <div class="loop-record-actions">

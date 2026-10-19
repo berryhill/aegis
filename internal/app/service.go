@@ -56,6 +56,7 @@ type Service struct {
 	FleetRepository     fleet.Repository
 	Fleet               *orchestration.FleetService
 	QueueWorker         *orchestration.QueueWorker
+	doerTaskMu          sync.Mutex // foreground retained-task continuation in this owning service
 	capMu               sync.RWMutex
 	capabilities        map[[32]byte]broker.Capability
 	brokerRequests      map[[32]byte]map[[32]byte]struct{}
