@@ -2127,6 +2127,7 @@ func filterConsoleQueue(model *consoleweb.SurfaceModel, state string) error {
 	}
 	model.QueueState = state
 	if state == "all" {
+		model.TotalCount = len(model.Records)
 		return nil
 	}
 	filtered := make([]consoleweb.RecordModel, 0, len(model.Records))
@@ -2136,26 +2137,13 @@ func filterConsoleQueue(model *consoleweb.SurfaceModel, state string) error {
 		}
 	}
 	model.Records = filtered
+	// Count the bounded lifecycle dataset before pagination; summary bands
+	// retain their independent authorized membership and counts.
+	model.TotalCount = len(filtered)
 	if model.State == "ready" && len(filtered) == 0 {
 		model.State = "filtered-empty"
 	}
 	return nil
-}
-
-// syncConsoleQueueBands derives the summary bands from the exact filtered,
-// paginated collection rendered below them. This prevents records outside the
-// selected lifecycle or bounded page from leaking into the visible result.
-func syncConsoleQueueBands(model *consoleweb.SurfaceModel) {
-	model.ActiveRecords = nil
-	model.FailedRecords = nil
-	for _, record := range model.Records {
-		switch record.Lifecycle {
-		case "active":
-			model.ActiveRecords = append(model.ActiveRecords, record)
-		case "failed":
-			model.FailedRecords = append(model.FailedRecords, record)
-		}
-	}
 }
 
 func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb.ActionModel {

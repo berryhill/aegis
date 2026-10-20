@@ -68,13 +68,22 @@ class ShardTests(unittest.TestCase):
                     self.assertEqual('-race' in command, race)
                     self.assertIn('-count=1', command)
                     self.assertNotIn('-run', command)
-                    self.assertEqual(command[command.index('-timeout=8m')+1:], shard.groups(self.packages())[group])
+                    timeout = '-timeout=12m' if race and group == 'api' else '-timeout=8m'
+                    self.assertEqual(command[command.index(timeout)+1:], shard.groups(self.packages())[group])
 
     def test_invalid_group_rejected_before_go(self):
         with mock.patch.object(shard.subprocess, 'run') as run, mock.patch('sys.stderr'):
             with self.assertRaises(SystemExit):
                 shard.main(['--group', 'unknown'])
             run.assert_not_called()
+
+    def test_outer_race_jobs_allow_setup_and_complete_slow_packages(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        job = workflow.split('  go-shards:\n', 1)[1].split('  installed-proof:', 1)[0]
+        allowance = "${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}"
+        self.assertIn('    timeout-minutes: ' + allowance, job)
+        self.assertIn('fail-fast: false', job)
+        self.assertIn('python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP" --race', job)
 
     def test_real_go_fixture_preserves_tests_examples_and_fuzz_seeds(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
