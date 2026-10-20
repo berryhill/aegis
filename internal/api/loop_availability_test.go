@@ -311,6 +311,9 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 		getPage("?record_key="+rev.LoopID+":1", ">Archive</button>")
 	})
 	// TCP has no Unix-peer principal: neither reads nor writes may use JSON identity.
+	// Replenish one source-limiter token after the Console request matrix so
+	// this assertion exercises authentication, not a preceding rate-limit denial.
+	time.Sleep(250 * time.Millisecond)
 	req, _ := http.NewRequest(http.MethodPut, "http://"+svc.Config.API.Listen+path+"/availability", strings.NewReader(string(mustAvailabilityJSON(t, input))))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
