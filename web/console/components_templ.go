@@ -3182,7 +3182,7 @@ func QueueBand(surface SurfaceModel, id, title, description string, records []Re
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = QueueRecordPanel(surface, records).Render(ctx, templ_7745c5c3_Buffer)
+			templ_7745c5c3_Err = QueueRecordPanel(queueBandSurface(surface), records).Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -7744,6 +7744,14 @@ func queueURL(state string) string {
 		path += "?" + encoded
 	}
 	return path + "#/queue"
+}
+
+// Summary-band records are independent of the lifecycle table's filter/page.
+// Their exact detail links must resolve in the unfiltered authorized collection.
+func queueBandSurface(surface SurfaceModel) SurfaceModel {
+	surface.CollectionURL = queueURL("all")
+	surface.QueueState = "all"
+	return surface
 }
 
 func registryURL(surface SurfaceModel) string {

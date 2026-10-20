@@ -545,9 +545,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			if err = paginateConsoleCollection(&model, c.QueryParam("page"), c.QueryParam("record_key"), limit, c.QueryParams()); err != nil {
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid console page")
 			}
-			if domain == consoleQueue {
-				syncConsoleQueueBands(&model)
-			}
+
 		}
 		// Resolve the filtered, paginated selection before joining evidence. Keep
 		// the latest roster independent from an exact historical detail, and do
