@@ -114,6 +114,39 @@ Consult `README.md`, `specs/MVP.md`, `specs/CANONICAL_DOMAINS.md`, `specs/IDENTI
 
 ## Single authenticated Loop execution request
 
+## Exact owner-principal Run preparation (source candidate)
+
+For a published selected-file v4 Loop, one fresh authenticated owner-principal
+`loops queue` request now prepares its **same immutable Loop** without separate
+setup consent when the selected stanza has zero capabilities, tools/toolsets,
+memory and credential scopes and the runtime target is `aegis-owned-ephemeral`.
+Hermes builds a disposable home directly from the exact mandate; this path does
+not create the persistent provisioned mapping, a plan, a generic approval or a
+provisioning receipt. `required_operations: ["provision"]` is not rewritten or
+waived for actual provisioning. Generic session entry still requires a verified
+provisioning receipt. Readiness marks the receipt `not_required` with reason
+`zero_authority_ephemeral_doer`, not falsely verified.
+
+The exact authenticated Run is also the owner-principal's write-scope action:
+the controller persists the existing signed exact host grant with truthful
+`run_request_id` provenance, bounded by authentication expiry/freshness. It does
+not infer a grant from publication, a draft, readiness, workspace ownership or
+UID alone. The durable intent fence, exact latest enabled Registry/stable-owner
+checks, immutable charter and Loop bindings, protected workspace/path checks,
+provider admission, fresh per-effect host admission and independent selected-file
+verification remain enforced. New authority, foreign owners, ordinary workspace
+actors and persistent runtime targets do not qualify. Explicit protected setup
+remains available when genuinely independent new authority is required; it is
+not a mandatory detour for this zero-authority Run.
+
+The controller does **not** install or choose Laya/model/checker dependencies.
+An absent execution controller/Laya configuration returns
+`doer_runtime_unconfigured` / `configure_controller_doer_runtime` inline with the
+same retained request identity and no new Graph/Queue/claim. Configured helpers
+still undergo the real availability and task-eligibility checks. Tests use
+synthetic Hermes/Laya protocol fixtures; they do not qualify a live provider.
+
+
 When the operator says “queue it” for an approved exact bounded Loop, use this single execution action, not a preparation-page handoff, binding file, second worker command, or repeated consent. Return the exact inline blocker if admission fails; never promote missing authority into executable Queue. The Queue overview omits generic prerequisite blocks; existing action and record-specific admission still fail closed.
 
 `aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` selects only the same request key's exact accepted Queue item for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.

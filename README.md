@@ -1,5 +1,21 @@
 # Aegis
 
+Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.
+
+The zero-authority owner-principal selected-file v4 Run has a narrow
+[ephemeral preparation policy](docs/DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).
+It does not provision persistent artifacts or invent a human decision: the exact
+Run carries signed expiring host scope, while general provisioning and
+new-authority gates remain unchanged. Missing execution dependencies still deny.
+
+Source candidate: connect the controller to one exact existing native Hermes
+Codex login through `controller-codex candidates|preview|connect|show` on the owning-service
+Unix transport. No account ID, token or hand-edited binding is required; Agent
+scopes and exact published definitions remain unchanged. Connection metadata is
+a separate private no-replace record; the owning YAML is never rewritten and
+config drift denies runtime use. See [the connection
+procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
+
 ## Retained task execution (source candidate)
 
 For an owner-requested Doer create-and-execute operation, use the owning-service

@@ -59,6 +59,11 @@ type Record struct {
 	ExpiresAt      time.Time             `json:"expires_at"`
 	KeyID          string                `json:"key_id"`
 	Signature      []byte                `json:"signature"`
+	// Nonempty only for an exact authenticated owner-principal Run, not a
+	// separate human setup decision. Signed with the complete exact scope.
+	RunRequestID          string `json:"run_request_id,omitempty"`
+	ImplementationPassCap uint16 `json:"implementation_pass_cap,omitempty"`
+	ReexecutionDigest     string `json:"reexecution_digest,omitempty"`
 	// Generation zero retains the original canonical record format.
 	Generation             uint64 `json:"generation,omitempty"`
 	ApprovalPreviousDigest string `json:"approval_previous_digest,omitempty"`
@@ -80,6 +85,9 @@ func (r Record) canonical() ([]byte, error) {
 		if err != nil || hex.EncodeToString(decoded) != r.ApprovalPreviousDigest[7:] {
 			return nil, ErrDenied
 		}
+	}
+	if (r.ImplementationPassCap == 0) != (r.ReexecutionDigest == "") || (r.ImplementationPassCap > 0 && (r.RunRequestID == "" || r.ImplementationPassCap >= r.Contract.MaxAttempts || (reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "lineage", Digest: r.ReexecutionDigest}).Validate() != nil)) {
+		return nil, ErrDenied
 	}
 	d, e := r.Contract.Digest()
 	candidate, _, ce := loop.NewDoerRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, r.Contract)

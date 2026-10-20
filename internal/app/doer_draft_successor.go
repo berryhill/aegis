@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/store"
@@ -12,6 +14,8 @@ import (
 // published definition or Run intent. The archived snapshot precedes the CAS
 // publication, so interrupted writes retain the exact superseded binding.
 func (s *Service) ContinueDoerDraftSuccessorAs(ctx context.Context, subject core.Subject, id string, version uint64, expected, charter reference.RevisionRef) (DoerDraft, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
 	if err := s.requirePrincipal(subject); err != nil {
 		return DoerDraft{}, err
 	}
@@ -66,9 +70,25 @@ func (s *Service) ContinueDoerDraftSuccessorAs(ctx context.Context, subject core
 			if d.ExecutionDigest != "" {
 				return nil, ErrConflict
 			}
+			runID := queueLoopRequestID(subject, QueueLoopInput{IdempotencyKey: d.PublicationKey + "-run"})
+			if _, e := s.FleetRepository.GetGraphRevision(ctx, runID, 1); !errors.Is(e, fleet.ErrNotFound) {
+				if e != nil {
+					return nil, e
+				}
+				return nil, ErrConflict
+			}
+			if _, e := s.FleetRepository.GetQueueItem(ctx, runID+"-queue"); !errors.Is(e, fleet.ErrNotFound) {
+				if e != nil {
+					return nil, e
+				}
+				return nil, ErrConflict
+			}
+			// Verify any existing immutable publication before changing only the
+			// runtime participant. Never allocate a replacement definition.
+			if _, err := s.retainedDoerPublication(ctx, subject, d); err != nil {
+				return nil, err
+			}
 			d.Agent = agentRevisionRef(latest)
-			d.LoopID, d.PublicationKey = store.ID("doer"), store.ID("doerpub")
-			d.Revision, d.PreviousDigest = 1, ""
 			d.Version++
 			d.UpdatedAt = now
 			set.Drafts[i], result = d, d

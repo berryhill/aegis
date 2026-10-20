@@ -177,6 +177,13 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	if !foundReason || len(storedPreparation.Claims) != 0 {
 		t.Fatal("missing durable diagnostic or unexpected claim")
 	}
+	graphs, graphErr := svc.ListGraphsAs(ctx, subject)
+	if graphErr != nil || len(graphs) != 0 || got.Graph != (reference.RevisionRef{}) {
+		t.Fatalf("Loop execution polluted Graph inventory: %d %v", len(graphs), graphErr)
+	}
+	if got.Execution != nil && (got.Execution.SourceKind != graph.SourceDirectLoop || got.Execution.Source != input.Loop) {
+		t.Fatal("direct source readback lost exact Loop")
+	}
 	var replay app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &replay, http.StatusOK)
 	if replay.QueueItemID != got.QueueItemID {
@@ -368,6 +375,19 @@ while read rest; do :; done
 	running, replayErr := queueRequest(input)
 	if replayErr != nil || running.Execution == nil || len(running.Execution.Claims) != 1 || len(running.Execution.Attempts) != 1 || running.Reason != "existing_execution" {
 		t.Fatalf("running replay: %+v %v", running, replayErr)
+	}
+	// Explicit same-item recovery is also readback while this foreground worker
+	// owns the run. Neither selector form may prepare or launch another worker.
+	recovery := input
+	recovery.QueueItemID = running.QueueItemID
+	recovered, recoveryErr := queueRequest(recovery)
+	if recoveryErr != nil || recovered.Execution == nil || recovered.Reason != "existing_execution" || len(recovered.Execution.Claims) != 1 || len(recovered.Execution.Attempts) != 1 || recovered.Execution.Claims[0].Digest != running.Execution.Claims[0].Digest {
+		t.Fatalf("running exact-item recovery: %+v %v", recovered, recoveryErr)
+	}
+	changedRunning := input
+	changedRunning.Activate = !input.Activate
+	if _, e := svc.QueueLoopAs(ctx, subject, changedRunning); !errors.Is(e, fleet.ErrConflict) {
+		t.Fatalf("changed running payload: %v", e)
 	}
 	if err := os.WriteFile(filepath.Join(root, "release"), nil, 0600); err != nil {
 		t.Fatal(err)

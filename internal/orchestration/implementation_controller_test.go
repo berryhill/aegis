@@ -48,7 +48,7 @@ func (r *implementationTestRepository) CompleteQueueItem(ctx context.Context, c 
 
 // The runtime is a protocol fixture; native checks and fleet completion are real.
 func TestImplementationQueueNativeCompletion(t *testing.T) {
-	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-needs-input", "v4-unauthorized", "v4-existing", "v4-toolset-denied", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper", "v5-toolset-denied"} {
+	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-runtime-failure", "v4-proposal-failure", "v4-needs-input", "v4-unauthorized", "v4-existing", "v4-toolset-denied", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper", "v5-toolset-denied"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			root := t.TempDir()
@@ -189,6 +189,12 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 				return string(event)
 			}
 			first := message("42")
+			if mode == "v4-runtime-failure" {
+				first = `{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"queue-runtime-session","payload":{"status":"error","text":"private runtime output","error":"private runtime error","error_surface":{"layer":"provider","code":"format_error","provider":"private label"}}}}`
+			}
+			if mode == "v4-proposal-failure" {
+				first = `{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"queue-runtime-session","payload":{"status":"complete","text":"private invalid proposal"}}}`
+			}
 			if mode == "correction" || mode == "exhaustion" || mode == "doer-retry" || mode == "v4-retry" {
 				first = message("0")
 			}
@@ -347,6 +353,49 @@ while read rest; do :; done
 			if mode == "exhaustion" {
 				if err == nil || projection.State != queue.StateFailed {
 					t.Fatalf("exhaustion: %v %+v", err, projection)
+				}
+				return
+			}
+			if mode == "v4-runtime-failure" || mode == "v4-proposal-failure" {
+				if err == nil || projection.State != queue.StateFailed || result.Artifact != nil || len(result.Receipts) != 0 || result.Disposition.ReasonCode != "doer_loop_failed" {
+					t.Fatalf("failed implementation promoted: %v %+v", err, projection)
+				}
+				want := "runtime_provider_format_error"
+				if mode == "v4-proposal-failure" {
+					want = "doer_proposal_json_invalid"
+				}
+				steps, traceErr := worker.DoerTrace(ctx, "attempt", lr.Digest)
+				if traceErr != nil || len(steps) == 0 {
+					t.Fatal("failure trace missing", traceErr)
+				}
+				last := steps[len(steps)-1]
+				if !last.Terminal || last.StepID != "implement" || last.Visit != 1 || last.FailureCode != want {
+					t.Fatalf("failure trace: %+v", last)
+				}
+				wire, _ := json.Marshal(steps)
+				if strings.Contains(string(wire), "private") {
+					t.Fatal("failure trace disclosed runtime text")
+				}
+				facts := implementation.StepCheckpointStore{DB: repository.ImplementationStore(), RunID: "attempt", RevisionDigest: lr.Digest}
+				history, readErr := facts.History(ctx)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				before, _ := json.Marshal(history)
+				if strings.Contains(string(before), "private") {
+					t.Fatal("raw runtime failure persisted")
+				}
+				if data, readErr := os.ReadFile(filepath.Join(workspace, "value.go")); readErr != nil || !strings.Contains(string(data), "return 0") {
+					t.Fatal("failed implementation edited selected file")
+				}
+				_, replayErr := worker.Process(ctx, WorkRequest{Subject: subject, Authority: authorityRef, QueueItemID: "queue", WorkerID: "worker", LoopExecutionID: "loop-execution", ClaimID: "claim", AttemptID: "attempt", ClaimTransitionID: "claimed", TerminalTransitionID: "terminal", DispositionID: "disposition", ArtifactID: "artifact", LeaseDuration: lease})
+				if replayErr == nil {
+					t.Fatal("terminal failed run replayed")
+				}
+				afterHistory, readErr := facts.History(ctx)
+				after, _ := json.Marshal(afterHistory)
+				if readErr != nil || string(before) != string(after) {
+					t.Fatal("failed history rewritten")
 				}
 				return
 			}

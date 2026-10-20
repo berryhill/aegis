@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -39,10 +40,6 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var registered struct {
-		Agent app.FleetAgent `json:"agent"`
-	}
-	apiRequest(t, client, http.MethodPost, "/v1/agents", app.NewRegisterFleetAgentInput(fixture, "online-fleet", "existing-source"), &registered, http.StatusCreated)
 	binary := filepath.Join(t.TempDir(), "aegis")
 	build := exec.Command("go", "build", "-ldflags=-X github.com/berryhill/aegis/internal/buildinfo.Version=0.0.0-online-test", "-o", binary, "./cmd/aegis")
 	build.Dir = "../.."
@@ -56,12 +53,70 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := func(configPath, target string, args ...string) ([]byte, error) {
+		// Each CLI call performs a config read plus its operation. Respect the
+		// production five-request/second limiter without changing server policy.
+		time.Sleep(500 * time.Millisecond)
 		argv := append([]string{"--config", configPath, "--target", target}, args...)
 		command := exec.Command(binary, argv...)
 		return command.CombinedOutput()
 	}
 	target := svc.Config.API.Console.Origin + "/console/agents#/agents"
-	out, err := run(cfgPath, target, "agents", "list")
+	registrationPath := filepath.Join(t.TempDir(), "registration.json")
+	registration := app.NewRegisterFleetAgentInput(fixture, "online-fleet", "existing-source")
+	registrationJSON, err := json.Marshal(registration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveRegistration := func(data []byte) {
+		t.Helper()
+		if err := os.WriteFile(registrationPath, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	saveRegistration(registrationJSON)
+	out, err := run(cfgPath, target, "agents", "register", registrationPath)
+	if err != nil {
+		t.Fatalf("register: %v %s", err, out)
+	}
+	var registered struct {
+		Agent   app.FleetAgent `json:"agent"`
+		Created bool           `json:"created"`
+	}
+	if err := json.Unmarshal(out, &registered); err != nil || !registered.Created || registered.Agent.Revision.AgentID != "existing-builder" || registered.Agent.Revision.Revision != 1 || registered.Agent.Revision.Digest == "" {
+		t.Fatalf("registration envelope: %v %s", err, out)
+	}
+	out, err = run(cfgPath, target, "agents", "show", "existing-builder", "1")
+	var exact app.FleetAgent
+	if err != nil || json.Unmarshal(out, &exact) != nil || !reflect.DeepEqual(exact, registered.Agent) {
+		t.Fatalf("exact registered revision: %v %s", err, out)
+	}
+	out, err = run(cfgPath, target, "agents", "register", registrationPath)
+	var replayRegistration struct {
+		Agent   app.FleetAgent `json:"agent"`
+		Created bool           `json:"created"`
+	}
+	if err != nil || json.Unmarshal(out, &replayRegistration) != nil || replayRegistration.Created || !reflect.DeepEqual(replayRegistration.Agent, registered.Agent) {
+		t.Fatalf("registration replay: %v %s", err, out)
+	}
+	for name, data := range map[string][]byte{
+		"malformed":        []byte(`{"fixture":`),
+		"unknown":          append([]byte(`{"unknown":true,`), registrationJSON[1:]...),
+		"unknown-identity": bytes.Replace(registrationJSON, []byte(`"identity":{`), []byte(`"identity":{"unknown":true,`), 1),
+		"unknown-fixture":  bytes.Replace(registrationJSON, []byte(`"fixture":{`), []byte(`"fixture":{"unknown":true,`), 1),
+		"trailing":         append(append([]byte(nil), registrationJSON...), []byte(` {}`)...),
+	} {
+		t.Run("registration-denies-"+name, func(t *testing.T) {
+			saveRegistration(data)
+			if out, err := run(cfgPath, target, "agents", "register", registrationPath); err == nil {
+				t.Fatalf("invalid registration admitted: %s", out)
+			}
+		})
+	}
+	saveRegistration(registrationJSON)
+	if out, err := run(cfgPath, "http://127.0.0.1:9999/console", "agents", "register", registrationPath); err == nil || !bytes.Contains(out, []byte("owning_instance_mismatch")) {
+		t.Fatalf("foreign registration target: %v %s", err, out)
+	}
+	out, err = run(cfgPath, target, "agents", "list")
 	if err != nil || !bytes.Contains(out, []byte("existing-builder")) {
 		t.Fatalf("list: %v %s", err, out)
 	}
@@ -150,7 +205,7 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 	raw, _ = json.Marshal(wrong)
 	wrongPath := filepath.Join(t.TempDir(), "wrong.json")
 	os.WriteFile(wrongPath, raw, 0600)
-	if out, err := run(wrongPath, target, "agents", "list"); err == nil || !bytes.Contains(out, []byte("owning_instance_mismatch")) {
+	if out, err := run(wrongPath, target, "agents", "register", registrationPath); err == nil || !bytes.Contains(out, []byte("owning_instance_mismatch")) {
 		t.Fatalf("wrong config: %v %s", err, out)
 	}
 	if _, err := os.Stat(wrong.StateDir); !os.IsNotExist(err) {
@@ -160,7 +215,7 @@ func TestInstalledOnlineLoopPublication(t *testing.T) {
 	wrong.API.Token = "unauthorized"
 	raw, _ = json.Marshal(wrong)
 	os.WriteFile(wrongPath, raw, 0600)
-	if out, err := run(wrongPath, target, "agents", "list"); err == nil || !bytes.Contains(out, []byte("HTTP 401")) {
+	if out, err := run(wrongPath, target, "agents", "register", registrationPath); err == nil || !bytes.Contains(out, []byte("HTTP 401")) {
 		t.Fatalf("unauthorized: %v %s", err, out)
 	}
 	var queue []app.QueueExecutionView

@@ -22,6 +22,7 @@ import (
 
 // QueueLoopInput grants one bounded foreground operation, not foundational authority.
 type QueueLoopInput struct {
+	Reexecution    *LoopReexecution        `json:"reexecution,omitempty"`
 	Agent          reference.RevisionRef   `json:"agent"`
 	Loop           reference.RevisionRef   `json:"loop"`
 	IdempotencyKey string                  `json:"idempotency_key"`
@@ -30,11 +31,13 @@ type QueueLoopInput struct {
 	Inputs         []graph.NormalizedInput `json:"inputs,omitempty"`
 }
 type QueueLoopResult struct {
-	Rejection   *queue.Rejection      `json:"rejection,omitempty"`
-	Graph       reference.RevisionRef `json:"graph"`
-	QueueItemID string                `json:"queue_item_id"`
-	Reason      string                `json:"reason"`
-	Execution   *QueueExecutionView   `json:"execution,omitempty"`
+	Reexecution *LoopReexecutionFact    `json:"reexecution,omitempty"`
+	Preparation *sessionPreparationFact `json:"preparation,omitempty"`
+	Rejection   *queue.Rejection        `json:"rejection,omitempty"`
+	Graph       reference.RevisionRef   `json:"graph"`
+	QueueItemID string                  `json:"queue_item_id"`
+	Reason      string                  `json:"reason"`
+	Execution   *QueueExecutionView     `json:"execution,omitempty"`
 	// RequestID is the stable, principal-scoped intent slot. A prerequisite
 	// denial can be retried with the same payload and idempotency key after an
 	// independently approved change; it is not a Queue item or an approval.
@@ -50,6 +53,8 @@ type QueueLoopResult struct {
 func (r *QueueLoopResult) blockedDoer(reason string) {
 	r.Reason = reason
 	switch reason {
+	case "doer_runtime_unconfigured":
+		r.RequiredAction = "configure_controller_doer_runtime"
 	case "provisioning_receipt_missing":
 		r.RequiredAction = "plan_preview_exact_charter"
 	case "doer_model_required":
@@ -61,6 +66,11 @@ func (r *QueueLoopResult) blockedDoer(reason string) {
 	case "session_selection_zero_authorized_matches":
 		r.RequiredAction = "review_charter_successor_with_matching_authentication"
 	}
+}
+
+func queueLoopRequestID(subject core.Subject, input QueueLoopInput) string {
+	sum := sha256.Sum256([]byte(subject.PrincipalID + "\x00" + input.IdempotencyKey))
+	return "loopq-" + hex.EncodeToString(sum[:16])
 }
 
 func loopLifecyclePrevious(view LoopView) string {
@@ -78,7 +88,43 @@ func (s *Service) QueueLoop(ctx context.Context, input QueueLoopInput) (QueueLoo
 	return s.QueueLoopAs(ctx, subject, input)
 }
 
-func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input QueueLoopInput) (result QueueLoopResult, err error) {
+// QueueLoopAs separates serialized admission/authority preparation from bounded
+// runtime work. Register worker ownership before releasing admission: an exact
+// replay in the binding-to-claim window must read back, not prepare again.
+func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input QueueLoopInput) (QueueLoopResult, error) {
+	var work *orchestration.WorkRequest
+	s.loopRunMu.Lock()
+	result, err := s.admitQueueLoop(ctx, subject, input, &work)
+	if err == nil && work != nil {
+		if s.loopRunWorkers == nil {
+			s.loopRunWorkers = make(map[string]bool)
+		}
+		s.loopRunWorkers[result.QueueItemID] = true
+	}
+	s.loopRunMu.Unlock()
+	if err != nil || work == nil {
+		return result, err
+	}
+	defer func() {
+		s.loopRunMu.Lock()
+		delete(s.loopRunWorkers, result.QueueItemID)
+		s.loopRunMu.Unlock()
+	}()
+	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
+	_, err = s.ProcessQueueItemAs(ctx, subject, *work)
+	if err != nil {
+		r, readErr := s.queueLoopBlockedReadback(ctx, subject, result, "processing_failed")
+		if readErr != nil {
+			return r, readErr
+		}
+		return r, err
+	}
+	return s.queueLoopBlockedReadback(ctx, subject, result, "processed")
+}
+
+// admitQueueLoop and prepareQueuedLoop run only with loopRunMu held. Neither
+// releases it or executes the returned work; the caller owns that boundary.
+func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, work **orchestration.WorkRequest) (result QueueLoopResult, err error) {
 	if err = s.requireFleetPrincipal(subject); err != nil {
 		return
 	}
@@ -124,6 +170,12 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	if lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		return result, ErrDenied
 	}
+	if input.Reexecution != nil {
+		result.Reexecution, e = s.sealLoopReexecution(ctx, subject, input, key, identity, lv.Revision)
+		if e != nil {
+			return result, e
+		}
+	}
 	if input.QueueItemID != "" {
 		// Explicit recovery selects only this request's exact Queue item.
 		// Different keys must not adopt prior execution authority or history.
@@ -146,16 +198,29 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if e != nil {
 			return result, e
 		}
-		g, e := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-		if e != nil {
-			return result, e
+		topology, e := s.Fleet.ResolveRunTopology(ctx, snapshot)
+		if e != nil || len(topology.Nodes) != 1 || topology.Nodes[0].Participant != input.Agent || topology.Nodes[0].Loop != input.Loop {
+			return result, fleet.ErrConflict
 		}
-		candidate, e := graph.NewRunSnapshot(snapshot.SnapshotID, g, input.Inputs)
-		if e != nil || candidate.Digest != snapshot.Digest || snapshot.Digest != prior.Item.Snapshot.Digest || g.Digest != snapshot.Graph.Digest || len(g.Nodes) != 1 || g.Nodes[0].Participant != input.Agent || g.Nodes[0].Loop != input.Loop {
+		var candidate graph.GraphRunSnapshot
+		if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+			direct, buildErr := graph.NewDirectLoopSnapshot(snapshot.SnapshotID, topology.Nodes[0], input.Inputs)
+			if buildErr != nil {
+				return result, fleet.ErrConflict
+			}
+			candidate, e = graph.NewDirectRunSnapshot(direct)
+		} else {
+			g, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
+			if loadErr != nil {
+				return result, loadErr
+			}
+			candidate, e = graph.NewRunSnapshot(snapshot.SnapshotID, g, input.Inputs)
+		}
+		if e != nil || candidate.Digest != snapshot.Digest || snapshot.Digest != prior.Item.Snapshot.Digest {
 			return result, fleet.ErrConflict
 		}
 		result.QueueItemID, result.Graph, result.Execution = input.QueueItemID, snapshot.Graph, &prior
-		if len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
 			result.Reason = "existing_execution"
 			return result, nil
 		}
@@ -174,13 +239,14 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 			}
 			result.RequiredCharter = &agent.Charter
 		}
+		ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
 		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
 			result.blockedDoer(reason)
 			return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 		}
-		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]))
+		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]), work)
 	}
 	// Rejections are immutable blocked intent, never fabricated executable work.
 	if prior, e := s.FleetRepository.GetRejection(ctx, key+"-reject"); e == nil {
@@ -215,7 +281,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		}
 		if prior, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID); e == nil {
 			result.Execution = &prior
-			if len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+			if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
 				result.Reason = "existing_execution"
 				return result, nil
 			}
@@ -224,6 +290,21 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		}
 	} else if !errors.Is(historicalErr, fleet.ErrNotFound) {
 		return result, historicalErr
+	}
+	// Historical direct readback, like historical Graph readback, does not
+	// reactivate a disabled participant or acquire new execution authority.
+	if prior, loadErr := s.GetQueueItemAs(ctx, subject, result.QueueItemID); loadErr == nil {
+		var reserved string
+		if err := s.Store.Load("queue-loop-intent", key, &reserved); err != nil || reserved != identity {
+			return result, fleet.ErrConflict
+		}
+		result.Execution = &prior
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+			result.Reason = "existing_execution"
+			return result, nil
+		}
+	} else if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return result, loadErr
 	}
 	workspace, e := s.RegisteredAgentWorkspaceAs(ctx, subject, input.Agent.ID)
 	if e != nil {
@@ -248,6 +329,16 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	if reserved != identity {
 		return result, fleet.ErrConflict
 	}
+	if prior, loadErr := s.GetQueueItemAs(ctx, subject, result.QueueItemID); loadErr == nil {
+		result.Execution = &prior
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+			result.Reason = "existing_execution"
+			return result, nil
+		}
+	} else if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return result, loadErr
+	}
+	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
 	if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
 		agent, loadErr := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
 		if loadErr != nil || agent.Digest != input.Agent.Digest {
@@ -292,48 +383,15 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 			return result, e
 		}
 	}
-	g := graph.GraphRevision{GraphID: key, Revision: 1, Nodes: []graph.Node{{ID: "loop-" + identity, Participant: input.Agent, Loop: input.Loop}}}
-	for _, p := range lv.Revision.Inputs {
-		port := graph.Port{ID: p.ID, Type: graph.ValueType(p.Type), Required: p.Required}
-		g.Inputs = append(g.Inputs, port)
-		g.Nodes[0].Inputs = append(g.Nodes[0].Inputs, port)
-		g.InputMappings = append(g.InputMappings, graph.InputMapping{GraphInput: p.ID, ToNodeID: g.Nodes[0].ID, ToPort: p.ID})
+	// Historical synthetic Graphs are replayed exactly; new intents never
+	// publish reusable definitions as an execution side effect.
+	var decision orchestration.SubmissionDecision
+	if historicalErr == nil {
+		decision, e = s.SubmitGraphAs(ctx, subject, orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Graph: result.Graph, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1})
+	} else {
+		decision, e = s.SubmitLoopAs(ctx, subject, orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1}, Participant: input.Agent, Loop: input.Loop, NodeID: "loop-" + identity})
 	}
-	for _, p := range lv.Revision.Outputs {
-		port := graph.Port{ID: p.ID, Type: graph.ValueType(p.Type), Required: p.Required}
-		g.Outputs = append(g.Outputs, port)
-		g.Nodes[0].Outputs = append(g.Nodes[0].Outputs, port)
-		g.OutputMappings = append(g.OutputMappings, graph.OutputMapping{FromNodeID: g.Nodes[0].ID, FromPort: p.ID, GraphOutput: p.ID})
-	}
-	// Publication's idempotency binding includes the complete request identity.
-	published := PublishedGraph{Revision: historical}
-	if errors.Is(historicalErr, fleet.ErrNotFound) {
-		published, e = s.PublishGraphAs(ctx, subject, PublishGraphInput{AgentID: input.Agent.ID, Revision: g, IdempotencyKey: key + "-" + identity})
-		if e != nil {
-			return result, e
-		}
-	}
-	result.Graph = reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: key, Revision: 1, Digest: published.Revision.Digest}
-	// A submission's canonical input digest supplies a second conflict check.
-	if old, e := s.FleetRepository.GetGraphRunSnapshot(ctx, key+"-snapshot"); e == nil {
-		candidate, e := graph.NewRunSnapshot(key+"-snapshot", published.Revision, input.Inputs)
-		if e != nil || candidate.Digest != old.Digest {
-			return result, fleet.ErrConflict
-		}
-	} else if !errors.Is(e, fleet.ErrNotFound) {
-		return result, e
-	}
-	if prior, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID); e == nil {
-		result.Execution = &prior
-		// Never reclaim or duplicate an already started execution on HTTP retry.
-		if len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
-			result.Reason = "existing_execution"
-			return result, nil
-		}
-	} else if !errors.Is(e, fleet.ErrNotFound) {
-		return result, e
-	}
-	decision, e := s.SubmitGraphAs(ctx, subject, orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Graph: result.Graph, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1})
+
 	if e != nil {
 		return result, e
 	}
@@ -346,7 +404,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		result.Reason = decision.Rejection.ReasonCode
 		return result, nil
 	}
-	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key)
+	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key, work)
 }
 
 // preflightDoerQueue reports missing foundational authority before any new
@@ -397,7 +455,8 @@ func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Sub
 	return result, err
 }
 
-func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string) (QueueLoopResult, error) {
+func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string, work **orchestration.WorkRequest) (QueueLoopResult, error) {
+	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
 	readback := func(reason string) (QueueLoopResult, error) {
 		return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 	}
@@ -409,7 +468,8 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if receiptErr != nil {
 		return readback("provisioning_receipt_unavailable")
 	}
-	if !verified {
+	ephemeralDoer := s.doerEphemeralPreparationAllowed(ctx, subject, lv.Revision, agent)
+	if !verified && !ephemeralDoer {
 		return readback("provisioning_receipt_missing")
 	}
 	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -425,17 +485,33 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if runtimeSatisfies(runtime.Version, charter.Charter.Runtime.VersionConstraint) != nil {
 		return readback("runtime_version_unsupported")
 	}
-	if e = s.QueueWorker.ValidateLoopAdmission(lv.Revision, agent); e != nil {
+	if e = s.QueueWorker.ValidateLoopAdmissionContext(ctx, lv.Revision, agent); e != nil {
 		return readback("implementation_prerequisite_required")
 	}
 	authority, e := s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 	reservation := sha256.Sum256([]byte(subject.ID + "\x00" + agent.Digest))
 	reservationID := hex.EncodeToString(reservation[:])
-	var fence map[string]string
-	if fenceErr := s.Store.Load("queue-session-preparation", reservationID, &fence); fenceErr == nil {
+	reserved := false
+	selectedReservation, fence, fenceErr := s.preparationReservation(reservationID)
+	if fenceErr == nil {
+		reservationID = selectedReservation
+		if fence["queue_item_id"] != result.QueueItemID {
+			next, nextErr := s.reserveNextLoopRun(ctx, subject, input, result, agent, reservationID, fence)
+			if nextErr != nil {
+				return readback("prior_run_terminal_authority_retirement_required")
+			}
+			reservationID, reserved = next, true
+			// Never adopt the predecessor's authority under a new Run.
+			authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
+		}
 		var prepared reference.DigestRef
-		if e != nil || s.Store.Load("queue-session-prepared", reservationID, &prepared) != nil || prepared != authority.Authority {
-			return readback("session_preparation_in_progress_or_interrupted")
+		if !reserved && (e != nil || s.Store.Load("queue-session-prepared", reservationID, &prepared) != nil || prepared != authority.Authority) {
+			next, proof, recoveryErr := s.recoverDoerSessionPreparation(ctx, subject, input, result, lv, agent, reservationID, fence)
+			if recoveryErr != nil {
+				return readback("session_preparation_in_progress_or_interrupted")
+			}
+			reservationID, result.Preparation, reserved = next, proof, true
+			authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 		}
 	} else if !errors.Is(fenceErr, os.ErrNotExist) {
 		return readback("session_preparation_in_progress_or_interrupted")
@@ -450,6 +526,14 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		}
 		for _, old := range contexts {
 			if old.SubjectID == subject.ID && old.AgentID == agent.AgentID && old.CharterDigest == agent.Charter.Digest {
+				var retired sessionPreparationFact
+				if s.Store.Load("queue-session-preparation-retired", old.ID, &retired) == nil && retired.AuthorityID == old.ID && retired.AgentDigest == agent.Digest && retired.SubjectID == subject.ID && retired.Digest == preparationFactDigest(retired) {
+					admission, checkErr := s.AuthorityCommands.AuthorityAdmission(ctx, old.ID, old.Digest, s.Now())
+					if checkErr != nil || admission.Admitted {
+						return readback("prior_runtime_authority_requires_explicit_recovery")
+					}
+					continue
+				}
 				return readback("prior_runtime_authority_requires_explicit_recovery")
 			}
 		}
@@ -460,15 +544,25 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		// Atomic create-only reservation prevents duplicate launches even if
 		// interrupted between session launch and queue binding. It is only a
 		// denial fence; it never supplies authority to the runtime.
-		if reserveErr := s.Store.Create("queue-session-preparation", reservationID, map[string]string{"queue_item_id": result.QueueItemID, "agent_digest": agent.Digest}); reserveErr != nil {
-			return readback("session_preparation_in_progress_or_interrupted")
+		if !reserved {
+			if reserveErr := s.Store.Create("queue-session-preparation", reservationID, map[string]string{"queue_item_id": result.QueueItemID, "agent_digest": agent.Digest}); reserveErr != nil {
+				return readback("session_preparation_in_progress_or_interrupted")
+			}
 		}
-		mandate, _, previewErr := s.PreviewSessionAs(ctx, subject, agent.Charter.ID, agent.Charter.Revision, "", core.Environment{Name: "local"})
+		if ephemeralDoer && !verified {
+			if !s.doerEphemeralPreparationAllowed(ctx, subject, lv.Revision, agent) {
+				return readback("ephemeral_doer_preparation_denied")
+			}
+			if auditErr := s.audit(ctx, core.AuditEvent{Type: "doer.session.preparation", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, AgentID: agent.AgentID, CharterDigest: charter.Digest, Outcome: "authorized", Reason: "zero_authority_ephemeral_doer", Metadata: map[string]string{"request_id": result.RequestID, "loop_digest": lv.Revision.Digest}}); auditErr != nil {
+				return result, auditErr
+			}
+		}
+		mandate, _, previewErr := s.previewSessionAs(ctx, subject, agent.Charter.ID, agent.Charter.Revision, "", core.Environment{Name: "local"}, ephemeralDoer)
 		if previewErr != nil {
 			return readback("session_mandate_preparation_failed")
 		}
 		if _, startErr := s.StartSessionAs(ctx, subject, mandate.ID); startErr != nil {
-			return readback("session_start_preparation_failed")
+			return s.recordSessionPreparationFailure(ctx, subject, input, result, reservationID, startErr)
 		}
 		authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 		if e == nil {
@@ -520,13 +614,6 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if e != nil {
 		return readback("exact_runtime_binding_required")
 	}
-	_, e = s.ProcessQueueItemAs(ctx, subject, orchestration.WorkRequest{Authority: authority.Authority, QueueItemID: result.QueueItemID, WorkerID: "exact-loop-controller", LoopExecutionID: key + "-loop", ClaimID: key + "-claim", AttemptID: key + "-attempt", ClaimTransitionID: key + "-claimed", TerminalTransitionID: key + "-terminal", DispositionID: key + "-disposition", ArtifactID: key + "-artifact", LeaseDuration: 6 * time.Minute})
-	if e != nil {
-		r, readErr := readback("processing_failed")
-		if readErr != nil {
-			return r, readErr
-		}
-		return r, e
-	}
-	return readback("processed")
+	*work = &orchestration.WorkRequest{Authority: authority.Authority, QueueItemID: result.QueueItemID, WorkerID: "exact-loop-controller", LoopExecutionID: key + "-loop", ClaimID: key + "-claim", AttemptID: key + "-attempt", ClaimTransitionID: key + "-claimed", TerminalTransitionID: key + "-terminal", DispositionID: key + "-disposition", ArtifactID: key + "-artifact", LeaseDuration: 6 * time.Minute}
+	return result, nil
 }

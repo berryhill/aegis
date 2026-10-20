@@ -260,17 +260,23 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 	if controllerAuth {
 		cmd = exec.CommandContext(ctx, desc.Executable, args...)
 	}
-	if bridge.Enabled {
+	if bridge.Enabled || controllerAuth {
 		python := gatewayPython(desc)
 		if python == "" {
 			return 0, nil, errors.New("Hermes TUI gateway Python executable not found")
 		}
 		cmd = exec.Command(python, "-m", "tui_gateway.entry")
+		if controllerAuth {
+			cmd = exec.CommandContext(ctx, python, "-m", "tui_gateway.entry")
+		}
 	}
 	cmd.Dir = home
 	cmd.Env = minimalEnv(home, credentials)
 	if controllerAuth {
-		cmd.Env = providerAuthenticationEnv(cmd.Env)
+		cmd.Env = append(providerAuthenticationEnv(cmd.Env), "HERMES_PYTHON_SRC_ROOT="+desc.Installation,
+			"HERMES_TUI_TOOLSETS="+pin, "HERMES_TUI_SKILLS=", "HERMES_DISABLE_AUTO_SKILLS=1",
+			"HERMES_SAFE_MODE=1", "HERMES_IGNORE_USER_CONFIG=1", "HERMES_IGNORE_RULES=1",
+			"HERMES_MODEL="+model, "HERMES_TUI_MODEL="+model, "HERMES_TUI_PROVIDER="+provider)
 	}
 	if bridge.Enabled {
 		cmd.Env = append(cmd.Env, "HERMES_PYTHON_SRC_ROOT="+desc.Installation, "HERMES_TUI_TOOLSETS=aegis", "HERMES_TUI_SKILLS=", "HERMES_DISABLE_AUTO_SKILLS=1")
@@ -324,18 +330,35 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		if controllerAuth {
 			_ = os.RemoveAll(home)
 		}
-		ps.done <- waitErr
-		close(ps.done)
 		a.mu.Lock()
 		delete(a.processes, id)
 		a.mu.Unlock()
+		ps.done <- waitErr
+		close(ps.done)
 	}()
-	if bridge.Enabled {
+	launchComplete := false
+	defer func() {
+		if !launchComplete {
+			_ = stdin.Close()
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			<-ps.done // No retry-safe error until the exact launched process is reaped.
+		}
+	}()
+	if bridge.Enabled || controllerAuth {
 		messages := make(chan gatewayMessage, 32)
 		readErrors := make(chan error, 1)
 		go readGateway(stdout, messages, readErrors)
 		verifyContext, cancel := context.WithTimeout(ctx, 20*time.Second)
-		err = verifyBrokerGateway(verifyContext, stdin, messages, readErrors, model, provider)
+		if controllerAuth {
+			_, err = waitGateway(verifyContext, messages, readErrors, func(m gatewayMessage) bool {
+				return m.Method == "event" && m.Params.Type == "gateway.ready"
+			})
+			if err == nil {
+				err = verifyEmptyGateway(verifyContext, stdin, messages, readErrors)
+			}
+		} else {
+			err = verifyBrokerGateway(verifyContext, stdin, messages, readErrors, model, provider)
+		}
 		cancel()
 		if err != nil {
 			_ = stdin.Close()
@@ -369,6 +392,7 @@ func (a *Adapter) launch(ctx context.Context, id, home string, tools []string, m
 		return 0, nil, ctx.Err()
 	case <-time.After(300 * time.Millisecond):
 	}
+	launchComplete = true
 	return cmd.Process.Pid, append([]string(nil), resolved...), nil
 }
 
@@ -527,6 +551,9 @@ func (a *Adapter) RunDesignForeground(ctx context.Context, stateRoot string, ret
 	return home, nil
 }
 
+// A cleanup failure never supplies a retry-safe session-start outcome.
+var ErrLaunchCleanupUnconfirmed = errors.New("hermes_launch_cleanup_unconfirmed")
+
 func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, authority core.AuthorityContext, credentials []Credential, bridge BrokerBridge, fresh ...func(context.Context) error) (string, string, int, []string, error) {
 	if err := core.ValidateAuthorityContext(authority, m); err != nil {
 		return "", "", 0, nil, fmt.Errorf("runtime launch denied: %w", err)
@@ -558,7 +585,9 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 		err = a.prepareProviderAuthentication(prepareContext, home, m.Hermes, fresh[0], cutoff)
 		cancel()
 		if err != nil {
-			_ = os.RemoveAll(home)
+			if os.RemoveAll(home) != nil {
+				return "", "", 0, nil, ErrLaunchCleanupUnconfirmed
+			}
 			return "", "", 0, nil, err
 		}
 	}
@@ -576,7 +605,9 @@ func (a *Adapter) Launch(ctx context.Context, stateRoot string, m core.Mandate, 
 		pid, configuredToolsets, err = a.launch(ctx, id, home, m.Hermes.Toolsets, m.Hermes.Model, m.Hermes.Provider, credentials, bridge, &m.Runtime, guards...)
 	}
 	if err != nil {
-		_ = os.RemoveAll(home)
+		if os.RemoveAll(home) != nil {
+			return "", "", 0, nil, ErrLaunchCleanupUnconfirmed
+		}
 		return "", "", 0, nil, err
 	}
 	return id, home, pid, configuredToolsets, nil

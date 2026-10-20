@@ -29,6 +29,7 @@ type doerRoles struct {
 type doerStepExecutor struct {
 	contract           loop.DoerContract
 	roles              doerRoles
+	passCap            uint16 // zero retains the original unlinked contract bound
 	attempts           uint16
 	report             string
 	feedback           string
@@ -52,6 +53,13 @@ func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequ
 	if err := e.roles.Admit(ctx, string(operation)); err != nil {
 		return looprun.StepResult{}, err
 	}
+	cap := e.contract.MaxAttempts
+	if e.passCap > 0 {
+		if e.passCap > cap {
+			return looprun.StepResult{}, errors.New("invalid implementation pass cap")
+		}
+		cap = e.passCap
+	}
 	result := looprun.StepResult{Outputs: looprun.Values{}}
 	switch operation {
 	case loop.DoerEligibility:
@@ -69,16 +77,20 @@ func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequ
 			result.Branch = "needs_input"
 		}
 	case loop.DoerImplement:
-		if e.roles.Implement == nil || e.roles.Apply == nil || request.Step.Kind != loop.StepAction || e.attempts >= e.contract.MaxAttempts {
+		if e.roles.Implement == nil || e.roles.Apply == nil || request.Step.Kind != loop.StepAction || e.attempts >= cap {
 			return result, errors.New("bounded implementation unavailable")
 		}
 		e.attempts++
 		proposal, err := e.roles.Implement(ctx, e.contract.Task, e.feedback, e.attempts)
 		if err != nil {
-			return result, err
+			var failure *doerFailure
+			if errors.As(err, &failure) {
+				return result, failure
+			}
+			return result, closedDoerFailure("doer_implement_failed", err)
 		}
 		if strings.TrimSpace(proposal.Report) == "" || len(proposal.Report) > 65536 {
-			return result, errors.New("bounded implementer report required")
+			return result, closedDoerFailure("doer_report_invalid", nil)
 		}
 		selectedDigest := ""
 		for _, edit := range proposal.Edits {
@@ -88,10 +100,10 @@ func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequ
 			}
 		}
 		if selectedDigest == "" {
-			return result, errors.New("selected file must be edited in this Doer pass")
+			return result, closedDoerFailure("doer_selected_edit_missing", nil)
 		}
 		if err = e.roles.Apply(ctx, e.contract, proposal.Edits); err != nil {
-			return result, err
+			return result, closedDoerFailure("doer_apply_failed", err)
 		}
 		e.selectedEditDigest = selectedDigest
 		e.report, e.feedback = proposal.Report, ""
@@ -136,7 +148,7 @@ func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequ
 		}
 		if len(e.failure) == 0 {
 			result.Branch = "verified"
-		} else if e.attempts < e.contract.MaxAttempts {
+		} else if e.attempts < cap {
 			result.Branch = "retry"
 		} else {
 			result.Branch = "exhausted"

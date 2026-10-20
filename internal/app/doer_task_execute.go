@@ -58,6 +58,10 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 	if err != nil {
 		return out, err
 	}
+	// Check an existing immutable publication before freezing execution intent.
+	if _, e := s.retainedDoerPublication(ctx, subject, d); e != nil {
+		return out, e
+	}
 	out.Readiness, err = s.ProbeDoerCandidateReadinessAs(ctx, subject, DoerCandidateReadinessInput{Agent: d.Agent, Candidate: candidate})
 	if err != nil {
 		return out, err
@@ -103,11 +107,18 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 	if err != nil {
 		return out, err
 	}
-	published, err := s.PublishLoopAs(ctx, subject, PublishLoopInput{AgentID: d.Agent.ID, Revision: candidate, ExpectedPreviousDigest: d.PreviousDigest, IdempotencyKey: d.PublicationKey})
+	published, err := s.retainedDoerPublication(ctx, subject, d)
 	if err != nil {
 		return out, err
 	}
-	out.Publication = &published
+	if published == nil {
+		created, e := s.PublishLoopAs(ctx, subject, PublishLoopInput{AgentID: d.Agent.ID, Revision: candidate, ExpectedPreviousDigest: d.PreviousDigest, IdempotencyKey: d.PublicationKey})
+		if e != nil {
+			return out, e
+		}
+		published = &created
+	}
+	out.Publication = published
 	// Read the exact immutable definition back before execution. Unknown write
 	// outcomes are reconciled by replaying these same keys, never minting a Run.
 	exact, err := s.GetLoopAs(ctx, subject, d.LoopID, d.Revision)

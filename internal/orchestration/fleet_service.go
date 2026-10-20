@@ -24,21 +24,22 @@ var ErrDenied = errors.New("fleet operation denied")
 type FleetAction string
 
 const (
-	FleetActionRegister       FleetAction = "register_fleet_agent"
-	FleetActionAgentRevision  FleetAction = "agent_revision"
-	FleetActionLoopValidate   FleetAction = "loop_validate"
-	FleetActionLoopPublish    FleetAction = "loop_publish"
-	FleetActionLoopLifecycle  FleetAction = "loop_lifecycle"
-	FleetActionGraphValidate  FleetAction = "graph_validate"
-	FleetActionGraphPublish   FleetAction = "graph_publish"
-	FleetActionSubmission     FleetAction = "submission"
-	FleetActionQueueAdmission FleetAction = "queue_admission"
-	FleetActionClaim          FleetAction = "queue_claim"
-	FleetActionReclaim        FleetAction = "queue_reclaim"
-	FleetActionQueueLifecycle FleetAction = "queue_lifecycle"
-	FleetActionRuntimeEffect  FleetAction = "runtime_effect"
-	FleetActionEvidenceVerify FleetAction = "evidence_verify"
-	FleetActionDisposition    FleetAction = "disposition"
+	FleetActionDirectLoopRuntime FleetAction = "direct_loop_runtime"
+	FleetActionRegister          FleetAction = "register_fleet_agent"
+	FleetActionAgentRevision     FleetAction = "agent_revision"
+	FleetActionLoopValidate      FleetAction = "loop_validate"
+	FleetActionLoopPublish       FleetAction = "loop_publish"
+	FleetActionLoopLifecycle     FleetAction = "loop_lifecycle"
+	FleetActionGraphValidate     FleetAction = "graph_validate"
+	FleetActionGraphPublish      FleetAction = "graph_publish"
+	FleetActionSubmission        FleetAction = "submission"
+	FleetActionQueueAdmission    FleetAction = "queue_admission"
+	FleetActionClaim             FleetAction = "queue_claim"
+	FleetActionReclaim           FleetAction = "queue_reclaim"
+	FleetActionQueueLifecycle    FleetAction = "queue_lifecycle"
+	FleetActionRuntimeEffect     FleetAction = "runtime_effect"
+	FleetActionEvidenceVerify    FleetAction = "evidence_verify"
+	FleetActionDisposition       FleetAction = "disposition"
 )
 
 type ReadinessState string
@@ -153,6 +154,18 @@ func (service *FleetService) Readiness(ctx context.Context, request ReadinessReq
 		return result
 	}
 
+	// A Graph-only authorizer must explicitly admit direct execution. Fresh
+	// mandate/charter/runtime binding remains mandatory for the exact participant.
+	if request.Loop.ID != "" && request.Graph.ID == "" {
+		if err := service.authorize(ctx, FleetActionDirectLoopRuntime, request.Subject); err != nil {
+			return readiness(request.Action, ReadinessDenied, "direct_loop_runtime_permission_required")
+		}
+		authority, mandate, ready := service.resolveAuthority(ctx, request.Subject, request.Authority)
+		participant, err := service.repository.GetAgentRevision(ctx, request.Agent.ID, request.Agent.Revision)
+		if ready.State != ReadinessReady || err != nil || participant.Digest != request.Agent.Digest || !agentMatchesAuthority(participant, authority, mandate) {
+			return readiness(request.Action, ReadinessDenied, "direct_loop_authority_binding_invalid")
+		}
+	}
 	if request.Agent.ID != "" {
 		agent, err := service.repository.GetAgentRevision(ctx, request.Agent.ID, request.Agent.Revision)
 		if result := definitionReadiness(request.Action, err, RepairRegisterAgent); result.State != ReadinessReady {
@@ -192,7 +205,7 @@ func (service *FleetService) Readiness(ctx context.Context, request ReadinessReq
 
 func knownFleetAction(action FleetAction) bool {
 	switch action {
-	case FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle,
+	case FleetActionDirectLoopRuntime, FleetActionRegister, FleetActionAgentRevision, FleetActionLoopValidate, FleetActionLoopPublish, FleetActionLoopLifecycle,
 		FleetActionGraphValidate, FleetActionGraphPublish, FleetActionSubmission, FleetActionQueueAdmission,
 		FleetActionClaim, FleetActionReclaim, FleetActionQueueLifecycle, FleetActionRuntimeEffect, FleetActionEvidenceVerify, FleetActionDisposition:
 		return true
@@ -713,6 +726,12 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 			return deny("loop_unavailable", "exact Loop revision is unavailable")
 		}
 	}
+	return service.acceptPreparedRun(ctx, request, snapshot, actorAgentID, mandateID, submissionRuntime, runtimeAuthority)
+}
+
+// acceptPreparedRun is the single atomic Queue admission path for resolved
+// execution data. Definition and authority admission must precede this call.
+func (service *FleetService) acceptPreparedRun(ctx context.Context, request SubmitGraphRequest, snapshot graph.GraphRunSnapshot, actorAgentID, mandateID, submissionRuntime string, runtimeAuthority core.AuthorityContext) (SubmissionDecision, error) {
 	now := service.now()
 	// Admission above remains fresh on replay. Only reuse canonical time;
 	// AcceptSubmission still compares the complete immutable request binding,
@@ -729,7 +748,7 @@ func (service *FleetService) PrepareGraphRun(ctx context.Context, request Submit
 	}
 	submission, err := queue.NewSubmission(queue.Submission{SubmissionID: request.SubmissionID, IdempotencyKey: request.IdempotencyKey, Snapshot: digestRef(snapshot.SnapshotID, snapshot.Digest), Authority: authorityRef, MandateID: mandateID, Runtime: submissionRuntime, AuthorityKind: authorityKind, OwnerAgentID: actorAgentID, OwnerID: ownerID, SubmittedAt: now})
 	if err != nil {
-		return deny("invalid_submission", "submission envelope is invalid")
+		return service.rejectPreparedRun(ctx, request, "invalid_submission", "submission envelope is invalid")
 	}
 	item, err := queue.NewItem(queue.Item{ItemID: request.QueueItemID, Submission: digestRef(submission.SubmissionID, submission.Digest), Snapshot: submission.Snapshot, Authority: authorityRef, GraphRunID: request.GraphRunID, MaxAttempts: request.MaxAttempts, EnqueuedAt: now, AvailableAt: now})
 	if err != nil {

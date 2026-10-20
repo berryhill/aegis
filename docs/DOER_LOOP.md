@@ -1,5 +1,37 @@
 # Bounded Doer Loop v4
 
+## Exact owner-principal Run preparation (source candidate)
+
+For a published selected-file v4 Loop, one fresh authenticated owner-principal
+`loops queue` request now prepares its **same immutable Loop** without separate
+setup consent when the selected stanza has zero capabilities, tools/toolsets,
+memory and credential scopes and the runtime target is `aegis-owned-ephemeral`.
+Hermes builds a disposable home directly from the exact mandate; this path does
+not create the persistent provisioned mapping, a plan, a generic approval or a
+provisioning receipt. `required_operations: ["provision"]` is not rewritten or
+waived for actual provisioning. Generic session entry still requires a verified
+provisioning receipt. Readiness marks the receipt `not_required` with reason
+`zero_authority_ephemeral_doer`, not falsely verified.
+
+The exact authenticated Run is also the owner-principal's write-scope action:
+the controller persists the existing signed exact host grant with truthful
+`run_request_id` provenance, bounded by authentication expiry/freshness. It does
+not infer a grant from publication, a draft, readiness, workspace ownership or
+UID alone. The durable intent fence, exact latest enabled Registry/stable-owner
+checks, immutable charter and Loop bindings, protected workspace/path checks,
+provider admission, fresh per-effect host admission and independent selected-file
+verification remain enforced. New authority, foreign owners, ordinary workspace
+actors and persistent runtime targets do not qualify. Explicit protected setup
+remains available when genuinely independent new authority is required; it is
+not a mandatory detour for this zero-authority Run.
+
+The controller does **not** install or choose Laya/model/checker dependencies.
+An absent execution controller/Laya configuration returns
+`doer_runtime_unconfigured` / `configure_controller_doer_runtime` inline with the
+same retained request identity and no new Graph/Queue/claim. Configured helpers
+still undergo the real availability and task-eligibility checks. Tests use
+synthetic Hermes/Laya protocol fixtures; they do not qualify a live provider.
+
 Implementation turns receive the exact selected-file assertion (`verify_file`, optional `expected_text`, `exact_bytes`) and retry bound alongside task prose and allowlisted paths. Raw-byte assertions do not imply a trailing newline. This is input to the tool-free implementer, not model-written acceptance evidence; the controller still independently reloads and verifies the file. Host workspace paths are not included in that turn. Publication and exact same-Loop execution remain distinct supported actions; no approval or credential authority is inferred from these inputs.
 
 ## Real-daemon protected setup negative regression
@@ -16,9 +48,125 @@ This builds a private source-root executable, closes fixture stores before real 
 
 The optional charter field `hermes.provider_authentication: {"mode":"controller-codex-access-token.v1"}` separates controller-owned inference transport from Agent credential authority. It accepts only an explicit Codex provider/model with zero Agent tools, toolsets, credential scopes, plugins, MCP servers or persistent/profile home. Historical omitted fields preserve canonical encoding; existing provider credential scopes are not reclassified or removed. An exact successor, authenticated approval, provisioning receipt and fresh session admission remain independent gates.
 
-The resolver uses only the explicitly configured `credentials.provider_auth` environment binding: `type: environment`, an operator-chosen `source_env`, and `target_env: AEGIS_CODEX_ACCESS_TOKEN`. The target is a binding discriminator, not an exported environment variable. The controller validates bounded access-token shape and expiry, materializes only disposable OAuth transport state, and supplies no refresh token, Agent credential tool or management grant. This access-only transport is qualified narrowly for Hermes 0.21.3 with the exact source fingerprints in the adapter; other versions or changed transport sources deny `doer_provider_auth_runtime_unqualified`. An offline synthetic-token test exercises the real pool loader and provider resolver without network access; it proves schema consumption, not provider authentication or entitlement. The token must remain outside the 120-second refresh margin throughout the approved session. Controller-authenticated processes repeat admission immediately before start and terminate on caller cancellation or the authority deadline. This is tool/model isolation, not a host-process sandbox: the trusted Hermes process necessarily handles the access token. Missing, invalid, expired or unauthorized bindings fail closed with fixed diagnostics. These controls are not a host sandbox or cryptographic JWT issuer verification. Independent security review and installed/live provider qualification remain required. No live binding, secret, charter, Agent, Loop or service was modified for this candidate.
+The legacy resolver uses the explicitly configured `credentials.provider_auth` environment binding: `type: environment`, an operator-chosen `source_env`, and `target_env: AEGIS_CODEX_ACCESS_TOKEN`. The target is a binding discriminator, not an exported environment variable. The controller validates bounded access-token shape and expiry, materializes only disposable OAuth transport state, and supplies no refresh token, Agent credential tool or management grant. This access-only transport is qualified narrowly for Hermes 0.21.3 with the exact source fingerprints in the adapter; other versions or changed transport sources deny `doer_provider_auth_runtime_unqualified`. An offline synthetic-token test exercises the real pool loader and provider resolver without network access; it proves schema consumption, not provider authentication or entitlement. The token must remain outside the 120-second refresh margin throughout the approved session. Controller-authenticated processes repeat admission immediately before start and terminate on caller cancellation or the authority deadline. This is tool/model isolation, not a host-process sandbox: the trusted Hermes process necessarily handles the access token. Missing, invalid, expired or unauthorized bindings fail closed with fixed diagnostics. These controls are not a host sandbox or cryptographic JWT issuer verification. Independent security review and installed/live provider qualification remain required. No live binding, secret, charter, Agent, Loop or service was modified for this candidate.
 
-`loops readiness FILE [--probe]`, `draft-save FILE`, `draft-show ID` and `draft-continue FILE` use strict typed CLI/API adapters and the configured authenticated owning-service Unix transport with `--target`. Readiness distinguishes `can_author` from `can_execute`; inspect before execution-intended publication, while intentional inactive registry-only publication remains possible. Plain inspection never invokes the helper; explicit probing is bounded to 10 seconds and does not judge task eligibility or create authority/work. Draft updates require exact version CAS; continuation requires the old exact Agent and an already-approved immediate successor charter, archives the old binding and retains contract/lifetime with fresh publication identities. None of these operations publishes, approves, provisions, activates or executes. Fresh worker admission and exact host-write approval still apply. See the canonical Loop skill for request fields.
+
+### Explicit native Hermes connection (Linux source candidate)
+
+The configured principal may explicitly select their canonical shared Hermes
+root (`<operator-home>/.hermes`) as well as a named profile. Shared-root access
+is not automatic fallback: preview, connection metadata and every runtime use
+pin that exact selected source and account. Another operator's root, arbitrary
+paths, implicit borrowing, source writes and refresh remain denied.
+
+Use the owning daemon's typed online connection action, never handcraft binding
+fields or extract a token/account ID:
+
+```sh
+aegis --config OWNER_CONFIG --target CONSOLE_URL controller-codex candidates PROFILE_HOME
+aegis --config OWNER_CONFIG --target CONSOLE_URL controller-codex preview PROFILE_HOME [--credential ID]
+aegis --config OWNER_CONFIG --target CONSOLE_URL controller-codex connect REVIEW_ID
+aegis --config OWNER_CONFIG --target CONSOLE_URL controller-codex show
+```
+
+`PROFILE_HOME` is the explicitly approved canonical `~/.hermes` or exact named
+profile under the principal's OS home, never an implicit shared-source fallback.
+Preview returns only source/account/principal metadata and a five-minute one-use
+review ID; connect rechecks the same account/source and exact configuration bytes.
+The existing fresh kernel-authenticated Unix principal authorizes this operational
+connection; it is not foundational charter approval and creates no Agent grant.
+No independent password decision or desktop is required for this operation.
+Unknown/caller-authored identity fields, foreign/expired reviews, unsafe sources,
+changed accounts and competing environment bindings deny. The daemon alone
+publishes a private mode-0600 controller-only operational record beside the
+owning config at `OWNER_CONFIG.controller-codex.json` (private owner-only parent).
+It contains the reviewed config SHA-256 and exact source/optional credential ID/account/principal only,
+never credentials. Publication is atomic no-replace with fsync and readback;
+existing records conflict. The owning YAML is never rewritten, backed up or
+rolled back, so concurrent operator bytes/comments are preserved. Every runtime
+resolution and `show` revalidate the record and config digest; any drift denies,
+not fallback to another account. This is not CAS against arbitrary same-UID
+writers. Legacy explicit YAML bindings remain supported without a sidecar;
+conflicting bindings deny. Read `show` after an
+interrupted outcome; do not replay a consumed review. The existing daemon's
+runtime resolver adopts the exact persisted binding without mutating shared
+startup configuration or requiring a restart. No local-store fallback exists.
+`approved_by` is derived server-side, never an input. Live account entitlement and
+same-Run execution must still be verified after independent candidate testing.
+
+The native connection retains the exact existing Hermes 0.21.3/five-source
+qualification gate. A private read-only descriptor is opened through no-follow
+owner/mode-checked ancestry into only that local profile's store. A bounded,
+no-inherited-environment child invokes the qualified native Hermes
+`_load_auth_store` and `_provider_state_in` APIs, never a fallback-capable account
+selector. Hermes owns the store decoding, including its supported legacy format;
+Aegis suppresses the parser's corruption-backup behavior and raw diagnostics.
+Only a nonempty profile-local native OAuth pool is eligible; no singleton is
+required. `PooledCredential.from_dict` decodes each entry. Exact token aliases
+are one grant; without an explicit selector multiple distinct grants deny as ambiguous without choosing by
+priority, label, singleton, or reviewed account. Each entry must have a local
+native device-code source and no external custody reference. Borrowed/global or
+external references return `doer_provider_auth_native_source_approval_required`
+without opening their sources; independent exact source approval is required.
+Suppressed, dead, exhausted, non-OAuth and reference-only entries deny. Empty
+local pools cannot establish effective profile-local login and never trigger
+root fallback. Symlinks, hardlinks, wrong owners,
+unsafe modes, oversized stores, account mismatch and expired/missing tokens deny.
+The source is never modified. The private pipe returns only the access token to
+the controller, which validates account and the existing 120-second margin;
+refresh tokens never enter runtime transport. Non-Linux native resolution is
+unqualified. A pre-existing environment binding still behaves as before, but a
+native connection cannot coexist with either Codex environment alias or be used
+for the design provider. Authentication approval remains distinct from custody,
+Agent, charter, Loop, Run and host-write authority; none is changed by connection.
+
+### Inspect and select an exact local native entry
+
+`controller-codex candidates PROFILE_HOME` calls only the owning service's strict
+`POST /v1/controller/codex/candidates` with `{"profile_home": PROFILE_HOME}`.
+It is credential-free output, not credential-free internal parsing: the same
+qualified native APIs inspect the protected pinned descriptor, offline and
+read-only. At most 64 entries and a 1 MiB source are accepted. Labels, raw native
+IDs, source JSON, exceptions, token hashes and credentials are never returned.
+Each row has optional `credential_id`, optional `account_fingerprint`, `eligible`
+and a closed `reason`. Reasons are `eligible`, `id_missing_or_invalid`,
+`id_duplicate`, `source_approval_required`, `unsupported_auth_type`,
+`unusable_status`, `token_absent`, `token_invalid` and `token_expired`.
+Source-wide malformed/suppressed/oversized stores fail with existing closed errors.
+`distinct_eligible_grants` counts validated distinct access grants, not accounts;
+matching account fingerprints can still identify different grants. No native
+current account is inferred or advertised. Inspection creates no review or grant.
+
+The opaque ID is `nc-` plus a domain-separated SHA-256 digest of the bounded
+explicit native entry ID. It is stable across token refresh, not across native
+entry replacement; missing IDs never use native `from_dict`'s generated default.
+After operator selection use `preview PROFILE_HOME --credential ID`. Its strict
+API adds optional `credential_id` to the preview input, never caller account,
+approval or secret fields. The five-minute single-use review binds exact source,
+ID, account, authenticated principal and config bytes. Connect rechecks all of
+these and persists the optional ID in the operational sidecar; `show` returns it.
+Every subsequent resolution requires exactly that native entry ID and account.
+Missing, duplicate, replaced, ineligible or account-drifted entries deny without
+selecting another entry. A refresh outside Aegis may advance the same entry's
+valid access token for the same account. Empty selector retains unique-only
+behavior, including exact aliases, and never picks by priority, label or model
+inference. An unsupported entry is not proof of multiple accounts or bad remote
+authentication. Provider-side authentication and entitlement remain unchanged.
+
+Offline regression command (synthetic stores only; no production credential read):
+
+```sh
+AEGIS_TEST_PROVIDER_HERMES_INSTALL=/path/to/qualified/hermes/source \
+  GOMAXPROCS=2 GOFLAGS=-p=1 GOMEMLIMIT=2GiB \
+  go test -race ./internal/config ./internal/runtime/hermes ./internal/app
+```
+
+This proves deterministic source resolution and the installed native parser,
+not provider entitlement or the published Loop's live execution. An independent
+tester must verify the frozen source/binary before an operator connects dev and
+retries the same retained Run. Do not create replacement definitions or output.
+
+`loops readiness FILE [--probe]`, `draft-save FILE`, `draft-show ID` and `draft-continue FILE` use strict typed CLI/API adapters and the configured authenticated owning-service Unix transport with `--target`. Readiness distinguishes `can_author` from `can_execute`; inspect before execution-intended publication, while intentional inactive registry-only publication remains possible. Plain inspection never invokes the helper; explicit probing is bounded to 10 seconds and does not judge task eligibility or create authority/work. Draft updates require exact version CAS; compatible continuation requires the old exact Agent and an already-approved immediate successor charter, archives the old binding and preserves contract/lifetime and original publication identities. None of these operations publishes, approves, provisions, activates or executes. Fresh worker admission and exact host-write approval still apply. See the canonical Loop skill for request fields.
 
 
 ## Protected setup through installed skills (source candidate)
@@ -28,7 +176,7 @@ Use this workflow only when installed `aegis loops --help` lists `setup-protecte
 1. Read the same retained task with `aegis --config OWNER_CONFIG --target CONSOLE_URL loops draft-show DRAFT_ID`. Keep its exact `id`, `version`, `agent`, `contract`, publication key and expiry; do not recreate the task when a prerequisite blocks it.
 2. For an explicitly requested remedy, create a private JSON invocation file containing only `{"id":"EXACT_RETURNED_DRAFT_ID","expected_version":EXACT_RETURNED_VERSION,"action":"successor"}`. Run `aegis --config OWNER_CONFIG --target CONSOLE_URL loops setup-protected FILE`. The typed owning service validates current principal/ownership and exact draft version, and launches its pinned hidden companion. It accepts no password, decision, review receipt, charter bytes or approval flag. `successor` is only the bounded credential-only correction described below, not an arbitrary charter editor.
 3. The human enters the enrolled Aegis principal password (not the authority passphrase) in an independently displayed protected native UI, then reviews the complete exact scope in a separate protected native confirmation. Root-owned trusted helpers capture input outside agent stdin. No GUI means unavailable; never fall back to a model-operated terminal or generic typed approve. Password session, CSRF and single-use review handle remain memory-only in the companion, never CLI output or agent input.
-4. On `approved`, require exact owning-service readback, not helper exit text. For successor, verify version increments once, the same Agent advances to its immediate Registry revision and the approved proposed charter, contract and fixed retention survive, and publication identity changes. Re-read the draft before another action. `successor` grants no provisioning, host write, publication or Run.
+4. On `approved`, require exact owning-service readback, not helper exit text. For successor, verify version increments once and the same Agent advances to its immediate approved Registry revision. Contract, fixed retention, original Loop ID, revision, predecessor and publication key survive. Existing exact validated publication and historical publisher provenance are reused, not rewritten. Re-read the draft before another action. `successor` grants no provisioning, host write, publication or Run.
 5. Only with separate owner intent, invoke the same command with `action: "provision"` and the new exact draft version. The human reviews the complete canonical charter/plan/effects and independently approves that exact plan for deterministic apply. Require its returned verified receipt, exact plan/charter digests and verified artifacts. Then independently invoke `action: "host"` to review the exact task/workspace/paths/assertion/retry contract and signed expiring host grant. Each action requires its own fresh password/native review. Neither action runs the task.
 6. Resume authoring from the returned draft: build a private Doer authoring file using `agent_id: draft.agent.id`, `loop_id`, `revision`, optional `previous_digest`, `idempotency_key: draft.publication_key`, and `doer: draft.contract`; `loops doer FILE --output NEW_FILE`, authenticated `loops validate NEW_FILE`, then explicitly authorized `loops publish NEW_FILE`. Read back the exact immutable revision via `loops show LOOP REVISION`.
 7. For separately requested Run, prepare `loops queue FILE` with exact readback `agent` and `loop` revision references, a stable owner-approved `idempotency_key`, and `activate: true` only if intended. The owning service repeats all current runtime/provider/Laya/host/receipt prerequisites. Require Queue attempt, independently checked selected-file artifact, verifier receipt and successful terminal disposition; `approved`, readiness or publication is not execution.
@@ -49,7 +197,7 @@ The issue 281 worktree adds a guided Agent → Doer task/assertion → readiness
 
 - **Retain, do not execute:** the authenticated principal's server-held draft preserves the exact Agent reference, task, workspace, writable paths, selected-file assertion and publication key across review. Edits require the current draft version (CAS); stale versions conflict. Draft expiry is fixed at creation (seven days), with at most 16 retained drafts per principal; edits do not renew expiry or recycle an old intent. Saving is not charter approval, publication, host consent or Run.
 - **Readiness is observation:** candidate authorability and execution prerequisites are separate. The console includes a controller provider authentication row; token/transport qualification is resolved once at that stage, before receipt and runtime checks. A missing/blocked foundation leaves later checks `not_checked`. Approved-draft page inspection remains helper-free even after exact signed continuation resolution: the helper stays `not_checked` with `helper_probe_required` until an explicit probe. A bounded Laya protocol probe does not establish task eligibility or a model grant. Publication may remain available while execution is blocked. The worker repeats fresh checks before claim/effects.
-- **Review each remedy independently:** choose an existing exact charter successor, independently approve its exact Agent binding, review/approve/apply the exact provisioning plan, and separately decide the exact host-write contract. No button, model proposal, draft or readiness label implies all those decisions. A successor archives the prior draft binding and creates a new Loop identity/revision-one binding and publication key; published predecessors and old Run requests stay immutable. Same-contract receipt recovery retains its request identity; a changed authority/binding needs a newly reviewed Run intent.
+- **Review each remedy independently:** choose an existing exact charter successor, independently approve its exact Agent binding, review/approve/apply the exact provisioning plan, and separately decide the exact host-write contract. No button, model proposal, draft or readiness label implies all those decisions. Compatible continuation archives the prior draft binding and preserves the original Loop identity/revision/predecessor and publication key. Exact publication, validation and stable owner/publisher provenance must verify before reuse; the newly admitted runtime participant is separate from historical creation provenance. Frozen/admitted runtime bindings cannot be rebound. Unknown, corrupt, foreign or changed publication denies, never allocates a replacement.
 - **Host consent is narrow:** the signed record binds deployment, authenticated principal/stable owner, exact enabled Agent, candidate/predecessor and full contract (task, absolute workspace, writable files, selected verifier, assertion and retry bound). Its lifetime is at most 24 hours. Signed custody and current Registry ownership are reloaded before effects; the existing explicitly configured contract allowlist remains supported and is not silently rewritten. Consent grants no credential, model, provisioning, session, Graph or native-test authority. Local Laya/Hermes custody and runtime admission remain independent prerequisites.
 - **Native continuation is a separate gate:** the required adapter is a separate Aegis companion process with a native `CONFIRM` decision (not password intake), protected Unix transport and genuine Linux peer credentials. The signed continuation retains the original browser requester/session and the authenticated human executor separately, with exact draft/version, candidate/Agent/Loop/charter, publication/Run keys, deployment/configuration and expiry. Browser cookies are not relabeled as local-OS identity, and a daemon self-socket is not a fallback. The in-flight portal/companion source is not yet qualified as an installed path. Unavailable, cancellation, denial, timeout, malformed response and no-decision must not mint approval or rotate the original draft/key.
 - **Publish then explicitly Run:** publication creates an inactive immutable definition, not execution. Run must pass current exact authority, receipt, runtime and contract checks; a blocker/uncertain response requires same-key observation before a distinct run. Success requires independently reloaded selected-file artifact, verifier receipt, exact binding and terminal disposition—not a Laya verdict, cursor, process exit or model claim.
@@ -130,6 +278,8 @@ When an authenticated v4 request has both an unusable selected model and no veri
 For a compatible already-accepted v4 preparation, a repeat request with an explicit item ID or the same idempotency key retains that exact ID. The optional `queue_item_id` is a recovery selector, not a changed execution intent: it must equal that request key's accepted Queue item ID. A different key cannot adopt the item. A newly missing prerequisite is appended as a no-state-change preparation diagnostic and reloaded for Queue readback, without claim or attempt. Repeating the same blocker does not duplicate its diagnostic. This does not turn a fresh unready request into a parked Queue item.
 
 The closed step sequence is eligibility (typed local Laya) → implement (bounded tool-free Hermes proposal; controller applies only allowlisted file edits) → judgment (Laya reads the report) → selected-file verification (controller reads the file independently) → either terminal assessment or bounded Hermes diagnosis and another proposal. The authenticated Queue detail shows the independently reloaded, content-free Doer cursor in recorded order so verify → diagnosis → implement is visible when it actually occurred; it never infers success from a cursor step or model verdict. A negative gate durably denies the Queue item as `doer_needs_input` before any claim/attempt. An already-satisfying target denies before claim so old bytes cannot count as new work. Both judgment and file check are observed on every pass; a model verdict never mints a receipt. The file verifier denies unsafe paths, symlinks, nonregular files, oversized output and mismatched text; content-addressed artifact, independently reloaded receipt, pinned contract and fresh authority are required for successful disposition. Failed or uncertain effects never become success.
+
+Implementation failure diagnostics retain a closed controller code in the append-only step checkpoint and expose it as `doer_steps[].failure_code` through authenticated Queue readback. Reviewed native Hermes `error_surface` layer/code pairs are advisory diagnostics only; provider/model labels, exception text, response bytes and retryability flags are never projected. Proposal decoding, missing selected edits and apply failures have separate closed codes. Missing or unrecognized native classifications stay generic. Historical untyped failures remain `step_error`: this projection cannot recover a cause that was discarded before persistence, infer it from later session cleanup, or reopen a terminal run. The Loop revision, implementation budget, fresh admission and evidence requirements are unchanged.
 
 Append-only digest-linked step checkpoints live in the existing fleet writer. Authenticated Queue readback exposes ordered content-free `doer_steps` metadata keyed by attempt ID; raw model text and file bytes are not copied into this response. Interrupted nonterminal cursors fail closed: an uncertain model turn or file write is never replayed automatically. The exact claimed attempt remains owned until its bounded lease expires; the existing authenticated `aegis queue expire` path then records an evidence-free expired disposition, subject to fresh authority and exact claim admission. If authority is no longer available, expiration needs separately authorized authority recovery; the model cannot force it. This is a bounded single-node Doer Loop, not a general multi-node Graph scheduler, host sandbox, distinct Sol/Luna model mandates, Jev adapter, token/cost ledger, arbitrary shell executor, automatic Queue retry, or live-model qualification. Native code/tests (if separately authorized in v3) and the local Laya subprocess remain host processes under the operator account; tool-free Hermes turns are capability-limited but not a host sandbox.
 

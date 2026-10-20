@@ -19,6 +19,9 @@ type DoerStepView struct {
 	Visit          uint32 `json:"visit"`
 	Attempt        uint16 `json:"attempt"`
 	Terminal       bool   `json:"terminal"`
+	// FailureCode is the last closed step failure, not raw runtime output.
+	// Legacy untyped failures remain step_error; no historical cause is inferred.
+	FailureCode string `json:"failure_code,omitempty"`
 }
 
 // DoerTrace is a read-only port; the application must authenticate the caller
@@ -47,12 +50,21 @@ func (worker *QueueWorker) DoerTrace(ctx context.Context, attemptID, revisionDig
 			Pending *struct {
 				Attempt uint16 `json:"attempt"`
 			} `json:"pending"`
-			Done json.RawMessage `json:"done"`
+			Done     json.RawMessage `json:"done"`
+			Failures []struct {
+				Code string `json:"code"`
+			} `json:"failures"`
 		}
 		if err := json.Unmarshal(fact.Payload, &cursor); err != nil || cursor.StepID == "" {
 			return nil, errors.New("Doer cursor payload invalid")
 		}
 		view := DoerStepView{Sequence: fact.Sequence, Digest: fact.Digest, PreviousDigest: fact.PreviousDigest, StepID: cursor.StepID, Visit: cursor.Visits[cursor.StepID], Terminal: len(cursor.Done) > 0 && string(cursor.Done) != "null"}
+		if len(cursor.Failures) > 0 {
+			view.FailureCode = "step_error"
+			if code := cursor.Failures[len(cursor.Failures)-1].Code; isDoerFailureCode(code) {
+				view.FailureCode = code
+			}
+		}
 		if cursor.Pending != nil {
 			view.Attempt = cursor.Pending.Attempt
 		}

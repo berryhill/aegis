@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"context"
 	"errors"
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
@@ -10,6 +11,9 @@ import (
 // ValidateLoopAdmission applies controller-owned implementation gates before
 // promoting preparation to executable work. Runtime repeats these checks.
 func (w *QueueWorker) ValidateLoopAdmission(value loop.LoopRevision, agent registry.AgentRevision) error {
+	return w.ValidateLoopAdmissionContext(context.Background(), value, agent)
+}
+func (w *QueueWorker) ValidateLoopAdmissionContext(ctx context.Context, value loop.LoopRevision, agent registry.AgentRevision) error {
 	if w == nil {
 		return errors.New("worker unavailable")
 	}
@@ -20,7 +24,7 @@ func (w *QueueWorker) ValidateLoopAdmission(value loop.LoopRevision, agent regis
 		return err
 	}
 	if value.SchemaVersion == loop.DoerRevisionSchemaVersion {
-		return w.validateDoerReadiness(value, agent)
+		return w.validateDoerReadiness(ctx, value, agent)
 	}
 	for _, step := range value.Steps {
 		if step.Implementation != nil {

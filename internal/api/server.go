@@ -123,8 +123,14 @@ func classifyError(err error) (int, string, string) {
 		return turnError.status, turnError.code, turnError.message
 	case errors.As(err, &commandError):
 		return http.StatusBadRequest, "manager_command_parse_error", commandError.message
+	case app.ProviderAuthenticationFailureCode(err) == "doer_provider_auth_runtime_unqualified":
+		return http.StatusServiceUnavailable, "doer_provider_auth_runtime_unqualified", "qualified native runtime required"
+	case app.ProviderAuthenticationFailureCode(err) != "":
+		return http.StatusConflict, app.ProviderAuthenticationFailureCode(err), "exact native source connection denied"
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
+	case errors.Is(err, app.ErrDoerReexecutionBudgetExhausted):
+		return http.StatusConflict, "doer_reexecution_budget_exhausted", "the immutable implementation-attempt budget is exhausted"
 	case errors.Is(err, app.ErrDenied):
 		return http.StatusForbidden, "denied", "authorization denied"
 	case errors.Is(err, app.ErrAmbiguous):
@@ -1758,6 +1764,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusCreated, value)
 	})
+	registerControllerCodexRoutes(g, svc)
 	registerDoerServiceRoutes(g, svc)
 	registerDoerProtectedInvokeRoutes(g, svc, nil)
 	g.GET("/loops", func(c *echo.Context) error {

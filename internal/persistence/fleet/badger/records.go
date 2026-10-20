@@ -1023,6 +1023,9 @@ func (s *Store) CreateGraphRunSnapshot(ctx context.Context, snapshot graph.Graph
 	return
 }
 func verifySnapshotReferences(txn *badgerdb.Txn, snapshot graph.GraphRunSnapshot) error {
+	if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+		return verifyDirectSnapshotReferences(txn, snapshot)
+	}
 	revision, err := graphRevision(txn, snapshot.Graph.ID, snapshot.Graph.Revision)
 	if err != nil {
 		return err

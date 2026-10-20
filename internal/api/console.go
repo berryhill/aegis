@@ -920,6 +920,9 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 		DispositionState:  "Pending — no authoritative terminal disposition is attached.",
 		ContextualAction:  queueContextualActionForState(view, state),
 	}
+	if view.IsDirectLoop() {
+		detail.ExecutionType = "Direct Loop run · " + exactRevisionLabel(view.Source.ID, view.Source.Revision, view.Source.Digest)
+	}
 	if pinnedGraph != nil {
 		detail.PinnedGraph = pinnedGraph.Revision.GraphID
 		detail.PinnedGraphRevision = fmt.Sprintf("r%d", pinnedGraph.Revision.Revision)

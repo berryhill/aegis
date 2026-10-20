@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/store"
@@ -226,6 +228,17 @@ func (r draftAgentRepository) GetAgentRevision(context.Context, string, uint64) 
 }
 func (r draftAgentRepository) LatestAgentRevision(context.Context, string) (registry.AgentRevision, error) {
 	return r.latest, nil
+}
+
+func (r draftAgentRepository) GetLoopRevision(context.Context, string, uint64) (loop.LoopRevision, error) {
+	return loop.LoopRevision{}, fleet.ErrNotFound
+}
+
+func (r draftAgentRepository) GetGraphRevision(context.Context, string, uint64) (graph.GraphRevision, error) {
+	return graph.GraphRevision{}, fleet.ErrNotFound
+}
+func (r draftAgentRepository) GetQueueItem(context.Context, string) (queue.Item, error) {
+	return queue.Item{}, fleet.ErrNotFound
 }
 
 func TestDoerDraftPublicationRevalidatesExactAgentWithoutSubstitution(t *testing.T) {

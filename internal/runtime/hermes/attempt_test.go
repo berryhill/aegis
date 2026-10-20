@@ -37,6 +37,7 @@ func (a attemptAdmission) CheckRuntimeAdmission(_ context.Context, launch execut
 
 func TestAttemptTurnExecutesOneBoundedGatewayTurn(t *testing.T) {
 	adapter, root := attemptTestAdapter(t, `#!/bin/sh
+[ -n "$HERMES_MODEL" ] && [ "$HERMES_MODEL" = "$HERMES_TUI_MODEL" ] || exit 91
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
 read tools
 printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'

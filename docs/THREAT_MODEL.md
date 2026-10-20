@@ -1,5 +1,11 @@
 # Aegis MVP Threat Model
 
+The zero-authority owner-principal selected-file v4 Run has a narrow
+[ephemeral preparation policy](../DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).
+It does not provision persistent artifacts or invent a human decision: the exact
+Run carries signed expiring host scope, while general provisioning and
+new-authority gates remain unchanged. Missing execution dependencies still deny.
+
 Offline upgrade transport recovery reuses all-states Linux VFS diagnostics and
 the startup lifecycle flock: non-listening, relative and aliased binds deny.
 Fresh exact stopped-plan/MainPID=0 admission precedes quarantine and authority

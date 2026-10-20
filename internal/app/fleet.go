@@ -264,8 +264,17 @@ type SubmissionHistory struct {
 	Rejected []queue.Rejection      `json:"rejected"`
 }
 
+// IsDirectLoop reports the execution source without exposing lower-layer
+// source-kind constants to presentation adapters.
+func (v QueueExecutionView) IsDirectLoop() bool {
+	return v.SourceKind == graph.SourceDirectLoop
+}
+
 type QueueExecutionView struct {
-	Item queue.Item `json:"item"`
+	SourceKind graph.SourceKind        `json:"source_kind"`
+	Source     reference.RevisionRef   `json:"source"`
+	Inputs     []graph.NormalizedInput `json:"inputs"`
+	Item       queue.Item              `json:"item"`
 	// Submission is the admitted queued request with full mandate context. It
 	// is resolved through the repository independently of Item.Submission,
 	// which only carries the immutable submission digest reference.
@@ -341,7 +350,16 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 	}
 	s.FleetRepository, s.Fleet, s.QueueWorker = repository, service, worker
 	worker.SetDoerHostApprovalResolver(s.resolveDoerHostApproval)
+	worker.SetDoerPassCapResolver(s.resolveDoerPassCap)
 	worker.SetDoerProtectedPaths(s.doerControllerProtectedPaths())
+	// Startup-only immutable capability wiring; this grants no execution rights.
+	if s.Config.Implementation.GoBinary == "" && s.Config.Implementation.LayaPython == "" && s.Config.Implementation.LayaHome == "" && len(s.Config.Implementation.AuthorizedContracts) == 0 {
+		if err := worker.PrepareInstalledDoerRuntime(s.Config.StateDir, s.Hermes); err != nil {
+			s.Log.Debug("installed local Doer runtime unavailable", "reason", "qualified_local_dependencies_missing")
+		} else {
+			s.Log.Info("installed local Doer library prepared", "model", "convaiinnovations/laya", "offline", true)
+		}
+	}
 	return nil
 }
 
@@ -676,6 +694,11 @@ func (s *Service) SetLoopLifecycleAs(ctx context.Context, subject core.Subject, 
 			if !replay {
 				agent := view.Provenance.PublisherAgent
 				ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.ID, Revision: agent.Revision, Digest: agent.Digest}
+				if request.Workspace != nil {
+					// Creation provenance stays immutable; preflight the freshly
+					// admitted workspace participant, not its historical publisher.
+					ref = request.Workspace.Agent
+				}
 				reason, err := s.preflightDoerQueue(ctx, subject, QueueLoopInput{Agent: ref, Loop: input.Loop}, view)
 				if err != nil {
 					return LoopLifecycleResult{}, err
@@ -992,6 +1015,20 @@ func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, reque
 	return s.Fleet.PrepareGraphRun(ctx, request)
 }
 
+// SubmitLoopAs shares Queue admission with the CLI/API Loop execution route.
+func (s *Service) SubmitLoopAs(ctx context.Context, subject core.Subject, request orchestration.SubmitLoopRequest) (orchestration.SubmissionDecision, error) {
+	if err := s.requireFleetPrincipal(subject); err != nil {
+		return orchestration.SubmissionDecision{}, err
+	}
+	request.Subject = subject
+	workspace, err := s.RegisteredAgentWorkspaceAs(ctx, subject, request.Participant.ID)
+	if err != nil {
+		return orchestration.SubmissionDecision{}, err
+	}
+	request.Workspace, request.Authority = &workspace, workspace.Ref()
+	return s.Fleet.PrepareLoopRun(ctx, request)
+}
+
 func (s *Service) SubmitGraph(ctx context.Context, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
 	subject, err := s.Authenticate(ctx)
 	if err != nil {
@@ -1089,14 +1126,18 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		if loadErr != nil || snapshot.Digest != item.Snapshot.Digest {
 			return nil, fleet.ErrCorrupt
 		}
-		graphRevision, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-		if loadErr != nil || graphRevision.Digest != snapshot.Graph.Digest || len(graphRevision.Nodes) == 0 {
+		topology, loadErr := s.Fleet.ResolveRunTopology(ctx, snapshot)
+		if loadErr != nil || len(topology.Nodes) == 0 {
 			return nil, fleet.ErrCorrupt
+		}
+		view.SourceKind, view.Source, view.Inputs = graph.SourcePublishedGraph, snapshot.Graph, snapshot.Inputs
+		if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+			view.SourceKind, view.Source = graph.SourceDirectLoop, topology.Nodes[0].Loop
 		}
 		// Historical visibility is not processing admission. Validate every
 		// participant even when this Graph is unsupported by the bounded worker.
-		view.NodeRuntimes = make(map[string]registry.RuntimeBinding, len(graphRevision.Nodes))
-		for _, node := range graphRevision.Nodes {
+		view.NodeRuntimes = make(map[string]registry.RuntimeBinding, len(topology.Nodes))
+		for _, node := range topology.Nodes {
 			participantRef := node.Participant
 			participant, loadErr := s.FleetRepository.GetAgentRevision(ctx, participantRef.ID, participantRef.Revision)
 			if loadErr != nil || participant.Digest != participantRef.Digest {
@@ -1106,8 +1147,8 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		}
 		// Preserve the single-node response without claiming one runtime is
 		// representative of an entire multi-node Graph.
-		if len(graphRevision.Nodes) == 1 {
-			view.Runtime = view.NodeRuntimes[graphRevision.Nodes[0].ID]
+		if len(topology.Nodes) == 1 {
+			view.Runtime = view.NodeRuntimes[topology.Nodes[0].ID]
 		}
 		foundRun := false
 		for _, run := range runs {

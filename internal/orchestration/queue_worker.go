@@ -94,6 +94,7 @@ type QueueWorker struct {
 	now                func() time.Time
 	implementation     *ImplementationController
 	doerHostApproval   func(context.Context, loop.DoerContract, registry.AgentRevision) error
+	doerPassCap        func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)
 	doerProtectedPaths []string
 }
 
@@ -160,11 +161,20 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil || snapshot.Digest != item.Snapshot.Digest {
 		return WorkResult{}, fmt.Errorf("%w: exact snapshot unavailable", ErrWorkerDenied)
 	}
-	graphRevision, err := worker.repository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-	if err != nil || graphRevision.Digest != snapshot.Graph.Digest || len(graphRevision.Nodes) != 1 {
-		return WorkResult{}, fmt.Errorf("%w: exact single-node graph required", ErrWorkerDenied)
+	topology, err := worker.service.ResolveRunTopology(ctx, snapshot)
+	if err != nil || len(topology.Nodes) != 1 {
+		return WorkResult{}, fmt.Errorf("%w: exact single-node topology required", ErrWorkerDenied)
 	}
-	node := graphRevision.Nodes[0]
+	var graphRevision graph.GraphRevision
+	if snapshot.SchemaVersion != graph.DirectRunSnapshotSchemaVersion {
+		graphRevision, err = worker.repository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
+		if err != nil || graphRevision.Digest != snapshot.Graph.Digest {
+			return WorkResult{}, fmt.Errorf("%w: exact Graph unavailable", ErrWorkerDenied)
+		}
+	}
+	node := topology.Nodes[0]
+	// Replace any inherited marker with the actual immutable submission and node.
+	ctx = context.WithValue(ctx, doerExecutionScopeKey{}, doerExecutionScope{requestID: submission.IdempotencyKey, candidate: node.Loop, queueItemID: item.ItemID, submissionID: submission.SubmissionID, graphID: snapshot.Graph.ID, direct: snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion, snapshotID: snapshot.SnapshotID, nodeID: node.ID})
 	participant, err := worker.repository.GetAgentRevision(ctx, node.Participant.ID, node.Participant.Revision)
 	if err != nil || participant.Digest != node.Participant.Digest || participant.Lifecycle != registry.LifecycleEnabled {
 		return WorkResult{}, fmt.Errorf("%w: exact enabled participant unavailable", ErrWorkerDenied)
@@ -189,11 +199,15 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion && loopRevision.Doer != nil {
 			doerContract = *loopRevision.Doer
-			if worker.ValidateLoopAdmission(loopRevision, participant) != nil {
+			if worker.ValidateLoopAdmissionContext(ctx, loopRevision, participant) != nil {
 				return WorkResult{}, fmt.Errorf("%w: Doer readiness required", ErrWorkerDenied)
 			}
 		} else if loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
-			doerContract, err = doerbinding.BindDoerGraphRun(loopRevision, graphRevision, node, snapshot)
+			if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+				doerContract, err = doerbinding.BindDoerDirectRun(loopRevision, node, snapshot)
+			} else {
+				doerContract, err = doerbinding.BindDoerGraphRun(loopRevision, graphRevision, node, snapshot)
+			}
 			if err != nil {
 				return WorkResult{}, fmt.Errorf("%w: invalid exact Doer Graph binding: %v", ErrWorkerDenied, err)
 			}
@@ -286,7 +300,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	runtimeRequest := RuntimeRequest{
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
 		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
-		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority},
+		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority, agent: node.Participant, loop: node.Loop, graph: snapshot.Graph},
 	}
 	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
 		return worker.processImplementation(runtimeCtx, request, base, runtimeRequest, actionID)
@@ -345,7 +359,23 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if readiness := worker.service.Readiness(ctx, ReadinessRequest{Action: FleetActionDisposition, Subject: request.Subject, Authority: request.Authority}); readiness.State != ReadinessReady {
+	admission := ReadinessRequest{Action: FleetActionDisposition, Subject: request.Subject, Authority: request.Authority}
+	item, loadErr := worker.repository.GetQueueItem(ctx, request.QueueItemID)
+	if loadErr != nil {
+		return result, loadErr
+	}
+	snapshot, loadErr := worker.repository.GetGraphRunSnapshot(ctx, item.Snapshot.ID)
+	if loadErr != nil || snapshot.Digest != item.Snapshot.Digest {
+		return result, ErrWorkerDenied
+	}
+	if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+		topology, topologyErr := worker.service.ResolveRunTopology(ctx, snapshot)
+		if topologyErr != nil || len(topology.Nodes) != 1 {
+			return result, ErrWorkerDenied
+		}
+		admission.Agent, admission.Loop = topology.Nodes[0].Participant, topology.Nodes[0].Loop
+	}
+	if readiness := worker.service.Readiness(ctx, admission); readiness.State != ReadinessReady {
 		state, reason, artifact, receipts = execution.StateDenied, "disposition_admission_denied", nil, nil
 	}
 	artifactIDs := []string{}
@@ -398,14 +428,16 @@ func (worker *QueueWorker) terminal(ctx context.Context, request WorkRequest, re
 }
 
 type fleetRuntimeAdmission struct {
-	service   *FleetService
-	subject   core.Subject
-	authority reference.DigestRef
+	service            *FleetService
+	subject            core.Subject
+	authority          reference.DigestRef
+	agent, loop, graph reference.RevisionRef
 }
 
 func (check fleetRuntimeAdmission) CheckRuntimeAdmission(ctx context.Context, contract execution.LaunchContract, at time.Time) (execution.AdmissionDecision, error) {
 	authority, mandate, result := check.service.resolveAuthority(ctx, check.subject, check.authority)
-	allowed := result.State == ReadinessReady && authority.ID == contract.AuthorityContext.ID && authority.Digest == contract.AuthorityContext.Digest && mandate.ID == contract.Mandate.ID && at.Before(authority.ExpiresAt)
+	ready := check.service.Readiness(ctx, ReadinessRequest{Action: FleetActionRuntimeEffect, Subject: check.subject, Authority: check.authority, Agent: check.agent, Loop: check.loop, Graph: check.graph})
+	allowed := ready.State == ReadinessReady && result.State == ReadinessReady && authority.ID == contract.AuthorityContext.ID && authority.Digest == contract.AuthorityContext.Digest && mandate.ID == contract.Mandate.ID && at.Before(authority.ExpiresAt)
 	return execution.AdmissionDecision{Allowed: allowed, AuthorityContextID: authority.ID, AuthorityContextDigest: authority.Digest, CheckedAt: at, Reason: result.ReasonCode}, nil
 }
 

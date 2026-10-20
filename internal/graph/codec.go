@@ -147,6 +147,18 @@ func UnmarshalRunSnapshot(data []byte) (GraphRunSnapshot, error) {
 	if err != nil {
 		return GraphRunSnapshot{}, err
 	}
+	// Even a null extension is not a historical v1 field.
+	if snapshot.SchemaVersion == SnapshotSchemaVersion {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(data, &fields); err != nil {
+			return GraphRunSnapshot{}, err
+		}
+		for name := range fields {
+			if name != "schema_version" && name != "snapshot_id" && name != "graph" && name != "inputs" && name != "participants" && name != "loops" && name != "digest" {
+				return GraphRunSnapshot{}, errors.New("extension field on historical snapshot")
+			}
+		}
+	}
 	snapshot, err = canonicalizeSnapshotValues(snapshot)
 	if err != nil {
 		return GraphRunSnapshot{}, err
@@ -187,6 +199,12 @@ func validateSnapshotAgainstRevision(snapshot GraphRunSnapshot, revision GraphRe
 }
 
 func validateSnapshot(snapshot GraphRunSnapshot) error {
+	if snapshot.SchemaVersion == DirectRunSnapshotSchemaVersion {
+		return validateDirectRunSnapshot(snapshot)
+	}
+	if snapshot.Execution != nil {
+		return errors.New("execution extension on historical snapshot")
+	}
 	if snapshot.SchemaVersion != SnapshotSchemaVersion || !validID(snapshot.SnapshotID) {
 		return errors.New("invalid Graph run snapshot identity")
 	}
@@ -397,6 +415,13 @@ func canonicalSnapshot(value GraphRunSnapshot) GraphRunSnapshot {
 
 func canonicalizeSnapshotValues(value GraphRunSnapshot) (GraphRunSnapshot, error) {
 	value = canonicalSnapshot(value)
+	if value.Execution != nil {
+		nested, err := canonicalExecutionSnapshot(*value.Execution)
+		if err != nil {
+			return GraphRunSnapshot{}, err
+		}
+		value.Execution = &nested
+	}
 	for index := range value.Inputs {
 		canonical, err := canonicalJSON(value.Inputs[index].Value)
 		if err != nil {

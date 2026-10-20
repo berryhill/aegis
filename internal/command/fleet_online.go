@@ -41,6 +41,21 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 	method, path := http.MethodGet, ""
 	var input any
 	switch operation {
+	case "controller-codex probe":
+		var value app.ControllerCodexProbeInput
+		if err := decodeJSONFile(args[0], &value); err != nil {
+			return err
+		}
+		method, path, input = http.MethodPost, "/v1/controller/codex/probe", value
+	case "controller-codex candidates":
+		method, path, input = http.MethodPost, "/v1/controller/codex/candidates", app.ControllerCodexCandidatesInput{ProfileHome: args[0]}
+	case "controller-codex preview":
+		id, _ := cmd.Flags().GetString("credential")
+		method, path, input = http.MethodPost, "/v1/controller/codex/preview", app.ControllerCodexPreviewInput{ProfileHome: args[0], CredentialID: id}
+	case "controller-codex connect":
+		method, path, input = http.MethodPost, "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: args[0]}
+	case "controller-codex show":
+		path = "/v1/controller/codex"
 	case "charter import", "charter validate":
 		file, err := os.Open(args[0])
 		if err != nil {
@@ -88,6 +103,12 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		}
 	case "session list":
 		path = "/v1/sessions"
+	case "agents register":
+		var proposal app.RegisterFleetAgentInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		method, path, input = http.MethodPost, "/v1/agents", proposal
 	case "agents approve-charter":
 		var proposal app.ApproveAgentCharterInput
 		if err := decodeJSONFile(args[1], &proposal); err != nil {
@@ -312,7 +333,7 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		}
 		timeout := controlTimeout
 		processing := method != http.MethodGet
-		if processing && (strings.HasSuffix(path, "/process") || path == "/v1/loops/queue" || path == "/v1/loops/doer/tasks/execute" || path == "/v1/provision" || path == "/v1/sessions/start" || strings.HasSuffix(path, "/setup-protected")) {
+		if processing && (strings.HasSuffix(path, "/process") || path == "/v1/controller/codex/probe" || path == "/v1/loops/queue" || path == "/v1/loops/doer/tasks/execute" || path == "/v1/provision" || path == "/v1/sessions/start" || strings.HasSuffix(path, "/setup-protected")) {
 			timeout = executionTimeout
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
@@ -341,6 +362,7 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 				return unknown()
 			}
 			var denial struct {
+				Code     string `json:"code"`
 				Decision struct {
 					Reason string `json:"reason"`
 				} `json:"decision"`
@@ -348,6 +370,14 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 			_ = json.NewDecoder(io.LimitReader(response.Body, 8192)).Decode(&denial)
 			// Only fixed public diagnostic codes may cross this boundary. Never echo
 			// arbitrary remote error text or trusted-input metadata.
+			switch denial.Code {
+			case "doer_reexecution_budget_exhausted":
+				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Code)
+			case "doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired", "doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":
+				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Code)
+			case "doer_provider_auth_native_import_failed", "doer_provider_auth_native_mode_denied", "doer_provider_auth_native_pool_invalid", "doer_provider_auth_native_source_suppressed", "doer_provider_auth_native_source_ambiguous", "doer_provider_auth_native_pool_unusable", "doer_provider_auth_native_protocol_failed", "doer_provider_auth_native_source_approval_required":
+				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Code)
+			}
 			switch denial.Decision.Reason {
 			case "provisioning_receipt_missing", "provisioning_receipt_unavailable":
 				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Decision.Reason)

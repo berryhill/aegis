@@ -258,9 +258,11 @@
       "authority": "Authenticated principal registration preserves immutable fleet, charter, runtime and stable owner provenance; exact revision lifecycle checks remain in product services. Registration is not runtime authority.",
       "sources": [
         "internal/command/fleet.go",
+        "internal/command/fleet_online.go",
         "internal/api/server.go"
       ],
       "tests": [
+        "internal/api/online_loop_installed_test.go",
         "internal/api/agent_console_execution_test.go",
         "internal/api/agent_console_detail_test.go",
         "internal/command/domain_surface_test.go"
@@ -524,11 +526,17 @@
       "classification": "shipped",
       "authority": "Controller/principal-only encrypted custody and exact scoped binding; ordinary registered workspaces have zero credential rights. Protected intake requires authenticated local transport, session capability, confirmed operation and bounded octet-stream intake; never place values in skill text, argv, JSON chat or logs. No generic authenticated client is supplied.",
       "sources": [
+        "internal/command/controller_codex.go",
+        "internal/api/controller_codex.go",
+        "internal/app/controller_codex_connection.go",
         "internal/command/secret.go",
         "internal/api/server.go",
         "internal/api/manager_credential_intake.go"
       ],
       "tests": [
+        "internal/api/controller_codex_test.go",
+        "internal/config/controller_connection_test.go",
+        "internal/runtime/hermes/native_codex_selection_test.go",
         "internal/command/secret_authority_test.go",
         "internal/api/credential_console_test.go",
         "internal/api/manager_credential_intake_test.go"
@@ -542,9 +550,20 @@
         "aegis secret rotate",
         "aegis secret revoke",
         "aegis secret bind",
-        "aegis secret backup"
+        "aegis secret backup",
+        "aegis controller-codex",
+        "aegis controller-codex candidates",
+        "aegis controller-codex preview",
+        "aegis controller-codex connect",
+        "aegis controller-codex show",
+        "aegis controller-codex probe"
       ],
       "http": [
+        "GET /v1/controller/codex",
+        "POST /v1/controller/codex/candidates",
+        "POST /v1/controller/codex/preview",
+        "POST /v1/controller/codex/connect",
+        "POST /v1/controller/codex/probe",
         "GET /console/credentials",
         "GET /console/credentials/operation",
         "POST /console/credentials/operation/review",

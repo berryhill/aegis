@@ -6,6 +6,7 @@ govulncheck
 
 # Task-local verification artifacts (never release source)
 /.scratch/
+/.candidate/
 
 # Go build and test outputs
 /aegis

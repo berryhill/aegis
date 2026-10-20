@@ -377,11 +377,11 @@ func (worker *QueueWorker) lifecycleAdmission(ctx context.Context, action FleetA
 	if err != nil || snapshot.Digest != item.Snapshot.Digest {
 		return fmt.Errorf("%w: exact snapshot unavailable", ErrWorkerDenied)
 	}
-	revision, err := worker.repository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-	if err != nil || revision.Digest != snapshot.Graph.Digest || len(revision.Nodes) != 1 {
-		return fmt.Errorf("%w: exact graph unavailable", ErrWorkerDenied)
+	topology, err := worker.service.ResolveRunTopology(ctx, snapshot)
+	if err != nil || len(topology.Nodes) != 1 {
+		return fmt.Errorf("%w: exact topology unavailable", ErrWorkerDenied)
 	}
-	node := revision.Nodes[0]
+	node := topology.Nodes[0]
 	ready := worker.service.Readiness(ctx, ReadinessRequest{Action: action, Subject: subject, Authority: item.Authority, Agent: node.Participant, Loop: node.Loop, Graph: snapshot.Graph})
 	if ready.State != ReadinessReady {
 		return fmt.Errorf("%w: lifecycle %s", ErrWorkerDenied, ready.ReasonCode)

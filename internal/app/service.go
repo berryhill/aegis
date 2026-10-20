@@ -56,7 +56,11 @@ type Service struct {
 	FleetRepository     fleet.Repository
 	Fleet               *orchestration.FleetService
 	QueueWorker         *orchestration.QueueWorker
-	doerTaskMu          sync.Mutex // foreground retained-task continuation in this owning service
+	nativeConnectionMu  sync.Mutex
+	nativeReviews       map[string]nativeConnectionReview
+	loopRunMu           sync.Mutex      // guards Run admission/preparation and foreground worker ownership
+	loopRunWorkers      map[string]bool // guarded by loopRunMu; durable claims remain the execution fence
+	doerTaskMu          sync.Mutex      // foreground retained-task continuation in this owning service
 	capMu               sync.RWMutex
 	capabilities        map[[32]byte]broker.Capability
 	brokerRequests      map[[32]byte]map[[32]byte]struct{}
@@ -1083,6 +1087,11 @@ func (s *Service) PreviewSession(ctx context.Context, agent string, rev uint64, 
 	return s.PreviewSessionAs(ctx, sub, agent, rev, requested, env)
 }
 func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent string, rev uint64, requested string, env core.Environment) (core.Mandate, core.Decision, error) {
+	return s.previewSessionAs(ctx, sub, agent, rev, requested, env, false)
+}
+
+// ephemeralDoer is private to exact QueueLoop preparation, never transport input.
+func (s *Service) previewSessionAs(ctx context.Context, sub core.Subject, agent string, rev uint64, requested string, env core.Environment, ephemeralDoer bool) (core.Mandate, core.Decision, error) {
 	if sub.Method == "password" {
 		if err := s.requirePrincipal(sub); err != nil {
 			return core.Mandate{}, core.Decision{}, err
@@ -1101,7 +1110,7 @@ func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent 
 	if receiptErr != nil {
 		return core.Mandate{}, core.Decision{Reason: "provisioning_receipt_unavailable"}, fmt.Errorf("%w: provisioning_receipt_unavailable", ErrDenied)
 	}
-	if !verified {
+	if !verified && !ephemeralDoer {
 		return core.Mandate{}, core.Decision{Reason: "provisioning_receipt_missing"}, fmt.Errorf("%w: provisioning_receipt_missing", ErrDenied)
 	}
 	d, err := s.Select(c, sub, requested, env)
@@ -1127,7 +1136,7 @@ func (s *Service) PreviewSessionAs(ctx context.Context, sub core.Subject, agent 
 	if sub.ExpiresAt.Before(expires) {
 		expires = sub.ExpiresAt
 	}
-	m := core.Mandate{ID: store.ID("mandate"), Subject: sub, AgentID: agent, StanzaID: st.ID, CharterRevision: c.Charter.Revision, CharterDigest: c.Digest, Runtime: rt, Target: c.Charter.Runtime.Target, DeploymentID: s.Config.Credentials.Authority.DeploymentID, Environment: env, Capabilities: append([]string(nil), st.Grant.Capabilities...), Tools: append([]string(nil), st.Grant.Tools...), Scopes: st.Scopes, Hermes: st.Hermes, IssuedAt: now, ExpiresAt: expires}
+	m := core.Mandate{ID: store.ID("mandate"), Subject: sub, AgentID: agent, StanzaID: st.ID, CharterRevision: c.Charter.Revision, CharterDigest: c.Digest, Runtime: rt, Target: c.Charter.Runtime.Target, DeploymentID: s.Config.Credentials.Authority.DeploymentID, Environment: env, Capabilities: slices.Clone(st.Grant.Capabilities), Tools: slices.Clone(st.Grant.Tools), Scopes: st.Scopes, Hermes: st.Hermes, IssuedAt: now, ExpiresAt: expires}
 	m.Hermes.Toolsets = toolsets
 	if err = s.Authority.CreateMandate(ctx, m); err != nil {
 		return m, d, err
@@ -1184,7 +1193,10 @@ func (s *Service) processAuthorityCommand(ctx context.Context, kind core.Authori
 }
 
 func (s *Service) validateMandate(m core.Mandate) error {
-	now := s.Now()
+	return s.validateMandateAt(m, s.Now())
+}
+
+func (s *Service) validateMandateAt(m core.Mandate, now time.Time) error {
 	if !now.Before(m.ExpiresAt) || !now.Before(m.Subject.ExpiresAt) {
 		return ErrExpired
 	}
@@ -1234,7 +1246,14 @@ func (s *Service) StartSession(ctx context.Context, mandateID string) (core.Sess
 	}
 	return s.StartSessionAs(ctx, sub, mandateID)
 }
-func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateID string) (core.Session, error) {
+func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateID string) (session core.Session, startErr error) {
+	stage, authorityID := "mandate_validation", ""
+	defer func() {
+		if startErr != nil {
+			startErr = &sessionStartFailure{Stage: stage, MandateID: mandateID, AuthorityID: authorityID,
+				RetrySafe: stage == "mandate_validation" || stage == "provider_resolution" || (stage == "runtime_launch" && !errors.Is(startErr, hermes.ErrLaunchCleanupUnconfirmed)), cause: startErr}
+		}
+	}()
 	if sub.Method == "password" {
 		if err := s.requirePrincipal(sub); err != nil {
 			return core.Session{}, err
@@ -1250,6 +1269,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err = s.validateMandate(m); err != nil {
 		return core.Session{}, err
 	}
+	stage = "provider_resolution"
 	var credentials []hermes.Credential
 	if m.Hermes.ProviderAuthentication != nil {
 		if core.ValidateProviderAuthentication(m.Hermes, m.Tools, m.Scopes.Credentials) != nil {
@@ -1285,8 +1305,8 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		SubjectID: m.Subject.ID, AgentID: m.AgentID, CharterRevision: m.CharterRevision,
 		CharterDigest: m.CharterDigest, Runtime: m.Runtime,
 		Authority: core.EffectiveAuthority{
-			StanzaID: m.StanzaID, Capabilities: append([]string(nil), m.Capabilities...),
-			Tools: append([]string(nil), m.Tools...), Memory: append([]string(nil), m.Scopes.Memory...),
+			StanzaID: m.StanzaID, Capabilities: slices.Clone(m.Capabilities),
+			Tools: slices.Clone(m.Tools), Memory: slices.Clone(m.Scopes.Memory),
 			// Preserve the immutable mandate's nil versus explicit-empty encoding;
 			// authority equivalence compares canonical digests, not slice lengths.
 			Credentials: slices.Clone(m.Scopes.Credentials), Hermes: m.Hermes,
@@ -1294,6 +1314,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		IssuedAt: issuedAt, ExpiresAt: m.ExpiresAt,
 	}
 	authority.Digest = core.AuthorityContextDigest(authority)
+	stage, authorityID = "authority_issuance", authority.ID
 	if err = s.Authority.CreateAuthorityContext(ctx, authority); err != nil {
 		return core.Session{}, err
 	}
@@ -1311,6 +1332,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 		}
 		return core.Session{}, err
 	}
+	stage = "runtime_launch"
 	id, home, pid, launchedToolsets, err := s.Hermes.Launch(ctx, s.Store.Root(), m, authority, credentials, bridge, func(c context.Context) error {
 		if err := s.validateMandate(m); err != nil {
 			return err
@@ -1327,6 +1349,7 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	if err != nil {
 		return core.Session{}, err
 	}
+	stage = "runtime_binding"
 	wantToolsets, gotToolsets := append([]string(nil), m.Hermes.Toolsets...), append([]string(nil), launchedToolsets...)
 	sort.Strings(wantToolsets)
 	sort.Strings(gotToolsets)
@@ -1339,6 +1362,8 @@ func (s *Service) StartSessionAs(ctx context.Context, sub core.Subject, mandateI
 	verification := "launch_arguments"
 	if bridge.Enabled {
 		verification = "exact_registered_aegis_bridge_tool"
+	} else if m.Hermes.ProviderAuthentication != nil {
+		verification = "exact_registered_empty_toolset"
 	}
 	sess := core.Session{ID: sessionID, Mandate: m, RuntimeSessionID: id, RuntimePID: pid, ProcessStart: processStartToken(pid), RuntimeHome: home, VerifiedToolsets: launchedToolsets, ToolsetVerification: verification, Status: "running", StartedAt: s.Now()}
 	if sess.ProcessStart == "" {

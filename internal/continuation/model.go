@@ -23,6 +23,7 @@ var ErrConflict = errors.New("Doer continuation content conflict")
 const Purpose = "aegis.doer-continuation.v1"
 
 type Run struct {
+	Reexecution    *Reexecution            `json:"reexecution,omitempty"`
 	Agent          reference.RevisionRef   `json:"agent"`
 	Loop           reference.RevisionRef   `json:"loop"`
 	IdempotencyKey string                  `json:"idempotency_key"`
