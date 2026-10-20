@@ -419,7 +419,7 @@ done
 		t.Fatal("task execution replaced historical publication")
 	}
 	graphs, err := svc.ListGraphsAs(ctx, subject)
-	if err != nil || len(graphs) != 1 {
+	if err != nil || len(graphs) != 0 {
 		t.Fatalf("graph count: %d %v", len(graphs), err)
 	}
 	items, err := svc.ListQueueAs(ctx, subject)
@@ -429,6 +429,9 @@ done
 	readback, err := svc.GetQueueItemAs(ctx, subject, result.QueueItemID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !readback.IsDirectLoop() || readback.Source.ID != revision.LoopID || readback.Source.Digest != revision.Digest {
+		t.Fatal("execution did not retain the exact direct Loop source")
 	}
 	if readback.Projection.State != queue.StateSucceeded || len(readback.Claims) != 1 || len(readback.Attempts) != 1 || readback.Attempts[0].AttemptNumber != 1 || readback.Artifact == nil || readback.Disposition == nil || len(readback.Receipts) != 1 {
 		t.Fatalf("missing terminal attempt/artifact/receipt/disposition: %+v", readback)
