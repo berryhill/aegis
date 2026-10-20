@@ -274,6 +274,8 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		path = "/v1/preparations"
 	case "queue list":
 		path = "/v1/queue"
+	case "queue result":
+		path = "/v1/queue/" + url.PathEscape(args[0]) + "/result"
 	case "queue show":
 		path = "/v1/queue/" + url.PathEscape(args[0])
 	case "queue process":

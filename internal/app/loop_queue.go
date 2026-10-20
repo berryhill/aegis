@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+
 	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
@@ -163,12 +164,26 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	if lv.Revision.Digest != input.Loop.Digest {
 		return result, ErrDenied
 	}
-	// The one-request shortcut is sealed to the v4 task definition. A v5 run
-	// requires an independently approved per-run contract bound through an
-	// exact typed Graph snapshot; do not create lifecycle or Queue preparation
-	// before that binding/approval exists.
+	// Bind the exact direct snapshot before preparation, retaining the canonical
+	// v5 definition and references. Binding grants no host or runtime authority.
 	if lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
-		return result, ErrDenied
+		node := graph.Node{ID: "loop-" + identity, Participant: input.Agent, Loop: input.Loop}
+		for _, p := range lv.Revision.Inputs {
+			node.Inputs = append(node.Inputs, graph.Port{ID: p.ID, Type: graph.ValueType(p.Type), Required: p.Required})
+		}
+		direct, bindErr := graph.NewDirectLoopSnapshot(key+"-snapshot", node, input.Inputs)
+		if bindErr != nil {
+			return result, bindErr
+		}
+		snapshot, bindErr := graph.NewDirectRunSnapshot(direct)
+		if bindErr != nil {
+			return result, bindErr
+		}
+		contract, bindErr := orchestration.BindDirectDoerContract(lv.Revision, node, snapshot)
+		if bindErr != nil {
+			return result, bindErr
+		}
+		ctx = context.WithValue(ctx, boundDoerRunKey{}, boundDoerRun{candidate: input.Loop, contract: contract})
 	}
 	if input.Reexecution != nil {
 		result.Reexecution, e = s.sealLoopReexecution(ctx, subject, input, key, identity, lv.Revision)
@@ -232,7 +247,7 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 		if e != nil || workspace.Agent != input.Agent {
 			return result, ErrDenied
 		}
-		if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion || lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
 			agent, loadErr := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
 			if loadErr != nil || agent.Digest != input.Agent.Digest {
 				return result, ErrDenied
@@ -339,7 +354,7 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 		return result, loadErr
 	}
 	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
-	if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+	if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion || lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		agent, loadErr := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
 		if loadErr != nil || agent.Digest != input.Agent.Digest {
 			return result, ErrDenied
@@ -387,9 +402,9 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	// publish reusable definitions as an execution side effect.
 	var decision orchestration.SubmissionDecision
 	if historicalErr == nil {
-		decision, e = s.SubmitGraphAs(ctx, subject, orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Graph: result.Graph, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1})
+		decision, e = s.submitGraphAs(ctx, subject, orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Graph: result.Graph, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1})
 	} else {
-		decision, e = s.SubmitLoopAs(ctx, subject, orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1}, Participant: input.Agent, Loop: input.Loop, NodeID: "loop-" + identity})
+		decision, e = s.submitLoopAs(ctx, subject, orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1}, Participant: input.Agent, Loop: input.Loop, NodeID: "loop-" + identity})
 	}
 
 	if e != nil {
@@ -411,7 +426,7 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 // v4 execution mutation. It neither issues a mandate nor grants host writes;
 // runtime and effect admission repeat their independent checks.
 func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, input QueueLoopInput, view LoopView) (string, error) {
-	if view.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion {
+	if view.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion && view.Revision.SchemaVersion != loop.DoerReusableSchemaVersion {
 		return "", nil
 	}
 	agent, err := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
@@ -485,7 +500,7 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if runtimeSatisfies(runtime.Version, charter.Charter.Runtime.VersionConstraint) != nil {
 		return readback("runtime_version_unsupported")
 	}
-	if e = s.QueueWorker.ValidateLoopAdmissionContext(ctx, lv.Revision, agent); e != nil {
+	if e = s.validateQueuedDoerAdmission(ctx, lv.Revision, agent, false); e != nil {
 		return readback("implementation_prerequisite_required")
 	}
 	authority, e := s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
@@ -610,7 +625,7 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		return result, priorErr
 	}
 	// BindRuntime verifies scope, ownership and authority before ID reuse.
-	_, _, e = s.BindQueueRuntimeAs(ctx, subject, BindQueueRuntimeInput{AgentID: input.Agent.ID, Authority: authority.Authority, QueueItemID: result.QueueItemID, BindingID: bindingID, TransitionID: transitionID})
+	_, _, e = s.bindQueueRuntimeAs(ctx, subject, BindQueueRuntimeInput{AgentID: input.Agent.ID, Authority: authority.Authority, QueueItemID: result.QueueItemID, BindingID: bindingID, TransitionID: transitionID})
 	if e != nil {
 		return readback("exact_runtime_binding_required")
 	}

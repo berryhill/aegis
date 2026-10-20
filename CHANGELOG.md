@@ -8,6 +8,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Agent-first reusable v5 direct Run through typed `loops queue` with exact normalized task/configuration binding and preauthorized contract digests, without republishing or Graph publication. Add owner-authorized `queue result` / `GET /v1/queue/:item/result` and selected authenticated Queue-detail inspection of named task, stored verified content, exact evidence references, enqueue-to-disposition elapsed provenance and explicit unavailable usage. No generic blob/path read, new human launch form, authority broadening or live-provider qualification. See [reusable Doer](docs/REUSABLE_DOER.md).
+
 - Authenticated exact-run execution debugger with durable interpreter step, transition, verification and implementation-pass observations; pinned Loop topology, Graph-node drill-down, live/pause/replay controls and explicit stale/auth-loss handling. Interpreter terminal is never substituted for evidence-backed Queue disposition; legacy boundaries remain unknown and multi-node scheduling is not added.
 
 ### Fixed

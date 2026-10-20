@@ -580,11 +580,11 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	if doerV5 && view.Lifecycle.State != "retired" {
 		switch lifecycle {
 		case "active":
-			readiness = "Active reusable v5 definition; a typed Graph run requires an independently approved per-run contract digest and fresh runtime admission"
+			readiness = "Active reusable v5 definition; typed Agent direct Run or Graph binding requires an independently approved per-run contract digest and fresh runtime admission"
 		case "inactive":
 			readiness = "Historical reusable v5 definition; not the active execution target"
 		default:
-			readiness = "Inactive reusable v5 definition; activate before a separately authorized typed Graph run"
+			readiness = "Inactive reusable v5 definition; explicit activation is required for an independently authorized typed Run"
 		}
 	}
 

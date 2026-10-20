@@ -31,6 +31,7 @@ First use `aegis queue --help`. The compatible CLI operations are:
 
 - `aegis queue list`
 - `aegis queue show ITEM`
+- `aegis queue result ITEM` (exact owner-authorized v5 selected-file result; `GET /v1/queue/:item/result`; route to primary `aegis-evidence-disposition` skill)
 - `aegis queue bind-runtime FILE` (controller-only; `POST /v1/queue/:item/bind-runtime`)
 - `aegis queue process FILE`
 - `aegis queue retry FILE`
