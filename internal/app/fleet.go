@@ -1023,6 +1023,12 @@ func (s *Service) ListSubmissionHistoryAs(ctx context.Context, subject core.Subj
 }
 
 func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
+	return s.submitGraphAs(ctx, subject, request)
+}
+
+func (s *Service) submitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
 	}
@@ -1039,6 +1045,12 @@ func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, reque
 
 // SubmitLoopAs shares Queue admission with the CLI/API Loop execution route.
 func (s *Service) SubmitLoopAs(ctx context.Context, subject core.Subject, request orchestration.SubmitLoopRequest) (orchestration.SubmissionDecision, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
+	return s.submitLoopAs(ctx, subject, request)
+}
+
+func (s *Service) submitLoopAs(ctx context.Context, subject core.Subject, request orchestration.SubmitLoopRequest) (orchestration.SubmissionDecision, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
 	}
@@ -1272,6 +1284,12 @@ func (s *Service) ListQueue(ctx context.Context) ([]QueueExecutionView, error) {
 // awaiting-runtime item. Workspace ownership and runtime authority must resolve
 // to the same exact enabled registered Agent.
 func (s *Service) BindQueueRuntimeAs(ctx context.Context, subject core.Subject, input BindQueueRuntimeInput) (queue.RuntimeBinding, bool, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
+	return s.bindQueueRuntimeAs(ctx, subject, input)
+}
+
+func (s *Service) bindQueueRuntimeAs(ctx context.Context, subject core.Subject, input BindQueueRuntimeInput) (queue.RuntimeBinding, bool, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return queue.RuntimeBinding{}, false, err
 	}

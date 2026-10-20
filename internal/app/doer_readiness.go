@@ -219,7 +219,7 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		return
 	}
 	if !probe {
-		if s.QueueWorker.ValidateLoopAdmissionContext(ctx, candidate, agent) != nil {
+		if s.validateQueuedDoerAdmission(ctx, candidate, agent, false) != nil {
 			r.block(&r.Controller, "implementation_prerequisite_required")
 			return
 		}
@@ -227,7 +227,7 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		r.Reason = "helper_probe_required"
 		return
 	}
-	err = s.QueueWorker.ValidateDoerAvailability(ctx, candidate, agent)
+	err = s.validateQueuedDoerAdmission(ctx, candidate, agent, true)
 	if err != nil {
 		if errors.Is(err, orchestration.ErrLocalLayaUnavailable) {
 			r.Controller = ready

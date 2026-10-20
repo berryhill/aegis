@@ -449,7 +449,7 @@ func LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopol
 				return templ_7745c5c3_Err
 			}
 		} else if record.Loop.DoerV5 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<p>This reusable v5 definition carries no execution authority. A separately authorized exact single-node Graph run can bind its inputs for the Queue worker, subject to the operator-approved per-run contract digest and fresh runtime admission. This page offers no direct execution action for v5.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<p>This reusable v5 definition carries no execution authority. Agents use typed loops queue with a named task and fixed recipe configuration bindings, then queue result for the verified run result. The canonical definition retains five input ports (task, workspace, writable_files, verify_file, optional expected_text) and zero Graph-dataflow outputs. Each resulting exact contract requires prior host authorization and fresh runtime admission. Humans inspect task and stored results in Queue detail; this page adds no human launch form.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

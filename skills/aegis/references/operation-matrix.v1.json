@@ -534,10 +534,12 @@
         "internal/api/server_test.go"
       ],
       "cli": [
-        "aegis queue show"
+        "aegis queue show",
+        "aegis queue result"
       ],
       "http": [
         "GET /v1/queue/:item",
+        "GET /v1/queue/:item/result",
         "GET /v1/submissions"
       ],
       "transport_classification": "shipped"

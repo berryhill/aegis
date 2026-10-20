@@ -1,0 +1,13 @@
+{
+  "agent": {"schema_version":"aegis.reference.revision.v1","id":"EXACT_REGISTERED_AGENT","revision":1,"digest":"sha256:REPLACE_WITH_READBACK_DIGEST"},
+  "loop": {"schema_version":"aegis.reference.revision.v1","id":"EXACT_PUBLISHED_REUSABLE_LOOP","revision":1,"digest":"sha256:REPLACE_WITH_READBACK_DIGEST"},
+  "idempotency_key":"OWNER_SELECTED_TASK_INTENT",
+  "activate":true,
+  "inputs":[
+    {"port_id":"task","type":"string","value":"Create result.txt containing hello"},
+    {"port_id":"workspace","type":"string","value":"/ABSOLUTE/ALREADY_APPROVED/WORKSPACE"},
+    {"port_id":"writable_files","type":"array","value":["result.txt"]},
+    {"port_id":"verify_file","type":"string","value":"result.txt"},
+    {"port_id":"expected_text","type":"string","value":"hello"}
+  ]
+}

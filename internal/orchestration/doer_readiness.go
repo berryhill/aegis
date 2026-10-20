@@ -56,7 +56,16 @@ func (w *QueueWorker) ValidateDoerAvailability(ctx context.Context, value loop.L
 // validateDoerReadiness is controller-owned and non-executing. It is repeated
 // before claim; it is not a substitute for fresh runtime/effect admission.
 func (w *QueueWorker) validateDoerReadiness(ctx context.Context, value loop.LoopRevision, agent registry.AgentRevision) error {
-	if value.Doer == nil || w.implementation == nil || w.authorizeDoer(ctx, *value.Doer, agent) != nil {
+	if value.Doer == nil {
+		return ErrDoerHostApprovalRequired
+	}
+	return w.ValidateDoerContractReadiness(ctx, *value.Doer, agent, false)
+}
+
+// ValidateDoerContractReadiness repeats the existing checks on an exact bound
+// contract, without changing its canonical reusable Loop definition.
+func (w *QueueWorker) ValidateDoerContractReadiness(ctx context.Context, contract loop.DoerContract, agent registry.AgentRevision, probe bool) error {
+	if w == nil || w.implementation == nil || w.authorizeDoer(ctx, contract, agent) != nil {
 		return ErrDoerHostApprovalRequired
 	}
 	c := w.implementation
@@ -79,7 +88,15 @@ func (w *QueueWorker) validateDoerReadiness(ctx context.Context, value loop.Loop
 	if err != nil || !home.IsDir() || home.Mode().Perm()&0077 != 0 {
 		return errors.New("private Laya home unavailable")
 	}
-	return ValidateDoerHostWorkspace(*value.Doer)
+	if err := ValidateDoerHostWorkspace(contract); err != nil {
+		return err
+	}
+	if probe {
+		if _, err := c.decision.Gate(ctx, contract.Task); err != nil {
+			return ErrLocalLayaUnavailable
+		}
+	}
+	return nil
 }
 
 func trustedExecutable(name string) error {

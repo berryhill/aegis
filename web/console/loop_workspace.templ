@@ -49,7 +49,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     </form>
     <p>The request key is retained across reloads so an interrupted response can be recovered without creating another run. <a href={ strings.SplitN(detailRoute(surface, record.Key), "#", 2)[0] + "&new_run=1" }>Start a distinct run</a> only when you intend another execution.</p>
    } else if record.Loop.DoerV5 {
-    <p>This reusable v5 definition carries no execution authority. A separately authorized exact single-node Graph run can bind its inputs for the Queue worker, subject to the operator-approved per-run contract digest and fresh runtime admission. This page offers no direct execution action for v5.</p>
+    <p>This reusable v5 definition carries no execution authority. Agents use typed loops queue with a named task and fixed recipe configuration bindings, then queue result for the verified run result. The canonical definition retains five input ports (task, workspace, writable_files, verify_file, optional expected_text) and zero Graph-dataflow outputs. Each resulting exact contract requires prior host authorization and fresh runtime admission. Humans inspect task and stored results in Queue detail; this page adds no human launch form.</p>
    } else {
     <p>This Loop can run only through a Graph that binds this exact revision and digest. Viewing the definition or its evidence contract grants no runtime authority.</p>
    }

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -31,7 +32,10 @@ func (s *Service) doerEphemeralPreparationAllowed(ctx context.Context, subject c
 		return false
 	}
 	canonical, _, err := loop.NewRevision(candidate)
-	if err != nil || candidate.SchemaVersion != loop.DoerRevisionSchemaVersion || candidate.Doer == nil || canonical.Digest != candidate.Digest {
+	if err != nil || canonical.Digest != candidate.Digest {
+		return false
+	}
+	if _, err := queuedDoerContract(ctx, candidate); err != nil {
 		return false
 	}
 	fresh, err := s.hostApprovalAgent(ctx, agentRevisionRef(agent))
@@ -53,12 +57,52 @@ func (s *Service) doerEphemeralPreparationAllowed(ctx context.Context, subject c
 // Only QueueLoop's exact, intent-fenced authenticated Run installs this private
 // marker. Readiness, publishing, activation and workspace actors cannot grant.
 type exactDoerRunKey struct{}
+
+// Private, admission-derived binding; never serialized as a revised definition.
+type boundDoerRunKey struct{}
+type boundDoerRun struct {
+	candidate reference.RevisionRef
+	contract  loop.DoerContract
+}
+
+func queuedDoerContract(ctx context.Context, candidate loop.LoopRevision) (loop.DoerContract, error) {
+	if candidate.SchemaVersion == loop.DoerRevisionSchemaVersion && candidate.Doer != nil {
+		return *candidate.Doer, nil
+	}
+	bound, ok := ctx.Value(boundDoerRunKey{}).(boundDoerRun)
+	ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}
+	if candidate.SchemaVersion != loop.DoerReusableSchemaVersion || !ok || bound.candidate != ref {
+		return loop.DoerContract{}, errors.New("exact reusable Doer run binding required")
+	}
+	return bound.contract, nil
+}
+
+func (s *Service) validateQueuedDoerAdmission(ctx context.Context, candidate loop.LoopRevision, agent registry.AgentRevision, probe bool) error {
+	if candidate.SchemaVersion == loop.DoerReusableSchemaVersion {
+		contract, err := queuedDoerContract(ctx, candidate)
+		if err != nil {
+			return err
+		}
+		return s.QueueWorker.ValidateDoerContractReadiness(ctx, contract, agent, probe)
+	}
+	if probe {
+		return s.QueueWorker.ValidateDoerAvailability(ctx, candidate, agent)
+	}
+	return s.QueueWorker.ValidateLoopAdmissionContext(ctx, candidate, agent)
+}
+
 type exactDoerRun struct {
 	requestID string
 	candidate reference.RevisionRef
 }
 
 func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subject, candidate loop.LoopRevision, agent registry.AgentRevision) error {
+	// Reusable templates never mint task grants. The worker must resolve an
+	// existing configured or signed approval for the derived exact digest.
+	if candidate.SchemaVersion == loop.DoerReusableSchemaVersion {
+		_, err := queuedDoerContract(ctx, candidate)
+		return err
+	}
 	intent, ok := ctx.Value(exactDoerRunKey{}).(exactDoerRun)
 	if !ok || intent.requestID == "" || !s.doerEphemeralPreparationAllowed(ctx, subject, candidate, agent) {
 		return nil

@@ -638,6 +638,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 					return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
 				}
 			}
+			if domain == consoleQueue && c.QueryParam("record_key") != "" && model.Surface.Inspector != nil && model.Surface.Inspector.Queue != nil {
+				model.Surface.Inspector.Queue.RunResult = consoleQueueRunResult(c.Request().Context(), svc, subject, model.Surface.Inspector.Key)
+			}
 			if domain == consoleLoops && model.Surface.Inspector != nil && model.Surface.Inspector.Loop.DoerV4 {
 				model.Surface.LoopRunKey, err = consoleLoopRunKey(c, subject, model.Surface.Inspector)
 				if err != nil {
@@ -1307,6 +1310,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if domain != consoleAgents {
 			if err = selectConsoleRecord(&model.Surface, c.QueryParam("record_key")); err != nil {
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+			}
+			if domain == consoleQueue && model.Surface.Inspector != nil && model.Surface.Inspector.Queue != nil {
+				model.Surface.Inspector.Queue.RunResult = consoleQueueRunResult(c.Request().Context(), svc, subject, model.Surface.Inspector.Key)
 			}
 		} else if model.Surface.Inspector == nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
@@ -2006,6 +2012,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return err
 		}
 		value, err := svc.GetQueueItemAs(c.Request().Context(), subject, c.Param("item"))
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, value)
+	})
+	g.GET("/queue/:item/result", func(c *echo.Context) error {
+		c.Response().Header().Set("Cache-Control", "no-store")
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		value, err := svc.GetQueueResultAs(c.Request().Context(), subject, c.Param("item"))
 		if err != nil {
 			return err
 		}
