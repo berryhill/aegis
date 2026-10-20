@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 root = Path(__file__).resolve().parents[1]
 fact = dict(sequence=1, ordinal=0, digest='checkpoint1', kind='step_start', step_id='implement', visit=1, retry=1, **{'pass': 1}, at='2026-10-20T12:00:00Z', outcome='running')
 state = dict(queue_id='q', graph_run_id='parent', snapshot_digest='snap', direct=False, state='claimed', terminal=False, version=1, watermark='w', notice='Synthetic fixture', dependencies=[], nodes=[dict(node_id='child', loop=dict(id='loop', revision=1, digest='pinned'), execution_id='exec', steps=[dict(id='implement', kind='executable')], edges=[], attempts=[dict(id='attempt', number=1, facts=[fact])])])
-html = '''<main data-queue-workspace data-debugger-url="/poll"><div class="qw-body" id="unrelated"></div><div class="queue-workspace"><section><div data-queue-viewport tabindex="0"><div data-queue-stage></div></div></section><aside id="queue-context"><h3 id="queue-context-title" tabindex="-1"></h3><div class="qw-body"><div data-queue-definition-panel></div><section data-queue-node-panel="0" hidden><ol data-debugger-node-history></ol></section></div><button data-queue-close>Close</button></aside></div><select data-debugger-scope></select><input data-debugger-replay type="range" min="0"><button data-debugger-follow></button><button data-debugger-current>Current</button><p data-debugger-status></p><p data-debugger-notice></p><p data-debugger-identity></p><ol data-debugger-history></ol><span data-queue-scale></span></main>'''
+html = '''<main data-queue-workspace data-debugger-url="/poll"><div class="qw-body" id="unrelated"></div><div class="queue-workspace"><section><div data-queue-viewport tabindex="0"><div data-queue-stage></div></div></section><aside id="queue-context"><h3 id="queue-context-title" tabindex="-1"></h3><div class="qw-body"><div data-queue-definition-panel>Authoritative Queue evidence</div><section data-queue-node-panel="0" hidden><ol data-debugger-node-history></ol></section></div><button data-queue-close>Close</button></aside></div><select data-debugger-scope></select><input data-debugger-replay type="range" min="0"><button data-debugger-follow></button><button data-debugger-current>Current</button><p data-debugger-status></p><p data-debugger-notice></p><p data-debugger-identity></p><ol data-debugger-history></ol><span data-queue-scale></span></main>'''
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
@@ -27,6 +27,10 @@ with sync_playwright() as p:
     page.route('http://fixture/**', route)
     page.goto('http://fixture/')
     page.wait_for_function("document.querySelector('[data-debugger-status]').textContent.includes('fresh observations')")
+    # The installed Graph → Queue journey requires collapsed definition
+    # controls after the debugger replaces the server-rendered node panels.
+    assert page.locator('#queue-context').is_hidden()
+    assert page.locator('[data-queue-definition]').first.get_attribute('aria-expanded') == 'false'
     page.locator('[data-queue-node]').focus()
     page.keyboard.press('Enter')
     assert page.locator('#queue-context').is_visible()
@@ -34,6 +38,16 @@ with sync_playwright() as p:
     assert page.locator('[data-debugger-scope]').input_value() == 'child'
     assert page.locator('[data-queue-node-panel]:visible').count() == 1
     assert page.locator('[data-queue-node][aria-pressed=true]').count() == 1
+    # The regenerated Loop panel must also reach authoritative Queue evidence,
+    # focus its heading, and close back to the connected selected node.
+    page.locator('[data-queue-node-panel] [data-queue-definition]').click()
+    assert page.locator('[data-queue-definition-panel]').is_visible()
+    assert page.locator('[data-queue-definition]').first.get_attribute('aria-expanded') == 'true'
+    assert page.locator('#queue-context-title').evaluate('(e)=>e===document.activeElement')
+    page.keyboard.press('Escape')
+    assert page.locator('#queue-context').is_hidden()
+    assert page.locator('[data-queue-node]').evaluate('(e)=>e===document.activeElement')
+    page.keyboard.press('Enter')
     assert page.locator('#queue-context [data-debugger-node-history]').count() == 1
     assert page.locator('#unrelated [data-debugger-node-history]').count() == 0
     assert page.locator('[data-debugger-node-history]').count() == 1

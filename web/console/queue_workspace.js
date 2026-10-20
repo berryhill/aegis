@@ -14,11 +14,12 @@
   root.addEventListener("queue-layout-changed", () => {
     panels = Array.from(root.querySelectorAll("[data-queue-node-panel]"));
     nodes = Array.from(root.querySelectorAll("[data-queue-node]"));
+    definitionButtons = Array.from(root.querySelectorAll("[data-queue-definition]"));
     const selected = nodes.find(n => n.getAttribute("aria-pressed") === "true");
     if (selected) { lastNode = selected; show(selected.dataset.queueNode, false); }
     else if (inspector && !inspector.hidden) show(null, false);
   });
-  const definitionButtons = Array.from(root.querySelectorAll("[data-queue-definition]"));
+  let definitionButtons = Array.from(root.querySelectorAll("[data-queue-definition]"));
   if (!stage) return;
   if (inspector) inspector.hidden = true;
   if (split) split.classList.add("solo");
@@ -36,7 +37,10 @@
     if (focus) title.focus({ preventScroll: true });
     if (matchMedia("(max-width:1080px)").matches && inspector) inspector.scrollIntoView({ block: "start" });
   };
-  for (const button of definitionButtons) button.addEventListener("click", () => show(null));
+  // Delegate because the debugger replaces node panels on scope changes.
+  root.addEventListener("click", (event) => {
+    if (event.target.closest("[data-queue-definition]")) show(null);
+  });
   let lastNode = null;
   root.addEventListener("click", (event) => { const node = event.target.closest("[data-queue-node]"); if (node) { lastNode = node; show(node.dataset.queueNode); } });
   const close = () => {

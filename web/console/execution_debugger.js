@@ -78,7 +78,11 @@
         button.append(make("strong", def.id), make("span", "unknown", "queue-node-state"), make("span", def.kind, "queue-node-execution"));
         stage.append(button); nodes.push(button);
         const panel = make("section"); panel.dataset.queueNodePanel = String(index); panel.hidden = true;
-        panel.append(make("h4", def.id));
+        // Layout replacement must retain the definition/evidence navigation
+        // supplied by the server-rendered node inspector.
+        const back = make("button", "← Back to queue", "ghost"); back.type = "button";
+        back.dataset.queueDefinition = ""; back.setAttribute("aria-expanded", "false");
+        panel.append(back, make("h4", def.id));
         if (!loop) {
           const child = latest.nodes[index];
           panel.append(make("p", `${child.loop.id} r${child.loop.revision} @ ${child.loop.digest} · ${child.execution_id || "execution not observed"}`));
