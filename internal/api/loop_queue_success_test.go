@@ -177,6 +177,13 @@ func exactLoopQueueImplementationSuccessReplay(t *testing.T, mode string) {
 	if !foundReason || len(storedPreparation.Claims) != 0 {
 		t.Fatal("missing durable diagnostic or unexpected claim")
 	}
+	graphs, graphErr := svc.ListGraphsAs(ctx, subject)
+	if graphErr != nil || len(graphs) != 0 || got.Graph != (reference.RevisionRef{}) {
+		t.Fatalf("Loop execution polluted Graph inventory: %d %v", len(graphs), graphErr)
+	}
+	if got.Execution != nil && (got.Execution.SourceKind != graph.SourceDirectLoop || got.Execution.Source != input.Loop) {
+		t.Fatal("direct source readback lost exact Loop")
+	}
 	var replay app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &replay, http.StatusOK)
 	if replay.QueueItemID != got.QueueItemID {

@@ -175,4 +175,5 @@ type GraphRunSnapshot struct {
 	Participants  []reference.RevisionRef `json:"participants"`
 	Loops         []reference.RevisionRef `json:"loops"`
 	Digest        string                  `json:"digest"`
+	Execution     *ExecutionSnapshot      `json:"execution,omitempty"`
 }

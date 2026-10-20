@@ -198,12 +198,25 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 		if e != nil {
 			return result, e
 		}
-		g, e := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-		if e != nil {
-			return result, e
+		topology, e := s.Fleet.ResolveRunTopology(ctx, snapshot)
+		if e != nil || len(topology.Nodes) != 1 || topology.Nodes[0].Participant != input.Agent || topology.Nodes[0].Loop != input.Loop {
+			return result, fleet.ErrConflict
 		}
-		candidate, e := graph.NewRunSnapshot(snapshot.SnapshotID, g, input.Inputs)
-		if e != nil || candidate.Digest != snapshot.Digest || snapshot.Digest != prior.Item.Snapshot.Digest || g.Digest != snapshot.Graph.Digest || len(g.Nodes) != 1 || g.Nodes[0].Participant != input.Agent || g.Nodes[0].Loop != input.Loop {
+		var candidate graph.GraphRunSnapshot
+		if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+			direct, buildErr := graph.NewDirectLoopSnapshot(snapshot.SnapshotID, topology.Nodes[0], input.Inputs)
+			if buildErr != nil {
+				return result, fleet.ErrConflict
+			}
+			candidate, e = graph.NewDirectRunSnapshot(direct)
+		} else {
+			g, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
+			if loadErr != nil {
+				return result, loadErr
+			}
+			candidate, e = graph.NewRunSnapshot(snapshot.SnapshotID, g, input.Inputs)
+		}
+		if e != nil || candidate.Digest != snapshot.Digest || snapshot.Digest != prior.Item.Snapshot.Digest {
 			return result, fleet.ErrConflict
 		}
 		result.QueueItemID, result.Graph, result.Execution = input.QueueItemID, snapshot.Graph, &prior
@@ -278,6 +291,21 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	} else if !errors.Is(historicalErr, fleet.ErrNotFound) {
 		return result, historicalErr
 	}
+	// Historical direct readback, like historical Graph readback, does not
+	// reactivate a disabled participant or acquire new execution authority.
+	if prior, loadErr := s.GetQueueItemAs(ctx, subject, result.QueueItemID); loadErr == nil {
+		var reserved string
+		if err := s.Store.Load("queue-loop-intent", key, &reserved); err != nil || reserved != identity {
+			return result, fleet.ErrConflict
+		}
+		result.Execution = &prior
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+			result.Reason = "existing_execution"
+			return result, nil
+		}
+	} else if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return result, loadErr
+	}
 	workspace, e := s.RegisteredAgentWorkspaceAs(ctx, subject, input.Agent.ID)
 	if e != nil {
 		return result, e
@@ -300,6 +328,15 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	}
 	if reserved != identity {
 		return result, fleet.ErrConflict
+	}
+	if prior, loadErr := s.GetQueueItemAs(ctx, subject, result.QueueItemID); loadErr == nil {
+		result.Execution = &prior
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+			result.Reason = "existing_execution"
+			return result, nil
+		}
+	} else if !errors.Is(loadErr, fleet.ErrNotFound) {
+		return result, loadErr
 	}
 	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
 	if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
@@ -346,48 +383,15 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 			return result, e
 		}
 	}
-	g := graph.GraphRevision{GraphID: key, Revision: 1, Nodes: []graph.Node{{ID: "loop-" + identity, Participant: input.Agent, Loop: input.Loop}}}
-	for _, p := range lv.Revision.Inputs {
-		port := graph.Port{ID: p.ID, Type: graph.ValueType(p.Type), Required: p.Required}
-		g.Inputs = append(g.Inputs, port)
-		g.Nodes[0].Inputs = append(g.Nodes[0].Inputs, port)
-		g.InputMappings = append(g.InputMappings, graph.InputMapping{GraphInput: p.ID, ToNodeID: g.Nodes[0].ID, ToPort: p.ID})
+	// Historical synthetic Graphs are replayed exactly; new intents never
+	// publish reusable definitions as an execution side effect.
+	var decision orchestration.SubmissionDecision
+	if historicalErr == nil {
+		decision, e = s.SubmitGraphAs(ctx, subject, orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Graph: result.Graph, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1})
+	} else {
+		decision, e = s.SubmitLoopAs(ctx, subject, orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1}, Participant: input.Agent, Loop: input.Loop, NodeID: "loop-" + identity})
 	}
-	for _, p := range lv.Revision.Outputs {
-		port := graph.Port{ID: p.ID, Type: graph.ValueType(p.Type), Required: p.Required}
-		g.Outputs = append(g.Outputs, port)
-		g.Nodes[0].Outputs = append(g.Nodes[0].Outputs, port)
-		g.OutputMappings = append(g.OutputMappings, graph.OutputMapping{FromNodeID: g.Nodes[0].ID, FromPort: p.ID, GraphOutput: p.ID})
-	}
-	// Publication's idempotency binding includes the complete request identity.
-	published := PublishedGraph{Revision: historical}
-	if errors.Is(historicalErr, fleet.ErrNotFound) {
-		published, e = s.PublishGraphAs(ctx, subject, PublishGraphInput{AgentID: input.Agent.ID, Revision: g, IdempotencyKey: key + "-" + identity})
-		if e != nil {
-			return result, e
-		}
-	}
-	result.Graph = reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: key, Revision: 1, Digest: published.Revision.Digest}
-	// A submission's canonical input digest supplies a second conflict check.
-	if old, e := s.FleetRepository.GetGraphRunSnapshot(ctx, key+"-snapshot"); e == nil {
-		candidate, e := graph.NewRunSnapshot(key+"-snapshot", published.Revision, input.Inputs)
-		if e != nil || candidate.Digest != old.Digest {
-			return result, fleet.ErrConflict
-		}
-	} else if !errors.Is(e, fleet.ErrNotFound) {
-		return result, e
-	}
-	if prior, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID); e == nil {
-		result.Execution = &prior
-		// Never reclaim or duplicate an already started execution on HTTP retry.
-		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
-			result.Reason = "existing_execution"
-			return result, nil
-		}
-	} else if !errors.Is(e, fleet.ErrNotFound) {
-		return result, e
-	}
-	decision, e := s.SubmitGraphAs(ctx, subject, orchestration.SubmitGraphRequest{WorkspaceAgentID: input.Agent.ID, Graph: result.Graph, Inputs: input.Inputs, SubmissionID: key + "-submission", IdempotencyKey: key, SnapshotID: key + "-snapshot", QueueItemID: result.QueueItemID, GraphRunID: key + "-run", TransitionID: key + "-prepare", RejectionID: key + "-reject", MaxAttempts: 1})
+
 	if e != nil {
 		return result, e
 	}

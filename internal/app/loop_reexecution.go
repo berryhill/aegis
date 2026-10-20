@@ -81,13 +81,28 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 	if err != nil || snapshot.Digest != v.Item.Snapshot.Digest {
 		return f, ErrDenied
 	}
-	g, err := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
-	if err != nil || g.Digest != snapshot.Graph.Digest || len(g.Nodes) != 1 || g.Nodes[0].Loop != in.Loop || g.Nodes[0].Participant != in.Agent {
+	topology, err := s.Fleet.ResolveRunTopology(ctx, snapshot)
+	if err != nil || len(topology.Nodes) != 1 || topology.Nodes[0].Loop != in.Loop || topology.Nodes[0].Participant != in.Agent {
 		return f, ErrDenied
 	}
+	// Reconstruct through the original source kind: direct runs have no
+	// published Graph. Preserve historical Graph snapshot/input semantics.
+	var inputSnapshot graph.GraphRunSnapshot
+	if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+		direct, inputErr := graph.NewDirectLoopSnapshot(snapshot.SnapshotID, topology.Nodes[0], in.Inputs)
+		if inputErr != nil {
+			return f, ErrDenied
+		}
+		inputSnapshot, err = graph.NewDirectRunSnapshot(direct)
+	} else {
+		g, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
+		if loadErr != nil {
+			return f, ErrDenied
+		}
+		inputSnapshot, err = graph.NewRunSnapshot(snapshot.SnapshotID, g, in.Inputs)
+	}
 	// The same exact approved task and inputs, not a changed work payload.
-	inputSnapshot, inputErr := graph.NewRunSnapshot(snapshot.SnapshotID, g, in.Inputs)
-	if inputErr != nil || inputSnapshot.Digest != snapshot.Digest {
+	if err != nil || inputSnapshot.Digest != snapshot.Digest {
 		return f, ErrDenied
 	}
 	steps, err := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, in.Loop.Digest)

@@ -399,7 +399,7 @@ done
 		t.Fatalf("activation: %+v %v", view.Lifecycle, err)
 	}
 	graphs, err := svc.ListGraphsAs(ctx, subject)
-	if err != nil || len(graphs) != 1 {
+	if err != nil || len(graphs) != 0 || result.Graph != (reference.RevisionRef{}) {
 		t.Fatalf("graph count: %d %v", len(graphs), err)
 	}
 	items, err := svc.ListQueueAs(ctx, subject)
@@ -420,26 +420,23 @@ done
 	if !reflect.DeepEqual(readback, *result.Execution) || len(readback.LoopExecutions) != 1 {
 		t.Fatal("independent readback changed execution or child cardinality")
 	}
-	graphView := graphs[0]
-	var g graph.GraphRevision
-	if err := cli.run(&g, "graphs", "show", result.Graph.ID, strconv.FormatUint(result.Graph.Revision, 10)); err != nil {
-		t.Fatal(err)
+	history, err := svc.ListSubmissionHistoryAs(ctx, subject)
+	if err != nil || len(history.Accepted) != 1 {
+		t.Fatalf("direct history: %+v %v", history, err)
 	}
-	if !reflect.DeepEqual(g, graphView.Revision) {
-		t.Fatal("public Graph readback differs from owning service")
+	run := history.Accepted[0]
+	if run.Snapshot.SchemaVersion != graph.DirectRunSnapshotSchemaVersion || run.Snapshot.Execution == nil || run.Snapshot.Graph != (reference.RevisionRef{}) || !reflect.DeepEqual(run.Snapshot.Participants, []reference.RevisionRef{input.Agent}) || !reflect.DeepEqual(run.Snapshot.Loops, []reference.RevisionRef{input.Loop}) || !reflect.DeepEqual(run.QueueItem, readback.Item) || run.Submission != readback.Submission || run.GraphRun != readback.GraphRun {
+		t.Fatal("direct snapshot exact lineage mismatch")
 	}
-	if g.GraphID != result.Graph.ID || g.Revision != result.Graph.Revision || g.Digest != result.Graph.Digest || len(g.Nodes) != 1 || g.Nodes[0].Participant != input.Agent || g.Nodes[0].Loop != input.Loop || len(graphView.Runs) != 1 {
-		t.Fatalf("Graph does not pin requested immutable definitions: %+v", graphView)
-	}
-	run := graphView.Runs[0]
-	if run.Snapshot.Graph != result.Graph || !reflect.DeepEqual(run.Snapshot.Participants, []reference.RevisionRef{input.Agent}) || !reflect.DeepEqual(run.Snapshot.Loops, []reference.RevisionRef{input.Loop}) || !reflect.DeepEqual(run.QueueItem, readback.Item) || run.Submission != readback.Submission || run.GraphRun != readback.GraphRun {
-		t.Fatal("accepted Graph snapshot/submission lineage differs from Queue")
+	node := run.Snapshot.Execution.Topology.Nodes[0]
+	if node.Participant != input.Agent || node.Loop != input.Loop {
+		t.Fatal("direct node exact refs mismatch")
 	}
 	itemRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: readback.Item.ItemID, Digest: readback.Item.Digest}
 	snapshotRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: run.Snapshot.SnapshotID, Digest: run.Snapshot.Digest}
 	submissionRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: readback.Submission.SubmissionID, Digest: readback.Submission.Digest}
 	child, attempt, claim := readback.LoopExecutions[0], readback.Attempts[0], readback.Claims[0]
-	if readback.Item.ItemID != result.QueueItemID || readback.Item.Submission != submissionRef || readback.Item.Snapshot != snapshotRef || readback.Submission.Snapshot != snapshotRef || readback.GraphRun.Snapshot != snapshotRef || readback.GraphRun.QueueItem != itemRef || readback.Item.GraphRunID != readback.GraphRun.GraphRunID || child.GraphRunID != readback.GraphRun.GraphRunID || child.GraphNodeID != g.Nodes[0].ID || child.Participant != input.Agent || child.Loop != input.Loop || attempt.GraphRunID != child.GraphRunID || attempt.LoopExecutionID != child.LoopExecutionID || attempt.QueueItem != itemRef || attempt.ClaimID != claim.ClaimID || claim.QueueItem != itemRef || claim.AttemptID != attempt.AttemptID {
+	if readback.Item.ItemID != result.QueueItemID || readback.Item.Submission != submissionRef || readback.Item.Snapshot != snapshotRef || readback.Submission.Snapshot != snapshotRef || readback.GraphRun.Snapshot != snapshotRef || readback.GraphRun.QueueItem != itemRef || readback.Item.GraphRunID != readback.GraphRun.GraphRunID || child.GraphRunID != readback.GraphRun.GraphRunID || child.GraphNodeID != node.ID || child.Participant != input.Agent || child.Loop != input.Loop || attempt.GraphRunID != child.GraphRunID || attempt.LoopExecutionID != child.LoopExecutionID || attempt.QueueItem != itemRef || attempt.ClaimID != claim.ClaimID || claim.QueueItem != itemRef || claim.AttemptID != attempt.AttemptID {
 		t.Fatal("Queue/Graph/Loop/attempt/claim exact lineage mismatch")
 	}
 	artifact, verification, terminal := readback.Artifact, readback.Receipts[0], readback.Disposition

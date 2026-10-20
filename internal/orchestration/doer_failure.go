@@ -29,6 +29,9 @@ func isDoerFailureCode(code string) bool {
 	switch code {
 	case "step_error", "doer_runtime_preparation_failed", "doer_proposal_decode_failed",
 		"doer_proposal_output_invalid", "doer_implement_failed", "doer_report_invalid",
+		"doer_proposal_size_invalid", "doer_proposal_json_invalid", "doer_proposal_duplicate_field",
+		"doer_proposal_unknown_field", "doer_proposal_shape_invalid", "doer_proposal_base64_invalid",
+		"doer_proposal_trailing_data", "doer_proposal_edits_invalid", "doer_proposal_report_invalid",
 		"doer_selected_edit_missing", "doer_apply_failed",
 		"doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired",
 		"doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":

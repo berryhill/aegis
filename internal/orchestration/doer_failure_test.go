@@ -35,7 +35,7 @@ func TestDoerFailurePacketRetainsOnlyClosedCode(t *testing.T) {
 }
 
 func TestDoerFailureConsumesOnePassAndDoesNotReplayTerminal(t *testing.T) {
-	for _, code := range []string{"runtime_auth_auth_permanent", "doer_proposal_decode_failed"} {
+	for _, code := range []string{"runtime_auth_auth_permanent", "doer_proposal_decode_failed", "doer_proposal_size_invalid", "doer_proposal_json_invalid", "doer_proposal_duplicate_field", "doer_proposal_unknown_field", "doer_proposal_shape_invalid", "doer_proposal_base64_invalid", "doer_proposal_trailing_data", "doer_proposal_edits_invalid", "doer_proposal_report_invalid"} {
 		t.Run(code, func(t *testing.T) {
 			expected := "fixture"
 			contract := loop.DoerContract{Task: "Create selected file", Workspace: t.TempDir(), WritableFiles: []string{"selected.txt"}, VerifyFile: "selected.txt", ExpectedText: &expected, MaxAttempts: 2}
@@ -76,7 +76,7 @@ func TestDoerFailureConsumesOnePassAndDoesNotReplayTerminal(t *testing.T) {
 }
 
 func TestDoerTraceLegacyAndUnknownFailureCodesAreContentFree(t *testing.T) {
-	for _, code := range []string{"step_error", "runtime_provider_format_error", "private arbitrary code"} {
+	for _, code := range []string{"step_error", "doer_proposal_decode_failed", "runtime_provider_format_error", "private arbitrary code", "doer_proposal_size_invalid", "doer_proposal_json_invalid", "doer_proposal_duplicate_field", "doer_proposal_unknown_field", "doer_proposal_shape_invalid", "doer_proposal_base64_invalid", "doer_proposal_trailing_data", "doer_proposal_edits_invalid", "doer_proposal_report_invalid"} {
 		t.Run(code, func(t *testing.T) {
 			ctx := context.Background()
 			repo, err := fleetbadger.Open(ctx, filepath.Join(t.TempDir(), "fleet-v1"))

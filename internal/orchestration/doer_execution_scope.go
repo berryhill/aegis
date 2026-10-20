@@ -7,6 +7,7 @@ import (
 
 type doerExecutionScopeKey struct{}
 type doerExecutionScope struct {
+	direct                                                 bool
 	requestID                                              string
 	candidate                                              reference.RevisionRef
 	queueItemID, submissionID, graphID, snapshotID, nodeID string
@@ -26,7 +27,7 @@ func DoerExecutionScope(ctx context.Context) (string, reference.RevisionRef, boo
 	}
 	// Compare the actual persisted identities with the exact controller emission,
 	// never trust a caller marker, worker ID, or a guessed name prefix.
-	if s.requestID == "" || s.queueItemID != s.requestID+"-queue" || s.submissionID != s.requestID+"-submission" || s.graphID != s.requestID || s.snapshotID != s.requestID+"-snapshot" {
+	if s.requestID == "" || s.queueItemID != s.requestID+"-queue" || s.submissionID != s.requestID+"-submission" || (!s.direct && s.graphID != s.requestID) || (s.direct && s.graphID != "") || s.snapshotID != s.requestID+"-snapshot" {
 		return "", reference.RevisionRef{}, true
 	}
 	return s.requestID, s.candidate, true

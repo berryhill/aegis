@@ -272,15 +272,27 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 		if err != nil || snapshot.Digest != item.Snapshot.Digest {
 			return false
 		}
-		graphWire, err := get(txn, key(familyGraphRevision, snapshot.Graph.ID, revisionPart(snapshot.Graph.Revision)))
-		if err != nil {
-			return false
+		var contract loop.DoerContract
+		if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {
+			if verifyDirectSnapshotReferences(txn, snapshot) != nil {
+				return false
+			}
+			node := snapshot.Execution.Topology.Nodes[0]
+			if node.ID != loopExecution.GraphNodeID || node.Participant != loopExecution.Participant || node.Loop != loopExecution.Loop {
+				return false
+			}
+			contract, err = doerbinding.BindDoerDirectRun(revision, node, snapshot)
+		} else {
+			graphWire, loadErr := get(txn, key(familyGraphRevision, snapshot.Graph.ID, revisionPart(snapshot.Graph.Revision)))
+			if loadErr != nil {
+				return false
+			}
+			definition, loadErr := graph.UnmarshalRevision(graphWire)
+			if loadErr != nil || definition.Digest != snapshot.Graph.Digest || len(definition.Nodes) != 1 || definition.Nodes[0].ID != loopExecution.GraphNodeID {
+				return false
+			}
+			contract, err = doerbinding.BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
 		}
-		definition, err := graph.UnmarshalRevision(graphWire)
-		if err != nil || definition.Digest != snapshot.Graph.Digest || len(definition.Nodes) != 1 || definition.Nodes[0].ID != loopExecution.GraphNodeID {
-			return false
-		}
-		contract, err := doerbinding.BindDoerGraphRun(revision, definition, definition.Nodes[0], snapshot)
 		if err != nil {
 			return false
 		}

@@ -362,7 +362,7 @@ while read rest; do :; done
 				}
 				want := "runtime_provider_format_error"
 				if mode == "v4-proposal-failure" {
-					want = "doer_proposal_decode_failed"
+					want = "doer_proposal_json_invalid"
 				}
 				steps, traceErr := worker.DoerTrace(ctx, "attempt", lr.Digest)
 				if traceErr != nil || len(steps) == 0 {
