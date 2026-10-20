@@ -336,10 +336,7 @@ while IFS= read -r rest; do :; done
 	cfg.API.Listen = "127.0.0.1:0"
 	cfg.API.UnixSocket = filepath.Join(socketTestDir(t), "aegis.sock")
 	cfg.Credentials.ProviderAuth["test"] = config.EnvironmentCredentialBinding{Type: "environment", SourceEnv: "AEGIS_API_TEST_KEY", TargetEnv: "TEST_PROVIDER_KEY"}
-	verifier, err := principalauth.Enroll(cfg.Principal.ID, []byte("api-principal-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	verifier := apiPrincipalVerifier(t)
 	if err = principalauth.Publish(filepath.Join(cfg.StateDir, "auth", principalauth.FileName), verifier); err != nil {
 		t.Fatal(err)
 	}

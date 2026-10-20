@@ -38,6 +38,20 @@ class ShardTests(unittest.TestCase):
         self.assertCountEqual(union, named + remainder)
         self.assertEqual(len(union), len(set(union)))
 
+    def test_measured_slow_update_is_isolated_from_both_remainders(self):
+        self.assertEqual(shard.GROUPS['update'], ('internal/update',))
+        # Inventory growth/reordering must not put the measured 368-373s package
+        # back beside cumulative remainder costs in either mode.
+        for count in (0, 1, 46, 47, 48):
+            packages = self.packages() + [shard.ROOT + f'future-{i}' for i in range(count)]
+            grouped = shard.groups(list(reversed(packages)))
+            self.assertEqual(grouped['update'], [shard.ROOT + 'internal/update'])
+            for name in ('remainder-a', 'remainder-b'):
+                self.assertNotIn(shard.ROOT + 'internal/update', grouped[name])
+            union = [p for group in grouped.values() for p in group]
+            self.assertCountEqual(union, packages)
+            self.assertEqual(len(union), len(set(union)))
+
     def test_empty_unknown_malformed_and_duplicate_listing_fail(self):
         for text in ['', '\n', '{}', 'other/module', shard.ROOT, shard.ROOT + 'bad name', '\n'.join([shard.ROOT + 'p'] * 2)]:
             with self.subTest(text=text), self.assertRaises(ValueError):
