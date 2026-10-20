@@ -221,6 +221,19 @@ type LoopDetailModel struct {
 	ValidationIssues                                                       []FieldModel
 	Provenance                                                             []FieldModel
 	LifecycleHistory                                                       []LoopLifecycleEventModel
+	DoerContract                                                           *LoopDoerContractModel
+}
+
+// LoopDoerContractModel projects only a sealed v4 definition, not run inputs or
+// produced file content. Digest seals the canonical contract before execution.
+// ExpectedText preserves nil (presence-only) versus explicitly empty text.
+type LoopDoerContractModel struct {
+	Task, Workspace, VerifyFile string
+	WritableFiles               []string
+	ExpectedText                *string
+	ExactBytes                  bool
+	MaxAttempts                 uint16
+	Digest, VerificationMode    string
 }
 
 type LoopPortModel struct {
