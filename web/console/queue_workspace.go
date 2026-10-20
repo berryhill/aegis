@@ -17,6 +17,7 @@ import (
 // inline pixel styles. This keeps the rendered HTML compatible with the
 // console's strict Content Security Policy (style-src 'self').
 type QueuePinnedTopology struct {
+	Loop                  bool
 	Nodes                 []QueueControlNodeModel
 	Edges                 []QueueControlEdgeModel
 	EdgeGeometry          []QueueEdgeLine
@@ -34,8 +35,11 @@ type QueuePinnedTopology struct {
 
 // QueueEdgeLine projects the SVG geometry for one drawn edge.
 type QueueEdgeLine struct {
-	Index int
-	Path  string
+	Back           bool
+	LabelX, LabelY int
+	Label          string
+	Index          int
+	Path           string
 }
 
 // buildQueuePinnedTopology projects the exact pinned Graph revision onto
@@ -44,6 +48,9 @@ func buildQueuePinnedTopology(detail *QueueDetailModel) QueuePinnedTopology {
 	t := QueuePinnedTopology{Columns: 1, Rows: 1}
 	if detail == nil {
 		return t
+	}
+	if detail.LiveLoop {
+		return BuildLoopExecutionTopology(detail.Nodes, detail.Edges)
 	}
 	t.ReconstructionWarning = detail.ReconstructionWarn
 	if len(detail.Nodes) > graph.MaxNodes || len(detail.Edges) > graph.MaxDependencies {

@@ -4,6 +4,7 @@ No model output, Queue success or installed-provider qualification is claimed.
 """
 import os
 from playwright.sync_api import sync_playwright
+from issue330_browser_assertions import baseline, parity, initial, reduced_motion
 
 base = os.environ['AEGIS_CONSOLE_BASE']
 with sync_playwright() as p:
@@ -17,6 +18,9 @@ with sync_playwright() as p:
     page.fill('#password', os.environ['AEGIS_CONSOLE_PASSWORD'])
     page.click('#session-form button[type=submit]')
     detail = base + '/console/queue?record_key=debug-queue#/queue/debug-queue'
+    expected_geometry = baseline(context, base)
+    if os.environ.get('AEGIS_DEBUGGER_GRAPH') != '1':
+        initial(context, base, detail, expected_geometry)
     page.goto(detail)
     page.wait_for_function("() => document.querySelector('[data-debugger-status]')?.textContent.includes('fresh observations')")
     if os.environ.get('AEGIS_DEBUGGER_GRAPH') == '1':
@@ -32,6 +36,7 @@ with sync_playwright() as p:
     assert 'r1' in page.locator('[data-debugger-scope]').inner_text()
     assert 'secret-canary' not in page.content()
     assert 'debug-execution' in page.locator('[data-debugger-identity]').inner_text()
+    parity(page, expected_geometry)
     node = page.locator('[data-queue-node]').filter(has=page.locator('strong', has_text='implement')).first
     node.focus()
     page.keyboard.press('Enter')
@@ -49,6 +54,7 @@ with sync_playwright() as p:
     assert page.locator('#queue-context').is_visible()
     assert page.locator('[data-queue-node-panel]:visible').count() == 1
     assert page.locator('#queue-context [data-debugger-node-history]').count() == page.locator('[data-debugger-node-history]').count()
+    parity(page, expected_geometry)
     page.locator('[data-queue-zoom=in]').click()
     before_zoom = page.locator('[data-queue-scale]').inner_text()
     print('RELEASE_CONTROLLED_EXECUTOR', flush=True)
@@ -66,6 +72,7 @@ with sync_playwright() as p:
     assert page.locator('[data-queue-scale]').inner_text() == before_zoom
     assert node.get_attribute('aria-pressed') == 'true'
     # Disconnect real transport; no DOM updates are fabricated.
+    parity(page, expected_geometry)
     context.set_offline(True)
     page.wait_for_function("() => document.querySelector('[data-debugger-status]')?.textContent.includes('stale / disconnected')")
     assert page.locator('[data-queue-workspace]').get_attribute('data-debugger-fresh') == 'false'
@@ -77,6 +84,8 @@ with sync_playwright() as p:
     assert page.locator('[data-debugger-history]').inner_text() == history
     page.set_viewport_size({'width':390,'height':844})
     page.emulate_media(reduced_motion='reduce')
+    parity(page, expected_geometry)
+    reduced_motion(page)
     page.locator('[data-debugger-replay]').fill('2')
     assert 'Historical replay' in page.locator('[data-debugger-status]').inner_text()
     overflow = page.evaluate('''() => [...document.querySelectorAll('body *')].filter(e => {const b=e.getBoundingClientRect(); return b.right>innerWidth && getComputedStyle(e).position!=='absolute' && !e.closest('.queue-stage')}).map(e=>[e.tagName,e.className,e.getBoundingClientRect().width]).slice(0,20)''')

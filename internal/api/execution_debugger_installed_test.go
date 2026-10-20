@@ -38,7 +38,10 @@ func TestExecutionDebuggerInstalledSeed(t *testing.T) {
 	// Relative socket resolves inside the private process cwd, avoiding the Unix
 	// path limit without touching production transport or using a shared socket.
 	svc.Config.API.UnixSocket = "aegis.sock"
-	for name, value := range map[string]any{"owner.json": svc.Config, "expected-debugger.json": view} {
+	// Seed the actual HTTP Console presentation contract, including canonical
+	// geometry, rather than comparing its response to the narrower app DTO.
+	// The restart probe compares every field except request freshness exactly.
+	for name, value := range map[string]any{"owner.json": svc.Config, "expected-debugger.json": debuggerPresentation(view)} {
 		raw, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)

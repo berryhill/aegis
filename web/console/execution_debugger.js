@@ -30,7 +30,7 @@
   };
   root.addEventListener("queue-selection-changed", event => {
     const index = event.detail.index;
-    selection[scope] = index === null ? null : nodes[Number(index)]?.querySelector("strong")?.textContent;
+    selection[scope] = index === null ? null : nodes[Number(index)]?.dataset.nodeId;
     persist();
   });
   const scopeInput = root.querySelector("[data-debugger-scope]");
@@ -61,20 +61,26 @@
     const loop = latest.nodes.find(n => n.node_id === scope);
     const definitions = loop ? loop.steps : latest.nodes.map(n => ({ id: n.node_id, kind: "Graph node", terminal: "" }));
     const edges = loop ? loop.edges : (latest.dependencies || []);
+    const geometry = loop ? latest.layouts[scope] : latest.graph_layout;
     const key = latest.snapshot_digest + "/" + scope;
     if (key !== layoutKey) {
       layoutKey = key; stage.replaceChildren();
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.classList.add("queue-edge-layer");
-      svg.setAttribute("viewBox", `0 0 ${definitions.length * 244 + 32} 166`); svg.setAttribute("aria-hidden", "true");
-      stage.append(svg); stage.style.gridTemplateColumns = `repeat(${definitions.length},212px)`;
-      stage.dataset.columns = String(definitions.length); stage.dataset.rows = "1";
+      svg.setAttribute("viewBox", `0 0 ${geometry.Columns * 244 + 32} ${geometry.Rows * 134 + (loop ? 72 : 32)}`); svg.setAttribute("aria-hidden", "true");
+      const defs = document.createElementNS(svg.namespaceURI, "defs"), marker = document.createElementNS(svg.namespaceURI, "marker");
+      marker.id="debugger-arrow"; for (const [k,v] of Object.entries({viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"})) marker.setAttribute(k,v);
+      const arrow=document.createElementNS(svg.namespaceURI,"path"); arrow.setAttribute("d","M 0 0 L 10 5 L 0 10 z"); marker.append(arrow); defs.append(marker); svg.append(defs);
+      stage.append(svg); stage.dataset.loopLayout=String(!!loop);
+      stage.dataset.columns = String(geometry.Columns); stage.dataset.rows = String(geometry.Rows);
       const panelParent = root.querySelector("#queue-context .qw-body");
       for (const panel of root.querySelectorAll("[data-queue-node-panel]")) panel.remove();
       panels = []; nodes = [];
       for (const [index, def] of definitions.entries()) {
         const button = make("button", undefined, "queue-node"); button.type = "button";
-        button.dataset.queueNode = String(index); button.dataset.gridColumn = String(index + 1); button.dataset.gridRow = "1";
-        button.style.gridColumn = String(index + 1); button.setAttribute("aria-controls", "queue-context"); button.setAttribute("aria-pressed", String(selection[scope] === def.id));
+        const cell=geometry.Nodes[index];
+        button.dataset.nodeId=def.id; button.classList.toggle("terminal-eligible",!!def.terminal);
+        button.dataset.queueNode = String(index); button.dataset.gridColumn = String(cell.GridColumn); button.dataset.gridRow = String(cell.GridRow);
+        button.setAttribute("aria-controls", "queue-context"); button.setAttribute("aria-pressed", String(selection[scope] === def.id));
         button.append(make("strong", def.id), make("span", "unknown", "queue-node-state"), make("span", def.kind, "queue-node-execution"));
         stage.append(button); nodes.push(button);
         const panel = make("section"); panel.dataset.queueNodePanel = String(index); panel.hidden = true;
@@ -90,12 +96,21 @@
         } else panel.append(make("p", `Loop ${loop.loop.id} r${loop.loop.revision} @ ${loop.loop.digest} · ${loop.execution_id || "execution not observed"} · interpreter observations are not Queue completion`));
         const list = make("ol"); list.dataset.debuggerNodeHistory = ""; panel.append(list); panelParent.append(panel); panels.push(panel);
       }
-      for (const [index, edge] of edges.entries()) {
-        const a = definitions.findIndex(s => s.id === edge.from), b = definitions.findIndex(s => s.id === edge.to); if (a < 0 || b < 0) continue;
-        const path = document.createElementNS(svg.namespaceURI, "path"), x1 = a * 244 + 244, x2 = b * 244 + 32;
-        path.setAttribute("d", b === a + 1 ? `M ${x1} 83 C ${x1+16} 83 ${x2-16} 83 ${x2} 83` : `M ${x1} 83 L ${x1+12} 20 L ${x2-12} 20 L ${x2} 83`);
-        path.dataset.edgeIndex = String(index); path.dataset.edgeId = edge.id; path.classList.add("queue-edge-path", "outcome-pending");
-        const caption = document.createElementNS(svg.namespaceURI, "title"); caption.textContent = `${edge.id}: ${edge.from} → ${edge.to} · bound ${edge.limit || "definition"}`; path.append(caption); svg.append(path);
+      for (const line of geometry.EdgeGeometry || []) {
+        const index=line.Index, edge=edges[index];
+        const path = document.createElementNS(svg.namespaceURI, "path");
+        path.setAttribute("d",line.Path); path.setAttribute("marker-end","url(#debugger-arrow)");
+        path.dataset.edgeIndex = String(index); path.dataset.edgeId = edge.id; path.classList.add("queue-edge-path", "outcome-pending"); path.classList.toggle("feedback",line.Back);
+        const caption = document.createElementNS(svg.namespaceURI, "title"); caption.textContent = `${edge.id}: ${edge.from} → ${edge.to} · ${edge.condition || ""} · bound ${edge.limit || "definition"}`; path.append(caption); svg.append(path);
+        if (line.Label) { const label=document.createElementNS(svg.namespaceURI,"text"); label.classList.add("queue-edge-label"); label.setAttribute("x",line.LabelX); label.setAttribute("y",line.LabelY); label.textContent=line.Label; svg.append(label); }
+      }
+      const textual=root.querySelector('.queue-textual');
+      if (textual) {
+        const summary=make('summary','Accessible textual equivalent · '+(loop ? 'exact Loop steps and transitions' : 'Graph nodes and dependencies'));
+        const list=make('ol');
+        for (const def of definitions) list.append(make('li',`${def.id} · ${def.kind} · ${def.terminal || 'no terminal outcome declared'}`));
+        for (const edge of edges) list.append(make('li',`${edge.id}: ${edge.from} → ${edge.to}${edge.condition ? ' · '+edge.condition : ''}${edge.limit ? ' · max '+edge.limit : ''} · definition context, not observed traversal`));
+        textual.replaceChildren(summary,make('p','Stored pinned definition, not an execution schedule. Runtime boundaries are listed in observed execution history.'),list);
       }
       root.dispatchEvent(new Event("queue-layout-changed"));
     }
@@ -113,13 +128,14 @@
         state = last ? (last.kind === "interpreter_terminal" ? "interpreter " + last.outcome : "child " + last.kind + ": " + last.outcome) : "not observed";
         running = last?.kind === "step_start";
       }
-      const node = nodes[index]; node.className = `queue-node state-${state.replaceAll(" ", "-")}`;
+      const node = nodes[index]; for (const cls of [...node.classList]) if (cls.startsWith("state-")) node.classList.remove(cls);
+      node.classList.add(`state-${state.replaceAll(" ", "-")}`);
       node.classList.toggle("current", running && !closed && following && fresh);
       node.querySelector(".queue-node-state").textContent = running && closed && following ? "finish unobserved (last observed running; Queue " + latest.state + ")" : state;
       const list = panels[index].querySelector("[data-debugger-node-history]"); list.replaceChildren(...selectedFacts.map(f => make("li", factText(f))));
       if (!selectedFacts.length) list.append(make("li", "No observed boundaries. Timing, pass and result unknown."));
     }
-    for (const path of stage.querySelectorAll("[data-edge-id]")) {
+    for (const path of stage.querySelectorAll("path[data-edge-id]")) {
       const occurrence = loop && visible.filter(f => f.node === scope && f.kind === "transition" && f.transition_id === path.dataset.edgeId).at(-1);
       const taken = !!occurrence, identity = occurrence ? `${occurrence.attempt}/${occurrence.sequence}/${occurrence.ordinal}` : "";
       const old = path.dataset.edgeOccurrence; path.dataset.edgeOccurrence = identity; path.dataset.edgeOutcome = taken ? "taken" : "pending";

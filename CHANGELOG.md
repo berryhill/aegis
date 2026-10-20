@@ -12,6 +12,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Use the same canonical Loop layout for definition and exact pinned execution
+  scopes, including multi-row branches, feedback arrows and condition/bound
+  labels, without deriving geometry from runtime/replay observations.
 - Preserve an already-published Doer Loop's exact revision, publication identity
   and historical publisher provenance through an independently approved compatible
   same-Agent charter successor. Retained task execution reuses the validated
