@@ -19,6 +19,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Isolate the measured slow updater package in its own complete normal/race CI
+  shard, keeping both remainder shards, exact-once package coverage and mandatory
+  evidence gates without increasing job deadlines or verification resources.
+
 - Clarify Loop definition ports versus sealed Doer task contracts and actual
   execution evidence. Show the exact v4 task/file assertion without inventing
   dataflow outputs; preserve reusable v5 run-bound inputs. Make definition and

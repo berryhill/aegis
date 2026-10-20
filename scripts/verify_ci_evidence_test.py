@@ -52,9 +52,9 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 MODULE.validate(run, jobs, SHA, 456)
 
-    def test_each_remainder_shard_is_required_in_both_modes(self):
+    def test_each_rebalanced_shard_is_required_in_both_modes(self):
         for mode in ('normal', 'race'):
-            for group in ('remainder-a', 'remainder-b'):
+            for group in ('update', 'remainder-a', 'remainder-b'):
                 name = f'Go {mode} / {group}'
                 with self.subTest(name=name):
                     self.assertIn(name, MODULE.REQUIRED_JOBS)

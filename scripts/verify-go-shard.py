@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exact-once bounded Go package groups; invoke through verify-budget.py.
 
-Six groups isolate measured slow packages without duplicating compilation or
+Seven groups isolate measured slow packages without duplicating compilation or
 splitting TestMain, examples, fuzz seeds, or subtests. The remainder is exact set
 subtraction from `go list ./...`; new packages cannot silently escape coverage.
 """
@@ -16,6 +16,8 @@ GROUPS = {
     'execution': ('internal/implementation', 'internal/orchestration'),
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
+    # CI race timing: update alone takes 368-373s; never pair it with the remainder.
+    'update': ('internal/update',),
     'remainder-a': (),
     'remainder-b': (),
 }
