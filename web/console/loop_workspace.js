@@ -12,6 +12,39 @@
   const panels = Array.from(root.querySelectorAll("[data-loop-node-panel]"));
   const nodes = Array.from(root.querySelectorAll("[data-loop-node]"));
   const definitionButtons = Array.from(root.querySelectorAll("[data-loop-definition]"));
+  const tabs = Array.from(root.querySelectorAll("[data-loop-tab]"));
+  const tabPanels = Array.from(root.querySelectorAll("[data-loop-tab-panel]"));
+  const tabNav = root.querySelector(".loop-tab-nav");
+  // Only enhancement hides sections: both remain readable without JavaScript.
+  if (tabNav && tabs.length && tabPanels.length === tabs.length) {
+    tabNav.setAttribute("role", "tablist");
+    const activate = (index, focus = false) => {
+      tabs.forEach((tab, i) => {
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(i === index));
+        tab.tabIndex = i === index ? 0 : -1;
+      });
+      tabPanels.forEach(panel => {
+        panel.setAttribute("role", "tabpanel");
+        panel.hidden = panel.dataset.loopTabPanel !== tabs[index].dataset.loopTab;
+      });
+      if (focus) tabs[index].focus({preventScroll:true});
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => activate(index));
+      tab.addEventListener("keydown", event => {
+        let next = index;
+        if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+        else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = tabs.length - 1;
+        else if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        activate(next, true);
+      });
+    });
+    activate(0);
+  }
   if (!stage) return;
   // Match the accepted workspace's canvas-first entry. Keep the server-rendered
   // definition visible without JavaScript; enhancement makes it contextual.

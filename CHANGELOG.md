@@ -8,6 +8,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Clarify Loop definition ports versus sealed Doer task contracts and actual
+  execution evidence. Show the exact v4 task/file assertion without inventing
+  dataflow outputs; preserve reusable v5 run-bound inputs. Make definition and
+  evidence tabs keyboard-operable while retaining readable no-JavaScript content.
+
 - Preserve an already-published Doer Loop's exact revision, publication identity
   and historical publisher provenance through an independently approved compatible
   same-Agent charter successor. Retained task execution reuses the validated
