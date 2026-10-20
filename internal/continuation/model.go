@@ -14,7 +14,6 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/graph"
-	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 )
 
@@ -24,7 +23,7 @@ var ErrConflict = errors.New("Doer continuation content conflict")
 const Purpose = "aegis.doer-continuation.v1"
 
 type Run struct {
-	Reexecution    *loop.Reexecution       `json:"reexecution,omitempty"`
+	Reexecution    *Reexecution            `json:"reexecution,omitempty"`
 	Agent          reference.RevisionRef   `json:"agent"`
 	Loop           reference.RevisionRef   `json:"loop"`
 	IdempotencyKey string                  `json:"idempotency_key"`

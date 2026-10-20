@@ -88,9 +88,43 @@ func (s *Service) QueueLoop(ctx context.Context, input QueueLoopInput) (QueueLoo
 	return s.QueueLoopAs(ctx, subject, input)
 }
 
-func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input QueueLoopInput) (result QueueLoopResult, err error) {
+// QueueLoopAs separates serialized admission/authority preparation from bounded
+// runtime work. Register worker ownership before releasing admission: an exact
+// replay in the binding-to-claim window must read back, not prepare again.
+func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input QueueLoopInput) (QueueLoopResult, error) {
+	var work *orchestration.WorkRequest
 	s.loopRunMu.Lock()
-	defer s.loopRunMu.Unlock()
+	result, err := s.admitQueueLoop(ctx, subject, input, &work)
+	if err == nil && work != nil {
+		if s.loopRunWorkers == nil {
+			s.loopRunWorkers = make(map[string]bool)
+		}
+		s.loopRunWorkers[result.QueueItemID] = true
+	}
+	s.loopRunMu.Unlock()
+	if err != nil || work == nil {
+		return result, err
+	}
+	defer func() {
+		s.loopRunMu.Lock()
+		delete(s.loopRunWorkers, result.QueueItemID)
+		s.loopRunMu.Unlock()
+	}()
+	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
+	_, err = s.ProcessQueueItemAs(ctx, subject, *work)
+	if err != nil {
+		r, readErr := s.queueLoopBlockedReadback(ctx, subject, result, "processing_failed")
+		if readErr != nil {
+			return r, readErr
+		}
+		return r, err
+	}
+	return s.queueLoopBlockedReadback(ctx, subject, result, "processed")
+}
+
+// admitQueueLoop and prepareQueuedLoop run only with loopRunMu held. Neither
+// releases it or executes the returned work; the caller owns that boundary.
+func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, work **orchestration.WorkRequest) (result QueueLoopResult, err error) {
 	if err = s.requireFleetPrincipal(subject); err != nil {
 		return
 	}
@@ -173,7 +207,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 			return result, fleet.ErrConflict
 		}
 		result.QueueItemID, result.Graph, result.Execution = input.QueueItemID, snapshot.Graph, &prior
-		if len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
 			result.Reason = "existing_execution"
 			return result, nil
 		}
@@ -199,7 +233,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 			result.blockedDoer(reason)
 			return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 		}
-		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]))
+		return s.prepareQueuedLoop(ctx, subject, input, lv, result, "recover-"+hex.EncodeToString(recoveryKey[:16]), work)
 	}
 	// Rejections are immutable blocked intent, never fabricated executable work.
 	if prior, e := s.FleetRepository.GetRejection(ctx, key+"-reject"); e == nil {
@@ -234,7 +268,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		}
 		if prior, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID); e == nil {
 			result.Execution = &prior
-			if len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+			if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
 				result.Reason = "existing_execution"
 				return result, nil
 			}
@@ -346,7 +380,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	if prior, e := s.GetQueueItemAs(ctx, subject, result.QueueItemID); e == nil {
 		result.Execution = &prior
 		// Never reclaim or duplicate an already started execution on HTTP retry.
-		if len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
+		if s.loopRunWorkers[result.QueueItemID] || len(prior.Attempts) > 0 || (!prior.Projection.State.IsPreparation() && prior.Projection.State != queue.StateQueued) {
 			result.Reason = "existing_execution"
 			return result, nil
 		}
@@ -366,7 +400,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		result.Reason = decision.Rejection.ReasonCode
 		return result, nil
 	}
-	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key)
+	return s.prepareQueuedLoop(ctx, subject, input, lv, result, key, work)
 }
 
 // preflightDoerQueue reports missing foundational authority before any new
@@ -417,7 +451,7 @@ func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Sub
 	return result, err
 }
 
-func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string) (QueueLoopResult, error) {
+func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string, work **orchestration.WorkRequest) (QueueLoopResult, error) {
 	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
 	readback := func(reason string) (QueueLoopResult, error) {
 		return s.queueLoopBlockedReadback(ctx, subject, result, reason)
@@ -576,13 +610,6 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if e != nil {
 		return readback("exact_runtime_binding_required")
 	}
-	_, e = s.ProcessQueueItemAs(ctx, subject, orchestration.WorkRequest{Authority: authority.Authority, QueueItemID: result.QueueItemID, WorkerID: "exact-loop-controller", LoopExecutionID: key + "-loop", ClaimID: key + "-claim", AttemptID: key + "-attempt", ClaimTransitionID: key + "-claimed", TerminalTransitionID: key + "-terminal", DispositionID: key + "-disposition", ArtifactID: key + "-artifact", LeaseDuration: 6 * time.Minute})
-	if e != nil {
-		r, readErr := readback("processing_failed")
-		if readErr != nil {
-			return r, readErr
-		}
-		return r, e
-	}
-	return readback("processed")
+	*work = &orchestration.WorkRequest{Authority: authority.Authority, QueueItemID: result.QueueItemID, WorkerID: "exact-loop-controller", LoopExecutionID: key + "-loop", ClaimID: key + "-claim", AttemptID: key + "-attempt", ClaimTransitionID: key + "-claimed", TerminalTransitionID: key + "-terminal", DispositionID: key + "-disposition", ArtifactID: key + "-artifact", LeaseDuration: 6 * time.Minute}
+	return result, nil
 }

@@ -21,12 +21,12 @@ type ControllerCodexProbeInput struct {
 	IdempotencyKey string                `json:"idempotency_key"`
 }
 type ControllerCodexProbeResult struct {
-	ID          string                          `json:"id"`
-	Input       ControllerCodexProbeInput       `json:"input"`
-	Status      string                          `json:"status"`
-	Reason      string                          `json:"reason"`
-	Diagnostic  hermes.ProviderFormatDiagnostic `json:"diagnostic"`
-	PrincipalID string                          `json:"principal_id"`
+	ID          string                    `json:"id"`
+	Input       ControllerCodexProbeInput `json:"input"`
+	Status      string                    `json:"status"`
+	Reason      string                    `json:"reason"`
+	Diagnostic  ProviderFormatDiagnostic  `json:"diagnostic"`
+	PrincipalID string                    `json:"principal_id"`
 }
 
 func controllerProviderProbeID(principal, key string) string {
@@ -130,7 +130,7 @@ func (s *Service) ProbeControllerCodexAs(ctx context.Context, sub core.Subject, 
 	if hermes.IsAttemptFailureReason(result.Attempt.Reason) {
 		out.Reason = result.Attempt.Reason
 	}
-	out.Diagnostic = result.Diagnostic
+	out.Diagnostic = ProviderFormatDiagnostic{Parameter: result.Diagnostic.Parameter, Code: result.Diagnostic.Code}
 	if e == nil && result.Attempt.State == execution.StateSucceeded {
 		out.Status = "completed"
 		out.Reason = "diagnostic_turn_completed_not_acceptance"

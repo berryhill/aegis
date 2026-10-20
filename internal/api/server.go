@@ -29,7 +29,6 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/managergateway"
 	"github.com/berryhill/aegis/internal/principalauth"
-	"github.com/berryhill/aegis/internal/runtime/hermes"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -124,22 +123,10 @@ func classifyError(err error) (int, string, string) {
 		return turnError.status, turnError.code, turnError.message
 	case errors.As(err, &commandError):
 		return http.StatusBadRequest, "manager_command_parse_error", commandError.message
-	case errors.Is(err, hermes.ErrProviderAuthRuntimeUnqualified):
+	case app.ProviderAuthenticationFailureCode(err) == "doer_provider_auth_runtime_unqualified":
 		return http.StatusServiceUnavailable, "doer_provider_auth_runtime_unqualified", "qualified native runtime required"
-	case hermes.NativeProviderFailureCode(err) != "":
-		return http.StatusConflict, hermes.NativeProviderFailureCode(err), "exact native source connection denied"
-	case errors.Is(err, hermes.ErrProviderAuthAbsent), errors.Is(err, hermes.ErrProviderAuthInvalid), errors.Is(err, hermes.ErrProviderAuthExpired), errors.Is(err, hermes.ErrProviderAuthUnauthorized):
-		code := "doer_provider_auth_invalid"
-		if errors.Is(err, hermes.ErrProviderAuthAbsent) {
-			code = "doer_provider_auth_absent"
-		}
-		if errors.Is(err, hermes.ErrProviderAuthExpired) {
-			code = "doer_provider_auth_expired"
-		}
-		if errors.Is(err, hermes.ErrProviderAuthUnauthorized) {
-			code = "doer_provider_auth_unauthorized"
-		}
-		return http.StatusConflict, code, "exact native source connection denied"
+	case app.ProviderAuthenticationFailureCode(err) != "":
+		return http.StatusConflict, app.ProviderAuthenticationFailureCode(err), "exact native source connection denied"
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
 	case errors.Is(err, app.ErrDoerReexecutionBudgetExhausted):

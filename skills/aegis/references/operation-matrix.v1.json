@@ -555,13 +555,15 @@
         "aegis controller-codex candidates",
         "aegis controller-codex preview",
         "aegis controller-codex connect",
-        "aegis controller-codex show"
+        "aegis controller-codex show",
+        "aegis controller-codex probe"
       ],
       "http": [
         "GET /v1/controller/codex",
         "POST /v1/controller/codex/candidates",
         "POST /v1/controller/codex/preview",
         "POST /v1/controller/codex/connect",
+        "POST /v1/controller/codex/probe",
         "GET /console/credentials",
         "GET /console/credentials/operation",
         "POST /console/credentials/operation/review",

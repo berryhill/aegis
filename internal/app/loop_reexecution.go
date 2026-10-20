@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 
+	"github.com/berryhill/aegis/internal/continuation"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
@@ -19,7 +20,7 @@ import (
 
 // LoopReexecution selects an authoritative known failure, never an unknown
 // outcome or a retry of its terminal GraphRun. Counts are not caller inputs.
-type LoopReexecution = loop.Reexecution
+type LoopReexecution = continuation.Reexecution
 
 var ErrDoerReexecutionBudgetExhausted = errors.New("doer_reexecution_budget_exhausted")
 

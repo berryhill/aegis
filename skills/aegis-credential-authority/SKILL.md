@@ -108,7 +108,23 @@ For a Linux controller's existing native Hermes Codex login, use only the typed
 owning-daemon CLI: `--config OWNER_CONFIG --target CONSOLE_URL controller-codex
 candidates PROFILE_HOME` for bounded credential-free inspection,
 then `controller-codex preview PROFILE_HOME [--credential ID]`, then `controller-codex connect REVIEW_ID`, then
-`controller-codex show` with the same global options. Preview returns only exact
+`controller-codex show` with the same global options.
+
+For a separately requested bounded inference diagnostic, use
+`--config OWNER_CONFIG --target CONSOLE_URL controller-codex probe FILE`
+(`POST /v1/controller/codex/probe`). The strict JSON file contains only exact
+`agent` and `loop` revision references and an `idempotency_key`; no prompt,
+workspace, source, provider/model override or credential value is accepted.
+This principal-only operation requires the existing exact approved native
+connection and fresh zero-authority runtime admission. It makes one bounded
+provider-format diagnostic turn in a disposable session, with no tools,
+capabilities, memory, Agent credentials, host-write scope, Graph/Queue work or
+implementation budget. Read only the closed reason/parameter/code fields;
+raw provider output and native exception text are not returned. Preserve the
+same key across uncertain outcomes: the durable create-only reservation never
+automatically repeats inference, and changed input conflicts. A completed probe
+is diagnostic transport evidence, never task success or live Loop acceptance.
+Preview returns only exact
 source/account metadata and a five-minute one-use review; connect revalidates the
 native account and exact reviewed config bytes and derives the principal server-side from
 fresh kernel Unix-peer authentication. No manual account/approved_by fields,

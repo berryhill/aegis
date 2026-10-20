@@ -58,8 +58,9 @@ type Service struct {
 	QueueWorker         *orchestration.QueueWorker
 	nativeConnectionMu  sync.Mutex
 	nativeReviews       map[string]nativeConnectionReview
-	loopRunMu           sync.Mutex // owning-service serial foreground Run admission/preparation
-	doerTaskMu          sync.Mutex // foreground retained-task continuation in this owning service
+	loopRunMu           sync.Mutex      // guards Run admission/preparation and foreground worker ownership
+	loopRunWorkers      map[string]bool // guarded by loopRunMu; durable claims remain the execution fence
+	doerTaskMu          sync.Mutex      // foreground retained-task continuation in this owning service
 	capMu               sync.RWMutex
 	capabilities        map[[32]byte]broker.Capability
 	brokerRequests      map[[32]byte]map[[32]byte]struct{}
