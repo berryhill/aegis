@@ -77,6 +77,14 @@ class ShardTests(unittest.TestCase):
                 shard.main(['--group', 'unknown'])
             run.assert_not_called()
 
+    def test_outer_race_jobs_allow_setup_and_complete_slow_packages(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        job = workflow.split('  go-shards:\n', 1)[1].split('  installed-proof:', 1)[0]
+        allowance = "${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}"
+        self.assertIn('    timeout-minutes: ' + allowance, job)
+        self.assertIn('fail-fast: false', job)
+        self.assertIn('python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP" --race', job)
+
     def test_real_go_fixture_preserves_tests_examples_and_fuzz_seeds(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
