@@ -187,7 +187,7 @@ func TestLoopWorkspaceCycleBranchTerminalInvalidAndMaximumFixtures(t *testing.T)
 			if !strings.Contains(html, "data-loop-workspace") {
 				t.Fatal("missing workspace root")
 			}
-			if !strings.Contains(html, "Required inputs") || !strings.Contains(html, "Evidence and outcomes") {
+			if !strings.Contains(html, "Definition contract") || !strings.Contains(html, "Evidence and outcomes") {
 				t.Fatal("missing tabs")
 			}
 			if !strings.Contains(html, "Accessible textual equivalent") {

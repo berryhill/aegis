@@ -29,6 +29,9 @@ type (
 )
 
 const (
+	DoerRevisionSchemaVersion = loop.DoerRevisionSchemaVersion
+	DoerReusableSchemaVersion = loop.DoerReusableSchemaVersion
+
 	LoopMaxPorts       = loop.MaxPorts
 	LoopMaxSteps       = loop.MaxSteps
 	LoopMaxEvidence    = loop.MaxEvidence

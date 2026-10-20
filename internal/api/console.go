@@ -553,8 +553,8 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 
 func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
-	doerV4 := revision.Doer != nil
-	doerV5 := revision.DoerReusable != nil
+	doerV4 := revision.SchemaVersion == app.DoerRevisionSchemaVersion && revision.Doer != nil
+	doerV5 := revision.SchemaVersion == app.DoerReusableSchemaVersion && revision.DoerReusable != nil
 	lifecycle := string(view.Lifecycle.State)
 	readiness := "Inactive definition; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
@@ -607,6 +607,26 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 			{Label: "Validation binding", Value: view.Provenance.ValidationDigest},
 			{Label: "Publication provenance digest", Value: view.Provenance.Digest},
 		},
+	}
+	if doerV4 {
+		contract := revision.Doer
+		if digest, err := contract.Digest(); err == nil {
+			projected := &consoleweb.LoopDoerContractModel{
+				Task: contract.Task, Workspace: contract.Workspace, VerifyFile: contract.VerifyFile,
+				WritableFiles: append([]string(nil), contract.WritableFiles...),
+				ExactBytes:    contract.ExactBytes, MaxAttempts: contract.MaxAttempts,
+				Digest: digest, VerificationMode: "presence-only",
+			}
+			if contract.ExpectedText != nil {
+				text := *contract.ExpectedText
+				projected.ExpectedText = &text
+				projected.VerificationMode = "trimmed-text"
+				if contract.ExactBytes {
+					projected.VerificationMode = "exact-bytes"
+				}
+			}
+			detail.DoerContract = projected
+		}
 	}
 	if view.Provenance.AuthorityKind != "" {
 		detail.Provenance = append(detail.Provenance, consoleweb.FieldModel{Label: "Authority kind", Value: view.Provenance.AuthorityKind})
@@ -687,6 +707,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
+		Availability: string(view.Availability.State), AvailabilitySequence: view.Availability.Sequence, AvailabilityDigest: view.Availability.Digest,
 		Summary:   summary,
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,

@@ -44,7 +44,10 @@
 .loop-workspace [hidden]{display:none!important}
 .loop-tab-nav{display:flex;gap:6px;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2)}
 .loop-tab-nav button{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);font:inherit;cursor:pointer}
-.loop-tab-nav button[aria-pressed=true]{color:var(--accent);border-color:var(--border);background:var(--surface)}
+.loop-tab-nav button[aria-selected=true]{color:var(--accent);border-color:var(--border);background:var(--surface)}
+.lw-tab-panel[hidden]{display:none!important}
+.loop-contract-value{white-space:pre-wrap;overflow:auto;max-height:16rem;max-width:100%;overflow-wrap:anywhere;margin:0}
+.loop-sealed-contract dd{min-width:0}
 .loop-workspace .lw-tab-panel{padding:14px;display:grid;gap:12px}
 .loop-workspace .lw-tab-panel[hidden]{display:none!important}
 .loop-support-section{display:grid;gap:12px}

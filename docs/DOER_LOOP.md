@@ -210,6 +210,22 @@ Before launching another native confirmation, the continuation portal reads the 
 
 Host consent remains bounded to at most 24 hours. While an exact-scope approval is active, reuse preserves its signed bytes, approval time and expiry. After expiry, a fresh explicit authenticated host-write decision appends a signed generation linked to its predecessor; reads never renew consent. Historical generation-zero records retain their filenames and bytes. The controller fully verifies the contiguous history under its store lock, including expired facts. History is limited to 256 generations per exact deployment/owner/Agent/contract scope; exhaustion denies and never prunes history or grants a new scope. Unknown publication outcomes recover only the exact committed generation. This renewal is distinct from runtime/session authority and cannot renew an expired continuation.
 
+### Reading a Loop's definition contract
+
+The Console's **Definition contract** section distinguishes declared dataflow
+ports from the task assertion. A selected-file v4 Loop intentionally has no
+external input or output ports: its task, workspace, writable-file allowlist,
+selected file, expected-text mode and attempt bound are sealed into that exact
+revision and displayed separately. Reusable v5 instead shows its declared typed
+inputs; concrete task values arrive at Run time, not from the definition page.
+
+The **Evidence and outcomes** section describes declared verification requirements
+and possible terminal outcomes. Neither a succeeded terminal node nor a pre-run
+contract digest proves a successful execution or an artifact content digest.
+Actual artifacts, verifier receipts and disposition belong to an exact execution.
+Both sections remain readable without JavaScript; enhanced tabs support pointer
+and keyboard selection without publishing, executing or changing the definition.
+
 ### Exact raw bytes versus legacy text
 
 The new Console builder defaults to **exact raw UTF-8 bytes**, encoded in a v4 contract as `"exact_bytes": true` with `expected_text`. For `"hello"`, `hello` passes but `hello\n` or surrounding spaces fail. An explicit empty expected string with this flag requires an empty file. Omission/false preserves historical trimming of both expected and observed UTF-8 text; omitting `expected_text` is presence-only and cannot be combined with `exact_bytes: true`. The assertion mode is sealed in the contract/Loop digests and selected-file evidence; it does not rewrite historical definitions. CLI JSON authoring must select the flag explicitly, rather than assuming the Console default. These are selected regular-file assertions, not arbitrary binary or multi-file proof.

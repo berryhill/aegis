@@ -31,7 +31,9 @@ func workspaceSkillSubmissionPublicReadback(t *testing.T, multiNode bool) {
 	t.Helper()
 	svc := apiService(t)
 	configureAPIFleet(t, svc)
-	probe := &skillParticipantIntegrityProbe{Repository: svc.FleetRepository, multiNode: multiNode}
+	// Preserve the real store's optional availability boundary while injecting
+	// participant read corruption; dropping it makes lifecycle readback unavailable.
+	probe := &skillParticipantIntegrityProbe{Repository: svc.FleetRepository, LoopAvailabilityRepository: svc.FleetRepository.(fleet.LoopAvailabilityRepository), multiNode: multiNode}
 	svc.FleetRepository = probe
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -165,6 +167,7 @@ func workspaceSkillSubmissionPublicReadback(t *testing.T, multiNode bool) {
 // checked rather than merely dropping the old single-node cardinality guard.
 type skillParticipantIntegrityProbe struct {
 	fleet.Repository
+	fleet.LoopAvailabilityRepository
 	multiNode bool
 	enabled   atomic.Bool
 	calls     atomic.Int32

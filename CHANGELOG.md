@@ -8,9 +8,25 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Source candidate: reversible logical-Loop archive/restore with Published/Archived
+  Console views and direct actions, published-only discovery, full revision
+  inventory and availability CLI/API readback. Archive covers current and future
+  revisions without changing lifecycle, stopping runtime work or rewriting pinned
+  Graph/Queue/execution/evidence history. MCP Loop adapter remains unavailable;
+  installed acceptance and publication are separate.
+
 - Authenticated exact-run execution debugger with durable interpreter step, transition, verification and implementation-pass observations; pinned Loop topology, Graph-node drill-down, live/pause/replay controls and explicit stale/auth-loss handling. Interpreter terminal is never substituted for evidence-backed Queue disposition; legacy boundaries remain unknown and multi-node scheduling is not added.
 
 ### Fixed
+
+- Clarify Loop definition ports versus sealed Doer task contracts and actual
+  execution evidence. Show the exact v4 task/file assertion without inventing
+  dataflow outputs; preserve reusable v5 run-bound inputs. Make definition and
+  evidence tabs keyboard-operable while retaining readable no-JavaScript content.
+
+- Use the same canonical Loop layout for definition and exact pinned execution
+  scopes, including multi-row branches, feedback arrows and condition/bound
+  labels, without deriving geometry from runtime/replay observations.
 
 - Preserve an already-published Doer Loop's exact revision, publication identity
   and historical publisher provenance through an independently approved compatible
