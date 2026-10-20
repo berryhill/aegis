@@ -51,7 +51,9 @@ jobs:
         mode: [normal, race]
         group: [api, execution, cli, persistence, remainder-a, remainder-b]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Include toolchain setup/compilation outside the Go test-process budget.
+    # All other jobs retain their existing bound; coverage is never skipped.
+    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}
     steps:
       - uses: actions/checkout@v4
         with:
