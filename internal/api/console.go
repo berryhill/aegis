@@ -703,7 +703,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 
 	summary := fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions))
 	if doerV5 {
-		summary += " · reusable typed-input definition · per-run Graph binding required"
+		summary += " · reusable typed-input definition · per-run task binding required"
 	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,

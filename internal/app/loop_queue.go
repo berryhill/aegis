@@ -173,15 +173,15 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 		}
 		direct, bindErr := graph.NewDirectLoopSnapshot(key+"-snapshot", node, input.Inputs)
 		if bindErr != nil {
-			return result, bindErr
+			return result, ErrDenied
 		}
 		snapshot, bindErr := graph.NewDirectRunSnapshot(direct)
 		if bindErr != nil {
-			return result, bindErr
+			return result, ErrDenied
 		}
 		contract, bindErr := orchestration.BindDirectDoerContract(lv.Revision, node, snapshot)
 		if bindErr != nil {
-			return result, bindErr
+			return result, ErrDenied
 		}
 		ctx = context.WithValue(ctx, boundDoerRunKey{}, boundDoerRun{candidate: input.Loop, contract: contract})
 	}
