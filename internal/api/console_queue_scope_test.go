@@ -301,9 +301,15 @@ func TestConsoleQueueScopeAuthenticatedRoutes(t *testing.T) {
 						if parsed.Query().Get("state") != "" || parsed.Query().Get("page") != "" {
 							t.Fatalf("band link retains bottom context: %s", link)
 						}
-						detail := queueScopeGet(t, client, base, link, http.StatusOK)
-						if !strings.Contains(detail, "data-queue-workspace") || !strings.Contains(detail, `<h2 id="inspector-title">`+bands[key].IDs[i]+`</h2>`) {
-							t.Fatalf("band detail did not resolve exact identity %s", link)
+						// All selections must produce the same unfiltered link
+						// context. Follow each distinct detail once from the
+						// incompatible paginated case, not 22 times per link:
+						// redundant full renders exhaust the race-shard budget.
+						if state == "succeeded" && page == "2" {
+							detail := queueScopeGet(t, client, base, link, http.StatusOK)
+							if !strings.Contains(detail, "data-queue-workspace") || !strings.Contains(detail, `<h2 id="inspector-title">`+bands[key].IDs[i]+`</h2>`) {
+								t.Fatalf("band detail did not resolve exact identity %s", link)
+							}
 						}
 					}
 				}
