@@ -264,6 +264,12 @@ type SubmissionHistory struct {
 	Rejected []queue.Rejection      `json:"rejected"`
 }
 
+// IsDirectLoop reports the execution source without exposing lower-layer
+// source-kind constants to presentation adapters.
+func (v QueueExecutionView) IsDirectLoop() bool {
+	return v.SourceKind == graph.SourceDirectLoop
+}
+
 type QueueExecutionView struct {
 	SourceKind graph.SourceKind        `json:"source_kind"`
 	Source     reference.RevisionRef   `json:"source"`

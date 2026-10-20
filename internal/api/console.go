@@ -18,7 +18,6 @@ import (
 	"github.com/a-h/templ"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
-	"github.com/berryhill/aegis/internal/graph"
 
 	"github.com/berryhill/aegis/internal/principalauth"
 	consoleweb "github.com/berryhill/aegis/web/console"
@@ -921,7 +920,7 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 		DispositionState:  "Pending — no authoritative terminal disposition is attached.",
 		ContextualAction:  queueContextualActionForState(view, state),
 	}
-	if view.SourceKind == graph.SourceDirectLoop {
+	if view.IsDirectLoop() {
 		detail.ExecutionType = "Direct Loop run · " + exactRevisionLabel(view.Source.ID, view.Source.Revision, view.Source.Digest)
 	}
 	if pinnedGraph != nil {
