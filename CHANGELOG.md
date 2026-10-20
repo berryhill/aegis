@@ -24,6 +24,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   history. Legacy discarded causes remain explicitly generic.
 
 - Prepare the same published selected-file v4 Loop inside a fresh owner-principal Run for zero-authority disposable sessions; retain signed expiring exact host scope with Run provenance without fabricating provisioning approval/receipts. General provisioning and new-authority gates remain unchanged. Report missing controller/Laya execution configuration distinctly; no automatic dependency installation or live-provider qualification.
+- Add the hard GitHub Trigger-to-Graph acceptance contract and project-context
+  routing; no Trigger runtime implementation or activation is claimed.
+
+- Document repository-scoped Hermes implementation/delivery expectations and hard
+  Loop/Graph acceptance contracts, routed from AGENTS.md. These define engineering
+  obligations and test targets, not newly implemented runtime capabilities.
+
+## [0.2.39] - 2026-10-19
 
 - Preserve selected-file acceptance assertions in Doer implementation turns instead
   of dropping exact expected bytes, whitespace policy and retry bounds. Independent

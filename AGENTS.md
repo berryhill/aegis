@@ -146,6 +146,19 @@ Charters, deterministic stanza selection, mandates, clean Hermes sessions, provi
 
 Detailed retained research is under `research/`.
 
+## Implementation delivery and Hermes acceptance routing
+
+Read `.hermes/implementation-delivery-contract.md` before acting on implementation, repair, publication or deployment requests. “Implement/fix” means working end-to-end behavior through independent acceptance, PR, exact-head CI and verified protected-base merge—not a plan, local patch, worker launch or open PR. Release and live activation are separate requested targets; when already authorized, complete them without duplicate permission. Narrower explicit scope and genuine independent approval gates always prevail.
+
+This `AGENTS.md` is the canonical project-instruction entry point. `.hermes/` contains explicitly referenced documents, not automatically loaded rules. Read `.hermes/README.md` for the index and evidence/hygiene rules.
+
+- For Doer Loop authoring, admission, execution, retries, evidence or disposition changes, read `.hermes/loop-happy-path-hard-acceptance.md` in full before defining acceptance or editing affected behavior.
+- For Graph authoring, typed inputs, multi-node execution, artifact handoff, dependency gating or aggregate disposition changes, read `.hermes/graph-happy-path-hard-acceptance.md` in full. Read both when the change spans both.
+- For Connector intake, Trigger invocation logic, Graph Trigger-entry composition, activation bindings or event-driven execution changes, also read `.hermes/trigger-happy-path-hard-acceptance.md`. This is a proposed GitHub acceptance target, not a claim of shipped Trigger capability or permission to enable integrations.
+- These contracts are hard acceptance targets, not claims of current capability or successful testing. Never weaken them to obtain green. Report PASS, FAIL, BLOCKED, UNAVAILABLE and downstream NOT EXERCISED distinctly; keep synthetic, live-provider and installed-target evidence separate.
+- Preserve task/worktree ownership, one source writer, dirty work and independent frozen-candidate testing. A rendered instruction is not execution. A shared-owner gate blocks only that portion; a pending handoff is not repair.
+- Instructions do not grant credentials, foundational authority or approval bypasses. Keep secret/session/approval material and runtime state out of committed context. Do not add a competing `.hermes.md`/`HERMES.md` merely to supplement this file. Verify fresh effective project-context loading; `/reload-skills` alone does not establish adoption.
+
 ## Launch-asset synchronization rule
 
 Every implementation change must include a launch-asset impact review. Before declaring the change complete, inspect every asset below, update each affected asset in the same change, and verify that every retained statement still matches the implemented and tested behavior:
