@@ -103,15 +103,18 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 				</div>
 				<p class="canvas-hint" id="queue-canvas-help">Read-only. Pinned Graph nodes are projected with authoritative runtime state. Select a node to inspect its current control, attempt, transitions, terminal eligibility, and failure context. Scroll or drag to pan; use arrow keys on the canvas. Tab to nodes, Enter to select. Textual equivalent below.</p>
 				<div class="queue-viewport" data-queue-viewport tabindex="0" role="region" aria-label="Pinned Graph control flow" aria-describedby="queue-canvas-help">
-					<div class="queue-stage" data-queue-stage="true" data-columns={ fmt.Sprint(topology.Columns) } data-rows={ fmt.Sprint(topology.Rows) }>
-						<svg class="queue-edge-layer" viewBox={ fmt.Sprintf("0 0 %d %d", topology.Columns*244+32, topology.Rows*134+32) } preserveAspectRatio="none" aria-hidden="true">
+					<div class="queue-stage" data-queue-stage="true" data-loop-layout={ fmt.Sprint(topology.Loop) } data-columns={ fmt.Sprint(topology.Columns) } data-rows={ fmt.Sprint(topology.Rows) }>
+						<svg class="queue-edge-layer" viewBox={ fmt.Sprintf("0 0 %d %d", topology.Columns*244+32, queueTopologyHeight(topology)) } preserveAspectRatio="none" aria-hidden="true">
 							<defs>
 								<marker id="queue-arrow-taken" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
 								<marker id="queue-arrow-pending" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
 								<marker id="queue-arrow-not-taken" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"></path></marker>
 							</defs>
 							for _, edge := range topology.EdgeGeometry {
-								<path class={ "queue-edge-path outcome-" + topology.Edges[edge.Index].Outcome } d={ edge.Path } marker-end={ "url(#queue-arrow-" + topology.Edges[edge.Index].Outcome + ")" } data-edge-index={ fmt.Sprint(edge.Index) } data-edge-outcome={ topology.Edges[edge.Index].Outcome }><title>{ topology.Edges[edge.Index].EdgeID + " · " + topology.Edges[edge.Index].Outcome }</title></path>
+								<path class={ queueGeometryClass(edge) + " outcome-" + topology.Edges[edge.Index].Outcome } data-edge-id={ topology.Edges[edge.Index].EdgeID } d={ edge.Path } marker-end={ "url(#queue-arrow-" + topology.Edges[edge.Index].Outcome + ")" } data-edge-index={ fmt.Sprint(edge.Index) } data-edge-outcome={ topology.Edges[edge.Index].Outcome }><title>{ topology.Edges[edge.Index].EdgeID + " · " + topology.Edges[edge.Index].Outcome }</title></path>
+								if edge.Label != "" {
+									<text class="queue-edge-label" x={ fmt.Sprint(edge.LabelX) } y={ fmt.Sprint(edge.LabelY) }>{ edge.Label }</text>
+								}
 							}
 						</svg>
 						for _, node := range topology.Nodes {

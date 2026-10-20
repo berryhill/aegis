@@ -8,6 +8,10 @@ from playwright.sync_api import sync_playwright
 root = Path(__file__).resolve().parents[1]
 fact = dict(sequence=1, ordinal=0, digest='checkpoint1', kind='step_start', step_id='implement', visit=1, retry=1, **{'pass': 1}, at='2026-10-20T12:00:00Z', outcome='running')
 state = dict(queue_id='q', graph_run_id='parent', snapshot_digest='snap', direct=False, state='claimed', terminal=False, version=1, watermark='w', notice='Synthetic fixture', dependencies=[], nodes=[dict(node_id='child', loop=dict(id='loop', revision=1, digest='pinned'), execution_id='exec', steps=[dict(id='implement', kind='executable')], edges=[], attempts=[dict(id='attempt', number=1, facts=[fact])])])
+# Explicit single-cell server projection for this synthetic transport fixture;
+# canonical multi-node geometry is verified through the real Go/Serve fixture.
+state['graph_layout'] = dict(Columns=1, Rows=1, Nodes=[dict(GridColumn=1, GridRow=1)], EdgeGeometry=[])
+state['layouts'] = {'child': copy.deepcopy(state['graph_layout'])}
 html = '''<main data-queue-workspace data-debugger-url="/poll"><div class="qw-body" id="unrelated"></div><div class="queue-workspace"><section><div data-queue-viewport tabindex="0"><div data-queue-stage></div></div></section><aside id="queue-context"><h3 id="queue-context-title" tabindex="-1"></h3><div class="qw-body"><div data-queue-definition-panel>Authoritative Queue evidence</div><section data-queue-node-panel="0" hidden><ol data-debugger-node-history></ol></section></div><button data-queue-close>Close</button></aside></div><select data-debugger-scope></select><input data-debugger-replay type="range" min="0"><button data-debugger-follow></button><button data-debugger-current>Current</button><p data-debugger-status></p><p data-debugger-notice></p><p data-debugger-identity></p><ol data-debugger-history></ol><span data-queue-scale></span></main>'''
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)

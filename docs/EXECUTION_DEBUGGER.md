@@ -3,7 +3,13 @@
 Open an authenticated Queue detail. Direct Loop runs display the exact pinned
 Loop control flow, not a wrapper Graph. Graph runs display immutable topology;
 select a node and **Open exact Loop execution** or choose its scope to inspect
-that node's pinned Loop. Revision/digest, Graph run, snapshot, child execution,
+that node's pinned Loop. Definition, initial execution HTML and polled Loop
+scopes share the canonical Go canvas geometry: cells, 212×102 nodes, directed
+paths, feedback return gutter, arrowheads and condition/traversal-bound labels.
+Observations and historical replay decorate that pinned layout without moving
+it; Graph overview keeps its separate dependency layout. The textual equivalent
+tracks the selected Graph or Loop scope.
+Revision/digest, Graph run, snapshot, child execution,
 Queue attempt, local retry and implementation pass remain distinct identities.
 
 The controller commits content-free step starts/finishes, taken transitions,
