@@ -34,6 +34,7 @@ var queueScopeStates = []string{"all", "queued", "claimable", "active", "retryin
 // selection are exercised. This is not runtime/provider execution evidence.
 type queueScopeRepository struct {
 	fleet.Repository
+	fleet.LoopAvailabilityRepository
 	projections  map[string]queue.Projection
 	dispositions map[string]disposition.Record
 	retries      map[string][]queue.Retry
@@ -82,7 +83,7 @@ func queueScopeFixture(t *testing.T) (*app.Service, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo := &queueScopeRepository{Repository: store, projections: map[string]queue.Projection{}, dispositions: map[string]disposition.Record{}, retries: map[string][]queue.Retry{}}
+	repo := &queueScopeRepository{Repository: store, LoopAvailabilityRepository: store, projections: map[string]queue.Projection{}, dispositions: map[string]disposition.Record{}, retries: map[string][]queue.Retry{}}
 	ref := func(id, digest string) reference.DigestRef {
 		return reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: id, Digest: digest}
 	}
