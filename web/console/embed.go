@@ -33,6 +33,12 @@ var queueWorkspaceJS []byte
 
 var NavigationJS = append(append(append(append([]byte{}, navigationJS...), graphWorkspaceJS...), loopWorkspaceJS...), queueWorkspaceJS...)
 
+// ExecutionDebuggerJS consumes authenticated, read-only run observations. It is
+// deliberately not part of the presentation-only NavigationJS contract.
+//
+//go:embed execution_debugger.js
+var ExecutionDebuggerJS []byte
+
 //go:embed vendor/datastar-v1.0.2.js
 var Datastar []byte
 

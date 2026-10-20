@@ -56,18 +56,20 @@ type CursorStore interface {
 	Save(context.Context, Cursor) error
 }
 type Cursor struct {
-	RevisionDigest   string            `json:"revision_digest"`
-	RunID            string            `json:"run_id"`
-	InputDigest      string            `json:"input_digest"`
-	StepID           string            `json:"step_id"`
-	Inputs           Values            `json:"inputs"`
-	Visits           map[string]uint32 `json:"visits"`
-	Traversals       map[string]uint16 `json:"traversals"`
-	TotalSteps       uint32            `json:"total_steps"`
-	TotalTransitions uint32            `json:"total_transitions"`
-	Pending          *StepRequest      `json:"pending,omitempty"`
-	Failures         []Failure         `json:"failures"`
-	Done             *Result           `json:"done,omitempty"`
+	ImplementationPass uint16            `json:"implementation_pass,omitempty"`
+	Observations       []Observation     `json:"observations,omitempty"`
+	RevisionDigest     string            `json:"revision_digest"`
+	RunID              string            `json:"run_id"`
+	InputDigest        string            `json:"input_digest"`
+	StepID             string            `json:"step_id"`
+	Inputs             Values            `json:"inputs"`
+	Visits             map[string]uint32 `json:"visits"`
+	Traversals         map[string]uint16 `json:"traversals"`
+	TotalSteps         uint32            `json:"total_steps"`
+	TotalTransitions   uint32            `json:"total_transitions"`
+	Pending            *StepRequest      `json:"pending,omitempty"`
+	Failures           []Failure         `json:"failures"`
+	Done               *Result           `json:"done,omitempty"`
 }
 type Result struct {
 	Outcome     loop.TerminalOutcome `json:"outcome"`
@@ -121,6 +123,8 @@ func Run(ctx context.Context, runID string, rev loop.LoopRevision, inputs Values
 			return Result{}, err
 		}
 	}
+	// Loaded batches were already committed; never append them again on resume.
+	c.Observations = nil
 	steps := make(map[string]loop.Step, len(rev.Steps))
 	edges := make(map[string][]loop.Transition)
 	for _, s := range rev.Steps {
@@ -129,11 +133,22 @@ func Run(ctx context.Context, runID string, rev loop.LoopRevision, inputs Values
 	for _, e := range rev.Transitions {
 		edges[e.FromStepID] = append(edges[e.FromStepID], e)
 	}
+	save := func() error {
+		err := store.Save(ctx, cloneCursor(c))
+		if err == nil {
+			c.Observations = nil
+		}
+		return err
+	}
 	finish := func(result Result) (Result, error) {
 		result.Failures = append([]Failure(nil), c.Failures...)
+		if result.Failure != nil && (len(c.Observations) == 0 || c.Observations[len(c.Observations)-1].Kind != "step_finish") {
+			c.observe("step_finish", "failed")
+		}
+		c.observe("interpreter_terminal", string(result.Outcome))
 		c.Done = &result
 		c.Pending = nil
-		if err := store.Save(ctx, cloneCursor(c)); err != nil {
+		if err := save(); err != nil {
 			return Result{}, err
 		}
 		if reporter != nil {
@@ -161,8 +176,12 @@ func Run(ctx context.Context, runID string, rev loop.LoopRevision, inputs Values
 			}
 			c.TotalSteps++
 			c.Visits[s.ID]++
+			if s.Executable != nil && s.Executable.Operation == loop.DoerImplement {
+				c.ImplementationPass++
+			}
 			c.Pending = &StepRequest{Key: fmt.Sprintf("%s/%s/%s/%d/1", c.RunID, rev.Digest, s.ID, c.Visits[s.ID]), Step: s, Visit: c.Visits[s.ID], Attempt: 1, Inputs: cloneValues(c.Inputs)}
-			if err := store.Save(ctx, cloneCursor(c)); err != nil {
+			c.observe("step_start", "running")
+			if err := save(); err != nil {
 				return Result{}, err
 			}
 		}
@@ -176,14 +195,17 @@ func Run(ctx context.Context, runID string, rev loop.LoopRevision, inputs Values
 			if !errors.As(executeErr, &packet) || packet == nil || packet.Code == "" || len(packet.Code) > 128 || len(packet.Message) > 1024 {
 				packet = &Failure{Code: "step_error", Message: "step execution failed"}
 			}
+			c.observe("step_finish", "failed")
 			c.Failures = append(c.Failures, *packet)
 			if c.Pending.Attempt >= s.Retry.MaxAttempts {
 				return finish(failed("retry_exhausted", fmt.Sprintf("step %s exhausted attempts", s.ID)))
 			}
+			c.observe("step_retry", "retry")
 			c.Pending.Attempt++
 			c.Pending.Previous = packet
 			c.Pending.Key = fmt.Sprintf("%s/%s/%s/%d/%d", c.RunID, rev.Digest, s.ID, c.Pending.Visit, c.Pending.Attempt)
-			if err := store.Save(ctx, cloneCursor(c)); err != nil {
+			c.observe("step_start", "running")
+			if err := save(); err != nil {
 				return Result{}, err
 			}
 			continue
@@ -202,6 +224,7 @@ func Run(ctx context.Context, runID string, rev loop.LoopRevision, inputs Values
 			if err = checkValues(rev.Outputs, mapped); err != nil {
 				return finish(failed("output_invalid", "Loop outputs invalid"))
 			}
+			c.observe("step_finish", string(s.Terminal.Outcome))
 			return finish(Result{Outcome: s.Terminal.Outcome, Outputs: mapped})
 		}
 		outgoing := edges[s.ID]
@@ -227,12 +250,23 @@ func Run(ctx context.Context, runID string, rev loop.LoopRevision, inputs Values
 		if err != nil || checkValues(steps[chosen.ToStepID].InputPorts, next) != nil {
 			return finish(failed("mapping_invalid", "transition input mapping invalid"))
 		}
+		c.observe("step_finish", "succeeded")
+		if s.Executable != nil && s.Executable.Operation == loop.DoerVerify {
+			outcome := "failed"
+			if chosen.Condition == "verified" {
+				outcome = "passed"
+			}
+			c.observe("verification", outcome)
+		}
+		c.observe("transition", "taken")
+		c.Observations[len(c.Observations)-1].TransitionID = chosen.ID
+		c.Observations[len(c.Observations)-1].ToStepID = chosen.ToStepID
 		c.Traversals[chosen.ID]++
 		c.TotalTransitions++
 		c.StepID = chosen.ToStepID
 		c.Inputs = next
 		c.Pending = nil
-		if err := store.Save(ctx, cloneCursor(c)); err != nil {
+		if err := save(); err != nil {
 			return Result{}, err
 		}
 	}
@@ -322,6 +356,7 @@ func cloneResult(r Result) Result {
 	return r
 }
 func cloneCursor(c Cursor) Cursor {
+	c.Observations = append([]Observation(nil), c.Observations...)
 	c.Inputs = cloneValues(c.Inputs)
 	v := map[string]uint32{}
 	for k, n := range c.Visits {

@@ -1296,6 +1296,30 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return patchConsole(c.Response(), c.Request(), consoleweb.Document(model))
 	})
+	e.GET("/console/assets/execution-debugger.js", func(c *echo.Context) error {
+		if err := consoleHeaders(c, false); err != nil {
+			return consoleError(err)
+		}
+		return c.Blob(http.StatusOK, "text/javascript; charset=utf-8", consoleweb.ExecutionDebuggerJS)
+	})
+	e.GET("/console/queue/:item/debugger", func(c *echo.Context) error {
+		if err := consoleHeaders(c, true); err != nil {
+			return consoleError(err)
+		}
+		subject, err := consoleManager.Authenticate(c.Request())
+		if err != nil {
+			consoleManager.ClearCookie(c.Response())
+			return consoleError(err)
+		}
+		if len(c.Param("item")) > 255 || len(c.QueryParam("cursor")) > 160 {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid exact-run cursor")
+		}
+		debugger, err := svc.ExecutionDebuggerAs(c.Request().Context(), subject, c.Param("item"), c.QueryParam("cursor"))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "execution observations unavailable")
+		}
+		return c.JSON(http.StatusOK, debugger)
+	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
 	decodeCommand := func(c *echo.Context, destination any) error {
