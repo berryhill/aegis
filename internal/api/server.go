@@ -141,6 +141,8 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusConflict, "expired", "authority expired"
 	case app.IsFleetDenied(err):
 		return http.StatusForbidden, "denied", "fleet authority denied"
+	case errors.Is(err, app.ErrLoopAvailabilityInput):
+		return http.StatusBadRequest, "invalid_input", "invalid Loop availability input"
 	case app.IsFleetUnavailable(err):
 		return http.StatusServiceUnavailable, "unavailable", "fleet control unavailable"
 	case app.IsFleetAmbiguous(err):
@@ -477,6 +479,18 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{Authenticated: true, Surface: consoleweb.SurfaceModel{Domain: string(domain), Title: "Fleet control", State: "unavailable", Status: "Fleet control unavailable. No collection was treated as empty."}}, nil
 		}
 		var selectedAgent *app.FleetAgent
+		if domain == consoleLoops {
+			surface.Loops, err = svc.ListLoopInventoryAs(c.Request().Context(), subject)
+			if err != nil {
+				return consoleweb.PageModel{}, err
+			}
+			readiness := surface.Readiness["loops"]
+			readiness.Count = len(surface.Loops)
+			if len(surface.Loops) > 0 && readiness.Authoritative {
+				readiness.State = "ready"
+			}
+			surface.Readiness["loops"] = readiness
+		}
 		if domain == consoleAgents && c.QueryParam("revision") != "" {
 			revision, revisionErr := requiredRevision(c.QueryParam("revision"))
 			if revisionErr != nil || c.QueryParam("record_key") == "" {
@@ -532,6 +546,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			}
 		}
 		if domain == consoleLoops || domain == consoleGraphs {
+			if domain == consoleLoops {
+				if err = filterConsoleLoopAvailability(&model, c.QueryParam("availability"), c.QueryParam("record_key")); err != nil {
+					return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid availability filter")
+				}
+			}
 			if err = filterConsoleDefinitions(&model, c.QueryParam("q"), c.QueryParam("lifecycle")); err != nil {
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid definition filter")
 			}
@@ -1320,6 +1339,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
+	e.POST("/console/loops/availability", consoleLoopAvailabilityHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
 			return console.ErrInvalidInput
@@ -1789,6 +1809,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	registerControllerCodexRoutes(g, svc)
 	registerDoerServiceRoutes(g, svc)
 	registerDoerProtectedInvokeRoutes(g, svc, nil)
+	registerLoopAvailabilityRoutes(g, svc)
 	g.GET("/loops", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
