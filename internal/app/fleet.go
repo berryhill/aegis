@@ -236,11 +236,12 @@ type PublishedGraph struct {
 }
 
 type LoopView struct {
-	Revision    loop.LoopRevision           `json:"revision"`
-	Validations []loop.LoopValidationResult `json:"validations"`
-	Provenance  loop.PublicationProvenance  `json:"provenance"`
-	Lifecycle   loop.Lifecycle              `json:"lifecycle"`
-	History     []loop.LifecycleEvent       `json:"lifecycle_history"`
+	Availability loop.AvailabilityStatus     `json:"availability"`
+	Revision     loop.LoopRevision           `json:"revision"`
+	Validations  []loop.LoopValidationResult `json:"validations"`
+	Provenance   loop.PublicationProvenance  `json:"provenance"`
+	Lifecycle    loop.Lifecycle              `json:"lifecycle"`
+	History      []loop.LifecycleEvent       `json:"lifecycle_history"`
 }
 
 type GraphView struct {
@@ -741,6 +742,21 @@ func (s *Service) GetLoop(ctx context.Context, id string, revision uint64) (loop
 }
 
 func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]LoopView, error) {
+	values, err := s.ListLoopInventoryAs(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]LoopView, 0, len(values))
+	for _, value := range values {
+		if value.Availability.State == loop.AvailabilityPublished {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+// ListLoopInventoryAs retains historical revisions, including archived Loops.
+func (s *Service) ListLoopInventoryAs(ctx context.Context, subject core.Subject) ([]LoopView, error) {
 	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
@@ -801,6 +817,11 @@ func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]Loop
 		if len(view.Validations) == 0 {
 			return nil, fleet.ErrCorrupt
 		}
+		availability, err := s.GetLoopAvailabilityAs(ctx, subject, revision.LoopID)
+		if err != nil {
+			return nil, err
+		}
+		view.Availability = availability
 		result = append(result, view)
 	}
 	return result, nil
@@ -818,7 +839,7 @@ func (s *Service) GetLoopViewAs(ctx context.Context, subject core.Subject, id st
 	if revision == 0 {
 		return LoopView{}, errors.New("exact Loop revision is required")
 	}
-	values, err := s.ListLoopsAs(ctx, subject)
+	values, err := s.ListLoopInventoryAs(ctx, subject)
 	if err != nil {
 		return LoopView{}, err
 	}

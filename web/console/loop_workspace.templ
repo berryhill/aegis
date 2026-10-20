@@ -14,6 +14,22 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     <dl class="meta-strip"><div><dt>Steps</dt><dd>{ fmt.Sprint(len(record.Loop.Steps)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Loop.Transitions)) }</dd></div><div><dt>Declared input ports</dt><dd>{ fmt.Sprint(len(record.Loop.Inputs)) }</dd></div><div><dt>Latest version</dt><dd>{ loopLatestVersion(record) }</dd></div></dl>
    </div>
    <div class="loop-record-actions">
+	if record.Availability != "" {
+	 <form method="post" action={ "/console/loops/availability?loop_id=" + url.QueryEscape(record.Label) }>
+	  <input type="hidden" name="csrf" value={ surface.CSRF }/>
+	  <input type="hidden" name="revision" value={ strings.TrimPrefix(record.Revision, "r") }/>
+	  <input type="hidden" name="digest" value={ record.Digest }/>
+	  <input type="hidden" name="sequence" value={ fmt.Sprint(record.AvailabilitySequence + 1) }/>
+	  <input type="hidden" name="previous_digest" value={ record.AvailabilityDigest }/>
+	  <input type="hidden" name="expected_state" value={ record.Availability }/>
+	  if record.Availability == "archived" {
+	   <input type="hidden" name="state" value="published"/><button type="submit" class="secondary">Restore</button>
+	  } else {
+	   <input type="hidden" name="state" value="archived"/><button type="submit" class="secondary">Archive</button>
+	  }
+	 </form>
+	 <p>Availability: { record.Availability }. Applies to all current and future revisions; runtime lifecycle and historical references are unchanged.</p>
+	}
     if !record.Loop.DoerV4 && !record.Loop.DoerV5 {
      <a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a>
     }

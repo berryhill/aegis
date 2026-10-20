@@ -1,5 +1,9 @@
 # Aegis
 
+Source candidate: reversible Published/Archived Loop discovery is separate from
+activation and retirement. See [Loop availability](docs/loop-availability.md) for
+exact CLI/API inputs, Console actions, preserved pinned history and adapter limits.
+
 The authenticated Queue detail includes a read-only [execution debugger](docs/EXECUTION_DEBUGGER.md) for exact pinned Loop control flow and Graph-node drill-down, with live following and historical replay.
 
 Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.

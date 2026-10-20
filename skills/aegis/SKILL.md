@@ -17,7 +17,7 @@ Use this skill to identify the relevant Aegis product domain and point the user 
 ## Route by domain
 
 - Agent identity, immutable registration, exact history, and lifecycle: use `aegis-agent-registry` and only its shipped `aegis agents`, `/v1/agents`, and fleet-readiness surfaces.
-- Versioned workflow definitions: Loops through `aegis loops` or `/v1/loops`.
+- Versioned workflow definitions and reversible logical-Loop discovery: use `aegis-loop-authoring` through `aegis loops` or `/v1/loops`. `loops list` hides archived Loops; `loops inventory` includes all revisions. Archive/restore is not activation, retirement or runtime stop and preserves pinned Graph/Queue/execution/evidence history. MCP Loop adapter is UNAVAILABLE; CLI/HTTP coverage is not MCP integration.
 - Exact Agent and Loop revision composition: Graphs through `aegis graphs` or `/v1/graphs`.
 - Submission, claims, attempts, lifecycle, evidence, and disposition: use `aegis-execution-queue` for shipped Queue operations, and `aegis-evidence-disposition` for exact evidence and terminal-disposition reconstruction; use only the shipped `aegis queue` or `/v1/queue` surfaces. Reviewer-authored reevaluation is unavailable in the supported release.
 - Encrypted credential custody, exact bindings, revocation, backup, and the narrow sanitized GitHub broker path: use `aegis-credential-authority`, its gateway-owned protected terminal creation workflow, and the separate principal-only `aegis secret` administration plus long-lived `aegis serve` broker owner. Never route credential values through this skill.
@@ -51,6 +51,14 @@ This skill provides discovery, explanation, drafting, validation guidance, and r
 6. Report the service's accepted result, durable rejection, exact digest, or evidence status distinctly. Never infer completion from runtime narration or process exit.
 
 ## Owning-service online allowlist
+
+Source candidate availability additions use the same protected owning service:
+`loops inventory`, `loops availability LOOP`, `loops archive LOOP FILE`, and
+`loops restore LOOP FILE`. Mutation input is exact publication-head and availability
+CAS data (`agent_id`, `head`, `event_id`, `sequence`, `previous_digest`,
+`expected_state`); CLI forces the target state. This is not lifecycle input.
+API additions are `GET /v1/loops/inventory` and `GET`/`PUT
+/v1/loops/:loop/availability`. Confirm installed help; no local-store fallback.
 
 With `--config OWNER_CONFIG --target CONSOLE_URL`, the controller-only native-source operations are `controller-codex candidates PROFILE_HOME`, `controller-codex preview PROFILE_HOME [--credential ID]`, `controller-codex connect REVIEW_ID`, and `controller-codex show`; see the credential-authority skill. Other supported operations are `agents register|list|show|history|approve-charter`, `loops list|show|validate|publish|activate|retire`, `graphs list|show|publish|submit`, and `queue list|show|bind-runtime|process`. Preserve each command’s positional file/reference arguments from installed help. The URL selects the owning instance; the protected Unix API performs authentication. Other online operations, Graph lifecycle application and general scheduling remain unsupported. No local-store fallback is allowed.
 

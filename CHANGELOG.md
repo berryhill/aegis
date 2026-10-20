@@ -8,6 +8,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Source candidate: reversible logical-Loop archive/restore with Published/Archived
+  Console views and direct actions, published-only discovery, full revision
+  inventory and availability CLI/API readback. Archive covers current and future
+  revisions without changing lifecycle, stopping runtime work or rewriting pinned
+  Graph/Queue/execution/evidence history. MCP Loop adapter remains unavailable;
+  installed acceptance and publication are separate.
+
 - Authenticated exact-run execution debugger with durable interpreter step, transition, verification and implementation-pass observations; pinned Loop topology, Graph-node drill-down, live/pause/replay controls and explicit stale/auth-loss handling. Interpreter terminal is never substituted for evidence-backed Queue disposition; legacy boundaries remain unknown and multi-node scheduling is not added.
 
 ### Fixed
