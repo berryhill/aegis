@@ -137,6 +137,9 @@ func (s *Store) saveDoerHostApproval(r hostapproval.Record, publish func(string,
 				return hostapproval.ErrDenied
 			}
 			if hostapproval.Verify(last, key.Public().(ed25519.PublicKey), r.DeploymentID, r.OwnerID, r.Agent, r.Contract, r.ApprovedAt) == nil {
+				if r.RunRequestID != last.RunRequestID || r.ImplementationPassCap != last.ImplementationPassCap || r.ReexecutionDigest != last.ReexecutionDigest {
+					return hostapproval.ErrDenied
+				}
 				// A caller presenting history metadata must match the existing generation.
 				if r.Generation != 0 || r.ApprovalPreviousDigest != "" {
 					request, err := hostapproval.Sign(r, key)

@@ -265,7 +265,7 @@ func (p LocalLayaProcess) Run(ctx context.Context, input []byte) ([]byte, error)
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
 		return nil, errors.New("local Laya home must be an existing private directory")
 	}
-	cmd := exec.CommandContext(ctx, p.PythonExecutable, "-I", "-c", layaHelperSource)
+	cmd := exec.CommandContext(ctx, p.PythonExecutable, "-I", "-B", "-c", layaHelperSource)
 	// Do not project the controller's ambient credentials into a local model
 	// subprocess. A separately configured private cache is the only home state.
 	cmd.Env = []string{"HOME=" + p.Home, "HF_HOME=" + filepath.Join(p.Home, ".cache", "huggingface"), "PYTHONNOUSERSITE=1", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1"}

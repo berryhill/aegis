@@ -341,7 +341,16 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 	}
 	s.FleetRepository, s.Fleet, s.QueueWorker = repository, service, worker
 	worker.SetDoerHostApprovalResolver(s.resolveDoerHostApproval)
+	worker.SetDoerPassCapResolver(s.resolveDoerPassCap)
 	worker.SetDoerProtectedPaths(s.doerControllerProtectedPaths())
+	// Startup-only immutable capability wiring; this grants no execution rights.
+	if s.Config.Implementation.GoBinary == "" && s.Config.Implementation.LayaPython == "" && s.Config.Implementation.LayaHome == "" && len(s.Config.Implementation.AuthorizedContracts) == 0 {
+		if err := worker.PrepareInstalledDoerRuntime(s.Config.StateDir, s.Hermes); err != nil {
+			s.Log.Debug("installed local Doer runtime unavailable", "reason", "qualified_local_dependencies_missing")
+		} else {
+			s.Log.Info("installed local Doer library prepared", "model", "convaiinnovations/laya", "offline", true)
+		}
+	}
 	return nil
 }
 
@@ -676,6 +685,11 @@ func (s *Service) SetLoopLifecycleAs(ctx context.Context, subject core.Subject, 
 			if !replay {
 				agent := view.Provenance.PublisherAgent
 				ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.ID, Revision: agent.Revision, Digest: agent.Digest}
+				if request.Workspace != nil {
+					// Creation provenance stays immutable; preflight the freshly
+					// admitted workspace participant, not its historical publisher.
+					ref = request.Workspace.Agent
+				}
 				reason, err := s.preflightDoerQueue(ctx, subject, QueueLoopInput{Agent: ref, Loop: input.Loop}, view)
 				if err != nil {
 					return LoopLifecycleResult{}, err

@@ -12,6 +12,15 @@ import (
 	"github.com/berryhill/aegis/internal/registry"
 )
 
+// ValidateDoerRuntimeCapability distinguishes missing installed execution
+// capability from missing operator authority. It neither grants nor installs.
+func (w *QueueWorker) ValidateDoerRuntimeCapability() error {
+	if w == nil || w.implementation == nil || w.implementation.adapter == nil || w.implementation.decision == nil {
+		return errors.New("doer_runtime_unconfigured")
+	}
+	return nil
+}
+
 var ErrLocalLayaUnavailable = errors.New("local Laya unavailable")
 var ErrDoerHostApprovalRequired = errors.New("exact Doer host-write approval required")
 var ErrDoerUnsafeWorkspace = errors.New("unsafe Doer workspace or file")
@@ -32,7 +41,7 @@ func (w *QueueWorker) ValidateDoerAvailability(ctx context.Context, value loop.L
 	if ctx == nil {
 		return ErrLocalLayaUnavailable
 	}
-	if err := w.ValidateLoopAdmission(value, agent); err != nil {
+	if err := w.ValidateLoopAdmissionContext(ctx, value, agent); err != nil {
 		return err
 	}
 	if value.SchemaVersion != loop.DoerRevisionSchemaVersion {
@@ -46,18 +55,21 @@ func (w *QueueWorker) ValidateDoerAvailability(ctx context.Context, value loop.L
 
 // validateDoerReadiness is controller-owned and non-executing. It is repeated
 // before claim; it is not a substitute for fresh runtime/effect admission.
-func (w *QueueWorker) validateDoerReadiness(value loop.LoopRevision, agent registry.AgentRevision) error {
-	if value.Doer == nil || w.implementation == nil || w.authorizeDoer(context.Background(), *value.Doer, agent) != nil {
+func (w *QueueWorker) validateDoerReadiness(ctx context.Context, value loop.LoopRevision, agent registry.AgentRevision) error {
+	if value.Doer == nil || w.implementation == nil || w.authorizeDoer(ctx, *value.Doer, agent) != nil {
 		return ErrDoerHostApprovalRequired
 	}
 	c := w.implementation
 	if c.adapter == nil || c.decision == nil || c.decision.process == nil || c.root == "" || c.config.LayaPython == "" || c.config.LayaHome == "" {
 		return ErrLocalLayaUnavailable
 	}
-	if err := trustedExecutable(c.config.GoBinary); err != nil {
-		return err
+	// Selected-file Doer never executes the native Go checker.
+	if !c.managedLocalDoer || c.config.GoBinary != "" {
+		if err := trustedExecutable(c.config.GoBinary); err != nil {
+			return err
+		}
 	}
-	if err := trustedExecutable(c.config.LayaPython); err != nil {
+	if err := trustedLayaExecutable(c.config.LayaPython); err != nil {
 		return errors.New("local Laya executable unavailable")
 	}
 	if !filepath.IsAbs(c.config.LayaHome) || filepath.Clean(c.config.LayaHome) != c.config.LayaHome || c.config.LayaHome == "/" {

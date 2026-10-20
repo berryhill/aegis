@@ -1,12 +1,56 @@
 # Control-Plane API Specification
 
+The zero-authority owner-principal selected-file v4 Run has a narrow
+[ephemeral preparation policy](../docs/DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).
+It does not provision persistent artifacts or invent a human decision: the exact
+Run carries signed expiring host scope, while general provisioning and
+new-authority gates remain unchanged. Missing execution dependencies still deny.
+
 Cobra and Echo are transports over the same application services. Policy and identity decisions MUST NOT be duplicated in handlers.
 
 ## CLI
 
+Compatible retained Doer continuation MUST preserve the original Loop ID,
+revision, predecessor, publication key, exact contract and fixed retention.
+Only an explicitly approved immediate same-Agent charter successor may advance
+the runtime participant; the prior draft binding MUST be archived under CAS.
+Execution-frozen or already admitted runtime bindings MUST NOT be rewritten.
+Task execution MUST reuse an existing exact canonical validated publication
+after verifying immutable validation, publisher, charter and stable owner
+provenance. Creation provenance MUST remain distinct from runtime admission.
+Only authoritative absence permits initial publication. Changed, corrupt,
+foreign, incomplete or unknown publication MUST fail closed without allocating
+a replacement Loop or publication identity.
+
+An exact selected-file Doer `loops queue` request may carry `reexecution` with
+`previous_queue` and `previous_disposition` immutable digest references. This
+selects a known failed terminal execution of the same Agent, Loop and inputs;
+it never reopens that Queue item or rewrites its disposition. The fresh request
+key creates a linked execution intent with a single-successor fence. Remaining
+implementation passes are derived from verified checkpoint history and sealed
+into the exact Run's signed host scope, never supplied as caller counts or
+reset from the current Loop maximum. Exhaustion denies with HTTP 409 and code
+`doer_reexecution_budget_exhausted` before executable admission. Unknown outcomes,
+changed references, foreign ownership and active work are not reexecution proof.
+
 Command results are JSON on stdout. Diagnostics and centrally rendered errors use stderr. Constructor-built Cobra trees and isolated typed configuration avoid package-level mutable state.
 
 ## HTTP API
+
+`POST /v1/controller/codex/probe` and the owning-service
+`controller-codex probe FILE` diagnostic accept only exact Agent/Loop references
+and an idempotency key. They derive the configured model/provider and execute a
+fixed, bounded, tool-free diagnostic prompt through the qualified native
+gateway. No caller prompt, task, source override, host-write scope or Loop
+implementation pass is accepted. A create-only probe fence prevents repeated
+inference after an interrupted or replayed request. Only closed status/reason
+and reviewed parameter/code literals are returned; response text and native
+error bodies remain outside API, CLI and audit output. Probe completion is not
+Loop execution or artifact acceptance and does not renew an exhausted budget.
+
+The adapter must carry the declared model using the native gateway's supported
+`HERMES_MODEL` launch seed. An equal legacy `HERMES_TUI_MODEL` alias may be emitted
+for older runtimes but must never be the only model binding on current gateways.
 
 Echo exposes liveness/readiness and protected workflow routes for runtime discovery, configuration inspection, charter design/import/validation/list/show, plan review, approval, provisioning/receipts, session preview/start/list/show/effective authority/termination, and audit inspection/verification. Principal-only audit-delivery routes expose aggregate status, bounded delivery, derived-projection verification, and explicit projection rebuild. `/readyz` is unauthenticated but returns only sanitized aggregate audit-delivery state and reports not-ready while delivery is pending, degraded, or unverifiable.
 

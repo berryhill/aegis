@@ -13,6 +13,12 @@ metadata:
 
 # Aegis approval and provisioning
 
+The zero-authority owner-principal selected-file v4 Run has a narrow
+[ephemeral preparation policy](../../docs/DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).
+It does not provision persistent artifacts or invent a human decision: the exact
+Run carries signed expiring host scope, while general provisioning and
+new-authority gates remain unchanged. Missing execution dependencies still deny.
+
 Use this skill to review a complete canonical provisioning plan, route an authenticated principal's exact decision to Aegis, and verify deterministic Aegis-owned results. The skill is advisory. Aegis remains authoritative for authentication, plan canonicalization and persistence, approval decisions, digest checks, application, rollback, recovery, receipts, and audit.
 
 ## Boundaries

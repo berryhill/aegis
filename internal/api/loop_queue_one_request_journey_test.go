@@ -137,8 +137,8 @@ func loopQueueOneRequestJourney(t *testing.T, usable bool) {
 	}
 	apiRequest(t, client, http.MethodPost, "/v1/agents", app.NewRegisterFleetAgentInput(fixture, "journey-fleet", "journey-source"), &registered, http.StatusCreated)
 	workspace := t.TempDir()
-	text := "hello from fixture"
-	contract := loop.DoerContract{Task: "Create result.txt", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 1}
+	text := "hello"
+	contract := loop.DoerContract{Task: "Create result.txt", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, ExactBytes: true, MaxAttempts: 2}
 	revision, _, err := loop.NewDoerRevision("journey-doer", 1, "", contract)
 	if err != nil {
 		t.Fatal(err)
@@ -221,6 +221,38 @@ func loopQueueOneRequestJourney(t *testing.T, usable bool) {
 		t.Fatal("changed accepted", e)
 	}
 
+	// Publish first, then explicitly approve an immediate same-Agent successor
+	// in this isolated synthetic fixture. Historical creation stays untouched.
+	priorPublication, err := svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: agent.AgentID, Revision: revision, IdempotencyKey: retained.Task.PublicationKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	priorView, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, revision.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	charter.Revision++
+	wire, err = json.Marshal(charter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err = svc.ImportCharterAs(ctx, subject, wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := svc.ApproveAgentCharterAs(ctx, subject, agent.AgentID, app.ApproveAgentCharterInput{Expected: retained.Task.Agent, Charter: app.RevisionReference(charter.AgentID, charter.Revision, canonical.Digest)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebound, err := svc.ContinueDoerDraftSuccessorAs(ctx, subject, retained.Task.ID, retained.Task.Version, retained.Task.Agent, next.Revision.Charter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebound.LoopID != retained.Task.LoopID || rebound.PublicationKey != retained.Task.PublicationKey || rebound.Version != retained.Task.Version+1 {
+		t.Fatal("successor replaced original identity")
+	}
+	retained.Task, agent = rebound, next.Revision
+	resume.ExpectedVersion = rebound.Version
 	// Explicit synthetic operator contract allowlist and local Laya process,
 	// matching the existing readiness fixture; neither is inferred from the Loop.
 	goBinary, err := exec.LookPath("go")
@@ -382,6 +414,9 @@ done
 	view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1)
 	if err != nil || view.Lifecycle.State != loop.LifecycleActive || len(view.History) != 1 {
 		t.Fatalf("activation: %+v %v", view.Lifecycle, err)
+	}
+	if view.Provenance.Digest != priorView.Provenance.Digest || executed.Publication.Revision.Digest != priorPublication.Revision.Digest || !executed.Publication.Decision.Idempotent {
+		t.Fatal("task execution replaced historical publication")
 	}
 	graphs, err := svc.ListGraphsAs(ctx, subject)
 	if err != nil || len(graphs) != 1 {

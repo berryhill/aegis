@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -258,11 +259,26 @@ type EnvironmentCredentialBinding struct {
 	SourceEnv string `mapstructure:"source_env" json:"source_env"`
 	TargetEnv string `mapstructure:"target_env" json:"target_env"`
 }
+
+// ControllerCodexLogin is an explicit controller-only operational connection.
+// AccountID pins the provider account; ApprovedBy is derived by the owning
+// service from its fresh kernel-authenticated principal connection action.
+// This operational reference grants no Agent authority.
+var controllerCredentialID = regexp.MustCompile(`^nc-[a-f0-9]{64}$`)
+
+type ControllerCodexLogin struct {
+	ProfileHome  string `mapstructure:"profile_home" json:"profile_home"`
+	CredentialID string `mapstructure:"credential_id" json:"credential_id,omitempty"`
+	AccountID    string `mapstructure:"account_id" json:"account_id"`
+	ApprovedBy   string `mapstructure:"approved_by" json:"approved_by"`
+}
+
 type Credentials struct {
-	References     map[string]EnvironmentCredentialBinding `mapstructure:"references" json:"references"`
-	ProviderAuth   map[string]EnvironmentCredentialBinding `mapstructure:"provider_auth" json:"provider_auth"`
-	DesignProvider string                                  `mapstructure:"design_provider" json:"design_provider,omitempty"`
-	Authority      CredentialAuthority                     `mapstructure:"authority" json:"authority"`
+	ControllerCodexLogin *ControllerCodexLogin                   `mapstructure:"controller_codex_login" json:"controller_codex_login,omitempty"`
+	References           map[string]EnvironmentCredentialBinding `mapstructure:"references" json:"references"`
+	ProviderAuth         map[string]EnvironmentCredentialBinding `mapstructure:"provider_auth" json:"provider_auth"`
+	DesignProvider       string                                  `mapstructure:"design_provider" json:"design_provider,omitempty"`
+	Authority            CredentialAuthority                     `mapstructure:"authority" json:"authority"`
 }
 
 type CredentialAuthority struct {
@@ -291,17 +307,18 @@ type BrokerDestination struct {
 
 func (c Credentials) MarshalJSON() ([]byte, error) {
 	type credentialOutput struct {
-		References     map[string]EnvironmentCredentialBinding `json:"references"`
-		ProviderAuth   map[string]EnvironmentCredentialBinding `json:"provider_auth"`
-		DesignProvider string                                  `json:"design_provider,omitempty"`
-		Authority      *CredentialAuthority                    `json:"authority,omitempty"`
+		ControllerCodexLogin *ControllerCodexLogin                   `json:"controller_codex_login,omitempty"`
+		References           map[string]EnvironmentCredentialBinding `json:"references"`
+		ProviderAuth         map[string]EnvironmentCredentialBinding `json:"provider_auth"`
+		DesignProvider       string                                  `json:"design_provider,omitempty"`
+		Authority            *CredentialAuthority                    `json:"authority,omitempty"`
 	}
 	var authority *CredentialAuthority
 	if c.Authority.Database != "" || c.Authority.DeploymentID != "" || c.Authority.Custody != "" || c.Authority.KEKCredential != "" || c.Authority.KEKFile != "" || c.Authority.Broker.Socket != "" || len(c.Authority.Broker.Destinations) != 0 {
 		copy := c.Authority
 		authority = &copy
 	}
-	return json.Marshal(credentialOutput{References: c.References, ProviderAuth: c.ProviderAuth, DesignProvider: c.DesignProvider, Authority: authority})
+	return json.Marshal(credentialOutput{ControllerCodexLogin: c.ControllerCodexLogin, References: c.References, ProviderAuth: c.ProviderAuth, DesignProvider: c.DesignProvider, Authority: authority})
 }
 
 func validEnvironmentName(name string) bool {
@@ -435,6 +452,14 @@ func (c Config) Validate() error {
 	}
 	for provider, binding := range c.Credentials.ProviderAuth {
 		validateBinding("provider_auth."+provider, binding)
+	}
+	if b := c.Credentials.ControllerCodexLogin; b != nil {
+		_, codex := c.Credentials.ProviderAuth["codex"]
+		_, openai := c.Credentials.ProviderAuth["openai-codex"]
+		nativeSource := filepath.Base(b.ProfileHome) == ".hermes" || (filepath.Base(filepath.Dir(b.ProfileHome)) == "profiles" && filepath.Base(filepath.Dir(filepath.Dir(b.ProfileHome))) == ".hermes")
+		if !filepath.IsAbs(b.ProfileHome) || filepath.Clean(b.ProfileHome) != b.ProfileHome || !nativeSource || (b.CredentialID != "" && !controllerCredentialID.MatchString(b.CredentialID)) || b.AccountID == "" || len(b.AccountID) > 256 || strings.ContainsAny(b.AccountID, " 	\n\r") || b.ApprovedBy != c.Principal.ID || codex || openai || c.Credentials.DesignProvider == "codex" || c.Credentials.DesignProvider == "openai-codex" {
+			es = append(es, errors.New("controller_codex_login requires one explicit native Hermes source, account and reviewed principal; competing environment/design bindings are forbidden"))
+		}
 	}
 	if c.Credentials.DesignProvider != "" {
 		if _, ok := c.Credentials.ProviderAuth[c.Credentials.DesignProvider]; !ok {

@@ -103,7 +103,45 @@ The only shipped model-visible broker operation is `github.get_repository.v1`, e
 5. The caller supplies only conservative owner and repository segments. Aegis requires the exact configured repository, constructs the fixed read request, applies authentication internally, refuses redirects and proxy environment, bounds the response, and returns only sanitized repository metadata.
 6. Duplicate IDs, stale deadlines, exhausted request budget, broker restart, ended session, mandate revocation, PID reuse or loss, binding ambiguity, disabled binding, revoked version, repository mismatch, malformed JSON, unknown fields, downstream redirect, oversized response, or downstream failure denies without returning secret-bearing material.
 
-This is not a generic proxy, credential read API, arbitrary GitHub client, all-provider broker, network sandbox, or protection from the service user, root, or kernel. Environment-backed model-provider authentication remains a separate explicit binding.
+This is not a generic proxy, credential read API, arbitrary GitHub client, all-provider broker, network sandbox, or protection from the service user, root, or kernel. Model-provider authentication remains a separate explicit controller binding.
+For a Linux controller's existing native Hermes Codex login, use only the typed
+owning-daemon CLI: `--config OWNER_CONFIG --target CONSOLE_URL controller-codex
+candidates PROFILE_HOME` for bounded credential-free inspection,
+then `controller-codex preview PROFILE_HOME [--credential ID]`, then `controller-codex connect REVIEW_ID`, then
+`controller-codex show` with the same global options. Preview returns only exact
+source/account metadata and a five-minute one-use review; connect revalidates the
+native account and exact reviewed config bytes and derives the principal server-side from
+fresh kernel Unix-peer authentication. No manual account/approved_by fields,
+independent foundational approval, desktop or second writer is involved. The
+operation never rewrites the owning YAML. It publishes only a private no-replace
+operational record at `OWNER_CONFIG.controller-codex.json`, bound to the exact
+reviewed config digest and source/exact optional credential ID/account/principal. Every show/runtime resolution
+revalidates it; config drift, unsafe metadata or existing-record conflicts deny.
+Concurrent config edits are preserved, not protected by a claimed same-UID CAS.
+Legacy YAML bindings remain supported only without a conflicting sidecar. Runtime
+resolution adopts the exact record without restart. It never inherits a default/global profile,
+selects another pool account, refreshes, imports or copies a login through tools.
+After an interrupted outcome use show, not automatic replay. It grants no Agent,
+charter, Loop, Run, host-write or credential-custody authority.
+The native parser runs only inside the qualified product controller and returns
+access-only transport on a private pipe; never invoke it as a tool for a live
+login. Preserve existing immutable Agent/charter/Loop/Run references and keep
+connection approval separate from custody and runtime authority. A singleton is
+not required: one unique profile-local native OAuth grant (including exact
+aliases) is eligible without a selector. With multiple grants, use only the exact
+opaque `nc-` ID returned by candidates after operator review; never pick by model
+inference, labels, priority or a guessed current account. Inspection creates no
+review or connection. It returns at most 64 rows, account fingerprints, distinct
+eligible grant count and closed eligibility reasons, never labels/raw IDs/tokens.
+No deterministic native current account is claimed. IDs are domain-separated
+SHA-256 digests of bounded explicit native entry IDs, not credentials.
+Missing/duplicate/replaced IDs, account mismatch, unsupported auth type, dead or
+unknown status, unsafe source and expiry deny. Native refresh outside Aegis may
+advance the same entry/account token; it never authorizes selecting a replacement.
+An explicitly approved canonical `~/.hermes` source is supported (never implicit
+fallback); borrowed/global/external custody references return the sanitized
+`doer_provider_auth_native_source_approval_required` gate without opening that
+source. Do not infer that the user is signed out globally from local absence.
 
 ## Interruption and incident recovery
 

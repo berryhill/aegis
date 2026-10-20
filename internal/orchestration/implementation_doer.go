@@ -47,11 +47,11 @@ func (l implementationLuna) turn(ctx context.Context, id, instruction string, va
 	turn.Input = string(wire)
 	result, err := l.adapter.AttemptTurn(ctx, turn)
 	if err != nil {
-		return "", err
+		return "", doerTurnFailure(result, err)
 	}
 	text := strings.TrimSpace(result.Output)
 	if text == "" || len(text) > 65536 {
-		return "", errors.New("Luna output missing or too large")
+		return "", closedDoerFailure("doer_proposal_output_invalid", nil)
 	}
 	return text, nil
 }

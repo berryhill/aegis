@@ -22,6 +22,7 @@ import (
 
 // QueueLoopInput grants one bounded foreground operation, not foundational authority.
 type QueueLoopInput struct {
+	Reexecution    *LoopReexecution        `json:"reexecution,omitempty"`
 	Agent          reference.RevisionRef   `json:"agent"`
 	Loop           reference.RevisionRef   `json:"loop"`
 	IdempotencyKey string                  `json:"idempotency_key"`
@@ -30,11 +31,13 @@ type QueueLoopInput struct {
 	Inputs         []graph.NormalizedInput `json:"inputs,omitempty"`
 }
 type QueueLoopResult struct {
-	Rejection   *queue.Rejection      `json:"rejection,omitempty"`
-	Graph       reference.RevisionRef `json:"graph"`
-	QueueItemID string                `json:"queue_item_id"`
-	Reason      string                `json:"reason"`
-	Execution   *QueueExecutionView   `json:"execution,omitempty"`
+	Reexecution *LoopReexecutionFact    `json:"reexecution,omitempty"`
+	Preparation *sessionPreparationFact `json:"preparation,omitempty"`
+	Rejection   *queue.Rejection        `json:"rejection,omitempty"`
+	Graph       reference.RevisionRef   `json:"graph"`
+	QueueItemID string                  `json:"queue_item_id"`
+	Reason      string                  `json:"reason"`
+	Execution   *QueueExecutionView     `json:"execution,omitempty"`
 	// RequestID is the stable, principal-scoped intent slot. A prerequisite
 	// denial can be retried with the same payload and idempotency key after an
 	// independently approved change; it is not a Queue item or an approval.
@@ -50,6 +53,8 @@ type QueueLoopResult struct {
 func (r *QueueLoopResult) blockedDoer(reason string) {
 	r.Reason = reason
 	switch reason {
+	case "doer_runtime_unconfigured":
+		r.RequiredAction = "configure_controller_doer_runtime"
 	case "provisioning_receipt_missing":
 		r.RequiredAction = "plan_preview_exact_charter"
 	case "doer_model_required":
@@ -61,6 +66,11 @@ func (r *QueueLoopResult) blockedDoer(reason string) {
 	case "session_selection_zero_authorized_matches":
 		r.RequiredAction = "review_charter_successor_with_matching_authentication"
 	}
+}
+
+func queueLoopRequestID(subject core.Subject, input QueueLoopInput) string {
+	sum := sha256.Sum256([]byte(subject.PrincipalID + "\x00" + input.IdempotencyKey))
+	return "loopq-" + hex.EncodeToString(sum[:16])
 }
 
 func loopLifecyclePrevious(view LoopView) string {
@@ -79,6 +89,8 @@ func (s *Service) QueueLoop(ctx context.Context, input QueueLoopInput) (QueueLoo
 }
 
 func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input QueueLoopInput) (result QueueLoopResult, err error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
 	if err = s.requireFleetPrincipal(subject); err != nil {
 		return
 	}
@@ -123,6 +135,12 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	// before that binding/approval exists.
 	if lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		return result, ErrDenied
+	}
+	if input.Reexecution != nil {
+		result.Reexecution, e = s.sealLoopReexecution(ctx, subject, input, key, identity, lv.Revision)
+		if e != nil {
+			return result, e
+		}
 	}
 	if input.QueueItemID != "" {
 		// Explicit recovery selects only this request's exact Queue item.
@@ -174,6 +192,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 			}
 			result.RequiredCharter = &agent.Charter
 		}
+		ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
 		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
@@ -248,6 +267,7 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	if reserved != identity {
 		return result, fleet.ErrConflict
 	}
+	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
 	if lv.Revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
 		agent, loadErr := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
 		if loadErr != nil || agent.Digest != input.Agent.Digest {
@@ -398,6 +418,7 @@ func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Sub
 }
 
 func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string) (QueueLoopResult, error) {
+	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
 	readback := func(reason string) (QueueLoopResult, error) {
 		return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 	}
@@ -409,7 +430,8 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if receiptErr != nil {
 		return readback("provisioning_receipt_unavailable")
 	}
-	if !verified {
+	ephemeralDoer := s.doerEphemeralPreparationAllowed(ctx, subject, lv.Revision, agent)
+	if !verified && !ephemeralDoer {
 		return readback("provisioning_receipt_missing")
 	}
 	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -425,17 +447,33 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 	if runtimeSatisfies(runtime.Version, charter.Charter.Runtime.VersionConstraint) != nil {
 		return readback("runtime_version_unsupported")
 	}
-	if e = s.QueueWorker.ValidateLoopAdmission(lv.Revision, agent); e != nil {
+	if e = s.QueueWorker.ValidateLoopAdmissionContext(ctx, lv.Revision, agent); e != nil {
 		return readback("implementation_prerequisite_required")
 	}
 	authority, e := s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 	reservation := sha256.Sum256([]byte(subject.ID + "\x00" + agent.Digest))
 	reservationID := hex.EncodeToString(reservation[:])
-	var fence map[string]string
-	if fenceErr := s.Store.Load("queue-session-preparation", reservationID, &fence); fenceErr == nil {
+	reserved := false
+	selectedReservation, fence, fenceErr := s.preparationReservation(reservationID)
+	if fenceErr == nil {
+		reservationID = selectedReservation
+		if fence["queue_item_id"] != result.QueueItemID {
+			next, nextErr := s.reserveNextLoopRun(ctx, subject, input, result, agent, reservationID, fence)
+			if nextErr != nil {
+				return readback("prior_run_terminal_authority_retirement_required")
+			}
+			reservationID, reserved = next, true
+			// Never adopt the predecessor's authority under a new Run.
+			authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
+		}
 		var prepared reference.DigestRef
-		if e != nil || s.Store.Load("queue-session-prepared", reservationID, &prepared) != nil || prepared != authority.Authority {
-			return readback("session_preparation_in_progress_or_interrupted")
+		if !reserved && (e != nil || s.Store.Load("queue-session-prepared", reservationID, &prepared) != nil || prepared != authority.Authority) {
+			next, proof, recoveryErr := s.recoverDoerSessionPreparation(ctx, subject, input, result, lv, agent, reservationID, fence)
+			if recoveryErr != nil {
+				return readback("session_preparation_in_progress_or_interrupted")
+			}
+			reservationID, result.Preparation, reserved = next, proof, true
+			authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 		}
 	} else if !errors.Is(fenceErr, os.ErrNotExist) {
 		return readback("session_preparation_in_progress_or_interrupted")
@@ -450,6 +488,14 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		}
 		for _, old := range contexts {
 			if old.SubjectID == subject.ID && old.AgentID == agent.AgentID && old.CharterDigest == agent.Charter.Digest {
+				var retired sessionPreparationFact
+				if s.Store.Load("queue-session-preparation-retired", old.ID, &retired) == nil && retired.AuthorityID == old.ID && retired.AgentDigest == agent.Digest && retired.SubjectID == subject.ID && retired.Digest == preparationFactDigest(retired) {
+					admission, checkErr := s.AuthorityCommands.AuthorityAdmission(ctx, old.ID, old.Digest, s.Now())
+					if checkErr != nil || admission.Admitted {
+						return readback("prior_runtime_authority_requires_explicit_recovery")
+					}
+					continue
+				}
 				return readback("prior_runtime_authority_requires_explicit_recovery")
 			}
 		}
@@ -460,15 +506,25 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		// Atomic create-only reservation prevents duplicate launches even if
 		// interrupted between session launch and queue binding. It is only a
 		// denial fence; it never supplies authority to the runtime.
-		if reserveErr := s.Store.Create("queue-session-preparation", reservationID, map[string]string{"queue_item_id": result.QueueItemID, "agent_digest": agent.Digest}); reserveErr != nil {
-			return readback("session_preparation_in_progress_or_interrupted")
+		if !reserved {
+			if reserveErr := s.Store.Create("queue-session-preparation", reservationID, map[string]string{"queue_item_id": result.QueueItemID, "agent_digest": agent.Digest}); reserveErr != nil {
+				return readback("session_preparation_in_progress_or_interrupted")
+			}
 		}
-		mandate, _, previewErr := s.PreviewSessionAs(ctx, subject, agent.Charter.ID, agent.Charter.Revision, "", core.Environment{Name: "local"})
+		if ephemeralDoer && !verified {
+			if !s.doerEphemeralPreparationAllowed(ctx, subject, lv.Revision, agent) {
+				return readback("ephemeral_doer_preparation_denied")
+			}
+			if auditErr := s.audit(ctx, core.AuditEvent{Type: "doer.session.preparation", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, AgentID: agent.AgentID, CharterDigest: charter.Digest, Outcome: "authorized", Reason: "zero_authority_ephemeral_doer", Metadata: map[string]string{"request_id": result.RequestID, "loop_digest": lv.Revision.Digest}}); auditErr != nil {
+				return result, auditErr
+			}
+		}
+		mandate, _, previewErr := s.previewSessionAs(ctx, subject, agent.Charter.ID, agent.Charter.Revision, "", core.Environment{Name: "local"}, ephemeralDoer)
 		if previewErr != nil {
 			return readback("session_mandate_preparation_failed")
 		}
 		if _, startErr := s.StartSessionAs(ctx, subject, mandate.ID); startErr != nil {
-			return readback("session_start_preparation_failed")
+			return s.recordSessionPreparationFailure(ctx, subject, input, result, reservationID, startErr)
 		}
 		authority, e = s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 		if e == nil {

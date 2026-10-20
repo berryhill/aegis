@@ -1,5 +1,37 @@
 # Execution preparation and executable admission
 
+## Exact owner-principal Run preparation (source candidate)
+
+For a published selected-file v4 Loop, one fresh authenticated owner-principal
+`loops queue` request now prepares its **same immutable Loop** without separate
+setup consent when the selected stanza has zero capabilities, tools/toolsets,
+memory and credential scopes and the runtime target is `aegis-owned-ephemeral`.
+Hermes builds a disposable home directly from the exact mandate; this path does
+not create the persistent provisioned mapping, a plan, a generic approval or a
+provisioning receipt. `required_operations: ["provision"]` is not rewritten or
+waived for actual provisioning. Generic session entry still requires a verified
+provisioning receipt. Readiness marks the receipt `not_required` with reason
+`zero_authority_ephemeral_doer`, not falsely verified.
+
+The exact authenticated Run is also the owner-principal's write-scope action:
+the controller persists the existing signed exact host grant with truthful
+`run_request_id` provenance, bounded by authentication expiry/freshness. It does
+not infer a grant from publication, a draft, readiness, workspace ownership or
+UID alone. The durable intent fence, exact latest enabled Registry/stable-owner
+checks, immutable charter and Loop bindings, protected workspace/path checks,
+provider admission, fresh per-effect host admission and independent selected-file
+verification remain enforced. New authority, foreign owners, ordinary workspace
+actors and persistent runtime targets do not qualify. Explicit protected setup
+remains available when genuinely independent new authority is required; it is
+not a mandatory detour for this zero-authority Run.
+
+The controller does **not** install or choose Laya/model/checker dependencies.
+An absent execution controller/Laya configuration returns
+`doer_runtime_unconfigured` / `configure_controller_doer_runtime` inline with the
+same retained request identity and no new Graph/Queue/claim. Configured helpers
+still undergo the real availability and task-eligibility checks. Tests use
+synthetic Hermes/Laya protocol fixtures; they do not qualify a live provider.
+
 ## Authority boundary
 
 Definition/workspace authority is not runtime authority. An enabled registered Agent may author and submit exact owned definitions without a provisioned runtime. Such acceptance MUST NOT be described as executable Queue admission. Foundational charter and provisioning approvals remain explicit; neither a model assertion nor a workspace submission grants them.
@@ -23,6 +55,21 @@ The controller composes the minimal exact Graph, prepares or reuses one session 
 The durable, create-only `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. Successful session preparation separately creates a `queue-session-prepared` receipt containing the exact runtime authority reference. When a reservation exists, reuse requires that receipt to match the freshly resolved authority exactly; active authority alone, including authority left by a failed launch, is insufficient. Before binding, the controller also requires the exact persisted session and mandate to validate against the authority context, with status `running`, a nonempty runtime session ID and process-start identity, and a positive runtime PID. These recorded process attributes are not a claim of host confinement.
 
 An interrupted reservation without matching success proof remains blocked as `session_preparation_in_progress_or_interrupted`, even if active authority exists. Explicit operator recovery is required; neither deleting the fence nor minting substitute authority is automatic crash reconciliation. Prior expired, revoked, or interrupted authority is not implicitly resurrected.
+
+A completed failed session start is distinct from an unknown interruption. An
+authenticated retry of the same exact owner-principal Doer Run may append a
+bounded child reservation only with immutable failure/transition evidence,
+unchanged Queue/Agent/Loop bindings, no claim, attempt, artifact or runtime
+binding, and proof that no process was launched or that the exact process was
+synchronously reaped. Failed authority is retired through normal authoritative
+commands, never reused. Original fences, mandates and history remain intact.
+Legacy recovery is limited to the reproducible nil-versus-explicit-empty
+zero-authority mandate defect with a unique authoritative pre-launch mandate
+and no issued authority context; elapsed time or process absence is not proof.
+
+Controller-authenticated tool-free Hermes sessions launch the qualified
+headless `tui_gateway.entry` protocol, not the interactive TUI. Admission checks
+the actual launched process's ready event and zero-tool snapshot before binding.
 
 ## Collection and evidence boundaries
 

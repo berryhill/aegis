@@ -182,11 +182,14 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		r.block(&r.Receipt, "provisioning_receipt_unavailable")
 		return
 	}
-	if !verified {
+	if !verified && !s.doerEphemeralPreparationAllowed(ctx, subject, candidate, agent) {
 		r.block(&r.Receipt, "provisioning_receipt_missing")
 		return
 	}
 	r.Receipt = ready
+	if !verified {
+		r.Receipt = DoerPrerequisiteStatus{State: "not_required", Reason: "zero_authority_ephemeral_doer"}
+	}
 	runtimeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	runtime, runtimeErr := s.Runtime(runtimeCtx)
 	cancel()
@@ -203,8 +206,20 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		r.block(&r.Controller, "implementation_prerequisite_required")
 		return
 	}
+	if err := s.QueueWorker.ValidateDoerRuntimeCapability(); err != nil {
+		reason := "implementation_prerequisite_required"
+		if s.doerEphemeralPreparationAllowed(ctx, subject, candidate, agent) {
+			reason = "doer_runtime_unconfigured"
+		}
+		r.block(&r.Controller, reason)
+		return
+	}
+	if err := s.prepareDoerRunHostScope(ctx, subject, candidate, agent); err != nil {
+		r.block(&r.Controller, "doer_host_scope_denied")
+		return
+	}
 	if !probe {
-		if s.QueueWorker.ValidateLoopAdmission(candidate, agent) != nil {
+		if s.QueueWorker.ValidateLoopAdmissionContext(ctx, candidate, agent) != nil {
 			r.block(&r.Controller, "implementation_prerequisite_required")
 			return
 		}

@@ -29,6 +29,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/managergateway"
 	"github.com/berryhill/aegis/internal/principalauth"
+	"github.com/berryhill/aegis/internal/runtime/hermes"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -123,8 +124,26 @@ func classifyError(err error) (int, string, string) {
 		return turnError.status, turnError.code, turnError.message
 	case errors.As(err, &commandError):
 		return http.StatusBadRequest, "manager_command_parse_error", commandError.message
+	case errors.Is(err, hermes.ErrProviderAuthRuntimeUnqualified):
+		return http.StatusServiceUnavailable, "doer_provider_auth_runtime_unqualified", "qualified native runtime required"
+	case hermes.NativeProviderFailureCode(err) != "":
+		return http.StatusConflict, hermes.NativeProviderFailureCode(err), "exact native source connection denied"
+	case errors.Is(err, hermes.ErrProviderAuthAbsent), errors.Is(err, hermes.ErrProviderAuthInvalid), errors.Is(err, hermes.ErrProviderAuthExpired), errors.Is(err, hermes.ErrProviderAuthUnauthorized):
+		code := "doer_provider_auth_invalid"
+		if errors.Is(err, hermes.ErrProviderAuthAbsent) {
+			code = "doer_provider_auth_absent"
+		}
+		if errors.Is(err, hermes.ErrProviderAuthExpired) {
+			code = "doer_provider_auth_expired"
+		}
+		if errors.Is(err, hermes.ErrProviderAuthUnauthorized) {
+			code = "doer_provider_auth_unauthorized"
+		}
+		return http.StatusConflict, code, "exact native source connection denied"
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
+	case errors.Is(err, app.ErrDoerReexecutionBudgetExhausted):
+		return http.StatusConflict, "doer_reexecution_budget_exhausted", "the immutable implementation-attempt budget is exhausted"
 	case errors.Is(err, app.ErrDenied):
 		return http.StatusForbidden, "denied", "authorization denied"
 	case errors.Is(err, app.ErrAmbiguous):
@@ -1758,6 +1777,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		}
 		return c.JSON(http.StatusCreated, value)
 	})
+	registerControllerCodexRoutes(g, svc)
 	registerDoerServiceRoutes(g, svc)
 	registerDoerProtectedInvokeRoutes(g, svc, nil)
 	g.GET("/loops", func(c *echo.Context) error {

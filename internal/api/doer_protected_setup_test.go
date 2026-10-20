@@ -123,7 +123,7 @@ func TestDoerProtectedSetupEnrolledLoginAndExactRetainedJourney(t *testing.T) {
 	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &result) != nil {
 		t.Fatal("successor failed", r.Code, r.Body.String())
 	}
-	if result.Status != "approved" || result.Draft.ID != draft.ID || result.Draft.Agent == draft.Agent || !reflect.DeepEqual(result.Draft.Contract, draft.Contract) || result.Draft.PublicationKey == draft.PublicationKey {
+	if result.Status != "approved" || result.Draft.ID != draft.ID || result.Draft.Agent == draft.Agent || !reflect.DeepEqual(result.Draft.Contract, draft.Contract) || result.Draft.PublicationKey != draft.PublicationKey || result.Draft.LoopID != draft.LoopID {
 		t.Fatal("successor lost retained task")
 	}
 	draft = result.Draft

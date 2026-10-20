@@ -94,6 +94,7 @@ type QueueWorker struct {
 	now                func() time.Time
 	implementation     *ImplementationController
 	doerHostApproval   func(context.Context, loop.DoerContract, registry.AgentRevision) error
+	doerPassCap        func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)
 	doerProtectedPaths []string
 }
 
@@ -165,6 +166,8 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		return WorkResult{}, fmt.Errorf("%w: exact single-node graph required", ErrWorkerDenied)
 	}
 	node := graphRevision.Nodes[0]
+	// Replace any inherited marker with the actual immutable submission and node.
+	ctx = context.WithValue(ctx, doerExecutionScopeKey{}, doerExecutionScope{requestID: submission.IdempotencyKey, candidate: node.Loop, queueItemID: item.ItemID, submissionID: submission.SubmissionID, graphID: graphRevision.GraphID, snapshotID: snapshot.SnapshotID, nodeID: node.ID})
 	participant, err := worker.repository.GetAgentRevision(ctx, node.Participant.ID, node.Participant.Revision)
 	if err != nil || participant.Digest != node.Participant.Digest || participant.Lifecycle != registry.LifecycleEnabled {
 		return WorkResult{}, fmt.Errorf("%w: exact enabled participant unavailable", ErrWorkerDenied)
@@ -189,7 +192,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion && loopRevision.Doer != nil {
 			doerContract = *loopRevision.Doer
-			if worker.ValidateLoopAdmission(loopRevision, participant) != nil {
+			if worker.ValidateLoopAdmissionContext(ctx, loopRevision, participant) != nil {
 				return WorkResult{}, fmt.Errorf("%w: Doer readiness required", ErrWorkerDenied)
 			}
 		} else if loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {

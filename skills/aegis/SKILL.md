@@ -51,7 +51,7 @@ This skill provides discovery, explanation, drafting, validation guidance, and r
 
 ## Owning-service online allowlist
 
-With `--config OWNER_CONFIG --target CONSOLE_URL`, supported operations are `agents list|show|history|approve-charter`, `loops list|show|validate|publish|activate|retire`, `graphs list|show|publish|submit`, and `queue list|show|bind-runtime|process`. Preserve each command’s positional file/reference arguments from installed help. The URL selects the owning instance; the protected Unix API performs authentication. Other online operations, Graph lifecycle application and general scheduling remain unsupported. No local-store fallback is allowed.
+With `--config OWNER_CONFIG --target CONSOLE_URL`, the controller-only native-source operations are `controller-codex candidates PROFILE_HOME`, `controller-codex preview PROFILE_HOME [--credential ID]`, `controller-codex connect REVIEW_ID`, and `controller-codex show`; see the credential-authority skill. Other supported operations are `agents register|list|show|history|approve-charter`, `loops list|show|validate|publish|activate|retire`, `graphs list|show|publish|submit`, and `queue list|show|bind-runtime|process`. Preserve each command’s positional file/reference arguments from installed help. The URL selects the owning instance; the protected Unix API performs authentication. Other online operations, Graph lifecycle application and general scheduling remain unsupported. No local-store fallback is allowed.
 
 ## Progressive disclosure
 

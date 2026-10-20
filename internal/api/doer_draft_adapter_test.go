@@ -106,7 +106,7 @@ func TestDoerDraftAdapterSaveReadCASAndSuccessor(t *testing.T) {
 	}
 	continuation.ID = original.ID
 	rebound := decodeDraft(call(http.MethodPost, path+"/continue", continuation))
-	if rebound.Version != updated.Version+1 || rebound.Agent.Digest != next.Digest || rebound.PublicationKey == updated.PublicationKey || !reflect.DeepEqual(rebound.Contract, updated.Contract) {
+	if rebound.Version != updated.Version+1 || rebound.Agent.Digest != next.Digest || rebound.PublicationKey != updated.PublicationKey || rebound.LoopID != updated.LoopID || rebound.Revision != updated.Revision || rebound.PreviousDigest != updated.PreviousDigest || !reflect.DeepEqual(rebound.Contract, updated.Contract) {
 		t.Fatal("successor failed to retain contract and renew binding")
 	}
 	if rr := call(http.MethodPost, path+"/continue", continuation); rr.Code < 400 {

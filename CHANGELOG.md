@@ -6,6 +6,25 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Preserve an already-published Doer Loop's exact revision, publication identity
+  and historical publisher provenance through an independently approved compatible
+  same-Agent charter successor. Retained task execution reuses the validated
+  publication; stale, foreign, frozen, incompatible and unknown outcomes deny.
+- Pass the configured model through the qualified Hermes gateway's actual model
+  environment contract. Add a bounded controller-owned provider-format diagnostic
+  with no task-file effects and durable replay fences; it grants no new authority
+  and does not consume or reset implementation attempts.
+
+- Retain credential-free, closed implementation failure codes from reviewed Hermes
+  error descriptors through Doer checkpoints and authenticated Queue readback.
+  Distinguish proposal decoding from runtime failures without exposing model or
+  exception text, accepting unknown completion statuses, or reopening terminal
+  history. Legacy discarded causes remain explicitly generic.
+
+- Prepare the same published selected-file v4 Loop inside a fresh owner-principal Run for zero-authority disposable sessions; retain signed expiring exact host scope with Run provenance without fabricating provisioning approval/receipts. General provisioning and new-authority gates remain unchanged. Report missing controller/Laya execution configuration distinctly; no automatic dependency installation or live-provider qualification.
+
 - Preserve selected-file acceptance assertions in Doer implementation turns instead
   of dropping exact expected bytes, whitespace policy and retry bounds. Independent
   verification and all runtime/credential/host authority checks remain unchanged.

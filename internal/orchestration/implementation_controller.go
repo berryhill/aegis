@@ -18,10 +18,11 @@ import (
 // Exact contract digests in operator configuration authorize workspace writes AND native code execution.
 // Agent-authored definitions alone never grant host authority.
 type ImplementationController struct {
-	config   config.Implementation
-	root     string
-	adapter  *hermesruntime.Adapter
-	decision *LayaDecisionAdapter
+	managedLocalDoer bool
+	config           config.Implementation
+	root             string
+	adapter          *hermesruntime.Adapter
+	decision         *LayaDecisionAdapter
 }
 
 func (w *QueueWorker) ConfigureImplementation(c config.Implementation, stateRoot string, adapter *hermesruntime.Adapter) error {

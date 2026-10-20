@@ -50,11 +50,14 @@ type AttemptTurnRequest struct {
 	Provider        string
 	Credentials     []Credential
 	Bounds          AttemptBounds
+	// Controller-only fixed no-effects diagnostic; never a transport input.
+	ProviderFormatProbe bool
 }
 
 type AttemptTurnResult struct {
-	Attempt execution.Turn
-	Output  string
+	Attempt    execution.Turn
+	Output     string
+	Diagnostic ProviderFormatDiagnostic
 }
 
 // AttemptTurn executes exactly one prompt in a clean disposable Hermes gateway
@@ -91,6 +94,11 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	}
 	if descriptor.Runtime != authority.Runtime.Runtime || descriptor.Version != authority.Runtime.Version {
 		return AttemptTurnResult{}, fmt.Errorf("%w: runtime binding does not match authority context", ErrAttemptDenied)
+	}
+	if request.ProviderFormatProbe {
+		if err = qualifyProviderFormat(descriptor); err != nil {
+			return AttemptTurnResult{}, err
+		}
 	}
 	python := gatewayPython(descriptor)
 	if python == "" {
@@ -134,6 +142,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 
 	toolsets := launchToolsets(tools)
 	command := exec.CommandContext(turnContext, python, "-m", "tui_gateway.entry")
+	if request.ProviderFormatProbe {
+		command = exec.CommandContext(turnContext, python, "-I", "-B", "-c", providerFormatGateway)
+	}
 	command.Dir = home
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Env = append(minimalEnv(home, request.Credentials),
@@ -147,7 +158,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		command.Env = providerAuthenticationEnv(command.Env)
 	}
 	if request.Model != "" {
-		command.Env = append(command.Env, "HERMES_TUI_MODEL="+request.Model)
+		// Current native gateways consume HERMES_MODEL; retain the equal legacy
+		// alias for older supported runtimes, never an ambient model default.
+		command.Env = append(command.Env, "HERMES_MODEL="+request.Model, "HERMES_TUI_MODEL="+request.Model)
 	}
 	if request.Provider != "" {
 		command.Env = append(command.Env, "HERMES_TUI_PROVIDER="+request.Provider)
@@ -254,7 +267,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	messageStarted := false
 	for {
 		message, waitErr := waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
-			return (message.Method == "event" && message.Params.SessionID == sessionID && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
+			return (request.ProviderFormatProbe && message.Method == "event" && message.Params.Type == "aegis.provider-format-error") || (message.Method == "event" && message.Params.SessionID == sessionID && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
 		})
 		if waitErr != nil {
 			return finishContextError(attempt, authority.ExpiresAt, turnContext, waitErr)
@@ -263,6 +276,10 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			return finishAttempt(attempt, execution.StateFailed, "prompt_rejected", errors.New("Hermes prompt failed"))
 		}
 		switch message.Params.Type {
+		case "aegis.provider-format-error":
+			if request.ProviderFormatProbe {
+				return finishRuntimeFailure(attempt, message.Params.Payload, true)
+			}
 		case "message.start":
 			messageStarted = true
 		case "message.delta":
@@ -272,7 +289,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 				}
 			}
 		case "error":
-			return finishAttempt(attempt, execution.StateFailed, "runtime_turn_failed", errors.New("Hermes turn failed"))
+			return finishRuntimeFailure(attempt, message.Params.Payload, request.ProviderFormatProbe)
 		case "message.complete":
 			if !messageStarted {
 				continue
@@ -287,7 +304,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			case "interrupted":
 				return finishAttempt(attempt, execution.StateCancelled, "runtime_turn_interrupted", context.Canceled)
 			case "error":
-				return finishAttempt(attempt, execution.StateFailed, "runtime_turn_failed", errors.New("Hermes turn failed"))
+				return finishRuntimeFailure(attempt, message.Params.Payload, request.ProviderFormatProbe)
 			case "complete":
 			default:
 				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status unknown"))
@@ -320,6 +337,9 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 }
 
 func validateAttemptRequest(request AttemptTurnRequest) error {
+	if request.ProviderFormatProbe && !validProviderFormatProbe(request) {
+		return ErrAttemptDenied
+	}
 	if request.Admission == nil {
 		return fmt.Errorf("%w: authoritative admission checker is required", ErrAttemptDenied)
 	}

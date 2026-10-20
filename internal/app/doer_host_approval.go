@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/hostapproval"
 	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/orchestration"
+	"os"
 
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
@@ -145,6 +148,37 @@ func (s *Service) resolveDoerHostApproval(ctx context.Context, c loop.DoerContra
 	if fresh.Digest != agent.Digest {
 		return ErrDenied
 	}
-	_, e = s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, fresh.Ownership.OwnerID, ref, c, s.Now())
-	return e
+	record, e := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, fresh.Ownership.OwnerID, ref, c, s.Now())
+	if e != nil {
+		return e
+	}
+	if record.RunRequestID != "" {
+		requestID, candidate, workerScope := orchestration.DoerExecutionScope(ctx)
+		if !workerScope {
+			intent, ok := ctx.Value(exactDoerRunKey{}).(exactDoerRun)
+			if !ok {
+				return ErrDenied
+			}
+			requestID, candidate = intent.requestID, intent.candidate
+		}
+		if workerScope {
+			var intent string
+			if s.Store.Load("queue-loop-intent", record.RunRequestID, &intent) != nil || !orchestration.DoerExecutionIntentMatches(ctx, intent) {
+				return ErrDenied
+			}
+		}
+		var lineage LoopReexecutionFact
+		loadErr := s.Store.Load("queue-loop-reexecution", requestID, &lineage)
+		if loadErr == nil {
+			if lineage.Digest != reexecutionDigest(lineage) || lineage.RequestID != requestID || lineage.Agent != ref || lineage.Loop != candidate || lineage.Remaining != record.ImplementationPassCap || lineage.Digest != record.ReexecutionDigest {
+				return ErrDenied
+			}
+		} else if !errors.Is(loadErr, os.ErrNotExist) || record.ImplementationPassCap != 0 || record.ReexecutionDigest != "" {
+			return ErrDenied
+		}
+		if requestID != record.RunRequestID || candidate != record.Candidate {
+			return ErrDenied
+		}
+	}
+	return nil
 }

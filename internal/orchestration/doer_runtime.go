@@ -41,6 +41,9 @@ func (c *ImplementationController) authorizeDoer(contract loop.DoerContract, age
 func (w *QueueWorker) SetDoerHostApprovalResolver(resolve func(context.Context, loop.DoerContract, registry.AgentRevision) error) {
 	w.doerHostApproval = resolve
 }
+func (w *QueueWorker) SetDoerPassCapResolver(resolve func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)) {
+	w.doerPassCap = resolve
+}
 func (w *QueueWorker) authorizeDoer(ctx context.Context, c loop.DoerContract, a registry.AgentRevision) error {
 	if ctx == nil || ctx.Err() != nil {
 		return ErrDoerHostApprovalRequired
@@ -130,7 +133,11 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 			if err != nil {
 				return implementation.Proposal{}, err
 			}
-			return decodeReportedPatch([]byte(text))
+			proposal, err := decodeReportedPatch([]byte(text))
+			if err != nil {
+				return implementation.Proposal{}, closedDoerFailure("doer_proposal_decode_failed", err)
+			}
+			return proposal, nil
 		},
 		Apply: func(ctx context.Context, contract loop.DoerContract, edits []implementation.Edit) error {
 			return implementation.ApplyDoerEdits(ctx, contract, edits, admit)
@@ -147,7 +154,14 @@ func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base
 			}{task, report, failures})
 		},
 	}
-	executor := &doerStepExecutor{contract: contract, roles: roles}
+	cap := contract.MaxAttempts
+	if w.doerPassCap != nil {
+		cap, err = w.doerPassCap(ctx, contract, runtime.Participant)
+		if err != nil || cap == 0 || cap > contract.MaxAttempts {
+			return w.terminal(ctx, request, base, execution.StateDenied, "doer_pass_cap_denied", nil, nil)
+		}
+	}
+	executor := &doerStepExecutor{contract: contract, passCap: cap, roles: roles}
 	cursor := &doerCursorStore{facts: implementation.StepCheckpointStore{DB: custody.ImplementationStore(), RunID: base.Attempt.AttemptID, RevisionDigest: runtime.LoopRevision.Digest}}
 	inputs := looprun.Values{}
 	if runtime.LoopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {

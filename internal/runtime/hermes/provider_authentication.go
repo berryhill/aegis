@@ -26,6 +26,24 @@ var (
 // Access-only pool entries cannot refresh; the qualified selector uses 120s.
 const ProviderTokenRefreshMargin = 120 * time.Second
 
+// Native-source diagnostics are a closed set, never native exception text.
+type nativeProviderFailure struct{ stage string }
+
+func (e nativeProviderFailure) Error() string { return "doer_provider_auth_native_" + e.stage }
+func (nativeProviderFailure) Unwrap() error   { return ErrProviderAuthInvalid }
+
+func NativeProviderFailureCode(err error) string {
+	var failure nativeProviderFailure
+	if !errors.As(err, &failure) {
+		return ""
+	}
+	switch failure.stage {
+	case "import_failed", "mode_denied", "pool_invalid", "source_suppressed", "source_ambiguous", "pool_unusable", "protocol_failed", "source_approval_required", "credential_selection_invalid":
+		return failure.Error()
+	}
+	return ""
+}
+
 // Exact transport sources exercised offline using disposable synthetic tokens.
 // Minimum-version admission alone does not qualify the access-only schema.
 var qualifiedProviderTransport = map[string]string{
@@ -70,7 +88,12 @@ func (a *Adapter) qualifyProviderDescriptor(d core.RuntimeDescriptor) error {
 // ProviderAccessToken is controller-only process input. It is never authority,
 // persisted Aegis state, environment, argv or model input. JWT claims are checked
 // for shape/expiry, NOT signature or remote entitlement; the provider authenticates.
+type NativeCodexMetadata struct {
+	AccountID string `json:"account_id"`
+}
+
 type ProviderAccessToken struct {
+	accountID string
 	provider  string
 	value     string
 	expiresAt time.Time
@@ -107,11 +130,19 @@ func NewProviderAccessToken(provider, value string, now time.Time) (ProviderAcce
 	if json.Unmarshal(payload, &claims) != nil || claims.Exp <= 0 || strings.TrimSpace(claims.Auth.Account) == "" {
 		return ProviderAccessToken{}, ErrProviderAuthInvalid
 	}
+	if len(claims.Auth.Account) > 256 {
+		return ProviderAccessToken{}, ErrProviderAuthInvalid
+	}
+	for _, c := range claims.Auth.Account {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+			return ProviderAccessToken{}, ErrProviderAuthInvalid
+		}
+	}
 	expiry := time.Unix(claims.Exp, 0)
 	if !now.Add(ProviderTokenRefreshMargin).Before(expiry) {
 		return ProviderAccessToken{}, ErrProviderAuthExpired
 	}
-	return ProviderAccessToken{provider: provider, value: value, expiresAt: expiry}, nil
+	return ProviderAccessToken{provider: provider, value: value, expiresAt: expiry, accountID: claims.Auth.Account}, nil
 }
 
 type ProviderAuthenticationResolver func(context.Context, core.HermesConfig) (ProviderAccessToken, error)
