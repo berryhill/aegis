@@ -62,6 +62,19 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 	client := unixClient(svc.Config.API.UnixSocket)
 	path := "/v1/loops/" + rev.LoopID
 	input := app.SetLoopAvailabilityInput{AgentID: owner.AgentID, Head: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: rev.LoopID, Revision: 1, Digest: rev.Digest}, EventID: "availability-archive", Sequence: 1, ExpectedState: loop.AvailabilityPublished, State: loop.AvailabilityArchived}
+	// TCP has no Unix-peer principal: JSON identity must not authorize a mutation.
+	// Probe before Console traffic consumes the same source-IP pre-auth bucket;
+	// otherwise a timing-dependent 429 can mask the authentication boundary.
+	req, _ := http.NewRequest(http.MethodPut, "http://"+address+path+"/availability", strings.NewReader(string(mustAvailabilityJSON(t, input))))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated mutation: %d", resp.StatusCode)
+	}
 	t.Run("malformed first change leaves availability history and audit unchanged", func(t *testing.T) {
 		repository := svc.FleetRepository.(fleet.LoopAvailabilityRepository)
 		before, err := svc.GetLoopViewAs(ctx, subject, rev.LoopID, 1)
@@ -310,17 +323,6 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 		compose(true)
 		getPage("?record_key="+rev.LoopID+":1", ">Archive</button>")
 	})
-	// TCP has no Unix-peer principal: neither reads nor writes may use JSON identity.
-	req, _ := http.NewRequest(http.MethodPut, "http://"+svc.Config.API.Listen+path+"/availability", strings.NewReader(string(mustAvailabilityJSON(t, input))))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated mutation: %d", resp.StatusCode)
-	}
 }
 
 func mustAvailabilityJSON(t *testing.T, value any) []byte {
