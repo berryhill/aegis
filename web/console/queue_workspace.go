@@ -107,6 +107,12 @@ func buildQueuePinnedTopology(detail *QueueDetailModel) QueuePinnedTopology {
 			}
 		}
 	}
+	if cyclic && detail.LiveLoop {
+		for i := range rank {
+			rank[i] = i
+		}
+		t.Issues = nil
+	}
 	rows := map[int]int{}
 	maxCol := 0
 	for i := range nodes {
@@ -141,7 +147,7 @@ func buildQueuePinnedTopology(detail *QueueDetailModel) QueuePinnedTopology {
 	}
 	t.Nodes = nodes
 	t.Edges = detail.Edges
-	if !cyclic {
+	if !cyclic || detail.LiveLoop {
 		t.EdgeGeometry = queueLayoutEdges(nodes, detail.Edges, drawable, indices, rank, rows)
 	}
 	return t
@@ -162,12 +168,12 @@ func queueLayoutEdges(nodes []QueueControlNodeModel, edges []QueueControlEdgeMod
 		if !okA || !okB {
 			continue
 		}
-		x1 := float64(rank[a]*212 + 32 + 212)
-		y1 := float64(32 + 102/2)
-		x2 := float64(rank[b]*212 + 32)
-		y2 := float64(32 + 102/2)
+		x1 := float64(rank[a]*244 + 32 + 212)
+		y1 := float64(32 + (nodes[a].GridRow-1)*134 + 102/2)
+		x2 := float64(rank[b]*244 + 32)
+		y2 := float64(32 + (nodes[b].GridRow-1)*134 + 102/2)
 		path := fmt.Sprintf("M %.2f %.2f C %.2f %.2f, %.2f %.2f, %.2f %.2f", x1, y1, x1+40, y1, x2-40, y2, x2, y2)
-		if rank[b]-rank[a] > 1 {
+		if rank[b]-rank[a] != 1 {
 			gutterY := float64(32) - 8
 			path = fmt.Sprintf("M %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f L %.2f %.2f", x1, y1, x1+28, y1, x1+28, gutterY, x2-28, gutterY, x2-28, y2, x2, y2)
 		}

@@ -1,11 +1,26 @@
+
+.debugger-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;min-width:0}
+.debugger-controls p{flex-basis:100%;overflow-wrap:anywhere;margin:0;font-size:12px}
+.debugger-controls select{max-width:100%;min-width:0}.debugger-controls label{min-width:0;max-width:100%}
+[data-debugger-history],[data-debugger-node-history]{overflow-wrap:anywhere;font-size:12px;max-height:360px;overflow:auto;padding-left:22px}
+[data-debugger-fresh="true"] .queue-node.current{animation:queue-observed-pulse 1.8s ease-in-out infinite}
+[data-debugger-fresh="true"] .queue-edge-path.observed-now{animation:queue-observed-edge .7s ease-out 1}
+@keyframes queue-observed-pulse{50%{box-shadow:0 0 0 2px var(--accent)}}
+@keyframes queue-observed-edge{from{stroke-width:5}to{stroke-width:1.5}}
+@media(prefers-reduced-motion:reduce){[data-queue-workspace] .queue-node.current,[data-queue-workspace] .queue-edge-path.observed-now{animation:none}}
+
 /* Read-only Queue execution workspace. The canvas projects authoritative
    runtime state onto the exact pinned Graph/Loop revision; current control,
    attempt, transitions, cycle bounds, terminal eligibility, and failure
    location are all surfaced from authoritative runtime facts, never from
    browser state. CSS-grid positioning keeps the workspace compatible with
    the console's strict Content Security Policy (style-src 'self'). */
-.queue-detail-page [data-queue-workspace]{display:grid;gap:16px;min-width:0}
+.queue-detail-page [data-queue-workspace]{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.queue-detail-page .related-records,.queue-detail-page .related-records li,.queue-detail-page .related-records a,.queue-detail-page .related-records span{min-width:0;max-width:100%;overflow-wrap:anywhere;white-space:normal}
+.queue-detail-page .meta-strip>div{min-width:0;max-width:100%}.queue-detail-page .meta-strip dd{overflow-wrap:anywhere}
+@media(max-width:600px){body:has([data-queue-workspace]) .topbar{height:auto;min-height:var(--topbar-h);flex-wrap:wrap;gap:6px;padding:8px}body:has([data-queue-workspace]) .topbar-status{display:none}}
 .queue-detail-page .queue-record-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:start}
+.queue-record-head .eyebrow{white-space:normal;overflow-wrap:anywhere}
 .queue-record-head h2{font-size:24px;margin:0 0 6px}.queue-record-head p{color:var(--muted);overflow-wrap:anywhere}
 .queue-record-actions{display:flex;gap:8px;flex-wrap:wrap}.queue-record-actions .queue-control{margin:0}
 .queue-record-actions .queue-control p{margin:0 0 6px;font-size:12px;color:var(--muted)}

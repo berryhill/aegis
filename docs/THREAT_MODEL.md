@@ -1,5 +1,7 @@
 # Aegis MVP Threat Model
 
+The exact-run debugger exposes only authenticated pinned definition context and content-free digest-linked interpreter observations. Same-origin no-store polling grants no execution authority; missing legacy observations are unknown and interpreter terminal is not disposition. The browser rejects regressing versions, history substitution and cross-run responses, marks transport loss stale, and clears protected topology on authentication loss. Local custody is not separately protected attestation.
+
 The zero-authority owner-principal selected-file v4 Run has a narrow
 [ephemeral preparation policy](../DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).
 It does not provision persistent artifacts or invent a human decision: the exact

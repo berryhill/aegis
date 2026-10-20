@@ -60,7 +60,8 @@
         "GET /console/assets/navigation.js",
         "GET /console/assets/datastar-v1.0.2.js",
         "GET /console/fragments/surface",
-        "GET /console/fragments/inspect"
+        "GET /console/fragments/inspect",
+        "GET /console/assets/execution-debugger.js"
       ],
       "transport_classification": "shipped"
     },
@@ -467,11 +468,15 @@
       "authority": "Workspace may manage only its own admitted work, not claim/runtime effects. Controller issues fresh runtime binding; every consequential effect repeats authority admission. Bounded claims/retries and distinct lifecycle outcomes are persisted externally.",
       "sources": [
         "internal/command/fleet.go",
-        "internal/api/server.go"
+        "internal/api/server.go",
+        "internal/api/execution_debugger.go",
+        "internal/app/execution_debugger.go"
       ],
       "tests": [
         "internal/command/queue_skill_contract_test.go",
-        "internal/api/server_test.go"
+        "internal/api/server_test.go",
+        "internal/api/execution_debugger_test.go",
+        "internal/api/execution_debugger_installed_test.go"
       ],
       "cli": [
         "aegis queue",
@@ -496,7 +501,8 @@
         "GET /console/queue",
         "POST /console/queue/:item/operate",
         "POST /v1/queue/:item/bind-runtime",
-        "GET /v1/preparations"
+        "GET /v1/preparations",
+        "GET /console/queue/:item/debugger"
       ],
       "transport_classification": "shipped"
     },

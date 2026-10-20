@@ -271,6 +271,7 @@ func (v QueueExecutionView) IsDirectLoop() bool {
 }
 
 type QueueExecutionView struct {
+	Debugger   *ExecutionDebugger      `json:"debugger,omitempty"`
 	SourceKind graph.SourceKind        `json:"source_kind"`
 	Source     reference.RevisionRef   `json:"source"`
 	Inputs     []graph.NormalizedInput `json:"inputs"`
@@ -1225,6 +1226,14 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 				view.Receipts = append(view.Receipts, receipt)
 			}
 		}
+		debugger, debuggerErr := s.ExecutionDebuggerAs(ctx, subject, item.ItemID, "")
+		if debuggerErr != nil {
+			return nil, debuggerErr
+		}
+		// Ordinary Queue readback is stable; request freshness belongs only to
+		// the dedicated live endpoint, not immutable execution comparisons.
+		debugger.ObservedAt = time.Time{}
+		view.Debugger = &debugger
 		result = append(result, view)
 	}
 	return result, nil

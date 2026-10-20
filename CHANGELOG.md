@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- Authenticated exact-run execution debugger with durable interpreter step, transition, verification and implementation-pass observations; pinned Loop topology, Graph-node drill-down, live/pause/replay controls and explicit stale/auth-loss handling. Interpreter terminal is never substituted for evidence-backed Queue disposition; legacy boundaries remain unknown and multi-node scheduling is not added.
+
 ### Fixed
 
 - Preserve an already-published Doer Loop's exact revision, publication identity

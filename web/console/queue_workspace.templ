@@ -12,7 +12,10 @@ import (
 // runtime state onto the resulting nodes and transitions. Browser selection
 // and canvas state never enter the projection or any reviewed operation.
 templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePinnedTopology) {
-	<div data-queue-workspace>
+	if record.Queue.DebuggerJSON != "" {
+		<script src="/console/assets/execution-debugger.js" defer></script>
+	}
+	<div data-queue-workspace data-debugger-initial={ record.Queue.DebuggerJSON } data-debugger-url={ "/console/queue/" + queueURLPathEscape(record.Key) + "/debugger" }>
 		<nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Execution Queue</a></nav>
 		<div class="record-head queue-record-head">
 			<div>
@@ -76,6 +79,17 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 				</dl>
 			</section>
 		}
+        if record.Queue.DebuggerJSON != "" {
+            <section class="debugger-controls" aria-label="Execution debugger controls">
+                <output data-debugger-status role="status">Snapshot · connecting</output>
+                <button type="button" data-debugger-follow>Pause following</button>
+                <button type="button" data-debugger-current>Return to current</button>
+                <label>History replay <input type="range" min="0" max="0" value="0" data-debugger-replay/></label>
+                <label>Topology <select data-debugger-scope aria-label="Graph or exact Loop execution"></select></label>
+                <p data-debugger-notice></p>
+                <p data-debugger-identity></p>
+            </section>
+        }
 		<div class="detail-split queue-workspace">
 			<section class="qw-pane qw-canvas" aria-labelledby="queue-canvas-title">
 				<div class="canvas-bar">
@@ -130,11 +144,13 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 						<section data-queue-node-panel={ fmt.Sprint(node.Index) } hidden>
 							<button type="button" class="ghost" data-queue-definition>← Back to queue</button>
 							@QueueNodeDetails(node)
+                            <ol data-debugger-node-history></ol>
 						</section>
 					}
 				</div>
 			</aside>
 		</div>
+        <section class="queue-support-section" aria-label="Observed execution history"><h3>Observed execution history · textual equivalent</h3><ol data-debugger-history></ol></section>
 		<nav class="queue-tab-nav" aria-label="Queue supporting definition sections">
 			<button type="button" data-queue-tab="inputs" aria-pressed="true">Inputs and outputs</button>
 			<button type="button" data-queue-tab="timeline" aria-pressed="false">Timeline</button>
