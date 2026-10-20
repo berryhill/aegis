@@ -355,13 +355,15 @@ type QueueControlNodeModel struct {
 // QueueControlEdgeModel projects one exact pinned Graph edge onto its
 // authoritative transition outcome.
 type QueueControlEdgeModel struct {
-	Index    int
-	EdgeID   string
-	From     string
-	To       string
-	Mappings string
-	Outcome  string // taken / not-taken / pending / unreachable.
-	Cycle    bool   // edge participates in a cycle.
+	Condition string
+	Limit     uint16
+	Index     int
+	EdgeID    string
+	From      string
+	To        string
+	Mappings  string
+	Outcome   string // taken / not-taken / pending / unreachable.
+	Cycle     bool   // edge participates in a cycle.
 }
 
 type QueueInputModel struct {

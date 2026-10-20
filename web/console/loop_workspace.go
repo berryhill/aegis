@@ -431,3 +431,12 @@ func loopRoleSummary(detail *LoopDetailModel) string {
 	}
 	return strings.Join(parts, " · ")
 }
+
+func queueGridPlacementCSS() []byte {
+	var css strings.Builder
+	for i := 1; i <= loop.MaxSteps; i++ {
+		fmt.Fprintf(&css, ".queue-workspace .queue-node[data-grid-column=\"%d\"]{grid-column:%d}\n", i, i)
+		fmt.Fprintf(&css, ".queue-workspace .queue-node[data-grid-row=\"%d\"]{grid-row:%d}\n", i, i)
+	}
+	return []byte(css.String())
+}

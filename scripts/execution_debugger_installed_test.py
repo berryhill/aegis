@@ -20,6 +20,13 @@ expected = json.loads((root / 'expected-debugger.json').read_text())
 identity = hashlib.sha256(binary.read_bytes()).hexdigest()
 assert not expected['direct'] and expected['nodes'][0]['execution_id'] == 'debug-execution'
 assert expected['nodes'][0]['loop']['revision'] == 1
+# The seed uses the production Console wrapper. Require real, complete pinned
+# presentation data, then compare it together with every durable app field below.
+assert set(expected['layouts']) == {node['node_id'] for node in expected['nodes']}
+assert len(expected['layouts']['debug-node']['Nodes']) == 9
+assert len(expected['layouts']['debug-node']['EdgeGeometry']) == 10
+assert all(edge['Label'] for edge in expected['layouts']['debug-node']['EdgeGeometry'])
+assert expected['graph_layout']['Nodes']
 home = root / 'home'
 home.mkdir(mode=0o700)
 env = {'PATH': os.environ['PATH'], 'HOME': str(Path.home()), 'GOMAXPROCS': '2', 'GOMEMLIMIT': '512MiB'}
