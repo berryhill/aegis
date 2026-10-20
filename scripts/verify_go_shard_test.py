@@ -68,7 +68,8 @@ class ShardTests(unittest.TestCase):
                     self.assertEqual('-race' in command, race)
                     self.assertIn('-count=1', command)
                     self.assertNotIn('-run', command)
-                    self.assertEqual(command[command.index('-timeout=8m')+1:], shard.groups(self.packages())[group])
+                    timeout = '-timeout=12m' if race and group == 'api' else '-timeout=8m'
+                    self.assertEqual(command[command.index(timeout)+1:], shard.groups(self.packages())[group])
 
     def test_invalid_group_rejected_before_go(self):
         with mock.patch.object(shard.subprocess, 'run') as run, mock.patch('sys.stderr'):
