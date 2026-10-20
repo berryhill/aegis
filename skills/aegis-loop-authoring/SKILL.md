@@ -38,6 +38,10 @@ First use `aegis loops --help`. Supported commands in the compatible release are
 - `aegis loops example` (typed publication template only)
 - `aegis loops validate FILE` (authenticated workspace structural validation, no publication)
 - `aegis loops list`
+- `aegis loops inventory` (all published revisions, including archived logical Loops)
+- `aegis loops availability LOOP` (discovery state, sequence and CAS digest)
+- `aegis loops archive LOOP FILE` (reversibly hide a logical Loop from discovery)
+- `aegis loops restore LOOP FILE` (restore published discovery)
 - `aegis loops publish FILE`
 - `aegis loops queue FILE` (one authenticated exact request; inspect returned blocker/execution)
 - `aegis loops show LOOP REVISION`
@@ -143,7 +147,17 @@ Publication remains inactive and does not authorize native code. Controller exec
 
 ## Inspection, denial, and interruption recovery
 
-Use `aegis loops list` for authenticated inventory and `aegis loops show LOOP REVISION` for exact readback. Keep draft, active, and retired distinct. Report immutable revision structure, validation, publication provenance, lifecycle history, and current lifecycle separately.
+Use `aegis loops list` for published discovery, hiding archived logical Loops; `aegis loops inventory` includes every published revision, including archived Loops. Use `aegis loops show LOOP REVISION` for exact readback. Keep draft, active, and retired distinct from availability. Report immutable revision structure, validation, publication provenance, lifecycle history, and current lifecycle separately.
+
+### Reversible availability (source candidate)
+
+Confirm installed help for `loops availability LOOP` and `loops archive|restore LOOP FILE`. These and `loops inventory` support `--config OWNER_CONFIG --target CONSOLE_URL` through the protected owning service, not a second writer. The MCP Loop adapter is UNAVAILABLE; CLI/HTTP coverage is not MCP integration or whole-issue completion.
+
+Availability is `published` or `archived`, independent of activation/retirement. Archive covers the logical ID across all current and future revisions, not deletion, retirement, runtime stop, Queue cancellation or an authority grant. Existing pinned Graphs, Queue work, executions, evidence and history remain preserved. Restore reverses discovery hiding without changing lifecycle or executing work.
+
+Inspect inventory and availability before mutation. Strict `app.SetLoopAvailabilityInput` JSON uses `agent_id`, `head` (exact current publication reference with `id`, `revision`, `digest`), stable `event_id`, next `sequence`, `previous_digest` from availability readback (empty/omitted only before the first event), and `expected_state` from that readback. For workspace requests omit `authority` and `publisher`; the online adapter requires server-derived values. CLI archive/restore forces `state` to `archived`/`published`. The positional Loop ID must equal `head.id`. Preserve owner admission, stale publication-head/state/sequence/digest conflicts and exact replay checks; do not invent digests or rotate uncertain event identities.
+
+API: `GET /v1/loops/inventory`, `GET /v1/loops/:loop/availability`, `PUT /v1/loops/:loop/availability`. PUT uses the same input with explicit target `state`. Availability readback returns `loop_id`, `state`, `sequence`, optional `digest`; mutation returns `event` and `idempotent`. Verify the exact returned event and subsequent availability readback. Console Published/Archived views offer direct Archive/Restore actions with existing authentication, origin/CSRF and owner checks, not new drafts or setup friction. See `docs/loop-availability.md`; installed acceptance remains separate.
 
 Preserve Aegis's exact denial or error. Never repair canonical identity, authority, digests, revision sequence, validation, publisher provenance, or lifecycle history from prompt content. Never retry a changed payload under the same event or idempotency identity.
 

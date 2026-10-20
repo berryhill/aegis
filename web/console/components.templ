@@ -504,6 +504,9 @@ templ AgentCard(surface SurfaceModel, record RecordModel) {
 
 templ DefinitionFilters(surface SurfaceModel) {
 	<form class="toolbar" method="get" action={ "/console/" + surface.Domain } aria-label={ "Filter " + surface.Title }>
+		if surface.Domain == DomainLoops {
+			<label>Availability <select name="availability"><option value="published" selected?={ surface.Availability == "published" }>Published</option><option value="archived" selected?={ surface.Availability == "archived" }>Archived</option></select></label>
+		}
 		<label class="lifecycle-filter"><span class="sr-only">Lifecycle</span><select name="lifecycle">
 			for _, state := range []string{"all", "draft", "published", "active", "inactive", "retired"} {
 				<option value={ state } selected?={ surface.Lifecycle == state }>{ stateHeading(state) }</option>

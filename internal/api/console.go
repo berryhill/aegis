@@ -707,6 +707,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
+		Availability: string(view.Availability.State), AvailabilitySequence: view.Availability.Sequence, AvailabilityDigest: view.Availability.Digest,
 		Summary:   summary,
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,
