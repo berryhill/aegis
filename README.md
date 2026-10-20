@@ -1,5 +1,7 @@
 # Aegis
 
+The authenticated Queue detail includes a read-only [execution debugger](docs/EXECUTION_DEBUGGER.md) for exact pinned Loop control flow and Graph-node drill-down, with live following and historical replay.
+
 Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

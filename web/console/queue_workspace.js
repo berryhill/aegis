@@ -1,5 +1,5 @@
 "use strict";
-// Presentation only: no network, storage, or route mutations.
+// Presentation controls only; exact-run polling is isolated in execution_debugger.js.
 (() => {
   const root = document.querySelector("[data-queue-workspace]");
   if (!root) return;
@@ -9,14 +9,22 @@
   const title = root.querySelector("#queue-context-title");
   const split = root.querySelector(".queue-workspace");
   const definition = root.querySelector("[data-queue-definition-panel]");
-  const panels = Array.from(root.querySelectorAll("[data-queue-node-panel]"));
-  const nodes = Array.from(root.querySelectorAll("[data-queue-node]"));
-  const definitionButtons = Array.from(root.querySelectorAll("[data-queue-definition]"));
+  let panels = Array.from(root.querySelectorAll("[data-queue-node-panel]"));
+  let nodes = Array.from(root.querySelectorAll("[data-queue-node]"));
+  root.addEventListener("queue-layout-changed", () => {
+    panels = Array.from(root.querySelectorAll("[data-queue-node-panel]"));
+    nodes = Array.from(root.querySelectorAll("[data-queue-node]"));
+    definitionButtons = Array.from(root.querySelectorAll("[data-queue-definition]"));
+    const selected = nodes.find(n => n.getAttribute("aria-pressed") === "true");
+    if (selected) { lastNode = selected; show(selected.dataset.queueNode, false); }
+    else if (inspector && !inspector.hidden) show(null, false);
+  });
+  let definitionButtons = Array.from(root.querySelectorAll("[data-queue-definition]"));
   if (!stage) return;
   if (inspector) inspector.hidden = true;
   if (split) split.classList.add("solo");
   for (const button of definitionButtons) button.setAttribute("aria-expanded", "false");
-  const show = (index) => {
+  const show = (index, focus = true) => {
     if (index !== null && !panels.some((p) => p.dataset.queueNodePanel === index)) return;
     if (inspector) inspector.hidden = false;
     if (split) split.classList.remove("solo");
@@ -25,18 +33,23 @@
     for (const node of nodes) node.setAttribute("aria-pressed", String(node.dataset.queueNode === index));
     for (const button of definitionButtons) button.setAttribute("aria-expanded", String(index === null));
     title.textContent = index === null ? "Queue definition" : "Node inspector";
-    title.focus({ preventScroll: true });
+    root.dispatchEvent(new CustomEvent("queue-selection-changed", {detail: {index}}));
+    if (focus) title.focus({ preventScroll: true });
     if (matchMedia("(max-width:1080px)").matches && inspector) inspector.scrollIntoView({ block: "start" });
   };
-  for (const button of definitionButtons) button.addEventListener("click", () => show(null));
+  // Delegate because the debugger replaces node panels on scope changes.
+  root.addEventListener("click", (event) => {
+    if (event.target.closest("[data-queue-definition]")) show(null);
+  });
   let lastNode = null;
-  for (const node of nodes) node.addEventListener("click", () => { lastNode = node; show(node.dataset.queueNode); });
+  root.addEventListener("click", (event) => { const node = event.target.closest("[data-queue-node]"); if (node) { lastNode = node; show(node.dataset.queueNode); } });
   const close = () => {
     if (inspector) inspector.hidden = true;
     if (split) split.classList.add("solo");
     for (const node of nodes) node.setAttribute("aria-pressed", "false");
     for (const button of definitionButtons) button.setAttribute("aria-expanded", "false");
-    (lastNode || definitionButtons[0]).focus({ preventScroll: true });
+    root.dispatchEvent(new CustomEvent("queue-selection-changed", {detail: {index: null}}));
+    (lastNode?.isConnected ? lastNode : definitionButtons[0] || viewport).focus({ preventScroll: true });
   };
   const closeBtn = root.querySelector("[data-queue-close]");
   if (closeBtn) closeBtn.addEventListener("click", close);
@@ -107,4 +120,4 @@
       // assert any preconditions here.
     });
   }
-})()
+})();

@@ -1118,6 +1118,9 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	if detail.FailureLocation != "" {
 		detail.CycleWarning = queueCycleWarning(detail)
 	}
+	if view.Debugger != nil {
+		applyQueueDebugger(detail, *view.Debugger)
+	}
 	// 9. Records JSON (raw marshalled view) for the textual equivalent.
 	raw, _ := json.MarshalIndent(view, "", "  ")
 	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, JSON: string(raw), Queue: detail}
@@ -1201,9 +1204,7 @@ func buildPinnedQueueControlFlow(detail *consoleweb.QueueDetailModel, view app.Q
 	// Edges with authoritative transition outcomes.
 	for i, dep := range revision.Dependencies {
 		outcome := "pending"
-		if view.QueueLoopExecutionTaken(dep.ToNodeID) {
-			outcome = "taken"
-		} else if dep.FromNodeID == currentControl {
+		if dep.FromNodeID == currentControl {
 			outcome = "pending"
 		}
 		mappings := make([]string, 0, len(dep.Mappings))
@@ -1228,13 +1229,7 @@ func projectedNodeState(view app.QueueExecutionView, exec app.QueueExecutionStat
 	if exec.IsTerminal() {
 		return string(exec)
 	}
-	if state := view.QueueExecutionDispositionState(); state != "" && state.IsTerminal() {
-		return string(state)
-	}
 	if hasAttempt {
-		return "started"
-	}
-	if view.QueueGraphRunState() == "started" {
 		return "started"
 	}
 	return "pending"

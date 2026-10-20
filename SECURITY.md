@@ -1,5 +1,7 @@
 # Security Policy
 
+The authenticated exact-run execution debugger is read-only and excludes raw task/model/cursor/file payloads. Durable interpreter observations are not authority, verification receipts or evidence-backed Queue completion. Auth loss clears the protected browser workspace; legacy boundaries remain unknown. See [debugger boundary](docs/EXECUTION_DEBUGGER.md).
+
 The zero-authority owner-principal selected-file v4 Run has a narrow
 [ephemeral preparation policy](docs/DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).
 It does not provision persistent artifacts or invent a human decision: the exact

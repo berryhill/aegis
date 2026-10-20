@@ -284,6 +284,8 @@ type LoopLifecycleEventModel struct {
 // output. Six supporting tabs are populated directly from authoritative runtime
 // facts so the contextual action can be evaluated without leaving the workspace.
 type QueueDetailModel struct {
+	DebuggerJSON string
+	LiveLoop     bool
 	// Header / summary facts.
 	ExecutionType       string // Graph run · pinned Graph/Loop snapshot identity.
 	QueueItemIdentity   string
