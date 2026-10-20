@@ -22,6 +22,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Isolate the measured slow updater package in its own complete normal/race CI
+  shard, keeping both remainder shards, exact-once package coverage and mandatory
+  evidence gates without increasing job deadlines or verification resources.
+
 - Scope Queue lifecycle filtering and pagination to Queue & Lifecycle. Preserve
   the independent Active/Failed bands, counts and usable exact-record links under
   incompatible lifecycle selections; filtering remains read-only.
