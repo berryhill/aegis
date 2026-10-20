@@ -75,8 +75,13 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn("tags:", events)
         self.assertNotIn("pull_request_target", self.ci)
         self.assertNotIn("make release-readiness", self.ci)
-        for block in self.jobs.values():
-            self.assertIn("timeout-minutes: 10", block)
+        for name, block in self.jobs.items():
+            if name == "go-shards":
+                # Measured slow race groups include setup plus the complete
+                # package run. Every other matrix/job allowance remains ten.
+                self.assertIn("timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}", block)
+            else:
+                self.assertIn("timeout-minutes: 10", block)
         self.assertNotIn("MemoryMax=", self.ci)
         self.assertNotIn("CPUQuota=", self.ci)
 

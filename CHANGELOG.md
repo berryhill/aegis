@@ -23,6 +23,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   shard, keeping both remainder shards, exact-once package coverage and mandatory
   evidence gates without increasing job deadlines or verification resources.
 
+- Scope Queue lifecycle filtering and pagination to Queue & Lifecycle. Preserve
+  the independent Active/Failed bands, counts and usable exact-record links under
+  incompatible lifecycle selections; filtering remains read-only.
+
 - Clarify Loop definition ports versus sealed Doer task contracts and actual
   execution evidence. Show the exact v4 task/file assertion without inventing
   dataflow outputs; preserve reusable v5 run-bound inputs. Make definition and
