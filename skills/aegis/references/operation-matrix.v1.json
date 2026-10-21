@@ -488,7 +488,10 @@
         "internal/command/fleet.go",
         "internal/api/server.go",
         "internal/api/execution_debugger.go",
-        "internal/app/execution_debugger.go"
+        "internal/app/execution_debugger.go",
+        "internal/app/console_queue_presentation.go",
+        "internal/api/console_queue_preferences.go",
+        "internal/api/console_queue_presentation.go"
       ],
       "tests": [
         "internal/command/queue_skill_contract_test.go",
@@ -520,7 +523,17 @@
         "POST /console/queue/:item/operate",
         "POST /v1/queue/:item/bind-runtime",
         "GET /v1/preparations",
-        "GET /console/queue/:item/debugger"
+        "GET /console/queue/:item/debugger",
+        "POST /console/queue/preferences",
+        "POST /console/queue/:item/archive",
+        "POST /console/queue/:item/unarchive",
+        "POST /console/queue/:item/requeue",
+        "POST /console/queue/:item/requeue-review",
+        "POST /v1/queue/:item/archive",
+        "POST /v1/queue/:item/unarchive",
+        "POST /v1/queue/:item/requeue",
+        "GET /v1/queue/preferences",
+        "PUT /v1/queue/preferences"
       ],
       "transport_classification": "shipped"
     },

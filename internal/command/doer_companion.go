@@ -202,9 +202,20 @@ func runDoerCompanion(ctx context.Context, o companionOptions, configIdentity st
 	if i.Requester.Kind != "principal" || i.Requester.Method != "password" || i.Requester.Issuer != "aegis-principal-auth" || i.Requester.PrincipalID == "" || i.Requester.AuthenticatedAt.IsZero() || !i.Requester.AuthenticatedAt.Before(i.ExpiresAt) || i.ExpiresAt.After(i.Requester.ExpiresAt) {
 		return "response_drift"
 	}
-	candidate, _, e := loop.NewDoerRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
-	if e != nil || draft.ID != i.DraftID || draft.Version != i.DraftVersion || draft.Agent != i.Agent || draft.PublicationKey != i.PublicationKey || candidate.Digest != i.CandidateDigest || i.Loop.ID != candidate.LoopID || i.Loop.Revision != candidate.Revision || i.Loop.Digest != candidate.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || i.Charter.Validate() != nil {
-		return "response_drift"
+	if i.Run.Reexecution != nil {
+		published := review.Published
+		if core.Digest(draft) != core.Digest(app.DoerDraft{}) || review.Requeue == nil || core.Digest(*review.Requeue) != i.RequeueBinding || core.Digest(review.Requeue.Run) != core.Digest(i.Run) || review.Requeue.Remaining == 0 || published == nil || published.Doer == nil || published.DoerReusable != nil || i.DraftID != "" || i.DraftVersion != 0 || i.PublicationKey != "" || i.RequeueBinding == "" || i.Run.Activate || i.Run.QueueItemID != "" || i.Run.Reexecution.PreviousQueue.Validate() != nil || i.Run.Reexecution.PreviousDisposition.Validate() != nil {
+			return "response_drift"
+		}
+		candidate, _, err := loop.NewDoerRevision(published.LoopID, published.Revision, published.PreviousDigest, *published.Doer)
+		if err != nil || candidate.Digest != published.Digest || candidate.Digest != i.CandidateDigest || i.Loop.ID != candidate.LoopID || i.Loop.Revision != candidate.Revision || i.Loop.Digest != candidate.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || i.Charter.Validate() != nil {
+			return "response_drift"
+		}
+	} else {
+		candidate, _, e := loop.NewDoerRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+		if review.Published != nil || review.Requeue != nil || i.RequeueBinding != "" || e != nil || draft.ID != i.DraftID || draft.Version != i.DraftVersion || draft.Agent != i.Agent || draft.PublicationKey != i.PublicationKey || candidate.Digest != i.CandidateDigest || i.Loop.ID != candidate.LoopID || i.Loop.Revision != candidate.Revision || i.Loop.Digest != candidate.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || i.Charter.Validate() != nil {
+			return "response_drift"
+		}
 	}
 	data, _ := json.Marshal(review)
 	if sensitiveCompanionBody(data, token) {
@@ -251,6 +262,9 @@ func sensitiveCompanionBody(data, token []byte) bool {
 		return true
 	}
 	contract, _ := json.Marshal(review.Draft.Contract)
+	if review.Published != nil {
+		contract, _ = json.Marshal(review.Published.Doer)
+	}
 	untrusted := strings.ToLower(string(contract))
 	if strings.Contains(untrusted, "password") || strings.Contains(untrusted, "passphrase") {
 		return true

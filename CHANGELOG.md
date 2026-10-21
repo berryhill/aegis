@@ -24,6 +24,8 @@ Doer readiness now preserves supported v4 exact host-review remediation versus e
 
 ### Fixed
 
+- Integrate predecessor-bound Console Requeue with the existing independent native continuation: review exact canonical pins, inputs, disposition, checkpoint and cumulative budget; bind fresh human SO_PEERCRED approval to the original browser session and stable successor intent; execute only through existing fresh runtime admission. Ordinary Run approval cannot be reused. Direct password POST without matching approval still denies without reserving a successor. Supported synthetic-runtime success/exhaustion regressions retain full lineage, budget and evidence assertions; live human/provider acceptance remains separate.
+
 - Apply the Loop Published/Archived availability selector through its existing GET
   form on selection, retaining Apply as the no-script fallback. Expose owner-bound
   Archive/Restore actions directly on collection rows with the same exact-state
