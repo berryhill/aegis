@@ -29,6 +29,8 @@ type DoerCandidateReadinessInput struct {
 // the candidate may request execution preparation; fresh admission still applies.
 // Helper success qualifies protocol availability, NOT actual task eligibility.
 type DoerCandidateReadiness struct {
+	definitionSchema       string
+	RequestID              string                 `json:"request_id,omitempty"`
 	Agent                  reference.RevisionRef  `json:"agent"`
 	Candidate              reference.RevisionRef  `json:"candidate"`
 	ContractDigest         string                 `json:"contract_digest,omitempty"`
@@ -62,7 +64,7 @@ func (r *DoerCandidateReadiness) block(status *DoerPrerequisiteStatus, reason st
 	*status = DoerPrerequisiteStatus{State: "blocked", Reason: reason}
 	r.Reason = reason
 	diagnostic := QueueLoopResult{}
-	diagnostic.blockedDoer(reason)
+	diagnostic.blockedDoer(reason, r.definitionSchema)
 	r.RequiredAction = diagnostic.RequiredAction
 }
 
@@ -89,6 +91,10 @@ func (s *Service) doerCandidateReadinessAs(ctx context.Context, subject core.Sub
 		return r, ErrDenied
 	}
 	r.Subject = ready
+	if ctx.Err() != nil {
+		r.block(&r.Controller, "doer_check_cancelled")
+		return r, nil
+	}
 	if input.Agent.Validate() != nil {
 		r.block(&r.AgentReference, "exact_latest_agent_required")
 		return r, ErrDenied
@@ -108,12 +114,17 @@ func (s *Service) doerCandidateReadinessAs(ctx context.Context, subject core.Sub
 	}
 	r.AgentReference = ready
 	candidate, _, err := loop.NewRevision(input.Candidate)
-	if err != nil || input.Candidate.SchemaVersion != loop.DoerRevisionSchemaVersion || candidate.Digest != input.Candidate.Digest || candidate.Doer == nil {
+	if err != nil || (input.Candidate.SchemaVersion != loop.DoerRevisionSchemaVersion && input.Candidate.SchemaVersion != loop.DoerReusableSchemaVersion) || candidate.Digest != input.Candidate.Digest {
 		r.block(&r.CanonicalCandidate, "canonical_doer_candidate_required")
 		return r, ErrDenied
 	}
 	r.Candidate = reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}
-	r.ContractDigest, err = candidate.Doer.Digest()
+	contract, err := queuedDoerContract(ctx, candidate)
+	if err != nil {
+		r.block(&r.CanonicalCandidate, "canonical_doer_candidate_required")
+		return r, ErrDenied
+	}
+	r.ContractDigest, err = contract.Digest()
 	if err != nil {
 		r.block(&r.CanonicalCandidate, "canonical_doer_candidate_required")
 		return r, ErrDenied
@@ -139,6 +150,7 @@ func (s *Service) doerCandidateReadinessAs(ctx context.Context, subject core.Sub
 // Shared execution checks intentionally retain preflight's ordering and reason
 // codes. The caller performs its own immutable-reference and authority admission.
 func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.Subject, candidate loop.LoopRevision, agent registry.AgentRevision, probe bool, r *DoerCandidateReadiness) {
+	r.definitionSchema = candidate.SchemaVersion
 	ready := DoerPrerequisiteStatus{State: "ready"}
 	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
 	if err != nil || charter.Digest != agent.Charter.Digest {
@@ -169,7 +181,12 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 	r.CredentialFree = ready
 	if selection.Selected.Hermes.ProviderAuthentication != nil {
 		if _, err := s.resolveControllerProviderAuthentication(ctx, selection.Selected.Hermes); err != nil {
-			r.block(&r.ProviderAuthentication, err.Error())
+			reason := "doer_prerequisite_unavailable"
+			switch err.Error() {
+			case "doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired", "doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":
+				reason = err.Error()
+			}
+			r.block(&r.ProviderAuthentication, reason)
 			return
 		}
 	} else if selection.Selected.Hermes.LocalInference == nil && selection.Selected.Hermes.Provider != "none" {
@@ -203,11 +220,11 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 	}
 	r.Runtime = ready
 	if s.QueueWorker == nil {
-		r.block(&r.Controller, "implementation_prerequisite_required")
+		r.block(&r.Controller, "doer_controller_unavailable")
 		return
 	}
 	if err := s.QueueWorker.ValidateDoerRuntimeCapability(); err != nil {
-		reason := "implementation_prerequisite_required"
+		reason := "doer_controller_unavailable"
 		if s.doerEphemeralPreparationAllowed(ctx, subject, candidate, agent) {
 			reason = "doer_runtime_unconfigured"
 		}
@@ -215,12 +232,12 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		return
 	}
 	if err := s.prepareDoerRunHostScope(ctx, subject, candidate, agent); err != nil {
-		r.block(&r.Controller, "doer_host_scope_denied")
+		r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
 		return
 	}
 	if !probe {
-		if s.validateQueuedDoerAdmission(ctx, candidate, agent, false) != nil {
-			r.block(&r.Controller, "implementation_prerequisite_required")
+		if err := s.validateQueuedDoerAdmission(ctx, candidate, agent, false); err != nil {
+			r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
 			return
 		}
 		r.Controller = ready
@@ -234,7 +251,7 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 			r.block(&r.Helper, "local_laya_unavailable")
 			return
 		}
-		r.block(&r.Controller, "implementation_prerequisite_required")
+		r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
 		return
 	}
 	r.Controller, r.Helper, r.CanExecute = ready, ready, true

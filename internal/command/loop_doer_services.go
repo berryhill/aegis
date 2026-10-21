@@ -22,13 +22,7 @@ func loopDoerServiceCommands(build builder) []*cobra.Command {
 		if err != nil {
 			return err
 		}
-		candidate := app.DoerCandidateReadinessInput{Agent: input.Agent, Candidate: input.Candidate}
-		var value app.DoerCandidateReadiness
-		if input.Probe {
-			value, err = svc.ProbeDoerCandidateReadinessAs(cmd.Context(), subject, candidate)
-		} else {
-			value, err = svc.ReadDoerCandidateReadinessAs(cmd.Context(), subject, candidate)
-		}
+		value, err := svc.ReadDoerReadinessAs(cmd.Context(), subject, input)
 		if err != nil {
 			return err
 		}

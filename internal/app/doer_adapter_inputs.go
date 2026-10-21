@@ -1,8 +1,12 @@
 package app
 
 import (
+	"bytes"
+	"encoding/json"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
+	"reflect"
 	"time"
 )
 
@@ -29,9 +33,56 @@ type DoerSetupDecisionInput struct {
 // DoerReadinessInput explicitly opts into the existing bounded helper probe.
 // It carries proposal references only, never authority or approval.
 type DoerReadinessInput struct {
-	Agent     reference.RevisionRef `json:"agent"`
-	Candidate loop.LoopRevision     `json:"candidate"`
-	Probe     bool                  `json:"probe,omitempty"`
+	IdempotencyKey   string                  `json:"idempotency_key,omitempty"`
+	Activate         bool                    `json:"activate,omitempty"`
+	Loop             reference.RevisionRef   `json:"loop,omitempty"`
+	Inputs           []graph.NormalizedInput `json:"inputs,omitempty"`
+	Agent            reference.RevisionRef   `json:"agent"`
+	Candidate        loop.LoopRevision       `json:"candidate"`
+	Probe            bool                    `json:"probe,omitempty"`
+	runFieldsPresent bool
+}
+
+func (i DoerReadinessInput) validateShape() error {
+	if i.Loop == (reference.RevisionRef{}) {
+		if i.runFieldsPresent || i.Inputs != nil || i.Activate || i.IdempotencyKey != "" || i.Candidate.SchemaVersion != loop.DoerRevisionSchemaVersion {
+			return ErrDenied
+		}
+		return nil
+	}
+	if i.Loop.Validate() != nil || !reflect.DeepEqual(i.Candidate, loop.LoopRevision{}) || len(i.IdempotencyKey) > 256 {
+		return ErrDenied
+	}
+	return nil
+}
+
+// Keep transport presence strict while accepting the zero struct fields emitted
+// by existing typed v4/v5 callers. Null is never an omitted request field.
+func (i *DoerReadinessInput) UnmarshalJSON(b []byte) error {
+	if reference.RejectDuplicateObjectKeys(b) != nil || bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return ErrDenied
+	}
+	type wire DoerReadinessInput
+	var value wire
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&value); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return err
+	}
+	for key, raw := range fields {
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return ErrDenied
+		}
+		if key == "inputs" || key == "activate" || key == "idempotency_key" {
+			value.runFieldsPresent = true
+		}
+	}
+	*i = DoerReadinessInput(value)
+	return i.validateShape()
 }
 
 // ContinueDoerDraftInput retains the exact optimistic version and prior Agent

@@ -2,13 +2,16 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/hostapproval"
 	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/registry"
 )
 
 func TestDoerReadinessDeniesMissingPrerequisites(t *testing.T) {
@@ -66,22 +69,34 @@ func TestDoerReadinessDeniesMissingPrerequisites(t *testing.T) {
 	tests := []struct {
 		name   string
 		change func(*QueueWorker)
+		want   string
 	}{
-		{"no-controller", func(w *QueueWorker) { w.implementation = nil }},
-		{"not-authorized", func(w *QueueWorker) { w.implementation.config.AuthorizedContracts = nil }},
-		{"no-laya", func(w *QueueWorker) { w.implementation.config.LayaPython = "" }},
-		{"no-home", func(w *QueueWorker) { w.implementation.config.LayaHome = "" }},
-		{"no-checker", func(w *QueueWorker) { w.implementation.config.GoBinary = "" }},
-		{"no-adapter", func(w *QueueWorker) { w.implementation.adapter = nil }},
+		{"no-controller", func(w *QueueWorker) { w.implementation = nil }, "doer_controller_unavailable"},
+		{"not-authorized", func(w *QueueWorker) { w.implementation.config.AuthorizedContracts = nil }, "doer_host_approval_required"},
+		{"no-laya", func(w *QueueWorker) { w.implementation.config.LayaPython = "" }, "doer_controller_unavailable"},
+		{"no-home", func(w *QueueWorker) { w.implementation.config.LayaHome = "" }, "doer_controller_unavailable"},
+		{"no-checker", func(w *QueueWorker) { w.implementation.config.GoBinary = "" }, "doer_go_executable_untrusted"},
+		{"no-adapter", func(w *QueueWorker) { w.implementation.adapter = nil }, "doer_controller_unavailable"},
+		{"untrusted-laya", func(w *QueueWorker) { w.implementation.config.LayaPython = filepath.Join(root, "absent") }, "doer_laya_executable_untrusted"},
+		{"untrusted-home", func(w *QueueWorker) { w.implementation.config.LayaHome = filepath.Join(root, "missing-home") }, "doer_laya_home_untrusted"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := configured()
 			tc.change(w)
-			if err := w.ValidateLoopAdmission(revision, agent); err == nil {
-				t.Fatal("missing prerequisite admitted")
+			if got := DoerPrerequisiteReason(w.ValidateLoopAdmission(revision, agent)); got != tc.want {
+				t.Fatalf("earliest cause %q want %q", got, tc.want)
 			}
 		})
+	}
+	for _, cause := range []error{hostapproval.ErrAbsent, hostapproval.ErrDenied, hostapproval.ErrExpired, errors.New("secret=/private/token")} {
+		w := configured()
+		w.implementation.config.AuthorizedContracts = nil
+		w.implementation.config.GoBinary = filepath.Join(root, "missing-downstream-checker")
+		w.SetDoerHostApprovalResolver(func(context.Context, loop.DoerContract, registry.AgentRevision) error { return cause })
+		if got, want := DoerPrerequisiteReason(w.ValidateDoerContractReadiness(context.Background(), contract, agent, true)), DoerPrerequisiteReason(cause); got != want {
+			t.Fatalf("resolver cause %q want %q", got, want)
+		}
 	}
 	t.Run("symlink-target", func(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(workspace, "other.go"), nil, 0600); err != nil {
