@@ -14,8 +14,7 @@ import (
 	"github.com/berryhill/aegis/internal/reference"
 )
 
-// Seed in a child process so both stores are closed before the real candidate
-// opens them. No runtime is launched and no production state is accessed.
+// A child process closes both stores before the actual root candidate opens them.
 func TestLoopAvailabilityConsoleBrowserSeed(t *testing.T) {
 	root := os.Getenv("AEGIS_FILTER_SEED_ROOT")
 	if root == "" {
@@ -76,11 +75,8 @@ func TestLoopAvailabilityConsoleBrowserSeed(t *testing.T) {
 	}
 }
 
-// Drives the built candidate's authenticated Console under its production CSP,
-// including durable-state reopen after an actual service process restart.
 func TestLoopAvailabilityConsoleBrowser(t *testing.T) {
-	python := os.Getenv("AEGIS_BROWSER_PYTHON")
-	candidate := os.Getenv("AEGIS_FILTER_CANDIDATE")
+	python, candidate := os.Getenv("AEGIS_BROWSER_PYTHON"), os.Getenv("AEGIS_FILTER_CANDIDATE")
 	if python == "" || candidate == "" {
 		t.Skip("set AEGIS_BROWSER_PYTHON and AEGIS_FILTER_CANDIDATE for browser regression")
 	}
@@ -92,7 +88,10 @@ func TestLoopAvailabilityConsoleBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidence := filepath.Join(repo, ".candidate", "issue334-filter")
+	if candidate != filepath.Join(repo, "aegis") {
+		t.Fatal("browser candidate must be the root aegis executable")
+	}
+	evidence := filepath.Join(repo, ".candidate", "issue334-combined")
 	if err := os.MkdirAll(evidence, 0700); err != nil {
 		t.Fatal(err)
 	}

@@ -22,17 +22,23 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Apply the Loop Published/Archived availability selector through its existing GET
+  form on selection, retaining Apply as the no-script fallback. Expose owner-bound
+  Archive/Restore actions directly on collection rows with the same exact-state
+  and session protections as the detail view.
+
 - Raise the development, CI and release Go toolchain floor to 1.26.10 for
   GO-2026-6809 (crypto/x509); retain vulnerability scanning and all verification
   and resource-budget gates without suppressions.
 
-- Apply the Loops Published/Archived selector immediately through its existing
-  read-only GET form, retaining the search query and clearing stale record,
-  revision and page selection. The Apply button remains usable without JavaScript.
-
 - Isolate the measured slow updater package in its own complete normal/race CI
   shard, keeping both remainder shards, exact-once package coverage and mandatory
   evidence gates without increasing job deadlines or verification resources.
+
+- Isolate independent Loop availability HTTP test journeys with fresh server
+  rate-limit buckets while preserving service state and exact history assertions;
+  reuse rendered row forms instead of duplicate setup GETs. Production limits and
+  middleware remain unchanged.
 
 - Scope Queue lifecycle filtering and pagination to Queue & Lifecycle. Preserve
   the independent Active/Failed bands, counts and usable exact-record links under

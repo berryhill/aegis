@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/loop"
@@ -60,6 +59,18 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
 	waitFor(t, "tcp", address)
 	client := unixClient(svc.Config.API.UnixSocket)
+	restartServer := func() {
+		t.Helper()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		client.CloseIdleConnections()
+		ctx, cancel = context.WithCancel(context.Background())
+		go func() { done <- Serve(ctx, svc) }()
+		waitFor(t, "unix", svc.Config.API.UnixSocket)
+		waitFor(t, "tcp", address)
+	}
 	path := "/v1/loops/" + rev.LoopID
 	input := app.SetLoopAvailabilityInput{AgentID: owner.AgentID, Head: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: rev.LoopID, Revision: 1, Digest: rev.Digest}, EventID: "availability-archive", Sequence: 1, ExpectedState: loop.AvailabilityPublished, State: loop.AvailabilityArchived}
 	// TCP has no Unix-peer principal: JSON identity must not authorize a mutation.
@@ -149,9 +160,9 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 			})
 		}
 	})
-	// The extra negative HTTP requests share the production token bucket with
-	// the existing journey. Let it replenish; do not disable or widen the limiter.
-	time.Sleep(2 * time.Second)
+	// Independent HTTP journeys retain durable state, not each other's source
+	// and principal token buckets. Shut down fully before starting fresh middleware.
+	restartServer()
 	for _, raw := range []string{`{"unknown":true}`, `{} {}`} {
 		req, _ := http.NewRequest(http.MethodPut, "http://unix"+path+"/availability", strings.NewReader(raw))
 		req.Header.Set("Content-Type", "application/json")
@@ -213,6 +224,7 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 	}
 	// Exercise the actual authenticated browser route and rendered session CSRF.
 	t.Run("rendered authenticated compose archive restore and exact history", func(t *testing.T) {
+		restartServer()
 		control, _, err := loop.NewDoerRevision("availability-control", 1, "", loop.DoerContract{Task: "published control", Workspace: t.TempDir(), WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, ExactBytes: true, MaxAttempts: 1})
 		if err != nil {
 			t.Fatal(err)
@@ -265,7 +277,7 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 			}
 			return string(body)
 		}
-		getPage("", `name="availability"`)
+		publishedPage := getPage("", `name="availability"`)
 		getPage("?record_key="+rev.LoopID+":1", `name="csrf" value="`+csrf+`"`, ">Archive</button>")
 		post := func(values url.Values, origin string, authenticated bool, want int) {
 			t.Helper()
@@ -286,21 +298,59 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 				t.Fatalf("console POST got %d want %d: %s", response.StatusCode, want, body)
 			}
 		}
-		form := url.Values{"csrf": {csrf}, "revision": {"1"}, "digest": {rev.Digest}, "sequence": {"3"}, "previous_digest": {""}, "expected_state": {"published"}, "state": {"archived"}}
+		form := renderedLoopRowForm(t, publishedPage, rev.LoopID, rev.LoopID+":1", "Archive")
 		apiRequest(t, client, http.MethodGet, path+"/availability", nil, &status, http.StatusOK)
-		form.Set("previous_digest", status.Digest)
+		if form.Get("csrf") != csrf || form.Get("previous_digest") != status.Digest || form.Get("digest") != rev.Digest {
+			t.Fatal("row form does not bind actual session and exact current state")
+		}
+		beforeAudits, err := svc.FleetRepository.AuditEvents(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertDeniedUnchanged := func() {
+			t.Helper()
+			after, err := svc.GetLoopViewAs(ctx, subject, rev.LoopID, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			audits, err := svc.FleetRepository.AuditEvents(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(beforeAudits, audits) {
+				t.Fatal("denied row mutation changed view or audit")
+			}
+		}
 		origin := "http://" + address
 		post(form, origin, false, http.StatusUnauthorized)
+		assertDeniedUnchanged()
 		post(form, "https://foreign.invalid", true, http.StatusForbidden)
+		assertDeniedUnchanged()
 		form.Set("csrf", "wrong")
 		post(form, origin, true, http.StatusForbidden)
+		assertDeniedUnchanged()
 		form.Set("csrf", csrf)
 		form.Set("principal_id", "forged")
 		post(form, origin, true, http.StatusBadRequest)
 		form.Del("principal_id")
+		form.Set("agent_id", foreign.AgentID)
+		post(form, origin, true, http.StatusBadRequest)
+		form.Del("agent_id")
+		form.Set("digest", "sha256:"+strings.Repeat("b", 64))
+		post(form, origin, true, http.StatusConflict)
+		form.Set("digest", rev.Digest)
+		form.Set("previous_digest", "sha256:"+strings.Repeat("b", 64))
+		post(form, origin, true, http.StatusConflict)
+		form.Set("previous_digest", status.Digest)
 		form.Set("sequence", "99")
 		post(form, origin, true, http.StatusConflict)
 		form.Set("sequence", "3")
+		assertDeniedUnchanged()
+		// The successful archive/restore journey gets its own server and real
+		// login after the independent denial matrix. Never reset limiter internals.
+		restartServer()
+		browser, csrf = loginConsole(t, address)
+		form = renderedLoopRowForm(t, getPage(""), rev.LoopID, rev.LoopID+":1", "Archive")
 		post(form, origin, true, http.StatusSeeOther)
 		post(form, origin, true, http.StatusConflict)
 		compose(false)
@@ -312,13 +362,10 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 		if body := getPage(""); strings.Contains(body, `id="record-`+rev.LoopID+`:1"`) {
 			t.Fatal("archived Loop remains in published collection")
 		}
-		getPage("?availability=archived&record_key="+rev.LoopID+":1", ">Restore</button>", `name="csrf" value="`+csrf+`"`)
+		archivedPage := getPage("?availability=archived", ">Restore</button>", `name="csrf" value="`+csrf+`"`)
 		getPage("?record_key="+rev.LoopID+":1", ">Restore</button>", rev.Digest, "Exact provenance", "Immutable lifecycle history", retired.Event.EventID, retired.Event.Digest)
 		apiRequest(t, client, http.MethodGet, path+"/availability", nil, &status, http.StatusOK)
-		form.Set("sequence", strconv.FormatUint(status.Sequence+1, 10))
-		form.Set("previous_digest", status.Digest)
-		form.Set("expected_state", "archived")
-		form.Set("state", "published")
+		form = renderedLoopRowForm(t, archivedPage, rev.LoopID, rev.LoopID+":1", "Restore")
 		post(form, origin, true, http.StatusSeeOther)
 		compose(true)
 		getPage("?record_key="+rev.LoopID+":1", ">Archive</button>")

@@ -528,7 +528,11 @@ templ CollectionCount(surface SurfaceModel, singular string) {
 templ RecordPanel(surface SurfaceModel) {
 	<div class="panel"><div class="panel-body compact"><ul id="surface-list" class="record-list" aria-label={ surface.Title + " records" }>
 		for _, record := range surface.Records {
-			<li><a id={ "record-" + record.Key } href={ detailRoute(surface, record.Key) } data-detail-link data-record-key={ record.Key }>@RecordLabel(record.Label)<span>Open exact record →</span></a></li>
+			<li><a id={ "record-" + record.Key } href={ detailRoute(surface, record.Key) } data-detail-link data-record-key={ record.Key }>@RecordLabel(record.Label)<span>Open exact record →</span></a>
+				if surface.Domain == DomainLoops && record.Availability != "" {
+					@LoopAvailabilityForm(surface, record)
+				}
+			</li>
 		}
 	</ul></div></div>
 }

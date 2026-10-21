@@ -1,0 +1,25 @@
+package consoleweb
+
+import (
+ "fmt"
+ "net/url"
+
+)
+
+// LoopAvailabilityForm carries only exact references and CAS preconditions.
+// Ownership and authority remain server-derived by the existing handler.
+templ LoopAvailabilityForm(surface SurfaceModel, record RecordModel) {
+ <form method="post" action={ "/console/loops/availability?loop_id=" + url.QueryEscape(record.Label) } aria-label={ "Change availability of " + record.Label }>
+  <input type="hidden" name="csrf" value={ surface.CSRF }/>
+  <input type="hidden" name="revision" value={ fmt.Sprint(record.AvailabilityHeadRevision) }/>
+  <input type="hidden" name="digest" value={ record.AvailabilityHeadDigest }/>
+  <input type="hidden" name="sequence" value={ fmt.Sprint(record.AvailabilitySequence + 1) }/>
+  <input type="hidden" name="previous_digest" value={ record.AvailabilityDigest }/>
+  <input type="hidden" name="expected_state" value={ record.Availability }/>
+  if record.Availability == "archived" {
+   <input type="hidden" name="state" value="published"/><button type="submit" class="secondary">Restore</button>
+  } else {
+   <input type="hidden" name="state" value="archived"/><button type="submit" class="secondary">Archive</button>
+  }
+ </form>
+}

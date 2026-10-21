@@ -152,29 +152,31 @@ type ActionModel struct {
 }
 
 type RecordModel struct {
-	Availability         string
-	AvailabilitySequence uint64
-	AvailabilityDigest   string
-	Key                  string
-	Digest               string
-	Label                string
-	Summary              string
-	JSON                 string
-	Lifecycle            string
-	Readiness            string
-	Revision             string
-	Runtime              string
-	Source               string
-	Owner                string
-	Authority            string
-	Provisioning         string
-	Fields               []FieldModel
-	Links                []LinkModel
-	Graph                *GraphDetailModel
-	Queue                *QueueDetailModel
-	Credential           *CredentialDetailModel
-	Loop                 *LoopDetailModel
-	Agent                *AgentDetailModel
+	Availability             string
+	AvailabilitySequence     uint64
+	AvailabilityDigest       string
+	AvailabilityHeadRevision uint64
+	AvailabilityHeadDigest   string
+	Key                      string
+	Digest                   string
+	Label                    string
+	Summary                  string
+	JSON                     string
+	Lifecycle                string
+	Readiness                string
+	Revision                 string
+	Runtime                  string
+	Source                   string
+	Owner                    string
+	Authority                string
+	Provisioning             string
+	Fields                   []FieldModel
+	Links                    []LinkModel
+	Graph                    *GraphDetailModel
+	Queue                    *QueueDetailModel
+	Credential               *CredentialDetailModel
+	Loop                     *LoopDetailModel
+	Agent                    *AgentDetailModel
 }
 
 // AgentDetailModel is a structured, display-only projection of one exact

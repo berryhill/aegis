@@ -1,11 +1,18 @@
 "use strict";
 
-// Loop availability is a collection navigation, not a lifecycle mutation.
-// Submit the existing GET form so filters stay in the URL and stale detail,
-// revision and page selection are cleared. Apply remains the no-script fallback.
+// Loop availability is collection navigation, not a lifecycle mutation.
+// The GET form clears stale detail/revision/page; Apply works without scripts.
 (() => {
   const availability = document.querySelector('form[action="/console/loops"][method="get"] select[name="availability"]');
   if (!availability) return;
+  const initial = Array.from(availability.options).find(option => option.defaultSelected)?.value;
+  const restoreAvailability = () => {
+    const value = new URL(location.href).searchParams.get("availability") || "published";
+    availability.value = value === "published" || value === "archived" ? value : initial;
+  };
+  // Native history may restore a changed control after loading the server DOM.
+  // Reconcile on every pageshow, including BFCache, without submitting the form.
+  window.addEventListener("pageshow", restoreAvailability);
   availability.addEventListener("change", () => availability.form.requestSubmit());
 })();
 
