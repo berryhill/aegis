@@ -509,6 +509,11 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		return readback("runtime_version_unsupported")
 	}
 	if e = s.validateQueuedDoerAdmission(ctx, lv.Revision, agent, false); e != nil {
+		// Keep the legacy implementation admission contract outside the
+		// selected-file Doer diagnostic surface unchanged.
+		if lv.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion && lv.Revision.SchemaVersion != loop.DoerReusableSchemaVersion {
+			return readback("implementation_prerequisite_required")
+		}
 		result.blockedDoer(orchestration.DoerPrerequisiteReason(e), lv.Revision.SchemaVersion)
 		return readback(result.Reason)
 	}
