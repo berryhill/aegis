@@ -200,7 +200,7 @@ assert not errors, errors
 assert not bad_responses, bad_responses
 assert not mutations, mutations
 assert lifecycle_posts == [
-    ("POST", "/console/loops/availability", ["filter-archived"], ["published"], ["1"]),
+    ("POST", "/console/loops/availability", ["filter-archived"], ["published"], ["2"]),
     ("POST", "/console/loops/availability", ["filter-archived"], ["archived"], ["2"]),
 ], lifecycle_posts
 assert hashlib.sha256(BINARY.read_bytes()).hexdigest() == IDENTITY

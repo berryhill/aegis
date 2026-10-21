@@ -442,6 +442,15 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Loop record")
 			}
 			record = consoleLoopRecord(loopView, surface.Graphs)
+			// Availability belongs to the logical Loop, while this row retains
+			// its exact historical revision. Pin the action to the observed head
+			// before collection filtering or pagination; POST still CASes it.
+			for _, candidate := range surface.Loops {
+				if candidate.Revision.LoopID == loopView.Revision.LoopID && candidate.Revision.Revision > record.AvailabilityHeadRevision {
+					record.AvailabilityHeadRevision = candidate.Revision.Revision
+					record.AvailabilityHeadDigest = candidate.Revision.Digest
+				}
+			}
 		} else if domain == consoleGraphs {
 			graphView, ok := value.(app.GraphView)
 			if !ok {
@@ -708,6 +717,7 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
 		Availability: string(view.Availability.State), AvailabilitySequence: view.Availability.Sequence, AvailabilityDigest: view.Availability.Digest,
+		AvailabilityHeadRevision: revision.Revision, AvailabilityHeadDigest: revision.Digest,
 		Summary:   summary,
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,
