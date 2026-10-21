@@ -114,6 +114,26 @@ func (p *DoerContinuationPortal) reload(ctx context.Context, id string) (doerPen
 	if i.ConfigIdentity != p.svc.DoerContinuationConfigIdentity() || i.DeploymentID != p.svc.Config.Credentials.Authority.DeploymentID {
 		return value, app.ErrDenied
 	}
+	if i.Run.Reexecution != nil {
+		run, binding, err := p.svc.PrepareQueueRequeueAs(ctx, i.Requester, app.RequeueQueueItemInput{QueueItem: i.Run.Reexecution.PreviousQueue, IdempotencyKey: i.Run.IdempotencyKey})
+		if err != nil {
+			return value, err
+		}
+		view, err := p.svc.GetLoopViewAs(ctx, i.Requester, i.Loop.ID, i.Loop.Revision)
+		if err != nil || !reflect.DeepEqual(run, i.Run) || core.Digest(binding) != i.RequeueBinding || value.Review.Requeue == nil || !reflect.DeepEqual(binding, *value.Review.Requeue) || value.Review.Published == nil || !reflect.DeepEqual(view.Revision, *value.Review.Published) || value.Review.Digest != value.Review.ContentDigest() {
+			return value, app.ErrConflict
+		}
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		saved := p.pending[id]
+		if saved == nil || !reflect.DeepEqual(saved.Review, value.Review) {
+			return value, app.ErrConflict
+		}
+		if err := p.recoverApprovalLocked(ctx, saved); err != nil {
+			return value, err
+		}
+		return *saved, nil
+	}
 	draft, err := p.svc.ReadDoerDraftAs(ctx, i.Requester, i.DraftID)
 	if err != nil {
 		return value, err
@@ -264,6 +284,9 @@ func (p *DoerContinuationPortal) RegisterNative(g *echo.Group) {
 }
 
 func (p *DoerContinuationPortal) render(c *echo.Context, v doerPending, csrf string) error {
+	if v.Review.Intent.Run.Reexecution != nil {
+		return p.renderRequeue(c, v, csrf)
+	}
 	if v.ApprovalID != "" {
 		if _, err := p.svc.ResolveDoerContinuationAs(c.Request().Context(), v.Review.Intent.Requester, v.Review.Intent.SessionID, v.ApprovalID, v.Review.Intent); err != nil {
 			v.Status = "approval_unavailable"

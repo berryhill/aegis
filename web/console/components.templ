@@ -442,11 +442,7 @@ templ DomainCollection(surface SurfaceModel) {
 		}
 		<section class="ops-band" aria-labelledby="queue-lifecycle"><div class="band-head"><div class="band-intro"><h2 class="band-title" id="queue-lifecycle">Queue &amp; Lifecycle</h2><p class="band-sub">Every bounded submitted record and the exact lifecycle state retained by Aegis.</p></div></div>
 			if surface.Authoritative {
-				<div class="toolbar"><nav class="seg-group" aria-label="Authoritative execution states"><span class="filter-label">Lifecycle views</span><a class={ templ.KV("seg", true), templ.KV("active", surface.QueueState == "all") } href={ queueURL("all") }>All</a>
-					for _, state := range []string{"Queued", "Claimable", "Active", "Retrying", "Cancelled", "Expired", "Denied", "Failed", "Exhausted", "Succeeded"} {
-						<a class={ templ.KV("seg", true), templ.KV("active", surface.QueueState == strings.ToLower(state)) } href={ queueURL(strings.ToLower(state)) }>{ state }</a>
-					}
-				</nav>@CollectionCount(surface, "execution")</div>
+				@QueueHistoryFilters(surface)
 			}
 			@QueueRecordPanel(surface, surface.Records)
 		</section>
@@ -471,7 +467,7 @@ templ QueueBand(surface SurfaceModel, id, title, description string, records []R
 templ QueueRecordPanel(surface SurfaceModel, records []RecordModel) {
 	<div class="panel"><div class="panel-body compact"><ul class="queue-records" aria-label="Execution records">
 		for _, record := range records {
-			<li><a id={ "record-" + record.Key } class="op-row" data-state={ record.Lifecycle } href={ detailRoute(surface, record.Key) }><span><strong>{ record.Label }</strong><small>{ record.Summary }</small></span><span>{ record.Revision }</span><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>{ record.Runtime }</span></a></li>
+			<li><a id={ "record-" + record.Key } class="op-row" data-state={ record.Lifecycle } href={ detailRoute(surface, record.Key) }><span><strong>{ record.Label }</strong><small>{ record.Summary }</small></span><span>{ record.Revision }</span><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>{ record.Runtime }</span></a>@QueuePresentationActions(surface, record)</li>
 		}
 	</ul></div></div>
 }

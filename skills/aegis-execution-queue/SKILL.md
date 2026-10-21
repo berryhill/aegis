@@ -101,6 +101,20 @@ Retry is a controller decision that returns one claimed item to queued availabil
 
 After mutation, read back the exact cancellation record, transition, projection, Graph and Loop execution states, and disposition where present. Terminal replay, mismatched reason, stale authority, incompatible state, or conflicting operation identity denies. Terminal history remains reconstructable and must not be deleted, relabeled, or retried.
 
+## Queue presentation and exact requeue transports
+
+Authenticated Console forms use `POST /console/queue/preferences` and exact
+`POST /console/queue/:item/archive`, `/unarchive`, `/requeue`, `/requeue-review`
+registrations. JSON adapters use `GET|PUT /v1/queue/preferences` and
+`POST /v1/queue/:item/archive`, `/unarchive`, `/requeue`. Archive visibility and
+saved lifecycle defaults are principal-scoped presentation metadata, not execution
+authority. Archive/unarchive preserve canonical terminal history and require exact
+item digest, ownership and revision CAS. Requeue preserves immutable pins and
+cumulative budget, creates a linked successor only after fresh admission, and
+retains independent-setup requirements. Console authentication and review do not
+grant runtime authority. Inspect the returned durable execution, not HTTP success.
+The structural operation matrix inventories these routes; it is not live proof.
+
 ## Denial and interruption recovery
 
 Preserve Aegis's exact denied, unavailable, conflict, not-found, corrupt, lease-not-expired, attempt-budget-exhausted, dependency-gated, unsupported-shape, repair-required, runtime, evidence, or terminal result. An authenticated empty list is valid; unavailable or corrupt persistence is not an empty Queue.

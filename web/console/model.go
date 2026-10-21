@@ -92,30 +92,31 @@ type AuthenticationModel struct {
 }
 
 type SurfaceModel struct {
-	Domain        string
-	CSRF          string
-	LoopRunKey    string
-	Availability  string
-	Title         string
-	Eyebrow       string
-	Description   string
-	State         string
-	Status        string
-	Source        string
-	ReasonCode    string
-	Authoritative bool
-	TotalCount    int
-	Query         string
-	Lifecycle     string
-	QueueState    string
-	TotalRecords  int
-	Actions       []ActionModel
-	Records       []RecordModel
-	ActiveRecords []RecordModel
-	FailedRecords []RecordModel
-	QueueStates   []string
-	Inspector     *RecordModel
-	InspectorOpen bool
+	QueueVisibility, QueuePreferenceRevision string
+	Domain                                   string
+	CSRF                                     string
+	LoopRunKey                               string
+	Availability                             string
+	Title                                    string
+	Eyebrow                                  string
+	Description                              string
+	State                                    string
+	Status                                   string
+	Source                                   string
+	ReasonCode                               string
+	Authoritative                            bool
+	TotalCount                               int
+	Query                                    string
+	Lifecycle                                string
+	QueueState                               string
+	TotalRecords                             int
+	Actions                                  []ActionModel
+	Records                                  []RecordModel
+	ActiveRecords                            []RecordModel
+	FailedRecords                            []RecordModel
+	QueueStates                              []string
+	Inspector                                *RecordModel
+	InspectorOpen                            bool
 	// CollectionURL is the server-rendered return location for the current
 	// bounded collection context. It contains presentation-only filters and
 	// pagination, never identity or authority inputs.
@@ -152,6 +153,7 @@ type ActionModel struct {
 }
 
 type RecordModel struct {
+	QueueActions             *QueueActionsModel
 	Availability             string
 	AvailabilitySequence     uint64
 	AvailabilityDigest       string

@@ -80,6 +80,7 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 			</section>
 		}
 		<section class="queue-admission" aria-label="Execution identity, lifecycle, and authority admission">
+   @QueuePresentationActions(surface, *record)
 			<p>This page reconstructs the exact pinned Graph revision from the queue snapshot binding. It never substitutes current catalogue topology in place of the pinned snapshot.</p>
 			<p>Artifact, receipt, and process-exit signals are not upgraded into terminal success. Only the authoritative terminal disposition or its absence can carry terminal state.</p>
 			if record.Queue.CycleWarning != "" {

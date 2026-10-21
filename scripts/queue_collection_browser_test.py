@@ -29,7 +29,7 @@ def snapshot(browser):
       return {active:band('active-executions'),failed:band('failed-executions'),
               lifecycle:band('queue-lifecycle'),
               state:new URL(location.href).searchParams.get('state')||'all',
-              selected:document.querySelector('section[aria-labelledby="queue-lifecycle"] a.seg.active')?.textContent.trim(),
+              selected:document.querySelector('section[aria-labelledby="queue-lifecycle"] select[name="state"]')?.value,
               emptyMessage:document.querySelector('[data-state="empty"] strong')?.textContent.trim()||'',
               url:location.href};
     })()""")
@@ -87,7 +87,8 @@ def main():
                 driver.click(browser, "#session-form button[type=submit]")
                 driver.wait_for(browser, "document.readyState === 'complete' && !!document.querySelector('#logout')", "authenticated collection")
                 time.sleep(1)
-                driver.navigate(browser, origin + "/console/queue#/queue")
+                # Saved/new defaults are deliberately not the all-record fixture.
+                driver.navigate(browser, origin + "/console/queue?state=all&visibility=all#/queue")
                 driver.wait_for(browser, "!!document.querySelector('#queue-lifecycle')", "Queue collection")
                 baseline = snapshot(browser)["lifecycle"]["ids"]
                 driver.require(len(baseline) == 21, "unexpected baseline fixture")
@@ -95,15 +96,21 @@ def main():
                 history = []
                 for state in (["succeeded"] if EMPTY else STATES):
                     time.sleep(1)  # Respect production rate limiting.
-                    selector = 'section[aria-labelledby="queue-lifecycle"] a.seg'
-                    selector += ':not([href*="state="])' if state == "all" else '[href*="state=' + state + '"]'
-                    if state == "queued":
-                        browser.evaluate("document.querySelector(" + json.dumps(selector) + ").focus()")
-                        driver.require(browser.evaluate("document.activeElement.matches(" + json.dumps(selector) + ")"), "lifecycle keyboard focus failed")
+                    selector = 'section[aria-labelledby="queue-lifecycle"] select[name="state"]'
+                    browser.evaluate("document.querySelector(" + json.dumps(selector) + ").focus()")
+                    # Native select keyboard input, not scripted value assignment.
+                    for key, code in [("Home", 36)] + [("ArrowDown", 40)] * STATES.index(state):
                         for event_type in ("rawKeyDown", "keyUp"):
-                            browser.command("Input.dispatchKeyEvent", {"type": event_type, "key": "Enter", "code": "Enter", "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
+                            browser.command("Input.dispatchKeyEvent", {"type": event_type, "key": key, "code": key, "windowsVirtualKeyCode": code, "nativeVirtualKeyCode": code})
+                    driver.require(browser.evaluate("document.querySelector(" + json.dumps(selector) + ").value") == state, "native lifecycle selection failed")
+                    submit = 'form[aria-label="Filter Queue history"] button[type="submit"]'
+                    if state == "queued":
+                        browser.evaluate("document.querySelector(" + json.dumps(submit) + ").focus()")
+                        driver.require(browser.evaluate("document.activeElement.matches(" + json.dumps(submit) + ")"), "lifecycle keyboard focus failed")
+                        for event_type in ("rawKeyDown", "keyUp"):
+                            browser.command("Input.dispatchKeyEvent", {"type": "keyDown" if event_type == "rawKeyDown" else event_type, "key": "Enter", "code": "Enter", "text": "\r" if event_type == "rawKeyDown" else "", "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13})
                     else:
-                        driver.click(browser, selector)
+                        driver.click(browser, submit)
                     checked.append({"phase": "keyboard" if state == "queued" else "click", **verify(browser, state, baseline)})
                     history.append(state)
                     time.sleep(1)

@@ -1,5 +1,25 @@
 "use strict";
 
+// Native history can restore edited controls over the server's selected values.
+// Reconcile Queue presentation only; never issue a mutation or save defaults.
+(() => {
+  const form = document.querySelector('form[aria-label="Filter Queue history"]');
+  if (!form) return;
+  const defaults = {};
+  for (const name of ["state", "visibility"]) {
+    const select = form.elements.namedItem(name);
+    defaults[name] = Array.from(select.options).find(option => option.defaultSelected)?.value;
+  }
+  window.addEventListener("pageshow", () => {
+    const query = new URL(location.href).searchParams;
+    for (const name of ["state", "visibility"]) {
+      const select = form.elements.namedItem(name);
+      const value = query.get(name) || defaults[name];
+      if (Array.from(select.options).some(option => option.value === value)) select.value = value;
+    }
+  });
+})();
+
 // Loop availability is collection navigation, not a lifecycle mutation.
 // The GET form clears stale detail/revision/page; Apply works without scripts.
 (() => {

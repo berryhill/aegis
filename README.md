@@ -13,6 +13,8 @@ exact CLI/API inputs, Console actions, preserved pinned history and adapter limi
 
 The authenticated Queue detail includes a read-only [execution debugger](docs/EXECUTION_DEBUGGER.md) for exact pinned Loop control flow and Graph-node drill-down, with live following and historical replay.
 
+Queue Requeue preserves failed direct Doer pins, inputs and the remaining cumulative implementation budget; it requires fresh execution authentication. Console password login is not local-OS execution authentication. Queue history offers **Review exact Requeue continuation**, which reconstructs the predecessor, disposition, immutable published contract, inputs, checkpoint and consumed/remaining budget without reserving a successor. The existing independent native companion authenticates the human and reviews this browser-session-bound exact intent; only its signed original SO_PEERCRED executor can continue the matching Requeue. Ordinary retained-draft Run approval cannot authorize Requeue. Provisioning, host-write, provider and session prerequisites remain separate gates. Without genuine native approval, direct password POST still reports `independent_setup_required` without successor reservation. Source fixtures exercise supported success and exhaustion with an explicitly mocked human-confirmation boundary and synthetic runtime; they are not live human/provider acceptance.
+
 Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

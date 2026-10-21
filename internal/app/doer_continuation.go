@@ -20,6 +20,7 @@ import (
 var ErrDoerContinuationUnavailable = errors.New("Doer canonical signed continuation custody unavailable")
 
 type DoerContinuationIntent struct {
+	RequeueBinding  string `json:"requeue_binding,omitempty"`
 	DraftID         string
 	DraftVersion    uint64
 	CandidateDigest string
@@ -194,7 +195,7 @@ func (s *Service) QueueDoerContinuationAs(ctx context.Context, requester core.Su
 func (s *Service) DoerContinuationConfigIdentity() string { return core.Digest(s.Config) }
 
 func continuationIntent(i DoerContinuationIntent) continuation.Intent {
-	return continuation.Intent{DraftID: i.DraftID, DraftVersion: i.DraftVersion, CandidateDigest: i.CandidateDigest, Agent: i.Agent, Loop: i.Loop, Charter: i.Charter, PublicationKey: i.PublicationKey, Run: continuation.Run(i.Run), Requester: i.Requester, SessionID: i.SessionID, DeploymentID: i.DeploymentID, ConfigIdentity: i.ConfigIdentity, ExpiresAt: i.ExpiresAt}
+	return continuation.Intent{RequeueBinding: i.RequeueBinding, DraftID: i.DraftID, DraftVersion: i.DraftVersion, CandidateDigest: i.CandidateDigest, Agent: i.Agent, Loop: i.Loop, Charter: i.Charter, PublicationKey: i.PublicationKey, Run: continuation.Run(i.Run), Requester: i.Requester, SessionID: i.SessionID, DeploymentID: i.DeploymentID, ConfigIdentity: i.ConfigIdentity, ExpiresAt: i.ExpiresAt}
 }
 
 func (s *Service) doerContinuationSelection(ctx context.Context, executor core.Subject, i DoerContinuationIntent) (string, error) {
@@ -240,6 +241,26 @@ func (s *Service) validateDoerContinuationIntent(ctx context.Context, requester 
 		return ErrExpired
 	}
 	if intent.Agent.Validate() != nil || intent.Loop.Validate() != nil || intent.Charter.Validate() != nil || intent.Run.IdempotencyKey == "" || len(intent.Run.IdempotencyKey) > 256 || intent.Run.Agent != intent.Agent || intent.Run.Loop != intent.Loop {
+		return ErrDenied
+	}
+	if intent.Run.Reexecution != nil {
+		if intent.DraftID != "" || intent.DraftVersion != 0 || intent.PublicationKey != "" || intent.CandidateDigest != intent.Loop.Digest || intent.RequeueBinding == "" {
+			return ErrDenied
+		}
+		run, binding, err := s.PrepareQueueRequeueAs(ctx, requester, RequeueQueueItemInput{QueueItem: intent.Run.Reexecution.PreviousQueue, IdempotencyKey: intent.Run.IdempotencyKey})
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(run, intent.Run) || core.Digest(binding) != intent.RequeueBinding {
+			return ErrConflict
+		}
+		agent, err := s.FleetRepository.GetAgentRevision(ctx, intent.Agent.ID, intent.Agent.Revision)
+		if err != nil || agent.Digest != intent.Agent.Digest || agent.Charter != intent.Charter {
+			return ErrDenied
+		}
+		return nil
+	}
+	if intent.RequeueBinding != "" {
 		return ErrDenied
 	}
 	draft, err := s.ReadDoerDraftAs(ctx, requester, intent.DraftID)

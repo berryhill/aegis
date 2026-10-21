@@ -75,9 +75,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		recovery = nil
 	}
 	svc := apiService(t)
-	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {
-		svc.Config.Principal.AuthTTL = 10 * time.Second
-	}
+
 	if len(recovery) > 0 && recovery[0] == "legacy" {
 		svc.Authority = &legacyEmptyMandateRepository{AuthorityRepository: svc.Authority}
 	}
@@ -86,7 +84,16 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	// the prerequisite denial is checked; no live provider is exercised.
 	svc.Config.Implementation.GoBinary = "/fixture/unconfigured-go"
 	configureAPIFleet(t, svc)
-	if reusable && os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1" {
+	// Keep this synthetic fixture independent of an installed host Laya runtime.
+	// The explicit controller has no decision helper until fixture setup below.
+	if err := svc.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: svc.Config.HermesExecutable}, svc.Config.StateDir, svc.Hermes); err != nil {
+		t.Fatal(err)
+	}
+	resultBrowser := reusable && os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1"
+	requeueBrowser := len(recovery) > 0 && recovery[0] == "linked-requeue-console-mismatched-authentication" && os.Getenv("AEGIS_QUEUE_REQUEUE_BROWSER_TEST") == "1"
+	// One fixture owns Serve and its transport lease. Browser helpers attach
+	// to this listener; they must never start another server on these stores.
+	if resultBrowser || requeueBrowser {
 		probe, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -105,6 +112,9 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		}
 	}()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	if resultBrowser || requeueBrowser {
+		waitFor(t, "tcp", svc.Config.API.Listen)
+	}
 	client := unixClient(svc.Config.API.UnixSocket)
 	subject, err := svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
 	if err != nil {
@@ -250,7 +260,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		expectedReason, expectedAction = "doer_runtime_unconfigured", "configure_controller_doer_runtime"
 	}
 	if pending.Reason != expectedReason || pending.RequiredAction != expectedAction || pending.RequiredCharter == nil || pending.RequiredCharter.Digest != canonical.Digest || pending.RequestID == "" || pending.QueueItemID != "" || pending.Execution != nil {
-		t.Fatalf("missing receipt advanced execution: %+v", pending)
+		t.Fatalf("missing receipt advanced execution: %+v; preparation: %+v", pending, pending.Preparation)
 	}
 	subject, err = svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
 	if err != nil {
@@ -414,6 +424,11 @@ done
 	}
 
 	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {
+		svc.Config.Principal.AuthTTL = 10 * time.Second
+		if strings.HasPrefix(recovery[0], "linked-requeue") {
+			installedPersistedRequeue(t, ctx, svc, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
+			return
+		}
 		installedLinkedReexecution(t, ctx, svc, cli, input, workspace, install, script, recovery[0] == "linked-failure")
 		return
 	}

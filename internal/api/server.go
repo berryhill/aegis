@@ -556,7 +556,17 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			}
 		}
 		if domain == consoleQueue {
-			if err = filterConsoleQueue(&model, c.QueryParam("state")); err != nil {
+			// Exact history is selected from the authorized inventory before saved
+			// presentation preferences or collection pagination hide any rows.
+			if key := c.QueryParam("record_key"); key != "" {
+				if err = selectConsoleRecord(&model, key); err != nil {
+					return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+				}
+				if state := c.QueryParam("state"); state != "" && state != "all" && state != model.Inspector.Lifecycle {
+					return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "detail outside explicit state")
+				}
+			}
+			if err = filterConsoleQueuePresentation(c.Request().Context(), svc, subject, &model, c.QueryParams()); err != nil {
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Execution Queue filter")
 			}
 		}
@@ -606,6 +616,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{}, consoleError(err)
 		}
 		model.CSRF = csrf
+		if domain == consoleQueue {
+			applyConsoleQueuePresentation(c.Request().Context(), svc, subject, &model)
+		}
 
 		if model.CollectionURL == "" {
 			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
@@ -634,8 +647,10 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 				return err
 			}
 			if recordKey := c.QueryParam("record_key"); recordKey != "" && domain != consoleAgents {
-				if err = selectConsoleRecord(&model.Surface, recordKey); err != nil {
-					return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+				if model.Surface.Inspector == nil || model.Surface.Inspector.Key != recordKey {
+					if err = selectConsoleRecord(&model.Surface, recordKey); err != nil {
+						return echo.NewHTTPError(http.StatusBadRequest, "invalid console record")
+					}
 				}
 			}
 			if domain == consoleQueue && c.QueryParam("record_key") != "" && model.Surface.Inspector != nil && model.Surface.Inspector.Queue != nil {
@@ -1344,6 +1359,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.JSON(http.StatusOK, debuggerPresentation(debugger))
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
+	registerConsoleQueuePresentation(e, svc, consoleManager, doerPortal)
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
 	e.POST("/console/loops/availability", consoleLoopAvailabilityHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
@@ -1653,6 +1669,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	e.POST("/console/logout", logout)
 	g := e.Group("/v1")
 	g.Use(protected)
+	registerQueuePresentationHTTP(g, svc)
 	doerPortal.RegisterNative(g)
 	g.POST("/manager/sessions", func(c *echo.Context) error {
 		subject, err := requestSubject(c)

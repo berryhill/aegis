@@ -33,6 +33,7 @@ type Run struct {
 }
 
 type Intent struct {
+	RequeueBinding  string                `json:"requeue_binding,omitempty"`
 	DraftID         string                `json:"draft_id"`
 	DraftVersion    uint64                `json:"draft_version"`
 	CandidateDigest string                `json:"candidate_digest"`
@@ -77,7 +78,7 @@ func Payload(a Approval) ([]byte, error) {
 	if i.Requester.Kind != "principal" || i.Requester.Method != "password" || i.Requester.Issuer != "aegis-principal-auth" || a.Executor.Kind != "human" || a.Executor.Method != "local-os" || a.Executor.Issuer != "linux-so-peercred" {
 		return nil, ErrInvalid
 	}
-	if a.Purpose != Purpose || a.ID != StableID(i) || a.StanzaID == "" || i.DraftID == "" || i.DraftVersion == 0 || i.PublicationKey == "" || i.SessionID == "" || i.DeploymentID == "" || i.ConfigIdentity == "" || i.Agent.Validate() != nil || i.Loop.Validate() != nil || i.Charter.Validate() != nil || i.CandidateDigest != i.Loop.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || len(i.Run.IdempotencyKey) > 256 || !subjectValid(i.Requester) || !subjectValid(a.Executor) || i.Requester.PrincipalID != a.Executor.PrincipalID || !i.Requester.AuthenticatedAt.Before(i.ExpiresAt) || !a.Executor.AuthenticatedAt.Before(i.ExpiresAt) || i.ExpiresAt.After(i.Requester.ExpiresAt) || i.ExpiresAt.After(a.Executor.ExpiresAt) {
+	if a.Purpose != Purpose || a.ID != StableID(i) || a.StanzaID == "" || !validSource(i) || i.SessionID == "" || i.DeploymentID == "" || i.ConfigIdentity == "" || i.Agent.Validate() != nil || i.Loop.Validate() != nil || i.Charter.Validate() != nil || i.CandidateDigest != i.Loop.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || len(i.Run.IdempotencyKey) > 256 || !subjectValid(i.Requester) || !subjectValid(a.Executor) || i.Requester.PrincipalID != a.Executor.PrincipalID || !i.Requester.AuthenticatedAt.Before(i.ExpiresAt) || !a.Executor.AuthenticatedAt.Before(i.ExpiresAt) || i.ExpiresAt.After(i.Requester.ExpiresAt) || i.ExpiresAt.After(a.Executor.ExpiresAt) {
 		return nil, ErrInvalid
 	}
 	key, e := base64.StdEncoding.DecodeString(a.PublicKey)
