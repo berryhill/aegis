@@ -47,6 +47,9 @@ func (s *Store) hostApprovalKey(create bool) (ed25519.PrivateKey, error) {
 	}
 	fd, e := syscall.Open(name, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if e != nil {
+		if errors.Is(e, os.ErrNotExist) {
+			return nil, hostapproval.ErrAbsent
+		}
 		return nil, hostapproval.ErrDenied
 	}
 	f := os.NewFile(uintptr(fd), name)
@@ -279,7 +282,7 @@ func (s *Store) loadDoerHostApproval(deployment, owner string, agent hostapprova
 		return e
 	}
 	if len(history) == 0 {
-		return hostapproval.ErrDenied
+		return hostapproval.ErrAbsent
 	}
 	current := history[len(history)-1]
 	if e = hostapproval.Verify(current, key.Public().(ed25519.PublicKey), deployment, owner, agent, c, now); e != nil {

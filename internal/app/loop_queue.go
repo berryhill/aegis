@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
+
 	"errors"
 	"os"
-	"sort"
+
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -32,6 +32,7 @@ type QueueLoopInput struct {
 	Inputs         []graph.NormalizedInput `json:"inputs,omitempty"`
 }
 type QueueLoopResult struct {
+	Readiness   *DoerCandidateReadiness `json:"readiness,omitempty"`
 	Reexecution *LoopReexecutionFact    `json:"reexecution,omitempty"`
 	Preparation *sessionPreparationFact `json:"preparation,omitempty"`
 	Rejection   *queue.Rejection        `json:"rejection,omitempty"`
@@ -51,10 +52,31 @@ type QueueLoopResult struct {
 	RequiredAction string `json:"required_action,omitempty"`
 }
 
-func (r *QueueLoopResult) blockedDoer(reason string) {
+func (r *QueueLoopResult) blockedDoer(reason string, schema ...string) {
+	priorReason, priorAction := r.Reason, r.RequiredAction
 	r.Reason = reason
+	r.RequiredAction = ""
+	if len(schema) == 0 && priorReason == reason && priorAction != "" {
+		r.RequiredAction = priorAction
+		return
+	}
+	if r.Readiness != nil && r.Readiness.Reason == reason {
+		r.RequiredAction = r.Readiness.RequiredAction
+		return
+	}
 	switch reason {
-	case "doer_runtime_unconfigured":
+	case "doer_host_approval_required", "doer_host_approval_absent", "doer_host_approval_invalid", "doer_host_approval_expired":
+		r.RequiredAction = "review_exact_host_write_contract"
+		if len(schema) > 0 && schema[0] == loop.DoerReusableSchemaVersion {
+			r.RequiredAction = "exact_v5_host_review_adapter_unavailable"
+		}
+	case "doer_unsafe_workspace":
+		r.RequiredAction = "review_exact_workspace_scope"
+	case "doer_go_executable_untrusted", "doer_laya_executable_untrusted", "doer_laya_home_untrusted", "local_laya_unavailable":
+		r.RequiredAction = "review_controller_dependency_integrity"
+	case "doer_prerequisite_unavailable", "doer_runtime_unqualified", "doer_check_cancelled":
+		r.RequiredAction = "controller_diagnostic_adapter_unavailable"
+	case "doer_controller_unavailable", "doer_runtime_unconfigured":
 		r.RequiredAction = "configure_controller_doer_runtime"
 	case "provisioning_receipt_missing":
 		r.RequiredAction = "plan_preview_exact_charter"
@@ -137,25 +159,10 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	sum := sha256.Sum256([]byte(subject.PrincipalID + "\x00" + input.IdempotencyKey))
 	key := "loopq-" + hex.EncodeToString(sum[:16])
 	result.RequestID = key
-	input.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
-	for i := range input.Inputs {
-		valueWire, err := graph.CanonicalInputJSON(input.Inputs[i].Value)
-		if err != nil {
-			return result, err
-		}
-		input.Inputs[i].Value = valueWire
+	input, identity, normalizeErr := normalizeLoopRunIdentity(input)
+	if normalizeErr != nil {
+		return result, normalizeErr
 	}
-	sort.Slice(input.Inputs, func(i, j int) bool { return input.Inputs[i].PortID < input.Inputs[j].PortID })
-	// queue_item_id is a recovery selector, not part of the requested work.
-	// It may be added only for this key's exact accepted Queue item.
-	identityInput := input
-	identityInput.QueueItemID = ""
-	wire, marshalErr := json.Marshal(identityInput)
-	if marshalErr != nil {
-		return result, marshalErr
-	}
-	payload := sha256.Sum256(wire)
-	identity := hex.EncodeToString(payload[:])
 	result.QueueItemID = key + "-queue"
 	lv, e := s.GetLoopViewAs(ctx, subject, input.Loop.ID, input.Loop.Revision)
 	if e != nil {
@@ -166,25 +173,11 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	}
 	// Bind the exact direct snapshot before preparation, retaining the canonical
 	// v5 definition and references. Binding grants no host or runtime authority.
-	if lv.Revision.SchemaVersion == loop.DoerReusableSchemaVersion {
-		node := graph.Node{ID: "loop-" + identity, Participant: input.Agent, Loop: input.Loop}
-		for _, p := range lv.Revision.Inputs {
-			node.Inputs = append(node.Inputs, graph.Port{ID: p.ID, Type: graph.ValueType(p.Type), Required: p.Required})
-		}
-		direct, bindErr := graph.NewDirectLoopSnapshot(key+"-snapshot", node, input.Inputs)
-		if bindErr != nil {
-			return result, ErrDenied
-		}
-		snapshot, bindErr := graph.NewDirectRunSnapshot(direct)
-		if bindErr != nil {
-			return result, ErrDenied
-		}
-		contract, bindErr := orchestration.BindDirectDoerContract(lv.Revision, node, snapshot)
-		if bindErr != nil {
-			return result, ErrDenied
-		}
-		ctx = context.WithValue(ctx, boundDoerRunKey{}, boundDoerRun{candidate: input.Loop, contract: contract})
+	ctx, e = bindDoerRun(ctx, input, lv.Revision)
+	if e != nil {
+		return result, e
 	}
+
 	if input.Reexecution != nil {
 		result.Reexecution, e = s.sealLoopReexecution(ctx, subject, input, key, identity, lv.Revision)
 		if e != nil {
@@ -255,7 +248,7 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 			result.RequiredCharter = &agent.Charter
 		}
 		ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop})
-		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
+		if reason, preflightErr := s.preflightDoerQueueResult(ctx, subject, input, lv, &result); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
 			result.blockedDoer(reason)
@@ -365,7 +358,7 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	// not requested. An actual v4 activation or run must preflight before any
 	// lifecycle, Graph, Queue, or runtime-preparation mutation.
 	if input.Activate || (lv.Lifecycle.State == loop.LifecycleActive && lv.Lifecycle.ActiveDigest == input.Loop.Digest) {
-		if reason, preflightErr := s.preflightDoerQueue(ctx, subject, input, lv); preflightErr != nil {
+		if reason, preflightErr := s.preflightDoerQueueResult(ctx, subject, input, lv, &result); preflightErr != nil {
 			return result, preflightErr
 		} else if reason != "" {
 			if result.Execution != nil {
@@ -426,6 +419,9 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 // v4 execution mutation. It neither issues a mandate nor grants host writes;
 // runtime and effect admission repeat their independent checks.
 func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, input QueueLoopInput, view LoopView) (string, error) {
+	return s.preflightDoerQueueResult(ctx, subject, input, view, nil)
+}
+func (s *Service) preflightDoerQueueResult(ctx context.Context, subject core.Subject, input QueueLoopInput, view LoopView, result *QueueLoopResult) (string, error) {
 	if view.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion && view.Revision.SchemaVersion != loop.DoerReusableSchemaVersion {
 		return "", nil
 	}
@@ -437,6 +433,17 @@ func (s *Service) preflightDoerQueue(ctx context.Context, subject core.Subject, 
 		return "", ErrDenied
 	}
 	readiness := newDoerReadiness()
+	readiness.Subject = DoerPrerequisiteStatus{State: "ready"}
+	readiness.AgentReference = DoerPrerequisiteStatus{State: "ready"}
+	readiness.CanonicalCandidate = DoerPrerequisiteStatus{State: "ready"}
+	readiness.Agent, readiness.Candidate = input.Agent, input.Loop
+	if contract, e := queuedDoerContract(ctx, view.Revision); e == nil {
+		readiness.ContractDigest, _ = contract.Digest()
+	}
+	if result != nil {
+		result.Readiness = &readiness
+		readiness.RequestID = result.RequestID
+	}
 	s.checkDoerExecutionReadiness(ctx, subject, view.Revision, agent, true, &readiness)
 	return readiness.Reason, nil
 }
@@ -473,6 +480,7 @@ func (s *Service) queueLoopBlockedReadback(ctx context.Context, subject core.Sub
 func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, input QueueLoopInput, lv LoopView, result QueueLoopResult, key string, work **orchestration.WorkRequest) (QueueLoopResult, error) {
 	ctx = context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: queueLoopRequestID(subject, input), candidate: input.Loop})
 	readback := func(reason string) (QueueLoopResult, error) {
+		result.blockedDoer(reason, lv.Revision.SchemaVersion)
 		return s.queueLoopBlockedReadback(ctx, subject, result, reason)
 	}
 	agent, e := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
@@ -501,7 +509,8 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 		return readback("runtime_version_unsupported")
 	}
 	if e = s.validateQueuedDoerAdmission(ctx, lv.Revision, agent, false); e != nil {
-		return readback("implementation_prerequisite_required")
+		result.blockedDoer(orchestration.DoerPrerequisiteReason(e), lv.Revision.SchemaVersion)
+		return readback(result.Reason)
 	}
 	authority, e := s.fleetCommandAuthorityForAgent(ctx, subject, &agent)
 	reservation := sha256.Sum256([]byte(subject.ID + "\x00" + agent.Digest))

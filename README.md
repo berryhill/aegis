@@ -1,5 +1,7 @@
 # Aegis
 
+See [Doer Loop readiness](docs/DOER_LOOP.md) for exact reusable Run diagnostics and independent review boundaries. Readiness is observation, not authorization.
+
 Agents can run one reusable Doer Loop with different task inputs and retrieve
 the exact verified result through typed `loops queue` and `queue result` calls.
 See [the bounded task-to-result workflow](docs/REUSABLE_DOER.md). Existing exact

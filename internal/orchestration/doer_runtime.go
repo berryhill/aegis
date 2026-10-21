@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/berryhill/aegis/internal/hostapproval"
 	"path/filepath"
 	"time"
 
@@ -45,11 +46,17 @@ func (w *QueueWorker) SetDoerPassCapResolver(resolve func(context.Context, loop.
 	w.doerPassCap = resolve
 }
 func (w *QueueWorker) authorizeDoer(ctx context.Context, c loop.DoerContract, a registry.AgentRevision) error {
-	if ctx == nil || ctx.Err() != nil {
-		return ErrDoerHostApprovalRequired
+	if ctx == nil {
+		return ErrDoerControllerUnavailable
 	}
-	if w.implementation == nil || a.Runtime.Adapter != "hermes" || a.Runtime.Runtime != "hermes-agent" {
-		return ErrDoerHostApprovalRequired
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if w == nil || w.implementation == nil {
+		return ErrDoerControllerUnavailable
+	}
+	if a.Runtime.Adapter != "hermes" || a.Runtime.Runtime != "hermes-agent" {
+		return ErrDoerRuntimeUnqualified
 	}
 	if ValidateDoerProtectedWorkspace(c, w.effectiveDoerProtectedPaths()) != nil {
 		return ErrDoerUnsafeWorkspace
@@ -57,8 +64,12 @@ func (w *QueueWorker) authorizeDoer(ctx context.Context, c loop.DoerContract, a 
 	if w.implementation.authorizeDoer(c, a) == nil {
 		return nil
 	}
-	if w.doerHostApproval != nil && w.doerHostApproval(ctx, c, a) == nil {
-		return nil
+	if w.doerHostApproval != nil {
+		err := w.doerHostApproval(ctx, c, a)
+		if errors.Is(err, hostapproval.ErrDenied) {
+			return errors.Join(ErrDoerHostApprovalRequired, err)
+		}
+		return err
 	}
 	return ErrDoerHostApprovalRequired
 }

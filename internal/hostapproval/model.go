@@ -45,6 +45,10 @@ func Decode(raw []byte) (Record, error) {
 
 var ErrDenied = errors.New("exact Doer host-write approval absent or invalid")
 
+// These closed custody causes retain the existing denial identity.
+var ErrAbsent = errors.Join(ErrDenied, errors.New("doer_host_approval_absent"))
+var ErrExpired = errors.Join(ErrDenied, errors.New("doer_host_approval_expired"))
+
 type Record struct {
 	Purpose        string                `json:"purpose"`
 	DeploymentID   string                `json:"deployment_id"`
@@ -115,8 +119,11 @@ func Sign(r Record, key ed25519.PrivateKey) (Record, error) {
 func Verify(r Record, key ed25519.PublicKey, deployment, owner string, agent reference.RevisionRef, contract loop.DoerContract, now time.Time) error {
 	d, e := contract.Digest()
 	b, ce := r.canonical()
-	if e != nil || ce != nil || len(key) != ed25519.PublicKeySize || r.KeyID != KeyID(key) || r.DeploymentID != deployment || r.OwnerID != owner || r.Agent != agent || r.ContractDigest != d || now.Before(r.ApprovedAt) || !now.Before(r.ExpiresAt) || !ed25519.Verify(key, b, r.Signature) {
+	if e != nil || ce != nil || len(key) != ed25519.PublicKeySize || r.KeyID != KeyID(key) || r.DeploymentID != deployment || r.OwnerID != owner || r.Agent != agent || r.ContractDigest != d || now.Before(r.ApprovedAt) || !ed25519.Verify(key, b, r.Signature) {
 		return ErrDenied
+	}
+	if !now.Before(r.ExpiresAt) {
+		return ErrExpired
 	}
 	return nil
 }

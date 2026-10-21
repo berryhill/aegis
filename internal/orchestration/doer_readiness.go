@@ -16,7 +16,7 @@ import (
 // capability from missing operator authority. It neither grants nor installs.
 func (w *QueueWorker) ValidateDoerRuntimeCapability() error {
 	if w == nil || w.implementation == nil || w.implementation.adapter == nil || w.implementation.decision == nil {
-		return errors.New("doer_runtime_unconfigured")
+		return ErrDoerControllerUnavailable
 	}
 	return nil
 }
@@ -65,34 +65,40 @@ func (w *QueueWorker) validateDoerReadiness(ctx context.Context, value loop.Loop
 // ValidateDoerContractReadiness repeats the existing checks on an exact bound
 // contract, without changing its canonical reusable Loop definition.
 func (w *QueueWorker) ValidateDoerContractReadiness(ctx context.Context, contract loop.DoerContract, agent registry.AgentRevision, probe bool) error {
-	if w == nil || w.implementation == nil || w.authorizeDoer(ctx, contract, agent) != nil {
-		return ErrDoerHostApprovalRequired
+	if w == nil || w.implementation == nil {
+		return ErrDoerControllerUnavailable
+	}
+	if err := w.authorizeDoer(ctx, contract, agent); err != nil {
+		return err
 	}
 	c := w.implementation
 	if c.adapter == nil || c.decision == nil || c.decision.process == nil || c.root == "" || c.config.LayaPython == "" || c.config.LayaHome == "" {
-		return ErrLocalLayaUnavailable
+		return ErrDoerControllerUnavailable
 	}
 	// Selected-file Doer never executes the native Go checker.
 	if !c.managedLocalDoer || c.config.GoBinary != "" {
 		if err := trustedExecutable(c.config.GoBinary); err != nil {
-			return err
+			return ErrDoerGoIntegrity
 		}
 	}
 	if err := trustedLayaExecutable(c.config.LayaPython); err != nil {
-		return errors.New("local Laya executable unavailable")
+		return ErrDoerLayaIntegrity
 	}
 	if !filepath.IsAbs(c.config.LayaHome) || filepath.Clean(c.config.LayaHome) != c.config.LayaHome || c.config.LayaHome == "/" {
-		return errors.New("private Laya home required")
+		return ErrDoerHomeIntegrity
 	}
 	home, err := os.Lstat(c.config.LayaHome)
 	if err != nil || !home.IsDir() || home.Mode().Perm()&0077 != 0 {
-		return errors.New("private Laya home unavailable")
+		return ErrDoerHomeIntegrity
 	}
 	if err := ValidateDoerHostWorkspace(contract); err != nil {
 		return err
 	}
 	if probe {
 		if _, err := c.decision.Gate(ctx, contract.Task); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return ErrLocalLayaUnavailable
 		}
 	}

@@ -325,7 +325,7 @@ esac
 		unapproved.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
 		unapproved.Inputs[0].Value = json.RawMessage(`"Different unapproved task"`)
 		denied, err := cli.queue(unapproved)
-		if err != nil || denied.Reason != "implementation_prerequisite_required" || denied.QueueItemID != "" || denied.Execution != nil {
+		if err != nil || denied.Reason != "doer_host_approval_absent" || denied.RequiredAction != "exact_v5_host_review_adapter_unavailable" || denied.Readiness == nil || denied.Readiness.Controller.State != "blocked" || denied.Readiness.Helper.State != "not_checked" || denied.QueueItemID != "" || denied.Execution != nil {
 			t.Fatalf("unapproved task admitted: %+v %v", denied, err)
 		}
 		var items []app.QueueExecutionView

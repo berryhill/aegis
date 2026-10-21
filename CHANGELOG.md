@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+Doer readiness now preserves supported v4 exact host-review remediation versus explicit v5 adapter unavailability, rejects mixed/partial/null forms before effects, and returns closed ordered prerequisite causes for the exact Run binding.
+
 ### Added
 
 - Agent-first reusable v5 direct Run through typed `loops queue` with exact normalized task/configuration binding and preauthorized contract digests, without republishing or Graph publication. Add owner-authorized `queue result` / `GET /v1/queue/:item/result` and selected authenticated Queue-detail inspection of named task, stored verified content, exact evidence references, enqueue-to-disposition elapsed provenance and explicit unavailable usage. No generic blob/path read, new human launch form, authority broadening or live-provider qualification. See [reusable Doer](docs/REUSABLE_DOER.md).

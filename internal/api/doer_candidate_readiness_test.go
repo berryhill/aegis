@@ -188,7 +188,7 @@ func TestDoerCandidateReadinessHelperProbeQualification(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, err = s.ReadDoerCandidateReadinessAs(ctx, subject, input)
-	if err != nil || r.Reason != "implementation_prerequisite_required" || r.Runtime.State != "ready" || r.CanExecute {
+	if err != nil || r.Reason != "doer_controller_unavailable" || r.Runtime.State != "ready" || r.CanExecute {
 		t.Fatalf("missing controller: %+v %v", r, err)
 	}
 	binary, err := exec.LookPath("go")

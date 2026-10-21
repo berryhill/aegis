@@ -2769,13 +2769,7 @@ func registerDoerServiceRoutes(g *echo.Group, svc *app.Service) {
 		if err = decode(c, &input); err != nil {
 			return err
 		}
-		candidate := app.DoerCandidateReadinessInput{Agent: input.Agent, Candidate: input.Candidate}
-		var value app.DoerCandidateReadiness
-		if input.Probe {
-			value, err = svc.ProbeDoerCandidateReadinessAs(c.Request().Context(), subject, candidate)
-		} else {
-			value, err = svc.ReadDoerCandidateReadinessAs(c.Request().Context(), subject, candidate)
-		}
+		value, err := svc.ReadDoerReadinessAs(c.Request().Context(), subject, input)
 		if err != nil {
 			return err
 		}
