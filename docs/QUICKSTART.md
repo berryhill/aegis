@@ -37,7 +37,7 @@ Protected principal prompts are operation-neutral. On Linux with terminal-backed
 ## Prerequisites
 
 - Linux
-- Go 1.26.9+
+- Go 1.26.10+
 - Stable Hermes Agent `>=0.18.0` on `PATH` (no arbitrary upper cap; exact-version protocol checks still apply, and acceptance does not guarantee future-release compatibility)
 - On Linux, a real terminal with terminal-backed stdin and diagnostic stderr for bounded no-echo protected prompts, or a compatible `pinentry` in the operator's desktop session
 
