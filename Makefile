@@ -3,7 +3,7 @@ SHELL := scripts/verify-shell.sh
 # triggers GOTOOLCHAIN=auto switching: govulncheck@v1.6.0 itself requires
 # only go 1.25+, so it builds with the older toolchain and then fails to
 # load packages that require go 1.26 (this project).
-export GOTOOLCHAIN := go1.26.9
+export GOTOOLCHAIN := go1.26.10
 # Inherited by nested Go builds as well as package tests. Explicit values win.
 override export GOFLAGS := $(if $(filter -p=% -p,$(GOFLAGS)),$(GOFLAGS),$(strip $(GOFLAGS) -p=1))
 export GOMAXPROCS ?= 2

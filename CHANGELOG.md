@@ -27,6 +27,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   Archive/Restore actions directly on collection rows with the same exact-state
   and session protections as the detail view.
 
+- Raise the development, CI and release Go toolchain floor to 1.26.10 for
+  GO-2026-6809 (crypto/x509); retain vulnerability scanning and all verification
+  and resource-budget gates without suppressions.
+
 - Isolate the measured slow updater package in its own complete normal/race CI
   shard, keeping both remainder shards, exact-once package coverage and mandatory
   evidence gates without increasing job deadlines or verification resources.

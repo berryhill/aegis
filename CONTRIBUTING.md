@@ -23,7 +23,7 @@ Source candidate: typed Doer candidate readiness and retained-draft save/read/CA
 
 ## Prerequisites
 
-- Go 1.26.9 or newer
+- Go 1.26.10 or newer
 - Stable Hermes Agent `>=0.18.0` for real adapter checks; no arbitrary upper cap. Version admission is not release qualification: run exact-version protocol/capability checks and retain the version and evidence.
 - Linux for Unix `SO_PEERCRED` API tests
 - `govulncheck` for vulnerability scanning

@@ -19,7 +19,7 @@ from scripts.verification_process import process_exited, run_owned
 class ResourceTests(unittest.TestCase):
     def test_go_toolchain_pins_match_security_floor(self):
         root = Path(__file__).resolve().parent.parent
-        version = '1.26.9'
+        version = '1.26.10'
         self.assertIn('go ' + version, (root / 'go.mod').read_text().splitlines())
         self.assertIn('export GOTOOLCHAIN := go' + version,
                       (root / 'Makefile').read_text().splitlines())
@@ -27,6 +27,12 @@ class ResourceTests(unittest.TestCase):
             with self.subTest(workflow=workflow):
                 self.assertIn('  GO_VERSION: "' + version + '"',
                               (root / '.github/workflows' / workflow).read_text().splitlines())
+        self.assertIn('  GOTOOLCHAIN: "go' + version + '"',
+                      (root / '.github/workflows/ci.yml').read_text().splitlines())
+        for document in ('README.md', 'CONTRIBUTING.md', 'docs/QUICKSTART.md',
+                         'docs/DEMO_NO_KEY.md'):
+            with self.subTest(document=document):
+                self.assertIn('Go ' + version, (root / document).read_text())
 
     def test_ci_hardens_go_before_verification(self):
         root = Path(__file__).resolve().parent.parent

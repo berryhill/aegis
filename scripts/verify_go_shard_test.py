@@ -102,7 +102,7 @@ class ShardTests(unittest.TestCase):
     def test_real_go_fixture_preserves_tests_examples_and_fuzz_seeds(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
-            (root / 'go.mod').write_text('module github.com/berryhill/aegis\n\ngo 1.26.9\n')
+            (root / 'go.mod').write_text('module github.com/berryhill/aegis\n\ngo 1.26.10\n')
             package = root / 'fixture'
             package.mkdir()
             (package / 'fixture_test.go').write_text('''package fixture
