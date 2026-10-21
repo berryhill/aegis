@@ -22,6 +22,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Apply the Loops Published/Archived selector immediately through its existing
+  read-only GET form, retaining the search query and clearing stale record,
+  revision and page selection. The Apply button remains usable without JavaScript.
+
 - Isolate the measured slow updater package in its own complete normal/race CI
   shard, keeping both remainder shards, exact-once package coverage and mandatory
   evidence gates without increasing job deadlines or verification resources.

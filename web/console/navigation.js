@@ -1,5 +1,14 @@
 "use strict";
 
+// Loop availability is a collection navigation, not a lifecycle mutation.
+// Submit the existing GET form so filters stay in the URL and stale detail,
+// revision and page selection are cleared. Apply remains the no-script fallback.
+(() => {
+  const availability = document.querySelector('form[action="/console/loops"][method="get"] select[name="availability"]');
+  if (!availability) return;
+  availability.addEventListener("change", () => availability.form.requestSubmit());
+})();
+
 // Fragments are not sent to the server. Resolve Graph bookmarks through the
 // existing authenticated read route; a record key selects only a rendered view.
 (() => {
