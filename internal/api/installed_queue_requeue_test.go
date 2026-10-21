@@ -22,6 +22,30 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// requeueStageClock models elapsed authority time, not fixture CPU/I/O latency.
+// Its stable method value is shared before any service captures it. Advance only
+// between completed execution stages, never during an admitted runtime effect.
+type requeueStageClock struct {
+	mu  sync.RWMutex
+	now time.Time
+}
+
+func newRequeueStageClock(now time.Time) *requeueStageClock {
+	return &requeueStageClock{now: now}
+}
+
+func (c *requeueStageClock) Now() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.now
+}
+
+func (c *requeueStageClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 func TestPersistedRequeueEntrypointSuccess(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true, "linked-requeue-success")
 }
@@ -45,7 +69,7 @@ func TestConsoleQueueMismatchedAuthenticationRequeue(t *testing.T) {
 // Real service, Badger, worker and verifier; synthetic tool-free runtime only.
 // Initial failure uses the existing trusted CLI fixture. Every successor request
 // calls the new authenticated service entrypoint, not QueueLoop or a helper.
-func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service, cli *installedLoopQueueClient, input app.QueueLoopInput, workspace, install, script string, secondFailure, consoleMode, mismatchedAuthentication bool) {
+func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service, clock *requeueStageClock, cli *installedLoopQueueClient, input app.QueueLoopInput, workspace, install, script string, secondFailure, consoleMode, mismatchedAuthentication bool) {
 	t.Helper()
 	python := filepath.Join(install, "venv", "bin", "python")
 	failure := strings.ReplaceAll(script, `\"edits\"`, `\"unknown_edits\"`)
@@ -84,8 +108,26 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		t.Fatal("read-only eligibility reserved successor", err)
 	}
 	consolePost := func() {}
+	expectStaleConsole := false
 	var nativeExecutor core.Subject
 	prepareConsole := func() {
+		var before app.LoopReexecutionFact
+		beforeErr := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &before)
+		if beforeErr != nil && !os.IsNotExist(beforeErr) {
+			t.Fatal(beforeErr)
+		}
+		assertReviewUnchanged := func() {
+			t.Helper()
+			var after app.LoopReexecutionFact
+			afterErr := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &after)
+			if os.IsNotExist(beforeErr) {
+				if !os.IsNotExist(afterErr) {
+					t.Fatal("review reserved successor", afterErr)
+				}
+			} else if afterErr != nil || after != before {
+				t.Fatal("review changed linked successor", afterErr)
+			}
+		}
 		manager, cookie, csrf := consoleQueueRouteFixture(t, s)
 		e := echo.New()
 		e.HTTPErrorHandler = func(c *echo.Context, err error) {
@@ -151,9 +193,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			if rec.Code != http.StatusOK {
 				t.Fatalf("requeue review: %d %s", rec.Code, rec.Body.String())
 			}
-			if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
-				t.Fatal("review reserved successor", err)
-			}
+			assertReviewUnchanged()
 			var pending doerPending
 			for _, v := range portal.pending {
 				pending = *v
@@ -171,9 +211,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			if reviewed.Code != 200 || !strings.Contains(reviewed.Body.String(), "Requeue exact approved predecessor") {
 				t.Fatalf("native continuation browser return: %d %s", reviewed.Code, reviewed.Body.String())
 			}
-			if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
-				t.Fatal("native approval reserved successor", err)
-			}
+			assertReviewUnchanged()
 			_, session, err := manager.AuthorizeCommand(authRequest)
 			if err != nil {
 				t.Fatal(err)
@@ -216,6 +254,12 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			req.AddCookie(cookie)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
+			if expectStaleConsole {
+				if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "requires fresh configured principal authentication") {
+					t.Fatalf("stale Console replay must deny: %d %s", rec.Code, rec.Body.String())
+				}
+				return
+			}
 			if mismatchedAuthentication {
 				t.Logf("authenticated Console requeue: status=%d body=%q", rec.Code, rec.Body.String())
 				if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" || !strings.Contains(rec.Body.String(), "independent_setup_required") || !strings.Contains(rec.Body.String(), "session_selection_zero_authorized_matches") {
@@ -329,7 +373,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	if err := s.RevokeSessionAs(ctx, sub, authority.SessionID, "isolated_requeue_fixture"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(10100 * time.Millisecond) // actual signed host scope expires
+	clock.Advance(s.Config.Principal.AuthTTL + time.Nanosecond) // actual signed host scope expires
 	if !secondFailure {
 		if err := os.WriteFile(python, []byte(script), 0700); err != nil {
 			t.Fatal(err)
@@ -360,7 +404,20 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			t.Fatal(err)
 		}
 		result = app.QueueLoopResult{RequestID: slot.RequestID, Execution: &next, Reexecution: &slot}
-		consolePost() // same authenticated form must reconcile the linked successor
+		// Execution is terminal; do not leave its disposable runtime session
+		// running while password verification and replay probes consume time.
+		// As for the predecessor above, close it with genuine fresh OS auth.
+		fresh, err := s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		authority, err := s.Authority.GetAuthorityContext(ctx, next.RuntimeAuthorityBinding.Authority.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RevokeSessionAs(ctx, fresh, authority.SessionID, "isolated_requeue_replay_fixture"); err != nil {
+			t.Fatal(err)
+		}
 	} else {
 		result, runErr = s.RequeueQueueItemAs(ctx, sub, selector)
 		if runErr != nil && secondFailure {
@@ -399,13 +456,29 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	if err != nil || !reflect.DeepEqual(oldSnapshot.Inputs, nextSnapshot.Inputs) || !reflect.DeepEqual(oldSnapshot.Loops, nextSnapshot.Loops) || !reflect.DeepEqual(oldSnapshot.Participants, nextSnapshot.Participants) {
 		t.Fatal("canonical task/input/pins changed", err)
 	}
-	if consoleMode {
-		consolePost()
-	} else {
+	if !consoleMode {
 		replay, err := s.RequeueQueueItemAs(ctx, sub, selector)
 		if err != nil || !reflect.DeepEqual(replay.Execution, result.Execution) {
 			t.Fatal("exact-key replay changed execution", err)
 		}
+	}
+	if consoleMode {
+		// Deterministically model slow race readbacks exhausting actual freshness.
+		// A surviving cookie/native approval is not fresh principal auth.
+		before, err := s.ListQueueAs(ctx, sub)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clock.Advance(s.Config.Principal.AuthTTL + time.Nanosecond)
+		expectStaleConsole = true
+		consolePost()
+		expectStaleConsole = false
+		assertUnchanged(before)
+		// Authenticate and obtain exact native consent just before the batch,
+		// not before slow execution/readbacks consume the ten-second TTL.
+		prepareConsole()
+		consolePost() // freshly authenticated exact form reconciles the linked successor
+		consolePost() // same-session serial replay remains idempotent
 	}
 	var wg sync.WaitGroup
 	for _, key := range []string{selector.IdempotencyKey, "distinct-a", "distinct-b"} {
@@ -440,7 +513,10 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	third := app.RequeueQueueItemInput{QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: next.Item.ItemID, Digest: next.Item.Digest}, IdempotencyKey: "third-denied"}
 	checkSubject := sub
 	if consoleMode {
-		checkSubject = nativeExecutor
+		checkSubject, err = s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	denied, err := s.RequeueQueueItemAs(ctx, checkSubject, third)
 	if err == nil {
