@@ -424,11 +424,11 @@ done
 	}
 
 	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {
-		svc.Config.Principal.AuthTTL = 10 * time.Second
 		if strings.HasPrefix(recovery[0], "linked-requeue") {
 			installedPersistedRequeue(t, ctx, svc, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
 			return
 		}
+		svc.Config.Principal.AuthTTL = 10 * time.Second
 		installedLinkedReexecution(t, ctx, svc, cli, input, workspace, install, script, recovery[0] == "linked-failure")
 		return
 	}

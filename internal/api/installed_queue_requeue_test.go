@@ -55,7 +55,13 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	if err := os.WriteFile(python, []byte(failure), 0700); err != nil {
 		t.Fatal(err)
 	}
+	// Shorten only the initial Run's signed host scope, not the browser's
+	// configured freshness policy. Restoring the policy cannot extend the
+	// already signed grant; it still expires during the real wait below.
+	principalAuthTTL := s.Config.Principal.AuthTTL
+	s.Config.Principal.AuthTTL = 10 * time.Second
 	_, _ = cli.queue(input) // failure may be returned after durable disposition
+	s.Config.Principal.AuthTTL = principalAuthTTL
 	sub, err := s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +238,15 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			t.Fatal("denial mutated durable queue", err)
 		}
 	}
-	for _, kind := range []string{"owner", "expired-local-os", "stale-password", "digest"} {
+	// Regress the policy boundary without depending on a race-instrumented
+	// Run happening to finish inside ten seconds. This is read-only and cannot
+	// create a successor or substitute for the browser's native approval.
+	aged := sub
+	aged.AuthenticatedAt = s.Now().Add(-11 * time.Second)
+	if got, err := s.CheckQueueRequeueAs(ctx, aged, selector.QueueItem); err != nil || got.Reason != "eligible_fresh_admission_required" {
+		t.Fatalf("initial host-scope TTL leaked into principal freshness: %+v %v", got, err)
+	}
+	for _, kind := range []string{"owner", "expired-local-os", "stale-password", "password-expiry-boundary", "digest"} {
 		badSub, bad := sub, selector
 		switch kind {
 		case "owner":
@@ -242,6 +256,9 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		case "stale-password":
 			badSub.Method = "password"
 			badSub.AuthenticatedAt = s.Now().Add(-s.Config.Principal.AuthTTL - time.Second)
+		case "password-expiry-boundary":
+			badSub.Method = "password"
+			badSub.AuthenticatedAt = s.Now().Add(-s.Config.Principal.AuthTTL)
 		case "digest":
 			bad.QueueItem.Digest = "sha256:" + strings.Repeat("f", 64)
 		}
@@ -326,7 +343,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	var runErr error
 	if consoleMode {
 		// Authenticate the browser after the signed host scope has expired.
-		// The service's shorter password freshness window still applies.
+		// The original configured password freshness window still applies.
 		prepareConsole()
 		if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &slot); !os.IsNotExist(err) {
 			t.Fatal("Console predecessor already has a successor intent", err)
