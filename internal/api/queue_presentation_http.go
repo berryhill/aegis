@@ -9,32 +9,8 @@ import (
 
 // registerQueuePresentationHTTP keeps identity and all admission in the app service.
 func registerQueuePresentationHTTP(g *echo.Group, svc *app.Service) {
-	for _, operation := range []struct {
-		path     string
-		archived bool
-	}{{"archive", true}, {"unarchive", false}} {
-		g.POST("/queue/:item/"+operation.path, func(c *echo.Context) error {
-			subject, err := requestSubject(c)
-			if err != nil {
-				return err
-			}
-			var input app.SetQueueArchiveInput
-			if err = decode(c, &input); err != nil {
-				return err
-			}
-			if input.QueueItem.ID != c.Param("item") {
-				return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
-			}
-			if input.Archived != operation.archived {
-				return echo.NewHTTPError(http.StatusBadRequest, "archived value conflicts with operation")
-			}
-			value, created, err := svc.SetQueueArchiveAs(c.Request().Context(), subject, input)
-			if err != nil {
-				return err
-			}
-			return c.JSON(createdOrOK(!created), value)
-		})
-	}
+	g.POST("/queue/:item/archive", queueArchiveHTTPHandler(svc, true))
+	g.POST("/queue/:item/unarchive", queueArchiveHTTPHandler(svc, false))
 	g.POST("/queue/:item/requeue", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
 		if err != nil {
@@ -79,4 +55,28 @@ func registerQueuePresentationHTTP(g *echo.Group, svc *app.Service) {
 		}
 		return c.JSON(createdOrOK(!created), value)
 	})
+}
+
+func queueArchiveHTTPHandler(svc *app.Service, archived bool) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		subject, err := requestSubject(c)
+		if err != nil {
+			return err
+		}
+		var input app.SetQueueArchiveInput
+		if err = decode(c, &input); err != nil {
+			return err
+		}
+		if input.QueueItem.ID != c.Param("item") {
+			return echo.NewHTTPError(http.StatusBadRequest, "queue item path and body must match")
+		}
+		if input.Archived != archived {
+			return echo.NewHTTPError(http.StatusBadRequest, "archived value conflicts with operation")
+		}
+		value, created, err := svc.SetQueueArchiveAs(c.Request().Context(), subject, input)
+		if err != nil {
+			return err
+		}
+		return c.JSON(createdOrOK(!created), value)
+	}
 }

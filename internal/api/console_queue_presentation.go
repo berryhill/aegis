@@ -14,38 +14,23 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
-	"github.com/berryhill/aegis/internal/queue"
-	"github.com/berryhill/aegis/internal/reference"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
-
-func queuePresentationTerminal(state queue.State) bool {
-	switch state {
-	case queue.StateSucceeded, queue.StateFailed, queue.StateCancelled, queue.StateDenied, queue.StateExpired:
-		return true
-	}
-	return false
-}
 
 func applyConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub core.Subject, model *consoleweb.SurfaceModel) {
 	apply := func(record *consoleweb.RecordModel) {
 		actions := &consoleweb.QueueActionsModel{RequeueReason: "Queue actions unavailable; canonical ownership and eligibility required"}
 		record.QueueActions = actions
-		view, err := svc.GetQueueItemAs(ctx, sub, record.Key)
-		if err != nil || view.Submission.OwnerID != sub.PrincipalID {
-			return
-		}
-		ref := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: view.Item.ItemID, Digest: view.Item.Digest}
-		archive, err := svc.GetQueueArchiveAs(ctx, sub, ref)
+		view, err := svc.ConsoleQueuePresentationAs(ctx, sub, record.Key, "")
 		if err != nil {
 			return
 		}
-		actions.Digest, actions.Revision = ref.Digest, strconv.FormatUint(archive.Revision, 10)
-		actions.Archived, actions.CanArchive = archive.Archived, queuePresentationTerminal(view.Projection.State)
+		actions.Digest, actions.Revision = view.Digest, strconv.FormatUint(view.Revision, 10)
+		actions.Archived, actions.CanArchive = view.Archived, view.Terminal
 		actions.RequeueReason = "Requeue unavailable: only supported failed direct Doer work with remaining cumulative budget; fresh admission required"
-		if view.Projection.State == queue.StateFailed {
-			result, err := svc.CheckQueueRequeueAs(ctx, sub, ref)
+		if view.Failed {
+			result, err := svc.CheckQueueRequeueAs(ctx, sub, app.ConsoleQueueRequeueInput(record.Key, view.Digest, "").QueueItem)
 			actions.CanRequeue = err == nil && result.Reason == "eligible_fresh_admission_required"
 			if actions.CanRequeue {
 				actions.RequeueReason = "Same pins and inputs; linked successor, remaining cumulative budget and fresh authority admission"
@@ -74,9 +59,10 @@ func applyConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub co
 
 func registerConsoleQueuePresentation(e *echo.Echo, svc *app.Service, manager *console.Manager, portals ...*DoerContinuationPortal) {
 	e.POST("/console/queue/preferences", consoleQueuePreferencesHandler(svc, manager))
-	for _, action := range []string{"archive", "unarchive", "requeue", "requeue-review"} {
-		e.POST("/console/queue/:item/"+action, consoleQueuePresentationHandler(svc, manager, action, portals...))
-	}
+	e.POST("/console/queue/:item/archive", consoleQueuePresentationHandler(svc, manager, "archive", portals...))
+	e.POST("/console/queue/:item/unarchive", consoleQueuePresentationHandler(svc, manager, "unarchive", portals...))
+	e.POST("/console/queue/:item/requeue", consoleQueuePresentationHandler(svc, manager, "requeue", portals...))
+	e.POST("/console/queue/:item/requeue-review", consoleQueuePresentationHandler(svc, manager, "requeue-review", portals...))
 }
 
 func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager, action string, portals ...*DoerContinuationPortal) echo.HandlerFunc {
@@ -113,22 +99,16 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		if err = svc.RequirePrincipal(sub); err != nil {
 			return err
 		}
-		view, err := svc.GetQueueItemAs(request.Context(), sub, c.Param("item"))
+		view, err := svc.ConsoleQueuePresentationAs(request.Context(), sub, c.Param("item"), values.Get("digest"))
 		if err != nil {
 			return err
 		}
-		if view.Item.Digest != values.Get("digest") || view.Submission.OwnerID != sub.PrincipalID {
-			return app.ErrDenied
-		}
-		ref := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: view.Item.ItemID, Digest: view.Item.Digest}
-		archive, err := svc.GetQueueArchiveAs(request.Context(), sub, ref)
-		if err != nil {
-			return err
-		}
-		if (action == "requeue" || action == "requeue-review") && archive.Revision != revision {
+		selector := app.ConsoleQueueRequeueInput(c.Param("item"), view.Digest, "")
+		ref := selector.QueueItem
+		if (action == "requeue" || action == "requeue-review") && view.Revision != revision {
 			return app.ErrConflict
 		}
-		if !queuePresentationTerminal(view.Projection.State) {
+		if !view.Terminal {
 			return app.ErrDenied
 		}
 		// Stable server-derived identity binds the canonical source, CAS and action;
@@ -139,7 +119,7 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		}
 		sum := sha256.Sum256([]byte(fmt.Sprintf("console-queue-v1:%s:%s:%s:%d:%s", sub.PrincipalID, ref.ID, ref.Digest, revision, intentAction)))
 		identity := fmt.Sprintf("console-queue-%x", sum)
-		selector := app.RequeueQueueItemInput{QueueItem: ref, IdempotencyKey: identity}
+		selector.IdempotencyKey = identity
 		if action == "requeue-review" {
 			if len(portals) == 0 {
 				return app.ErrDenied
@@ -167,13 +147,7 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 			}
 			// A worker can return an error after a durable failed disposition.
 			// Reconcile that exact admitted item read-only; never retry an effect.
-			if err != nil && result.QueueItemID != "" && result.Reexecution != nil {
-				retained, readErr := svc.GetQueueItemAs(request.Context(), sub, result.QueueItemID)
-				if readErr == nil && retained.Projection.State == queue.StateFailed && retained.Disposition != nil && retained.Disposition.ReasonCode == "doer_loop_failed" && result.Reexecution.Previous.PreviousQueue == ref {
-					result.Execution = &retained
-					err = nil
-				}
-			}
+			result, err = svc.ReconcileConsoleQueueRequeueFailureAs(request.Context(), sub, selector, result, err)
 			if err != nil {
 				return err
 			}
@@ -188,7 +162,7 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		if action != "archive" && action != "unarchive" {
 			return bad()
 		}
-		_, _, err = svc.SetQueueArchiveAs(request.Context(), sub, app.SetQueueArchiveInput{RequestID: identity, QueueItem: ref, Archived: action == "archive", ExpectedRevision: revision})
+		_, _, err = svc.SetQueueArchiveAs(request.Context(), sub, app.ConsoleQueueArchiveInput(ref.ID, ref.Digest, identity, action == "archive", revision))
 		if err != nil {
 			return err
 		}

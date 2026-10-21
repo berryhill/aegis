@@ -3,9 +3,7 @@ package api
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
-	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"io"
 	"mime"
 	"net/http"
@@ -15,8 +13,6 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/console"
 	"github.com/berryhill/aegis/internal/core"
-	"github.com/berryhill/aegis/internal/queue"
-	"github.com/berryhill/aegis/internal/reference"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
 )
@@ -37,11 +33,11 @@ func filterConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub c
 	if state == "" {
 		state = string(prefs.Selection)
 	}
-	visibility := queue.ArchiveVisibility(query.Get("visibility"))
+	visibility := query.Get("visibility")
 	if visibility == "" {
-		visibility = prefs.Visibility
+		visibility = string(prefs.Visibility)
 	}
-	if err = visibility.Validate(); err != nil {
+	if err = app.ValidateConsoleQueueVisibility(visibility); err != nil {
 		return err
 	}
 	model.QueueVisibility = string(visibility)
@@ -51,14 +47,11 @@ func filterConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub c
 		if record.Queue == nil {
 			continue
 		}
-		a, loadErr := svc.GetQueueArchiveAs(ctx, sub, reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: record.Key, Digest: record.Queue.QueueItemDigest})
-		if errors.Is(loadErr, fleet.ErrPresentationDenied) {
-			continue
-		}
+		a, loadErr := svc.ConsoleQueueArchivedAs(ctx, sub, record.Key, record.Queue.QueueItemDigest)
 		if loadErr != nil {
 			return loadErr
 		}
-		archived[record.Key] = a.Archived
+		archived[record.Key] = a
 	}
 	selectRecords := func(records []consoleweb.RecordModel, band bool) []consoleweb.RecordModel {
 		out := make([]consoleweb.RecordModel, 0, len(records))
@@ -68,7 +61,7 @@ func filterConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub c
 				if a {
 					continue
 				}
-			} else if visibility == queue.VisibilityArchived && !a || visibility == queue.VisibilityUnarchived && a {
+			} else if visibility == "archived" && !a || visibility == "unarchived" && a {
 				continue
 			}
 			out = append(out, record)
@@ -107,8 +100,8 @@ func consoleQueuePreferencesHandler(svc *app.Service, manager *console.Manager) 
 		if err != nil {
 			return bad()
 		}
-		selection, visibility := queue.LifecycleSelection(v.Get("state")), queue.ArchiveVisibility(v.Get("visibility"))
-		if selection.Validate() != nil || visibility.Validate() != nil {
+		input, err := app.ConsoleQueuePreferencesInput(v.Get("state"), v.Get("visibility"))
+		if err != nil {
 			return bad()
 		}
 		r.Header.Set("X-CSRF-Token", v.Get("csrf"))
@@ -116,8 +109,9 @@ func consoleQueuePreferencesHandler(svc *app.Service, manager *console.Manager) 
 		if err != nil {
 			return mapConsoleError(err)
 		}
-		sum := sha256.Sum256([]byte(fmt.Sprintf("console-queue-preferences-v1:%s:%d:%s:%s", sub.PrincipalID, revision, selection, visibility)))
-		_, _, err = svc.SetQueuePreferencesAs(r.Context(), sub, app.SetQueuePreferencesInput{RequestID: fmt.Sprintf("console-queue-prefs-%x", sum), Selection: selection, Visibility: visibility, ExpectedRevision: revision})
+		sum := sha256.Sum256([]byte(fmt.Sprintf("console-queue-preferences-v1:%s:%d:%s:%s", sub.PrincipalID, revision, input.Selection, input.Visibility)))
+		input.RequestID, input.ExpectedRevision = fmt.Sprintf("console-queue-prefs-%x", sum), revision
+		_, _, err = svc.SetQueuePreferencesAs(r.Context(), sub, input)
 		if err != nil {
 			return err
 		}
