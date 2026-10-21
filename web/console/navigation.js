@@ -1,5 +1,21 @@
 "use strict";
 
+// Loop availability is collection navigation, not a lifecycle mutation.
+// The GET form clears stale detail/revision/page; Apply works without scripts.
+(() => {
+  const availability = document.querySelector('form[action="/console/loops"][method="get"] select[name="availability"]');
+  if (!availability) return;
+  const initial = Array.from(availability.options).find(option => option.defaultSelected)?.value;
+  const restoreAvailability = () => {
+    const value = new URL(location.href).searchParams.get("availability") || "published";
+    availability.value = value === "published" || value === "archived" ? value : initial;
+  };
+  // Native history may restore a changed control after loading the server DOM.
+  // Reconcile on every pageshow, including BFCache, without submitting the form.
+  window.addEventListener("pageshow", restoreAvailability);
+  availability.addEventListener("change", () => availability.form.requestSubmit());
+})();
+
 // Fragments are not sent to the server. Resolve Graph bookmarks through the
 // existing authenticated read route; a record key selects only a rendered view.
 (() => {

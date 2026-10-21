@@ -7,7 +7,7 @@ function resolve(href) {
   const replacements = [];
   const url = new URL(href);
   const location = {href, hash: url.hash, pathname: url.pathname, replace: value => replacements.push(value)};
-  const context = {URL, location, document: {body: {dataset: {}}}, addEventListener() {}};
+  const context = {URL, location, document: {querySelector() { return null; }, body: {dataset: {}}}, addEventListener() {}};
   context.window = context;
   vm.runInNewContext(source, context);
   return replacements;
