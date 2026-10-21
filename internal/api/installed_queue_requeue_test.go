@@ -78,8 +78,26 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		t.Fatal("read-only eligibility reserved successor", err)
 	}
 	consolePost := func() {}
+	expectStaleConsole := false
 	var nativeExecutor core.Subject
 	prepareConsole := func() {
+		var before app.LoopReexecutionFact
+		beforeErr := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &before)
+		if beforeErr != nil && !os.IsNotExist(beforeErr) {
+			t.Fatal(beforeErr)
+		}
+		assertReviewUnchanged := func() {
+			t.Helper()
+			var after app.LoopReexecutionFact
+			afterErr := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &after)
+			if os.IsNotExist(beforeErr) {
+				if !os.IsNotExist(afterErr) {
+					t.Fatal("review reserved successor", afterErr)
+				}
+			} else if afterErr != nil || after != before {
+				t.Fatal("review changed linked successor", afterErr)
+			}
+		}
 		manager, cookie, csrf := consoleQueueRouteFixture(t, s)
 		e := echo.New()
 		e.HTTPErrorHandler = func(c *echo.Context, err error) {
@@ -145,9 +163,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			if rec.Code != http.StatusOK {
 				t.Fatalf("requeue review: %d %s", rec.Code, rec.Body.String())
 			}
-			if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
-				t.Fatal("review reserved successor", err)
-			}
+			assertReviewUnchanged()
 			var pending doerPending
 			for _, v := range portal.pending {
 				pending = *v
@@ -165,9 +181,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			if reviewed.Code != 200 || !strings.Contains(reviewed.Body.String(), "Requeue exact approved predecessor") {
 				t.Fatalf("native continuation browser return: %d %s", reviewed.Code, reviewed.Body.String())
 			}
-			if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
-				t.Fatal("native approval reserved successor", err)
-			}
+			assertReviewUnchanged()
 			_, session, err := manager.AuthorizeCommand(authRequest)
 			if err != nil {
 				t.Fatal(err)
@@ -210,6 +224,12 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			req.AddCookie(cookie)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
+			if expectStaleConsole {
+				if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "requires fresh configured principal authentication") {
+					t.Fatalf("stale Console replay must deny: %d %s", rec.Code, rec.Body.String())
+				}
+				return
+			}
 			if mismatchedAuthentication {
 				t.Logf("authenticated Console requeue: status=%d body=%q", rec.Code, rec.Body.String())
 				if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" || !strings.Contains(rec.Body.String(), "independent_setup_required") || !strings.Contains(rec.Body.String(), "session_selection_zero_authorized_matches") {
@@ -343,7 +363,20 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			t.Fatal(err)
 		}
 		result = app.QueueLoopResult{RequestID: slot.RequestID, Execution: &next, Reexecution: &slot}
-		consolePost() // same authenticated form must reconcile the linked successor
+		// Execution is terminal; do not leave its disposable runtime session
+		// running while password verification and replay probes consume time.
+		// As for the predecessor above, close it with genuine fresh OS auth.
+		fresh, err := s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		authority, err := s.Authority.GetAuthorityContext(ctx, next.RuntimeAuthorityBinding.Authority.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.RevokeSessionAs(ctx, fresh, authority.SessionID, "isolated_requeue_replay_fixture"); err != nil {
+			t.Fatal(err)
+		}
 	} else {
 		result, runErr = s.RequeueQueueItemAs(ctx, sub, selector)
 		if runErr != nil && secondFailure {
@@ -382,13 +415,29 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	if err != nil || !reflect.DeepEqual(oldSnapshot.Inputs, nextSnapshot.Inputs) || !reflect.DeepEqual(oldSnapshot.Loops, nextSnapshot.Loops) || !reflect.DeepEqual(oldSnapshot.Participants, nextSnapshot.Participants) {
 		t.Fatal("canonical task/input/pins changed", err)
 	}
-	if consoleMode {
-		consolePost()
-	} else {
+	if !consoleMode {
 		replay, err := s.RequeueQueueItemAs(ctx, sub, selector)
 		if err != nil || !reflect.DeepEqual(replay.Execution, result.Execution) {
 			t.Fatal("exact-key replay changed execution", err)
 		}
+	}
+	if consoleMode {
+		// Deterministically model slow race readbacks exhausting actual freshness.
+		// A surviving cookie/native approval is not fresh principal auth.
+		before, err := s.ListQueueAs(ctx, sub)
+		if err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(s.Config.Principal.AuthTTL + 100*time.Millisecond)
+		expectStaleConsole = true
+		consolePost()
+		expectStaleConsole = false
+		assertUnchanged(before)
+		// Authenticate and obtain exact native consent just before the batch,
+		// not before slow execution/readbacks consume the ten-second TTL.
+		prepareConsole()
+		consolePost() // freshly authenticated exact form reconciles the linked successor
+		consolePost() // same-session serial replay remains idempotent
 	}
 	var wg sync.WaitGroup
 	for _, key := range []string{selector.IdempotencyKey, "distinct-a", "distinct-b"} {
@@ -423,7 +472,10 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	third := app.RequeueQueueItemInput{QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: next.Item.ItemID, Digest: next.Item.Digest}, IdempotencyKey: "third-denied"}
 	checkSubject := sub
 	if consoleMode {
-		checkSubject = nativeExecutor
+		checkSubject, err = s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	denied, err := s.RequeueQueueItemAs(ctx, checkSubject, third)
 	if err == nil {
