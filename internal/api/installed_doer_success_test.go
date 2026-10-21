@@ -75,6 +75,13 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		recovery = nil
 	}
 	svc := apiService(t)
+	var requeueClock *requeueStageClock
+	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue") {
+		// Install before Fleet, worker and Serve capture Now: every authority
+		// consumer, including password/native authentication, shares this clock.
+		requeueClock = newRequeueStageClock(svc.Now())
+		svc.Now = requeueClock.Now
+	}
 
 	if len(recovery) > 0 && recovery[0] == "legacy" {
 		svc.Authority = &legacyEmptyMandateRepository{AuthorityRepository: svc.Authority}
@@ -426,7 +433,7 @@ done
 	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {
 		svc.Config.Principal.AuthTTL = 10 * time.Second
 		if strings.HasPrefix(recovery[0], "linked-requeue") {
-			installedPersistedRequeue(t, ctx, svc, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
+			installedPersistedRequeue(t, ctx, svc, requeueClock, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
 			return
 		}
 		installedLinkedReexecution(t, ctx, svc, cli, input, workspace, install, script, recovery[0] == "linked-failure")

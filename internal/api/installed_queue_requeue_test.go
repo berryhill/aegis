@@ -22,6 +22,30 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
+// requeueStageClock models elapsed authority time, not fixture CPU/I/O latency.
+// Its stable method value is shared before any service captures it. Advance only
+// between completed execution stages, never during an admitted runtime effect.
+type requeueStageClock struct {
+	mu  sync.RWMutex
+	now time.Time
+}
+
+func newRequeueStageClock(now time.Time) *requeueStageClock {
+	return &requeueStageClock{now: now}
+}
+
+func (c *requeueStageClock) Now() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.now
+}
+
+func (c *requeueStageClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 func TestPersistedRequeueEntrypointSuccess(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true, "linked-requeue-success")
 }
@@ -45,7 +69,7 @@ func TestConsoleQueueMismatchedAuthenticationRequeue(t *testing.T) {
 // Real service, Badger, worker and verifier; synthetic tool-free runtime only.
 // Initial failure uses the existing trusted CLI fixture. Every successor request
 // calls the new authenticated service entrypoint, not QueueLoop or a helper.
-func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service, cli *installedLoopQueueClient, input app.QueueLoopInput, workspace, install, script string, secondFailure, consoleMode, mismatchedAuthentication bool) {
+func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service, clock *requeueStageClock, cli *installedLoopQueueClient, input app.QueueLoopInput, workspace, install, script string, secondFailure, consoleMode, mismatchedAuthentication bool) {
 	t.Helper()
 	python := filepath.Join(install, "venv", "bin", "python")
 	failure := strings.ReplaceAll(script, `\"edits\"`, `\"unknown_edits\"`)
@@ -332,7 +356,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 	if err := s.RevokeSessionAs(ctx, sub, authority.SessionID, "isolated_requeue_fixture"); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(10100 * time.Millisecond) // actual signed host scope expires
+	clock.Advance(s.Config.Principal.AuthTTL + time.Nanosecond) // actual signed host scope expires
 	if !secondFailure {
 		if err := os.WriteFile(python, []byte(script), 0700); err != nil {
 			t.Fatal(err)
@@ -428,7 +452,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		if err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(s.Config.Principal.AuthTTL + 100*time.Millisecond)
+		clock.Advance(s.Config.Principal.AuthTTL + time.Nanosecond)
 		expectStaleConsole = true
 		consolePost()
 		expectStaleConsole = false
