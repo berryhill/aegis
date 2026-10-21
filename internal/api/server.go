@@ -259,6 +259,28 @@ func sourceKey(request *http.Request) string {
 	return "unknown"
 }
 
+func apiHTTPErrorHandler(svc *app.Service, consoleManager *console.Manager) echo.HTTPErrorHandler {
+	return func(c *echo.Context, err error) {
+		if errors.Is(err, console.ErrReauthenticationRequired) {
+			consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
+			model := consoleweb.PageModel{Authentication: consoleweb.AuthenticationModel{
+				SessionTTL: svc.Config.API.Console.SessionTTL.String(),
+				Status:     "This action requires fresh principal authentication. Sign in again, then review and retry the action. Nothing was executed.",
+				ReasonCode: "principal_reauthentication_required",
+			}, Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
+			content, renderErr := renderConsole(c.Request().Context(), consoleweb.Document(model))
+			if renderErr == nil {
+				_ = c.Blob(http.StatusUnauthorized, "text/html; charset=utf-8", content)
+				return
+			}
+		}
+		status, code, msg := classifyError(err)
+		rid, _ := c.Get("request_id").(string)
+		svc.Log.ErrorContext(c.Request().Context(), "API request failed", "request_id", rid, "route", c.Path(), "error", err)
+		_ = c.JSON(status, envelope{code, msg, rid})
+	}
+}
+
 func Serve(ctx context.Context, svc *app.Service) error {
 	return ServeWithTelemetry(ctx, svc, noopTelemetry{})
 }
@@ -312,25 +334,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	var ready atomic.Bool
 	preAuthLimit := newLimiter()
 	postAuthLimit := newLimiter()
-	e.HTTPErrorHandler = func(c *echo.Context, err error) {
-		if errors.Is(err, console.ErrReauthenticationRequired) {
-			consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
-			model := consoleweb.PageModel{Authentication: consoleweb.AuthenticationModel{
-				SessionTTL: svc.Config.API.Console.SessionTTL.String(),
-				Status:     "This action requires fresh principal authentication. Sign in again, then review and retry the action. Nothing was executed.",
-				ReasonCode: "principal_reauthentication_required",
-			}, Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
-			content, renderErr := renderConsole(c.Request().Context(), consoleweb.Document(model))
-			if renderErr == nil {
-				_ = c.Blob(http.StatusUnauthorized, "text/html; charset=utf-8", content)
-				return
-			}
-		}
-		status, code, msg := classifyError(err)
-		rid, _ := c.Get("request_id").(string)
-		svc.Log.ErrorContext(c.Request().Context(), "API request failed", "request_id", rid, "route", c.Path(), "error", err)
-		_ = c.JSON(status, envelope{code, msg, rid})
-	}
+	e.HTTPErrorHandler = apiHTTPErrorHandler(svc, consoleManager)
 	// Outer-to-inner: request ID, structured logging, recovery, body limit,
 	// coarse source rate limit. Protected routes add authentication.
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {

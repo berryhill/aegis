@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -130,10 +131,7 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		}
 		manager, cookie, csrf := consoleQueueRouteFixture(t, s)
 		e := echo.New()
-		e.HTTPErrorHandler = func(c *echo.Context, err error) {
-			status, _, _ := classifyError(err)
-			_ = c.String(status, err.Error())
-		}
+		e.HTTPErrorHandler = apiHTTPErrorHandler(s, manager)
 		portal := NewDoerContinuationPortal(s, manager)
 		portal.RegisterBrowser(e)
 		registerConsoleQueuePresentation(e, s, manager, portal)
@@ -255,7 +253,9 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
 			if expectStaleConsole {
-				if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "requires fresh configured principal authentication") {
+				// The browser boundary requests step-up before service admission.
+				// app.ErrDenied remains a separate exact 403 (covered below).
+				if rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "principal_reauthentication_required") || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 					t.Fatalf("stale Console replay must deny: %d %s", rec.Code, rec.Body.String())
 				}
 				return
@@ -473,6 +473,24 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		expectStaleConsole = true
 		consolePost()
 		expectStaleConsole = false
+		// Exercise the independent service freshness boundary as well: it
+		// still returns app.ErrDenied, rendered as exactly 403, not step-up.
+		_, staleErr := s.RequeueQueueItemAs(ctx, sub, selector)
+		if !errors.Is(staleErr, app.ErrDenied) || !strings.Contains(staleErr.Error(), "requires fresh configured principal authentication") {
+			t.Fatalf("stale service replay must deny: %v", staleErr)
+		}
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodPost, "/service-stale-replay", nil)
+		rec := httptest.NewRecorder()
+		apiHTTPErrorHandler(s, nil)(e.NewContext(req, rec), staleErr)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"code":"denied"`) {
+			t.Fatalf("stale service replay must remain 403: %d %s", rec.Code, rec.Body.String())
+		}
+		// Read-only durable proof also requires genuine fresh authority.
+		sub, err = s.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+		if err != nil {
+			t.Fatal(err)
+		}
 		assertUnchanged(before)
 		// Authenticate and obtain exact native consent just before the batch,
 		// not before slow execution/readbacks consume the ten-second TTL.
