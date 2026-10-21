@@ -228,6 +228,7 @@ func fleetLoopsCmd(build builder) *cobra.Command {
 	}}
 	command.AddCommand(queueLoop)
 	command.AddCommand(loopDoerServiceCommands(build)...)
+	command.AddCommand(loopAvailabilityCommands(build)...)
 	command.AddCommand(list, loopExampleCmd(), loopHelloCmd(), loopImplementationCmd(), loopDoerCmd(), loopDoerReusableCmd(), loopTemplatesCmd(), validate, publish, show, activate, retire)
 	return command
 }
@@ -338,6 +339,17 @@ func fleetQueueCmd(build builder) *cobra.Command {
 		}
 		return output(cmd, value)
 	}}
+	command.AddCommand(&cobra.Command{Use: "result ITEM", Short: "Read exact verified stored reusable Doer result", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		service, err := build(cmd)
+		if err != nil {
+			return err
+		}
+		value, err := service.GetQueueResult(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		return output(cmd, value)
+	}})
 	bindRuntime := &cobra.Command{Use: "bind-runtime FILE", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input app.BindQueueRuntimeInput
 		if err := decodeJSONFile(args[0], &input); err != nil {

@@ -631,17 +631,17 @@ func TestConsoleQueueFilterSeparatesLifecycleViews(t *testing.T) {
 			{Key: "failed", Lifecycle: "failed"},
 		},
 	}
+	model.ActiveRecords = []consoleweb.RecordModel{{Key: "outside-filter", Lifecycle: "active"}}
+	model.FailedRecords = []consoleweb.RecordModel{{Key: "outside-page", Lifecycle: "failed"}}
 	if err := filterConsoleQueue(&model, "failed"); err != nil {
 		t.Fatal(err)
 	}
 	if model.QueueState != "failed" || len(model.Records) != 1 || model.Records[0].Key != "failed" {
 		t.Fatalf("filtered queue model=%+v", model)
 	}
-	model.ActiveRecords = []consoleweb.RecordModel{{Key: "outside-filter", Lifecycle: "active"}}
-	model.FailedRecords = []consoleweb.RecordModel{{Key: "outside-page", Lifecycle: "failed"}}
-	syncConsoleQueueBands(&model)
-	if len(model.ActiveRecords) != 0 || len(model.FailedRecords) != 1 || model.FailedRecords[0].Key != "failed" {
-		t.Fatalf("queue bands escaped filtered page: active=%+v failed=%+v", model.ActiveRecords, model.FailedRecords)
+
+	if len(model.ActiveRecords) != 1 || model.ActiveRecords[0].Key != "outside-filter" || len(model.FailedRecords) != 1 || model.FailedRecords[0].Key != "outside-page" {
+		t.Fatalf("lifecycle filtering replaced independent bands: active=%+v failed=%+v", model.ActiveRecords, model.FailedRecords)
 	}
 	if err := filterConsoleQueue(&model, "unknown"); err == nil {
 		t.Fatal("unknown queue state filter accepted")

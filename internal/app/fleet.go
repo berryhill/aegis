@@ -236,11 +236,12 @@ type PublishedGraph struct {
 }
 
 type LoopView struct {
-	Revision    loop.LoopRevision           `json:"revision"`
-	Validations []loop.LoopValidationResult `json:"validations"`
-	Provenance  loop.PublicationProvenance  `json:"provenance"`
-	Lifecycle   loop.Lifecycle              `json:"lifecycle"`
-	History     []loop.LifecycleEvent       `json:"lifecycle_history"`
+	Availability loop.AvailabilityStatus     `json:"availability"`
+	Revision     loop.LoopRevision           `json:"revision"`
+	Validations  []loop.LoopValidationResult `json:"validations"`
+	Provenance   loop.PublicationProvenance  `json:"provenance"`
+	Lifecycle    loop.Lifecycle              `json:"lifecycle"`
+	History      []loop.LifecycleEvent       `json:"lifecycle_history"`
 }
 
 type GraphView struct {
@@ -741,6 +742,21 @@ func (s *Service) GetLoop(ctx context.Context, id string, revision uint64) (loop
 }
 
 func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]LoopView, error) {
+	values, err := s.ListLoopInventoryAs(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]LoopView, 0, len(values))
+	for _, value := range values {
+		if value.Availability.State == loop.AvailabilityPublished {
+			result = append(result, value)
+		}
+	}
+	return result, nil
+}
+
+// ListLoopInventoryAs retains historical revisions, including archived Loops.
+func (s *Service) ListLoopInventoryAs(ctx context.Context, subject core.Subject) ([]LoopView, error) {
 	if err := s.requireFleetPrincipalIdentity(subject); err != nil {
 		return nil, err
 	}
@@ -801,6 +817,11 @@ func (s *Service) ListLoopsAs(ctx context.Context, subject core.Subject) ([]Loop
 		if len(view.Validations) == 0 {
 			return nil, fleet.ErrCorrupt
 		}
+		availability, err := s.GetLoopAvailabilityAs(ctx, subject, revision.LoopID)
+		if err != nil {
+			return nil, err
+		}
+		view.Availability = availability
 		result = append(result, view)
 	}
 	return result, nil
@@ -818,7 +839,7 @@ func (s *Service) GetLoopViewAs(ctx context.Context, subject core.Subject, id st
 	if revision == 0 {
 		return LoopView{}, errors.New("exact Loop revision is required")
 	}
-	values, err := s.ListLoopsAs(ctx, subject)
+	values, err := s.ListLoopInventoryAs(ctx, subject)
 	if err != nil {
 		return LoopView{}, err
 	}
@@ -1002,6 +1023,12 @@ func (s *Service) ListSubmissionHistoryAs(ctx context.Context, subject core.Subj
 }
 
 func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
+	return s.submitGraphAs(ctx, subject, request)
+}
+
+func (s *Service) submitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
 	}
@@ -1018,6 +1045,12 @@ func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, reque
 
 // SubmitLoopAs shares Queue admission with the CLI/API Loop execution route.
 func (s *Service) SubmitLoopAs(ctx context.Context, subject core.Subject, request orchestration.SubmitLoopRequest) (orchestration.SubmissionDecision, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
+	return s.submitLoopAs(ctx, subject, request)
+}
+
+func (s *Service) submitLoopAs(ctx context.Context, subject core.Subject, request orchestration.SubmitLoopRequest) (orchestration.SubmissionDecision, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
 	}
@@ -1251,6 +1284,12 @@ func (s *Service) ListQueue(ctx context.Context) ([]QueueExecutionView, error) {
 // awaiting-runtime item. Workspace ownership and runtime authority must resolve
 // to the same exact enabled registered Agent.
 func (s *Service) BindQueueRuntimeAs(ctx context.Context, subject core.Subject, input BindQueueRuntimeInput) (queue.RuntimeBinding, bool, error) {
+	s.loopRunMu.Lock()
+	defer s.loopRunMu.Unlock()
+	return s.bindQueueRuntimeAs(ctx, subject, input)
+}
+
+func (s *Service) bindQueueRuntimeAs(ctx context.Context, subject core.Subject, input BindQueueRuntimeInput) (queue.RuntimeBinding, bool, error) {
 	if err := s.requireFleetPrincipal(subject); err != nil {
 		return queue.RuntimeBinding{}, false, err
 	}

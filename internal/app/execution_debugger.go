@@ -51,10 +51,11 @@ type DebuggerStep struct {
 	Terminal string `json:"terminal,omitempty"`
 }
 type DebuggerEdge struct {
-	ID    string `json:"id"`
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Limit uint16 `json:"limit,omitempty"`
+	Condition string `json:"condition,omitempty"`
+	ID        string `json:"id"`
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Limit     uint16 `json:"limit,omitempty"`
 }
 type DebuggerAttempt struct {
 	ID     string         `json:"id"`
@@ -130,7 +131,7 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 			n.Steps = append(n.Steps, d)
 		}
 		for _, edge := range rev.Transitions {
-			n.Edges = append(n.Edges, DebuggerEdge{ID: edge.ID, From: edge.FromStepID, To: edge.ToStepID, Limit: edge.MaxTraversals})
+			n.Edges = append(n.Edges, DebuggerEdge{ID: edge.ID, From: edge.FromStepID, To: edge.ToStepID, Limit: edge.MaxTraversals, Condition: edge.Condition})
 		}
 		out.Nodes = append(out.Nodes, n)
 	}

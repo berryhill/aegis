@@ -10,7 +10,7 @@ function run(route) {
   const listeners = {};
   const location = new URL(route, "https://console.example");
   location.replace = target => redirects.push(new URL(target));
-  vm.runInNewContext(source, {location, URL, document: {body: null},
+  vm.runInNewContext(source, {location, URL, document: {querySelector() { return null; }, body: null},
     window: {addEventListener: (event, fn) => { listeners[event] = fn; }}});
   return {location, redirects, listeners};
 }

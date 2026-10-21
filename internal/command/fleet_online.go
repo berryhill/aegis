@@ -203,6 +203,19 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		method, path, input = http.MethodPost, "/v1/loops/queue", proposal
 	case "loops list":
 		path = "/v1/loops"
+	case "loops inventory":
+		path = "/v1/loops/inventory"
+	case "loops availability":
+		path = "/v1/loops/" + url.PathEscape(args[0]) + "/availability"
+	case "loops archive", "loops restore":
+		proposal, err := readLoopAvailabilityInput(args[0], args[1], cmd.Name())
+		if err != nil {
+			return usage(err)
+		}
+		if proposal.AgentID == "" || proposal.Authority.ID != "" || proposal.Authority.Digest != "" || proposal.Publisher.ID != "" || proposal.Publisher.Digest != "" || proposal.Publisher.Revision != 0 {
+			return usage(errors.New("workspace availability requires agent_id and server-derived authority and publisher"))
+		}
+		method, path, input = http.MethodPut, "/v1/loops/"+url.PathEscape(args[0])+"/availability", proposal
 	case "loops show":
 		revision, err := exactRevision(args)
 		if err != nil {
@@ -274,6 +287,8 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		path = "/v1/preparations"
 	case "queue list":
 		path = "/v1/queue"
+	case "queue result":
+		path = "/v1/queue/" + url.PathEscape(args[0]) + "/result"
 	case "queue show":
 		path = "/v1/queue/" + url.PathEscape(args[0])
 	case "queue process":

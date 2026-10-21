@@ -53,11 +53,11 @@ func TestReusableDoerConsoleShowsBoundedWorkerWithoutClaimingAuthority(t *testin
 		{LoopID: revision.LoopID, State: loop.LifecycleActive, ActiveRevision: 1, ActiveDigest: revision.Digest},
 	} {
 		record := consoleLoopRecord(app.LoopView{Revision: revision, Lifecycle: state})
-		if record.Loop == nil || !record.Loop.DoerV5 || record.Loop.CanActivate != (state.State == loop.LifecycleDraft) || !strings.Contains(record.Readiness, "per-run contract digest") && state.State == loop.LifecycleActive || !strings.Contains(record.Summary, "per-run Graph binding required") {
+		if record.Loop == nil || !record.Loop.DoerV5 || record.Loop.CanActivate != (state.State == loop.LifecycleDraft) || !strings.Contains(record.Readiness, "per-run contract digest") && state.State == loop.LifecycleActive || !strings.Contains(record.Summary, "per-run task binding required") {
 			t.Fatalf("reusable Doer readiness/activation misrepresented: %+v", record)
 		}
 		list, err := renderConsole(context.Background(), consoleweb.QueueRecordPanel(consoleweb.SurfaceModel{Domain: "loops"}, []consoleweb.RecordModel{record}))
-		if err != nil || !strings.Contains(string(list), "per-run Graph binding required") {
+		if err != nil || !strings.Contains(string(list), "per-run task binding required") {
 			t.Fatalf("reusable Doer list hid binding requirement: %s, err %v", list, err)
 		}
 		html, err := renderConsole(context.Background(), consoleweb.LoopWorkspace(consoleweb.SurfaceModel{Domain: "loops"}, &record, consoleweb.LoopTopology{}))
@@ -65,7 +65,7 @@ func TestReusableDoerConsoleShowsBoundedWorkerWithoutClaimingAuthority(t *testin
 			t.Fatal(err)
 		}
 		content := string(html)
-		if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || strings.Contains(content, "aegis loops queue FILE") || !strings.Contains(content, "no direct execution action") {
+		if strings.Contains(content, "Find a Graph") || strings.Contains(content, "Run from a Graph") || strings.Contains(content, `action="/console/loops/run`) || !strings.Contains(content, "Agents use typed loops queue") || !strings.Contains(content, "prior host authorization and fresh runtime admission") || !strings.Contains(content, "this page adds no human launch form") {
 			t.Fatalf("reusable Doer detail offered an execution action: %s", content)
 		}
 	}

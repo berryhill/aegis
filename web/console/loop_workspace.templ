@@ -11,9 +11,13 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
   <nav class="crumb-row" aria-label="Breadcrumb"><a id="close-inspector" class="back-crumb" href={ collectionRoute(surface) }>← Back to Loops</a></nav>
   <div class="record-head loop-record-head">
    <div><span class="eyebrow">Exact Loop revision</span><h2 id="inspector-title">{ record.Label }</h2><p>{ record.Label } · { record.Revision }</p><div class="record-head-tags"><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>Stored validation · { record.Loop.Validation }</span></div>
-    <dl class="meta-strip"><div><dt>Steps</dt><dd>{ fmt.Sprint(len(record.Loop.Steps)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Loop.Transitions)) }</dd></div><div><dt>Required inputs</dt><dd>{ fmt.Sprint(len(record.Loop.Inputs)) }</dd></div><div><dt>Latest version</dt><dd>{ loopLatestVersion(record) }</dd></div></dl>
+    <dl class="meta-strip"><div><dt>Steps</dt><dd>{ fmt.Sprint(len(record.Loop.Steps)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Loop.Transitions)) }</dd></div><div><dt>Declared input ports</dt><dd>{ fmt.Sprint(len(record.Loop.Inputs)) }</dd></div><div><dt>Latest version</dt><dd>{ loopLatestVersion(record) }</dd></div></dl>
    </div>
    <div class="loop-record-actions">
+	if record.Availability != "" {
+	 @LoopAvailabilityForm(surface, *record)
+	 <p>Availability: { record.Availability }. Applies to all current and future revisions; runtime lifecycle and historical references are unchanged.</p>
+	}
     if !record.Loop.DoerV4 && !record.Loop.DoerV5 {
      <a class="primary" href={ loopRunGraphURL(record) }>{ loopRunGraphLabel(record.Links) }</a>
     }
@@ -33,7 +37,7 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     </form>
     <p>The request key is retained across reloads so an interrupted response can be recovered without creating another run. <a href={ strings.SplitN(detailRoute(surface, record.Key), "#", 2)[0] + "&new_run=1" }>Start a distinct run</a> only when you intend another execution.</p>
    } else if record.Loop.DoerV5 {
-    <p>This reusable v5 definition carries no execution authority. A separately authorized exact single-node Graph run can bind its inputs for the Queue worker, subject to the operator-approved per-run contract digest and fresh runtime admission. This page offers no direct execution action for v5.</p>
+    <p>This reusable v5 definition carries no execution authority. Agents use typed loops queue with a named task and fixed recipe configuration bindings, then queue result for the verified run result. The canonical definition retains five input ports (task, workspace, writable_files, verify_file, optional expected_text) and zero Graph-dataflow outputs. Each resulting exact contract requires prior host authorization and fresh runtime admission. Humans inspect task and stored results in Queue detail; this page adds no human launch form.</p>
    } else {
     <p>This Loop can run only through a Graph that binds this exact revision and digest. Viewing the definition or its evidence contract grants no runtime authority.</p>
    }
@@ -86,16 +90,15 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
    }
   </ol></div>
   <nav class="loop-tab-nav" aria-label="Loop supporting definition sections">
-   <button type="button" data-loop-tab="inputs" aria-pressed="true">Required inputs</button>
-   <button type="button" data-loop-tab="evidence" aria-pressed="false">Evidence and outcomes</button>
+   <button id="loop-tab-contract" type="button" data-loop-tab="inputs" aria-controls="loop-panel-contract">Definition contract</button>
+   <button id="loop-tab-evidence" type="button" data-loop-tab="evidence" aria-controls="loop-panel-evidence">Evidence and outcomes</button>
   </nav>
-  <div class="lw-tab-panel" data-loop-tab-panel="inputs">
-   <section class="loop-support-section"><h4>Loop inputs</h4>@LoopPorts(record.Loop.Inputs, "No Loop inputs")</section>
-   <section class="loop-support-section"><h4>Loop outputs</h4>@LoopPorts(record.Loop.Outputs, "No Loop outputs")</section>
+  <div id="loop-panel-contract" class="lw-tab-panel" data-loop-tab-panel="inputs" aria-labelledby="loop-tab-contract">
+   @LoopDefinitionContract(record.Loop)
   </div>
-  <div class="lw-tab-panel" data-loop-tab-panel="evidence" hidden>
+  <div id="loop-panel-evidence" class="lw-tab-panel" data-loop-tab-panel="evidence" aria-labelledby="loop-tab-evidence">
    <section class="loop-support-section">
-    <h4>Required evidence · Loop-level</h4>
+    <h4>Declared required evidence · Loop-level</h4>
     if len(record.Loop.RequiredEvidence) == 0 {
      <p class="empty-note">No Loop-level evidence requirements are declared.</p>
     }
@@ -109,6 +112,15 @@ templ LoopWorkspace(surface SurfaceModel, record *RecordModel, topology LoopTopo
     <p class="empty-note">Requirements are definition truth only. They do not assert that an artifact, verifier receipt, or terminal disposition exists.</p>
    </section>
    <section class="loop-support-section">
+    <h4>Possible terminal outcomes</h4>
+    <p>Declared destinations, not actual execution disposition. Actual artifacts, verifier receipts and disposition belong to an exact execution.</p>
+    <ul>
+     for _, step := range record.Loop.Steps {
+      if step.TerminalOutcome != "" {
+       <li>{ step.ID } · { step.TerminalOutcome }</li>
+      }
+     }
+    </ul>
     <h4>Validation issues</h4>
     if len(record.Loop.ValidationIssues) == 0 {
      <p class="empty-note">No validation issues recorded for this revision.</p>
@@ -203,10 +215,53 @@ templ LoopNodeDetails(node LoopPosition) {
  }
 }
 
+templ LoopDefinitionContract(detail *LoopDetailModel) {
+ <section class="loop-support-section">
+  <h4>Declared input ports</h4>
+  if detail.DoerV4 {
+   <p>No external input ports; the task and file assertion are sealed in this revision.</p>
+  } else if detail.DoerV5 {
+   <p>Reusable v5: concrete task values are supplied per run, not sealed definition-time values.</p>
+  }
+  @LoopPorts(detail.Inputs, "No declared dataflow input ports.")
+  <h4>Declared output ports</h4>
+  @LoopPorts(detail.Outputs, "No declared dataflow output ports. Execution artifacts, verification receipts and terminal disposition are recorded separately.")
+ </section>
+ if detail.DoerContract != nil {
+  <section class="loop-support-section loop-sealed-contract">
+   <h4>Sealed v4 task contract</h4>
+   <dl class="spec">
+    <dt>Task</dt><dd><pre class="loop-contract-value"><code>{ detail.DoerContract.Task }</code></pre></dd>
+    <dt>Workspace</dt><dd><pre class="loop-contract-value"><code>{ detail.DoerContract.Workspace }</code></pre></dd>
+    <dt>Writable files</dt><dd><ul>
+     for _, file := range detail.DoerContract.WritableFiles {
+      <li><pre class="loop-contract-value"><code>{ file }</code></pre></li>
+     }
+    </ul></dd>
+    <dt>Selected file</dt><dd><pre class="loop-contract-value"><code>{ detail.DoerContract.VerifyFile }</code></pre></dd>
+    <dt>Maximum attempts</dt><dd>{ fmt.Sprint(detail.DoerContract.MaxAttempts) }</dd>
+    <dt>Verification mode</dt><dd>{ detail.DoerContract.VerificationMode }</dd>
+    <dt>Expected text</dt><dd>
+     if detail.DoerContract.ExpectedText == nil {
+      <p>Not specified (presence-only).</p>
+     } else {
+      if *detail.DoerContract.ExpectedText == "" {
+       <p>Explicitly empty text (0 bytes).</p>
+      }
+      <pre class="loop-contract-value" data-loop-expected-text><code>{ *detail.DoerContract.ExpectedText }</code></pre>
+     }
+    </dd>
+    <dt>Pre-run contract digest</dt><dd><pre class="loop-contract-value">{ detail.DoerContract.Digest }</pre></dd>
+   </dl>
+   <p>The digest seals the expected pre-run contract, not actual artifact content. presence-only checks file presence; trimmed-text compares trimmed text; exact-bytes compares raw bytes. These are declared requirements, not passed verification or execution results.</p>
+  </section>
+ }
+}
+
 templ LoopDefinitionDetails(record *RecordModel) {
  <div class="loop-definition-details">
   <section class="loop-contract" aria-labelledby="loop-provenance"><h4 id="loop-provenance">Exact provenance</h4><dl class="spec"><dt>Revision digest</dt><dd>{ record.Loop.Digest }</dd><dt>Previous digest</dt><dd>{ record.Loop.PreviousDigest }</dd><dt>Stored validation</dt><dd>{ record.Loop.Validation }</dd><dt>Validation digest</dt><dd>{ record.Loop.ValidationDigest }</dd></dl>@RelatedRecords(record.Links)</section>
-  <section class="loop-grid" aria-label="Loop contracts"><div><h4>Input schema</h4>@LoopPorts(record.Loop.Inputs, "No Loop inputs")</div><div><h4>Output schema</h4>@LoopPorts(record.Loop.Outputs, "No Loop outputs")</div></section>
+  @LoopDefinitionContract(record.Loop)
   if record.Loop.Description != "" {
    <section aria-labelledby="loop-description"><h4 id="loop-description">Description</h4><p>{ record.Loop.Description }</p></section>
   }

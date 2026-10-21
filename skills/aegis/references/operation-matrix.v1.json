@@ -335,6 +335,10 @@
         "internal/command/fleet.go",
         "internal/api/server.go",
         "internal/command/loop_implementation.go",
+        "internal/command/loop_availability.go",
+        "internal/app/loop_availability.go",
+        "internal/api/loop_availability.go",
+        "internal/api/loop_availability_console.go",
         "internal/command/loop_hello.go",
         "internal/command/loop_doer.go",
         "internal/api/doer_setup.go",
@@ -353,6 +357,9 @@
         "internal/api/workspace_skill_contract_test.go",
         "internal/api/loop_console_form_test.go",
         "internal/command/loop_implementation_test.go",
+        "internal/command/loop_availability_test.go",
+        "internal/app/loop_availability_test.go",
+        "internal/api/loop_availability_test.go",
         "internal/command/loop_hello_test.go",
         "internal/command/loop_doer_test.go",
         "internal/api/doer_setup_test.go",
@@ -371,6 +378,10 @@
         "aegis loops example",
         "aegis loops validate",
         "aegis loops list",
+        "aegis loops inventory",
+        "aegis loops availability",
+        "aegis loops archive",
+        "aegis loops restore",
         "aegis loops publish",
         "aegis loops show",
         "aegis loops activate",
@@ -394,6 +405,10 @@
       ],
       "http": [
         "GET /v1/loops",
+        "GET /v1/loops/inventory",
+        "GET /v1/loops/:loop/availability",
+        "PUT /v1/loops/:loop/availability",
+        "POST /console/loops/availability",
         "POST /v1/loops/validate",
         "POST /v1/loops",
         "PUT /v1/loops/:loop/lifecycle",
@@ -519,10 +534,12 @@
         "internal/api/server_test.go"
       ],
       "cli": [
-        "aegis queue show"
+        "aegis queue show",
+        "aegis queue result"
       ],
       "http": [
         "GET /v1/queue/:item",
+        "GET /v1/queue/:item/result",
         "GET /v1/submissions"
       ],
       "transport_classification": "shipped"

@@ -683,6 +683,16 @@ def verify_enabled_registration(devtools: DevTools, origin: str, expected_identi
     require(registration_identity(devtools, "Registry revision") == expected_identity, "refreshed browser detail differs from reviewed revision")
 
 
+def validate_reusable_run_copy(copy: str | None, has_browser_run_form: bool) -> None:
+    required = ("reusable v5 definition carries no execution authority",
+                "Agents use typed loops queue",
+                "prior host authorization and fresh runtime admission",
+                "this page adds no human launch form")
+    require(isinstance(copy, str) and all(phrase in copy for phrase in required),
+            "active reusable v5 lifecycle was misrepresented as execution readiness")
+    require(not has_browser_run_form, "reusable v5 detail added a human launch form")
+
+
 def main() -> int:
     if len(sys.argv) not in (4, 5, 7):
         raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [registration-readback | register CHARTER_JSON CURRENT_FLEET_JSON]")
@@ -873,8 +883,8 @@ def main() -> int:
             wait_for(devtools, "document.readyState === 'complete' && document.querySelector('#inspector-title')?.textContent.trim() === " + json.dumps(fixture["loop_id"]), "exact geometry fixture")
             if fixture.get("reusable_active"):
                 copy = devtools.evaluate("document.querySelector('#loop-detail')?.textContent")
-                require("reusable v5 definition carries no execution authority" in copy and "separately authorized exact single-node Graph run" in copy,
-                        "active reusable v5 lifecycle was misrepresented as execution readiness")
+                has_browser_run_form = devtools.evaluate("!!document.querySelector('#loop-detail form[action*=\"/console/loops/run\"]')")
+                validate_reusable_run_copy(copy, has_browser_run_form)
             for width, height in ((1440, 900), (390, 844)):
                 devtools.command("Emulation.setDeviceMetricsOverride", {"width": width, "height": height, "deviceScaleFactor": 1, "mobile": width == 390})
                 for state, selector in (("fit", "[data-loop-fit]"), ("zoom-in", '[data-loop-zoom="in"]'), ("zoom-out", '[data-loop-zoom="out"]')):

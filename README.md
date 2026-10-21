@@ -1,5 +1,16 @@
 # Aegis
 
+Agents can run one reusable Doer Loop with different task inputs and retrieve
+the exact verified result through typed `loops queue` and `queue result` calls.
+See [the bounded task-to-result workflow](docs/REUSABLE_DOER.md). Existing exact
+host authorization and runtime gates remain required; the UI is for inspection,
+not a mandatory human launch step. This source feature is not a deployment claim.
+
+Source candidate: reversible Published/Archived Loop discovery is separate from
+activation and retirement. See [Loop availability](docs/loop-availability.md) for
+exact CLI/API inputs, Console actions, preserved pinned history and adapter limits.
+
+
 The authenticated Queue detail includes a read-only [execution debugger](docs/EXECUTION_DEBUGGER.md) for exact pinned Loop control flow and Graph-node drill-down, with live following and historical replay.
 
 Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.
@@ -118,7 +129,7 @@ The updater selects only the latest exact published stable GitHub release and fa
 ./scripts/build-source.sh ./aegis
 ```
 
-Go 1.26.9 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Executables built into the verified source checkout report `dev` and are mechanically bound to the ignored `<repository>/.aegis` profile beside `./aegis`, even when Go embeds the checkout's clean release tag as its module version. Tagged release archives and stable versioned `go install` binaries outside a worktree use the `production` profile at `~/.aegis`. Each profile has separate configuration, encrypted authority, deployment identifier, audit/checkpoint state, manager certification, and runtime state. Development refuses paths outside its verified repository profile, and destructive reset is restricted to each binary's own exact profile layout.
+Go 1.26.10 or newer is required. `aegis version` and `aegis --version` print the same build version without requiring configuration. The application uses Cobra, isolated Viper instances, Echo v5, context cancellation, and injected `log/slog` loggers. Executables built into the verified source checkout report `dev` and are mechanically bound to the ignored `<repository>/.aegis` profile beside `./aegis`, even when Go embeds the checkout's clean release tag as its module version. Tagged release archives and stable versioned `go install` binaries outside a worktree use the `production` profile at `~/.aegis`. Each profile has separate configuration, encrypted authority, deployment identifier, audit/checkpoint state, manager certification, and runtime state. Development refuses paths outside its verified repository profile, and destructive reset is restricted to each binary's own exact profile layout.
 
 The source builder pins Git subprocesses to the verified checkout and checks Go's embedded revision, commit time, and dirty flag before publishing the binary. Use it for linked worktrees nested inside another Git repository: plain Go builds on toolchains that ignore `.git` files can stamp the enclosing repository. A truthful dirty development build is not clean release-candidate acceptance.
 

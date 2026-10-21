@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -36,6 +37,10 @@ func TestInstalledOnlineDoerExactBytesSuccess(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, false)
 }
 
+func TestInstalledOnlineReusableDoerDirectAdmission(t *testing.T) {
+	installedOnlineDoerExactBytesSuccess(t, true, "reusable")
+}
+
 func TestInstalledOnlineDoerPrincipalSingleRunWithoutProvisioning(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true)
 }
@@ -65,16 +70,33 @@ func (r *legacyEmptyMandateRepository) CreateMandate(ctx context.Context, m core
 }
 
 func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery ...string) {
+	reusable := len(recovery) > 0 && recovery[0] == "reusable"
+	if reusable {
+		recovery = nil
+	}
 	svc := apiService(t)
 
 	if len(recovery) > 0 && recovery[0] == "legacy" {
 		svc.Authority = &legacyEmptyMandateRepository{AuthorityRepository: svc.Authority}
 	}
+	// Explicit fixture wiring suppresses optional host Laya auto-discovery.
+	// ConfigureImplementation below installs the synthetic runtime only after
+	// the prerequisite denial is checked; no live provider is exercised.
+	svc.Config.Implementation.GoBinary = "/fixture/unconfigured-go"
 	configureAPIFleet(t, svc)
 	// Keep this synthetic fixture independent of an installed host Laya runtime.
 	// The explicit controller has no decision helper until fixture setup below.
 	if err := svc.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: svc.Config.HermesExecutable}, svc.Config.StateDir, svc.Hermes); err != nil {
 		t.Fatal(err)
+	}
+	if reusable && os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1" {
+		probe, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc.Config.API.Listen = probe.Addr().String()
+		_ = probe.Close()
+		svc.Config.API.Console.Origin = "http://" + svc.Config.API.Listen
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -138,7 +160,12 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	apiRequest(t, client, http.MethodPost, "/v1/agents", app.NewRegisterFleetAgentInput(fixture, "journey-fleet", "journey-source"), &registered, http.StatusCreated)
 	workspace := t.TempDir()
 	text := "hello"
-	contract := loop.DoerContract{Task: "Create result.txt", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 2, ExactBytes: true}
+	contract := loop.DoerContract{Task: "Create result.txt containing hello", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 2, ExactBytes: true}
+	betaText := "beta"
+	betaContract := contract
+	betaContract.Task = "Replace result.txt with beta"
+	betaContract.ExpectedText = &betaText
+	betaContract.ExactBytes = false
 	// Public authoring is a separate real process; stderr carries draft diagnostics.
 	write := func(name string, value any) string {
 		t.Helper()
@@ -163,6 +190,17 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		t.Fatal(err)
 	}
 	revision := publication.Revision
+	if reusable {
+		contract.ExactBytes = false // v5 retains its declared trimmed-text assertion.
+		revision, _, err = loop.NewDoerReusableRevision("journey-doer", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		publication.Revision = revision
+		if len(revision.Outputs) != 0 {
+			t.Fatal("canonical reusable Doer unexpectedly declares outputs")
+		}
+	}
 	publicationPath := write("publication.json", publication)
 	var validated app.ValidatedLoop
 	if err := cli.run(&validated, "loops", "validate", publicationPath); err != nil {
@@ -186,6 +224,25 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	input := app.QueueLoopInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.AgentID, Revision: agent.Revision, Digest: agent.Digest},
 		Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: 1, Digest: published.Revision.Digest},
 		IdempotencyKey: "journey-request", Activate: true}
+	if reusable {
+		for _, value := range []struct {
+			id    string
+			kind  graph.ValueType
+			value any
+		}{
+			{"task", graph.TypeString, contract.Task},
+			{"workspace", graph.TypeString, contract.Workspace},
+			{"writable_files", graph.TypeArray, contract.WritableFiles},
+			{"verify_file", graph.TypeString, contract.VerifyFile},
+			{"expected_text", graph.TypeString, text},
+		} {
+			raw, err := json.Marshal(value.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input.Inputs = append(input.Inputs, graph.NormalizedInput{PortID: value.id, Type: value.kind, Value: raw})
+		}
+	}
 	var pending app.QueueLoopResult
 	pending, err = cli.queue(input)
 	if err != nil {
@@ -252,11 +309,38 @@ esac
 		t.Fatal(err)
 	}
 	allowed := []string{digest}
-	if singleRun {
+	if reusable {
+		betaDigest, err := betaContract.Digest()
+		if err != nil || betaDigest == digest {
+			t.Fatal("distinct preauthorized task contracts", err)
+		}
+		allowed = append(allowed, betaDigest)
+	}
+	if singleRun && !reusable {
 		allowed = nil
 	}
 	if err := svc.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: allowed, LayaPython: laya, LayaHome: layaHome}, svc.Config.StateDir, svc.Hermes); err != nil {
 		t.Fatal(err)
+	}
+	if reusable {
+		unapproved := input
+		unapproved.IdempotencyKey = "journey-unapproved-task"
+		unapproved.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
+		unapproved.Inputs[0].Value = json.RawMessage(`"Different unapproved task"`)
+		denied, err := cli.queue(unapproved)
+		if err != nil || denied.Reason != "implementation_prerequisite_required" || denied.QueueItemID != "" || denied.Execution != nil {
+			t.Fatalf("unapproved task admitted: %+v %v", denied, err)
+		}
+		var items []app.QueueExecutionView
+		if err := cli.run(&items, "queue", "list"); err != nil || len(items) != 0 {
+			t.Fatalf("unapproved task created work: %+v %v", items, err)
+		}
+		if view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1); err != nil || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
+			t.Fatal("unapproved task activated reusable Loop", err)
+		}
+		if _, err := os.Stat(filepath.Join(workspace, "result.txt")); !os.IsNotExist(err) {
+			t.Fatal("unapproved task wrote result")
+		}
 	}
 	if err := svc.QueueWorker.ValidateLoopAdmission(published.Revision, agent); err != nil && !singleRun {
 		t.Fatalf("Doer controller fixture prerequisites: %v", err)
@@ -292,6 +376,21 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Synthetic proposals are selected by the explicit task, never by the
+	// expected_text assertion. Real controller verification still reads bytes.
+	betaEdits, err := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "result.txt", Content: []byte("beta")}}, "report": "Replaced the selected file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	betaEvent, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "fixture", "payload": map[string]string{"status": "complete", "text": string(betaEdits)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptAssertion := `*expected_text*hello*exact_bytes*true*max_attempts*2*`
+	if reusable {
+		// v5's closed binding has no exact_bytes port and preserves trimmed text.
+		promptAssertion = `*expected_text*hello*max_attempts*2*`
+	}
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
 [ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
@@ -302,14 +401,17 @@ while IFS= read -r create; do
   IFS= read -r prompt || exit 0
   case "$prompt" in
     *'Return only JSON edits'*)
-      case "$prompt" in *expected_text*hello*exact_bytes*true*max_attempts*2*) ;; *) exit 91 ;; esac
+      case "$prompt" in %s|*Replace\ result.txt\ with\ beta*expected_text*beta*max_attempts*2*) ;; *) exit 91 ;; esac
       ;;
   esac
   printf '%%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
   printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"fixture","payload":{}}}'
-  printf '%%s\n' '%s'
+  case "$prompt" in
+    *'Replace result.txt with beta'*) printf '%%s\n' '%s' ;;
+    *) printf '%%s\n' '%s' ;;
+  esac
 done
-`, string(event))
+`, promptAssertion, string(betaEvent), string(event))
 	if err := os.WriteFile(filepath.Join(install, "venv", "bin", "python"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +527,14 @@ done
 		t.Fatalf("selected-file verification unbound: %+v", readback)
 	}
 	// Compare full immutable references, not just nonempty IDs/digests.
-	if !reflect.DeepEqual(readback, *result.Execution) || len(readback.LoopExecutions) != 1 {
+	// CLI indentation differs when a view is nested in a Run response.
+	// Marshal compacts RawMessage input values; compare every semantic field.
+	equalViews := func(a, b app.QueueExecutionView) bool {
+		left, leftErr := json.Marshal(a)
+		right, rightErr := json.Marshal(b)
+		return leftErr == nil && rightErr == nil && string(left) == string(right)
+	}
+	if !equalViews(readback, *result.Execution) || len(readback.LoopExecutions) != 1 {
 		t.Fatal("independent readback changed execution or child cardinality")
 	}
 	history, err := svc.ListSubmissionHistoryAs(ctx, subject)
@@ -439,6 +548,16 @@ done
 	node := run.Snapshot.Execution.Topology.Nodes[0]
 	if node.Participant != input.Agent || node.Loop != input.Loop {
 		t.Fatal("direct node exact refs mismatch")
+	}
+	if reusable {
+		boundInputs := make([]loop.DoerInput, 0, len(run.Snapshot.Execution.Inputs))
+		for _, value := range run.Snapshot.Execution.Inputs {
+			boundInputs = append(boundInputs, loop.DoerInput{PortID: value.PortID, Type: loop.ValueType(value.Type), Value: value.Value})
+		}
+		bound, err := loop.NormalizeDoerBinding(published.Revision, boundInputs)
+		if err != nil || !reflect.DeepEqual(bound, contract) || len(node.Outputs) != 0 || readback.Source != input.Loop || readback.Item.MaxAttempts != 1 {
+			t.Fatalf("reusable direct input/output/contract binding changed: %+v %v", bound, err)
+		}
 	}
 	itemRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: readback.Item.ItemID, Digest: readback.Item.Digest}
 	snapshotRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: run.Snapshot.SnapshotID, Digest: run.Snapshot.Digest}
@@ -470,7 +589,20 @@ done
 	if err != nil || string(bytes) != text {
 		t.Fatalf("selected file: %q %v", bytes, err)
 	}
-	if singleRun {
+	if reusable {
+		var named app.QueueResult
+		if err := cli.run(&named, "queue", "result", result.QueueItemID); err != nil {
+			t.Fatal(err)
+		}
+		if named.Result == nil || named.Verification != "verified" || named.Result.Content != text || named.Result.Encoding != "utf-8" || named.Result.SizeBytes != len(bytes) || named.Result.Artifact != *readback.Artifact || named.Result.Receipt != readback.Receipts[0] || named.Result.Loop != input.Loop || named.Result.Participant != input.Agent || named.Result.AttemptID != readback.Attempts[0].AttemptID || named.GraphRunID != readback.Item.GraphRunID || named.Task != contract.Task || named.Usage != "unavailable" || named.Elapsed == nil || named.Elapsed.Nanoseconds != readback.Disposition.OccurredAt.Sub(readback.Item.EnqueuedAt).Nanoseconds() {
+			t.Fatalf("unbound named result: %+v", named)
+		}
+		stored, err := svc.Store.GetBlob(named.Result.FileRef)
+		if err != nil || string(stored) != string(bytes) {
+			t.Fatalf("stored selected bytes: %q %v", stored, err)
+		}
+	}
+	if singleRun && !reusable {
 		for _, bucket := range []string{"plans", "approvals", "receipts"} {
 			if err := svc.Store.List(bucket, func(json.RawMessage) error { t.Errorf("single Run fabricated %s", bucket); return nil }); err != nil && !os.IsNotExist(err) {
 				t.Fatal(err)
@@ -498,7 +630,92 @@ done
 	if err := cli.run(&afterReplay, "queue", "show", result.QueueItemID); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(afterReplay, readback) || replayed.Graph != result.Graph || !reflect.DeepEqual(*replayed.Execution, readback) {
+	if reusable {
+		second := input
+		second.IdempotencyKey = "journey-request-beta"
+		second.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
+		second.Inputs[0].Value, _ = json.Marshal(betaContract.Task)
+		second.Inputs[4].Value, _ = json.Marshal(betaText)
+		// Keep hello intact until the second admitted runtime replaces it. It
+		// does not satisfy beta's predeclared trimmed-text assertion.
+		before, err := os.ReadFile(filepath.Join(workspace, "result.txt"))
+		if err != nil || string(before) != "hello" || strings.TrimSpace(string(before)) == betaText {
+			t.Fatal("second task precondition", err)
+		}
+		secondRun, err := cli.queue(second)
+		if err != nil || secondRun.Execution == nil || secondRun.Execution.Projection.State != queue.StateSucceeded || secondRun.QueueItemID == result.QueueItemID || secondRun.RequestID == result.RequestID {
+			t.Fatalf("second Run: %+v %v", secondRun, err)
+		}
+		var beta, original app.QueueResult
+		if err := cli.run(&beta, "queue", "result", secondRun.QueueItemID); err != nil {
+			t.Fatal(err)
+		}
+		if err := cli.run(&original, "queue", "result", result.QueueItemID); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			named      app.QueueResult
+			run        app.QueueLoopResult
+			task, text string
+			contract   loop.DoerContract
+		}{{original, result, contract.Task, text, contract}, {beta, secondRun, betaContract.Task, betaText, betaContract}} {
+			v, named := tc.run.Execution, tc.named
+			wantDigest, err := tc.contract.Digest()
+			if err != nil || v == nil || len(v.Attempts) != 1 || len(v.Claims) != 1 || len(v.LoopExecutions) != 1 || len(v.Receipts) != 1 || v.Disposition == nil || v.Artifact == nil {
+				t.Fatal("second-task evidence incomplete", err)
+			}
+			if named.Result == nil || named.Status != queue.StateSucceeded || named.Verification != "verified" || named.Task != tc.task || named.Result.Content != tc.text || named.Result.ContractDigest != wantDigest || named.Result.Loop != input.Loop || named.Source != input.Loop || named.Result.Participant != input.Agent || named.QueueItem.ID != tc.run.QueueItemID || named.QueueItem.Digest != v.Item.Digest || named.GraphRunID != v.Item.GraphRunID || named.Result.AttemptID != v.Attempts[0].AttemptID || named.Result.LoopExecutionID != v.LoopExecutions[0].LoopExecutionID || named.Result.Artifact != *v.Artifact || named.Result.Receipt != v.Receipts[0] || named.Result.Receipt.Outcome != evidence.Passed || named.Elapsed == nil || named.Elapsed.Source != "queue.item.enqueued_at_to_disposition.occurred_at" || named.Elapsed.Nanoseconds != v.Disposition.OccurredAt.Sub(v.Item.EnqueuedAt).Nanoseconds() || named.Usage != "unavailable" {
+				t.Fatalf("exact two-task result: %+v", named)
+			}
+		}
+		if os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1" {
+			proof := exec.Command("python3", "../../scripts/queue_result_browser_test.py")
+			proof.Env = append(os.Environ(), "AEGIS_CONSOLE_BASE="+svc.Config.API.Console.Origin, "AEGIS_CONSOLE_PASSWORD="+principalTestSecret(), "AEGIS_QUEUE_RESULT_RECORDS="+write("browser-results.json", []app.QueueResult{original, beta}))
+			output, err := proof.CombinedOutput()
+			t.Log(string(output))
+			if err != nil {
+				t.Fatal("authenticated Chrome result inspection", err)
+			}
+		}
+		if original.Result.FileRef == beta.Result.FileRef || original.Result.ContractDigest == beta.Result.ContractDigest || original.Result.Artifact.Digest == beta.Result.Artifact.Digest {
+			t.Fatal("distinct results collapsed")
+		}
+		after, err := os.ReadFile(filepath.Join(workspace, "result.txt"))
+		if err != nil || string(after) != betaText {
+			t.Fatal("runtime did not replace hello with beta", err)
+		}
+		for _, request := range []app.QueueLoopInput{input, second} {
+			replay, err := cli.queue(request)
+			want := result
+			if request.IdempotencyKey == second.IdempotencyKey {
+				want = secondRun
+			}
+			if err != nil || replay.QueueItemID != want.QueueItemID || replay.Execution == nil || len(replay.Execution.Attempts) != 1 {
+				t.Fatal("two-task replay duplicated attempt", err)
+			}
+			changed := request
+			changed.Inputs = append([]graph.NormalizedInput(nil), request.Inputs...)
+			changed.Inputs[0].Value = json.RawMessage(`"Changed payload"`)
+			if _, err := cli.queue(changed); err == nil {
+				t.Fatal("changed payload did not conflict")
+			}
+		}
+		graphs, err := svc.ListGraphsAs(ctx, subject)
+		if err != nil || len(graphs) != 0 {
+			t.Fatal("reusable run published Graph", err)
+		}
+		view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1)
+		if err != nil || view.Revision.Digest != input.Loop.Digest || len(view.History) != 1 {
+			t.Fatal("second run republished/reactivated Loop", err)
+		}
+		items, err := svc.ListQueueAs(ctx, subject)
+		if err != nil || len(items) != 2 {
+			t.Fatal("two-task queue cardinality", err)
+		}
+		// Tampering fixtures run only after the untouched public Run→Run proof.
+		testQueueResultDenials(t, svc, subject, result.QueueItemID, client)
+	}
+	if !equalViews(afterReplay, readback) || replayed.Graph != result.Graph || !equalViews(*replayed.Execution, readback) {
 		t.Fatal("fresh replay readback changed terminal lineage")
 	}
 }

@@ -95,6 +95,7 @@ type SurfaceModel struct {
 	Domain        string
 	CSRF          string
 	LoopRunKey    string
+	Availability  string
 	Title         string
 	Eyebrow       string
 	Description   string
@@ -152,26 +153,31 @@ type ActionModel struct {
 
 type RecordModel struct {
 	QueueActions *QueueActionsModel
-	Key          string
-	Digest       string
-	Label        string
-	Summary      string
-	JSON         string
-	Lifecycle    string
-	Readiness    string
-	Revision     string
-	Runtime      string
-	Source       string
-	Owner        string
-	Authority    string
-	Provisioning string
-	Fields       []FieldModel
-	Links        []LinkModel
-	Graph        *GraphDetailModel
-	Queue        *QueueDetailModel
-	Credential   *CredentialDetailModel
-	Loop         *LoopDetailModel
-	Agent        *AgentDetailModel
+	Availability             string
+	AvailabilitySequence     uint64
+	AvailabilityDigest       string
+	AvailabilityHeadRevision uint64
+	AvailabilityHeadDigest   string
+	Key                      string
+	Digest                   string
+	Label                    string
+	Summary                  string
+	JSON                     string
+	Lifecycle                string
+	Readiness                string
+	Revision                 string
+	Runtime                  string
+	Source                   string
+	Owner                    string
+	Authority                string
+	Provisioning             string
+	Fields                   []FieldModel
+	Links                    []LinkModel
+	Graph                    *GraphDetailModel
+	Queue                    *QueueDetailModel
+	Credential               *CredentialDetailModel
+	Loop                     *LoopDetailModel
+	Agent                    *AgentDetailModel
 }
 
 // AgentDetailModel is a structured, display-only projection of one exact
@@ -222,6 +228,19 @@ type LoopDetailModel struct {
 	ValidationIssues                                                       []FieldModel
 	Provenance                                                             []FieldModel
 	LifecycleHistory                                                       []LoopLifecycleEventModel
+	DoerContract                                                           *LoopDoerContractModel
+}
+
+// LoopDoerContractModel projects only a sealed v4 definition, not run inputs or
+// produced file content. Digest seals the canonical contract before execution.
+// ExpectedText preserves nil (presence-only) versus explicitly empty text.
+type LoopDoerContractModel struct {
+	Task, Workspace, VerifyFile string
+	WritableFiles               []string
+	ExpectedText                *string
+	ExactBytes                  bool
+	MaxAttempts                 uint16
+	Digest, VerificationMode    string
 }
 
 type LoopPortModel struct {
@@ -272,6 +291,7 @@ type LoopLifecycleEventModel struct {
 // output. Six supporting tabs are populated directly from authoritative runtime
 // facts so the contextual action can be evaluated without leaving the workspace.
 type QueueDetailModel struct {
+	RunResult    *QueueRunResultModel
 	DebuggerJSON string
 	LiveLoop     bool
 	// Header / summary facts.
@@ -343,13 +363,15 @@ type QueueControlNodeModel struct {
 // QueueControlEdgeModel projects one exact pinned Graph edge onto its
 // authoritative transition outcome.
 type QueueControlEdgeModel struct {
-	Index    int
-	EdgeID   string
-	From     string
-	To       string
-	Mappings string
-	Outcome  string // taken / not-taken / pending / unreachable.
-	Cycle    bool   // edge participates in a cycle.
+	Condition string
+	Limit     uint16
+	Index     int
+	EdgeID    string
+	From      string
+	To        string
+	Mappings  string
+	Outcome   string // taken / not-taken / pending / unreachable.
+	Cycle     bool   // edge participates in a cycle.
 }
 
 type QueueInputModel struct {

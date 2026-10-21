@@ -442,6 +442,15 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 				return consoleweb.SurfaceModel{}, errors.New("invalid Loop record")
 			}
 			record = consoleLoopRecord(loopView, surface.Graphs)
+			// Availability belongs to the logical Loop, while this row retains
+			// its exact historical revision. Pin the action to the observed head
+			// before collection filtering or pagination; POST still CASes it.
+			for _, candidate := range surface.Loops {
+				if candidate.Revision.LoopID == loopView.Revision.LoopID && candidate.Revision.Revision > record.AvailabilityHeadRevision {
+					record.AvailabilityHeadRevision = candidate.Revision.Revision
+					record.AvailabilityHeadDigest = candidate.Revision.Digest
+				}
+			}
 		} else if domain == consoleGraphs {
 			graphView, ok := value.(app.GraphView)
 			if !ok {
@@ -553,8 +562,8 @@ func consoleAgentRecord(agent app.FleetAgent, surfaces ...app.FleetSurface) cons
 
 func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	revision := view.Revision
-	doerV4 := revision.Doer != nil
-	doerV5 := revision.DoerReusable != nil
+	doerV4 := revision.SchemaVersion == app.DoerRevisionSchemaVersion && revision.Doer != nil
+	doerV5 := revision.SchemaVersion == app.DoerReusableSchemaVersion && revision.DoerReusable != nil
 	lifecycle := string(view.Lifecycle.State)
 	readiness := "Inactive definition; activation requires authenticated lifecycle admission"
 	if view.Lifecycle.State == "active" {
@@ -580,11 +589,11 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 	if doerV5 && view.Lifecycle.State != "retired" {
 		switch lifecycle {
 		case "active":
-			readiness = "Active reusable v5 definition; a typed Graph run requires an independently approved per-run contract digest and fresh runtime admission"
+			readiness = "Active reusable v5 definition; typed Agent direct Run or Graph binding requires an independently approved per-run contract digest and fresh runtime admission"
 		case "inactive":
 			readiness = "Historical reusable v5 definition; not the active execution target"
 		default:
-			readiness = "Inactive reusable v5 definition; activate before a separately authorized typed Graph run"
+			readiness = "Inactive reusable v5 definition; explicit activation is required for an independently authorized typed Run"
 		}
 	}
 
@@ -607,6 +616,26 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 			{Label: "Validation binding", Value: view.Provenance.ValidationDigest},
 			{Label: "Publication provenance digest", Value: view.Provenance.Digest},
 		},
+	}
+	if doerV4 {
+		contract := revision.Doer
+		if digest, err := contract.Digest(); err == nil {
+			projected := &consoleweb.LoopDoerContractModel{
+				Task: contract.Task, Workspace: contract.Workspace, VerifyFile: contract.VerifyFile,
+				WritableFiles: append([]string(nil), contract.WritableFiles...),
+				ExactBytes:    contract.ExactBytes, MaxAttempts: contract.MaxAttempts,
+				Digest: digest, VerificationMode: "presence-only",
+			}
+			if contract.ExpectedText != nil {
+				text := *contract.ExpectedText
+				projected.ExpectedText = &text
+				projected.VerificationMode = "trimmed-text"
+				if contract.ExactBytes {
+					projected.VerificationMode = "exact-bytes"
+				}
+			}
+			detail.DoerContract = projected
+		}
 	}
 	if view.Provenance.AuthorityKind != "" {
 		detail.Provenance = append(detail.Provenance, consoleweb.FieldModel{Label: "Authority kind", Value: view.Provenance.AuthorityKind})
@@ -683,10 +712,12 @@ func consoleLoopRecord(view app.LoopView, graphSets ...[]app.GraphView) consolew
 
 	summary := fmt.Sprintf("revision %d · %d steps · %d transitions", revision.Revision, len(revision.Steps), len(revision.Transitions))
 	if doerV5 {
-		summary += " · reusable typed-input definition · per-run Graph binding required"
+		summary += " · reusable typed-input definition · per-run task binding required"
 	}
 	record := consoleweb.RecordModel{
 		Key: revision.LoopID + ":" + strconv.FormatUint(revision.Revision, 10), Digest: revision.Digest, Label: revision.LoopID,
+		Availability: string(view.Availability.State), AvailabilitySequence: view.Availability.Sequence, AvailabilityDigest: view.Availability.Digest,
+		AvailabilityHeadRevision: revision.Revision, AvailabilityHeadDigest: revision.Digest,
 		Summary:   summary,
 		Lifecycle: lifecycle, Readiness: readiness, Revision: fmt.Sprintf("r%d", revision.Revision),
 		Runtime: view.Provenance.Runtime.Runtime, Source: view.Provenance.PublisherAgent.ID, Authority: view.Provenance.Authority.ID, Loop: detail,
@@ -2106,6 +2137,7 @@ func filterConsoleQueue(model *consoleweb.SurfaceModel, state string) error {
 	}
 	model.QueueState = state
 	if state == "all" {
+		model.TotalCount = len(model.Records)
 		return nil
 	}
 	filtered := make([]consoleweb.RecordModel, 0, len(model.Records))
@@ -2115,26 +2147,13 @@ func filterConsoleQueue(model *consoleweb.SurfaceModel, state string) error {
 		}
 	}
 	model.Records = filtered
+	// Count the bounded lifecycle dataset before pagination; summary bands
+	// retain their independent authorized membership and counts.
+	model.TotalCount = len(filtered)
 	if model.State == "ready" && len(filtered) == 0 {
 		model.State = "filtered-empty"
 	}
 	return nil
-}
-
-// syncConsoleQueueBands derives the summary bands from the exact filtered,
-// paginated collection rendered below them. This prevents records outside the
-// selected lifecycle or bounded page from leaking into the visible result.
-func syncConsoleQueueBands(model *consoleweb.SurfaceModel) {
-	model.ActiveRecords = nil
-	model.FailedRecords = nil
-	for _, record := range model.Records {
-		switch record.Lifecycle {
-		case "active":
-			model.ActiveRecords = append(model.ActiveRecords, record)
-		case "failed":
-			model.FailedRecords = append(model.FailedRecords, record)
-		}
-	}
 }
 
 func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb.ActionModel {

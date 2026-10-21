@@ -8,9 +8,50 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- Agent-first reusable v5 direct Run through typed `loops queue` with exact normalized task/configuration binding and preauthorized contract digests, without republishing or Graph publication. Add owner-authorized `queue result` / `GET /v1/queue/:item/result` and selected authenticated Queue-detail inspection of named task, stored verified content, exact evidence references, enqueue-to-disposition elapsed provenance and explicit unavailable usage. No generic blob/path read, new human launch form, authority broadening or live-provider qualification. See [reusable Doer](docs/REUSABLE_DOER.md).
+
+- Source candidate: reversible logical-Loop archive/restore with Published/Archived
+  Console views and direct actions, published-only discovery, full revision
+  inventory and availability CLI/API readback. Archive covers current and future
+  revisions without changing lifecycle, stopping runtime work or rewriting pinned
+  Graph/Queue/execution/evidence history. MCP Loop adapter remains unavailable;
+  installed acceptance and publication are separate.
+
+
 - Authenticated exact-run execution debugger with durable interpreter step, transition, verification and implementation-pass observations; pinned Loop topology, Graph-node drill-down, live/pause/replay controls and explicit stale/auth-loss handling. Interpreter terminal is never substituted for evidence-backed Queue disposition; legacy boundaries remain unknown and multi-node scheduling is not added.
 
 ### Fixed
+
+- Apply the Loop Published/Archived availability selector through its existing GET
+  form on selection, retaining Apply as the no-script fallback. Expose owner-bound
+  Archive/Restore actions directly on collection rows with the same exact-state
+  and session protections as the detail view.
+
+- Raise the development, CI and release Go toolchain floor to 1.26.10 for
+  GO-2026-6809 (crypto/x509); retain vulnerability scanning and all verification
+  and resource-budget gates without suppressions.
+
+- Isolate the measured slow updater package in its own complete normal/race CI
+  shard, keeping both remainder shards, exact-once package coverage and mandatory
+  evidence gates without increasing job deadlines or verification resources.
+
+- Isolate independent Loop availability HTTP test journeys with fresh server
+  rate-limit buckets while preserving service state and exact history assertions;
+  reuse rendered row forms instead of duplicate setup GETs. Production limits and
+  middleware remain unchanged.
+
+- Scope Queue lifecycle filtering and pagination to Queue & Lifecycle. Preserve
+  the independent Active/Failed bands, counts and usable exact-record links under
+  incompatible lifecycle selections; filtering remains read-only.
+
+- Clarify Loop definition ports versus sealed Doer task contracts and actual
+  execution evidence. Show the exact v4 task/file assertion without inventing
+  dataflow outputs; preserve reusable v5 run-bound inputs. Make definition and
+  evidence tabs keyboard-operable while retaining readable no-JavaScript content.
+
+- Use the same canonical Loop layout for definition and exact pinned execution
+  scopes, including multi-row branches, feedback arrows and condition/bound
+  labels, without deriving geometry from runtime/replay observations.
 
 - Preserve an already-published Doer Loop's exact revision, publication identity
   and historical publisher provenance through an independently approved compatible

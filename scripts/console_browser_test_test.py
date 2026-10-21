@@ -79,6 +79,24 @@ class LoopGeometryTest(unittest.TestCase):
             console_browser_test.validate_loop_geometry({"nodes": [], "edges": []}, [], [])
 
 
+class ReusableRunPresentationTest(unittest.TestCase):
+    COPY = ("reusable v5 definition carries no execution authority. "
+            "Agents use typed loops queue. prior host authorization and fresh runtime admission. "
+            "this page adds no human launch form")
+
+    def test_agent_run_copy_preserves_authority_boundary(self):
+        console_browser_test.validate_reusable_run_copy(self.COPY, False)
+
+    def test_missing_guard_or_browser_launch_is_rejected(self):
+        for phrase in ("carries no execution authority", "Agents use typed loops queue",
+                       "prior host authorization and fresh runtime admission",
+                       "this page adds no human launch form"):
+            with self.subTest(phrase=phrase), self.assertRaises(RuntimeError):
+                console_browser_test.validate_reusable_run_copy(self.COPY.replace(phrase, ""), False)
+        with self.assertRaises(RuntimeError):
+            console_browser_test.validate_reusable_run_copy(self.COPY, True)
+
+
 class ChromeEnvironmentTest(unittest.TestCase):
     def test_absolute_nested_tmpdir_keeps_same_directory_without_parent_mutation(self):
         temporary = str(pathlib.Path(".scratch/browser-test").absolute())

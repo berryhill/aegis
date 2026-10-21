@@ -30,6 +30,7 @@ First run `aegis queue --help`. The compatible CLI exposes:
 
 - `aegis queue list`
 - `aegis queue show ITEM`
+- `aegis queue result ITEM` (this skill owns the exact verified-result read)
 - `aegis queue bind-runtime FILE` (controller-only; protected POST /v1/queue/:item/bind-runtime; routes to `aegis-execution-queue` for the request contract)
 - `aegis queue process FILE`
 - `aegis queue retry FILE`
@@ -43,6 +44,10 @@ Protected HTTP read surfaces expose `GET /v1/queue` and `GET /v1/queue/:item`. T
 `aegis queue process FILE` is the shipped controller operation that claims eligible narrow work, invokes the registered runtime adapter, stores content-addressed output, verifies precommitted claims, and records the resulting terminal disposition. It is consequential execution, not a read-only evidence-review command.
 
 ## Gather one reconstructable execution view
+
+For a direct reusable v5 Run, use `--config OWNER_CONFIG --target CONSOLE_URL queue result ITEM` (or protected `GET /v1/queue/:item/result`) after exact Queue readback. The application authenticates the caller, checks the pinned participant's stable owner, reconstructs the task contract, and independently reloads the successful disposition, causal artifact/receipt bindings and content-addressed proof/file bytes. Metadata visibility alone is not content-read authority. No arbitrary blob reference, path or mutable latest selector is accepted.
+
+The response includes the exact task, status, verification and source; only verified success includes named `result`, its artifact/receipt/contract/file references, encoding, media type, size and content. UTF-8 or explicit base64 preserves the verified bytes; do not treat v5's JSON proof envelope as the selected file. Results are read from immutable storage, not today's workspace. Pending/failed work has no verified result; corrupt/substituted evidence denies. Elapsed time explicitly includes Queue waiting; usage is unavailable when unmeasured, never fabricated zero. This requested owner-authorized work product is distinct from raw runtime logs, private prompts or credential material, which must not be exposed.
 
 1. Read `aegis queue show ITEM`. If the item ID is not exact, use authenticated `aegis queue list` only to find an immutable queue identity; never select by a mutable label or model guess.
 2. Preserve the accepted submission and every immutable reference returned by queue readback: submission and idempotency identities, snapshot reference, runtime, mandate and authority references, maximum attempts, and causal Graph-run identity. The current public queue view does not return the Graph-run snapshot body or its normalized typed inputs. Do not claim those fields were reconstructed from `queue show`; report full snapshot inspection as unavailable on this surface.

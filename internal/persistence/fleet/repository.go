@@ -67,6 +67,15 @@ type CancellationMutation struct {
 	Disposition  disposition.Record
 }
 
+// LoopAvailabilityRepository is a separate metadata boundary. Callers must
+// authenticate and admit fresh owner authority before mutation or replay.
+// Absence on an existing published Loop reads as Published; unknown Loops fail.
+type LoopAvailabilityRepository interface {
+	AppendLoopAvailability(context.Context, loop.AvailabilityEvent, AuditFact) (loop.AvailabilityEvent, bool, error)
+	GetLoopAvailability(context.Context, string) (loop.AvailabilityStatus, error)
+	ListLoopAvailabilityEvents(context.Context, string) ([]loop.AvailabilityEvent, error)
+}
+
 // Repository exposes create-only definition persistence. It deliberately has
 // no generic put, update, delete, latest-substitution, or engine transaction API.
 type Repository interface {

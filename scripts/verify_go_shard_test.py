@@ -38,6 +38,20 @@ class ShardTests(unittest.TestCase):
         self.assertCountEqual(union, named + remainder)
         self.assertEqual(len(union), len(set(union)))
 
+    def test_measured_slow_update_is_isolated_from_both_remainders(self):
+        self.assertEqual(shard.GROUPS['update'], ('internal/update',))
+        # Inventory growth/reordering must not put the measured 368-373s package
+        # back beside cumulative remainder costs in either mode.
+        for count in (0, 1, 46, 47, 48):
+            packages = self.packages() + [shard.ROOT + f'future-{i}' for i in range(count)]
+            grouped = shard.groups(list(reversed(packages)))
+            self.assertEqual(grouped['update'], [shard.ROOT + 'internal/update'])
+            for name in ('remainder-a', 'remainder-b'):
+                self.assertNotIn(shard.ROOT + 'internal/update', grouped[name])
+            union = [p for group in grouped.values() for p in group]
+            self.assertCountEqual(union, packages)
+            self.assertEqual(len(union), len(set(union)))
+
     def test_empty_unknown_malformed_and_duplicate_listing_fail(self):
         for text in ['', '\n', '{}', 'other/module', shard.ROOT, shard.ROOT + 'bad name', '\n'.join([shard.ROOT + 'p'] * 2)]:
             with self.subTest(text=text), self.assertRaises(ValueError):
@@ -68,7 +82,8 @@ class ShardTests(unittest.TestCase):
                     self.assertEqual('-race' in command, race)
                     self.assertIn('-count=1', command)
                     self.assertNotIn('-run', command)
-                    self.assertEqual(command[command.index('-timeout=8m')+1:], shard.groups(self.packages())[group])
+                    timeout = '-timeout=12m' if race and group == 'api' else '-timeout=8m'
+                    self.assertEqual(command[command.index(timeout)+1:], shard.groups(self.packages())[group])
 
     def test_invalid_group_rejected_before_go(self):
         with mock.patch.object(shard.subprocess, 'run') as run, mock.patch('sys.stderr'):
@@ -76,10 +91,18 @@ class ShardTests(unittest.TestCase):
                 shard.main(['--group', 'unknown'])
             run.assert_not_called()
 
+    def test_outer_race_jobs_allow_setup_and_complete_slow_packages(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        job = workflow.split('  go-shards:\n', 1)[1].split('  installed-proof:', 1)[0]
+        allowance = "${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}"
+        self.assertIn('    timeout-minutes: ' + allowance, job)
+        self.assertIn('fail-fast: false', job)
+        self.assertIn('python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP" --race', job)
+
     def test_real_go_fixture_preserves_tests_examples_and_fuzz_seeds(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
-            (root / 'go.mod').write_text('module github.com/berryhill/aegis\n\ngo 1.26.9\n')
+            (root / 'go.mod').write_text('module github.com/berryhill/aegis\n\ngo 1.26.10\n')
             package = root / 'fixture'
             package.mkdir()
             (package / 'fixture_test.go').write_text('''package fixture

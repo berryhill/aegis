@@ -463,7 +463,7 @@ templ QueueBand(surface SurfaceModel, id, title, description string, records []R
 		if len(records) == 0 {
 			<div class="panel"><p class="empty-note queue-empty">{ empty }</p></div>
 		} else {
-			@QueueRecordPanel(surface, records)
+			@QueueRecordPanel(queueBandSurface(surface), records)
 		}
 	</section>
 }
@@ -504,6 +504,9 @@ templ AgentCard(surface SurfaceModel, record RecordModel) {
 
 templ DefinitionFilters(surface SurfaceModel) {
 	<form class="toolbar" method="get" action={ "/console/" + surface.Domain } aria-label={ "Filter " + surface.Title }>
+		if surface.Domain == DomainLoops {
+			<label>Availability <select name="availability"><option value="published" selected?={ surface.Availability == "published" }>Published</option><option value="archived" selected?={ surface.Availability == "archived" }>Archived</option></select></label>
+		}
 		<label class="lifecycle-filter"><span class="sr-only">Lifecycle</span><select name="lifecycle">
 			for _, state := range []string{"all", "draft", "published", "active", "inactive", "retired"} {
 				<option value={ state } selected?={ surface.Lifecycle == state }>{ stateHeading(state) }</option>
@@ -525,7 +528,11 @@ templ CollectionCount(surface SurfaceModel, singular string) {
 templ RecordPanel(surface SurfaceModel) {
 	<div class="panel"><div class="panel-body compact"><ul id="surface-list" class="record-list" aria-label={ surface.Title + " records" }>
 		for _, record := range surface.Records {
-			<li><a id={ "record-" + record.Key } href={ detailRoute(surface, record.Key) } data-detail-link data-record-key={ record.Key }>@RecordLabel(record.Label)<span>Open exact record →</span></a></li>
+			<li><a id={ "record-" + record.Key } href={ detailRoute(surface, record.Key) } data-detail-link data-record-key={ record.Key }>@RecordLabel(record.Label)<span>Open exact record →</span></a>
+				if surface.Domain == DomainLoops && record.Availability != "" {
+					@LoopAvailabilityForm(surface, record)
+				}
+			</li>
 		}
 	</ul></div></div>
 }
@@ -1101,6 +1108,14 @@ func queueURL(state string) string {
 	path := "/console/queue"
 	if encoded := values.Encode(); encoded != "" { path += "?" + encoded }
 	return path + "#/queue"
+}
+
+// Summary-band records are independent of the lifecycle table's filter/page.
+// Their exact detail links must resolve in the unfiltered authorized collection.
+func queueBandSurface(surface SurfaceModel) SurfaceModel {
+	surface.CollectionURL = queueURL("all")
+	surface.QueueState = "all"
+	return surface
 }
 
 func registryURL(surface SurfaceModel) string {
