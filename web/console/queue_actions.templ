@@ -1,0 +1,33 @@
+package consoleweb
+
+type QueueActionsModel struct {
+ Digest, Revision, RequeueReason string
+ CanArchive, Archived, CanRequeue bool
+}
+
+templ QueuePresentationActions(surface SurfaceModel, record RecordModel) {
+ if record.QueueActions != nil {
+  <div class="queue-presentation-actions" aria-label="Queue history actions">
+   if record.QueueActions.CanArchive {
+    if record.QueueActions.Archived {
+     @queuePresentationForm(surface, record, "unarchive", "Unarchive")
+    } else {
+     @queuePresentationForm(surface, record, "archive", "Archive")
+    }
+   }
+   if record.QueueActions.CanRequeue {
+    @queuePresentationForm(surface, record, "requeue", "Requeue failed Doer")
+   }
+   <p role="status">{ record.QueueActions.RequeueReason }</p>
+  </div>
+ }
+}
+
+templ queuePresentationForm(surface SurfaceModel, record RecordModel, operation string, label string) {
+ <form method="post" action={ "/console/queue/" + queueURLPathEscape(record.Key) + "/" + operation }>
+  <input type="hidden" name="csrf" value={ surface.CSRF }/>
+  <input type="hidden" name="digest" value={ record.QueueActions.Digest }/>
+  <input type="hidden" name="expected_revision" value={ record.QueueActions.Revision }/>
+  <button class="secondary" type="submit">{ label }</button>
+ </form>
+}

@@ -151,6 +151,7 @@ type ActionModel struct {
 }
 
 type RecordModel struct {
+	QueueActions *QueueActionsModel
 	Key          string
 	Digest       string
 	Label        string

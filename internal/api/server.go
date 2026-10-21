@@ -589,6 +589,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 			return consoleweb.PageModel{}, consoleError(err)
 		}
 		model.CSRF = csrf
+		if domain == consoleQueue {
+			applyConsoleQueuePresentation(c.Request().Context(), svc, subject, &model)
+		}
 
 		if model.CollectionURL == "" {
 			model.CollectionURL = consoleCollectionURL(domain, c.QueryParams())
@@ -1321,6 +1324,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return c.JSON(http.StatusOK, debugger)
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
+	registerConsoleQueuePresentation(e, svc, consoleManager)
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
 	decodeCommand := func(c *echo.Context, destination any) error {
 		if c.Request().Body == nil {
@@ -1629,6 +1633,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	e.POST("/console/logout", logout)
 	g := e.Group("/v1")
 	g.Use(protected)
+	registerQueuePresentationHTTP(g, svc)
 	doerPortal.RegisterNative(g)
 	g.POST("/manager/sessions", func(c *echo.Context) error {
 		subject, err := requestSubject(c)
