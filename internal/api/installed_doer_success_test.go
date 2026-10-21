@@ -89,7 +89,11 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	if err := svc.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: svc.Config.HermesExecutable}, svc.Config.StateDir, svc.Hermes); err != nil {
 		t.Fatal(err)
 	}
-	if reusable && os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1" {
+	resultBrowser := reusable && os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1"
+	requeueBrowser := len(recovery) > 0 && recovery[0] == "linked-requeue-console-mismatched-authentication" && os.Getenv("AEGIS_QUEUE_REQUEUE_BROWSER_TEST") == "1"
+	// One fixture owns Serve and its transport lease. Browser helpers attach
+	// to this listener; they must never start another server on these stores.
+	if resultBrowser || requeueBrowser {
 		probe, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -108,6 +112,9 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		}
 	}()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	if resultBrowser || requeueBrowser {
+		waitFor(t, "tcp", svc.Config.API.Listen)
+	}
 	client := unixClient(svc.Config.API.UnixSocket)
 	subject, err := svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
 	if err != nil {

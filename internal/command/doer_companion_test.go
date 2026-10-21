@@ -41,10 +41,41 @@ func companionReviewFixture(t *testing.T) app.DoerContinuationReview {
 }
 
 func TestCompanionUnixExactDecision(t *testing.T) {
-	for _, scenario := range []string{"approve", "cancelled", "denied", "no_decision", "timeout", "unavailable", "digest-drift", "origin-drift", "config-drift", "draft-drift", "redirect", "unknown", "sensitive", "oversize"} {
+	for _, scenario := range []string{"approve", "cancelled", "denied", "no_decision", "timeout", "unavailable", "digest-drift", "origin-drift", "config-drift", "draft-drift", "redirect", "unknown", "sensitive", "oversize", "requeue-approve", "requeue-cancelled", "requeue-budget-drift", "requeue-published-drift", "requeue-mixed-drift", "mixed-drift", "requeue-null-draft", "requeue-duplicate", "requeue-unknown"} {
 		t.Run(scenario, func(t *testing.T) {
 			review := companionReviewFixture(t)
+			if strings.HasPrefix(scenario, "requeue-") {
+				published, _, err := loop.NewDoerRevision(review.Draft.LoopID, review.Draft.Revision, "", review.Draft.Contract)
+				if err != nil {
+					t.Fatal(err)
+				}
+				review.Published = &published
+				review.Draft = app.DoerDraft{}
+				review.Intent.DraftID = ""
+				review.Intent.DraftVersion = 0
+				review.Intent.PublicationKey = ""
+				review.Intent.Run.Activate = false
+				ref := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "previous-queue", Digest: "sha256:" + strings.Repeat("c", 64)}
+				disposition := ref
+				disposition.ID = "previous-disposition"
+				review.Intent.Run.Reexecution = &app.LoopReexecution{PreviousQueue: ref, PreviousDisposition: disposition}
+				review.Requeue = &app.QueueRequeueBinding{Run: review.Intent.Run, Checkpoint: "sha256:" + strings.Repeat("d", 64), Consumed: 1, Remaining: 1}
+				review.Intent.RequeueBinding = core.Digest(*review.Requeue)
+				if scenario == "requeue-budget-drift" {
+					review.Requeue.Remaining++
+				}
+				if scenario == "requeue-published-drift" {
+					review.Published.Doer.Task = "changed task"
+				}
+				if scenario == "requeue-mixed-drift" {
+					review.Draft = companionReviewFixture(t).Draft
+				}
+				review.Digest = review.ContentDigest()
+			}
 			switch scenario {
+			case "mixed-drift":
+				review.Requeue = &app.QueueRequeueBinding{}
+				review.Digest = review.ContentDigest()
 			case "digest-drift":
 				review.Digest = "wrong"
 			case "origin-drift":
@@ -97,7 +128,20 @@ func TestCompanionUnixExactDecision(t *testing.T) {
 						io.WriteString(w, strings.Repeat("x", companionJSONLimit+1))
 						return
 					}
-					_ = json.NewEncoder(w).Encode(review)
+					data, err := json.Marshal(review)
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					switch scenario {
+					case "requeue-null-draft":
+						data = append([]byte(`{"draft":null,`), data[1:]...)
+					case "requeue-duplicate":
+						data = append([]byte(`{"origin":"http://localhost:8080",`), data[1:]...)
+					case "requeue-unknown":
+						data = append([]byte(`{"unknown":true,`), data[1:]...)
+					}
+					_, _ = w.Write(data)
 					return
 				}
 				decisions.Add(1)
@@ -125,28 +169,35 @@ func TestCompanionUnixExactDecision(t *testing.T) {
 						t.Error("review incomplete")
 					}
 				}
-				if scenario == "approve" || scenario == "unknown" {
+				if scenario == "approve" || scenario == "unknown" || scenario == "requeue-approve" {
 					return "confirmed"
+				}
+				if scenario == "requeue-cancelled" {
+					return "cancelled"
 				}
 				return scenario
 			})
 			want := scenario
 			switch scenario {
-			case "approve":
+			case "approve", "requeue-approve":
 				want = "approved"
+			case "requeue-cancelled":
+				want = "cancelled"
+			case "requeue-budget-drift", "requeue-published-drift", "requeue-mixed-drift", "mixed-drift":
+				want = "response_drift"
 			case "unknown", "redirect":
 				want = "unknown_response"
 			case "digest-drift", "origin-drift", "config-drift", "draft-drift":
 				want = "response_drift"
 			case "sensitive":
 				want = "sensitive_body_rejected"
-			case "oversize":
+			case "oversize", "requeue-null-draft", "requeue-duplicate", "requeue-unknown":
 				want = "malformed_protocol"
 			}
 			if got != want {
 				t.Fatalf("got %s want %s", got, want)
 			}
-			if scenario != "approve" && scenario != "unknown" && decisions.Load() != 0 {
+			if scenario != "approve" && scenario != "unknown" && scenario != "requeue-approve" && decisions.Load() != 0 {
 				t.Fatal("decision sent without explicit confirmation")
 			}
 			if strings.HasSuffix(scenario, "drift") && confirmations.Load() != 0 {

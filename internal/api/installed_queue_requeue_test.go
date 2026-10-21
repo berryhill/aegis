@@ -69,7 +69,16 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		t.Fatalf("not a clean durable failure: %+v", old)
 	}
 	selector := app.RequeueQueueItemInput{QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: old.Item.ItemID, Digest: old.Item.Digest}, IdempotencyKey: "persisted-requeue"}
+	eligibility, err := s.CheckQueueRequeueAs(ctx, sub, selector.QueueItem)
+	if err != nil || eligibility.Reason != "eligible_fresh_admission_required" || eligibility.Execution != nil || eligibility.Reexecution != nil {
+		t.Fatalf("fresh OS read-only eligibility: %+v %v", eligibility, err)
+	}
+	var eligibilitySlot app.LoopReexecutionFact
+	if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
+		t.Fatal("read-only eligibility reserved successor", err)
+	}
 	consolePost := func() {}
+	var nativeExecutor core.Subject
 	prepareConsole := func() {
 		manager, cookie, csrf := consoleQueueRouteFixture(t, s)
 		e := echo.New()
@@ -77,7 +86,9 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			status, _, _ := classifyError(err)
 			_ = c.String(status, err.Error())
 		}
-		registerConsoleQueuePresentation(e, s, manager)
+		portal := NewDoerContinuationPortal(s, manager)
+		portal.RegisterBrowser(e)
+		registerConsoleQueuePresentation(e, s, manager, portal)
 		// Read back under the same password-session subject used by the route.
 		// The fixture must not synthesize the server's idempotency intent.
 		authRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/"+old.Item.ItemID+"/requeue", nil)
@@ -91,8 +102,15 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		model := consoleweb.SurfaceModel{Domain: "queue", CSRF: csrf, Records: []consoleweb.RecordModel{consoleQueueRecord(old)}}
 		applyConsoleQueuePresentation(ctx, s, sub, &model)
 		record := model.Records[0]
-		if record.QueueActions == nil || !record.QueueActions.CanRequeue {
-			t.Fatal("supported failed Doer missing requeue control")
+		if record.QueueActions == nil {
+			t.Fatal("missing canonical requeue eligibility")
+		}
+		if mismatchedAuthentication {
+			if record.QueueActions.CanRequeue || !strings.Contains(record.QueueActions.RequeueReason, "session_selection_zero_authorized_matches") || !strings.Contains(record.QueueActions.RequeueReason, "independent_setup_required") {
+				t.Fatalf("render must expose incompatible authentication without Requeue control: %+v", record.QueueActions)
+			}
+		} else if !record.QueueActions.CanReviewRequeue {
+			t.Fatalf("supported Console-positive execution path unavailable: %s", record.QueueActions.RequeueReason)
 		}
 		for _, component := range []func() ([]byte, error){
 			func() ([]byte, error) { return renderConsole(ctx, consoleweb.QueueRecordPanel(model, model.Records)) },
@@ -101,9 +119,87 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			},
 		} {
 			body, err := component()
-			if err != nil || !strings.Contains(string(body), "/"+old.Item.ItemID+"/requeue") {
-				t.Fatalf("missing rendered requeue form: %s %v", body, err)
+			if err != nil {
+				t.Fatal(err)
 			}
+			hasForm := strings.Contains(string(body), "/"+old.Item.ItemID+"/requeue\"")
+			if !mismatchedAuthentication {
+				hasForm = strings.Contains(string(body), "/"+old.Item.ItemID+"/requeue-review")
+			}
+			if mismatchedAuthentication {
+				if hasForm || !strings.Contains(string(body), "session_selection_zero_authorized_matches") {
+					t.Fatalf("render hid authentication eligibility or offered an unsupported form: %s", body)
+				}
+			} else if !hasForm {
+				t.Fatalf("missing rendered requeue form: %s", body)
+			}
+		}
+		if !mismatchedAuthentication {
+			values := url.Values{"csrf": {csrf}, "digest": {old.Item.Digest}, "expected_revision": {"0"}}
+			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/"+old.Item.ItemID+"/requeue-review", strings.NewReader(values.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Origin", "http://127.0.0.1")
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("requeue review: %d %s", rec.Code, rec.Body.String())
+			}
+			if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
+				t.Fatal("review reserved successor", err)
+			}
+			var pending doerPending
+			for _, v := range portal.pending {
+				pending = *v
+			}
+			if pending.ID == "" || pending.Review.Intent.Run.Reexecution == nil || pending.Review.Published == nil {
+				t.Fatal("missing predecessor native review")
+			}
+			// A normal Run-shaped intent can never reuse this approval.
+			portal.launch = func(ctx context.Context, id string, bind func(int)) string {
+				// The only mocked boundary is independent human confirmation.
+				approveRequeueNativeFixture(t, portal, id)
+				return "approved"
+			}
+			reviewed := portalPost(e, cookie, csrf, url.Values{"action": {"request-local-review"}, "intent_id": {pending.ID}})
+			if reviewed.Code != 200 || !strings.Contains(reviewed.Body.String(), "Requeue exact approved predecessor") {
+				t.Fatalf("native continuation browser return: %d %s", reviewed.Code, reviewed.Body.String())
+			}
+			if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &eligibilitySlot); !os.IsNotExist(err) {
+				t.Fatal("native approval reserved successor", err)
+			}
+			_, session, err := manager.AuthorizeCommand(authRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, kind := range []string{"ordinary-run", "changed-key", "changed-budget", "changed-source", "changed-session"} {
+				altered := pending.Review.Intent
+				alteredSession := session
+				switch kind {
+				case "ordinary-run":
+					altered.Run.Reexecution = nil
+					altered.Run.Activate = true
+				case "changed-key":
+					altered.Run.IdempotencyKey += "-other"
+				case "changed-budget":
+					altered.RequeueBinding = "sha256:" + strings.Repeat("f", 64)
+				case "changed-source":
+					reexecution := *altered.Run.Reexecution
+					reexecution.PreviousQueue.Digest = "sha256:" + strings.Repeat("f", 64)
+					altered.Run.Reexecution = &reexecution
+				case "changed-session":
+					alteredSession = "other-browser-session"
+				}
+				if _, err := s.ResolveDoerContinuationAs(ctx, sub, alteredSession, portal.pending[pending.ID].ApprovalID, altered); err == nil {
+					t.Fatal("altered native requeue approval accepted", kind)
+				}
+			}
+			approved, err := s.Store.ReadDoerContinuation(portal.pending[pending.ID].ApprovalID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Preserve the signed original executor for successor-owner assertions.
+			nativeExecutor = approved.Executor
 		}
 		consolePost = func() {
 			t.Helper()
@@ -118,6 +214,9 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 				t.Logf("authenticated Console requeue: status=%d body=%q", rec.Code, rec.Body.String())
 				if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" || !strings.Contains(rec.Body.String(), "independent_setup_required") || !strings.Contains(rec.Body.String(), "session_selection_zero_authorized_matches") {
 					t.Errorf("Console mismatch must expose independent_setup_required and session_selection_zero_authorized_matches without redirect: %d %s", rec.Code, rec.Body.String())
+				}
+				if !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") || !strings.Contains(rec.Body.String(), "<!doctype html>") || strings.Contains(rec.Body.String(), "style=") {
+					t.Error("Console admission gate must be CSP-safe HTML, not a browser-generated text viewer")
 				}
 				return
 			}
@@ -181,6 +280,9 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 			t.Fatalf("password unexpectedly selected OS stanza: %+v %v", decision, err)
 		}
 		consolePost()
+		if os.Getenv("AEGIS_QUEUE_REQUEUE_BROWSER_TEST") == "1" {
+			queueRequeueBrowser(t, s, old.Item.ItemID)
+		}
 		if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &slot); !os.IsNotExist(err) {
 			t.Errorf("mismatched authentication reserved successor: load=%v reserved=%t", err, err == nil)
 		} else {
@@ -233,8 +335,8 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		if err := s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &slot); err != nil {
 			t.Fatal(err)
 		}
-		if slot.SubjectID != sub.ID || slot.PrincipalID != sub.PrincipalID {
-			t.Fatal("Console successor is not owned by the authenticated password session")
+		if slot.SubjectID != nativeExecutor.ID || slot.PrincipalID != nativeExecutor.PrincipalID {
+			t.Fatal("Console successor is not owned by the signed genuine native executor")
 		}
 		next, err := s.GetQueueItemAs(ctx, sub, slot.RequestID+"-queue")
 		if err != nil {
@@ -319,7 +421,11 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		t.Fatal("successor changed after replay/concurrency", err)
 	}
 	third := app.RequeueQueueItemInput{QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: next.Item.ItemID, Digest: next.Item.Digest}, IdempotencyKey: "third-denied"}
-	denied, err := s.RequeueQueueItemAs(ctx, sub, third)
+	checkSubject := sub
+	if consoleMode {
+		checkSubject = nativeExecutor
+	}
+	denied, err := s.RequeueQueueItemAs(ctx, checkSubject, third)
 	if err == nil {
 		t.Fatal("exhausted/unsupported source admitted")
 	}

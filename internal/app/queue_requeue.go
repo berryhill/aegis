@@ -92,39 +92,7 @@ func (s *Service) queueRequeue(ctx context.Context, sub core.Subject, in Requeue
 	if err := s.requireFleetPrincipal(sub); err != nil {
 		return QueueLoopResult{Reason: "requeue_fresh_authority_required"}, err
 	}
-	if in.QueueItem.Validate() != nil || in.IdempotencyKey == "" || len(in.IdempotencyKey) > 256 {
-		return QueueLoopResult{Reason: "requeue_invalid_selector"}, requeueDenied("requeue_invalid_selector")
-	}
-	old, err := s.GetQueueItemAs(ctx, sub, in.QueueItem.ID)
-	if err != nil {
-		return QueueLoopResult{Reason: "requeue_source_unavailable"}, err
-	}
-	snapshot, err := s.FleetRepository.GetGraphRunSnapshot(ctx, old.Item.Snapshot.ID)
-	if err != nil {
-		return QueueLoopResult{Reason: "requeue_snapshot_unavailable"}, err
-	}
-	// Do not reinterpret historical Graphs as direct loops, including single-node Graphs.
-	if snapshot.SchemaVersion != graph.DirectRunSnapshotSchemaVersion {
-		return QueueLoopResult{Reason: "requeue_graph_source_unsupported"}, requeueDenied("requeue_graph_source_unsupported")
-	}
-	topology, err := s.Fleet.ResolveRunTopology(ctx, snapshot)
-	if err != nil {
-		return QueueLoopResult{Reason: "requeue_snapshot_invalid"}, err
-	}
-	input, err := reconstructQueueRequeue(sub, in, old, snapshot, topology)
-	if err != nil {
-		return QueueLoopResult{Reason: err.Error()}, err
-	}
-	view, err := s.GetLoopViewAs(ctx, sub, input.Loop.ID, input.Loop.Revision)
-	if err != nil {
-		return QueueLoopResult{Reason: "requeue_loop_unavailable"}, err
-	}
-	if view.Revision.Digest != input.Loop.Digest {
-		return QueueLoopResult{Reason: "requeue_loop_mismatch"}, ErrDenied
-	}
-	// Read-only eligibility check before reserving a successor. The QueueLoop
-	// admission repeats this check under its own serialization boundary.
-	_, err = s.deriveLoopReexecution(ctx, sub, input, queueLoopRequestID(sub, input), "", view.Revision)
+	input, _, err := s.PrepareQueueRequeueAs(ctx, sub, in)
 	if err != nil {
 		reason := "requeue_retained_bindings_or_kind_unsupported"
 		if errors.Is(err, ErrDoerReexecutionBudgetExhausted) {
@@ -132,8 +100,83 @@ func (s *Service) queueRequeue(ctx context.Context, sub core.Subject, in Requeue
 		}
 		return QueueLoopResult{Reason: reason}, err
 	}
+	// Read-only eligibility must check the requester too, not merely historical
+	// shape and budget. Rendering a control is not an execution-auth bridge.
+	// A requester that cannot select the exact retained execution charter must
+	// not consume the predecessor's single successor slot. In particular, a
+	// Console password session is never relabeled as a local-OS executor.
+	agent, err := s.FleetRepository.GetAgentRevision(ctx, input.Agent.ID, input.Agent.Revision)
+	if err != nil {
+		return QueueLoopResult{}, err
+	}
+	if agent.Digest != input.Agent.Digest {
+		return QueueLoopResult{}, ErrDenied
+	}
+	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
+	if err != nil {
+		return QueueLoopResult{}, err
+	}
+	if charter.Digest != agent.Charter.Digest {
+		return QueueLoopResult{}, ErrDenied
+	}
+	selection, selectionErr := s.Select(charter, sub, "", core.Environment{Name: "local"})
+	if selectionErr != nil || selection.Selected == nil {
+		result := QueueLoopResult{}
+		result.blockedDoer("session_selection_" + selection.Reason)
+		return result, nil
+	}
 	if !execute {
 		return QueueLoopResult{Reason: "eligible_fresh_admission_required"}, nil
 	}
 	return s.QueueLoopAs(ctx, sub, input)
+}
+
+// PrepareQueueRequeueAs reconstructs a non-authorizing review, never reserves a successor.
+type QueueRequeueBinding struct {
+	Run                 QueueLoopInput
+	Checkpoint          string
+	Consumed, Remaining uint16
+}
+
+func (s *Service) PrepareQueueRequeueAs(ctx context.Context, sub core.Subject, in RequeueQueueItemInput) (QueueLoopInput, QueueRequeueBinding, error) {
+	if err := s.requireFleetPrincipal(sub); err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	if in.QueueItem.Validate() != nil || in.IdempotencyKey == "" || len(in.IdempotencyKey) > 256 {
+		return QueueLoopInput{}, QueueRequeueBinding{}, requeueDenied("requeue_invalid_selector")
+	}
+	old, err := s.GetQueueItemAs(ctx, sub, in.QueueItem.ID)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	snapshot, err := s.FleetRepository.GetGraphRunSnapshot(ctx, old.Item.Snapshot.ID)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	// Do not reinterpret historical Graphs as direct loops, including single-node Graphs.
+	if snapshot.SchemaVersion != graph.DirectRunSnapshotSchemaVersion {
+		return QueueLoopInput{}, QueueRequeueBinding{}, requeueDenied("requeue_graph_source_unsupported")
+	}
+	topology, err := s.Fleet.ResolveRunTopology(ctx, snapshot)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	input, err := reconstructQueueRequeue(sub, in, old, snapshot, topology)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	view, err := s.GetLoopViewAs(ctx, sub, input.Loop.ID, input.Loop.Revision)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	if view.Revision.Digest != input.Loop.Digest {
+		return QueueLoopInput{}, QueueRequeueBinding{}, ErrDenied
+	}
+	// Read-only eligibility check before reserving a successor. The QueueLoop
+	// admission repeats this check under its own serialization boundary.
+	fact, err := s.deriveLoopReexecution(ctx, sub, input, queueLoopRequestID(sub, input), "", view.Revision)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
+	return input, QueueRequeueBinding{input, fact.CheckpointDigest, fact.Consumed, fact.Remaining}, nil
 }

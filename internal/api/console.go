@@ -1823,7 +1823,7 @@ func consoleCollectionURL(domain consoleDomain, query url.Values) string {
 	case consoleAgents, consoleGraphs, consoleLoops:
 		allowed["q"], allowed["lifecycle"] = true, true
 	case consoleQueue:
-		allowed["state"] = true
+		allowed["state"], allowed["visibility"] = true, true
 	case consoleCredentials:
 		allowed["q"], allowed["status"] = true, true
 	}
@@ -1923,7 +1923,10 @@ func paginateConsoleCollection(model *consoleweb.SurfaceModel, rawPage, recordKe
 		}
 		page = parsed
 	}
-	if recordKey != "" {
+	// Queue history may intentionally be absent from the saved collection view.
+	// Its already-authorized inspector must not change the collection's page.
+	exactQueueDetail := model.Domain == string(consoleQueue) && model.InspectorOpen && model.Inspector != nil && model.Inspector.Key == recordKey
+	if recordKey != "" && !exactQueueDetail {
 		found := -1
 		for index := range model.Records {
 			if model.Records[index].Key == recordKey {
@@ -2242,6 +2245,9 @@ func fallback(value, replacement string) string {
 }
 
 func selectConsoleRecord(model *consoleweb.SurfaceModel, raw string) error {
+	if model.Domain == string(consoleQueue) && model.InspectorOpen && model.Inspector != nil && model.Inspector.Key == raw {
+		return nil
+	}
 	for index := range model.Records {
 		if model.Records[index].Key == raw {
 			model.Inspector = &model.Records[index]

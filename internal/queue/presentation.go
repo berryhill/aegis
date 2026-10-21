@@ -22,9 +22,14 @@ const (
 )
 
 func (s LifecycleSelection) Validate() error {
-	if s == SelectionAll || terminalState(State(s)) || s == LifecycleSelection(StateQueued) || s == LifecycleSelection(StateClaimed) || State(s).IsPreparation() {
+	if terminalState(State(s)) || State(s).IsPreparation() || State(s) == StateClaimed {
 		return nil
 	}
+	switch s {
+	case "all", "queued", "claimable", "active", "retrying", "cancelled", "expired", "denied", "failed", "exhausted", "succeeded":
+		return nil
+	}
+
 	return errors.New("invalid queue lifecycle selection")
 }
 

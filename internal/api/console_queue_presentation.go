@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"html"
 	"io"
 	"mime"
 	"net/http"
@@ -45,9 +46,12 @@ func applyConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub co
 		actions.RequeueReason = "Requeue unavailable: only supported failed direct Doer work with remaining cumulative budget; fresh admission required"
 		if view.Projection.State == queue.StateFailed {
 			result, err := svc.CheckQueueRequeueAs(ctx, sub, ref)
-			actions.CanRequeue = err == nil
-			if err == nil {
+			actions.CanRequeue = err == nil && result.Reason == "eligible_fresh_admission_required"
+			if actions.CanRequeue {
 				actions.RequeueReason = "Same pins and inputs; linked successor, remaining cumulative budget and fresh authority admission"
+			} else if err == nil && result.RequiredAction != "" {
+				actions.CanReviewRequeue = true
+				actions.RequeueReason = "Requeue unavailable: independent_setup_required; " + result.Reason + "; required action: " + result.RequiredAction + "; Console authentication does not grant execution authority"
 			} else if result.Reason == "doer_reexecution_budget_exhausted" {
 				actions.RequeueReason = "Requeue unavailable: immutable implementation-attempt budget exhausted"
 			}
@@ -68,13 +72,14 @@ func applyConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub co
 	}
 }
 
-func registerConsoleQueuePresentation(e *echo.Echo, svc *app.Service, manager *console.Manager) {
-	for _, action := range []string{"archive", "unarchive", "requeue"} {
-		e.POST("/console/queue/:item/"+action, consoleQueuePresentationHandler(svc, manager, action))
+func registerConsoleQueuePresentation(e *echo.Echo, svc *app.Service, manager *console.Manager, portals ...*DoerContinuationPortal) {
+	e.POST("/console/queue/preferences", consoleQueuePreferencesHandler(svc, manager))
+	for _, action := range []string{"archive", "unarchive", "requeue", "requeue-review"} {
+		e.POST("/console/queue/:item/"+action, consoleQueuePresentationHandler(svc, manager, action, portals...))
 	}
 }
 
-func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager, action string) echo.HandlerFunc {
+func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager, action string, portals ...*DoerContinuationPortal) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		manager.ApplySecurityHeaders(c.Response().Header(), true)
 		request := c.Request()
@@ -101,7 +106,7 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 			return bad()
 		}
 		request.Header.Set("X-CSRF-Token", values.Get("csrf"))
-		sub, err := manager.AuthorizeMutation(request)
+		sub, session, err := manager.AuthorizeCommand(request)
 		if err != nil {
 			return mapConsoleError(err)
 		}
@@ -120,7 +125,7 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		if err != nil {
 			return err
 		}
-		if archive.Revision != revision {
+		if (action == "requeue" || action == "requeue-review") && archive.Revision != revision {
 			return app.ErrConflict
 		}
 		if !queuePresentationTerminal(view.Projection.State) {
@@ -128,17 +133,57 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		}
 		// Stable server-derived identity binds the canonical source, CAS and action;
 		// caller cannot rotate a key or supply authority/task/budget fields.
-		sum := sha256.Sum256([]byte(fmt.Sprintf("console-queue-v1:%s:%s:%s:%d:%s", sub.PrincipalID, ref.ID, ref.Digest, revision, action)))
+		intentAction := action
+		if action == "requeue-review" {
+			intentAction = "requeue"
+		}
+		sum := sha256.Sum256([]byte(fmt.Sprintf("console-queue-v1:%s:%s:%s:%d:%s", sub.PrincipalID, ref.ID, ref.Digest, revision, intentAction)))
 		identity := fmt.Sprintf("console-queue-%x", sum)
+		selector := app.RequeueQueueItemInput{QueueItem: ref, IdempotencyKey: identity}
+		if action == "requeue-review" {
+			if len(portals) == 0 {
+				return app.ErrDenied
+			}
+			v, err := portals[0].retainRequeue(request.Context(), sub, session, selector)
+			if err != nil {
+				return err
+			}
+			return portals[0].render(c, v, values.Get("csrf"))
+		}
 		if action == "requeue" {
-			result, err := svc.RequeueQueueItemAs(request.Context(), sub, app.RequeueQueueItemInput{QueueItem: ref, IdempotencyKey: identity})
+			var result app.QueueLoopResult
+			if len(portals) > 0 {
+				run, _, prepErr := svc.PrepareQueueRequeueAs(request.Context(), sub, selector)
+				if prepErr != nil {
+					return prepErr
+				}
+				if pending, ok := portals[0].exact(request.Context(), sub, session, run); ok {
+					result, err = svc.QueueDoerContinuationAs(request.Context(), sub, session, pending.ApprovalID, pending.Review.Intent)
+				} else {
+					result, err = svc.RequeueQueueItemAs(request.Context(), sub, selector)
+				}
+			} else {
+				result, err = svc.RequeueQueueItemAs(request.Context(), sub, selector)
+			}
+			// A worker can return an error after a durable failed disposition.
+			// Reconcile that exact admitted item read-only; never retry an effect.
+			if err != nil && result.QueueItemID != "" && result.Reexecution != nil {
+				retained, readErr := svc.GetQueueItemAs(request.Context(), sub, result.QueueItemID)
+				if readErr == nil && retained.Projection.State == queue.StateFailed && retained.Disposition != nil && retained.Disposition.ReasonCode == "doer_loop_failed" && result.Reexecution.Previous.PreviousQueue == ref {
+					result.Execution = &retained
+					err = nil
+				}
+			}
 			if err != nil {
 				return err
 			}
 			if result.Execution != nil {
 				return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleQueue, result.Execution.Item.ItemID))
 			}
-			return c.String(http.StatusOK, "Requeue admission: "+result.Reason+"; no completed execution asserted")
+			// Render an HTML document rather than Chrome's text/plain viewer,
+			// whose injected inline wrapping style violates our strict CSP.
+			message := "Requeue admission: independent_setup_required; " + result.Reason + "; required action: " + result.RequiredAction + "; no completed execution asserted"
+			return c.HTML(http.StatusOK, "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Requeue admission</title></head><body><main><h1>Independent setup required</h1><p>"+html.EscapeString(message)+"</p><a href=\""+html.EscapeString(consoleRecordURL(consoleQueue, ref.ID))+"\">Return to execution</a></main></body></html>")
 		}
 		if action != "archive" && action != "unarchive" {
 			return bad()

@@ -35,6 +35,7 @@ var queueScopeStates = []string{"all", "queued", "claimable", "active", "retryin
 type queueScopeRepository struct {
 	fleet.Repository
 	fleet.LoopAvailabilityRepository
+	fleet.QueuePresentationRepository
 	projections  map[string]queue.Projection
 	dispositions map[string]disposition.Record
 	retries      map[string][]queue.Retry
@@ -83,7 +84,7 @@ func queueScopeFixture(t *testing.T) (*app.Service, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo := &queueScopeRepository{Repository: store, LoopAvailabilityRepository: store, projections: map[string]queue.Projection{}, dispositions: map[string]disposition.Record{}, retries: map[string][]queue.Retry{}}
+	repo := &queueScopeRepository{Repository: store, LoopAvailabilityRepository: store, QueuePresentationRepository: store, projections: map[string]queue.Projection{}, dispositions: map[string]disposition.Record{}, retries: map[string][]queue.Retry{}}
 	ref := func(id, digest string) reference.DigestRef {
 		return reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: id, Digest: digest}
 	}
@@ -357,6 +358,29 @@ func TestConsoleQueueScopeAuthenticatedRoutes(t *testing.T) {
 	assertQueueScopeBands(t, fragmentBands)
 	if !reflect.DeepEqual(bands, fragmentBands) || agentReadOnlyState(t, svc) != before {
 		t.Fatal("empty fragment differs or navigation changed canonical records")
+	}
+	// Saved preferences apply only to the collection, never exact historical
+	// readback. Keep an intentionally empty Archived/Succeeded bottom view.
+	ctx := context.Background()
+	subject, err := svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = svc.SetQueuePreferencesAs(ctx, subject, app.SetQueuePreferencesInput{
+		RequestID: "scope-saved-view", Selection: "succeeded", Visibility: queue.VisibilityArchived, ExpectedRevision: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, prefix := range []string{"/console/queue?", "/console/fragments/surface?domain=queue&", "/console/fragments/inspect?domain=queue&"} {
+		detail := queueScopeGet(t, client, base, prefix+"record_key=scope-failed-1&limit=1", http.StatusOK)
+		if !strings.Contains(detail, "data-queue-workspace") || !strings.Contains(detail, "scope-failed-1") {
+			t.Fatalf("saved view hid exact history: %s", prefix)
+		}
+	}
+	prefs, err := svc.GetQueuePreferencesAs(ctx, subject)
+	if err != nil || prefs.Revision != 1 || prefs.Selection != "succeeded" || prefs.Visibility != queue.VisibilityArchived {
+		t.Fatalf("detail navigation changed saved view: %+v %v", prefs, err)
 	}
 }
 
