@@ -5,16 +5,26 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 )
 
 func TestDoerEphemeralPreparationPolicy(t *testing.T) {
+	testDoerEphemeralPreparationPolicy(t, false)
+}
+
+func TestReusableDoerExactRunPreparationPolicy(t *testing.T) {
+	testDoerEphemeralPreparationPolicy(t, true)
+}
+
+func testDoerEphemeralPreparationPolicy(t *testing.T, reusable bool) {
 	for _, which := range []string{"allowed", "capability", "memory", "tools", "credentials", "foreign", "workspace-actor", "expired", "stale-auth", "disabled", "persistent", "profile", "persistent-home", "mcp", "plugins", "substituted-agent", "substituted-loop"} {
 		t.Run(which, func(t *testing.T) {
 			s := testService(t)
@@ -80,6 +90,29 @@ func TestDoerEphemeralPreparationPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if reusable {
+				contract.ExactBytes = false
+				candidate, _, err = loop.NewDoerReusableRevision("policy-doer", 1, "", loop.DoerReusableContract{MaxAttempts: contract.MaxAttempts})
+				if err != nil {
+					t.Fatal(err)
+				}
+				input := QueueLoopInput{Agent: agentRevisionRef(agent), Loop: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}}
+				for _, port := range []struct {
+					id    string
+					kind  graph.ValueType
+					value any
+				}{{"task", graph.TypeString, contract.Task}, {"workspace", graph.TypeString, contract.Workspace}, {"writable_files", graph.TypeArray, contract.WritableFiles}, {"verify_file", graph.TypeString, contract.VerifyFile}, {"expected_text", graph.TypeString, text}} {
+					raw, err := json.Marshal(port.value)
+					if err != nil {
+						t.Fatal(err)
+					}
+					input.Inputs = append(input.Inputs, graph.NormalizedInput{PortID: port.id, Type: port.kind, Value: raw})
+				}
+				ctx, err = bindDoerRun(ctx, input, candidate)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			switch which {
 			case "workspace-actor":
 				subject.Kind = "agent"
@@ -91,11 +124,22 @@ func TestDoerEphemeralPreparationPolicy(t *testing.T) {
 			case "substituted-agent":
 				agent.Digest = "sha256:bad"
 			case "substituted-loop":
-				candidate.Doer.Task = "changed without digest"
+				if reusable {
+					candidate.DoerReusable.MaxAttempts++
+				} else {
+					candidate.Doer.Task = "changed without digest"
+				}
 			}
 			allowed := s.doerEphemeralPreparationAllowed(ctx, subject, candidate, agent)
 			if allowed != (which == "allowed") {
 				t.Fatalf("policy allowed=%v", allowed)
+			}
+			if which != "allowed" {
+				runCtx := context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: "denied-run", candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}})
+				_ = s.prepareDoerRunHostScope(runCtx, subject, candidate, agent)
+				if _, err := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, agent.Ownership.OwnerID, agentRevisionRef(agent), contract, s.Now()); err == nil {
+					t.Fatal("ineligible exact Run minted approval")
+				}
 			}
 			// Even an eligible exact Run never opens the generic session entry point.
 			if which == "allowed" {
@@ -110,6 +154,10 @@ func TestDoerEphemeralPreparationPolicy(t *testing.T) {
 					t.Fatal("readiness without exact Run marker granted writes")
 				}
 				runCtx := context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: "policy-exact-run", candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}})
+				wrongCandidate := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "other-loop", Revision: candidate.Revision, Digest: candidate.Digest}
+				if err := s.prepareDoerRunHostScope(context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: "policy-exact-run", candidate: wrongCandidate}), subject, candidate, agent); err == nil {
+					t.Fatal("caller candidate substitution accepted")
+				}
 				if err = s.prepareDoerRunHostScope(runCtx, subject, candidate, agent); err != nil {
 					t.Fatal(err)
 				}
@@ -125,10 +173,24 @@ func TestDoerEphemeralPreparationPolicy(t *testing.T) {
 				if err != nil || grant.RunRequestID != "policy-exact-run" || grant.ExpiresAt.After(subject.ExpiresAt) {
 					t.Fatalf("grant provenance: %+v %v", grant, err)
 				}
+				if grant.Candidate != (reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}) || !reflect.DeepEqual(grant.Contract, contract) || !reflect.DeepEqual(grant.DoerReusable, candidate.DoerReusable) || grant.ExpiresAt.After(subject.AuthenticatedAt.Add(s.Config.Principal.AuthTTL)) {
+					t.Fatalf("incorrect signed exact source: %+v", grant)
+				}
+				for _, changed := range []loop.DoerContract{func() loop.DoerContract { c := contract; c.Task = "changed task"; return c }(), func() loop.DoerContract { c := contract; other := "other assertion"; c.ExpectedText = &other; return c }()} {
+					if s.resolveDoerHostApproval(runCtx, changed, agent) == nil {
+						t.Fatal("changed task/assertion covered")
+					}
+				}
+				now := s.Now
+				s.Now = func() time.Time { return grant.ExpiresAt }
+				if s.resolveDoerHostApproval(runCtx, contract, agent) == nil {
+					t.Fatal("expired signed approval covered")
+				}
+				s.Now = now
 				changed := contract
 				changed.WritableFiles = []string{"other.txt"}
 				changed.VerifyFile = "other.txt"
-				if s.resolveDoerHostApproval(ctx, changed, agent) == nil {
+				if s.resolveDoerHostApproval(runCtx, changed, agent) == nil {
 					t.Fatal("changed write contract granted")
 				}
 				if _, err = os.Stat(filepath.Join(contract.Workspace, "result.txt")); !os.IsNotExist(err) {

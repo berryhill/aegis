@@ -292,8 +292,8 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		t.Fatal("prerequisite denial wrote result")
 	}
 
-	// Explicit synthetic operator contract allowlist and local Laya process,
-	// matching the existing readiness fixture; neither is inferred from the Loop.
+	// Synthetic local Laya only. Owner-principal Runs must obtain their exact
+	// signed scope through the owning service, never a fixture digest allowlist.
 	goBinary, err := exec.LookPath("go")
 	if err != nil {
 		t.Fatal(err)
@@ -314,29 +314,29 @@ esac
 	if err := os.WriteFile(laya, []byte(layaScript), 0700); err != nil {
 		t.Fatal(err)
 	}
-	digest, err := contract.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
 	layaHome := t.TempDir()
 	if err := os.Chmod(layaHome, 0700); err != nil {
 		t.Fatal(err)
 	}
-	allowed := []string{digest}
-	if reusable {
-		betaDigest, err := betaContract.Digest()
-		if err != nil || betaDigest == digest {
-			t.Fatal("distinct preauthorized task contracts", err)
+	var allowed []string
+	if !singleRun {
+		digest, err := contract.Digest()
+		if err != nil {
+			t.Fatal(err)
 		}
-		allowed = append(allowed, betaDigest)
-	}
-	if singleRun && !reusable {
-		allowed = nil
+		allowed = []string{digest}
+		if reusable {
+			betaDigest, err := betaContract.Digest()
+			if err != nil || betaDigest == digest {
+				t.Fatal("distinct preauthorized task contracts", err)
+			}
+			allowed = append(allowed, betaDigest)
+		}
 	}
 	if err := svc.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: allowed, LayaPython: laya, LayaHome: layaHome}, svc.Config.StateDir, svc.Hermes); err != nil {
 		t.Fatal(err)
 	}
-	if reusable {
+	if reusable && !singleRun {
 		unapproved := input
 		unapproved.IdempotencyKey = "journey-unapproved-task"
 		unapproved.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
@@ -354,6 +354,15 @@ esac
 		}
 		if _, err := os.Stat(filepath.Join(workspace, "result.txt")); !os.IsNotExist(err) {
 			t.Fatal("unapproved task wrote result")
+		}
+	}
+	if reusable && singleRun {
+		readiness, err := svc.ReadDoerReadinessAs(ctx, subject, app.DoerReadinessInput{Agent: input.Agent, Loop: input.Loop, Inputs: input.Inputs, IdempotencyKey: input.IdempotencyKey, Activate: input.Activate})
+		if err != nil || readiness.Controller.State != "blocked" {
+			t.Fatalf("pure reusable readiness granted scope: %+v %v", readiness, err)
+		}
+		if _, err := svc.ReadDoerHostWriteApprovalAs(ctx, subject, input.Agent, contract); err == nil {
+			t.Fatal("publication, activation intent or readiness minted host approval")
 		}
 	}
 	if err := svc.QueueWorker.ValidateLoopAdmission(published.Revision, agent); err != nil && !singleRun {
@@ -616,14 +625,14 @@ done
 			t.Fatalf("stored selected bytes: %q %v", stored, err)
 		}
 	}
-	if singleRun && !reusable {
+	if singleRun {
 		for _, bucket := range []string{"plans", "approvals", "receipts"} {
 			if err := svc.Store.List(bucket, func(json.RawMessage) error { t.Errorf("single Run fabricated %s", bucket); return nil }); err != nil && !os.IsNotExist(err) {
 				t.Fatal(err)
 			}
 		}
 		grant, err := svc.ReadDoerHostWriteApprovalAs(ctx, subject, input.Agent, contract)
-		if err != nil || grant.RunRequestID != result.RequestID || grant.Candidate != input.Loop || grant.ExpiresAt.After(grant.ApprovedAt.Add(svc.Config.Principal.AuthTTL)) {
+		if err != nil || grant.RunRequestID != result.RequestID || grant.Candidate != input.Loop || !reflect.DeepEqual(grant.Contract, contract) || !reflect.DeepEqual(grant.DoerReusable, published.Revision.DoerReusable) || grant.ExpiresAt.After(grant.ApprovedAt.Add(svc.Config.Principal.AuthTTL)) {
 			t.Fatalf("exact Run scope: %+v %v", grant, err)
 		}
 		currentCharter, err := svc.GetCharter(charter.AgentID, 1)

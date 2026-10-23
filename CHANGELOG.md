@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Restore exact authenticated owner-principal Run preparation for reusable v5 Loops under the same narrow zero-authority ephemeral policy as v4. Bind signed scope to the real v5 revision, concrete per-run contract and stable intent without duplicate task consent or fixture digest preauthorization. Preserve freshness, ownership, effect admission, reexecution budgets and historical v4 signatures. Required public CLI-to-service normal/race regressions now exercise this path without an `AuthorizedContracts` shortcut. See [exact Run parity](docs/REUSABLE_DOER_EXACT_RUN.md); live provider acceptance remains separate.
+
 Doer readiness now preserves supported v4 exact host-review remediation versus explicit v5 adapter unavailability, rejects mixed/partial/null forms before effects, and returns closed ordered prerequisite causes for the exact Run binding.
 
 ### Added
