@@ -51,7 +51,8 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		method, path, input = http.MethodPost, "/v1/controller/codex/candidates", app.ControllerCodexCandidatesInput{ProfileHome: args[0]}
 	case "controller-codex preview":
 		id, _ := cmd.Flags().GetString("credential")
-		method, path, input = http.MethodPost, "/v1/controller/codex/preview", app.ControllerCodexPreviewInput{ProfileHome: args[0], CredentialID: id}
+		replace, _ := cmd.Flags().GetBool("replace")
+		method, path, input = http.MethodPost, "/v1/controller/codex/preview", app.ControllerCodexPreviewInput{ProfileHome: args[0], CredentialID: id, Replace: replace}
 	case "controller-codex connect":
 		method, path, input = http.MethodPost, "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: args[0]}
 	case "controller-codex show":

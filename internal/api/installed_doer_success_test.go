@@ -41,6 +41,10 @@ func TestInstalledOnlineReusableDoerDirectAdmission(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true, "reusable")
 }
 
+func TestInstalledOnlineReusableDoerFailureContinuity(t *testing.T) {
+	installedOnlineDoerExactBytesSuccess(t, true, "reusable-continuity")
+}
+
 func TestInstalledOnlineDoerPrincipalSingleRunWithoutProvisioning(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true)
 }
@@ -70,7 +74,8 @@ func (r *legacyEmptyMandateRepository) CreateMandate(ctx context.Context, m core
 }
 
 func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery ...string) {
-	reusable := len(recovery) > 0 && recovery[0] == "reusable"
+	continuity := len(recovery) > 0 && recovery[0] == "reusable-continuity"
+	reusable := len(recovery) > 0 && strings.HasPrefix(recovery[0], "reusable")
 	if reusable {
 		recovery = nil
 	}
@@ -437,6 +442,10 @@ done
 `, promptAssertion, string(betaEvent), string(event))
 	if err := os.WriteFile(filepath.Join(install, "venv", "bin", "python"), []byte(script), 0700); err != nil {
 		t.Fatal(err)
+	}
+	if continuity {
+		installedReusableFailureContinuity(t, ctx, svc, cli, input, workspace, install, script)
+		return
 	}
 
 	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {

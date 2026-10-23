@@ -163,9 +163,12 @@ func (s *Service) resolveDoerHostApproval(ctx context.Context, c loop.DoerContra
 		}
 		if workerScope {
 			var intent string
-			if s.Store.Load("queue-loop-intent", record.RunRequestID, &intent) != nil || !orchestration.DoerExecutionIntentMatches(ctx, intent) {
+			if s.Store.Load("queue-loop-intent", requestID, &intent) != nil || !orchestration.DoerExecutionIntentMatches(ctx, intent) {
 				return ErrDenied
 			}
+		}
+		if s.reusableApprovalCoversRun(record, requestID, candidate, ref) {
+			return nil
 		}
 		var lineage LoopReexecutionFact
 		loadErr := s.Store.Load("queue-loop-reexecution", requestID, &lineage)

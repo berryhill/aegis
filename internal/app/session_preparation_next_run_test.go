@@ -43,7 +43,7 @@ func (r predecessorRepository) GetQueueProjection(context.Context, string) (queu
 
 // Synthetic source-level eligibility tests, not live-runtime evidence.
 func TestCompletedReusablePredecessorEligibility(t *testing.T) {
-	for _, name := range []string{"success", "busy", "active-claim", "nonterminal", "foreign-owner", "foreign-subject", "foreign-loop", "fence-drift", "prepared-drift", "binding-drift", "charter-drift", "missing-attempt", "terminal-evidence-drift", "failed-budget", "failed-budget-after-manual-retirement", "cancelled", "pending"} {
+	for _, name := range []string{"success", "different-next-loop", "terminal-failure", "busy", "active-claim", "nonterminal", "foreign-owner", "foreign-subject", "foreign-loop", "fence-drift", "prepared-drift", "binding-drift", "charter-drift", "missing-attempt", "terminal-evidence-drift", "failed-budget", "failed-budget-after-manual-retirement", "cancelled", "pending"} {
 		t.Run(name, func(t *testing.T) {
 			s := testService(t)
 			ctx := context.Background()
@@ -66,6 +66,12 @@ func TestCompletedReusablePredecessorEligibility(t *testing.T) {
 			fence := map[string]string{"queue_item_id": ref.ID, "agent_digest": agent.Digest}
 			prepared := authref
 			switch name {
+			case "different-next-loop":
+				in.Loop = reference.RevisionRef{ID: "different-loop", Revision: 1, Digest: "different-loop-digest"}
+			case "terminal-failure":
+				old.Projection.State = queue.StateFailed
+				old.Disposition.State = execution.StateFailed
+				old.Transitions[0].To = queue.StateFailed
 			case "busy":
 				s.loopRunWorkers = map[string]bool{ref.ID: true}
 			case "active-claim":
@@ -101,7 +107,7 @@ func TestCompletedReusablePredecessorEligibility(t *testing.T) {
 				t.Fatal(err)
 			}
 			got := s.completedReusablePredecessor(ctx, sub, in, agent, "parent", fence, old, authority, session)
-			if got != (name == "success") {
+			if got != (name == "success" || name == "different-next-loop" || name == "terminal-failure") {
 				t.Fatalf("eligibility=%v", got)
 			}
 		})

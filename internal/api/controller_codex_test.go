@@ -313,6 +313,32 @@ func TestControllerCodexOwningTransport(t *testing.T) {
 		t.Fatal("resolver ignored selected account drift")
 	}
 	save("synthetic-account")
+	// Rebinding is explicit, reviewed, single-use and history-preserving.
+	// The running daemon resolves the new exact native entry without touching
+	// operator YAML, native auth bytes or the approved Agent/Loop/model.
+	other := candidates.Candidates[1].CredentialID
+	originalConnection, e := os.ReadFile(s.ConfigFile + ".controller-codex.json")
+	if e != nil {
+		t.Fatal(e)
+	}
+	beforeReplacement, _ := os.ReadFile(filepath.Join(home, "auth.json"))
+	call("POST", "/v1/controller/codex/preview", app.ControllerCodexPreviewInput{ProfileHome: home, CredentialID: other}, 409)
+	replacement := cli("preview", home, "--credential", other, "--replace")
+	staleReplacement := cli("preview", home, "--credential", other, "--replace")
+	replaced := cli("connect", replacement.ReviewID)
+	if replaced.CredentialID != other || replaced.AccountID != "other-account" || replaced.Status != "connected" {
+		t.Fatal("exact replacement missing")
+	}
+	call("POST", "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: replacement.ReviewID}, 403)
+	call("POST", "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: staleReplacement.ReviewID}, 409)
+	if _, e = s.Hermes.ResolveProviderAuthentication(ctx, h); e != nil {
+		t.Fatal("running resolver did not adopt replacement", e)
+	}
+	retainedConnection, _ := os.ReadFile(s.ConfigFile + ".controller-codex.json")
+	afterReplacement, _ := os.ReadFile(filepath.Join(home, "auth.json"))
+	if !bytes.Equal(originalConnection, retainedConnection) || !bytes.Equal(beforeReplacement, afterReplacement) {
+		t.Fatal("replacement overwrote retained connection or native auth")
+	}
 	afterLoop, e := s.GetLoopAs(ctx, sub, "preserved-loop", 1)
 	if e != nil || !reflect.DeepEqual(beforeLoop, afterLoop) {
 		t.Fatal("exact published Loop changed", e)

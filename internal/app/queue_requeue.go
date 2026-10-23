@@ -174,6 +174,10 @@ func (s *Service) PrepareQueueRequeueAs(ctx context.Context, sub core.Subject, i
 	}
 	// Read-only eligibility check before reserving a successor. The QueueLoop
 	// admission repeats this check under its own serialization boundary.
+	ctx, err = bindDoerRun(ctx, input, view.Revision)
+	if err != nil {
+		return QueueLoopInput{}, QueueRequeueBinding{}, err
+	}
 	fact, err := s.deriveLoopReexecution(ctx, sub, input, queueLoopRequestID(sub, input), "", view.Revision)
 	if err != nil {
 		return QueueLoopInput{}, QueueRequeueBinding{}, err

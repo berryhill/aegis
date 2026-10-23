@@ -146,12 +146,13 @@ func (s *Service) legacyPreparationFailure(ctx context.Context, sub core.Subject
 // atomically creates a child denial fence; it never clears an old fence/lease,
 // rewrites signed facts, substitutes Queue identity, or adds authority scope.
 func (s *Service) recoverDoerSessionPreparation(ctx context.Context, sub core.Subject, input QueueLoopInput, result QueueLoopResult, lv LoopView, agent registry.AgentRevision, reservation string, fence map[string]string) (string, *sessionPreparationFact, error) {
-	if lv.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion || !s.doerEphemeralPreparationAllowed(ctx, sub, lv.Revision, agent) || fence["queue_item_id"] != result.QueueItemID || fence["agent_digest"] != agent.Digest {
+	if (lv.Revision.SchemaVersion != loop.DoerRevisionSchemaVersion && lv.Revision.SchemaVersion != loop.DoerReusableSchemaVersion) || !s.doerEphemeralPreparationAllowed(ctx, sub, lv.Revision, agent) || fence["queue_item_id"] != result.QueueItemID || fence["agent_digest"] != agent.Digest {
 		return "", nil, ErrDenied
 	}
 	rootSum := sha256.Sum256([]byte(sub.ID + "\x00" + agent.Digest))
 	rootID := hex.EncodeToString(rootSum[:])
-	if reservation != rootID && reservation != preparationNextID(rootID) {
+	selected, selectedFence, selectErr := s.preparationReservation(rootID)
+	if selectErr != nil || selected != reservation || selectedFence["queue_item_id"] != result.QueueItemID || selectedFence["agent_digest"] != agent.Digest {
 		return "", nil, ErrDenied
 	}
 	v, err := s.GetQueueItemAs(ctx, sub, result.QueueItemID)
@@ -162,6 +163,9 @@ func (s *Service) recoverDoerSessionPreparation(ctx context.Context, sub core.Su
 		return "", nil, ErrDenied
 	}
 	tr := v.Transitions[len(v.Transitions)-1]
+	if tr.TransitionID == v.Projection.LastTransitionID && tr.Reason == "prior_runtime_authority_requires_explicit_recovery" {
+		return s.recoverCompletedPrelaunchBlock(ctx, sub, input, result, agent, reservation, fence, v, tr)
+	}
 	if tr.TransitionID != v.Projection.LastTransitionID || tr.Reason != "session_start_preparation_failed" {
 		return "", nil, ErrDenied
 	}

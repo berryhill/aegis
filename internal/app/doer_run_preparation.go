@@ -120,13 +120,9 @@ func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subj
 		return ErrDenied
 	}
 	if s.resolveDoerHostApproval(ctx, contract, agent) == nil {
-		if !linked {
-			return nil
-		}
-		record, err := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, agent.Ownership.OwnerID, agentRevisionRef(agent), contract, s.Now())
-		if err == nil && record.RunRequestID == intent.requestID && record.ReexecutionDigest == lineage.Digest && record.ImplementationPassCap == lineage.Remaining {
-			return nil
-		}
+		// Resolve rechecks either this exact signed Run or its canonical
+		// same-task v5 continuation under the unchanged approval lifetime.
+		return nil
 	}
 	now := s.Now().UTC()
 	expires := subject.ExpiresAt
