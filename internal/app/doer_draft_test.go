@@ -241,6 +241,113 @@ func (r draftAgentRepository) GetQueueItem(context.Context, string) (queue.Item,
 	return queue.Item{}, fleet.ErrNotFound
 }
 
+func TestRetainedDoerRunReservationFencesConflictingIntent(t *testing.T) {
+	s, subject, input := draftFixture(t)
+	ctx := context.Background()
+	draft, err := s.SaveDoerDraftAs(ctx, subject, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, _, err := NewDoerLoopRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := QueueLoopInput{Agent: draft.Agent, Loop: RevisionReference(candidate.LoopID, candidate.Revision, candidate.Digest), IdempotencyKey: draft.PublicationKey + "-run", Activate: true}
+	if _, err := s.reserveExactDoerRun(ctx, subject, run); err != nil {
+		t.Fatal(err)
+	}
+	other := run
+	other.Activate = false
+	if _, err := s.reserveExactDoerRun(ctx, subject, other); !errors.Is(err, ErrConflict) {
+		t.Fatalf("conflicting reservation: %v", err)
+	}
+	if _, err := s.reserveExactDoerRun(ctx, subject, run); err != nil {
+		t.Fatalf("same-intent replay: %v", err)
+	}
+	var identity string
+	_, expected, err := normalizeLoopRunIdentity(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.Load("queue-loop-intent", queueLoopRequestID(subject, run), &identity); err != nil || identity != expected {
+		t.Fatalf("reservation lost exact identity: %v", err)
+	}
+	if _, err := os.Stat(s.Store.Root() + "/doer-host-approvals"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("reservation created host approval: %v", err)
+	}
+}
+
+func TestRetainedDoerRunIntentDenialsHaveNoEffects(t *testing.T) {
+	for _, name := range []string{"intent-mismatch", "expired-auth", "expired-task", "stale-version"} {
+		t.Run(name, func(t *testing.T) {
+			s, subject, input := draftFixture(t)
+			ctx := context.Background()
+			draft, err := s.SaveDoerDraftAs(ctx, subject, input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			agent := registry.AgentRevision{AgentID: input.Agent.ID, Revision: input.Agent.Revision, Digest: input.Agent.Digest, Lifecycle: registry.LifecycleEnabled}
+			agent.Ownership.OwnerID = subject.PrincipalID
+			// Unimplemented mutation methods deliberately fail if admission reaches
+			// publication/Queue effects instead of rejecting the retained intent.
+			s.FleetRepository = draftAgentRepository{exact: agent, latest: agent}
+			candidate, _, err := NewDoerLoopRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run := QueueLoopInput{Agent: draft.Agent, Loop: RevisionReference(candidate.LoopID, candidate.Revision, candidate.Digest), IdempotencyKey: draft.PublicationKey + "-run", Activate: true}
+			key := queueLoopRequestID(subject, run)
+			request := ExecuteDoerTaskInput{ID: draft.ID, ExpectedVersion: draft.Version}
+			want := ErrConflict
+			switch name {
+			case "intent-mismatch":
+				other := run
+				other.Activate = false
+				_, identity, err := normalizeLoopRunIdentity(other)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := s.Store.Create("queue-loop-intent", key, identity); err != nil {
+					t.Fatal(err)
+				}
+			case "expired-auth":
+				subject.ExpiresAt = s.Now()
+				want = ErrDenied
+			case "expired-task":
+				s.Now = func() time.Time { return draft.ExpiresAt }
+				subject.ExpiresAt = draft.ExpiresAt.Add(time.Hour)
+				want = ErrExpired
+			case "stale-version":
+				request.ExpectedVersion++
+			}
+			var before, after json.RawMessage
+			if err := s.Store.Load(doerDraftKind, doerDraftSlot(subject.PrincipalID), &before); err != nil {
+				t.Fatal(err)
+			}
+			out, err := s.ExecuteDoerTaskAs(ctx, subject, request)
+			if !errors.Is(err, want) || out.Publication != nil || out.Run != nil {
+				t.Fatalf("denial=%+v err=%v want=%v", out, err, want)
+			}
+			if err := s.Store.Load(doerDraftKind, doerDraftSlot(subject.PrincipalID), &after); err != nil || string(before) != string(after) {
+				t.Fatalf("denial mutated retained draft: %v", err)
+			}
+			if _, err := os.Stat(s.Store.Root() + "/doer-host-approvals"); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("denial created host approval: %v", err)
+			}
+			var identity string
+			err = s.Store.Load("queue-loop-intent", key, &identity)
+			if name == "intent-mismatch" {
+				_, expected, normalizeErr := normalizeLoopRunIdentity(QueueLoopInput{Agent: run.Agent, Loop: run.Loop, IdempotencyKey: run.IdempotencyKey})
+				if err != nil || normalizeErr != nil || identity != expected {
+					t.Fatalf("denial replaced original intent: %v %v", err, normalizeErr)
+				}
+			} else if !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("denial reserved intent: %v", err)
+			}
+		})
+	}
+}
+
 func TestDoerDraftPublicationRevalidatesExactAgentWithoutSubstitution(t *testing.T) {
 	s, subject, input := draftFixture(t)
 	draft, err := s.SaveDoerDraftAs(context.Background(), subject, input)

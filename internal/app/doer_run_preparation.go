@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -10,6 +11,7 @@ import (
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
+	"github.com/berryhill/aegis/internal/store"
 )
 
 // This policy prepares only an owner-principal's zero-authority disposable
@@ -54,8 +56,8 @@ func (s *Service) doerEphemeralPreparationAllowed(ctx context.Context, subject c
 	return len(st.Grant.Capabilities) == 0 && len(st.Grant.Tools) == 0 && len(st.Hermes.Toolsets) == 0 && len(st.Scopes.Memory) == 0 && len(st.Scopes.Credentials) == 0 && st.Hermes.Profile == "" && !st.Hermes.PersistentHome && len(st.Hermes.MCPServers) == 0 && len(st.Hermes.Plugins) == 0
 }
 
-// Only QueueLoop's exact, intent-fenced authenticated Run installs this private
-// marker. Readiness, publishing, activation and workspace actors cannot grant.
+// Only exact authenticated QueueLoop or retained task execution installs this
+// private marker. Public readiness, publishing and workspace actors cannot grant.
 type exactDoerRunKey struct{}
 
 // Private, admission-derived binding; never serialized as a revised definition.
@@ -94,6 +96,45 @@ func (s *Service) validateQueuedDoerAdmission(ctx context.Context, candidate loo
 type exactDoerRun struct {
 	requestID string
 	candidate reference.RevisionRef
+}
+
+// Check the exact normalized intent. Effect-authorizing callers must reserve
+// it atomically before probing readiness, which can prepare signed host scope.
+func (s *Service) exactDoerRunContext(ctx context.Context, subject core.Subject, input QueueLoopInput) (context.Context, error) {
+	if err := ctx.Err(); err != nil {
+		return ctx, err
+	}
+	if err := s.requirePrincipal(subject); err != nil {
+		return ctx, err
+	}
+	input, identity, err := normalizeLoopRunIdentity(input)
+	if err != nil {
+		return ctx, err
+	}
+	key := queueLoopRequestID(subject, input)
+	var reserved string
+	if e := s.Store.Load("queue-loop-intent", key, &reserved); e != nil && !errors.Is(e, os.ErrNotExist) {
+		return ctx, e
+	} else if e == nil && reserved != identity {
+		return ctx, ErrConflict
+	}
+	return context.WithValue(ctx, exactDoerRunKey{}, exactDoerRun{requestID: key, candidate: input.Loop}), nil
+}
+
+func (s *Service) reserveExactDoerRun(ctx context.Context, subject core.Subject, input QueueLoopInput) (context.Context, error) {
+	ctx, err := s.exactDoerRunContext(ctx, subject, input)
+	if err != nil {
+		return ctx, err
+	}
+	_, identity, err := normalizeLoopRunIdentity(input)
+	if err != nil {
+		return ctx, err
+	}
+	key := queueLoopRequestID(subject, input)
+	if err = s.Store.Create("queue-loop-intent", key, identity); err != nil && !errors.Is(err, store.ErrAlreadyExists) {
+		return ctx, err
+	}
+	return s.exactDoerRunContext(ctx, subject, input)
 }
 
 func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subject, candidate loop.LoopRevision, agent registry.AgentRevision) error {

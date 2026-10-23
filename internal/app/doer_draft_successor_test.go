@@ -8,6 +8,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 )
@@ -53,6 +54,14 @@ func TestDoerDraftSuccessorRetainsInputsAndArchivesExactBinding(t *testing.T) {
 		t.Fatal(err)
 	}
 	provenance = fixtureWorkspaceProvenance(t, provenance, old)
+	// A real setup-blocked Execute must not freeze the proposal before the
+	// independently approved successor can be bound to this same task.
+	s.FleetRepository = draftAgentRepository{exact: old, latest: old}
+	s.Fleet = &orchestration.FleetService{}
+	blocked, e := s.ExecuteDoerTaskAs(ctx, sub, ExecuteDoerTaskInput{ID: draft.ID, ExpectedVersion: draft.Version})
+	if e != nil || blocked.Status != "independent_setup_required" || blocked.Task.ExecutionDigest != "" || blocked.Publication != nil || blocked.Run != nil {
+		t.Fatalf("setup blocked continuation: %+v %v", blocked, e)
+	}
 	s.FleetRepository = retainedPublicationRepository{draftAgentRepository: draftAgentRepository{exact: old, latest: next}, revision: revision, validation: validation, provenance: provenance}
 	for _, name := range []string{"principal", "ref", "version", "charter"} {
 		who, ref, ch, version := sub, input.Agent, next.Charter, draft.Version

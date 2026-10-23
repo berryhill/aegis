@@ -82,6 +82,19 @@ func (s *Service) ProbeDoerCandidateReadinessAs(ctx context.Context, subject cor
 }
 
 func (s *Service) doerCandidateReadinessAs(ctx context.Context, subject core.Subject, input DoerCandidateReadinessInput, probe bool) (DoerCandidateReadiness, error) {
+	// All observational callers, including typed owning-service readiness,
+	// share the public probe deadline. Exact Run admission uses the private
+	// helper below with its execution context instead.
+	if probe && ctx != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+	return s.doerCandidateReadinessWithSetupAs(ctx, subject, input, probe, false)
+}
+
+// setupOnly stops before host-scope preparation, helper admission or any Run effect.
+func (s *Service) doerCandidateReadinessWithSetupAs(ctx context.Context, subject core.Subject, input DoerCandidateReadinessInput, probe, setupOnly bool) (DoerCandidateReadiness, error) {
 	r := newDoerReadiness()
 	r.Agent = input.Agent
 	ready := DoerPrerequisiteStatus{State: "ready"}
@@ -137,19 +150,51 @@ func (s *Service) doerCandidateReadinessAs(ctx context.Context, subject core.Sub
 	}
 	r.CanAuthor = true
 	r.RequiredCharter = &agent.Charter
-	if probe {
-		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		s.checkDoerExecutionReadiness(probeCtx, subject, candidate, agent, true, &r)
-	} else {
-		s.checkDoerExecutionReadiness(ctx, subject, candidate, agent, false, &r)
+	if setupOnly {
+		s.checkDoerSetupReadiness(ctx, subject, candidate, agent, &r)
+		return r, nil
 	}
+	// Exact Run callers retain their execution context, just like Queue preflight.
+	// Only public observational probing imposes the ten-second inspection bound.
+	s.checkDoerExecutionReadiness(ctx, subject, candidate, agent, probe, &r)
 	return r, nil
 }
 
 // Shared execution checks intentionally retain preflight's ordering and reason
 // codes. The caller performs its own immutable-reference and authority admission.
 func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.Subject, candidate loop.LoopRevision, agent registry.AgentRevision, probe bool, r *DoerCandidateReadiness) {
+	s.checkDoerSetupReadiness(ctx, subject, candidate, agent, r)
+	if r.Controller.State != "ready" {
+		return
+	}
+	ready := DoerPrerequisiteStatus{State: "ready"}
+	if err := s.prepareDoerRunHostScope(ctx, subject, candidate, agent); err != nil {
+		r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
+		return
+	}
+	if !probe {
+		if err := s.validateQueuedDoerAdmission(ctx, candidate, agent, false); err != nil {
+			r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
+			return
+		}
+		r.Controller = ready
+		r.Reason = "helper_probe_required"
+		return
+	}
+	err := s.validateQueuedDoerAdmission(ctx, candidate, agent, true)
+	if err != nil {
+		if errors.Is(err, orchestration.ErrLocalLayaUnavailable) {
+			r.Controller = ready
+			r.block(&r.Helper, "local_laya_unavailable")
+			return
+		}
+		r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
+		return
+	}
+	r.Controller, r.Helper, r.CanExecute = ready, ready, true
+}
+
+func (s *Service) checkDoerSetupReadiness(ctx context.Context, subject core.Subject, candidate loop.LoopRevision, agent registry.AgentRevision, r *DoerCandidateReadiness) {
 	r.definitionSchema = candidate.SchemaVersion
 	ready := DoerPrerequisiteStatus{State: "ready"}
 	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
@@ -231,28 +276,5 @@ func (s *Service) checkDoerExecutionReadiness(ctx context.Context, subject core.
 		r.block(&r.Controller, reason)
 		return
 	}
-	if err := s.prepareDoerRunHostScope(ctx, subject, candidate, agent); err != nil {
-		r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
-		return
-	}
-	if !probe {
-		if err := s.validateQueuedDoerAdmission(ctx, candidate, agent, false); err != nil {
-			r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
-			return
-		}
-		r.Controller = ready
-		r.Reason = "helper_probe_required"
-		return
-	}
-	err = s.validateQueuedDoerAdmission(ctx, candidate, agent, true)
-	if err != nil {
-		if errors.Is(err, orchestration.ErrLocalLayaUnavailable) {
-			r.Controller = ready
-			r.block(&r.Helper, "local_laya_unavailable")
-			return
-		}
-		r.block(&r.Controller, orchestration.DoerPrerequisiteReason(err))
-		return
-	}
-	r.Controller, r.Helper, r.CanExecute = ready, ready, true
+	r.Controller = ready
 }

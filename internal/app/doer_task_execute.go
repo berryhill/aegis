@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/url"
+	"reflect"
 
 	"github.com/berryhill/aegis/internal/core"
 )
@@ -62,17 +63,25 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 	if _, e := s.retainedDoerPublication(ctx, subject, d); e != nil {
 		return out, e
 	}
-	out.Readiness, err = s.ProbeDoerCandidateReadinessAs(ctx, subject, DoerCandidateReadinessInput{Agent: d.Agent, Candidate: candidate})
+	input := QueueLoopInput{Agent: d.Agent, Loop: RevisionReference(candidate.LoopID, candidate.Revision, candidate.Digest), IdempotencyKey: d.PublicationKey + "-run", Activate: true}
+	// Reject an already conflicting reservation without mutating the draft.
+	_, err = s.exactDoerRunContext(ctx, subject, input)
 	if err != nil {
 		return out, err
 	}
-	if !out.Readiness.CanExecute {
+	out.Readiness, err = s.doerCandidateReadinessWithSetupAs(ctx, subject, DoerCandidateReadinessInput{Agent: d.Agent, Candidate: candidate}, false, true)
+	if err != nil {
+		return out, err
+	}
+	if out.Readiness.Controller.State != "ready" {
 		out.Status = "independent_setup_required"
 		out.ConfirmationURL = "/console/loops/doer/setup?draft_id=" + url.QueryEscape(d.ID)
 		return out, nil
 	}
-	// Freeze only after full current readiness; CAS excludes concurrent edits and
-	// successor rebinding. This is immutable intent, not an approval or a lease.
+	// Freeze under the owning Store CAS BEFORE reserving or preparing host scope.
+	// A crash between these writes leaves a frozen, replayable task, never an
+	// editable draft with a durable incompatible reservation. Setup-only blockers
+	// above remain editable and may still bind an independently approved successor.
 	err = s.Store.Update(doerDraftKind, doerDraftSlot(subject.PrincipalID), func(raw []byte) (any, error) {
 		if e := ctx.Err(); e != nil {
 			return nil, e
@@ -88,7 +97,7 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 			if current.ID != d.ID {
 				continue
 			}
-			if current.Version != d.Version || current.Agent != d.Agent {
+			if !reflect.DeepEqual(current, d) {
 				return nil, ErrConflict
 			}
 			if !s.Now().Before(current.ExpiresAt) {
@@ -96,6 +105,9 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 			}
 			if current.ExecutionDigest != "" && current.ExecutionDigest != candidate.Digest {
 				return nil, ErrConflict
+			}
+			if _, e := s.ValidateDoerDraftPublicationAs(ctx, subject, d.ID, d.Version); e != nil {
+				return nil, e
 			}
 			current.ExecutionDigest = candidate.Digest
 			set.Drafts[i] = current
@@ -106,6 +118,21 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 	})
 	if err != nil {
 		return out, err
+	}
+	ctx, err = s.reserveExactDoerRun(ctx, subject, input)
+	if err != nil {
+		return out, err
+	}
+	// This is execution admission, not the ten-second public inspection probe.
+	// Reuse the same real checks as Queue preflight, under the reserved exact Run.
+	out.Readiness, err = s.doerCandidateReadinessWithSetupAs(ctx, subject, DoerCandidateReadinessInput{Agent: d.Agent, Candidate: candidate}, true, false)
+	if err != nil {
+		return out, err
+	}
+	if !out.Readiness.CanExecute {
+		out.Status = "independent_setup_required"
+		out.ConfirmationURL = "/console/loops/doer/setup?draft_id=" + url.QueryEscape(d.ID)
+		return out, nil
 	}
 	published, err := s.retainedDoerPublication(ctx, subject, d)
 	if err != nil {
@@ -128,7 +155,7 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 	if exact.Digest != candidate.Digest {
 		return out, ErrConflict
 	}
-	run, err := s.QueueLoopAs(ctx, subject, QueueLoopInput{Agent: d.Agent, Loop: RevisionReference(exact.LoopID, exact.Revision, exact.Digest), IdempotencyKey: d.PublicationKey + "-run", Activate: true})
+	run, err := s.QueueLoopAs(ctx, subject, input)
 	out.Run = &run
 	out.Status = "execution_observed"
 	return out, err
