@@ -6,6 +6,7 @@ Codex request, and retain only reviewed structured error literals, never text.
 """
 import json
 import os
+import re
 import runpy
 import sys
 import threading
@@ -16,14 +17,26 @@ CODES = frozenset(("invalid_request_error", "unsupported_parameter", "unsupporte
 
 
 def closed_details(body):
-    if not isinstance(body, dict) or not isinstance(body.get("error"), dict):
+    if not isinstance(body, dict):
         return {}
-    error = body["error"]
+    error = body.get("error")
+    structured = error if isinstance(error, dict) else {}
     out = {}
     for key, allowed in (("param", PARAMETERS), ("code", CODES)):
-        value = error.get(key)
+        value = structured.get(key)
         if isinstance(value, str) and value in allowed:
             out["request_parameter" if key == "param" else "request_code"] = value
+    # Codex also sends this reviewed model-entitlement denial as a string,
+    # without structured param/code. Classify only the closed exact grammar;
+    # never retain the model identifier, raw message, response, or headers.
+    message = structured.get("message") if structured else error
+    if not isinstance(message, str):
+        message = body.get("detail")
+    if not out and isinstance(message, str) and len(message) <= 512 and re.fullmatch(
+        r"the '[^'\r\n]{1,128}' model is not supported when using codex with a chatgpt account\.?",
+        message.casefold(),
+    ):
+        return {"request_parameter": "model", "request_code": "unsupported_value"}
     return out
 
 

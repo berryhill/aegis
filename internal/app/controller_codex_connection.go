@@ -28,6 +28,7 @@ func (s *Service) InspectControllerCodexCandidatesAs(ctx context.Context, sub co
 type ControllerCodexPreviewInput struct {
 	ProfileHome  string `json:"profile_home"`
 	CredentialID string `json:"credential_id,omitempty"`
+	Replace      bool   `json:"replace,omitempty"`
 }
 type ControllerCodexApplyInput struct {
 	ReviewID string `json:"review_id"`
@@ -45,6 +46,7 @@ type nativeConnectionReview struct {
 	Subject  core.Subject
 	Metadata ControllerCodexConnection
 	Config   []byte
+	Previous *config.ControllerCodexLogin
 }
 
 func connectionIdentity(s core.Subject) core.Subject {
@@ -96,7 +98,7 @@ func (s *Service) PreviewControllerCodexAs(ctx context.Context, sub core.Subject
 		return ControllerCodexConnection{}, ErrConflict
 	}
 	existing, bindingErr := config.ReadControllerCodexBinding(s.ConfigFile)
-	if bindingErr != nil || existing != nil || cfg.Principal != s.Config.Principal {
+	if bindingErr != nil || (existing != nil) != in.Replace || cfg.Principal != s.Config.Principal {
 		return ControllerCodexConnection{}, ErrConflict
 	}
 	// Validate the proposed native-vs-environment exclusivity before source access.
@@ -125,7 +127,7 @@ func (s *Service) PreviewControllerCodexAs(ctx context.Context, sub core.Subject
 		return ControllerCodexConnection{}, ErrDenied
 	}
 	out := ControllerCodexConnection{ProfileHome: in.ProfileHome, CredentialID: in.CredentialID, AccountID: metadata.AccountID, PrincipalID: sub.PrincipalID, ReviewID: hex.EncodeToString(entropy[:]), ExpiresAt: now.Add(5 * time.Minute), Status: "review"}
-	s.nativeReviews[out.ReviewID] = nativeConnectionReview{connectionIdentity(sub), out, snapshot}
+	s.nativeReviews[out.ReviewID] = nativeConnectionReview{Subject: connectionIdentity(sub), Metadata: out, Config: snapshot, Previous: existing}
 	return out, nil
 }
 
@@ -145,7 +147,12 @@ func (s *Service) ApplyControllerCodexAs(ctx context.Context, sub core.Subject, 
 		return ControllerCodexConnection{}, ErrConflict
 	}
 	binding := config.ControllerCodexLogin{ProfileHome: r.Metadata.ProfileHome, CredentialID: r.Metadata.CredentialID, AccountID: current.AccountID, ApprovedBy: sub.PrincipalID}
-	if e = config.ConnectControllerCodex(s.ConfigFile, r.Config, binding); e != nil {
+	if r.Previous != nil {
+		e = config.ReplaceControllerCodex(s.ConfigFile, r.Config, *r.Previous, binding)
+	} else {
+		e = config.ConnectControllerCodex(s.ConfigFile, r.Config, binding)
+	}
+	if e != nil {
 		return ControllerCodexConnection{}, ErrConflict
 	}
 	// Config remains immutable in memory. Runtime resolution independently loads

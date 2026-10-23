@@ -42,6 +42,12 @@ First inspect `aegis secret --help`, `aegis serve --help`, and the installed con
 
 If an operation or option is absent from installed help, report it unavailable. Do not invent generic secret reads, arbitrary HTTP forwarding, caller-selected URLs, headers, methods, profiles, deployments, or broker destinations.
 
+## Exact native Codex connection and replacement
+
+After explicit owner authorization for operational login selection, inspect `controller-codex --help` and use `--config OWNER_CONFIG --target CONSOLE_URL controller-codex candidates PROFILE_HOME` for non-secret opaque credential IDs and eligibility. Eligibility does not prove approved-model entitlement. Preview an exact ID with `controller-codex preview PROFILE_HOME --credential ID`; when explicitly replacing an existing connection and installed help advertises it, add `--replace`. Apply only its fresh single-use `review_id` with `controller-codex connect REVIEW_ID`, then read `controller-codex show`. Replacement revalidates the reviewed predecessor and configuration and retains append-only connection history; it does not edit native auth bytes, operator YAML, Agent authority or the model. Do not change model/provider or select another login without owner authorization. Preserve stale-review, expiry, source drift and conflict denials.
+
+For an authorized provider diagnostic, use only `controller-codex probe FILE` with exact Agent/Loop references and one stable diagnostic intent. It sends the fixed tool-free diagnostic prompt through the approved model and selected native login, returning only closed metadata. A model/unsupported_value diagnostic is an entitlement rejection, not missing Agent authority; do not spend task attempts or weaken execution checks to cure it. After an explicitly authorized exact rebind, use a distinct diagnostic intent and require actual completion before resuming the existing task request. No tokens, native messages or request bodies enter model context.
+
 ## Daemon-owned conversational creation
 
 When the gateway owns application state, use the authenticated Linux Aegis

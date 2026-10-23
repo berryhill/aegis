@@ -142,6 +142,14 @@ func ReadControllerCodexBinding(path string) (*ControllerCodexLogin, error) {
 			return nil, ErrConnectionConfig
 		}
 	}
+	binding, _, err = readControllerReplacements(fd, filepath.Base(path), before, binding)
+	if err != nil {
+		return nil, ErrConnectionConfig
+	}
+	cfg.Credentials.ControllerCodexLogin = binding
+	if cfg.Validate() != nil {
+		return nil, ErrConnectionConfig
+	}
 	after, err := ConnectionSnapshot(path)
 	if err != nil || !bytes.Equal(before, after) {
 		return nil, ErrConnectionConfig
