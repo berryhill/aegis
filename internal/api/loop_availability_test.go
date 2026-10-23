@@ -297,6 +297,15 @@ func TestLoopAvailabilityHTTP(t *testing.T) {
 				body, _ := io.ReadAll(response.Body)
 				t.Fatalf("console POST got %d want %d: %s", response.StatusCode, want, body)
 			}
+			if want == http.StatusSeeOther {
+				location := "/console/loops?availability=archived"
+				if values.Get("state") == "published" {
+					location = "/console/loops?availability=published&record_key=" + url.QueryEscape(rev.LoopID+":1")
+				}
+				if got := response.Header.Get("Location"); got != location {
+					t.Fatalf("availability redirect got %q want %q", got, location)
+				}
+			}
 		}
 		form := renderedLoopRowForm(t, publishedPage, rev.LoopID, rev.LoopID+":1", "Archive")
 		apiRequest(t, client, http.MethodGet, path+"/availability", nil, &status, http.StatusOK)

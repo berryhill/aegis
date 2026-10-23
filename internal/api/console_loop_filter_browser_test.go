@@ -88,10 +88,10 @@ func TestLoopAvailabilityConsoleBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if candidate != filepath.Join(repo, "aegis") {
-		t.Fatal("browser candidate must be the root aegis executable")
+	if candidate != filepath.Join(repo, "aegis") && candidate != filepath.Join(repo, ".candidate", "issue370", "aegis") {
+		t.Fatal("browser candidate must be the root or isolated issue370 executable")
 	}
-	evidence := filepath.Join(repo, ".candidate", "issue334-combined")
+	evidence := filepath.Join(repo, ".candidate", "issue370")
 	if err := os.MkdirAll(evidence, 0700); err != nil {
 		t.Fatal(err)
 	}

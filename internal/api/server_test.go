@@ -108,10 +108,7 @@ func (o *recordingConsoleQueueOperator) Revoke(_ context.Context, _ core.Subject
 
 func consoleQueueRouteFixture(t *testing.T, svc *app.Service) (*consoleauth.Manager, *http.Cookie, string) {
 	t.Helper()
-	verifier, err := principalauth.Enroll(svc.Config.Principal.ID, []byte("test-principal-password"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	verifier := consoleQueuePrincipalVerifier(t, svc.Config.Principal.ID)
 	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: svc.Config.Principal.ID, PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, svc.Now)
 	if err != nil {
 		t.Fatal(err)
