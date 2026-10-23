@@ -18,7 +18,6 @@ import (
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
-	"github.com/berryhill/aegis/internal/store"
 )
 
 // QueueLoopInput grants one bounded foreground operation, not foundational authority.
@@ -329,19 +328,12 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	}
 	// A preflight denial must still seal the exact request to this key. A
 	// later approval cannot turn a substituted payload into the original run.
-	var reserved string
-	if e := s.Store.Load("queue-loop-intent", key, &reserved); errors.Is(e, os.ErrNotExist) {
-		if createErr := s.Store.Create("queue-loop-intent", key, identity); createErr != nil && !errors.Is(createErr, store.ErrAlreadyExists) {
-			return result, createErr
-		}
-		if e = s.Store.Load("queue-loop-intent", key, &reserved); e != nil {
-			return result, e
-		}
-	} else if e != nil {
-		return result, e
-	}
-	if reserved != identity {
+	ctx, e = s.reserveExactDoerRun(ctx, subject, input)
+	if errors.Is(e, ErrConflict) {
 		return result, fleet.ErrConflict
+	}
+	if e != nil {
+		return result, e
 	}
 	if prior, loadErr := s.GetQueueItemAs(ctx, subject, result.QueueItemID); loadErr == nil {
 		result.Execution = &prior

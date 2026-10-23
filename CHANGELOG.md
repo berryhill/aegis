@@ -8,6 +8,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Unify retained Doer create-and-execute with exact published-Loop Run admission.
+  Preserve editable genuine setup blockers, freeze exact retained intent before
+  host effects, and retain immutable publication/Run identity through replay.
+  Keep public readiness probes bounded without imposing their inspection deadline
+  on execution qualification; preserve authority and cumulative-pass fences.
+
 - Keep successful Execution Queue Archive actions on the collection at
   `/console/queue`, including Archive from a Failed Executions card. Unarchive
   still returns to the execution detail; canonical execution history and archive

@@ -34,6 +34,24 @@ synthetic Hermes/Laya protocol fixtures; they do not qualify a live provider.
 
 Implementation turns receive the exact selected-file assertion (`verify_file`, optional `expected_text`, `exact_bytes`) and retry bound alongside task prose and allowlisted paths. Raw-byte assertions do not imply a trailing newline. This is input to the tool-free implementer, not model-written acceptance evidence; the controller still independently reloads and verifies the file. Host workspace paths are not included in that turn. Publication and exact same-Loop execution remain distinct supported actions; no approval or credential authority is inferred from these inputs.
 
+### Retained create-and-execute parity
+
+`loops task-execute` derives the same exact Run intent from the authenticated
+retained task and shares the published-Loop Run preparation/admission checks.
+Genuine setup blockers leave the proposal editable and do not reserve a Run.
+Once setup is eligible, the owning-store version guard freezes the exact task
+before reserving intent or preparing signed host scope. Later material edits
+deny; recovery keeps the task, publication key, immutable Loop and Run identity.
+Publication is read back before execution. Failed history and cumulative
+implementation-pass limits remain unchanged.
+
+Execution qualification uses the bounded execution context, not the public
+ten-second observational readiness probe. Public readiness, including the typed
+owning-service probe, remains bounded and grants no execution authority. Expired
+authority, unapproved scope, drift and unqualified runtime/provider/helper state
+still deny. A successful command response is not completion: inspect the exact
+Queue artifact, passed verifier receipt and succeeded disposition.
+
 ## Real-daemon protected setup negative regression
 
 On Linux, in a checkout under the operator home with no group/other-writable executable ancestors:

@@ -49,6 +49,14 @@ func TestInstalledOnlineDoerPrincipalSingleRunWithoutProvisioning(t *testing.T) 
 	installedOnlineDoerExactBytesSuccess(t, true)
 }
 
+func TestRetainedDoerExactRunParity(t *testing.T) {
+	installedOnlineDoerExactBytesSuccess(t, true, "retained")
+}
+
+func TestRetainedDoerSlowHelperExecutionParity(t *testing.T) {
+	installedOnlineDoerExactBytesSuccess(t, true, "retained-slow")
+}
+
 func TestInstalledOnlineDoerSameQueuePreparationRecovery(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true, "failed-launch")
 }
@@ -74,6 +82,11 @@ func (r *legacyEmptyMandateRepository) CreateMandate(ctx context.Context, m core
 }
 
 func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery ...string) {
+	slowHelper := len(recovery) > 0 && recovery[0] == "retained-slow"
+	retainedTask := len(recovery) > 0 && (recovery[0] == "retained" || slowHelper)
+	if retainedTask {
+		recovery = nil
+	}
 	continuity := len(recovery) > 0 && recovery[0] == "reusable-continuity"
 	reusable := len(recovery) > 0 && strings.HasPrefix(recovery[0], "reusable")
 	if reusable {
@@ -81,7 +94,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	}
 	svc := apiService(t)
 	var requeueClock *requeueStageClock
-	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue") {
+	if slowHelper || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue") {
 		// Install before Fleet, worker and Serve capture Now: every authority
 		// consumer, including password/native authentication, shares this clock.
 		requeueClock = newRequeueStageClock(svc.Now())
@@ -229,20 +242,30 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		t.Fatalf("validation: %+v", validated)
 	}
 	var published app.PublishedLoop
-	if err := cli.run(&published, "loops", "publish", publicationPath); err != nil {
-		t.Fatal(err)
-	}
-	var shown app.LoopView
-	if err := cli.run(&shown, "loops", "show", revision.LoopID, "1"); err != nil {
-		t.Fatal(err)
-	}
-	if shown.Revision.Digest != published.Revision.Digest || shown.Lifecycle.State != loop.LifecycleDraft {
-		t.Fatalf("publication readback: %+v", shown)
+	if !retainedTask {
+		if err := cli.run(&published, "loops", "publish", publicationPath); err != nil {
+			t.Fatal(err)
+		}
+		var shown app.LoopView
+		if err := cli.run(&shown, "loops", "show", revision.LoopID, "1"); err != nil {
+			t.Fatal(err)
+		}
+		if shown.Revision.Digest != published.Revision.Digest || shown.Lifecycle.State != loop.LifecycleDraft {
+			t.Fatalf("publication readback: %+v", shown)
+		}
 	}
 	agent := registered.Agent.Revision
 	input := app.QueueLoopInput{Agent: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: agent.AgentID, Revision: agent.Revision, Digest: agent.Digest},
-		Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: 1, Digest: published.Revision.Digest},
+		Loop:           reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: 1, Digest: revision.Digest},
 		IdempotencyKey: "journey-request", Activate: true}
+	var retained app.DoerDraft
+	if retainedTask {
+		retained, err = svc.SaveDoerDraftAs(ctx, subject, app.DoerDraftInput{CreationKey: "retained-parity", Agent: input.Agent, LoopID: revision.LoopID, Revision: 1, Contract: contract})
+		if err != nil {
+			t.Fatal(err)
+		}
+		input.IdempotencyKey = retained.PublicationKey + "-run"
+	}
 	if reusable {
 		for _, value := range []struct {
 			id    string
@@ -263,23 +286,27 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		}
 	}
 	var pending app.QueueLoopResult
-	pending, err = cli.queue(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expectedReason, expectedAction := "provisioning_receipt_missing", "plan_preview_exact_charter"
-	if singleRun {
-		expectedReason, expectedAction = "doer_runtime_unconfigured", "configure_controller_doer_runtime"
-	}
-	if pending.Reason != expectedReason || pending.RequiredAction != expectedAction || pending.RequiredCharter == nil || pending.RequiredCharter.Digest != canonical.Digest || pending.RequestID == "" || pending.QueueItemID != "" || pending.Execution != nil {
-		t.Fatalf("missing receipt advanced execution: %+v; preparation: %+v", pending, pending.Preparation)
-	}
-	subject, err = svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1); err != nil || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
-		t.Fatalf("missing receipt activated Loop: %+v %v", view.Lifecycle, err)
+	if !retainedTask {
+		pending, err = cli.queue(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expectedReason, expectedAction := "provisioning_receipt_missing", "plan_preview_exact_charter"
+		if singleRun {
+			expectedReason, expectedAction = "doer_runtime_unconfigured", "configure_controller_doer_runtime"
+		}
+		if pending.Reason != expectedReason || pending.RequiredAction != expectedAction || pending.RequiredCharter == nil || pending.RequiredCharter.Digest != canonical.Digest || pending.RequestID == "" || pending.QueueItemID != "" || pending.Execution != nil {
+			t.Fatalf("missing receipt advanced execution: %+v; preparation: %+v", pending, pending.Preparation)
+		}
+		subject, err = svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view, err := svc.GetLoopViewAs(ctx, subject, revision.LoopID, 1); err != nil || view.Lifecycle.State != loop.LifecycleDraft || len(view.History) != 0 {
+			t.Fatalf("missing receipt activated Loop: %+v %v", view.Lifecycle, err)
+		}
+	} else if _, err := svc.GetLoopAs(ctx, subject, revision.LoopID, 1); err == nil {
+		t.Fatal("retained candidate must initially be unpublished")
 	}
 
 	var blockedItems []app.QueueExecutionView
@@ -316,6 +343,11 @@ case "$request" in
   *) exit 1 ;;
 esac
 `
+	if slowHelper {
+		// Actual protocol helper latency exceeds the public inspection deadline.
+		// Execution must still qualify the helper, not omit its admission check.
+		layaScript = strings.Replace(layaScript, "read request\n", "read request\nsleep 11 >/dev/null 2>&1 &\nwait\n", 1)
+	}
 	if err := os.WriteFile(laya, []byte(layaScript), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -501,6 +533,65 @@ done
 		input.QueueItemID = failed.QueueItemID
 	}
 	var result app.QueueLoopResult
+	if retainedTask {
+		if slowHelper {
+			if err := os.WriteFile(laya, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			blocked, e := svc.ExecuteDoerTaskAs(ctx, subject, app.ExecuteDoerTaskInput{ID: retained.ID, ExpectedVersion: retained.Version})
+			if e != nil || blocked.Readiness.Reason != "local_laya_unavailable" || blocked.Readiness.CanExecute || blocked.Readiness.Helper.State != "blocked" || blocked.Publication != nil || blocked.Run != nil || blocked.Task.ExecutionDigest != revision.Digest {
+				t.Fatalf("unqualified helper admitted or intent not frozen: %+v %v", blocked, e)
+			}
+			if _, e := svc.GetLoopAs(ctx, subject, revision.LoopID, revision.Revision); e == nil {
+				t.Fatal("unqualified helper published retained candidate")
+			}
+			items, e := svc.ListQueueAs(ctx, subject)
+			if e != nil || len(items) != 0 {
+				t.Fatalf("unqualified helper created Queue work: %+v %v", items, e)
+			}
+			if _, e := os.Stat(filepath.Join(workspace, "result.txt")); !os.IsNotExist(e) {
+				t.Fatalf("unqualified helper wrote result: %v", e)
+			}
+			if e := os.WriteFile(laya, []byte(layaScript), 0700); e != nil {
+				t.Fatal(e)
+			}
+			// An exact-Run signed scope is not authority for public observation.
+			// The independent preauthorized fixture tests the public probe deadline.
+			readiness, e := svc.ProbeDoerCandidateReadinessAs(ctx, subject, app.DoerCandidateReadinessInput{Agent: input.Agent, Candidate: revision})
+			if e != nil || readiness.CanExecute || readiness.Helper.State != "not_checked" || readiness.Controller.State != "blocked" {
+				t.Fatalf("public inspection reused private Run scope: %+v err=%v", readiness, e)
+			}
+		}
+		start := time.Now()
+		observed, retainedErr := svc.ExecuteDoerTaskAs(ctx, subject, app.ExecuteDoerTaskInput{ID: retained.ID, ExpectedVersion: retained.Version})
+		if retainedErr != nil || observed.Run == nil || observed.Publication == nil || observed.Status == "independent_setup_required" {
+			t.Fatalf("retained status=%s readiness=%s err=%v", observed.Status, observed.Readiness.Reason, retainedErr)
+		}
+		if slowHelper {
+			if !observed.Readiness.CanExecute || observed.Readiness.Helper.State != "ready" || time.Since(start) < 11*time.Second {
+				t.Fatalf("execution skipped slow helper qualification: %+v", observed.Readiness)
+			}
+			t.Logf("retained execution qualified slow helper and ran in %s", time.Since(start))
+		}
+		if observed.Task.ID != retained.ID || observed.Task.Version != retained.Version || observed.Task.PublicationKey != retained.PublicationKey || observed.Publication.Revision.Digest != revision.Digest {
+			t.Fatal("retained execution changed immutable identity")
+		}
+		pending = *observed.Run
+		if slowHelper {
+			// Independent replay happens at a new authority stage, not after
+			// fixture helper latency has consumed the principal's short TTL.
+			// Authenticate the real native subject again; preserve all Run IDs.
+			requeueClock.Advance(time.Second)
+			subject, err = svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		replayed, replayErr := svc.ExecuteDoerTaskAs(ctx, subject, app.ExecuteDoerTaskInput{ID: retained.ID, ExpectedVersion: retained.Version})
+		if replayErr != nil || replayed.Run == nil || replayed.Publication == nil || !reflect.DeepEqual(replayed.Task, observed.Task) || !reflect.DeepEqual(replayed.Publication.Revision, observed.Publication.Revision) || replayed.Publication.Validation.Digest != observed.Publication.Validation.Digest || !replayed.Publication.Decision.Idempotent || replayed.Run.RequestID != observed.Run.RequestID || replayed.Run.QueueItemID != observed.Run.QueueItemID {
+			t.Fatalf("retained replay changed immutable identity: %+v %v", replayed, replayErr)
+		}
+	}
 	result, err = cli.queue(input)
 	if err != nil {
 		t.Fatal(err)
