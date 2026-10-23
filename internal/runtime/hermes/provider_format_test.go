@@ -47,6 +47,13 @@ for status,expected in [(400,('provider','format_error')),(401,('auth','auth')),
     result=scope['closed_status'](status)
     assert (result['layer'],result['code'])==expected
 assert scope['closed_details']({'error':{'param':'secret-canary','code':'unreviewed-canary','message':'raw-canary'}})=={}
+for body in [
+ {'error':{'message':"The 'private-model-canary' model is not supported when using Codex with a ChatGPT account."}},
+ {'error':"The 'private-model-canary' model is not supported when using Codex with a ChatGPT account."},
+ {'detail':"The 'private-model-canary' model is not supported when using Codex with a ChatGPT account."},
+]:
+    assert scope['closed_details'](body)=={'request_parameter':'model','request_code':'unsupported_value'}
+assert scope['closed_details']({'error':{'message':'private arbitrary unsupported model text'}})=={}
 `
 	command := exec.Command("python3", "-I", "-B", "-c", code)
 	command.Stdin = strings.NewReader(providerFormatGateway)

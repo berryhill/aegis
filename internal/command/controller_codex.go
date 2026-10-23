@@ -27,6 +27,7 @@ func controllerCodexCmd() *cobra.Command {
 		}}
 		if name == "preview" {
 			child.Flags().String("credential", "", "Exact opaque native credential ID returned by candidates (no default selection)")
+			child.Flags().Bool("replace", false, "Review replacement of the exact current operational binding; preserve connection history")
 		}
 		c.AddCommand(child)
 	}

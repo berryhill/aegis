@@ -62,7 +62,8 @@ func consumedDoerPasses(steps []orchestration.DoerStepView) (uint16, string, err
 
 func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, in QueueLoopInput, requestID, identity string, revision loop.LoopRevision) (LoopReexecutionFact, error) {
 	var f LoopReexecutionFact
-	if in.Reexecution == nil || in.Reexecution.PreviousQueue.Validate() != nil || in.Reexecution.PreviousDisposition.Validate() != nil || revision.SchemaVersion != loop.DoerRevisionSchemaVersion || revision.Doer == nil || requestID+"-queue" == in.Reexecution.PreviousQueue.ID {
+	contract, contractErr := queuedDoerContract(ctx, revision)
+	if contractErr != nil || in.Reexecution == nil || in.Reexecution.PreviousQueue.Validate() != nil || in.Reexecution.PreviousDisposition.Validate() != nil || requestID+"-queue" == in.Reexecution.PreviousQueue.ID {
 		return f, ErrDenied
 	}
 	v, err := s.GetQueueItemAs(ctx, sub, in.Reexecution.PreviousQueue.ID)
@@ -113,7 +114,7 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 	if err != nil {
 		return f, err
 	}
-	cap := revision.Doer.MaxAttempts
+	cap := contract.MaxAttempts
 	var parent LoopReexecutionFact
 	err = s.Store.Load("queue-loop-reexecution", v.Submission.IdempotencyKey, &parent)
 	if err == nil {
@@ -183,7 +184,13 @@ func (s *Service) resolveDoerPassCap(ctx context.Context, c loop.DoerContract, a
 		return 0, err
 	}
 	record, err := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, a.Ownership.OwnerID, agentRevisionRef(a), c, s.Now())
-	if err != nil || record.RunRequestID != id || record.ReexecutionDigest != f.Digest || record.ImplementationPassCap != f.Remaining {
+	if err != nil {
+		return 0, ErrDenied
+	}
+	if s.reusableApprovalCoversRun(record, id, candidate, agentRevisionRef(a)) {
+		return f.Remaining, nil
+	}
+	if record.RunRequestID != id || record.ReexecutionDigest != f.Digest || record.ImplementationPassCap != f.Remaining {
 		return 0, ErrDenied
 	}
 	return f.Remaining, nil

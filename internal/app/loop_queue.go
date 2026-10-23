@@ -140,6 +140,12 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 		if readErr != nil {
 			return r, readErr
 		}
+		// A durably committed failed attempt is an execution outcome, not an
+		// admission-only HTTP denial. Return its authenticated exact readback;
+		// never hide an executed task behind a generic 403 or imply success.
+		if v := r.Execution; v != nil && v.Disposition != nil && v.Projection.State == queue.StateFailed && v.Disposition.State == "failed" && v.Projection.ActiveClaimID == "" && v.Disposition.QueueItem.ID == v.Item.ItemID && v.Disposition.QueueItem.Digest == v.Item.Digest && v.Disposition.GraphRunID == v.Item.GraphRunID {
+			return r, nil
+		}
 		return r, err
 	}
 	return s.queueLoopBlockedReadback(ctx, subject, result, "processed")
@@ -444,6 +450,10 @@ func (s *Service) preflightDoerQueueResult(ctx context.Context, subject core.Sub
 		result.Readiness = &readiness
 		readiness.RequestID = result.RequestID
 	}
+	if err := s.validateReusableTaskHistory(ctx, subject, input, view.Revision); err != nil {
+		readiness.Reason = "same_task_budget_link_required"
+		return readiness.Reason, nil
+	}
 	s.checkDoerExecutionReadiness(ctx, subject, view.Revision, agent, true, &readiness)
 	return readiness.Reason, nil
 }
@@ -561,6 +571,9 @@ func (s *Service) prepareQueuedLoop(ctx context.Context, subject core.Subject, i
 					if checkErr != nil || admission.Admitted {
 						return readback("prior_runtime_authority_requires_explicit_recovery")
 					}
+					continue
+				}
+				if s.completedProviderProbeAuthority(ctx, subject, agent, old) {
 					continue
 				}
 				return readback("prior_runtime_authority_requires_explicit_recovery")
