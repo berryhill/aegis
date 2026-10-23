@@ -8,6 +8,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Keep successful Execution Queue Archive actions on the collection at
+  `/console/queue`, including Archive from a Failed Executions card. Unarchive
+  still returns to the execution detail; canonical execution history and archive
+  authorization/CAS protections are unchanged.
+
 - Complete reusable-v5 terminal-run continuity: retire only proven idle terminal predecessors, admit a different exact task/Loop after failure, and preserve same-task remaining-pass lineage across reexecution and intervening work. Keep completed zero-authority provider diagnostics from stranding later Runs, recover only recorded pre-launch refusals with a reconciled authority footprint, and return failed execution readback instead of an admission-only HTTP error. Add explicit reviewed native Codex login replacement with append-only history and closed model-entitlement diagnostics. Configuration/auth bytes, model, immutable failed history and unknown-outcome fences remain protected. See [run continuity](docs/REUSABLE_DOER_RUN_CONTINUITY.md).
 
 - Restore exact authenticated owner-principal Run preparation for reusable v5 Loops under the same narrow zero-authority ephemeral policy as v4. Bind signed scope to the real v5 revision, concrete per-run contract and stable intent without duplicate task consent or fixture digest preauthorization. Preserve freshness, ownership, effect admission, reexecution budgets and historical v4 signatures. Required public CLI-to-service normal/race regressions now exercise this path without an `AuthorizedContracts` shortcut. See [exact Run parity](docs/REUSABLE_DOER_EXACT_RUN.md); live provider acceptance remains separate.

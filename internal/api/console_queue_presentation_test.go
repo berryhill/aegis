@@ -80,6 +80,15 @@ func TestConsoleQueuePresentationActions(t *testing.T) {
 		}
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
+		if rec.Code == http.StatusSeeOther {
+			want := consoleRecordURL(consoleQueue, item.ItemID)
+			if action == "archive" {
+				want = "/console/queue"
+			}
+			if got := rec.Header().Get("Location"); got != want {
+				t.Errorf("%s Location = %q, want %q", action, got, want)
+			}
+		}
 		return rec.Code
 	}
 	values := func(revision string) url.Values {

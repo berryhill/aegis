@@ -166,6 +166,9 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		if err != nil {
 			return err
 		}
+		if action == "archive" {
+			return c.Redirect(http.StatusSeeOther, "/console/queue")
+		}
 		return c.Redirect(http.StatusSeeOther, consoleRecordURL(consoleQueue, ref.ID))
 	}
 }
