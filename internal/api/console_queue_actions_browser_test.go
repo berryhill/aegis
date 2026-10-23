@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/core"
@@ -66,13 +67,31 @@ func TestConsoleQueueActionsBrowserSeed(t *testing.T) {
 	}
 	_, err = store.AcceptSubmission(ctx, fleet.AcceptedSubmission{Snapshot: snapshot, Submission: submission, QueueItem: item, GraphRun: run, InitialTransition: transition}, fact("submission.accepted"))
 	check(err)
-	cancellation, err := queue.NewCancellation(queue.Cancellation{CancellationID: "browser-actions-cancel", QueueItem: ref(item.ItemID, item.Digest), Reason: "operator_cancelled", OccurredAt: now})
+	// Persist an actual failed projection through canonical claim/completion APIs.
+	// This synthetic history is not a live provider or runtime admission proof.
+	loopExecution, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: "browser-actions-loop", GraphRunID: run.GraphRunID, GraphNodeID: gr.Nodes[0].ID, Loop: snapshot.Loops[0], Participant: snapshot.Participants[0], CreatedAt: now})
 	check(err)
-	cancelled, err := queue.NewTransition(queue.QueueTransition{TransitionID: "browser-actions-cancelled", QueueItemID: item.ItemID, From: queue.StateQueued, To: queue.StateCancelled, Reason: "operator_cancelled", OccurredAt: now})
+	_, err = store.CreateLoopExecution(ctx, loopExecution, fact("loop-execution.created"))
 	check(err)
-	terminal, err := disposition.New(disposition.Record{DispositionID: "browser-actions-disposition", GraphRunID: item.GraphRunID, QueueItem: ref(item.ItemID, item.Digest), Authority: item.Authority, State: execution.StateCancelled, ReasonCode: "operator_cancelled", OccurredAt: now})
+	claim, err := queue.NewClaim(queue.Claim{ClaimID: "browser-actions-claim", QueueItem: ref(item.ItemID, item.Digest), AttemptID: "browser-actions-attempt", WorkerID: "browser-actions-worker", Authority: item.Authority, ClaimedAt: now, ExpiresAt: now.Add(time.Minute)})
 	check(err)
-	check(store.CancelQueueItem(ctx, fleet.CancellationMutation{Cancellation: cancellation, Transition: cancelled, Disposition: terminal}, fact("queue.cancelled")))
+	attempt, err := execution.NewAttempt(execution.Attempt{AttemptID: claim.AttemptID, GraphRunID: run.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, QueueItem: claim.QueueItem, ClaimID: claim.ClaimID, AttemptNumber: 1, CreatedAt: now})
+	check(err)
+	claimed, err := queue.NewTransition(queue.QueueTransition{TransitionID: "browser-actions-claimed", QueueItemID: item.ItemID, From: queue.StateQueued, To: queue.StateClaimed, ClaimID: claim.ClaimID, Reason: "synthetic browser fixture", OccurredAt: now})
+	check(err)
+	check(store.ClaimQueueItem(ctx, claim, attempt, claimed, fact("queue.claimed")))
+	failed, err := queue.NewTransition(queue.QueueTransition{TransitionID: "browser-actions-failed", QueueItemID: item.ItemID, From: queue.StateClaimed, To: queue.StateFailed, ClaimID: claim.ClaimID, Reason: "runtime_exit_nonzero", OccurredAt: now})
+	check(err)
+	terminal, err := disposition.New(disposition.Record{DispositionID: "browser-actions-disposition", GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, AttemptID: attempt.AttemptID, QueueItem: claim.QueueItem, Authority: item.Authority, State: execution.StateFailed, ReasonCode: failed.Reason, OccurredAt: now})
+	check(err)
+	completionFact := fact("fleet.disposition.recorded")
+	completionFact.Event.AgentID = loopExecution.Participant.ID
+	completionFact.Event.StanzaID = "principal"
+	completionFact.Event.MandateID = submission.MandateID
+	completionFact.Event.Outcome = string(terminal.State)
+	completionFact.Event.Reason = terminal.ReasonCode
+	completionFact.Event.Metadata = map[string]string{"disposition_id": terminal.DispositionID, "transition_id": failed.TransitionID, "terminal_at": now.UTC().Format(time.RFC3339Nano)}
+	check(store.CompleteQueueItem(ctx, fleet.Completion{Claim: claim, Disposition: terminal, Transition: failed}, completionFact, nil))
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	check(err)
 	svc.Config.API.Listen = probe.Addr().String()
@@ -102,7 +121,10 @@ func TestConsoleQueueActionsBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidence := filepath.Join(repo, ".candidate", "issue332-completion")
+	evidence := filepath.Join(repo, ".candidate", "issue365")
+	if err := os.MkdirAll(evidence, 0700); err != nil {
+		t.Fatal(err)
+	}
 	root, err := os.MkdirTemp(evidence, "actions-browser-")
 	if err != nil {
 		t.Fatal(err)
@@ -148,6 +170,9 @@ func TestConsoleQueueActionsBrowser(t *testing.T) {
 	view, err := svc.GetQueueItemAs(context.Background(), sub, "browser-actions-item")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if view.Projection.State != queue.StateFailed || view.Disposition == nil || view.Disposition.State != execution.StateFailed {
+		t.Fatal("browser fixture must retain canonical FAILED history")
 	}
 	before, err := os.ReadFile(filepath.Join(root, "history-before.json"))
 	if err != nil {

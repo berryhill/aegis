@@ -87,35 +87,39 @@ for generation in range(2):
                         d.insert_text(b,'#password',os.environ['AEGIS_CONSOLE_PASSWORD'])
                         click(b,'#session-form button[type=submit]',"!!document.querySelector('#logout')")
                         nav(b,'/console/queue')
-                        d.require(selected(b)==(['succeeded','unarchived'] if generation==0 else ['cancelled','archived']), 'durable defaults differ: '+repr(selected(b)))
+                        d.require(selected(b)==(['succeeded','unarchived'] if generation==0 else ['failed','archived']), 'durable defaults differ: '+repr(selected(b)))
                         if generation == 0:
                             nav(b,'/console/queue?state=all&visibility=all')
                             d.require(b.evaluate("document.querySelectorAll('a form, a button, form form').length") == 0,'nested row controls')
-                            nav(b,'/console/queue?record_key='+item)
+                            failed_card = 'section[aria-labelledby="failed-executions"] li:has(#record-'+item+')'
+                            d.require(b.evaluate("!!document.querySelector('"+failed_card+"')"),'FAILED item absent from Failed Executions')
+                            d.require(b.evaluate("document.querySelector('"+failed_card+" a').dataset.state === 'failed'"),'card is not failed')
                             d.require('/console/queue/'+item+'/requeue' not in forms(b),'unsupported Graph requeue visible')
-                            digest = b.evaluate("document.querySelector('form[action$=\"/archive\"] input[name=digest]').value")
                             # Submit an explicitly unsupported requeue using real browser cookies,
                             # CSRF and same-origin fetch. No UI implies no supported positive path.
                             status = b.evaluate("(async()=>{const f=document.querySelector('form[action$=\"/archive\"]'); const r=await fetch('/console/queue/"+item+"/requeue',{method:'POST',body:new URLSearchParams(new FormData(f))}); return r.status})()")
                             d.require(status==403,'unsupported Requeue must deny exactly 403: '+str(status))
-                            click(b,'form[action$="/archive"] button',"!!document.querySelector('form[action$=\"/unarchive\"]')")
-                            d.require(b.evaluate("document.querySelector('form[action$=\"/unarchive\"] input[name=expected_revision]').value")=='1','archive CAS readback')
+                            click(b,failed_card+' form[action$="/archive"] button',"document.readyState==='complete' && location.pathname==='/console/queue' && location.search==='' && location.hash==='' && !!document.querySelector('#queue-lifecycle')")
+                            d.require(not b.evaluate("!!document.querySelector('"+failed_card+"')"),'archived item remains in Failed Executions')
+                            d.require(b.evaluate("location.href") == base+'/console/queue','Archive opened detail or retained query/fragment')
                             nav(b,'/console/queue?state=all&visibility=unarchived')
                             d.require(not b.evaluate("!!document.querySelector('#record-"+item+"')"),'archived row still unarchived')
-                            nav(b,'/console/queue?state=cancelled&visibility=archived')
+                            nav(b,'/console/queue?state=failed&visibility=archived')
                             d.require(b.evaluate("!!document.querySelector('#record-"+item+"')"),'archived row absent')
                             click(b,'form[action="/console/queue/preferences"] button',"document.readyState==='complete' && location.search==='' && !!document.querySelector('#queue-lifecycle')")
-                            d.require(selected(b)==['cancelled','archived'],'saved default not read back')
+                            d.require(selected(b)==['failed','archived'],'saved default not read back')
                             d.refresh_registration_document(b)
-                            d.require(selected(b)==['cancelled','archived'],'reload lost default')
+                            d.require(selected(b)==['failed','archived'],'reload lost default')
                         else:
                             d.require(b.evaluate("!!document.querySelector('#record-"+item+"')"),'restart lost archive')
                             nav(b,'/console/queue?record_key='+item)
                             d.require(b.evaluate("document.querySelector('form[action$=\"/unarchive\"] input[name=expected_revision]').value")=='1','restart lost revision')
                             click(b,'form[action$="/unarchive"] button',"!!document.querySelector('form[action$=\"/archive\"]')")
                             d.require(b.evaluate("document.querySelector('form[action$=\"/archive\"] input[name=expected_revision]').value")=='2','unarchive revision')
+                            d.require(b.evaluate("location.search") == '?record_key='+item and b.evaluate("location.hash") == '#/queue/'+item,'Unarchive no longer returns to detail')
                             nav(b,'/console/queue')
-                            d.require(not b.evaluate("!!document.querySelector('#record-"+item+"')"),'unarchived row still in saved archived view')
+                            d.require(not b.evaluate("!!document.querySelector('section[aria-labelledby=\"queue-lifecycle\"] #record-"+item+"')"),'unarchived row still in saved archived lifecycle view')
+                            d.require(b.evaluate("!!document.querySelector('section[aria-labelledby=\"failed-executions\"] #record-"+item+"')"),'unarchived FAILED item missing from independent Failed band')
                             nav(b,'/console/queue?state=all&visibility=unarchived')
                             d.require(b.evaluate("!!document.querySelector('#record-"+item+"')"),'unarchive row absent')
                         violations = [e for e in b.events if e.get('method')=='Audits.issueAdded' and e.get('params',{}).get('issue',{}).get('code')=='ContentSecurityPolicyIssue']
@@ -131,6 +135,8 @@ for generation in range(2):
 
 d.require(hashlib.sha256(binary.read_bytes()).hexdigest()==identity,'binary changed')
 (root/'acceptance.json').write_text(json.dumps({'binary_sha256':identity,'generations':results,
+    'archive_collection_url':base+'/console/queue', 'failed_card_archive':True,
+    'failed_band_removed_on_archive':True, 'unarchive_detail_preserved':True,
     'archive_unarchive_cas':[1,2], 'saved_default_restart':True,
     'unsupported_graph_requeue_status':403,
     'evidence_tier':'real candidate authenticated Chrome and process restart; synthetic historical Graph; no provider execution'},indent=2)+'\n')
