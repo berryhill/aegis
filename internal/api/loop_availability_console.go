@@ -92,6 +92,12 @@ func consoleLoopAvailabilityHandler(svc *app.Service, manager *consoleauth.Manag
 		if err != nil {
 			return err
 		}
-		return c.Redirect(http.StatusSeeOther, "/console/loops?availability="+url.QueryEscape(string(state))+"&record_key="+url.QueryEscape(view.Revision.LoopID+":"+strconv.FormatUint(revision, 10)))
+		location := "/console/loops?availability=" + url.QueryEscape(string(state))
+		// Archiving from the collection must not select the archived Loop detail.
+		// Restore retains its existing exact-revision navigation.
+		if state != app.LoopAvailability("archived") {
+			location += "&record_key=" + url.QueryEscape(view.Revision.LoopID+":"+strconv.FormatUint(revision, 10))
+		}
+		return c.Redirect(http.StatusSeeOther, location)
 	}
 }

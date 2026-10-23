@@ -3,6 +3,7 @@
 The Go fixture supplies candidate/root argv and protected synthetic login input.
 """
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -71,6 +72,20 @@ def pace(route):
     route.continue_()
 
 
+def exact_readback():
+    config = json.loads(CONFIG.read_text())
+    connection = http.client.HTTPConnection("localhost")
+    connection.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    connection.sock.connect(str(ROOT / config["api"]["unix_socket"]))
+    connection.request("GET", "/v1/loops/filter-archived/2",
+                       headers={"Authorization": "Bearer " + config["api"]["token"]})
+    response = connection.getresponse()
+    assert response.status == 200, response.status
+    result = json.loads(response.read())
+    connection.close()
+    return result
+
+
 def start(log):
     daemon = subprocess.Popen([str(BINARY), "--config", str(CONFIG), "serve"],
                               cwd=ROOT, env=ENV, stdout=log, stderr=log)
@@ -92,6 +107,7 @@ def start(log):
 with sync_playwright() as playwright:
     browser = playwright.chromium.launch(headless=True)
     archived_url = ""
+    durable_after = None
     for generation in range(2):
         with (ROOT / f"serve-{generation}.log").open("wb") as log:
             daemon = start(log)
@@ -104,6 +120,7 @@ with sync_playwright() as playwright:
                     (response.status, urlsplit(response.url).path)) if response.status >= 400 else None)
                 login(page)
                 if generation == 1:
+                    assert exact_readback() == durable_after
                     page.goto(archived_url)
                     collection(page, "archived", "filter-")
                     page.reload()
@@ -154,10 +171,12 @@ with sync_playwright() as playwright:
                     # successor, because availability is logical-Loop scoped.
                     before = page.locator('#surface-list form').evaluate_all(
                         "forms => forms.map(form => [form.querySelector('[name=revision]').value, form.querySelector('[name=digest]').value])")
+                    durable_before = exact_readback()
                     lifecycle_phase = True
                     row = page.locator("#surface-list li").filter(
                         has=page.locator('a[data-record-key="filter-archived:1"]'))
                     row.get_by_role("button", name="Restore", exact=True).click()
+                    expect(page).to_have_url(BASE + "/console/loops?availability=published&record_key=filter-archived%3A2")
                     expect(page.locator("[data-loop-workspace]")).to_be_visible()
                     page.locator("#close-inspector").click()
                     keys = page.locator('a[data-detail-link][data-record-key]').evaluate_all(
@@ -166,13 +185,26 @@ with sync_playwright() as playwright:
                     row = page.locator("#surface-list li").filter(
                         has=page.locator('a[data-record-key="filter-archived:2"]'))
                     row.get_by_role("button", name="Archive", exact=True).click()
-                    expect(page.locator("[data-loop-workspace]")).to_be_visible()
-                    page.locator("#close-inspector").click()
+                    expect(page).to_have_url(BASE + "/console/loops?availability=archived")
+                    assert "record_key" not in parse_qs(urlsplit(page.url).query)
+                    collection(page, "archived")
+                    page.reload()
+                    collection(page, "archived")
+                    page.select_option('select[name="availability"]', "published")
+                    expect(page).to_have_url(re.compile(r"availability=published"))
+                    collection(page, "published")
+                    page.select_option('select[name="availability"]', "archived")
+                    expect(page).to_have_url(re.compile(r"availability=archived"))
                     lifecycle_phase = False
                     collection(page, "archived")
                     after = page.locator('#surface-list form').evaluate_all(
                         "forms => forms.map(form => [form.querySelector('[name=revision]').value, form.querySelector('[name=digest]').value])")
                     assert after == before, (before, after)
+                    durable_after = exact_readback()
+                    for key in ("revision", "validations", "provenance", "lifecycle", "lifecycle_history"):
+                        assert durable_after[key] == durable_before[key], key
+                    assert durable_after["availability"]["state"] == "archived"
+                    assert durable_after["availability"]["sequence"] == durable_before["availability"]["sequence"] + 2
                     # Original discoverability restored; history remains append-only.
                     page.goto(archived_url)
                     collection(page, "archived", "filter-")

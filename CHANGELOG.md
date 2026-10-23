@@ -8,6 +8,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Keep successful Loop Archive actions on the Archived collection without selecting
+  Loop detail. Restore retains exact-revision detail navigation; availability
+  authorization, compare-and-swap checks and append-only history are unchanged.
+
 - Unify retained Doer create-and-execute with exact published-Loop Run admission.
   Preserve editable genuine setup blockers, freeze exact retained intent before
   host effects, and retain immutable publication/Run identity through replay.
