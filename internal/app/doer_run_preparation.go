@@ -97,17 +97,19 @@ type exactDoerRun struct {
 }
 
 func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subject, candidate loop.LoopRevision, agent registry.AgentRevision) error {
-	// Reusable templates never mint task grants. The worker must resolve an
-	// existing configured or signed approval for the derived exact digest.
-	if candidate.SchemaVersion == loop.DoerReusableSchemaVersion {
-		_, err := queuedDoerContract(ctx, candidate)
+	contract, err := queuedDoerContract(ctx, candidate)
+	if err != nil {
 		return err
 	}
 	intent, ok := ctx.Value(exactDoerRunKey{}).(exactDoerRun)
 	if !ok || intent.requestID == "" || !s.doerEphemeralPreparationAllowed(ctx, subject, candidate, agent) {
 		return nil
 	}
-	if err := s.validateDoerControllerWorkspace(*candidate.Doer); err != nil {
+	ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}
+	if intent.candidate != ref {
+		return ErrDenied
+	}
+	if err := s.validateDoerControllerWorkspace(contract); err != nil {
 		return err
 	}
 	// Reuse signed exact scope, never a controller-wide allowlist or an Agent
@@ -117,11 +119,11 @@ func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subj
 	if linked && (lineage.Digest != reexecutionDigest(lineage) || lineage.RequestID != intent.requestID || lineage.Agent != agentRevisionRef(agent) || lineage.Loop != intent.candidate || lineage.SubjectID != subject.ID || lineage.PrincipalID != subject.PrincipalID) {
 		return ErrDenied
 	}
-	if s.resolveDoerHostApproval(ctx, *candidate.Doer, agent) == nil {
+	if s.resolveDoerHostApproval(ctx, contract, agent) == nil {
 		if !linked {
 			return nil
 		}
-		record, err := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, agent.Ownership.OwnerID, agentRevisionRef(agent), *candidate.Doer, s.Now())
+		record, err := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, agent.Ownership.OwnerID, agentRevisionRef(agent), contract, s.Now())
 		if err == nil && record.RunRequestID == intent.requestID && record.ReexecutionDigest == lineage.Digest && record.ImplementationPassCap == lineage.Remaining {
 			return nil
 		}
@@ -134,11 +136,14 @@ func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subj
 	if limit := now.Add(24 * time.Hour); limit.Before(expires) {
 		expires = limit
 	}
-	digest, err := candidate.Doer.Digest()
+	digest, err := contract.Digest()
 	if err != nil {
 		return err
 	}
-	record := hostapproval.Record{Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: agentRevisionRef(agent), Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: candidate.PreviousDigest, Contract: *candidate.Doer, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires, RunRequestID: intent.requestID}
+	record := hostapproval.Record{Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: agentRevisionRef(agent), Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: candidate.PreviousDigest, Contract: contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires, RunRequestID: intent.requestID}
+	if candidate.SchemaVersion == loop.DoerReusableSchemaVersion {
+		record.DoerReusable = candidate.DoerReusable
+	}
 	if linked {
 		record.ImplementationPassCap, record.ReexecutionDigest = lineage.Remaining, lineage.Digest
 	}
@@ -151,5 +156,5 @@ func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subj
 	if _, err = s.Store.SaveDoerHostApproval(record); err != nil {
 		return err
 	}
-	return s.resolveDoerHostApproval(ctx, *candidate.Doer, agent)
+	return s.resolveDoerHostApproval(ctx, contract, agent)
 }

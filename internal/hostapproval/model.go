@@ -71,6 +71,10 @@ type Record struct {
 	// Generation zero retains the original canonical record format.
 	Generation             uint64 `json:"generation,omitempty"`
 	ApprovalPreviousDigest string `json:"approval_previous_digest,omitempty"`
+	// DoerReusable binds an exact v5 source revision, never template-wide
+	// authority. Contract and RunRequestID still seal one concrete Run.
+	// Omission preserves historical v4 canonical signed bytes.
+	DoerReusable *loop.DoerReusableContract `json:"doer_reusable,omitempty"`
 }
 
 func KeyID(key ed25519.PublicKey) string {
@@ -94,7 +98,16 @@ func (r Record) canonical() ([]byte, error) {
 		return nil, ErrDenied
 	}
 	d, e := r.Contract.Digest()
-	candidate, _, ce := loop.NewDoerRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, r.Contract)
+	var candidate loop.LoopRevision
+	var ce error
+	if r.DoerReusable != nil {
+		if r.RunRequestID == "" || r.Contract.ExactBytes || r.Contract.MaxAttempts != r.DoerReusable.MaxAttempts {
+			return nil, ErrDenied
+		}
+		candidate, _, ce = loop.NewDoerReusableRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, *r.DoerReusable)
+	} else {
+		candidate, _, ce = loop.NewDoerRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, r.Contract)
+	}
 	if ce != nil || candidate.Digest != r.Candidate.Digest {
 		return nil, ErrDenied
 	}
