@@ -1,0 +1,29 @@
+package consoleweb
+
+templ QueueResult(q *QueueDetailModel) {
+		if q.RunResult != nil {
+			<section data-queue-run-result aria-label="Task and verified run result">
+				<h3>Task → verified run result</h3>
+				<p data-run-task>{ q.RunResult.Task }</p>
+				<p>Status · { q.RunResult.Status } · Verification · { q.RunResult.Verification } · Usage · { q.RunResult.Usage }</p>
+				if q.RunResult.Notice != "" {
+					<p role="status">{ q.RunResult.Notice }</p>
+				}
+				<dl>
+					for _, field := range q.RunResult.Fields {
+						<div><dt>{ field.Label }</dt><dd>{ field.Value }</dd></div>
+					}
+				</dl>
+				if q.RunResult.Verified {
+					<h4>Result · { q.RunResult.Name }</h4>
+					<p>Stored content · { q.RunResult.Encoding } · not a live workspace read or a Graph-dataflow output port.</p>
+					<pre data-run-result-content>{ q.RunResult.Content }</pre>
+				}
+			</section>
+		}
+}
+
+templ QueueCurrentOutcome(q *QueueDetailModel) {
+ @QueueOutcome(q)
+ @QueueResult(q)
+}

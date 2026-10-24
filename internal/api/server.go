@@ -1360,7 +1360,11 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return echo.NewHTTPError(http.StatusBadRequest, "execution observations unavailable")
 		}
-		return c.JSON(http.StatusOK, debuggerPresentation(debugger))
+		outcome, err := consoleQueueCurrentOutcome(c.Request().Context(), svc, subject, debugger)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "execution outcome unavailable")
+		}
+		return c.JSON(http.StatusOK, debuggerPresentation(debugger, outcome))
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
 	registerConsoleQueuePresentation(e, svc, consoleManager, doerPortal)

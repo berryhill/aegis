@@ -71,6 +71,27 @@ with sync_playwright() as p:
     assert 'no evidence-backed terminal disposition' in page.locator('[data-debugger-status]').inner_text()
     assert page.locator('[data-queue-scale]').inner_text() == before_zoom
     assert node.get_attribute('aria-pressed') == 'true'
+    if os.environ.get('AEGIS_DEBUGGER_TERMINAL') == '1':
+        page.locator('[data-debugger-follow]').click()
+        paused_terminal = page.locator('[data-debugger-history]').inner_text()
+        print('RECORD_CONTROLLED_DISPOSITION', flush=True)
+        success = os.environ.get('AEGIS_DEBUGGER_SUCCESS') == '1'
+        reason = 'evidence_satisfied' if success else 'implementation_failed'
+        state = 'succeeded' if success else 'failed'
+        page.wait_for_function("reason => document.querySelector('[data-queue-outcome]')?.textContent.includes(reason)", arg=reason)
+        outcome = page.locator('[data-queue-outcome]').inner_text()
+        assert 'Current execution outcome · ' + state in outcome
+        assert ('A more detailed cause was not recorded' in outcome) == (not success)
+        assert 'verified acceptance' not in outcome
+        assert 'Verification · not independently established' in outcome
+        assert page.locator('[data-current-queue-state]').text_content().strip() == state
+        assert 'Historical replay' in page.locator('[data-debugger-status]').inner_text()
+        assert page.locator('[data-debugger-history]').inner_text() == paused_terminal
+        assert page.locator('[data-queue-scale]').inner_text() == before_zoom
+        assert node.get_attribute('aria-pressed') == 'true'
+        page.locator('[data-debugger-current]').click()
+        history = page.locator('[data-debugger-history]').inner_text()
+        assert 'debug-disposition' in history
     # Disconnect real transport; no DOM updates are fabricated.
     parity(page, expected_geometry)
     context.set_offline(True)
@@ -99,6 +120,8 @@ with sync_playwright() as p:
     page.wait_for_function("() => document.querySelector('[data-queue-workspace]')?.textContent.includes('Session expired')")
     assert page.locator('[data-queue-node]').count() == 0
     assert 'debug-execution' not in page.locator('[data-queue-workspace]').inner_text()
+    assert page.locator('[data-queue-workspace]').get_attribute('data-debugger-initial') is None
+    assert page.locator('[data-run-result-content], [data-queue-outcome]').count() == 0
     assert not errors, errors
     print('PASS controlled durable live start, exact pinned Loop, retry history, pause/current/replay, reconnect, keyboard, zoom/selection, 390px, auth loss, CSP', flush=True)
     browser.close()

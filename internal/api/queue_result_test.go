@@ -98,6 +98,10 @@ func testQueueResultDenials(t *testing.T, s *app.Service, subject core.Subject, 
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s.FleetRepository = tc.repo
+			model := consoleQueueRunResult(context.Background(), s, subject, id)
+			if model.Verified || model.Content != "" || model.Task != "" || model.Notice != "Named result unavailable: exact owner authorization and intact verified evidence are required." {
+				t.Fatalf("Console denial disclosed content or raw diagnostic: %+v", model)
+			}
 			var body map[string]any
 			// Keep the production read limiter enabled while covering denials.
 			time.Sleep(250 * time.Millisecond)

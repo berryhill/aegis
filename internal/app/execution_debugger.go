@@ -19,22 +19,23 @@ import (
 // ExecutionDebugger is a bounded content-free exact-run read model. Definition
 // context and interpreter observations confer neither authority nor completion.
 type ExecutionDebugger struct {
-	QueueID        string                `json:"queue_id"`
-	GraphRunID     string                `json:"graph_run_id"`
-	SnapshotDigest string                `json:"snapshot_digest"`
-	Source         reference.RevisionRef `json:"source"`
-	Direct         bool                  `json:"direct"`
-	State          string                `json:"state"`
-	Terminal       bool                  `json:"terminal"`
-	DispositionID  string                `json:"disposition_id,omitempty"`
-	ArtifactIDs    []string              `json:"artifact_ids,omitempty"`
-	ReceiptIDs     []string              `json:"receipt_ids,omitempty"`
-	Watermark      string                `json:"watermark"`
-	Version        uint64                `json:"version"`
-	ObservedAt     time.Time             `json:"observed_at"`
-	Notice         string                `json:"notice"`
-	Nodes          []DebuggerLoop        `json:"nodes"`
-	Dependencies   []DebuggerEdge        `json:"dependencies"`
+	QueueID           string                `json:"queue_id"`
+	GraphRunID        string                `json:"graph_run_id"`
+	SnapshotDigest    string                `json:"snapshot_digest"`
+	Source            reference.RevisionRef `json:"source"`
+	Direct            bool                  `json:"direct"`
+	State             string                `json:"state"`
+	Terminal          bool                  `json:"terminal"`
+	DispositionReason string                `json:"disposition_reason"`
+	DispositionID     string                `json:"disposition_id,omitempty"`
+	ArtifactIDs       []string              `json:"artifact_ids,omitempty"`
+	ReceiptIDs        []string              `json:"receipt_ids,omitempty"`
+	Watermark         string                `json:"watermark"`
+	Version           uint64                `json:"version"`
+	ObservedAt        time.Time             `json:"observed_at"`
+	Notice            string                `json:"notice"`
+	Nodes             []DebuggerLoop        `json:"nodes"`
+	Dependencies      []DebuggerEdge        `json:"dependencies"`
 }
 type DebuggerLoop struct {
 	NodeID      string                `json:"node_id"`
@@ -207,9 +208,10 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 	}
 	disposition, err := s.FleetRepository.GetDispositionByGraphRun(ctx, item.GraphRunID)
 	if err == nil {
-		if disposition.QueueItem.ID != id || disposition.QueueItem.Digest != item.Digest {
+		if disposition.GraphRunID != item.GraphRunID || disposition.QueueItem.ID != id || disposition.QueueItem.Digest != item.Digest {
 			return out, fleet.ErrCorrupt
 		}
+		out.DispositionReason = disposition.ReasonCode
 		out.DispositionID = disposition.DispositionID
 		out.State = string(disposition.State)
 		out.Terminal = true

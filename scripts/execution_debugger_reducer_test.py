@@ -12,7 +12,7 @@ state = dict(queue_id='q', graph_run_id='parent', snapshot_digest='snap', direct
 # canonical multi-node geometry is verified through the real Go/Serve fixture.
 state['graph_layout'] = dict(Columns=1, Rows=1, Nodes=[dict(GridColumn=1, GridRow=1)], EdgeGeometry=[])
 state['layouts'] = {'child': copy.deepcopy(state['graph_layout'])}
-html = '''<main data-queue-workspace data-debugger-url="/poll"><div class="qw-body" id="unrelated"></div><div class="queue-workspace"><section><div data-queue-viewport tabindex="0"><div data-queue-stage></div></div></section><aside id="queue-context"><h3 id="queue-context-title" tabindex="-1"></h3><div class="qw-body"><div data-queue-definition-panel>Authoritative Queue evidence</div><section data-queue-node-panel="0" hidden><ol data-debugger-node-history></ol></section></div><button data-queue-close>Close</button></aside></div><select data-debugger-scope></select><input data-debugger-replay type="range" min="0"><button data-debugger-follow></button><button data-debugger-current>Current</button><p data-debugger-status></p><p data-debugger-notice></p><p data-debugger-identity></p><ol data-debugger-history></ol><span data-queue-scale></span></main>'''
+html = '''<main data-queue-workspace data-debugger-url="/poll"><div data-queue-current-outcome><section data-queue-outcome><p data-outcome-freshness></p>initial safe outcome</section></div><div class="qw-body" id="unrelated"></div><div class="queue-workspace"><section><div data-queue-viewport tabindex="0"><div data-queue-stage></div></div></section><aside id="queue-context"><h3 id="queue-context-title" tabindex="-1"></h3><div class="qw-body"><div data-queue-definition-panel>Authoritative Queue evidence</div><section data-queue-node-panel="0" hidden><ol data-debugger-node-history></ol></section></div><button data-queue-close>Close</button></aside></div><select data-debugger-scope></select><input data-debugger-replay type="range" min="0"><button data-debugger-follow></button><button data-debugger-current>Current</button><p data-debugger-status></p><p data-debugger-notice></p><p data-debugger-identity></p><ol data-debugger-history></ol><span data-queue-scale></span></main>'''
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     page = browser.new_page()
@@ -102,6 +102,17 @@ with sync_playwright() as p:
     page.wait_for_function("document.querySelector('[data-debugger-status]').textContent.includes('stale / disconnected')")
     assert 'Queue cancelled' in page.locator('[data-debugger-status]').inner_text()
     assert page.locator('.queue-node.current').count() == 0
+    # Foreign exact-run/snapshot responses must never install result HTML.
+    for field, bad in [('queue_id', 'foreign-q'), ('graph_run_id', 'foreign-run'), ('snapshot_digest', 'foreign-snapshot')]:
+        previous = state[field]
+        state[field] = bad
+        state['version'] = 9
+        state['outcome_html'] = '<section data-queue-outcome>private-foreign-result-canary</section>'
+        page.wait_for_timeout(1800)
+        assert 'private-foreign-result-canary' not in page.content()
+        assert 'Queue cancelled' in page.locator('[data-debugger-status]').inner_text()
+        state[field] = previous
+    state.pop('outcome_html')
     # Exact run key prevents another snapshot borrowing selection or replay.
     state['queue_id'] = 'other-q'
     page.reload()
