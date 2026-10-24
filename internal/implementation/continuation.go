@@ -11,6 +11,7 @@ import (
 // grants no execution authority: Run repeats admission and custody validation.
 type Continuation struct {
 	predecessor, history, successor string
+	preimage, proof                 string
 	consumed, remaining             uint16
 }
 
@@ -29,7 +30,11 @@ func (e *Executor) PrepareContinuation(previous, head, successor string, remaini
 	if h.Digest != head || previous == successor || successor == "" || consumed >= uint16(c.MaxPasses) || remaining == 0 || remaining != uint16(c.MaxPasses)-consumed {
 		return nil, errors.New("native continuation binding or cumulative budget mismatch")
 	}
-	return &Continuation{previous, head, successor, consumed, remaining}, nil
+	preimage, proof, err := e.recoveryPreimage(r, c)
+	if err != nil {
+		return nil, err
+	}
+	return &Continuation{predecessor: previous, history: head, successor: successor, preimage: preimage, proof: proof, consumed: consumed, remaining: remaining}, nil
 }
 
 func (e *Executor) continuationContext(id string, c loop.VerifiedImplementation) (*CollectedRepositoryContext, *CollectedRepositoryContext, error) {
@@ -55,6 +60,69 @@ func (e *Executor) continuationContext(id string, c loop.VerifiedImplementation)
 	if err != nil {
 		return nil, nil, err
 	}
-	current, err := load(r.Passes[len(r.Passes)-1].ContextStateDigest)
+	current, err := load(t.preimage)
 	return initial, current, err
+}
+
+// The durable implement report precedes every apply in managed doer.v1.
+// Absence is a witness only for a validated prepared final reservation, never
+// for generic, interrupted or partially applied histories.
+func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (string, string, error) {
+	reject := errors.New("native coding no-apply witness unavailable")
+	if r.State != "failed" || len(r.Passes) == 0 {
+		return "", "", reject
+	}
+	last := r.Passes[len(r.Passes)-1]
+	if last.ContextStateDigest != "" && last.WorkspaceDigest != "" && last.OutputDigest != "" {
+		return last.ContextStateDigest, "completed-check.v1", nil
+	}
+	if !r.ManagedInput || c.DecisionMode != "doer.v1" || c.RepositoryContext == nil || r.ContextDigest == "" || last.Input == nil || last.Input.Delivered || last.WorkspaceDigest != "" || last.OutputDigest != "" || last.ContextStateDigest != "" || last.ContextIdentity != "" || last.Passed || r.ConsumedBefore+uint16(len(r.Passes)) >= uint16(c.MaxPasses) {
+		return "", "", reject
+	}
+	if e.revalidateInputs(c, r, false) != nil {
+		return "", "", reject
+	}
+	if RepositorySourceDigest(c.RepositoryContext) != c.RepositoryContext.SourceDigest {
+		return "", "", reject
+	}
+	if f := last.Failure; f != nil {
+		if f.State != "failed" || f.Reason == "turn_cancelled_or_timed_out" || f.Reason == "prompt_rejected" || f.Reason == "local_inference_release_denied" || f.Reason == "authority_expired" || f.Reason == "authority_no_longer_effective" {
+			return "", "", reject
+		}
+	}
+	gate := false
+	for _, s := range r.Stages {
+		if _, err := e.StageOutput(r.RunID, s); err != nil {
+			return "", "", reject
+		}
+		switch s.Name {
+		case "gate":
+			b, err := e.StageOutput(r.RunID, s)
+			var g GateDecision
+			if gate || s.PassID != "" || err != nil || json.Unmarshal(b, &g) != nil || !g.Specified || !g.ResultDefined {
+				return "", "", reject
+			}
+			gate = true
+		case "input_prepared", "input_delivered", "implement", "judgment", "check", "diagnosis":
+		default:
+			return "", "", reject
+		}
+		if s.PassID == last.ID && s.Name != "input_prepared" {
+			return "", "", reject
+		}
+	}
+	if !gate {
+		return "", "", reject
+	}
+	preimage := r.ContextDigest
+	if len(r.Passes) > 1 {
+		preimage = r.Passes[len(r.Passes)-2].ContextStateDigest
+	} else if r.PredecessorRun != "" {
+		// Do not confuse original immutable model context with a predecessor's candidate.
+		return "", "", reject
+	}
+	if preimage == "" {
+		return "", "", reject
+	}
+	return preimage, "prepared-no-implement.v1", nil
 }

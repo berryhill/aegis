@@ -25,13 +25,20 @@ type CodingHistoryView struct {
 	AcceptanceGate     string           `json:"acceptance_gate"`
 }
 type CodingPassView struct {
-	Input              *CodingInputView `json:"input,omitempty"`
-	ContextIdentity    string           `json:"context_identity,omitempty"`
-	ContextStateDigest string           `json:"context_state_digest,omitempty"`
-	ID                 string           `json:"id"`
-	WorkspaceDigest    string           `json:"workspace_digest"`
-	OutputDigest       string           `json:"output_digest"`
-	Passed             bool             `json:"passed"`
+	Failure            *CodingFailureView `json:"failure,omitempty"`
+	Input              *CodingInputView   `json:"input,omitempty"`
+	ContextIdentity    string             `json:"context_identity,omitempty"`
+	ContextStateDigest string             `json:"context_state_digest,omitempty"`
+	ID                 string             `json:"id"`
+	WorkspaceDigest    string             `json:"workspace_digest"`
+	OutputDigest       string             `json:"output_digest"`
+	Passed             bool               `json:"passed"`
+}
+
+type CodingFailureView struct {
+	State  string `json:"state,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	Code   string `json:"code,omitempty"`
 }
 
 type CodingInputView struct {
@@ -52,6 +59,9 @@ func codingHistoryView(h implementation.History) CodingHistoryView {
 	}
 	for i, p := range h.Passes {
 		v.Passes[i] = CodingPassView{ContextIdentity: p.ContextIdentity, ContextStateDigest: p.ContextStateDigest, ID: p.ID, WorkspaceDigest: p.WorkspaceDigest, OutputDigest: p.OutputDigest, Passed: p.Passed}
+		if p.Failure != nil {
+			v.Passes[i].Failure = &CodingFailureView{State: p.Failure.State, Reason: p.Failure.Reason, Code: p.Failure.Code}
+		}
 		if p.Input != nil {
 			b := p.Input
 			v.Passes[i].Input = &CodingInputView{InputDigest: b.InputDigest, InputBytes: b.InputBytes, ContextDigest: b.ContextDigest, ContractDigest: b.ContractDigest, TaskDigest: b.TaskDigest, Delivered: b.Delivered, TurnID: b.TurnID, RuntimeSessionID: b.RuntimeSessionID}

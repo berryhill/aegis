@@ -174,7 +174,9 @@ raw production-file SHA-256. A legacy selected-file verifier receipt is not this
 native software-correctness claim.
 
 One Queue attempt can contain multiple implementation passes. Known complete-pass
-failure may use the existing authenticated append-only requeue/reexecution path
+failure, or a validated known failed managed reservation with prepared input and
+durable proof that no implement/apply stage began, may use the existing
+authenticated append-only requeue/reexecution path
 under only the remaining original budget. It retains the same published Loop,
 original task/context and exact predecessor lineage; a successor Queue record is
 not a reset or a rewrite of its terminal predecessor. A correction uses the
@@ -182,7 +184,12 @@ controller's recorded current writable preimage while keeping the original
 read-only context. Fresh authority still applies. Success, exhaustion, unknown or
 partial effects, missing/corrupt evidence, source drift, swapped references and
 conflicting successors deny. Do not republish, rotate uncertain intent or create
-a successor merely to evade failure. First reconcile exact authoritative history.
+a successor merely to evade failure. A pre-apply continuation must reverify the
+recorded preimage, retain its consumed pass and prepared/not-delivered distinction,
+and cannot infer a stop acknowledgment or a historical failure cause. Missing
+witnesses, unknown/interrupted outcomes and partial applies still deny. Distinct
+tasks can retire only exactly owned, idle, terminal zero-authority coding runtimes;
+they do not reset the failed task's budget. First reconcile authoritative history.
 
 ## Qualification tiers
 

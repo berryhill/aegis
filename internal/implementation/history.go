@@ -1,6 +1,7 @@
 package implementation
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,7 +51,10 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (History, e
 			return out, reject
 		}
 		h, x := e.History(r.PredecessorRun, c)
-		if x != nil || h.State != "failed" || h.Digest != r.PredecessorHistory || h.CumulativeConsumed != r.ConsumedBefore || h.ContextDigest != r.ContextDigest || h.ReservedPasses == 0 || h.Passes[len(h.Passes)-1].ContextStateDigest == "" {
+		if x != nil || h.State != "failed" || h.Digest != r.PredecessorHistory || h.CumulativeConsumed != r.ConsumedBefore || h.ContextDigest != r.ContextDigest || h.ReservedPasses == 0 {
+			return out, reject
+		}
+		if _, _, x = e.recoveryPreimage(previous, c); x != nil {
 			return out, reject
 		}
 		successor, x := e.DB.Get([]byte("implementation/successor/" + digest([]byte(r.PredecessorRun))))
@@ -168,7 +172,20 @@ func (e *Executor) CheckRecoveryState(id string, c loop.VerifiedImplementation) 
 	}
 	last := h.Passes[len(h.Passes)-1]
 	if last.ContextStateDigest == "" || last.OutputDigest == "" || last.WorkspaceDigest == "" {
-		return h, errors.New("native coding partial pass recovery unavailable")
+		r, x := e.Read(id)
+		if x != nil {
+			return h, x
+		}
+		d, _, x := e.recoveryPreimage(r, c)
+		if x != nil {
+			return h, x
+		}
+		b, x := e.loadBlob(d)
+		var expected CollectedRepositoryContext
+		if x != nil || json.Unmarshal(b, &expected) != nil {
+			return h, errors.New("native coding preimage unavailable")
+		}
+		return h, verifyContext(context.Background(), c, &expected)
 	}
 	r, err := e.Read(id)
 	if err != nil {

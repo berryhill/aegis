@@ -62,7 +62,25 @@ func (p HermesPatchProposer) propose(ctx context.Context, request implementation
 	}
 	result, err := p.Adapter.AttemptTurn(ctx, turn)
 	if err != nil {
-		return implementation.Proposal{}, err
+		failure := doerTurnFailure(result, err)
+		if request.FailureObserver != nil {
+			v := implementation.ManagedFailure{}
+			switch string(result.Attempt.State) {
+			case "failed", "denied", "expired", "cancelled", "interrupted", "revoked":
+				v.State = string(result.Attempt.State)
+			}
+			if hermesruntime.IsAttemptFailureReason(result.Attempt.Reason) {
+				v.Reason = result.Attempt.Reason
+			}
+			var closed *doerFailure
+			if errors.As(failure, &closed) {
+				v.Code = closed.code
+			}
+			if x := request.FailureObserver(v); x != nil {
+				return implementation.Proposal{}, x
+			}
+		}
+		return implementation.Proposal{}, failure
 	}
 	if request.InputObserver != nil {
 		if err = request.InputObserver(implementation.InputObservation{Bytes: wire, Completed: true, TurnID: result.Attempt.ID, RuntimeSessionID: result.Attempt.RuntimeSessionID}); err != nil {

@@ -28,6 +28,7 @@ type Edit struct {
 	Content []byte `json:"content"`
 }
 type Request struct {
+	FailureObserver   func(ManagedFailure) error   `json:"-"`
 	InputObserver     func(InputObservation) error `json:"-"`
 	Contract          loop.VerifiedImplementation
 	RepositoryContext *CollectedRepositoryContext `json:",omitempty"`
@@ -47,13 +48,14 @@ type Halt struct{ State string }
 func (h *Halt) Error() string { return h.State }
 
 type Pass struct {
-	Input              *InputEvidence `json:"input,omitempty"`
-	ContextIdentity    string         `json:"context_identity,omitempty"`
-	ContextStateDigest string         `json:"context_state_digest,omitempty"`
-	ID                 string         `json:"id"`
-	WorkspaceDigest    string         `json:"workspace_digest"`
-	OutputDigest       string         `json:"output_digest"`
-	Passed             bool           `json:"passed"`
+	Failure            *ManagedFailure `json:"failure,omitempty"`
+	Input              *InputEvidence  `json:"input,omitempty"`
+	ContextIdentity    string          `json:"context_identity,omitempty"`
+	ContextStateDigest string          `json:"context_state_digest,omitempty"`
+	ID                 string          `json:"id"`
+	WorkspaceDigest    string          `json:"workspace_digest"`
+	OutputDigest       string          `json:"output_digest"`
+	Passed             bool            `json:"passed"`
 }
 type Record struct {
 	ManagedInput       bool    `json:"managed_input,omitempty"`
@@ -303,6 +305,7 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		request := Request{Contract: proposalContract, RepositoryContext: cloneContext(initial), PassID: passID, PreviousCheck: append([]byte(nil), previous...), PreviousDiagnosis: append([]byte(nil), previousDiagnosis...)}
 		if r.ManagedInput {
 			request.InputObserver = e.inputObserver(&r, c, passID)
+			request.FailureObserver = e.failureObserver(&r, passID)
 		}
 		var edits []Edit
 		var report string

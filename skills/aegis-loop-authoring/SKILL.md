@@ -161,8 +161,10 @@ Reload authenticated `queue show` coding history, exact artifacts,
 `aegis.implementation.verifier` receipts and the terminal disposition. Verify
 actual source/test input commitments and managed delivery, unchanged trusted
 tests, behavioral RED→GREEN, cumulative reserved passes and original failed
-history. Known complete-pass correction uses existing exact requeue lineage;
-unknown/partial effects and exhaustion deny rather than reset budget or
+history. Known complete-pass correction, or a prepared managed reservation with
+durable no-implement/no-apply proof and unchanged recorded preimage, uses existing
+exact requeue lineage without restoring consumed passes. Unknown/interrupted or
+partial-apply effects and exhaustion deny rather than reset budget or
 republish. Synthetic fixtures, real managed-provider, packaged and installed
 proof are distinct tiers. See `docs/BOUNDED_CODING.md` for the source contract.
 

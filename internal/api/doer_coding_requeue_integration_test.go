@@ -18,6 +18,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/graph"
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/queue"
@@ -29,6 +30,14 @@ import (
 // authentication, app Run/requeue admission, native Go checks and disposition.
 // No continuation/pass resolver is replaced by this fixture.
 func TestAuthenticatedCodingCorrectionRequeue(t *testing.T) {
+	authenticatedCodingCorrectionRequeue(t, false)
+}
+
+func TestAuthenticatedCodingNoApplyCorrectionRequeue(t *testing.T) {
+	authenticatedCodingCorrectionRequeue(t, true)
+}
+
+func authenticatedCodingCorrectionRequeue(t *testing.T, noApply bool) {
 	s := apiService(t)
 	clock := newRequeueStageClock(s.Now())
 	s.Now = clock.Now
@@ -130,10 +139,17 @@ esac
 		t.Fatal(err)
 	}
 	write(s.Config.HermesExecutable, "#!/bin/sh\nif [ \"${1:-}\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+install+"'; exit 0; fi\nsleep 60 &\nwait\n")
-	event := func(value string) string {
-		proposal, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package fixture\nfunc Value() int { return " + value + " }\n")}}, "report": "Implemented value"})
+	patchEvent := func(path, content string) string {
+		proposal, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: path, Content: []byte(content)}}, "report": "Implemented value"})
 		b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "event", "params": map[string]any{"type": "message.complete", "session_id": "fixture", "payload": map[string]string{"status": "complete", "text": string(proposal)}}})
 		return string(b)
+	}
+	event := func(value string) string {
+		return patchEvent("value.go", "package fixture\nfunc Value() int { return "+value+" }\n")
+	}
+	firstEvent := event("0")
+	if noApply {
+		firstEvent = `{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fixture","payload":{"status":"error","text":"synthetic first proposal failure","error":"synthetic backend failure"}}}`
 	}
 	write(filepath.Join(install, "venv", "bin", "python"), fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
@@ -146,6 +162,10 @@ IFS= read -r prompt || exit 0
 printf '%%s\n' "$prompt" > '%s/prompt-latest'
 printf '%%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"fixture","payload":{}}}'
+case "$prompt" in
+ *'Write reusable hello'*) printf '%%s\n' '%s'; while IFS= read -r rest; do :; done; exit 0 ;;
+ *'Write reusable world'*) printf '%%s\n' '%s'; while IFS= read -r rest; do :; done; exit 0 ;;
+esac
 if [ ! -f '%s/first' ]; then
  printf '%%s\n' "$prompt" > '%s/prompt-first'
  : > '%s/first'
@@ -154,11 +174,11 @@ elif [ ! -f '%s/diagnosed' ]; then
  : > '%s/diagnosed'
  printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fixture","payload":{"status":"error","text":"private diagnosis failure","error":"synthetic backend failure"}}}'
 else
- if [ ! -f '%s/prompt-correction' ]; then printf '%%s\n' "$prompt" > '%s/prompt-correction'; fi
+ case "$prompt" in *RepositoryContext*) printf '%%s\n' "$prompt" > '%s/prompt-correction' ;; esac
  printf '%%s\n' '%s'
 fi
 while IFS= read -r rest; do :; done
-`, root, root, root, root, event("0"), root, root, root, root, event("42")))
+`, root, patchEvent("result.txt", "hello"), patchEvent("result.txt", "world"), root, root, root, firstEvent, root, root, root, event("42")))
 	done := make(chan error, 1)
 	go func() { done <- Serve(ctx, s) }()
 	defer func() {
@@ -212,13 +232,24 @@ while IFS= read -r rest; do :; done
 			Request implementation.Request `json:"request"`
 		}
 		if json.Unmarshal([]byte(rpc.Params.Text), &envelope) != nil || !reflect.DeepEqual(envelope.Request.RepositoryContext, expectedContext) {
-			t.Fatal("serialized source/test/module input changed")
+			t.Fatalf("serialized source/test/module input changed: capture=%s actual=%+v expected=%+v", capture, envelope.Request.RepositoryContext, expectedContext)
 		}
 		if p.Input == nil || !p.Input.Delivered || p.Input.InputDigest != hash([]byte(rpc.Params.Text)) || p.Input.InputBytes != len(rpc.Params.Text) || p.Input.ContractDigest != inner || p.Input.TaskDigest != manifest.TaskDigest || p.Input.ContextDigest != hash(contextWire) || p.Input.TurnID != p.ID || p.Input.RuntimeSessionID != "fixture" || envelope.Request.PassID != p.ID {
 			t.Fatal("exact serialized input/turn witness mismatch")
 		}
 	}
-	assertInput(old, "prompt-first")
+	if noApply {
+		p := history.Passes[0]
+		if p.Input == nil || p.Input.Delivered || p.Input.InputDigest == "" || p.Input.InputBytes == 0 {
+			t.Fatal("known managed no-apply failure lost prepared, undelivered input")
+		}
+		b, err := os.ReadFile(filepath.Join(workspace, "value.go"))
+		if err != nil || string(b) != files["value.go"] {
+			t.Fatal("no-apply failure changed candidate", err)
+		}
+	} else {
+		assertInput(old, "prompt-first")
+	}
 	selector := app.RequeueQueueItemInput{QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: old.Item.ItemID, Digest: old.Item.Digest}, IdempotencyKey: "coding-correction"}
 	for _, tc := range []struct {
 		name, path string
@@ -234,17 +265,25 @@ while IFS= read -r rest; do :; done
 			apiRequest(t, client, http.MethodPost, "/v1/queue/"+tc.path+"/requeue", app.RequeueQueueItemInput{QueueItem: tc.ref, IdempotencyKey: tc.name}, nil, tc.status)
 		})
 	}
-	// Match the existing persisted-requeue fixture: an unexpired exact Run
-	// scope cannot be relabeled for a successor. Close the old runtime and
-	// advance the synchronized fixture clock, then authenticate afresh.
-	authority, err := s.Authority.GetAuthorityContext(ctx, old.RuntimeAuthorityBinding.Authority.ID)
-	if err != nil {
-		t.Fatal(err)
+	// Actual preparation retires authority; no manual closure or expiry jump.
+	runInterveningReusableTasks(t, client, input.Agent, c.AgentID)
+	for _, duplicate := range []bool{false, true} {
+		run := input
+		run.IdempotencyKey = fmt.Sprintf("arbitrary-native-%v", duplicate)
+		if duplicate {
+			copy, _, err := loop.NewDoerRevision("duplicate-native-task", 1, "", contract)
+			if err != nil {
+				t.Fatal(err)
+			}
+			apiRequest(t, client, http.MethodPost, "/v1/loops", app.PublishLoopInput{AgentID: c.AgentID, Revision: copy, IdempotencyKey: "duplicate-publish"}, nil, http.StatusCreated)
+			run.Loop = app.RevisionReference(copy.LoopID, 1, copy.Digest)
+		}
+		var denied app.QueueLoopResult
+		apiRequest(t, client, http.MethodPost, "/v1/loops/queue", run, &denied, http.StatusOK)
+		if denied.Reason != "same_task_budget_link_required" || denied.QueueItemID != "" {
+			t.Fatalf("same contract reset admitted: %+v", denied)
+		}
 	}
-	if err = s.RevokeSessionAs(ctx, sub, authority.SessionID, "isolated_coding_requeue_fixture"); err != nil {
-		t.Fatal(err)
-	}
-	clock.Advance(s.Config.Principal.AuthTTL + time.Nanosecond)
 	var next app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/queue/"+old.Item.ItemID+"/requeue", selector, &next, http.StatusOK)
 	if next.Execution == nil || next.Execution.Projection.State != queue.StateSucceeded {
@@ -276,7 +315,7 @@ while IFS= read -r rest; do :; done
 	for _, p := range []struct {
 		input  bool
 		digest string
-	}{{history.Passes[0].Input != nil, history.Passes[0].ContextStateDigest}, {h.Passes[0].Input != nil, h.Passes[0].ContextStateDigest}} {
+	}{{history.Passes[0].Input != nil, history.ContextDigest}, {h.Passes[0].Input != nil, h.Passes[0].ContextStateDigest}} {
 		if !p.input || p.digest == "" {
 			t.Fatal("missing context/input custody")
 		}
@@ -297,10 +336,52 @@ while IFS= read -r rest; do :; done
 	if !reflect.DeepEqual(oldWire, after) {
 		t.Fatal("failed historical public readback mutated")
 	}
+	var replay app.QueueLoopResult
+	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &replay, http.StatusOK)
+	if replay.QueueItemID != old.Item.ItemID || replay.Execution == nil || len(replay.Execution.Attempts) != 1 {
+		t.Fatal("original-key replay duplicated native effects")
+	}
 	var successful app.QueueExecutionView
 	apiRequest(t, client, http.MethodGet, "/v1/queue/"+corrected.Item.ItemID, nil, &successful, http.StatusOK)
 	if successful.CodingHistory[corrected.Attempts[0].AttemptID].Digest != h.Digest {
 		t.Fatal("public successor history drift")
 	}
 	t.Logf("authenticated Run failed after 1 native pass; authenticated requeue succeeded with 1 remaining pass; cumulative=2; predecessor history=%s successor history=%s", history.Digest, h.Digest)
+}
+
+func runInterveningReusableTasks(t *testing.T, client *http.Client, agent reference.RevisionRef, agentID string) {
+	t.Helper()
+	reusable, _, err := loop.NewDoerReusableRevision("coding-intervening-reusable", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiRequest(t, client, http.MethodPost, "/v1/loops", app.PublishLoopInput{AgentID: agentID, Revision: reusable, IdempotencyKey: "reusable-publish"}, nil, http.StatusCreated)
+	for _, text := range []string{"hello", "world"} {
+		run := app.QueueLoopInput{Agent: agent, Loop: app.RevisionReference(reusable.LoopID, 1, reusable.Digest), IdempotencyKey: "intervening-" + text, Activate: true}
+		space := t.TempDir()
+		for _, v := range []struct {
+			id    string
+			kind  graph.ValueType
+			value any
+		}{
+			{"task", graph.TypeString, "Write reusable " + text}, {"workspace", graph.TypeString, space}, {"writable_files", graph.TypeArray, []string{"result.txt"}}, {"verify_file", graph.TypeString, "result.txt"}, {"expected_text", graph.TypeString, text},
+		} {
+			raw, _ := json.Marshal(v.value)
+			run.Inputs = append(run.Inputs, graph.NormalizedInput{PortID: v.id, Type: v.kind, Value: raw})
+		}
+		var result app.QueueLoopResult
+		apiRequest(t, client, http.MethodPost, "/v1/loops/queue", run, &result, http.StatusOK)
+		if result.Execution == nil || result.Execution.Projection.State != queue.StateSucceeded || len(result.Execution.Attempts) != 1 || len(result.Execution.Receipts) != 1 {
+			t.Fatalf("distinct %s blocked: %+v", text, result)
+		}
+		b, err := os.ReadFile(filepath.Join(space, "result.txt"))
+		if err != nil || string(b) != text {
+			t.Fatalf("%s output=%q err=%v", text, b, err)
+		}
+		var replay app.QueueLoopResult
+		apiRequest(t, client, http.MethodPost, "/v1/loops/queue", run, &replay, http.StatusOK)
+		if replay.QueueItemID != result.QueueItemID || replay.Execution == nil || len(replay.Execution.Attempts) != 1 {
+			t.Fatal("reusable replay duplicated effects")
+		}
+	}
 }
