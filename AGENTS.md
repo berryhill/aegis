@@ -148,6 +148,10 @@ Detailed retained research is under `research/`.
 
 ## Implementation delivery and Hermes acceptance routing
 
+### Temporary Hermes GitHub issue contribution routing
+
+An owner request such as “Hey, implement this GitHub issue”, “implement this issue”, or “fix this GitHub issue” triggers the existing engineering contribution procedure without requiring skill names or repeated continue requests. Before choosing execution tools, the agent must load and use `aegis-implementation-model` and `aegis-development-loop`, then read `.hermes/implementation-delivery-contract.md`. Use the active `aegis_implementation_loop` with an execution-capable conductor under those skills' execution contract; rendered instructions and generic worker launches are not execution of that flow. Preserve existing ownership and independent approval gates. This temporary Hermes routing remains until an explicitly adopted Aegis-managed contribution workflow replaces it; it does not create a product Loop or authorize its activation.
+
 Read `.hermes/implementation-delivery-contract.md` before acting on implementation, repair, publication or deployment requests. “Implement/fix” means working end-to-end behavior through independent acceptance, PR, exact-head CI and verified protected-base merge—not a plan, local patch, worker launch or open PR. Release and live activation are separate requested targets; when already authorized, complete them without duplicate permission. Narrower explicit scope and genuine independent approval gates always prevail.
 
 This `AGENTS.md` is the canonical project-instruction entry point. `.hermes/` contains explicitly referenced documents, not automatically loaded rules. Read `.hermes/README.md` for the index and evidence/hygiene rules.

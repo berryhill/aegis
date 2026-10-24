@@ -1,5 +1,19 @@
 # Implementation and delivery contract
 
+## Temporary Hermes GitHub issue contribution routing
+
+Owner requests such as “Hey, implement this GitHub issue”, “implement this issue”, and “fix this GitHub issue”, with an issue reference, invoke this engineering procedure. The agent must load and use `aegis-implementation-model` and `aegis-development-loop` before selecting execution tools. Read the issue and relevant discussion, including latest owner instructions; establish bounded domain obligations, observable acceptance, security invariants and delivery scope. Reconcile existing task/session/worktree/branch/PR ownership before starting or resuming; never duplicate execution or overlap source writers.
+
+Use the active `aegis_implementation_loop` through a real execution-capable conductor as specified by the engineering skills. `FlowExecutor.run_task_flow()` rendering is not engineering execution. Verify the supported conductor and approval delivery before dispatch; distinguish parent-attended conduction from autonomous dispatcher execution. Classify an unanswerable detached-worker approval as `approval_transport_unavailable`; do not redispatch unchanged failures or evade a gate. Report a missing capability accurately rather than claiming the loop ran.
+
+Retain the engineering lifecycle and evidence for each performed step:
+
+`prepare_feature_worktree` → `understand` → `inspect` → `trace` → `implement_minimally` → `test_the_behavior` → `diagnose_and_repeat` → `review_security_boundaries` → `review_launch_assets` → `final_verification` → `report_concisely` → `push_feature_branch` → `watch_cicd` → `merge_on_success_or_loop`.
+
+Use one source-owning builder, then freeze executable identity and complete source identity covering staged, unstaged and untracked source. A fresh independent tester must not modify product code and must exercise affected real journeys in isolated development state. Require acceptance before release; send concrete failures back for bounded repair, rebuild and retest. The parent independently verifies evidence and retains delivery ownership through PR, exact-head CI and protected-base merge/readback. A handoff prompt, worker verdict or passing sample is not completion.
+
+This is a temporary Hermes contribution procedure until an explicitly adopted Aegis-managed contribution workflow replaces it, not a request to author or run a product Loop. Do not create PlanStore/TaskQueue records merely to install these repository instructions. For actual contributions, follow the applicable skills' supported existing execution and ownership paths and the owner's scope. No new queue, daemon, dispatcher, conductor framework or management UI is required. Preserve narrower scope and genuine authority gates; no unsolicited release or live activation. An additive question or request for a handoff prompt does not cancel an active implementation; stop only on explicit cancellation or a genuinely replacing objective.
+
 ## Meaning of owner requests
 
 - **Implement / fix:** deliver the requested working user-visible behavior end to end, with regression evidence, independent acceptance, a task-owned feature branch/worktree, PR, exact-head CI and verified merge to the protected base. Do not stop at local edits, an open PR, a worker launch or a plan. A document-only request means the actual requested documents, not an unsolicited product implementation or release.
