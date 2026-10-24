@@ -36,27 +36,29 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 	// prove this invocation produced it. Deny before claim rather than
 	// manufacturing a success from old bytes.
 	if contract.Coding == nil {
-	filePolicy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: contract.VerifyFile, Mode: evidence.SelectedFilePresence}
-	if contract.ExpectedText != nil {
-		filePolicy.Mode, filePolicy.Text = evidence.SelectedFileText, *contract.ExpectedText
-		if contract.ExactBytes {
-			filePolicy.Mode = evidence.SelectedFileExactBytes
+		filePolicy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: contract.VerifyFile, Mode: evidence.SelectedFilePresence}
+		if contract.ExpectedText != nil {
+			filePolicy.Mode, filePolicy.Text = evidence.SelectedFileText, *contract.ExpectedText
+			if contract.ExactBytes {
+				filePolicy.Mode = evidence.SelectedFileExactBytes
+			}
+		}
+		policyDigest, err := filePolicy.Digest()
+		if err != nil {
+			return LayaGate{}, err
+		}
+		observation, err := evidence.VerifySelectedFile(ctx, contract.Workspace, filePolicy, policyDigest, evidence.SelectedFileBinding{AttemptID: request.AttemptID, ActionID: "verify", RunID: item.GraphRunID, OwnerID: agentRef.ID, AuthorityContextID: request.Authority.ID, AuthorityContextDigest: request.Authority.Digest})
+		if err != nil {
+			return LayaGate{}, err
+		}
+		if observation.Outcome == evidence.Passed {
+			return LayaGate{}, fmt.Errorf("%w: selected file already satisfies assertion", ErrWorkerDenied)
 		}
 	}
-	policyDigest, err := filePolicy.Digest()
-	if err != nil {
-		return LayaGate{}, err
-	}
-	observation, err := evidence.VerifySelectedFile(ctx, contract.Workspace, filePolicy, policyDigest, evidence.SelectedFileBinding{AttemptID: request.AttemptID, ActionID: "verify", RunID: item.GraphRunID, OwnerID: agentRef.ID, AuthorityContextID: request.Authority.ID, AuthorityContextDigest: request.Authority.Digest})
-	if err != nil {
-		return LayaGate{}, err
-	}
-	if observation.Outcome == evidence.Passed {
-		return LayaGate{}, fmt.Errorf("%w: selected file already satisfies assertion", ErrWorkerDenied)
-	}
-	}
 	state := "Task: " + contract.Task + "\nExpected result: " + contract.VerifyFile + " exists in the workspace"
-	if contract.Coding != nil { state = "Task: " + contract.Task + "\nExpected result: " + contract.Coding.Acceptance }
+	if contract.Coding != nil {
+		state = "Task: " + contract.Task + "\nExpected result: " + contract.Coding.Acceptance
+	}
 	if contract.ExpectedText != nil {
 		state += " and contains exactly " + fmt.Sprintf("%q", *contract.ExpectedText)
 	}
