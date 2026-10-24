@@ -138,6 +138,33 @@ regenerated, no tag or release is published, and production behavior is unchange
 
 ## Remaining acceptance
 
+### API cumulative-deadline follow-up
+
+The seven-group, whole-package topology above is historical. Hosted run
+40055537827 exhausted the API race package's 12-minute alarm while its active
+authenticated HTTP test had just started. The repair replaces API with `api-a`
+and `api-b` in both modes. Only API compiles twice; every other package remains
+exact-once by validated `go list ./...` set subtraction. Each API group derives
+the same sorted inventory from `go test [-race] -count=1 -timeout=... -list .`
+and alternates top-level names. An anchored, escaped parent-name regex preserves
+children and fuzz seeds without prefix matches. Benchmarks are recognized but
+are not default executions. Real TestMain runs for discovery and each partition.
+Empty, duplicate, malformed or incomplete discovery fails closed.
+
+Alarms remain eight minutes normal and twelve minutes API race; outer API jobs
+remain ten minutes normal and sixteen minutes race. Toolchain, CPU, memory and
+supervisor are unchanged. Exact CI evidence requires every partition and rejects
+unknown, missing, skipped or failed jobs; all-success aggregate guards remain.
+No product/authentication code, KDF, test body or test skip changes. A real Go
+fixture proves every default leaf once across partitions in normal and race
+modes, including TestMain, subtests, examples, fuzz seeds and future tests.
+
+Focused local script validation passed; production partition timing and fresh
+hosted exact-head success remain separate acceptance. CI-only launch impact
+affects this ledger and CHANGELOG.md, not runtime/security, architecture,
+installation, quickstart, demos, recording, licenses, contributor material or
+release bytes. No release or publication is performed by this source repair.
+
 Exact-head hosted CI must exercise every group, repository stage, authority and
 vulnerability/vet gate plus final archive/browser proof. Measure created-to-finish
 elapsed time, including setup/queue; job deadlines alone are insufficient. Final

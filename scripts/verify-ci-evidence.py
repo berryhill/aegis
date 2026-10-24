@@ -15,7 +15,7 @@ REQUIRED_JOBS = frozenset({"Exact-head release readiness", "Race tests", "Reposi
                            "Authority denial matrix", "Vulnerability scan",
                            "Release package and installed proof"}
                           | {f"Go {mode} / {group}" for mode in ("normal", "race")
-                             for group in ("api", "execution", "cli", "persistence", "update", "remainder-a", "remainder-b")})
+                             for group in ("api-a", "api-b", "execution", "cli", "persistence", "update", "remainder-a", "remainder-b")})
 
 
 def validate_sha(value):
@@ -58,8 +58,8 @@ def validate(run, jobs, revision, workflow_id):
             raise ValueError("CI jobs are ambiguous, incomplete, skipped, failed or source-mismatched")
         names.add(name)
         ids.add(ident)
-    if not REQUIRED_JOBS.issubset(names):
-        raise ValueError("required complete source-verification gates are missing")
+    if names != REQUIRED_JOBS:
+        raise ValueError("required complete source-verification gates are missing or unknown")
     # The API run URL is not accepted as an authority or followed as a destination.
     return {"source_revision": revision, "repository": REPOSITORY,
             "workflow": WORKFLOW, "run_id": run["id"], "run_attempt": run["run_attempt"],

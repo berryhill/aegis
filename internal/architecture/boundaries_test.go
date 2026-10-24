@@ -23,7 +23,8 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 var allowedInternalImports = map[string][]string{
 	"internal/reference":         {},
 	"internal/registry":          {"internal/reference"},
-	"internal/loop":              {},
+	"internal/loop":              {"internal/reference"},                                       // Pure immutable references only; never contribution intake.
+	"internal/contribution":      {"internal/loop", "internal/registry", "internal/reference"}, // Sealed intake binds outward to pure domain models.
 	"internal/graph":             {"internal/reference"},
 	"internal/queue":             {"internal/reference"},
 	"internal/core":              {},
@@ -35,14 +36,14 @@ var allowedInternalImports = map[string][]string{
 	"internal/disposition":       {"internal/execution", "internal/reference"},
 	"internal/store":             {"internal/core", "internal/continuation", "internal/hostapproval"},
 	"internal/persistence":       {"internal/core", "internal/persistence"},
-	"internal/persistence/fleet": {"internal/core", "internal/disposition", "internal/doerbinding", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
+	"internal/persistence/fleet": {"internal/contribution", "internal/core", "internal/disposition", "internal/doerbinding", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/principalauth":     {},
 	"internal/skillbundle":       {"internal/skillbundle"},
 	"internal/localinference":    {"internal/core"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/localinference", "internal/store"},
-	"internal/app":               {"internal/config", "internal/continuation", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/hostapproval", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
+	"internal/app":               {"internal/contribution", "internal/config", "internal/continuation", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/hostapproval", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
 	"internal/managergateway":    {"internal/app", "internal/core", "internal/credentials", "internal/manager", "internal/slash"},
 	"internal/console":           {"internal/core", "internal/principalauth"},
 	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway", "internal/principalauth"},
@@ -52,7 +53,8 @@ var allowedInternalImports = map[string][]string{
 var classifiedTestOnlyFamilies = map[string]struct{}{"testprocess": {}}
 
 var classifiedProductionFamilies = map[string]struct{}{
-	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {}, "continuation": {}, "hostapproval": {},
+	"contribution": {},
+	"api":          {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {}, "continuation": {}, "hostapproval": {},
 	"core": {}, "credentials": {}, "disposition": {}, "doerbinding": {}, "evidence": {}, "execution": {}, "graph": {},
 	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "looprun": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
@@ -497,4 +499,23 @@ func inspectCanonicalTypeOwners(root string) ([]string, error) {
 		return nil
 	})
 	return violations, err
+}
+
+func TestLoopBoundaryRejectsContributionIntake(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "internal", "loop")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixture := []byte("package loop\nimport _ \"github.com/berryhill/aegis/internal/contribution\"\n")
+	if err := os.WriteFile(filepath.Join(directory, "violation.go"), fixture, 0600); err != nil {
+		t.Fatal(err)
+	}
+	violations, err := inspectProductionImports(root)
+	if err != nil || len(violations) != 1 || !strings.Contains(violations[0], "protected layer internal/loop") {
+		t.Fatalf("Loop must reject contribution intake: %v, %v", violations, err)
+	}
+	if !matchesAnyLayer("internal/reference", allowedInternalImports["internal/loop"]) {
+		t.Fatal("Loop must retain canonical pure references")
+	}
 }

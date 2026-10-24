@@ -185,6 +185,17 @@ func validateGrammar(request Request) error {
 		return usage()
 	}
 	switch request.Canonical {
+	case "contribute":
+		if len(args) == 2 && args[0] == "narrow" && (args[1] == "no-merge" || args[1] == "no-publish" || args[1] == "local-only") {
+			return nil
+		}
+		if len(args) == 2 && (args[0] == "select" || args[0] == "status" || args[0] == "stop") || len(args) == 1 && (args[0] == "status" || args[0] == "stop") {
+			return nil
+		}
+		if (len(args) == 2 || len(args) == 3) && args[0] == "run" {
+			return nil
+		}
+		return usage()
 	case "help":
 		if len(args) > 1 {
 			return usage()

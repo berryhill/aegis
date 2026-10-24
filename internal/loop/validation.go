@@ -37,7 +37,7 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 	add := func(code, path, message string) {
 		issues = append(issues, ValidationIssue{Code: code, Path: path, Message: message})
 	}
-	if revision.SchemaVersion != RevisionSchemaVersion && revision.SchemaVersion != ImplementationRevisionSchemaVersion && revision.SchemaVersion != DoerRevisionSchemaVersion && revision.SchemaVersion != DoerReusableSchemaVersion {
+	if revision.SchemaVersion != RevisionSchemaVersion && !IsImplementationSchema(revision.SchemaVersion) && revision.SchemaVersion != DoerRevisionSchemaVersion && revision.SchemaVersion != DoerReusableSchemaVersion {
 		add("schema.unsupported", "schema_version", "unsupported Loop revision schema version")
 	}
 	if !validID(revision.LoopID) {
@@ -193,17 +193,24 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 			add("doer.version", "steps."+step.ID+".executable", "executable binding requires v4 or v5")
 		}
 	}
+	if revision.SchemaVersion == ContributionRevisionSchemaVersion {
+		if revision.Contribution == nil || revision.Contribution.Validate() != nil || len(revision.Inputs) != 0 {
+			add("contribution.invalid", "contribution", "v6 requires exact independently authorized contribution profile and no caller inputs")
+		}
+	} else if revision.Contribution != nil {
+		add("contribution.version", "contribution", "contribution profile requires v6")
+	}
 	implementationCount := 0
 	for _, step := range revision.Steps {
 		if step.Implementation == nil {
 			continue
 		}
 		implementationCount++
-		if revision.SchemaVersion != ImplementationRevisionSchemaVersion || step.Kind != StepAction || step.Retry.MaxAttempts != 1 || step.Implementation.Validate() != nil {
+		if !IsImplementationSchema(revision.SchemaVersion) || step.Kind != StepAction || step.Retry.MaxAttempts != 1 || step.Implementation.Validate() != nil {
 			add("implementation.invalid", "steps."+step.ID, "verified implementation requires v3, one action attempt and an exact validated contract")
 		}
 	}
-	if revision.SchemaVersion == ImplementationRevisionSchemaVersion {
+	if IsImplementationSchema(revision.SchemaVersion) {
 		entry := steps[revision.EntryStepID]
 		if len(revision.RequiredEvidence) != 1 || len(entry.EvidenceClaims) != 1 {
 			add("implementation.evidence", "required_evidence", "exact controller verification claim required")
@@ -215,7 +222,7 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 			}
 		}
 	}
-	if revision.SchemaVersion == ImplementationRevisionSchemaVersion && (implementationCount != 1 || len(revision.Steps) != 2 || len(revision.Transitions) != 1 || steps[revision.EntryStepID].Implementation == nil) {
+	if IsImplementationSchema(revision.SchemaVersion) && (implementationCount != 1 || len(revision.Steps) != 2 || len(revision.Transitions) != 1 || steps[revision.EntryStepID].Implementation == nil) {
 		add("implementation.shape", "steps", "v3 supports exactly one implementation action and one terminal")
 	}
 

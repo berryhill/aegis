@@ -6,6 +6,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"github.com/berryhill/aegis/internal/contribution"
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/disposition"
@@ -33,11 +34,20 @@ type AuditFact struct {
 
 // AcceptedSubmission is one all-or-nothing admission mutation.
 type AcceptedSubmission struct {
+	Contribution      *contribution.Contract `json:"contribution,omitempty"`
 	Snapshot          graph.GraphRunSnapshot `json:"snapshot"`
 	Submission        queue.Submission       `json:"submission"`
 	QueueItem         queue.Item             `json:"queue_item"`
 	GraphRun          execution.GraphRun     `json:"graph_run"`
 	InitialTransition queue.QueueTransition  `json:"initial_transition"`
+}
+
+// ContributionRepository is a narrow view over the existing admission store.
+type ContributionRepository interface {
+	GetContributionControl(context.Context, string) (contribution.Control, error)
+	AppendContributionControl(context.Context, contribution.Control) error
+	GetContribution(context.Context, string, string) (contribution.Contract, error)
+	GetContributionForQueue(context.Context, string) (contribution.Contract, error)
 }
 
 // Completion is one all-or-nothing evidence-gated terminal mutation.

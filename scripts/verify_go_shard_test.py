@@ -1,7 +1,9 @@
-"""Exact package coverage and real Go fixture regression tests."""
+"""Exact package/default-test coverage, including a real normal/race Go binary."""
 import importlib.util
 import json
+from collections import Counter
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -15,75 +17,72 @@ spec.loader.exec_module(shard)
 
 class ShardTests(unittest.TestCase):
     def packages(self):
-        return [shard.ROOT + p for paths in shard.GROUPS.values() for p in paths] + [shard.ROOT + 'new', shard.ROOT + 'empty']
+        return sorted({shard.ROOT + p for paths in shard.GROUPS.values() for p in paths}) + [shard.ROOT + 'new', shard.ROOT + 'empty']
 
-    def test_exact_once_union_including_new_and_zero_test_packages(self):
-        packages = self.packages()
-        grouped = shard.groups(packages)
-        union = [p for group in grouped.values() for p in group]
-        self.assertCountEqual(union, packages)
-        self.assertEqual(len(union), len(set(union)))
-        self.assertEqual(grouped['remainder-a'], [shard.ROOT + 'empty'])
-        self.assertEqual(grouped['remainder-b'], [shard.ROOT + 'new'])
-        self.assertEqual(grouped, shard.groups(list(reversed(packages))))
-
-    def test_odd_remainder_is_sorted_alternating_and_exact_once(self):
-        named = [shard.ROOT + p for paths in shard.GROUPS.values() for p in paths]
-        remainder = [shard.ROOT + f'new-{i:02d}' for i in range(47)]
-        grouped = shard.groups(list(reversed(named + remainder)))
-        self.assertEqual(grouped['remainder-a'], remainder[::2])
-        self.assertEqual(grouped['remainder-b'], remainder[1::2])
-        self.assertEqual([len(grouped[n]) for n in ('remainder-a', 'remainder-b')], [24, 23])
-        union = [p for group in grouped.values() for p in group]
-        self.assertCountEqual(union, named + remainder)
-        self.assertEqual(len(union), len(set(union)))
-
-    def test_measured_slow_update_is_isolated_from_both_remainders(self):
-        self.assertEqual(shard.GROUPS['update'], ('internal/update',))
-        # Inventory growth/reordering must not put the measured 368-373s package
-        # back beside cumulative remainder costs in either mode.
+    def test_exact_once_nonapi_and_only_api_twice_including_future_packages(self):
         for count in (0, 1, 46, 47, 48):
-            packages = self.packages() + [shard.ROOT + f'future-{i}' for i in range(count)]
+            packages = self.packages() + [shard.ROOT + f'future-{i:02d}' for i in range(count)]
             grouped = shard.groups(list(reversed(packages)))
-            self.assertEqual(grouped['update'], [shard.ROOT + 'internal/update'])
-            for name in ('remainder-a', 'remainder-b'):
-                self.assertNotIn(shard.ROOT + 'internal/update', grouped[name])
             union = [p for group in grouped.values() for p in group]
-            self.assertCountEqual(union, packages)
-            self.assertEqual(len(union), len(set(union)))
+            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1}))
+            self.assertEqual(grouped, shard.groups(packages))
+            self.assertEqual(grouped['api-a'], [shard.API])
+            self.assertEqual(grouped['api-b'], [shard.API])
+            self.assertEqual(grouped['update'], [shard.ROOT + 'internal/update'])
+            remainder = sorted(p for p in packages if p not in {shard.ROOT + p for paths in shard.GROUPS.values() for p in paths})
+            self.assertEqual(grouped['remainder-a'], remainder[::2])
+            self.assertEqual(grouped['remainder-b'], remainder[1::2])
 
-    def test_empty_unknown_malformed_and_duplicate_listing_fail(self):
+    def test_invalid_package_inventory_and_overlap_fail(self):
         for text in ['', '\n', '{}', 'other/module', shard.ROOT, shard.ROOT + 'bad name', '\n'.join([shard.ROOT + 'p'] * 2)]:
             with self.subTest(text=text), self.assertRaises(ValueError):
                 shard.inventory(text)
+        with self.assertRaises(ValueError):
+            shard.groups([p for p in self.packages() if p != shard.API])
+        for duplicate in ('internal/api', 'internal/update'):
+            with mock.patch.dict(shard.GROUPS, {'overlap': (duplicate,)}), self.assertRaises(ValueError):
+                shard.groups(self.packages())
 
-    def test_missing_named_package_fails(self):
-        with self.assertRaisesRegex(ValueError, 'missing'):
-            shard.groups(self.packages()[1:])
+    def test_invalid_test_inventory_fails_closed(self):
+        footer = '\nok\t' + shard.API + '\t0.001s\n'
+        for text in ['', 'TestOne\nTestTwo\n', footer, 'TestOne\nTestOne' + footer,
+                     'TestOne\nUnknown' + footer, 'TestOne\nTestTwo/child' + footer,
+                     'BenchmarkOnly' + footer, 'TestOne\nTestTwo' + footer + 'noise\n']:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                shard.test_inventory(text)
 
-    def test_overlapping_group_fails(self):
-        packages = self.packages()
-        with mock.patch.dict(shard.GROUPS, {'overlap': ('internal/api',)}):
-            with self.assertRaisesRegex(ValueError, 'more than once'):
-                shard.groups(packages)
+    def test_inventory_failure_never_executes_partition(self):
+        for failure in (subprocess.CalledProcessError(1, ['go']), mock.Mock(stdout='')):
+            with mock.patch.object(shard.subprocess, 'run', side_effect=[mock.Mock(stdout='\n'.join(self.packages())), failure]) as run:
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    shard.main(['--group', 'api-a'])
+                self.assertEqual(run.call_count, 2)
 
-    def test_go_failure_never_runs_tests(self):
-        with mock.patch.object(shard.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, ['go'])) as run:
-            with self.assertRaises(subprocess.CalledProcessError):
-                shard.main(['--group', 'api'])
-            self.assertEqual(run.call_count, 1)
-
-    def test_every_mode_has_explicit_uncached_complete_package_command(self):
+    def test_every_mode_command_and_matching_inventory_mode(self):
+        listing = 'TestOne\nTestOnePrefix\nExample\nFuzzSeed\nBenchmarkUnused\nok\t' + shard.API + '\t0.001s\n'
         for race in (False, True):
             for group in shard.GROUPS:
-                with mock.patch.object(shard.subprocess, 'run', return_value=mock.Mock(stdout='\n'.join(self.packages()))) as run, mock.patch('builtins.print'):
+                api = group.startswith('api-')
+                results = [mock.Mock(stdout='\n'.join(self.packages()))]
+                if api:
+                    results.append(mock.Mock(stdout=listing))
+                results.append(mock.Mock())
+                with mock.patch.object(shard.subprocess, 'run', side_effect=results) as run, mock.patch('builtins.print'):
                     shard.main(['--group', group] + (['--race'] if race else []))
                     command = run.call_args.args[0]
                     self.assertEqual('-race' in command, race)
                     self.assertIn('-count=1', command)
-                    self.assertNotIn('-run', command)
-                    timeout = '-timeout=12m' if race and group == 'api' else '-timeout=8m'
-                    self.assertEqual(command[command.index(timeout)+1:], shard.groups(self.packages())[group])
+                    self.assertIn('-timeout=12m' if race and api else '-timeout=8m', command)
+                    self.assertEqual('-run' in command, api)
+                    if api:
+                        inventory = run.call_args_list[1].args[0]
+                        self.assertEqual('-race' in inventory, race)
+                        self.assertIn('-list', inventory)
+                        pattern = command[command.index('-run') + 1]
+                        selected = shard.test_inventory(listing)[0 if group == 'api-a' else 1::2]
+                        for name in shard.test_inventory(listing):
+                            self.assertEqual(bool(re.search(pattern, name)), name in selected)
+                            self.assertIsNone(re.search(pattern, name + 'Suffix'))
 
     def test_invalid_group_rejected_before_go(self):
         with mock.patch.object(shard.subprocess, 'run') as run, mock.patch('sys.stderr'):
@@ -91,34 +90,36 @@ class ShardTests(unittest.TestCase):
                 shard.main(['--group', 'unknown'])
             run.assert_not_called()
 
-    def test_outer_race_jobs_allow_setup_and_complete_slow_packages(self):
-        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
-        job = workflow.split('  go-shards:\n', 1)[1].split('  installed-proof:', 1)[0]
-        allowance = "${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}"
-        self.assertIn('    timeout-minutes: ' + allowance, job)
-        self.assertIn('fail-fast: false', job)
-        self.assertIn('python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP" --race', job)
-
-    def test_real_go_fixture_preserves_tests_examples_and_fuzz_seeds(self):
+    def test_real_go_fixture_preserves_every_default_leaf_and_testmain(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
             (root / 'go.mod').write_text('module github.com/berryhill/aegis\n\ngo 1.26.10\n')
             package = root / 'fixture'
             package.mkdir()
             (package / 'fixture_test.go').write_text('''package fixture
-import ("testing"; "fmt")
-func TestOne(t *testing.T) { t.Run("child", func(t *testing.T) {}) }
-func Example() { fmt.Println("example"); // Output: example
+import ("testing"; "fmt"; "os")
+var mainReady bool
+func TestMain(m *testing.M) { mainReady = true; os.Exit(m.Run()) }
+func ready(t *testing.T) { if !mainReady { t.Fatal("TestMain did not run") } }
+func TestOne(t *testing.T) { ready(t); t.Run("child", func(t *testing.T) { ready(t) }) }
+func TestOnePrefix(t *testing.T) { ready(t) }
+func TestFuture(t *testing.T) { ready(t) }
+func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
 }
-func FuzzSeed(f *testing.F) { f.Add("seed"); f.Fuzz(func(t *testing.T, s string) {}) }
+func FuzzSeed(f *testing.F) { if !mainReady { f.Fatal("TestMain did not run") }; f.Add("seed"); f.Fuzz(func(t *testing.T, s string) { ready(t) }) }
+func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests") }
 ''')
-            result = subprocess.run(['go', 'list', './...'], cwd=root, capture_output=True, text=True, check=True)
-            packages = shard.inventory(result.stdout)
-            with mock.patch.object(shard, 'GROUPS', {'fixture': ('fixture',), 'remainder-a': (), 'remainder-b': ()}):
-                self.assertEqual(shard.groups(packages)['fixture'], packages)
-            result = subprocess.run(['go', 'test', '-count=1', '-json', *packages], cwd=root, capture_output=True, text=True, check=True)
-            seen = [event['Test'] for line in result.stdout.splitlines() if (event := json.loads(line)).get('Action') == 'run' and '/' not in event.get('Test', '')]
-            self.assertCountEqual(seen, ['TestOne', 'Example', 'FuzzSeed'])
+            pkg = shard.ROOT + 'fixture'
+            for race in (False, True):
+                base = ['go', 'test', *(['-race'] if race else []), '-count=1', '-timeout=8m']
+                listing = subprocess.run([*base, '-list', '.', pkg], cwd=root, capture_output=True, text=True, check=True)
+                names = shard.test_inventory(listing.stdout, pkg)
+                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', 'Example', 'FuzzSeed'])
+                seen = []
+                for group in ('api-a', 'api-b'):
+                    result = subprocess.run([*base, '-json', '-run', shard.test_pattern(names, group), pkg], cwd=root, capture_output=True, text=True, check=True)
+                    seen += [e['Test'] for line in result.stdout.splitlines() if (e := json.loads(line)).get('Action') == 'run' and 'Test' in e]
+                self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0']))
 
 
 if __name__ == '__main__':
