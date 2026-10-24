@@ -350,3 +350,7 @@ See [online Loop publication](docs/ONLINE_LOOP_PUBLICATION.md) for `--target`, a
 Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](docs/INSTALLED_UPDATE_BOOTSTRAP.md).
 
 For a stopped foreign user-service unit, see [bounded service recovery](docs/SERVICE_RECOVERY.md); recovery never force-updates a binary or claims authenticated readiness.
+
+### Explicit contribution intake
+
+Authenticated manager sessions support `/contribute select <published-loop>`, then `/contribute run <issue-url> [narrower-scope]`, with `status`, `stop`, and `narrow` controls. This is bounded intake, not automated contribution delivery. See [contribution intake](docs/contribution-intake.md) for limits.

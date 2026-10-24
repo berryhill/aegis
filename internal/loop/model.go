@@ -135,6 +135,7 @@ type ValidatorSpec struct {
 // LoopRevision is a create-only definition. Digest covers its canonical form
 // with Digest omitted, avoiding a self-referential hash.
 type LoopRevision struct {
+	Contribution     *ContributionProfile  `json:"contribution,omitempty"`
 	SchemaVersion    string                `json:"schema_version"`
 	Doer             *DoerContract         `json:"doer,omitempty"`
 	DoerReusable     *DoerReusableContract `json:"doer_reusable,omitempty"`

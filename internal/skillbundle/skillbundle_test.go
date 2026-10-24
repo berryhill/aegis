@@ -392,7 +392,7 @@ func TestSessionOperationsSkill(t *testing.T) {
 	if skill.AuthorityClass != "advisory" || skill.Network != "none" || skill.Filesystem != "none" || len(skill.RequiredToolsets) != 0 || len(skill.Sensitivity) != 0 {
 		t.Fatalf("skill authority boundary = %#v", skill)
 	}
-	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 1 || skill.RequiredOperations[0] != operation {
+	if strings.Join(skill.Dependencies, ",") != "aegis,aegis-trust-context-inspection,aegis-audit-verification" || len(skill.RequiredOperations) != 2 || skill.RequiredOperations[0] != operation || skill.RequiredOperations[1] != "aegis.contribution.intake" {
 		t.Fatalf("skill routing contract = dependencies %#v, operations %#v", skill.Dependencies, skill.RequiredOperations)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/berryhill/aegis/internal/contribution"
 	"sort"
 
 	"github.com/berryhill/aegis/internal/disposition"
@@ -44,7 +45,18 @@ func (s *Store) AcceptSubmission(ctx context.Context, accepted fleet.AcceptedSub
 	if err != nil {
 		return false, err
 	}
-	binding, err := requestBinding("accepted", snapshotWire, submissionWire, itemWire, runWire, transitionWire, fact.Event)
+	var contributionWire []byte
+	if accepted.Contribution != nil {
+		contributionWire, err = contribution.Marshal(*accepted.Contribution)
+		if err != nil {
+			return false, err
+		}
+	}
+	bindingParts := []any{"accepted", snapshotWire, submissionWire, itemWire, runWire, transitionWire, fact.Event}
+	if accepted.Contribution != nil {
+		bindingParts = append(bindingParts, contributionWire)
+	}
+	binding, err := requestBinding(bindingParts...)
 	if err != nil {
 		return false, err
 	}
@@ -59,6 +71,9 @@ func (s *Store) AcceptSubmission(ctx context.Context, accepted fleet.AcceptedSub
 			return fleet.ErrConflict
 		}
 		if e := verifySnapshotReferences(txn, accepted.Snapshot); e != nil {
+			return e
+		}
+		if e := putContribution(txn, accepted); e != nil {
 			return e
 		}
 		if accepted.Submission.Snapshot != digestRef(accepted.Snapshot.SnapshotID, accepted.Snapshot.Digest) ||

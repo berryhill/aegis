@@ -301,12 +301,15 @@
       "sources": [
         "internal/command/root.go",
         "internal/api/server.go",
-        "internal/command/fleet_online.go"
+        "internal/command/fleet_online.go",
+        "internal/managergateway/contribution.go",
+        "internal/app/contribution.go"
       ],
       "tests": [
         "internal/command/domain_surface_test.go",
         "internal/api/server_test.go",
-        "internal/command/fleet_online_preparation_test.go"
+        "internal/command/fleet_online_preparation_test.go",
+        "internal/managergateway/contribution_test.go"
       ],
       "cli": [
         "aegis session",

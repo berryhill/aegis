@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls; downstream contribution delivery remains unavailable.
+
 ### Fixed
 
 - Show the authenticated Execution Queue's current outcome above its topology,
@@ -14,6 +16,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   content where supported. Refresh terminal outcomes on the same page without
   changing historical replay or selection; clear protected outcome data on
   authentication loss. Native/Graph selected-content limitations are not failures.
+
+- Partition cumulative API CI work into `api-a` and `api-b` in both modes
+  using the actual Go test inventory. Preserve every default test, example,
+  subtest and fuzz seed, real TestMain and existing authentication/resource
+  limits. Require both partitions and reject unknown or missing CI jobs.
 
 - Explicitly route owner GitHub issue implementation requests through the existing
   Aegis engineering skills and implementation loop, with independent acceptance,

@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
-"""Exact-once bounded Go package groups; invoke through verify-budget.py.
+"""Bounded Go groups; only API compiles twice, with exact-once default tests.
 
-Seven groups isolate measured slow packages without duplicating compilation or
-splitting TestMain, examples, fuzz seeds, or subtests. The remainder is exact set
-subtraction from `go list ./...`; new packages cannot silently escape coverage.
+API inventories the actual mode's Go test binary, then alternates sorted top-level
+tests, runnable examples and fuzz targets (including all their children/seeds).
+Benchmarks are inventoried but not run by default. TestMain runs normally in each
+partition. Every non-API package remains exact-once, including future packages.
 """
 import argparse
 import json
+import re
+from collections import Counter
 import subprocess
 import sys
 
 ROOT = 'github.com/berryhill/aegis/'
+API = ROOT + 'internal/api'
 GROUPS = {
-    'api': ('internal/api',),
+    'api-a': ('internal/api',),
+    'api-b': ('internal/api',),
     'execution': ('internal/implementation', 'internal/orchestration'),
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
@@ -38,15 +43,43 @@ def groups(packages):
         raise ValueError('empty or duplicate package inventory')
     selected = {name: [ROOT + path for path in paths] for name, paths in GROUPS.items()}
     assigned = [package for names in selected.values() for package in names]
-    if len(assigned) != len(set(assigned)) or not set(assigned) <= set(packages):
+    expected = Counter({p: 1 for p in set(assigned)})
+    expected[API] = 2
+    if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if len(union) != len(packages) or set(union) != set(packages):
+    if Counter(union) != Counter(packages) + Counter({API: 1}):
         raise ValueError('package coverage mismatch')
     return selected
+
+
+def test_inventory(text, package=API):
+    """Fail closed on missing footer, empty/duplicate names or unknown output."""
+    lines = text.splitlines()
+    if not lines or not re.fullmatch(r'ok\s+' + re.escape(package) + r'\s+\d+(?:\.\d+)?s', lines[-1]):
+        raise ValueError('missing Go test inventory completion')
+    names = lines[:-1]
+    if not names or len(names) != len(set(names)):
+        raise ValueError('empty or duplicate Go test inventory')
+    if any(not re.fullmatch(r'(?:Test|Example|Fuzz|Benchmark)\w*', name) for name in names):
+        raise ValueError('unknown Go test inventory entry')
+    defaults = sorted(name for name in names if not name.startswith('Benchmark'))
+    if len(defaults) < 2:
+        raise ValueError('empty Go test partition')
+    return defaults
+
+
+def test_pattern(names, group):
+    if group not in ('api-a', 'api-b'):
+        raise ValueError('unknown API partition')
+    selected = names[0 if group == 'api-a' else 1::2]
+    if not selected:
+        raise ValueError('empty Go test partition')
+    # No slash: matching a parent deliberately executes all subtests/fuzz seeds.
+    return '^(?:' + '|'.join(re.escape(name) for name in selected) + ')$'
 
 
 def main(argv=None):
@@ -60,12 +93,15 @@ def main(argv=None):
     selected = groups(packages)[args.group]
     if not selected:
         raise ValueError('selected group has no packages')
-    # The complete API race package includes principal-authenticated route
-    # matrices and has outgrown eight minutes on the bounded two-CPU runner.
-    # Keep package/TestMain coverage intact and every other timeout unchanged;
-    # verify-budget.py still enforces the outer CPU/memory/runtime envelope.
-    timeout = '12m' if args.race and args.group == 'api' else '8m'
-    command = ['go', 'test', *(['-race'] if args.race else []), '-count=1', '-timeout=' + timeout, *selected]
+    mode = ['-race'] if args.race else []
+    api = args.group in ('api-a', 'api-b')
+    timeout = '12m' if args.race and api else '8m'
+    command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
+    if api:
+        listing = subprocess.run([*command, '-list', '.', API], text=True, stdout=subprocess.PIPE, check=True)
+        names = test_inventory(listing.stdout)
+        command += ['-run', test_pattern(names, args.group)]
+    command += selected
     print(json.dumps({'group': args.group, 'race': args.race, 'total_packages': len(packages), 'selected_packages': len(selected), 'command': command}), flush=True)
     if not args.list_only:
         subprocess.run(command, check=True)

@@ -54,7 +54,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_each_rebalanced_shard_is_required_in_both_modes(self):
         for mode in ('normal', 'race'):
-            for group in ('update', 'remainder-a', 'remainder-b'):
+            for group in ('api-a', 'api-b', 'update', 'remainder-a', 'remainder-b'):
                 name = f'Go {mode} / {group}'
                 with self.subTest(name=name):
                     self.assertIn(name, MODULE.REQUIRED_JOBS)
@@ -62,6 +62,13 @@ class EvidenceTests(unittest.TestCase):
                     jobs = [job for job in jobs if job['name'] != name]
                     with self.assertRaisesRegex(ValueError, 'missing'):
                         MODULE.validate(run, jobs, SHA, 456)
+
+    def test_unknown_successful_shard_and_legacy_api_are_denied(self):
+        for name in ('Go race / api', 'Go normal / api-c', 'unknown successful gate'):
+            run, jobs = self.fixture()
+            jobs.append(dict(jobs[0], id=999, name=name))
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'unknown'):
+                MODULE.validate(run, jobs, SHA, 456)
 
     def test_latest_attempt_selected_without_falling_back_to_green(self):
         older, _ = self.fixture()

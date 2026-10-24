@@ -40,6 +40,8 @@ type Opened struct {
 }
 
 type session struct {
+	contributionLoop       app.ContributionLoopReference
+	contributionKey        string
 	id                     string
 	token                  [32]byte
 	subject                core.Subject
@@ -303,6 +305,9 @@ func (s *Service) Execute(ctx context.Context, subject core.Subject, id, token, 
 			return slash.Result{}, &CommandParseError{Reason: parseError.Reason, Message: message}
 		}
 		return slash.Result{}, err
+	}
+	if request.Canonical == "contribute" {
+		return s.contribute(ctx, entry, request)
 	}
 	manager := slash.Context{
 		Subject: entry.subject, StanzaID: managerdomain.SecurityContext,
