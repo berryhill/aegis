@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/core"
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
@@ -66,9 +69,28 @@ func applyQueueDebugger(detail *consoleweb.QueueDetailModel, d app.ExecutionDebu
 	detail.EdgeCount = len(detail.Edges)
 }
 
+// Render only the canonical escaped template. Content is joined through the
+// exact selected-item owner/evidence reader, never from debugger observations.
+func consoleQueueCurrentOutcome(ctx context.Context, svc *app.Service, subject core.Subject, d app.ExecutionDebugger) (string, error) {
+	q := &consoleweb.QueueDetailModel{CurrentState: d.State, DispositionID: d.DispositionID, DispositionReason: d.DispositionReason, RunResult: consoleQueueRunResult(ctx, svc, subject, d.QueueID, d)}
+	if d.Terminal {
+		q.TerminalOutcome = d.State
+	}
+	var b bytes.Buffer
+	if err := consoleweb.QueueCurrentOutcome(q).Render(ctx, &b); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
 // Geometry is computed once by the canonical Console adapter for initial and
 // polled reads alike. Only pinned, content-free definition fields enter it.
-func debuggerPresentation(d app.ExecutionDebugger) any {
+func debuggerPresentation(d app.ExecutionDebugger, outcomeHTML ...string) any {
+	d.DispositionReason = consoleweb.SafeQueueOutcomeReason(d.DispositionReason)
+	var outcome string
+	if len(outcomeHTML) > 0 {
+		outcome = outcomeHTML[0]
+	}
 	layouts := map[string]consoleweb.QueuePinnedTopology{}
 	for _, n := range d.Nodes {
 		nodes := []consoleweb.QueueControlNodeModel{}
@@ -90,7 +112,8 @@ func debuggerPresentation(d app.ExecutionDebugger) any {
 	}
 	return struct {
 		app.ExecutionDebugger
+		OutcomeHTML string                                    `json:"outcome_html,omitempty"`
 		Layouts     map[string]consoleweb.QueuePinnedTopology `json:"layouts"`
 		GraphLayout consoleweb.QueuePinnedTopology            `json:"graph_layout"`
-	}{d, layouts, consoleweb.BuildDebuggerGraphTopology(graph)}
+	}{d, outcome, layouts, consoleweb.BuildDebuggerGraphTopology(graph)}
 }

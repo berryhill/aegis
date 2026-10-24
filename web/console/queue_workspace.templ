@@ -32,10 +32,12 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 					<div class="reconstruction-warning" role="status" data-reconstruction="missing"><strong>Pinned snapshot reconstruction is partial.</strong> { record.Queue.ReconstructionWarn }</div>
 				}
 				<div class="record-head-tags">
-					<span class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span>
-					if record.Queue.TerminalOutcome != "" {
-						<span>Terminal outcome · { record.Queue.TerminalOutcome }</span>
-					}
+					<span data-current-queue-state class={ "lifecycle state-large " + record.Lifecycle }>{ record.Lifecycle }</span>
+					<span data-current-terminal-state>
+                     if record.Queue.TerminalOutcome != "" {
+                        Terminal outcome · { record.Queue.TerminalOutcome }
+                     }
+                     </span>
 					if record.Queue.FailureLocation != "" {
 						<span>Authoritative failure · { record.Queue.FailureLocation }</span>
 					}
@@ -59,26 +61,10 @@ templ QueueWorkspace(surface SurfaceModel, record *RecordModel, topology QueuePi
 				</div>
 			}
 		</div>
-		if record.Queue.RunResult != nil {
-			<section data-queue-run-result aria-label="Task and verified run result">
-				<h3>Task → verified run result</h3>
-				<p data-run-task>{ record.Queue.RunResult.Task }</p>
-				<p>Status · { record.Queue.RunResult.Status } · Verification · { record.Queue.RunResult.Verification } · Usage · { record.Queue.RunResult.Usage }</p>
-				if record.Queue.RunResult.Notice != "" {
-					<p role="status">{ record.Queue.RunResult.Notice }</p>
-				}
-				<dl>
-					for _, field := range record.Queue.RunResult.Fields {
-						<div><dt>{ field.Label }</dt><dd>{ field.Value }</dd></div>
-					}
-				</dl>
-				if record.Queue.RunResult.Verified {
-					<h4>Result · { record.Queue.RunResult.Name }</h4>
-					<p>Stored content · { record.Queue.RunResult.Encoding } · not a live workspace read or a Graph-dataflow output port.</p>
-					<pre data-run-result-content>{ record.Queue.RunResult.Content }</pre>
-				}
-			</section>
-		}
+		<div data-queue-current-outcome>
+		@QueueOutcome(record.Queue)
+		@QueueResult(record.Queue)
+		</div>
 		<section class="queue-admission" aria-label="Execution identity, lifecycle, and authority admission">
    @QueuePresentationActions(surface, *record)
 			<p>This page reconstructs the exact pinned Graph revision from the queue snapshot binding. It never substitutes current catalogue topology in place of the pinned snapshot.</p>

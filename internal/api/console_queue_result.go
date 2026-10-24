@@ -12,13 +12,19 @@ import (
 
 // Metadata visibility does not grant content visibility. Join only the selected
 // Queue item, through the same pinned-owner/evidence reader as the typed CLI.
-func consoleQueueRunResult(ctx context.Context, svc *app.Service, subject core.Subject, id string) *consoleweb.QueueRunResultModel {
+func consoleQueueRunResult(ctx context.Context, svc *app.Service, subject core.Subject, id string, expected ...app.ExecutionDebugger) *consoleweb.QueueRunResultModel {
 	result, err := svc.GetQueueResultAs(ctx, subject, id)
 	if err != nil {
 		return &consoleweb.QueueRunResultModel{Notice: "Named result unavailable: exact owner authorization and intact verified evidence are required."}
 	}
+	if len(expected) > 0 {
+		d := expected[0]
+		if result.QueueItem.ID != d.QueueID || result.GraphRunID != d.GraphRunID || string(result.Status) != d.State || (result.Result != nil && !d.Terminal) {
+			return &consoleweb.QueueRunResultModel{Notice: "Result observation changed; waiting for a matching authoritative execution read."}
+		}
+	}
 	if result.Reason == "result_source_unsupported" {
-		return nil
+		return &consoleweb.QueueRunResultModel{Status: string(result.Status), Verification: "unavailable", Usage: "unavailable", Notice: "Selected-file content is unsupported for this result type. Consult the authoritative disposition and evidence; this is not an execution failure reason."}
 	}
 	model := &consoleweb.QueueRunResultModel{Task: result.Task, Status: string(result.Status), Verification: result.Verification, Usage: result.Usage}
 	model.Fields = []consoleweb.FieldModel{{Label: "Queue item", Value: result.QueueItem.ID + " @ " + result.QueueItem.Digest}, {Label: "Run", Value: result.GraphRunID}, {Label: "Loop", Value: exactRevisionLabel(result.Source.ID, result.Source.Revision, result.Source.Digest)}}

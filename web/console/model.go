@@ -292,6 +292,7 @@ type LoopLifecycleEventModel struct {
 // output. Six supporting tabs are populated directly from authoritative runtime
 // facts so the contextual action can be evaluated without leaving the workspace.
 type QueueDetailModel struct {
+	CurrentState string
 	RunResult    *QueueRunResultModel
 	DebuggerJSON string
 	LiveLoop     bool

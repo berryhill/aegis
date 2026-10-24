@@ -938,6 +938,7 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	// without inventing topology.
 	pinnedGraph := resolvePinnedGraphRevision(view, graphSets...)
 	detail := &consoleweb.QueueDetailModel{
+		CurrentState:      string(view.Projection.State),
 		ExecutionType:     "Pinned Graph run",
 		QueueItemIdentity: view.Item.ItemID,
 		QueueItemDigest:   view.Item.Digest,

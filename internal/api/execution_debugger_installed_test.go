@@ -41,7 +41,11 @@ func TestExecutionDebuggerInstalledSeed(t *testing.T) {
 	// Seed the actual HTTP Console presentation contract, including canonical
 	// geometry, rather than comparing its response to the narrower app DTO.
 	// The restart probe compares every field except request freshness exactly.
-	for name, value := range map[string]any{"owner.json": svc.Config, "expected-debugger.json": debuggerPresentation(view)} {
+	outcome, err := consoleQueueCurrentOutcome(context.Background(), svc, subject, view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, value := range map[string]any{"owner.json": svc.Config, "expected-debugger.json": debuggerPresentation(view, outcome)} {
 		raw, err := json.Marshal(value)
 		if err != nil {
 			t.Fatal(err)

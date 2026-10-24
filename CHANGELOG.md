@@ -8,6 +8,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Show the authenticated Execution Queue's current outcome above its topology,
+  including authoritative disposition reasons, honest missing-cause fallback,
+  separate verification/result availability, and exact-owner verified stored
+  content where supported. Refresh terminal outcomes on the same page without
+  changing historical replay or selection; clear protected outcome data on
+  authentication loss. Native/Graph selected-content limitations are not failures.
+
 - Explicitly route owner GitHub issue implementation requests through the existing
   Aegis engineering skills and implementation loop, with independent acceptance,
   approval-capable conduction and verified PR/CI/merge ownership. Preserve narrower
