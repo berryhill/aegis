@@ -58,6 +58,16 @@ class PipelineTests(unittest.TestCase):
         success.pop("vet")
         with mock.patch.dict(os.environ, NEEDS_JSON=json.dumps(success)), self.assertRaises(AssertionError):
             exec(code, {})
+        success['unknown'] = {'result': 'success'}
+        with mock.patch.dict(os.environ, NEEDS_JSON=json.dumps(success)), self.assertRaises(AssertionError):
+            exec(code, {})
+
+    def test_race_aggregate_requires_entire_matrix_success(self):
+        gate = self.jobs['race']
+        self.assertIn('always()', gate)
+        self.assertIn('needs: [go-shards]', gate)
+        self.assertIn('SHARDS_RESULT: ${{ needs.go-shards.result }}', gate)
+        self.assertIn('run: test "$SHARDS_RESULT" = success', gate)
 
     def test_all_security_tests_are_executed_and_no_source_gate_removed(self):
         make = (ROOT / "Makefile").read_text()
@@ -79,7 +89,7 @@ class PipelineTests(unittest.TestCase):
             if name == "go-shards":
                 # Measured slow race groups include setup plus the complete
                 # package run. Every other matrix/job allowance remains ten.
-                self.assertIn("timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}", block)
+                self.assertIn("timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b' || matrix.group == 'remainder-a') && 16 || 10 }}", block)
             else:
                 self.assertIn("timeout-minutes: 10", block)
         self.assertNotIn("MemoryMax=", self.ci)

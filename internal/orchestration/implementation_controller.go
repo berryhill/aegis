@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/implementation"
@@ -93,6 +94,17 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 	if len(runtime.Launch.AuthorityContext.Authority.Tools) != 0 || len(runtime.Launch.AuthorityContext.Authority.Credentials) != 0 {
 		return w.terminal(ctx, request, base, execution.StateDenied, "implementation_tools_denied", nil, nil)
 	}
+	if runtime.LoopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+		var err error
+		var sealed contribution.Contract
+		contract, sealed, err = w.contributionContract(ctx, request.QueueItemID, runtime.LoopRevision)
+		if err != nil {
+			return w.terminal(ctx, request, base, execution.StateDenied, "contribution_contract_denied", nil, nil)
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, sealed.Deadline)
+		defer cancel()
+	}
 	custody, ok := w.repository.(interface{ ImplementationStore() implementation.Store })
 	if !ok {
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_custody_unavailable", nil, nil)
@@ -132,6 +144,11 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		kernel.Reporter = luna
 	}
 	kernel.Admit = func(ctx context.Context, _ string) error {
+		if runtime.LoopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+			if _, _, e := w.contributionContract(ctx, request.QueueItemID, runtime.LoopRevision); e != nil {
+				return e
+			}
+		}
 		p, e := w.repository.GetQueueProjection(ctx, request.QueueItemID)
 		if e != nil {
 			return e

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/berryhill/aegis/internal/contribution"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -634,6 +635,7 @@ func (service *FleetService) PublishGraph(ctx context.Context, request PublishGr
 }
 
 type SubmitGraphRequest struct {
+	Contribution     *contribution.Contract  `json:"-"`
 	Subject          core.Subject            `json:"-"`
 	Authority        reference.DigestRef     `json:"authority"`
 	Graph            reference.RevisionRef   `json:"graph"`
@@ -766,7 +768,7 @@ func (service *FleetService) acceptPreparedRun(ctx context.Context, request Subm
 	if err != nil {
 		return SubmissionDecision{}, err
 	}
-	accepted := fleet.AcceptedSubmission{Snapshot: snapshot, Submission: submission, QueueItem: item, GraphRun: run, InitialTransition: transition}
+	accepted := fleet.AcceptedSubmission{Snapshot: snapshot, Submission: submission, QueueItem: item, GraphRun: run, InitialTransition: transition, Contribution: request.Contribution}
 	stanzaID := ""
 	if request.Workspace != nil {
 		stanzaID = "workspace-control"

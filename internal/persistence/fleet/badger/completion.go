@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/berryhill/aegis/internal/contribution"
 	"time"
 
 	"github.com/berryhill/aegis/internal/disposition"
@@ -219,10 +220,21 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 	if err != nil || revision.Digest != loopExecution.Loop.Digest || len(revision.RequiredEvidence) != len(completion.Receipts) {
 		return false
 	}
-	if revision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+	if loop.IsImplementationSchema(revision.SchemaVersion) {
 		for _, step := range revision.Steps {
 			if step.ID == completion.Artifact.ActionID && step.Implementation != nil {
-				d, e := step.Implementation.Digest()
+				contract := *step.Implementation
+				if revision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+					sealed, e := loadContribution(txn, attempt.QueueItem.ID)
+					if e != nil {
+						return false
+					}
+					contract, e = contribution.BindLoop(revision, sealed)
+					if e != nil {
+						return false
+					}
+				}
+				d, e := contract.Digest()
 				if e != nil {
 					return false
 				}

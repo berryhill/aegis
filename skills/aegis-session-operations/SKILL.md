@@ -88,3 +88,7 @@ After interruption, inspect the durable session and fresh authority before actin
 ## Progressive disclosure
 
 Use `references/session-fixtures.json` only as non-secret interpretation examples. Fixtures are not current identity, mandate, process, authority, or receipt evidence. Consult `specs/RUNTIME_AND_SESSIONS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/AUDIT.md`, and installed command help for normative and shipped behavior. Hermes remains explicit in every runtime description and limitation.
+
+## Explicit contribution intake (#375)
+
+In an authenticated manager session use `/contribute select <published-loop>` then `/contribute run <issue-url> [narrower-scope]`. The profile must be an active immutable v6 contribution Loop with exact controller, builder and tester Registry/charter/runtime references. No operator bindings or internal idempotency key are needed. Ordinary chat and quoted/tutorial URLs do not admit work. Use `/contribute status`, `/contribute stop`, or `/contribute narrow <closed-delivery>` on the retained invocation; closed restrictions are `no-merge`, `no-publish`, and `local-only`, and can only narrow. Readback exposes the exact sealed contract and durable control sequence. Stop is sticky and uses the current authenticated session. This is intake only: Queue state does not attest whole-contribution completion, and non-local delivery execution is unavailable pending sibling implementation.

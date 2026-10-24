@@ -189,7 +189,13 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if err != nil {
 		return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 	}
-	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+	if loop.IsImplementationSchema(loopRevision.SchemaVersion) {
+		if loopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+			_, c, e := worker.contributionContract(ctx, item.ItemID, loopRevision)
+			if e != nil || snapshot.SchemaVersion != graph.DirectRunSnapshotSchemaVersion || c.Controller != node.Participant || c.OwnerID != submission.OwnerID || c.SubmissionID != submission.SubmissionID || c.RunID != item.GraphRunID {
+				return WorkResult{}, fmt.Errorf("%w: exact contribution contract required", ErrWorkerDenied)
+			}
+		}
 		if item.MaxAttempts != 1 {
 			return WorkResult{}, fmt.Errorf("%w: implementation pass budget forbids Queue retries", ErrWorkerDenied)
 		}
@@ -304,7 +310,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority, agent: node.Participant, loop: node.Loop, graph: snapshot.Graph},
 	}
-	if loopRevision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+	if loop.IsImplementationSchema(loopRevision.SchemaVersion) {
 		return worker.processImplementation(runtimeCtx, request, base, runtimeRequest, actionID)
 	}
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
@@ -463,7 +469,7 @@ func executableAction(revision loop.LoopRevision) (string, error) {
 		}
 		return "verify", nil
 	}
-	if revision.SchemaVersion == loop.ImplementationRevisionSchemaVersion {
+	if loop.IsImplementationSchema(revision.SchemaVersion) {
 		for _, step := range revision.Steps {
 			if step.Implementation != nil {
 				return step.ID, nil
