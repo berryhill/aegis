@@ -81,6 +81,14 @@ changing the explicit native fields or inventing an allowlist. An explicit Laya
 configuration or existing decision is not replaced. Missing qualification denies;
 there is no package, model, toolchain or dependency auto-installation.
 
+Qualified controller-owned Codex turns set the native event-idle watchdog from
+the already-approved remaining turn deadline instead of inheriting a shorter
+implicit transport default. The value stays finite and positive; the Go context,
+authority expiry, cancellation and unchanged token-refresh margin remain hard
+cutoffs. Startup and public inspection/probe bounds are not extended. This does
+not restore consumed passes: an exhausted acceptance case remains exhausted, and
+a fresh post-fix live case needs independent owner approval.
+
 All ordinary principal, exact Agent/charter, provider/login, tool-free runtime,
 session, host and effect-admission gates still apply. Models/providers/login
 selection are not changed by coding authoring or readiness. Independent setup
