@@ -11,6 +11,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/graph"
+
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/reference"
@@ -58,9 +59,10 @@ type DebuggerEdge struct {
 	Limit     uint16 `json:"limit,omitempty"`
 }
 type DebuggerAttempt struct {
-	ID     string         `json:"id"`
-	Number uint32         `json:"number"`
-	Facts  []DebuggerFact `json:"facts"`
+	Coding *orchestration.CodingHistoryView `json:"coding,omitempty"`
+	ID     string                           `json:"id"`
+	Number uint32                           `json:"number"`
+	Facts  []DebuggerFact                   `json:"facts"`
 }
 type DebuggerFact struct {
 	Sequence uint32 `json:"sequence"`
@@ -168,6 +170,20 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 			matched = true
 			n.ExecutionID = child.LoopExecutionID
 			a := DebuggerAttempt{ID: attempt.AttemptID, Number: attempt.AttemptNumber, Facts: []DebuggerFact{}}
+			revision, loadErr := s.FleetRepository.GetLoopRevision(ctx, child.Loop.ID, child.Loop.Revision)
+			if loadErr != nil || revision.Digest != child.Loop.Digest {
+				return out, fleet.ErrCorrupt
+			}
+			if revision.Doer != nil && revision.Doer.Coding != nil {
+				history, historyErr := s.QueueWorker.CodingHistory(ctx, attempt.QueueItem, attempt.AttemptID, revision)
+				if historyErr != nil {
+					return out, historyErr
+				}
+				a.Coding = &history
+				out.Version += uint64(history.ReservedPasses)
+				n.Attempts = append(n.Attempts, a)
+				continue
+			}
 			trace, err := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, child.Loop.Digest)
 			if err != nil {
 				return out, err

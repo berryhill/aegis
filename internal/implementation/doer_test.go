@@ -82,7 +82,7 @@ func TestDoerThreePassesDiagnosisAndStageReadback(t *testing.T) {
 		if r.Contract.Task != c.Task || r.Contract.Acceptance != c.Acceptance {
 			t.Fatal("original request changed")
 		}
-		if calls > 1 && (!strings.Contains(string(r.PreviousCheck), "acceptance not satisfied") || !strings.Contains(string(r.PreviousDiagnosis), "repair value")) {
+		if calls > 1 && (!strings.Contains(string(r.PreviousCheck), "go_test_failed") || !strings.Contains(string(r.PreviousDiagnosis), "repair value")) {
 			t.Fatalf("missing aggregate feedback %+v", r)
 		}
 		value := "1"

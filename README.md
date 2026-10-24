@@ -1,5 +1,10 @@
 # Aegis
 
+Doer v4 also supports opt-in [bounded repository CODING](docs/BOUNDED_CODING.md):
+controller-collected source/test bytes, immutable context commitments, separately
+authorized offline Go tests, and native evidence-gated software acceptance. Legacy
+selected-file results keep their weaker meanings; this is not a host sandbox.
+
 See [Doer Loop readiness](docs/DOER_LOOP.md) for exact reusable Run diagnostics and independent review boundaries. Readiness is observation, not authorization.
 
 Agents can run one reusable Doer Loop with different task inputs and retrieve
@@ -30,7 +35,9 @@ Codex login through `controller-codex candidates|preview|connect|show` on the ow
 Unix transport. No account ID, token or hand-edited binding is required; Agent
 scopes and exact published definitions remain unchanged. Connection metadata is
 a separate private no-replace record; the owning YAML is never rewritten and
-config drift denies runtime use. See [the connection
+config drift denies runtime use. A source candidate additionally permits an explicit
+same-selection replacement review for one exactly reconstructable appended native
+trust block; it never automatically repairs drift. See [the connection
 procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
 ## Retained task execution (source candidate)

@@ -25,14 +25,15 @@ type GoTestPolicy struct {
 }
 
 type VerifiedImplementation struct {
-	SchemaVersion string       `json:"schema_version"`
-	Task          string       `json:"task"`
-	Acceptance    string       `json:"acceptance"`
-	Workspace     string       `json:"workspace"`
-	WritableFiles []string     `json:"writable_files"`
-	Policy        GoTestPolicy `json:"policy"`
-	MaxPasses     uint8        `json:"max_passes"`
-	DecisionMode  string       `json:"decision_mode,omitempty"`
+	SchemaVersion     string             `json:"schema_version"`
+	Task              string             `json:"task"`
+	Acceptance        string             `json:"acceptance"`
+	Workspace         string             `json:"workspace"`
+	WritableFiles     []string           `json:"writable_files"`
+	Policy            GoTestPolicy       `json:"policy"`
+	MaxPasses         uint8              `json:"max_passes"`
+	DecisionMode      string             `json:"decision_mode,omitempty"`
+	RepositoryContext *RepositoryContext `json:"repository_context,omitempty"`
 }
 
 // ImplementationDraft explicitly leaves workspace unresolved. It cannot execute
@@ -44,6 +45,11 @@ func ImplementationDraft(task, acceptance string) VerifiedImplementation {
 var goPackagePath = regexp.MustCompile(`^\./[A-Za-z0-9_./-]*$`)
 
 func (v VerifiedImplementation) Validate() error {
+	if v.RepositoryContext != nil {
+		if err := v.RepositoryContext.Validate(v.Task, v.WritableFiles); err != nil {
+			return err
+		}
+	}
 	if v.SchemaVersion != VerifiedImplementationSchema || strings.TrimSpace(v.Task) == "" || strings.TrimSpace(v.Acceptance) == "" || len(v.Task) > 32768 || len(v.Acceptance) > 32768 {
 		return errors.New("exact version, bounded task and acceptance are required")
 	}

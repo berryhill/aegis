@@ -16,7 +16,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/berryhill/aegis/internal/config"
 	hermesruntime "github.com/berryhill/aegis/internal/runtime/hermes"
 )
 
@@ -24,9 +23,12 @@ import (
 // It examines only the conventional existing library venv and public Laya cache;
 // it never runs Doer, installs packages, downloads models or edits owner config.
 func (w *QueueWorker) PrepareInstalledDoerRuntime(stateRoot string, adapter *hermesruntime.Adapter) error {
-	if w.implementation != nil {
+	if c := w.implementation; c != nil && (c.config.LayaPython == "") != (c.config.LayaHome == "") {
+		return ErrLocalLayaUnavailable
+	}
+	if w.implementation != nil && (w.implementation.decision != nil || w.implementation.config.LayaPython != "" || w.implementation.config.LayaHome != "") {
 		return nil
-	} // explicit controller configuration wins
+	} // An explicit decision or Laya configuration always wins.
 	u, err := user.Current()
 	if err != nil || u.Uid != configUID() {
 		return ErrLocalLayaUnavailable
@@ -99,6 +101,14 @@ func trustedLayaExecutable(path string) error {
 	return nil
 }
 func (w *QueueWorker) prepareInstalledDoerRuntime(home, stateRoot string, adapter *hermesruntime.Adapter) error {
+	if c := w.implementation; c != nil {
+		if (c.config.LayaPython == "") != (c.config.LayaHome == "") {
+			return ErrLocalLayaUnavailable
+		}
+		if c.decision != nil || c.config.LayaPython != "" {
+			return nil
+		}
+	}
 	if adapter == nil || !filepath.IsAbs(stateRoot) || trustedInstalledPath(stateRoot) != nil {
 		return ErrLocalLayaUnavailable
 	}
@@ -180,7 +190,15 @@ func (w *QueueWorker) prepareInstalledDoerRuntime(home, stateRoot string, adapte
 		return err
 	}
 	process := &installedLayaProcess{python: python, home: privateHome, revision: revision, sources: sources}
-	w.implementation = &ImplementationController{managedLocalDoer: true, config: config.Implementation{LayaPython: python, LayaHome: privateHome}, root: filepath.Join(stateRoot, "persistence", "fleet-v1"), adapter: adapter, decision: NewLayaDecisionAdapter(process)}
+	if w.implementation == nil {
+		w.implementation = &ImplementationController{root: filepath.Join(stateRoot, "persistence", "fleet-v1"), adapter: adapter}
+	}
+	// Dependency discovery supplies no native authority. Preserve the exact
+	// configured executable, contract allowlist and controller bindings.
+	w.implementation.managedLocalDoer = true
+	w.implementation.config.LayaPython = python
+	w.implementation.config.LayaHome = privateHome
+	w.implementation.decision = NewLayaDecisionAdapter(process)
 	w.doerProtectedPaths = append(w.doerProtectedPaths, venv, cache, privateHome)
 	return nil
 }

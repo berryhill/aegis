@@ -35,6 +35,7 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 	// A pre-existing artifact already satisfying the pinned assertion cannot
 	// prove this invocation produced it. Deny before claim rather than
 	// manufacturing a success from old bytes.
+	if contract.Coding == nil {
 	filePolicy := evidence.SelectedFilePolicy{Version: evidence.SelectedFilePolicyV1, RelativePath: contract.VerifyFile, Mode: evidence.SelectedFilePresence}
 	if contract.ExpectedText != nil {
 		filePolicy.Mode, filePolicy.Text = evidence.SelectedFileText, *contract.ExpectedText
@@ -53,7 +54,9 @@ func (worker *QueueWorker) preclaimDoerGate(ctx context.Context, request WorkReq
 	if observation.Outcome == evidence.Passed {
 		return LayaGate{}, fmt.Errorf("%w: selected file already satisfies assertion", ErrWorkerDenied)
 	}
+	}
 	state := "Task: " + contract.Task + "\nExpected result: " + contract.VerifyFile + " exists in the workspace"
+	if contract.Coding != nil { state = "Task: " + contract.Task + "\nExpected result: " + contract.Coding.Acceptance }
 	if contract.ExpectedText != nil {
 		state += " and contains exactly " + fmt.Sprintf("%q", *contract.ExpectedText)
 	}

@@ -226,12 +226,20 @@ func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, complet
 				if e != nil {
 					return false
 				}
-				return evidence.ValidateImplementationProvenance(completion.Provenance, d, loop.VerifiedImplementationSchema, *completion.Artifact, completion.Receipts)
+				return evidence.ValidateImplementationBinding(completion.Provenance, d, loop.VerifiedImplementationSchema, *completion.Artifact, completion.Receipts)
 			}
 		}
 		return false
 	}
 	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion {
+		if revision.Doer != nil && revision.Doer.Coding != nil {
+			c, err := revision.Doer.CodingImplementation()
+			if err != nil || completion.Artifact.ActionID != "verify" || len(revision.RequiredEvidence) != 1 || revision.RequiredEvidence[0].Claim != "verified-implementation" || revision.RequiredEvidence[0].ProducerStepID != "verify" {
+				return false
+			}
+			d, err := c.Digest()
+			return err == nil && evidence.ValidateImplementationBinding(completion.Provenance, d, loop.VerifiedImplementationSchema, *completion.Artifact, completion.Receipts)
+		}
 		if revision.Doer == nil || completion.Artifact.ActionID != "verify" || len(revision.RequiredEvidence) != 1 ||
 			revision.RequiredEvidence[0].Claim != "selected-file-verified" || revision.RequiredEvidence[0].ProducerStepID != "verify" || len(completion.Receipts) != 1 {
 			return false

@@ -76,9 +76,18 @@ func (c *ImplementationController) authorize(steps []loop.Step, agent registry.A
 func (w *QueueWorker) processImplementation(ctx context.Context, request WorkRequest, base WorkResult, runtime RuntimeRequest, action string) (WorkResult, error) {
 	c := w.implementation
 	var contract loop.VerifiedImplementation
+	outer := runtime.LoopRevision.Doer
+	coding := outer != nil && outer.Coding != nil
 	for _, s := range runtime.LoopRevision.Steps {
 		if s.Implementation != nil {
 			contract = *s.Implementation
+		}
+	}
+	if coding {
+		var err error
+		contract, err = outer.CodingImplementation()
+		if err != nil {
+			return w.terminal(ctx, request, base, execution.StateDenied, "doer_coding_invalid", nil, nil)
 		}
 	}
 	if len(runtime.Launch.AuthorityContext.Authority.Tools) != 0 || len(runtime.Launch.AuthorityContext.Authority.Credentials) != 0 {
@@ -90,6 +99,29 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 	}
 	turn := hermesruntime.AttemptTurnRequest{Launch: runtime.Launch, Admission: runtime.Admission, ParentAttemptID: base.Attempt.AttemptID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(c.root)), "runtime", "fleet"), Model: runtime.Launch.AuthorityContext.Authority.Hermes.Model, Provider: runtime.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
 	kernel := &implementation.Executor{DB: custody.ImplementationStore(), GoBinary: c.config.GoBinary, Proposer: HermesPatchProposer{Adapter: c.adapter, Request: turn}}
+	runID := base.Attempt.AttemptID
+	if coding {
+		runID = request.QueueItemID
+		kernel.RequireInputEvidence = true
+		if w.codingContinuation != nil {
+			var err error
+			var continuation *CodingContinuation
+			continuation, err = w.codingContinuation(ctx, *outer, runtime.Participant)
+			if err == nil && continuation != nil {
+				kernel.Continuation = continuation.native
+			}
+			if err != nil {
+				return w.terminal(ctx, request, base, execution.StateDenied, "coding_continuation_denied", nil, nil)
+			}
+		}
+		if w.doerPassCap != nil {
+			cap, err := w.doerPassCap(ctx, *outer, runtime.Participant)
+			if err != nil || cap == 0 || cap > outer.MaxAttempts {
+				return w.terminal(ctx, request, base, execution.StateDenied, "doer_pass_cap_denied", nil, nil)
+			}
+			kernel.PassLimit = uint8(cap)
+		}
+	}
 	if contract.DecisionMode == "doer.v1" {
 		if c.decision == nil {
 			return w.terminal(ctx, request, base, execution.StateDenied, "implementation_laya_unconfigured", nil, nil)
@@ -104,10 +136,18 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		if e != nil {
 			return e
 		}
-		if p.State != queue.StateClaimed {
+		if p.State != queue.StateClaimed || (coding && (p.ActiveClaimID != base.Claim.ClaimID || !w.now().Before(base.Claim.ExpiresAt))) {
 			return &implementation.Halt{State: string(p.State)}
 		}
-		if e = c.authorize(runtime.LoopRevision.Steps, runtime.Participant); e != nil {
+		if coding {
+			e = w.authorizeDoer(ctx, *outer, runtime.Participant)
+			if e == nil {
+				e = w.checkDoerProviderAuthority(ctx, runtime.Launch.AuthorityContext.Authority)
+			}
+		} else {
+			e = c.authorize(runtime.LoopRevision.Steps, runtime.Participant)
+		}
+		if e != nil {
 			return e
 		}
 		decision, e := runtime.Admission.CheckRuntimeAdmission(ctx, runtime.Launch, time.Now().UTC())
@@ -119,7 +159,7 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		}
 		return nil
 	}
-	record, err := kernel.Run(ctx, base.Attempt.AttemptID, contract)
+	record, err := kernel.Run(ctx, runID, contract)
 	if err == nil && record.State == "needs_input" {
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_needs_input", nil, nil)
 	}
@@ -132,7 +172,10 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		defer cancel()
 		return w.terminal(terminalCtx, request, base, state, "implementation_"+record.State, nil, nil)
 	}
-	output, err := kernel.Output(base.Attempt.AttemptID, contract)
+	if err := kernel.Admit(ctx, "artifact"); err != nil {
+		return w.terminal(ctx, request, base, execution.StateDenied, "implementation_artifact_denied", nil, nil)
+	}
+	output, err := kernel.Output(runID, contract)
 	if err != nil {
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_revalidation_failed", nil, nil)
 	}
@@ -145,7 +188,7 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 	if !ok {
 		return base, errors.New("native evidence verifier required")
 	}
-	receipt, proof, err := verifyImplementation(ctx, verifier, artifact, kernel, contract)
+	receipt, proof, err := verifyImplementation(ctx, verifier, artifact, kernel, contract, runID)
 	if err != nil {
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_evidence_failed", nil, nil)
 	}
@@ -154,19 +197,28 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 
 // verifyImplementation composes the native kernel with the evidence-owned port.
 // Every invocation (including final persistence admission) reloads custody.
-func verifyImplementation(ctx context.Context, verifier *evidence.BlobVerifier, artifact evidence.RuntimeArtifact, kernel *implementation.Executor, contract loop.VerifiedImplementation) (evidence.VerificationReceipt, evidence.CompletionProvenance, error) {
+func verifyImplementation(ctx context.Context, verifier *evidence.BlobVerifier, artifact evidence.RuntimeArtifact, kernel *implementation.Executor, contract loop.VerifiedImplementation, runIDs ...string) (evidence.VerificationReceipt, evidence.CompletionProvenance, error) {
+	runID := artifact.AttemptID
+	if len(runIDs) != 0 {
+		runID = runIDs[0]
+	}
 	digest, err := contract.Digest()
 	if err != nil {
 		return evidence.VerificationReceipt{}, evidence.CompletionProvenance{}, err
 	}
 	return verifier.VerifyImplementation(ctx, artifact, evidence.ImplementationCheck{ContractDigest: digest, PolicyVersion: loop.VerifiedImplementationSchema, Reload: func() ([]byte, error) {
-		record, err := kernel.Read(artifact.AttemptID)
+		if kernel.Admit != nil {
+			if err := kernel.Admit(ctx, "evidence"); err != nil {
+				return nil, err
+			}
+		}
+		record, err := kernel.Read(runID)
 		if err != nil {
 			return nil, err
 		}
 		if record.State != "succeeded" {
 			return nil, errors.New("implementation has no terminal checker success")
 		}
-		return kernel.Output(artifact.AttemptID, contract)
+		return kernel.Output(runID, contract)
 	}})
 }

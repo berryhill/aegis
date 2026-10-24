@@ -28,7 +28,9 @@ type Edit struct {
 	Content []byte `json:"content"`
 }
 type Request struct {
+	InputObserver     func(InputObservation) error `json:"-"`
 	Contract          loop.VerifiedImplementation
+	RepositoryContext *CollectedRepositoryContext `json:",omitempty"`
 	PassID            string
 	PreviousCheck     []byte
 	PreviousDiagnosis []byte
@@ -45,28 +47,39 @@ type Halt struct{ State string }
 func (h *Halt) Error() string { return h.State }
 
 type Pass struct {
-	ID              string `json:"id"`
-	WorkspaceDigest string `json:"workspace_digest"`
-	OutputDigest    string `json:"output_digest"`
-	Passed          bool   `json:"passed"`
+	Input              *InputEvidence `json:"input,omitempty"`
+	ContextIdentity    string         `json:"context_identity,omitempty"`
+	ContextStateDigest string         `json:"context_state_digest,omitempty"`
+	ID                 string         `json:"id"`
+	WorkspaceDigest    string         `json:"workspace_digest"`
+	OutputDigest       string         `json:"output_digest"`
+	Passed             bool           `json:"passed"`
 }
 type Record struct {
-	RunID          string  `json:"run_id"`
-	ContractDigest string  `json:"contract_digest"`
-	State          string  `json:"state"`
-	Passes         []Pass  `json:"passes"`
-	Completion     string  `json:"completion,omitempty"`
-	Stages         []Stage `json:"stages,omitempty"`
-	ReportError    string  `json:"report_error,omitempty"`
+	ManagedInput       bool    `json:"managed_input,omitempty"`
+	PredecessorRun     string  `json:"predecessor_run,omitempty"`
+	PredecessorHistory string  `json:"predecessor_history,omitempty"`
+	ConsumedBefore     uint16  `json:"consumed_before,omitempty"`
+	ContextDigest      string  `json:"context_digest,omitempty"`
+	RunID              string  `json:"run_id"`
+	ContractDigest     string  `json:"contract_digest"`
+	State              string  `json:"state"`
+	Passes             []Pass  `json:"passes"`
+	Completion         string  `json:"completion,omitempty"`
+	Stages             []Stage `json:"stages,omitempty"`
+	ReportError        string  `json:"report_error,omitempty"`
 }
 type Executor struct {
-	DB        Store
-	GoBinary  string
-	Proposer  Proposer
-	Admit     Admit
-	Decision  Decision
-	Diagnosis Diagnostician
-	Reporter  CompletionReporter
+	RequireInputEvidence bool
+	Continuation         *Continuation
+	PassLimit            uint8 // zero retains the exact contract budget
+	DB                   Store
+	GoBinary             string
+	Proposer             Proposer
+	Admit                Admit
+	Decision             Decision
+	Diagnosis            Diagnostician
+	Reporter             CompletionReporter
 }
 
 func digest(b []byte) string     { h := sha256.Sum256(b); return "sha256:" + hex.EncodeToString(h[:]) }
@@ -141,6 +154,7 @@ func (e *Executor) stop(r Record, err error) (Record, error) {
 // retained and require explicit controller reconciliation; they are not replayed.
 func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementation) (Record, error) {
 	var r Record
+	c = cloneImplementation(c)
 	if e.DB == nil || e.Proposer == nil || e.Admit == nil || !filepath.IsAbs(e.GoBinary) || id == "" || len(id) > 255 {
 		return r, errors.New("controller dependencies and exact run identity required")
 	}
@@ -165,6 +179,13 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		return r, err
 	}
 	defer unlock()
+	var continuedInitial, continuedCurrent *CollectedRepositoryContext
+	if e.Continuation != nil {
+		continuedInitial, continuedCurrent, err = e.continuationContext(id, c)
+		if err != nil {
+			return r, err
+		}
+	}
 	if old, x := e.Read(id); x == nil {
 		if old.ContractDigest != cd {
 			return old, errors.New("reserved contract mismatch")
@@ -180,7 +201,14 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		return r, x
 	}
 	admissionErr := e.admit(ctx, "begin")
-	r = Record{RunID: id, ContractDigest: cd, State: "running", Passes: []Pass{}}
+	r = Record{RunID: id, ContractDigest: cd, State: "running", Passes: []Pass{}, ManagedInput: e.RequireInputEvidence}
+	if t := e.Continuation; t != nil {
+		// Atomic predecessor slot survives unknown outcomes; no second successor.
+		if err = e.DB.Create([]byte("implementation/successor/"+digest([]byte(t.predecessor))), []byte(id)); err != nil {
+			return r, err
+		}
+		r.PredecessorRun, r.PredecessorHistory, r.ConsumedBefore = t.predecessor, t.history, t.consumed
+	}
 	wire, err := json.Marshal(r)
 	if err == nil {
 		err = e.DB.Create(recordKey(id), wire)
@@ -191,10 +219,46 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 	if admissionErr != nil {
 		return e.stop(r, admissionErr)
 	}
+	var initial, expected *CollectedRepositoryContext
+	if c.RepositoryContext != nil {
+		if e.Continuation != nil {
+			initial = continuedInitial
+		} else {
+			initial, err = CollectRepositoryContext(ctx, c, RepositorySourceDigest(c.RepositoryContext))
+		}
+		if err != nil {
+			return e.stop(r, err)
+		}
+		for _, path := range c.WritableFiles {
+			found := false
+			for _, f := range initial.Files {
+				if f.Path == path {
+					found = true
+				}
+			}
+			if !found {
+				return e.stop(r, errors.New("repository context missing writable preimage"))
+			}
+		}
+		expected = cloneContext(initial)
+		if e.Continuation != nil {
+			expected = cloneContext(continuedCurrent)
+		}
+		r.ContextDigest, err = e.contextBlob(initial)
+		if err != nil {
+			return e.stop(r, err)
+		}
+		if err = e.save(r); err != nil {
+			return r, err
+		}
+	}
 	var previous []byte
 	var previousDiagnosis []byte
 	if doer {
 		if err = e.admit(ctx, "gate"); err != nil {
+			return e.stop(r, err)
+		}
+		if err = verifyContext(ctx, c, expected); err != nil {
 			return e.stop(r, err)
 		}
 		gate, x := e.Decision.Gate(ctx, "Task: "+c.Task+"\nExpected result: "+c.Acceptance)
@@ -213,7 +277,14 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 			return r, err
 		}
 	}
-	for p := uint8(1); p <= c.MaxPasses; p++ {
+	limit := c.MaxPasses
+	if e.Continuation != nil {
+		limit = uint8(e.Continuation.remaining)
+	}
+	if e.PassLimit > 0 && e.PassLimit < limit {
+		limit = e.PassLimit
+	}
+	for p := uint8(1); p <= limit; p++ {
 		var failures []string
 		r.Passes = append(r.Passes, Pass{ID: fmt.Sprintf("%s/pass/%d", id, p)})
 		if err = e.save(r); err != nil {
@@ -222,14 +293,17 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		if err = e.admit(ctx, "implement"); err != nil {
 			return e.stop(r, err)
 		}
+		if err = verifyContext(ctx, c, expected); err != nil {
+			return e.stop(r, err)
+		}
 		// Never share the controller's slice backing arrays with an untrusted
 		// proposal adapter; its request cannot rewrite the immutable policy.
-		proposalContract := c
-		proposalContract.WritableFiles = append([]string(nil), c.WritableFiles...)
-		proposalContract.Policy.Packages = append([]string(nil), c.Policy.Packages...)
-		proposalContract.Policy.RequiredTests = append([]loop.RequiredGoTest(nil), c.Policy.RequiredTests...)
+		proposalContract := cloneImplementation(c)
 		passID := r.Passes[len(r.Passes)-1].ID
-		request := Request{Contract: proposalContract, PassID: passID, PreviousCheck: append([]byte(nil), previous...), PreviousDiagnosis: append([]byte(nil), previousDiagnosis...)}
+		request := Request{Contract: proposalContract, RepositoryContext: cloneContext(initial), PassID: passID, PreviousCheck: append([]byte(nil), previous...), PreviousDiagnosis: append([]byte(nil), previousDiagnosis...)}
+		if r.ManagedInput {
+			request.InputObserver = e.inputObserver(&r, c, passID)
+		}
 		var edits []Edit
 		var report string
 		var x error
@@ -253,7 +327,10 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 				return r, err
 			}
 		}
-		if err = e.apply(ctx, c, edits); err != nil {
+		if err = verifyContext(ctx, c, expected); err != nil {
+			return e.stop(r, err)
+		}
+		if err = e.apply(ctx, c, edits, expected); err != nil {
 			return e.stop(r, err)
 		}
 		judged := true
@@ -271,23 +348,29 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 			}
 			judged = judgment.Passed()
 		}
-		before, x := snapshot(c.Workspace)
+		before, x := contractSnapshot(c)
 		if x != nil {
 			return e.stop(r, x)
 		}
 		if err = e.admit(ctx, "check"); err != nil {
 			return e.stop(r, err)
 		}
-		output, passed, x := e.check(ctx, c)
+		if err = verifyContext(ctx, c, expected); err != nil {
+			return e.stop(r, err)
+		}
+		output, passed, x := e.checkCandidate(ctx, c, expected)
 		if x != nil {
 			return e.stop(r, x)
 		}
-		after, x := snapshot(c.Workspace)
+		after, x := contractSnapshot(c)
 		if x != nil {
 			return e.stop(r, x)
 		}
 		if digest(before) != digest(after) {
 			return e.stop(r, errors.New("workspace changed during verification"))
+		}
+		if err = verifyContext(ctx, c, expected); err != nil {
+			return e.stop(r, err)
 		}
 		wd, x := e.blob(after)
 		if x != nil {
@@ -305,7 +388,15 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 				return r, err
 			}
 		}
-		r.Passes[len(r.Passes)-1] = Pass{ID: passID, WorkspaceDigest: wd, OutputDigest: od, Passed: passed && judged}
+		input := r.Passes[len(r.Passes)-1].Input
+		r.Passes[len(r.Passes)-1] = Pass{ID: passID, WorkspaceDigest: wd, OutputDigest: od, Passed: passed && judged, Input: input}
+		if initial != nil {
+			r.Passes[len(r.Passes)-1].ContextIdentity = initial.Identity
+			r.Passes[len(r.Passes)-1].ContextStateDigest, err = e.contextBlob(expected)
+			if err != nil {
+				return e.stop(r, err)
+			}
+		}
 		if err = e.save(r); err != nil {
 			return r, err
 		}
@@ -324,7 +415,7 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 			}
 			return r, err
 		}
-		previous = output
+		previous = closedCheckDiagnostics(output, passed, c.Policy.RequiredTests)
 		if doer {
 			if !judged {
 				failures = append(failures, "judgment rejected implementer report")
@@ -332,13 +423,16 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 			if !passed {
 				failures = append(failures, "independent Go test failed")
 			}
-			if p == c.MaxPasses {
+			if p == limit {
 				break
 			}
 			if err = e.admit(ctx, "diagnosis"); err != nil {
 				return e.stop(r, err)
 			}
-			previousDiagnosis, x = e.Diagnosis.Diagnose(ctx, DiagnosisRequest{Task: c.Task, Acceptance: c.Acceptance, PassID: passID, Report: report, Judgment: judgment, Check: append([]byte(nil), output...), Failures: append([]string(nil), failures...)})
+			if err = verifyContext(ctx, c, expected); err != nil {
+				return e.stop(r, err)
+			}
+			previousDiagnosis, x = e.Diagnosis.Diagnose(ctx, DiagnosisRequest{Task: c.Task, Acceptance: c.Acceptance, PassID: passID, Report: report, Judgment: judgment, Check: append([]byte(nil), previous...), Failures: append([]string(nil), failures...)})
 			if x != nil {
 				return e.stop(r, x)
 			}
@@ -399,12 +493,18 @@ func (e *Executor) Revalidate(id string, c loop.VerifiedImplementation) error {
 	if r.RunID != id || r.ContractDigest != cd || (r.State != "running" && r.State != "succeeded") || len(r.Passes) == 0 || len(r.Passes) > int(c.MaxPasses) {
 		return errors.New("completion binding mismatch")
 	}
+	if err = e.revalidateContext(c, r); err != nil {
+		return err
+	}
+	if err = e.revalidateInputs(c, r, true); err != nil {
+		return err
+	}
 	if c.DecisionMode == "doer.v1" {
 		if len(r.Stages) < 4 || r.Stages[0].Name != "gate" || r.Stages[0].PassID != "" {
 			return errors.New("gate stage missing")
 		}
 		for _, stage := range r.Stages {
-			if stage.Name != "gate" && stage.Name != "implement" && stage.Name != "judgment" && stage.Name != "check" && stage.Name != "diagnosis" {
+			if stage.Name != "gate" && stage.Name != "implement" && stage.Name != "judgment" && stage.Name != "check" && stage.Name != "diagnosis" && stage.Name != "input_prepared" && stage.Name != "input_delivered" {
 				return errors.New("unknown decision stage")
 			}
 			if _, err := e.StageOutput(id, stage); err != nil {
@@ -434,7 +534,7 @@ func (e *Executor) Revalidate(id string, c loop.VerifiedImplementation) error {
 	if !last.Passed {
 		return errors.New("controller check did not pass")
 	}
-	b, err := snapshot(c.Workspace)
+	b, err := contractSnapshot(c)
 	if err != nil {
 		return err
 	}
@@ -456,7 +556,11 @@ func (e *Executor) Output(id string, c loop.VerifiedImplementation) ([]byte, err
 	return e.loadBlob(r.Passes[len(r.Passes)-1].WorkspaceDigest)
 }
 
-func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edits []Edit) error {
+func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edits []Edit, states ...*CollectedRepositoryContext) error {
+	var expected *CollectedRepositoryContext
+	if len(states) != 0 {
+		expected = states[0]
+	}
 	if len(edits) == 0 || len(edits) > len(c.WritableFiles) {
 		return errors.New("bounded nonempty source edits required")
 	}
@@ -475,7 +579,7 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 	}
 	// Reject symlinks/nonregular files before writes. os.Root additionally prevents
 	// a concurrent path replacement from redirecting a write outside the root.
-	if _, err := snapshot(c.Workspace); err != nil {
+	if _, err := contractSnapshot(c); err != nil {
 		return err
 	}
 	root, err := os.OpenRoot(c.Workspace)
@@ -485,6 +589,9 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 	defer root.Close()
 	for _, v := range edits {
 		if err = e.admit(ctx, "write:"+v.Path); err != nil {
+			return err
+		}
+		if err = verifyContext(ctx, c, expected); err != nil {
 			return err
 		}
 		var nonce [16]byte
@@ -511,6 +618,10 @@ func (e *Executor) apply(ctx context.Context, c loop.VerifiedImplementation, edi
 		if err = root.Rename(temp, v.Path); err != nil {
 			return err
 		}
+		advanceContext(c, expected, []Edit{v})
+		if err = verifyContext(ctx, c, expected); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -531,6 +642,18 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 	return n, nil
 }
 func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]byte, bool, error) {
+	var expected *CollectedRepositoryContext
+	if c.RepositoryContext != nil {
+		var err error
+		expected, err = CollectRepositoryContext(ctx, c, RepositorySourceDigest(c.RepositoryContext))
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	return e.checkCandidate(ctx, c, expected)
+}
+
+func (e *Executor) checkCandidate(ctx context.Context, c loop.VerifiedImplementation, expected *CollectedRepositoryContext) ([]byte, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(c.Policy.TimeoutSeconds)*time.Second)
 	defer cancel()
 	home, err := os.MkdirTemp("", "aegis-go-check-")
@@ -538,6 +661,13 @@ func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]
 		return nil, false, err
 	}
 	defer os.RemoveAll(home)
+	workspace := c.Workspace
+	if c.RepositoryContext != nil {
+		workspace = filepath.Join(home, "workspace")
+		if err = materializeCheckerContext(ctx, c, expected, workspace); err != nil {
+			return nil, false, err
+		}
+	}
 	args := []string{"test", "-json", "-count=1", "-p=1", "-timeout=" + fmt.Sprintf("%ds", c.Policy.TimeoutSeconds)}
 	args = append(args, c.Policy.Packages...)
 	cmd := exec.CommandContext(ctx, e.GoBinary, args...)
@@ -545,13 +675,18 @@ func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]
 		return nil, false, err
 	}
 	defer killProcessGroup(cmd)
-	cmd.Dir = c.Workspace
+	cmd.Dir = workspace
 	cmd.Env = []string{"PATH=" + filepath.Dir(e.GoBinary), "HOME=" + home, "GOCACHE=" + filepath.Join(home, "cache"), "GOMODCACHE=" + filepath.Join(home, "modules"), "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off", "CGO_ENABLED=0", "GOMAXPROCS=2"}
 	cmd.WaitDelay = time.Second
 	var out boundedOutput
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	err = cmd.Run()
+	if c.RepositoryContext != nil {
+		if x := verifyContext(ctx, c, expected); x != nil {
+			return nil, false, x
+		}
+	}
 	if ctx.Err() != nil {
 		return nil, false, ctx.Err()
 	}

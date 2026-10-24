@@ -25,7 +25,7 @@ func Preflight(c loop.VerifiedImplementation, goBinary string) error {
 	if err != nil || resolved != c.Workspace {
 		return errors.New("resolved workspace required")
 	}
-	if _, err = snapshot(c.Workspace); err != nil {
+	if _, err = contractSnapshot(c); err != nil {
 		return err
 	}
 	for _, name := range c.WritableFiles {

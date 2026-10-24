@@ -71,6 +71,21 @@ Local model digest rechecks detect drift but do not atomically pin the server mo
 
 ## Verified implementation native-code boundary
 
+Opt-in v4 CODING additionally binds an explicit finite repository manifest to the
+task and observed source/test/module bytes. Escapes, symlinks/hardlinks, private
+paths, nontext/oversized input and source drift deny without rejected-byte output.
+Context is untrusted task data, never authority. No implicit module or unlisted
+compiler input is read into the context-enabled native checker workspace. Trusted
+tests and checker inputs remain read-only; exact serialized managed-input custody
+is prepared before the effect and marked delivered only on adapter completion.
+Public Queue/debugger history exposes safe commitments, not prompts or arbitrary
+host output. Known complete-pass correction preserves original context, failed
+history and cumulative budget; ambiguous/partial histories cannot be replayed.
+The outer v4 Doer-contract native allowlist is distinct from selected-file host
+consent, Loop identity and derived implementation identity. This prevents a
+presence-only stub from becoming software acceptance but does not confine native
+code or defeat hostile same-UID/root mutation. See [bounded CODING](BOUNDED_CODING.md).
+
 Loop v3 publication is not host authorization. Exact implementation-contract digests in operator-approved controller configuration authorize both bounded source writes and native Go test execution. The default authorization set is empty. Agent/model proposals cannot populate it. Tests and imported code run with the controller OS identity and are **not sandboxed**; patch path restrictions are not native-code confinement. Trust the repository/tests and isolate the host account before authorizing. Fresh runtime admission and independently reloaded evidence remain required. See [Verified implementation](VERIFIED_IMPLEMENTATION.md).
 
 Optional `doer.v1` pins its decision mode and pass budget in that same exact contract digest. A separately configured local Laya Python process receives only bounded task/report text through a fixed helper protocol and a minimal offline-cache environment, not controller credential variables. Its typed answers are untrusted judgments, never admission or evidence; malformed, low-confidence and ambiguous answers fail closed. A Laya subprocess and native Go tests still have host filesystem/process access, and the Laya model cache is operator-trusted; this is neither a Python sandbox nor independent attestation. Hermes proposal, diagnosis and completion turns use the same sealed tool-free, credential-free authority/model binding. Stage records are local content-addressed custody, not separately protected evidence. The final Queue success still requires native checker evidence independently reloaded against the exact Loop contract.

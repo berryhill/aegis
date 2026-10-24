@@ -15,13 +15,49 @@ import (
 // VerifyFile is a workspace-relative selected regular file; the worker must
 // reject symlinks (including parent components) and independently read it.
 type DoerContract struct {
-	Task          string   `json:"task"`
-	Workspace     string   `json:"workspace"`
-	WritableFiles []string `json:"writable_files"`
-	VerifyFile    string   `json:"verify_file"`
-	ExpectedText  *string  `json:"expected_text,omitempty"` // nil means presence-only; pointer to empty string means exact empty text
-	ExactBytes    bool     `json:"exact_bytes,omitempty"`   // additive; false preserves historical trimmed-text contracts
-	MaxAttempts   uint16   `json:"max_attempts"`
+	Task          string      `json:"task"`
+	Workspace     string      `json:"workspace"`
+	WritableFiles []string    `json:"writable_files"`
+	VerifyFile    string      `json:"verify_file"`
+	ExpectedText  *string     `json:"expected_text,omitempty"` // nil means presence-only; pointer to empty string means exact empty text
+	ExactBytes    bool        `json:"exact_bytes,omitempty"`   // additive; false preserves historical trimmed-text contracts
+	MaxAttempts   uint16      `json:"max_attempts"`
+	Coding        *DoerCoding `json:"coding,omitempty"`
+}
+
+// DoerCoding opts into native implementation verification, never file presence.
+type DoerCoding struct {
+	Acceptance        string             `json:"acceptance"`
+	RepositoryContext *RepositoryContext `json:"repository_context"`
+	Policy            GoTestPolicy       `json:"policy"`
+}
+
+func (c DoerContract) CodingImplementation() (VerifiedImplementation, error) {
+	if c.Coding == nil || c.VerifyFile != "" || c.ExpectedText != nil || c.ExactBytes || c.Coding.RepositoryContext == nil {
+		return VerifiedImplementation{}, errors.New("coding requires exclusive native verification and explicit context")
+	}
+	v := VerifiedImplementation{SchemaVersion: VerifiedImplementationSchema, Task: c.Task, Acceptance: c.Coding.Acceptance, Workspace: c.Workspace, WritableFiles: c.WritableFiles, Policy: c.Coding.Policy, MaxPasses: uint8(c.MaxAttempts), DecisionMode: "doer.v1", RepositoryContext: c.Coding.RepositoryContext}
+	if c.MaxAttempts < 1 || c.MaxAttempts > 3 {
+		return v, errors.New("invalid coding budget")
+	}
+	if err := v.Validate(); err != nil {
+		return v, err
+	}
+	source, tests, module := map[string]bool{}, false, false
+	for _, f := range v.RepositoryContext.Files {
+		source[f.Path] = f.Role == "source"
+		tests = tests || f.Role == "trusted_test"
+		module = module || (f.Path == "go.mod" && f.Role == "checker_input")
+	}
+	for _, p := range c.WritableFiles {
+		if !source[p] {
+			return v, errors.New("coding source preimage required")
+		}
+	}
+	if !tests || !module {
+		return v, errors.New("coding requires trusted tests and go.mod")
+	}
+	return v, nil
 }
 
 type DoerOperation string
@@ -60,6 +96,10 @@ func (c DoerContract) Digest() (string, error) {
 }
 
 func validDoerContract(c DoerContract) bool {
+	if c.Coding != nil {
+		_, err := c.CodingImplementation()
+		return err == nil
+	}
 	if c.Task == "" || strings.TrimSpace(c.Task) != c.Task || !utf8.ValidString(c.Task) || len(c.Task) > 4096 || strings.ContainsAny(c.Task, "\x00\r") ||
 		!filepath.IsAbs(c.Workspace) || filepath.Clean(c.Workspace) != c.Workspace || c.Workspace == "/" || len(c.Workspace) > 1024 ||
 		c.VerifyFile == "" || !utf8.ValidString(c.VerifyFile) || len(c.VerifyFile) > 255 || strings.ContainsAny(c.VerifyFile, "\\\x00\r\n") ||
@@ -123,6 +163,13 @@ func doerCandidate(c DoerContract) LoopRevision {
 	verify.Gate = &GateDefinition{Mode: "exclusive"}
 	contractWire, _ := json.Marshal(c)
 	verify.EvidenceClaims = []EvidenceClaim{{Claim: "selected-file-verified", MediaType: "application/octet-stream", ExpectedDigest: sha256Digest(contractWire), VerifierID: DoerVerifierID, PolicyVersion: DoerVerifierPolicy}}
+	claim := "selected-file-verified"
+	if c.Coding != nil {
+		v, _ := c.CodingImplementation()
+		d, _ := v.Digest()
+		claim = "verified-implementation"
+		verify.EvidenceClaims = []EvidenceClaim{{Claim: claim, MediaType: "application/json", ExpectedDigest: d, VerifierID: "aegis.implementation.verifier", PolicyVersion: VerifiedImplementationSchema}}
+	}
 	completion := step("completion", StepAction, DoerCompletion, "hermes")
 	done := Step{ID: "done", Kind: StepTerminal, Retry: RetryPolicy{MaxAttempts: 1}, Terminal: &TerminalDefinition{Outcome: OutcomeSucceeded}}
 	failed := Step{ID: "failed", Kind: StepTerminal, Retry: RetryPolicy{MaxAttempts: 1}, Terminal: &TerminalDefinition{Outcome: OutcomeFailed}}
@@ -138,7 +185,7 @@ func doerCandidate(c DoerContract) LoopRevision {
 			edge("diagnosed", "diagnosis", "implement", "", c.MaxAttempts), edge("verified", "verify", "completion", "verified", 0),
 			edge("verification-retry", "verify", "diagnosis", "retry", c.MaxAttempts), edge("verification-exhausted", "verify", "failed", "exhausted", 0),
 			edge("completed", "completion", "done", "", 0)},
-		RequiredEvidence: []EvidenceRequirement{{Claim: "selected-file-verified", ProducerStepID: "verify"}}}
+		RequiredEvidence: []EvidenceRequirement{{Claim: claim, ProducerStepID: "verify"}}}
 }
 
 func validateDoerRevision(r LoopRevision, add func(string, string, string)) {
