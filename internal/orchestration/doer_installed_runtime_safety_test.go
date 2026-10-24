@@ -4,16 +4,18 @@ package orchestration
 
 import (
 	"encoding/binary"
+	"github.com/berryhill/aegis/internal/config"
 	hermesruntime "github.com/berryhill/aegis/internal/runtime/hermes"
 	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
 // Metadata-only fixture tests qualification, not real Laya availability.
 func TestInstalledLocalLayaSourceQualification(t *testing.T) {
-	for _, which := range []string{"qualified", "foreign-asset", "missing-asset", "writable-library", "library-acl"} {
+	for _, which := range []string{"qualified", "native-qualified", "native-missing", "explicit-decision", "explicit-laya", "foreign-asset", "missing-asset", "writable-library", "library-acl"} {
 		t.Run(which, func(t *testing.T) {
 			cwd, _ := os.Getwd()
 			base, _ := filepath.Abs(filepath.Join(cwd, "..", "..", ".candidate"))
@@ -54,6 +56,8 @@ func TestInstalledLocalLayaSourceQualification(t *testing.T) {
 				}
 			case "missing-asset":
 				os.Remove(asset)
+			case "native-missing":
+				os.Remove(filepath.Join(site, "laya-0.3.20.dist-info", "METADATA"))
 			case "writable-library":
 				os.Chmod(library, 0666)
 			case "library-acl":
@@ -73,9 +77,46 @@ func TestInstalledLocalLayaSourceQualification(t *testing.T) {
 			state := filepath.Join(home, "state")
 			os.MkdirAll(state, 0700)
 			w := &QueueWorker{}
+			adapter := &hermesruntime.Adapter{}
+			native := config.Implementation{GoBinary: filepath.Join(home, "trusted-go"), AuthorizedContracts: []string{"sha256:67b258b972d3264b4e93f2bacfac500c5c52a7a9815322e2aefb475674a7da58"}}
+			if which == "native-qualified" || which == "native-missing" || which == "explicit-decision" || which == "explicit-laya" {
+				if which == "explicit-laya" {
+					native.LayaPython, native.LayaHome = filepath.Join(home, "custom-python"), filepath.Join(home, "custom-home")
+				}
+				if err := w.ConfigureImplementation(native, state, adapter); err != nil {
+					t.Fatal(err)
+				}
+			}
+			controller := w.implementation
+			if which == "explicit-decision" {
+				controller.decision = &LayaDecisionAdapter{}
+			}
+			if which == "explicit-decision" || which == "explicit-laya" {
+				decision := controller.decision
+				// Invalid discovery inputs prove explicit decisions/config bypass discovery.
+				if err := w.prepareInstalledDoerRuntime("/missing", "relative", nil); err != nil {
+					t.Fatal(err)
+				}
+				if w.implementation != controller || controller.decision != decision || !reflect.DeepEqual(controller.config, native) {
+					t.Fatal("explicit configuration replaced")
+				}
+				return
+			}
 			err = w.prepareInstalledDoerRuntime(home, state, &hermesruntime.Adapter{})
-			if (err == nil) != (which == "qualified") {
+			if (err == nil) != (which == "qualified" || which == "native-qualified") {
 				t.Fatalf("qualification %s: %v", which, err)
+			}
+			if controller != nil {
+				if w.implementation != controller || controller.adapter != adapter || controller.root != filepath.Join(state, "persistence", "fleet-v1") || controller.config.GoBinary != native.GoBinary || !reflect.DeepEqual(controller.config.AuthorizedContracts, native.AuthorizedContracts) {
+					t.Fatal("native authority or bindings changed")
+				}
+				if which == "native-missing" {
+					if controller.decision != nil || !reflect.DeepEqual(controller.config, native) {
+						t.Fatal("missing library changed configuration")
+					}
+				} else if controller.decision == nil || controller.config.LayaPython != filepath.Join(venv, "bin", "python") || controller.config.LayaHome == "" || !controller.managedLocalDoer {
+					t.Fatal("qualified backend not filled")
+				}
 			}
 			if which == "qualified" {
 				// Materialize only public cache assets; no provider/auth or user cache files.

@@ -72,11 +72,28 @@ func (w *QueueWorker) ValidateDoerContractReadiness(ctx context.Context, contrac
 		return err
 	}
 	c := w.implementation
+	// Native authorization is checked first; missing and untrusted checker
+	// configuration are distinct and do not imply any grant.
+	if contract.Coding != nil {
+		if c.config.GoBinary == "" {
+			return ErrDoerGoMissing
+		}
+		// Only a canonical absolute missing path is absence. A relative path,
+		// symlink or inaccessible executable remains an integrity failure.
+		if filepath.IsAbs(c.config.GoBinary) && filepath.Clean(c.config.GoBinary) == c.config.GoBinary {
+			if _, err := os.Lstat(c.config.GoBinary); errors.Is(err, os.ErrNotExist) {
+				return ErrDoerGoMissing
+			}
+		}
+		if err := trustedExecutable(c.config.GoBinary); err != nil {
+			return ErrDoerGoIntegrity
+		}
+	}
 	if c.adapter == nil || c.decision == nil || c.decision.process == nil || c.root == "" || c.config.LayaPython == "" || c.config.LayaHome == "" {
 		return ErrDoerControllerUnavailable
 	}
 	// Selected-file Doer never executes the native Go checker.
-	if !c.managedLocalDoer || c.config.GoBinary != "" {
+	if contract.Coding != nil || !c.managedLocalDoer || c.config.GoBinary != "" {
 		if err := trustedExecutable(c.config.GoBinary); err != nil {
 			return ErrDoerGoIntegrity
 		}
@@ -93,6 +110,15 @@ func (w *QueueWorker) ValidateDoerContractReadiness(ctx context.Context, contrac
 	}
 	if err := ValidateDoerHostWorkspace(contract); err != nil {
 		return err
+	}
+	if contract.Coding != nil {
+		v, err := contract.CodingImplementation()
+		if err != nil {
+			return err
+		}
+		if err = implementation.Preflight(v, c.config.GoBinary); err != nil {
+			return err
+		}
 	}
 	if probe {
 		if _, err := c.decision.Gate(ctx, contract.Task); err != nil {

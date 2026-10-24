@@ -13,6 +13,7 @@ import (
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
+
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
@@ -280,22 +281,23 @@ type QueueExecutionView struct {
 	// Submission is the admitted queued request with full mandate context. It
 	// is resolved through the repository independently of Item.Submission,
 	// which only carries the immutable submission digest reference.
-	Submission              queue.Submission                        `json:"submission"`
-	RuntimeAuthorityBinding *queue.RuntimeBinding                   `json:"runtime_authority_binding,omitempty"`
-	Projection              queue.Projection                        `json:"projection"`
-	GraphRun                execution.GraphRun                      `json:"graph_run"`
-	LoopExecutions          []execution.LoopExecution               `json:"loop_executions"`
-	Attempts                []execution.Attempt                     `json:"attempts"`
-	Claims                  []queue.Claim                           `json:"claims"`
-	Transitions             []queue.QueueTransition                 `json:"transitions"`
-	Retries                 []queue.Retry                           `json:"retries"`
-	Cancellations           []queue.Cancellation                    `json:"cancellations"`
-	Runtime                 registry.RuntimeBinding                 `json:"runtime"`
-	NodeRuntimes            map[string]registry.RuntimeBinding      `json:"node_runtimes,omitempty"`
-	Artifact                *evidence.RuntimeArtifact               `json:"artifact,omitempty"`
-	Receipts                []evidence.VerificationReceipt          `json:"receipts"`
-	DoerSteps               map[string][]orchestration.DoerStepView `json:"doer_steps,omitempty"`
-	Disposition             *disposition.Record                     `json:"disposition,omitempty"`
+	Submission              queue.Submission                           `json:"submission"`
+	RuntimeAuthorityBinding *queue.RuntimeBinding                      `json:"runtime_authority_binding,omitempty"`
+	Projection              queue.Projection                           `json:"projection"`
+	GraphRun                execution.GraphRun                         `json:"graph_run"`
+	LoopExecutions          []execution.LoopExecution                  `json:"loop_executions"`
+	Attempts                []execution.Attempt                        `json:"attempts"`
+	Claims                  []queue.Claim                              `json:"claims"`
+	Transitions             []queue.QueueTransition                    `json:"transitions"`
+	Retries                 []queue.Retry                              `json:"retries"`
+	Cancellations           []queue.Cancellation                       `json:"cancellations"`
+	Runtime                 registry.RuntimeBinding                    `json:"runtime"`
+	NodeRuntimes            map[string]registry.RuntimeBinding         `json:"node_runtimes,omitempty"`
+	Artifact                *evidence.RuntimeArtifact                  `json:"artifact,omitempty"`
+	Receipts                []evidence.VerificationReceipt             `json:"receipts"`
+	DoerSteps               map[string][]orchestration.DoerStepView    `json:"doer_steps,omitempty"`
+	CodingHistory           map[string]orchestration.CodingHistoryView `json:"coding_history,omitempty"`
+	Disposition             *disposition.Record                        `json:"disposition,omitempty"`
 }
 
 type SurfaceReadiness struct {
@@ -353,9 +355,10 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 	s.FleetRepository, s.Fleet, s.QueueWorker = repository, service, worker
 	worker.SetDoerHostApprovalResolver(s.resolveDoerHostApproval)
 	worker.SetDoerPassCapResolver(s.resolveDoerPassCap)
+	worker.SetCodingContinuationResolver(s.resolveCodingContinuation)
 	worker.SetDoerProtectedPaths(s.doerControllerProtectedPaths())
 	// Startup-only immutable capability wiring; this grants no execution rights.
-	if s.Config.Implementation.GoBinary == "" && s.Config.Implementation.LayaPython == "" && s.Config.Implementation.LayaHome == "" && len(s.Config.Implementation.AuthorizedContracts) == 0 {
+	if s.Config.Implementation.LayaPython == "" && s.Config.Implementation.LayaHome == "" {
 		if err := worker.PrepareInstalledDoerRuntime(s.Config.StateDir, s.Hermes); err != nil {
 			s.Log.Debug("installed local Doer runtime unavailable", "reason", "qualified_local_dependencies_missing")
 		} else {
@@ -1215,7 +1218,16 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 					if revisionErr != nil || revision.Digest != child.Loop.Digest {
 						return nil, fleet.ErrCorrupt
 					}
-					if revision.SchemaVersion == loop.DoerRevisionSchemaVersion || revision.SchemaVersion == loop.DoerReusableSchemaVersion {
+					if revision.Doer != nil && revision.Doer.Coding != nil {
+						history, historyErr := s.QueueWorker.CodingHistory(ctx, attempt.QueueItem, attempt.AttemptID, revision)
+						if historyErr != nil {
+							return nil, historyErr
+						}
+						if view.CodingHistory == nil {
+							view.CodingHistory = make(map[string]orchestration.CodingHistoryView)
+						}
+						view.CodingHistory[attempt.AttemptID] = history
+					} else if revision.SchemaVersion == loop.DoerRevisionSchemaVersion || revision.SchemaVersion == loop.DoerReusableSchemaVersion {
 						steps, traceErr := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, revision.Digest)
 						if traceErr != nil {
 							return nil, traceErr

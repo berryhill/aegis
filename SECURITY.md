@@ -40,6 +40,14 @@ drift, unsafe paths and conflicting records deny. Publication/readback is not
 CAS against arbitrary same-UID config writers. Qualified Hermes parsing remains
 read-only, without refresh, inherited stores or public API token output. Startup
 configuration remains immutable. Same-UID/root writers are not host-sandboxed.
+An explicit same-selection `preview --replace` may review one newly appended
+`implementation` mapping containing only typed `go_binary` and
+`authorized_contracts`. Removing it must reproduce the predecessor's exact
+config commitment; aliases, duplicate keys, other drift and changed source,
+selector, account or principal deny. Connect consumes the exact review and
+appends a linked commitment transition without rewriting prior generations.
+Show and inference still deny until the latest commitment matches all current
+config bytes. Qualified-parser integration proof remains separate from config tests.
 See [the exact procedure](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
 ## Interrupted operational authority
@@ -94,6 +102,18 @@ Retained drafts and readiness observations grant no authority. Successor charter
 ## Local inference and hello boundary
 
 Fixed-output hello policy is precommitted, not model-issued evidence. Exact local model rechecks are drift detection, not atomic pinning across inference. Disposable homes and process-group cleanup are process custody, not a host sandbox. Live provider/model acceptance remains unverified.
+
+Opt-in Doer v4 CODING requires an explicit bounded source/test/module manifest
+and the exact outer Doer-contract digest in independently approved native
+controller configuration. Signed selected-file host consent alone is insufficient.
+The controller verifies actual bytes and materializes only declared inputs for
+the existing offline Go checker; it never crawls the repository or includes an
+undeclared module. Trusted tests/module inputs cannot be model-writable. Managed
+input commitments distinguish preparation from actual adapter completion, and
+public history excludes raw prompt/source/checker output. Native Go code still
+executes as the controller OS user, with host access: neither materialization nor
+tool-free inference is a sandbox. Historical selected-file receipts are not
+upgraded to native software acceptance. See [bounded CODING](docs/BOUNDED_CODING.md).
 
 The optional Loop v3 `doer.v1` implementation mode requires an operator-allowlisted exact contract digest, trusted native Go tests, and an explicitly configured local Laya interpreter with a private, prepopulated offline cache. Laya gate/judgment and Hermes diagnosis/completion are untrusted assessments, not principal authentication, runtime authority or independent verification. A bounded local subprocess with scrubbed environment is not host or network confinement; native tests run as the controller OS user. Success still requires the controller's fresh authority admission and independently reloaded native-check evidence. See [Verified implementation](docs/VERIFIED_IMPLEMENTATION.md).
 

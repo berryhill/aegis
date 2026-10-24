@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -197,6 +198,15 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		if err = a.qualifyProviderDescriptor(descriptor); err != nil {
 			return AttemptTurnResult{}, err
 		}
+		// The qualified native Codex transport's implicit 12s event-idle
+		// watchdog is not the approved turn budget. Use only the remaining
+		// controller deadline (already capped by authority and token margin).
+		// Never inherit an operator override or disable the native watchdog.
+		seconds, timeoutErr := remainingCodexEventTimeout(turnContext)
+		if timeoutErr != nil {
+			return AttemptTurnResult{}, timeoutErr
+		}
+		command.Env = append(command.Env, "HERMES_CODEX_EVENT_STALE_TIMEOUT_SECONDS="+seconds)
 	}
 	attempt := execution.Turn{
 		ID:                 request.AttemptID,
@@ -334,6 +344,18 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			return result, finishErr
 		}
 	}
+}
+
+func remainingCodexEventTimeout(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	deadline, ok := ctx.Deadline()
+	remaining := time.Until(deadline)
+	if !ok || remaining <= 0 || remaining > MaxAttemptDuration {
+		return "", ErrAttemptDenied
+	}
+	return strconv.FormatFloat(remaining.Seconds(), 'f', 9, 64), nil
 }
 
 func validateAttemptRequest(request AttemptTurnRequest) error {

@@ -1,5 +1,12 @@
 # Verified implementation Loop authoring
 
+For the additive managed Doer v4 CODING journey, see
+[bounded repository context and trusted acceptance](BOUNDED_CODING.md). It reuses
+this native checker with separately approved outer Doer-contract authorization,
+explicit immutable source/test/module inputs, declared-only checker
+materialization and managed-input/continuation custody. Nil-context v3 policy and
+historical selected-file claims are not reinterpreted by that opt-in mode.
+
 `aegis loops implementation FILE [--output NEW_FILE]` builds a canonical Loop v3 publication draft, not the structural-only `loops example` template. It does not open authority stores, verify an Agent exists, run tests, publish, activate, or queue work. Stdout contains publication JSON; stderr identifies the exact implementation-contract digest. `--output` creates a mode-0600 file and refuses overwrite.
 
 Build source before invoking commands; do not use `go run ./cmd/aegis` (it runs a temporary executable outside the development root, breaking source-build provenance):

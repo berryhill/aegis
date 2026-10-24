@@ -64,6 +64,11 @@ func (w *QueueWorker) authorizeDoer(ctx context.Context, c loop.DoerContract, a 
 	if w.implementation.authorizeDoer(c, a) == nil {
 		return nil
 	}
+	// Selected-file host-write consent is not trusted native-code authority.
+	// CODING still requires an exact operator configuration allowlist binding.
+	if c.Coding != nil {
+		return ErrDoerNativeContractUnauthorized
+	}
 	if w.doerHostApproval != nil {
 		err := w.doerHostApproval(ctx, c, a)
 		if errors.Is(err, hostapproval.ErrDenied) {
@@ -75,6 +80,12 @@ func (w *QueueWorker) authorizeDoer(ctx context.Context, c loop.DoerContract, a 
 }
 
 func (w *QueueWorker) processDoer(ctx context.Context, request WorkRequest, base WorkResult, runtime RuntimeRequest, contract loop.DoerContract, preclaimGate LayaGate) (WorkResult, error) {
+	if contract.Coding != nil {
+		if runtime.LoopRevision.SchemaVersion != loop.DoerRevisionSchemaVersion {
+			return w.terminal(ctx, request, base, execution.StateDenied, "doer_coding_version_denied", nil, nil)
+		}
+		return w.processImplementation(ctx, request, base, runtime, "verify")
+	}
 	c := w.implementation
 	if c == nil || c.decision == nil || c.adapter == nil {
 		return w.terminal(ctx, request, base, execution.StateDenied, "doer_runtime_unconfigured", nil, nil)

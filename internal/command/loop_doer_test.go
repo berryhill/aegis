@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/berryhill/aegis/internal/app"
@@ -73,5 +74,19 @@ func TestDoerTemplateCLIIsAvailableWithoutConfiguration(t *testing.T) {
 	}
 	if len(templates) != 1 || templates[0].ID != loop.DoerTemplateID || templates[0].Version != loop.DoerTemplateVersion || templates[0].Digest != loop.IncludedDoerTemplate().Digest || len(templates[0].Digest) != len("sha256:")+64 {
 		t.Fatalf("unexpected included templates: %s", out.String())
+	}
+}
+
+func TestDoerHelpDiscoversCodingWithoutAuthority(t *testing.T) {
+	var out, diag bytes.Buffer
+	command := NewRoot(Dependencies{Out: &out, Err: &diag})
+	command.SetArgs([]string{"loops", "doer", "--help"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"CODING", "presence/text/exact-byte", "without authority", "BOUNDED_CODING.md"} {
+		if !strings.Contains(out.String(), text) {
+			t.Fatalf("help omits %q: %s", text, out.String())
+		}
 	}
 }

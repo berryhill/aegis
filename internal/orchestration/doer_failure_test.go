@@ -75,6 +75,59 @@ func TestDoerFailureConsumesOnePassAndDoesNotReplayTerminal(t *testing.T) {
 	}
 }
 
+// Synthetic final-pass failure only; never opens a retained/live task store.
+func TestDoerStreamingTimeoutDoesNotRestoreExhaustedBudget(t *testing.T) {
+	contract := loop.DoerContract{Task: "Create selected file", Workspace: t.TempDir(), WritableFiles: []string{"selected.txt"}, VerifyFile: "selected.txt", MaxAttempts: 2}
+	revision, _, err := loop.NewDoerRevision("stream-timeout-budget", 1, "", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	roles := doerRoles{
+		Admit: func(context.Context, string) error { return nil },
+		Gate: func(context.Context, string) (LayaGate, error) {
+			return LayaGate{Specified: true, ResultDefined: true}, nil
+		},
+		Implement: func(_ context.Context, _, _ string, pass uint16) (implementation.Proposal, error) {
+			calls++
+			if pass != 2 {
+				t.Fatalf("final pass reset: %d", pass)
+			}
+			return implementation.Proposal{}, doerTurnFailure(hermesruntime.AttemptTurnResult{Attempt: execution.Turn{Reason: "runtime_streaming_timeout"}}, errors.New("synthetic timeout"))
+		},
+		Apply: func(context.Context, loop.DoerContract, []implementation.Edit) error {
+			t.Fatal("failed stream applied edits")
+			return nil
+		},
+	}
+	executor := &doerStepExecutor{contract: contract, roles: roles, attempts: 1}
+	cursor := &doerMemoryCursor{}
+	result, err := looprun.Run(context.Background(), "exhausted-stream", revision, looprun.Values{}, cursor, executor, nil)
+	if err != nil || result.Outcome != loop.OutcomeFailed || executor.attempts != 2 || calls != 1 || len(result.Failures) != 1 || result.Failures[0].Code != "runtime_streaming_timeout" {
+		t.Fatalf("final timeout lost failure/budget: %+v %v attempts=%d calls=%d", result, err, executor.attempts, calls)
+	}
+	before, err := json.Marshal(cursor.cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Terminal checkpoint replay must not reopen work even with a new executor.
+	reloaded := &doerStepExecutor{contract: contract, roles: roles, attempts: executor.attempts}
+	replayed, err := looprun.Run(context.Background(), "exhausted-stream", revision, looprun.Values{}, cursor, reloaded, nil)
+	after, marshalErr := json.Marshal(cursor.cursor)
+	if err != nil || marshalErr != nil || replayed.Outcome != loop.OutcomeFailed || calls != 1 || reloaded.attempts != 2 || string(before) != string(after) {
+		t.Fatalf("terminal timeout reopened/refunded: %+v %v attempts=%d calls=%d", replayed, err, reloaded.attempts, calls)
+	}
+	for _, step := range revision.Steps {
+		if step.Executable != nil && step.Executable.Operation == loop.DoerImplement {
+			if _, err := reloaded.Execute(context.Background(), looprun.StepRequest{Step: step}); err == nil || reloaded.attempts != 2 || calls != 1 {
+				t.Fatal("exhausted implementation budget restored")
+			}
+			return
+		}
+	}
+	t.Fatal("implementation step missing")
+}
+
 func TestDoerTraceLegacyAndUnknownFailureCodesAreContentFree(t *testing.T) {
 	for _, code := range []string{"step_error", "doer_proposal_decode_failed", "runtime_provider_format_error", "private arbitrary code", "doer_proposal_size_invalid", "doer_proposal_json_invalid", "doer_proposal_duplicate_field", "doer_proposal_unknown_field", "doer_proposal_shape_invalid", "doer_proposal_base64_invalid", "doer_proposal_trailing_data", "doer_proposal_edits_invalid", "doer_proposal_report_invalid"} {
 		t.Run(code, func(t *testing.T) {

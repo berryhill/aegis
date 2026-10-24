@@ -35,7 +35,7 @@ func reconstructQueueRequeue(sub core.Subject, in RequeueQueueItemInput, old Que
 		return out, requeueDenied("requeue_terminal_failure_required")
 	}
 	d := old.Disposition
-	if d == nil || d.State != execution.StateFailed || d.ReasonCode != "doer_loop_failed" {
+	if d == nil || d.State != execution.StateFailed || (d.ReasonCode != "doer_loop_failed" && d.ReasonCode != "implementation_failed") {
 		return out, requeueDenied("requeue_failure_unsupported")
 	}
 	// QueueLoop creates direct runs; it cannot preserve a published Graph source.

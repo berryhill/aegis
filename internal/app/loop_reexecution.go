@@ -9,6 +9,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
+
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
@@ -71,7 +72,11 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 		return f, err
 	}
 	d := v.Disposition
-	if v.Item.Digest != in.Reexecution.PreviousQueue.Digest || v.Projection.State != queue.StateFailed || v.Projection.ActiveClaimID != "" || d == nil || d.State != execution.StateFailed || d.ReasonCode != "doer_loop_failed" || d.DispositionID != in.Reexecution.PreviousDisposition.ID || d.Digest != in.Reexecution.PreviousDisposition.Digest || d.QueueItem != in.Reexecution.PreviousQueue || d.GraphRunID != v.Item.GraphRunID || v.Submission.OwnerAgentID != in.Agent.ID || v.Submission.OwnerID != sub.PrincipalID || len(v.Attempts) != 1 || len(v.LoopExecutions) != 1 || v.RuntimeAuthorityBinding == nil {
+	reason := "doer_loop_failed"
+	if contract.Coding != nil {
+		reason = "implementation_failed"
+	}
+	if v.Item.Digest != in.Reexecution.PreviousQueue.Digest || v.Projection.State != queue.StateFailed || v.Projection.ActiveClaimID != "" || d == nil || d.State != execution.StateFailed || d.ReasonCode != reason || d.DispositionID != in.Reexecution.PreviousDisposition.ID || d.Digest != in.Reexecution.PreviousDisposition.Digest || d.QueueItem != in.Reexecution.PreviousQueue || d.GraphRunID != v.Item.GraphRunID || v.Submission.OwnerAgentID != in.Agent.ID || v.Submission.OwnerID != sub.PrincipalID || len(v.Attempts) != 1 || len(v.LoopExecutions) != 1 || v.RuntimeAuthorityBinding == nil {
 		return f, ErrDenied
 	}
 	child, attempt := v.LoopExecutions[0], v.Attempts[0]
@@ -106,11 +111,23 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 	if err != nil || inputSnapshot.Digest != snapshot.Digest {
 		return f, ErrDenied
 	}
-	steps, err := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, in.Loop.Digest)
-	if err != nil {
-		return f, err
+	var consumed uint16
+	var head string
+	var codingHistory orchestration.CodingHistoryView
+	if contract.Coding != nil {
+		h, x := s.QueueWorker.CodingHistory(ctx, in.Reexecution.PreviousQueue, attempt.AttemptID, revision)
+		if x != nil || h.State != "failed" || h.ReservedPasses == 0 {
+			return f, ErrDenied
+		}
+		consumed, head = h.ReservedPasses, h.Digest
+		codingHistory = h
+	} else {
+		steps, x := s.QueueWorker.DoerTrace(ctx, attempt.AttemptID, in.Loop.Digest)
+		if x != nil {
+			return f, x
+		}
+		consumed, head, err = consumedDoerPasses(steps)
 	}
-	consumed, head, err := consumedDoerPasses(steps)
 	if err != nil {
 		return f, err
 	}
@@ -127,6 +144,14 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 	}
 	if consumed >= cap {
 		return f, ErrDoerReexecutionBudgetExhausted
+	}
+	if contract.Coding != nil {
+		if codingHistory.ConsumedBefore != contract.MaxAttempts-cap || codingHistory.RemainingBudget != cap-consumed {
+			return f, ErrDenied
+		}
+		if _, x := s.QueueWorker.PrepareCodingContinuation(ctx, in.Reexecution.PreviousQueue, attempt.AttemptID, revision, head, requestID+"-queue", cap-consumed); x != nil {
+			return f, ErrDenied
+		}
 	}
 	f = LoopReexecutionFact{RequestID: requestID, RequestDigest: identity, SubjectID: sub.ID, PrincipalID: sub.PrincipalID, Agent: in.Agent, Loop: in.Loop, Previous: *in.Reexecution, CheckpointDigest: head, Consumed: consumed, Remaining: cap - consumed}
 	f.Digest = reexecutionDigest(f)
@@ -164,6 +189,46 @@ func (s *Service) sealLoopReexecution(ctx context.Context, sub core.Subject, in 
 
 // Budget is resolved from the signed exact Run scope AND the canonical intent,
 // never from wire counts, current Loop edits, or controller-wide grants.
+func (s *Service) resolveCodingContinuation(ctx context.Context, c loop.DoerContract, a registry.AgentRevision) (*orchestration.CodingContinuation, error) {
+	id, candidate, worker := orchestration.DoerExecutionScope(ctx)
+	if !worker || id == "" {
+		return nil, ErrDenied
+	}
+	var f LoopReexecutionFact
+	err := s.Store.Load("queue-loop-reexecution", id, &f)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil || f.Digest != reexecutionDigest(f) || f.RequestID != id || f.Agent != agentRevisionRef(a) || f.Loop != candidate || !orchestration.DoerExecutionIntentMatches(ctx, f.RequestDigest) {
+		return nil, ErrDenied
+	}
+	var slot LoopReexecutionFact
+	if s.Store.Load("queue-loop-reexecution-successor", f.Previous.PreviousQueue.ID, &slot) != nil || slot != f {
+		return nil, ErrDenied
+	}
+	previous, err := s.FleetRepository.GetQueueItem(ctx, f.Previous.PreviousQueue.ID)
+	if err != nil || previous.Digest != f.Previous.PreviousQueue.Digest {
+		return nil, ErrDenied
+	}
+	// Internal custody reload under the actual worker scope, never a fabricated subject.
+	disposition, err := s.FleetRepository.GetDispositionByGraphRun(ctx, previous.GraphRunID)
+	if err != nil {
+		return nil, err
+	}
+	projection, err := s.FleetRepository.GetQueueProjection(ctx, previous.ItemID)
+	if err != nil {
+		return nil, err
+	}
+	if disposition.Digest != f.Previous.PreviousDisposition.Digest || disposition.DispositionID != f.Previous.PreviousDisposition.ID || disposition.QueueItem != f.Previous.PreviousQueue || disposition.State != execution.StateFailed || disposition.ReasonCode != "implementation_failed" || projection.State != queue.StateFailed || projection.ActiveClaimID != "" {
+		return nil, ErrDenied
+	}
+	revision, err := s.FleetRepository.GetLoopRevision(ctx, candidate.ID, candidate.Revision)
+	if err != nil || revision.Digest != candidate.Digest {
+		return nil, ErrDenied
+	}
+	return s.QueueWorker.PrepareCodingContinuation(ctx, f.Previous.PreviousQueue, disposition.AttemptID, revision, f.CheckpointDigest, id+"-queue", f.Remaining)
+}
+
 func (s *Service) resolveDoerPassCap(ctx context.Context, c loop.DoerContract, a registry.AgentRevision) (uint16, error) {
 	id, candidate, worker := orchestration.DoerExecutionScope(ctx)
 	if !worker {

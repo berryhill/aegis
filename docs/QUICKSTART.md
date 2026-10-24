@@ -1,5 +1,9 @@
 # Five-Minute Quickstart
 
+For separately authorized repository coding, see [bounded Doer CODING](BOUNDED_CODING.md).
+Its explicit source/test manifest, native-code trust and behavioral acceptance are
+not part of this no-key quickstart and are not granted by publication.
+
 ## Verified installed coordinator bootstrap (source candidate)
 
 The product acquisition script verifies canonical official platform archive checksums,

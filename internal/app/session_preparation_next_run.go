@@ -41,7 +41,7 @@ func (s *Service) reserveNextLoopRun(ctx context.Context, sub core.Subject, in Q
 		if e != nil || rev.Digest != old.Source.Digest {
 			return "", ErrDenied
 		}
-		reusable = rev.SchemaVersion == loop.DoerReusableSchemaVersion
+		reusable = rev.SchemaVersion == loop.DoerReusableSchemaVersion || nativeCodingRevision(rev)
 		if reusable && old.Projection.State == queue.StateFailed {
 			if err := s.validateReusableNextTask(ctx, sub, in, result.RequestID, old, rev); err != nil {
 				return "", err
@@ -56,7 +56,10 @@ func (s *Service) reserveNextLoopRun(ctx context.Context, sub core.Subject, in Q
 			return "", e
 		}
 
-		if rev.SchemaVersion == loop.DoerRevisionSchemaVersion && old.Projection.State == queue.StateFailed {
+		if rev.Digest != child.Loop.Digest {
+			return "", ErrDenied
+		}
+		if rev.SchemaVersion == loop.DoerRevisionSchemaVersion && !nativeCodingRevision(rev) && old.Projection.State == queue.StateFailed {
 			if in.Reexecution == nil || in.Reexecution.PreviousQueue.ID != old.Item.ItemID || in.Reexecution.PreviousQueue.Digest != old.Item.Digest || in.Reexecution.PreviousDisposition.ID != old.Disposition.DispositionID || in.Reexecution.PreviousDisposition.Digest != old.Disposition.Digest {
 				return "", ErrDenied
 			}
@@ -169,7 +172,8 @@ func (s *Service) predecessorAuthorityIdle(ctx context.Context, authority refere
 	return nil
 }
 
-// Only an exactly owned terminal direct v5 predecessor is eligible for cleanup.
+// Only an exactly owned terminal direct v5 or native CODING v4 predecessor
+// is eligible for cleanup. Legacy selected-file v4 is deliberately unchanged.
 // Failure-budget admission is separate and precedes this lifecycle predicate.
 func (s *Service) completedReusablePredecessor(ctx context.Context, sub core.Subject, in QueueLoopInput, agent registry.AgentRevision, parent string, fence map[string]string, old QueueExecutionView, authority core.AuthorityContext, session core.Session) bool {
 	if old.SourceKind != graph.SourceDirectLoop || old.Projection.ActiveClaimID != "" || old.Disposition == nil || old.RuntimeAuthorityBinding == nil || len(old.LoopExecutions) != 1 || len(old.Attempts) != 1 || len(old.Claims) != 1 || s.loopRunWorkers[old.Item.ItemID] {
@@ -179,8 +183,15 @@ func (s *Service) completedReusablePredecessor(ctx context.Context, sub core.Sub
 		return false
 	}
 	rev, err := s.FleetRepository.GetLoopRevision(ctx, old.Source.ID, old.Source.Revision)
-	if err != nil || rev.Digest != old.Source.Digest || rev.SchemaVersion != loop.DoerReusableSchemaVersion {
+	if err != nil || rev.Digest != old.Source.Digest || (rev.SchemaVersion != loop.DoerReusableSchemaVersion && !nativeCodingRevision(rev)) {
 		return false
+	}
+	if nativeCodingRevision(rev) {
+		a := authority.Authority
+		h := a.Hermes
+		if session.Mandate.Target != "aegis-owned-ephemeral" || len(a.Capabilities) != 0 || len(a.Tools) != 0 || len(a.Memory) != 0 || len(a.Credentials) != 0 || h.PersistentHome || h.Profile != "" || len(h.Toolsets) != 0 || len(h.MCPServers) != 0 || len(h.Plugins) != 0 {
+			return false
+		}
 	}
 	if fence["queue_item_id"] != old.Item.ItemID || fence["agent_digest"] != agent.Digest || (fence["subject_id"] != "" && fence["subject_id"] != sub.ID) || (fence["loop_digest"] != "" && fence["loop_digest"] != old.Source.Digest) {
 		return false

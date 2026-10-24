@@ -10,16 +10,24 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Source candidate: permit explicit same-selection native Codex replacement
+  review after one exactly reconstructable additive native-trust mapping.
+  Preserve full-config runtime drift denial and append-only predecessor history;
+  no automatic rebind or credential/model selection change. Qualified native
+  parser and owning-transport acceptance remain separately required.
+
 - Partition cumulative API CI work into `api-a` and `api-b` in both modes
   using the actual Go test inventory. Preserve every default test, example,
   subtest and fuzz seed, real TestMain and existing authentication/resource
   limits. Require both partitions and reject unknown or missing CI jobs.
+
 
 - Explicitly route owner GitHub issue implementation requests through the existing
   Aegis engineering skills and implementation loop, with independent acceptance,
   approval-capable conduction and verified PR/CI/merge ownership. Preserve narrower
   scope and independent gates; this temporary Hermes rule does not activate a
   product Loop or authorize an unsolicited release or deployment.
+
 
 - Keep successful Loop Archive actions on the Archived collection without selecting
   Loop detail. Restore retains exact-revision detail navigation; availability
@@ -43,6 +51,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 Doer readiness now preserves supported v4 exact host-review remediation versus explicit v5 adapter unavailability, rejects mixed/partial/null forms before effects, and returns closed ordered prerequisite causes for the exact Run binding.
 
 ### Added
+
+- Opt-in Doer v4 CODING with bounded controller-collected repository context,
+  immutable trusted source/test/module commitments, declared-only offline Go
+  checking, closed corrective diagnostics and exact managed-input/turn evidence.
+  Add content-free native history and cumulative complete-pass correction through
+  existing authenticated requeue. Keep native authority separate from file-write
+  consent and preserve all historical selected-file meanings. Native code is not
+  sandboxed; real-provider and packaged/installed evidence remain separate tiers.
 
 - Agent-first reusable v5 direct Run through typed `loops queue` with exact normalized task/configuration binding and preauthorized contract digests, without republishing or Graph publication. Add owner-authorized `queue result` / `GET /v1/queue/:item/result` and selected authenticated Queue-detail inspection of named task, stored verified content, exact evidence references, enqueue-to-disposition elapsed provenance and explicit unavailable usage. No generic blob/path read, new human launch form, authority broadening or live-provider qualification. See [reusable Doer](docs/REUSABLE_DOER.md).
 

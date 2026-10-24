@@ -92,6 +92,26 @@ No arrow grants authority from prompt text. Local model recheck is drift detecti
 
 ## Verified implementation path
 
+Doer v4's additive CODING path reuses this native implementation kernel rather
+than treating a selected-file receipt as software acceptance:
+
+```text
+exact task + explicit source/test/module manifest + declared limits
+  -> controller reads/verifies actual bytes -> bounded tool-free managed input
+  -> persisted input commitment -> actual managed turn -> allowlisted Go edit
+  -> declared-current-input materialization -> trusted offline go-test.v1
+  -> reloaded context/input/source/check evidence -> native receipt/disposition
+```
+
+The application consumes orchestration-owned content-free coding history and an
+opaque continuation port; it does not import kernel custody types. Original
+context, complete-pass candidate state, reserved/cumulative consumption and exact
+predecessor history bind supported correction. Unknown/partial effects do not
+reset the budget. Exact native contract authorization remains separate from
+selected-file host scope; native code is not sandboxed. An explicitly configured
+native checker can reuse qualified installed Laya discovery without granting a
+default native allowlist. See [bounded CODING](BOUNDED_CODING.md).
+
 ```text
 typed local authoring -> canonical Loop v3 draft
   -> authenticated validate/publish -> immutable inactive revision

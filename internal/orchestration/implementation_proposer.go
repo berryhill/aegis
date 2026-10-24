@@ -16,7 +16,9 @@ import (
 // already grant zero tools and zero credentials; this adapter never edits it.
 // It cannot apply files, execute a checker, or assert successful verification.
 type HermesPatchProposer struct {
-	Adapter *hermesruntime.Adapter
+	Adapter interface {
+		AttemptTurn(context.Context, hermesruntime.AttemptTurnRequest) (hermesruntime.AttemptTurnResult, error)
+	}
 	Request hermesruntime.AttemptTurnRequest
 }
 
@@ -48,11 +50,42 @@ func (p HermesPatchProposer) propose(ctx context.Context, request implementation
 		return implementation.Proposal{}, err
 	}
 	turn := p.Request
+	if len(wire) > hermesruntime.MaxAttemptInputBytes || (turn.Bounds.InputBytes > 0 && len(wire) > turn.Bounds.InputBytes) {
+		return implementation.Proposal{}, errors.New("serialized implementation input exceeds budget")
+	}
 	turn.AttemptID = request.PassID
 	turn.Input = string(wire)
+	if request.InputObserver != nil {
+		if err = request.InputObserver(implementation.InputObservation{Bytes: wire}); err != nil {
+			return implementation.Proposal{}, err
+		}
+	}
 	result, err := p.Adapter.AttemptTurn(ctx, turn)
 	if err != nil {
-		return implementation.Proposal{}, err
+		failure := doerTurnFailure(result, err)
+		if request.FailureObserver != nil {
+			v := implementation.ManagedFailure{}
+			switch string(result.Attempt.State) {
+			case "failed", "denied", "expired", "cancelled", "interrupted", "revoked":
+				v.State = string(result.Attempt.State)
+			}
+			if hermesruntime.IsAttemptFailureReason(result.Attempt.Reason) {
+				v.Reason = result.Attempt.Reason
+			}
+			var closed *doerFailure
+			if errors.As(failure, &closed) {
+				v.Code = closed.code
+			}
+			if x := request.FailureObserver(v); x != nil {
+				return implementation.Proposal{}, x
+			}
+		}
+		return implementation.Proposal{}, failure
+	}
+	if request.InputObserver != nil {
+		if err = request.InputObserver(implementation.InputObservation{Bytes: wire, Completed: true, TurnID: result.Attempt.ID, RuntimeSessionID: result.Attempt.RuntimeSessionID}); err != nil {
+			return implementation.Proposal{}, err
+		}
 	}
 	return decodePatch([]byte(result.Output), reported)
 }

@@ -7,11 +7,13 @@ import (
 )
 
 var (
-	ErrDoerControllerUnavailable = errors.New("doer_controller_unavailable")
-	ErrDoerRuntimeUnqualified    = errors.New("doer_runtime_unqualified")
-	ErrDoerGoIntegrity           = errors.New("doer_go_executable_untrusted")
-	ErrDoerLayaIntegrity         = errors.New("doer_laya_executable_untrusted")
-	ErrDoerHomeIntegrity         = errors.New("doer_laya_home_untrusted")
+	ErrDoerNativeContractUnauthorized = errors.New("doer_native_contract_unauthorized")
+	ErrDoerGoMissing                  = errors.New("doer_go_executable_missing")
+	ErrDoerControllerUnavailable      = errors.New("doer_controller_unavailable")
+	ErrDoerRuntimeUnqualified         = errors.New("doer_runtime_unqualified")
+	ErrDoerGoIntegrity                = errors.New("doer_go_executable_untrusted")
+	ErrDoerLayaIntegrity              = errors.New("doer_laya_executable_untrusted")
+	ErrDoerHomeIntegrity              = errors.New("doer_laya_home_untrusted")
 )
 
 // DoerPrerequisiteReason is a closed public projection. Never publish backend text.
@@ -37,6 +39,10 @@ func DoerPrerequisiteReason(err error) string {
 		return "doer_host_approval_required"
 	case errors.Is(err, ErrDoerGoIntegrity):
 		return "doer_go_executable_untrusted"
+	case errors.Is(err, ErrDoerGoMissing):
+		return "doer_go_executable_missing"
+	case errors.Is(err, ErrDoerNativeContractUnauthorized):
+		return "doer_native_contract_unauthorized"
 	case errors.Is(err, ErrDoerLayaIntegrity):
 		return "doer_laya_executable_untrusted"
 	case errors.Is(err, ErrDoerHomeIntegrity):
