@@ -14,6 +14,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   no automatic rebind or credential/model selection change. Qualified native
   parser and owning-transport acceptance remain separately required.
 
+- Explicitly route owner GitHub issue implementation requests through the existing
+  Aegis engineering skills and implementation loop, with independent acceptance,
+  approval-capable conduction and verified PR/CI/merge ownership. Preserve narrower
+  scope and independent gates; this temporary Hermes rule does not activate a
+  product Loop or authorize an unsolicited release or deployment.
+
+
 - Keep successful Loop Archive actions on the Archived collection without selecting
   Loop detail. Restore retains exact-revision detail navigation; availability
   authorization, compare-and-swap checks and append-only history are unchanged.
