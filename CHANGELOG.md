@@ -6,6 +6,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls; downstream contribution delivery remains unavailable.
+
 ### Fixed
 
 - Explicitly route owner GitHub issue implementation requests through the existing
