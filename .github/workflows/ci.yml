@@ -49,11 +49,11 @@ jobs:
       fail-fast: false
       matrix:
         mode: [normal, race]
-        group: [api, execution, cli, persistence, update, remainder-a, remainder-b]
+        group: [api-a, api-b, execution, cli, persistence, update, remainder-a, remainder-b]
     runs-on: ubuntu-latest
     # Include toolchain setup/compilation outside the Go test-process budget.
     # All other jobs retain their existing bound; coverage is never skipped.
-    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api' || matrix.group == 'remainder-a') && 16 || 10 }}
+    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b' || matrix.group == 'remainder-a') && 16 || 10 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -214,6 +214,6 @@ jobs:
           python3 - <<'PY'
           import json, os
           results = json.loads(os.environ['NEEDS_JSON'])
-          assert len(results) == 7, results
+          assert set(results) == {'repository-checks', 'go-shards', 'installed-proof', 'vet', 'authority-denial-matrix', 'vulnerability-scan', 'race'}, results
           assert all(job['result'] == 'success' for job in results.values()), results
           PY
