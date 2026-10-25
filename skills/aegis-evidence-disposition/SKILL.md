@@ -34,6 +34,8 @@ historical canonical-matrix statuses. This does not complete #377 authority and
 quiescence, #378 delivery or #379 joined verification.
 Queue/model/build/PR/CI alone cannot attest the whole contribution.
 Narrower scope and real gates prevail.
+Without a checkout, read the same canonical contract at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
 
 
 Use this skill to inspect one authority-bound Execution Queue item's immutable lineage, explain whether exact evidence satisfies its pinned Loop (and Graph where present), and route only shipped authenticated lifecycle operations to Aegis. The model may organize returned records and identify missing or conflicting evidence. It cannot verify bytes, mint receipts, authenticate a reviewer, choose authority, or record a disposition itself.

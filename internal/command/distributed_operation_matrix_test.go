@@ -24,6 +24,7 @@ func TestDistributedOperationMatrix(t *testing.T) {
 	var matrix struct {
 		SchemaVersion       int                             `json:"schema_version"`
 		EvidenceClass       string                          `json:"evidence_class"`
+		OwningServiceCLI    map[string][]string             `json:"owning_service_cli"`
 		TransportBoundary   string                          `json:"transport_boundary"`
 		AuthorityBoundary   string                          `json:"authority_boundary"`
 		Classifications     map[string]string               `json:"classifications"`

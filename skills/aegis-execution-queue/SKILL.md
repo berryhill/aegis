@@ -33,6 +33,8 @@ source observations are historical: reinspect source, do not repeat stale stage
 statuses or imply #377 authority/quiescence, #378 delivery or #379 joined proof
 is complete. Queue/model/build/PR/CI alone cannot attest the whole contribution.
 Narrower scope and real gates prevail.
+Without a checkout, read the same canonical contract at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
 
 
 Use this skill to inspect durable Queue history or route one explicitly authorized process, retry, reclaim, cancel, expire, exhaust, or revoke operation through the shipped typed Aegis service. The model may explain records and prepare a proposed request file; Aegis authenticates the principal, performs fresh authority admission, validates immutable bindings, commits lifecycle facts and authoritative audit atomically, invokes the registered runtime adapter, verifies evidence, and determines disposition.

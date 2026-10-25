@@ -1,6 +1,23 @@
 {
   "schema_version": 1,
   "evidence_class": "structural-coverage-only",
+  "owning_service_cli": {
+    "shipped": [
+      "controller-codex probe", "controller-codex candidates", "controller-codex preview", "controller-codex connect", "controller-codex show",
+      "charter import", "charter validate", "charter show",
+      "plan preview", "plan show", "approval request", "approval approve", "approval reject", "approval show", "aegis provision",
+      "session preview", "session start", "session show", "session authority", "session list",
+      "agents register", "agents approve-charter", "agents list", "agents show", "agents history",
+      "loops readiness", "loops task-execute", "loops task-save", "loops draft-save", "loops task-show", "loops draft-show",
+      "loops setup-protected", "loops setup-browser", "loops setup-review", "loops setup-decide", "loops task-continue", "loops draft-continue",
+      "loops queue", "loops list", "loops inventory", "loops availability", "loops archive", "loops restore", "loops show", "loops publish", "loops validate", "loops activate", "loops retire",
+      "graphs list", "graphs show", "graphs publish", "graphs submit",
+      "queue preparations", "queue list", "queue result", "queue show", "queue process", "queue bind-runtime"
+    ],
+    "missing-adapter": ["agents enable", "agents disable", "agents retire", "queue cancel", "queue revoke", "queue retry", "queue expire", "queue exhaust"],
+    "advisory": ["loops setup-approve"],
+    "unavailable": ["ordinary retry without durable stop acknowledgement", "Graph lifecycle mutation", "background scheduling", "reviewer reevaluation", "deployment projection"]
+  },
   "transport_boundary": "A listed CLI and a listed HTTP endpoint are distinct adapters, not interchangeable transports. Most direct-service CLI commands fail control_plane_online while the configured gateway owns state. Use only an already supplied product-owned typed online interface; do not stop the gateway, open a second writer, extract authentication material or implement a generic HTTP client. The catalog does not grant access, provide request schemas or qualify an installed executable. The enclosing verified archive binds these source references to its exact source_revision.",
   "authority_boundary": "Installed skill text grants no authority. Typed product authentication, exactly one stanza, approvals, mandates, persistence and evidence remain external. No permission union; missing or ambiguous authority denies. Source/test references are navigation, not claims that behavioral tests passed.",
   "classifications": {
