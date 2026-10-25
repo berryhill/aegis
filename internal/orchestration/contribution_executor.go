@@ -141,12 +141,15 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		})
 		return hermesruntime.AttemptTurnRequest{Launch: role.Launch, Admission: admission, ParentAttemptID: role.Launch.ParentDispatch.ID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(w.implementation.root)), "runtime", "contribution"), Model: role.Launch.AuthorityContext.Authority.Hermes.Model, Provider: role.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
 	}
+	candidateAccepted := false
 	if w.contributionContinuity != nil {
 		observer, err = w.contributionContinuity(ctx, request.Subject, sealed, base, runtime.Launch)
 		if err != nil {
 			return base, err
 		}
-		defer func() { resultErr = errors.Join(resultErr, observer.Close(context.WithoutCancel(ctx))) }()
+		defer func() {
+			resultErr = errors.Join(resultErr, observer.Close(context.WithoutCancel(ctx), candidateAccepted))
+		}()
 	}
 	engine := &implementation.ManagedContribution{DB: custody.ImplementationStore(), GoBinary: w.implementation.config.GoBinary, StateRoot: filepath.Join(w.implementation.root, "contribution-evidence"), Repository: sealed.Repository, Admit: admit, Fetch: w.contributionFetch}
 	if observer != nil {
@@ -238,6 +241,7 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 	if record.State != "candidate_accepted" {
 		return base, errors.New("contribution candidate budget exhausted")
 	}
+	candidateAccepted = true
 	// Durable candidate and criterion artifacts were stored before this return.
 	// Never route them through v3 selected-file completion or mint final receipts.
 	return base, ErrContributionCandidatePending

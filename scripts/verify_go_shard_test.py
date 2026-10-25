@@ -24,7 +24,7 @@ class ShardTests(unittest.TestCase):
             packages = self.packages() + [shard.ROOT + f'future-{i:02d}' for i in range(count)]
             grouped = shard.groups(list(reversed(packages)))
             union = [p for group in grouped.values() for p in group]
-            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1, shard.ORCHESTRATION: 1}))
+            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1, shard.ORCHESTRATION: 1, shard.MANAGER: 3}))
             self.assertEqual(grouped, shard.groups(packages))
             self.assertEqual(grouped['api-a'], [shard.API])
             self.assertEqual(grouped['api-b'], [shard.API])
@@ -68,6 +68,18 @@ class ShardTests(unittest.TestCase):
                 seen.extend(selected)
             self.assertEqual(Counter(seen), Counter(names))
 
+    def test_manager_exact_once_current_future_and_missing_heavy(self):
+        for count in (0, 1, 47, 48):
+            names = sorted(list(shard.MANAGER_TESTS.values()) + ['Example', 'FuzzFuture', 'TestContributionManagerApprovedNativeRepairFuture'] + [f'TestFuture{i}' for i in range(count)])
+            seen = []
+            for group in ('manager', *shard.MANAGER_TESTS):
+                pattern = shard.test_pattern(names, group)
+                seen.extend(name for name in names if re.fullmatch(pattern, name))
+                for missing in shard.MANAGER_TESTS.values():
+                    with self.assertRaises(ValueError):
+                        shard.test_pattern([name for name in names if name != missing], group)
+            self.assertEqual(Counter(seen), Counter(names))
+
     def test_orchestration_missing_target_or_inventory_never_executes(self):
         for group in ('orchestration', 'orchestration-contribution'):
             for listing in ('', 'TestFuture\nExample\nok\t' + shard.ORCHESTRATION + '\t0.001s\n'):
@@ -89,9 +101,11 @@ class ShardTests(unittest.TestCase):
         for race in (False, True):
             for group in shard.GROUPS:
                 api = group.startswith('api-')
-                partition = api or group.startswith('orchestration')
-                package = shard.API if api else shard.ORCHESTRATION
+                partition = api or group.startswith(('orchestration', 'manager'))
+                package = shard.API if api else shard.MANAGER if group.startswith("manager") else shard.ORCHESTRATION
                 group_listing = listing if api else listing.replace(shard.API, package).replace('TestOne\n', shard.CONTRIBUTION_TEST + '\nTestOne\n')
+                if group.startswith('manager'):
+                    group_listing = '\n'.join(list(shard.MANAGER_TESTS.values()) + ['TestFuture', 'Example']) + '\nok\t' + package + '\t0.001s\n'
                 results = [mock.Mock(stdout='\n'.join(self.packages()))]
                 if partition:
                     results.append(mock.Mock(stdout=group_listing))
@@ -113,6 +127,8 @@ class ShardTests(unittest.TestCase):
                         pattern = command[command.index('-run') + 1]
                         names = shard.test_inventory(group_listing, package)
                         selected = names[0 if group == 'api-a' else 1::2] if api else [name for name in names if (name == shard.CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+                        if group.startswith('manager'):
+                            selected = [shard.MANAGER_TESTS[group]] if group in shard.MANAGER_TESTS else [name for name in names if name not in shard.MANAGER_TESTS.values()]
                         self.assertEqual(inventory[-1], package)
                         for name in names:
                             self.assertEqual(bool(re.search(pattern, name)), name in selected)

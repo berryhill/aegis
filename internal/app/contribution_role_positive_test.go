@@ -153,7 +153,7 @@ func TestContributionRoleAuthorityPositiveAppAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := state.RoleAuthorities["controller"]
-	request := contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.QueueItemID, Digest: c.Digest}, RunID: c.RunID, QueueItemID: c.QueueItemID, Candidate: state.Candidate, CandidateEvidence: state.CandidateEvidence, Role: "controller", Epoch: r.Epoch, RoleAuthority: stable, Scope: c.Effect}
+	request := contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.QueueItemID, Digest: c.Digest}, RunID: c.RunID, QueueItemID: c.QueueItemID, Candidate: state.CandidateEvidence.Digest, CandidateEvidence: state.CandidateEvidence, Role: "controller", Epoch: r.Epoch, RoleAuthority: stable, Scope: c.Effect}
 	if _, err = s.CheckContributionEffectAs(ctx, sub, r.SessionID, c.Key, request, false); err != nil {
 		t.Fatal("read bridge", err)
 	}

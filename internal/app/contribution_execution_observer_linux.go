@@ -108,7 +108,7 @@ func (s *Service) contributionExecutionObserver(ctx context.Context, sub core.Su
 			return ErrDenied
 		}
 		serial++
-		binding := contribution.NativeBinding{IntentID: fmt.Sprintf("native-%s-%d-%d", base.Attempt.AttemptID, r.Epoch, serial), RunID: c.RunID, QueueItemID: c.QueueItemID, ClaimID: base.Claim.ClaimID, AttemptID: base.Attempt.AttemptID, Role: name, Epoch: r.Epoch, Authority: r.Ref(), Candidate: st.Candidate, PolicyDigest: c.TemplateDigest, CommandDigest: hermes.NativeCommandDigest(cmd)}
+		binding := contribution.NativeBinding{IntentID: fmt.Sprintf("native-%s-%s-%d-%d", base.Attempt.AttemptID, name, r.Epoch, st.Sequence+1), RunID: c.RunID, QueueItemID: c.QueueItemID, ClaimID: base.Claim.ClaimID, AttemptID: base.Attempt.AttemptID, Role: name, Epoch: r.Epoch, Authority: r.Ref(), Candidate: st.Candidate, PolicyDigest: c.TemplateDigest, CommandDigest: hermes.NativeCommandDigest(cmd)}
 		boundary, exists := st.NativeBoundaries[name]
 		kind := "native-boundary-extend"
 		if !exists {
@@ -203,11 +203,18 @@ func (s *Service) contributionExecutionObserver(ctx context.Context, sub core.Su
 		return appendEvent(ctx, contribution.ContinuityEvent{Kind: "checkpoint", Stage: cp.Stage, Candidate: lineage, Evidence: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: lineage, Digest: evidence}})
 	}, Turn: func(ctx context.Context, id string) error {
 		return appendEvent(ctx, contribution.ContinuityEvent{Kind: "reserve", Counter: "runtime-turn", OperationID: id})
-	}, Role: role, Native: native, StopRole: closeRole, Close: func(ctx context.Context) error {
+	}, Role: role, Native: native, StopRole: closeRole, Close: func(ctx context.Context, candidateAccepted bool) error {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 		defer cancel()
 		var result error
 		for session := range sessions {
+			// Candidate acceptance is not the end of the contribution. Keep its
+			// separately admitted controller for the held delivery stage; every
+			// later effect still rechecks its original mandate and current fence.
+			// Interrupted/expired execution instead shuts down every role.
+			if candidateAccepted && sessions[session] == "controller" {
+				continue
+			}
 			result = errors.Join(result, closeRole(cleanup, session))
 		}
 		return result

@@ -95,10 +95,21 @@ func (s *Service) PrepareContributionDecisionAs(ctx context.Context, sub core.Su
 		return out, ErrDenied
 	}
 	// Uncertain responses are read back, never automatically re-prompted.
-	if _, e = repo.GetContributionDecision(ctx, c.QueueItemID, in.ID); e == nil {
-		return out, ErrConflict
-	} else if e != fleet.ErrNotFound {
-		return out, e
+	if existing, readErr := repo.GetContributionDecision(ctx, c.QueueItemID, in.ID); readErr == nil {
+		if existing.Status != "requested" || existing.Role != in.Role || s.checkContributionDecision(ctx, sub, existing) != nil {
+			return out, ErrConflict
+		}
+		plan, err := s.GetPlan(existing.PlanID)
+		if err != nil || plan.Digest != existing.PlanDigest || core.PlanDigest(plan) != plan.Digest {
+			return out, ErrConflict
+		}
+		charter, err := s.GetCharter(existing.Binding.Charter.ID, existing.Binding.Charter.Revision)
+		if err != nil || charter.Digest != existing.Binding.Charter.Digest {
+			return out, ErrConflict
+		}
+		return ContributionDecisionReview{Intent: existing, Plan: plan, Charter: charter}, nil
+	} else if readErr != fleet.ErrNotFound {
+		return out, readErr
 	}
 	control, e := s.FleetRepository.(fleet.ContributionRepository).GetContributionControl(ctx, c.QueueItemID)
 	if e != nil {

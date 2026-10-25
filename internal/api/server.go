@@ -934,6 +934,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 	registerDoerSetupRoutes(e, svc, consoleManager)
 	registerDoerProtectedSetupRoutes(e, svc, consoleManager)
 	RegisterContributionDecisionRoutes(e, svc, consoleManager)
+	installContributionDecisionDelivery(svc)
 	doerPortal := NewDoerContinuationPortal(svc, consoleManager)
 	doerPortal.RegisterBrowser(e)
 	e.GET("/console/loops/doer", func(c *echo.Context) error {

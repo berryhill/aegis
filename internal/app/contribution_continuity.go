@@ -60,6 +60,9 @@ type ContributionContinuityInput struct {
 // continuation admission is integrated. Cancellation can come from a fresh
 // same-owner session; it records a fence, never claims runtime quiescence.
 func (s *Service) RecordContributionContinuityAs(ctx context.Context, subject core.Subject, session, key string, in ContributionContinuityInput) (contribution.Continuity, error) {
+	if in.Kind == "cancel-acknowledged" {
+		return contribution.Continuity{}, ErrDenied
+	}
 	if err := s.requirePrincipal(subject); err != nil {
 		return contribution.Continuity{}, err
 	}

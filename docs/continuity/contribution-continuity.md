@@ -1,110 +1,82 @@
-# Contribution continuity: bounded retained-control slice (#377)
+# Retained contribution continuity implementation guide
 
-## Implemented in this slice
+## Owner discovery and safe checkpoint readback
 
-`app.Service.ObserveContributionContinuityAs(ctx, subject, key)` reloads the
-same owner's sealed intake, Queue identity, retained counters and complete ordered
-history. It requires authenticated principal identity, does not renew anything,
-and does not require the original conversation to still exist.
+`/contribute status [issue-url]` and `/contribute resume [issue-url]` resolve
+through existing Queue inventory and `GetContributionForQueue`, not a new index.
+No reference selects only one same-owner nonterminal contribution; ambiguity is
+an explicit conflict, never latest-wins. Canonical issue URL matches are exact;
+opaque retained keys remain compatible. Terminal, foreign-owner and substituted
+immutable Loop references deny. Observation restores the exact selected Loop/key
+but starts no runtime and grants no continuation authority.
 
-`app.Service.RecordContributionContinuityAs(ctx, subject, session, key, input)`
-requires **fresh** configured principal authentication, the exact contract digest,
-expected sequence/digest, original session (except cancellation), and exact latest
-enabled role/charter/runtime definitions. New-session observation is intentionally
-not new-session execution. Substituted/disabled/successor participants cannot use
-this path. This is an internal application API, not a new public endpoint.
+`internal/app/contribution_discovery.go` owns resolution;
+`internal/app/contribution_readback.go` owns the typed allowlist projected by
+`internal/managergateway/contribution.go`. It reports stage, lineage separately
+from frozen digest, exact Loop/run/Queue, independent used/limit counters, role
+epoch and stop-request/ack booleans, closed decision outcomes and unresolved native
+intent IDs. No PID/start/boot, command/environment, private path, runtime home or
+receipt secret is copied from internal continuity. `completed` remains false;
+checkpoint observation is not #379 whole-contribution disposition.
 
-`fleet.ContributionContinuityRepository` is implemented on the **existing** fleet
-Badger `Store`. Every append, head and audit fact shares its transaction. Reads
-reconstruct the entire digest-linked history and reject missing/rolled-back heads,
-missing/tampered events and unexpected records. No RuntimeBinding is modified.
 
-The once-sealed limits are candidate <= original intake budget (currently <=2),
-Queue attempts 1, runtime turns 128, infrastructure rechecks 2, decision deliveries
-8, with the original absolute deadline. Counters are cumulative **reservations**,
-not proof an effect happened. Appending a checkpoint retains its evidence reference,
-not a passing verifier verdict. Every canonical stage is an allowed observation;
-the slice does not implement or claim to execute the whole stage graph.
+The [canonical contribution contract](../../.hermes/contribution-happy-path-contract.md)
+is the acceptance oracle. This guide describes source implementation, not #379
+completion, real-provider qualification, installed acceptance or publication.
 
-Decision states are requested, delivered, unanswered, denied, expired,
-dialog-cancelled, unavailable, timeout and unknown. History preserves whether
-request delivery occurred. Unavailable cannot turn into a pending human decision;
-a terminal outcome cannot be silently redispatched under the same ID. A requested
-record consumes a separately reserved delivery. There is deliberately **no**
-caller-authored approved state or approval receipt. These are transport observations,
-not protected-authority evidence. Real adapter delivery/readback is still required.
+## Retained invocation and admission
 
-Cancellation from a fresh same-owner session atomically appends cancellation intent
-and the **existing** sticky `contribution.Control.Stop` fence consumed by the
-execution owner. It does not mark Queue cancelled, assert runtime stop, mint a stop
-acknowledgement or release source/publication custody. It works before initialization
-and after the absolute execution deadline. HTTP cancellation alone writes nothing.
-Cancellation is not implemented as `StopContributionInSessionAs`, whose existing
-Queue transition does not provide the required process-Wait proof.
+Use `/contribute resume [reference]` in a freshly authenticated same-owner manager
+session. An authorized Resume reloads the original contract and restores its
+immutable Loop selection. It retains the original Queue/run/claim/attempt, scope,
+absolute deadline, source custody and cumulative counters. Login is not approval
+or new task consent. Compatible replacement role epochs use independently admitted
+clean sessions; the immutable initial RuntimeBinding and expired leases are not
+rewritten. Doer same-session controls and qualification tiers remain unchanged.
 
-## Required central consumer integration (not implemented here)
+`internal/app/contribution_resume.go`, the owning execution observer, and the
+ManagedContribution checkpoint path retain held freeze/test continuation. The
+accepted controller is retained through handoff; builder/tester shutdown and
+failure cleanup still require exact owned process Wait/group-empty proof.
 
-Only new contribution-domain, dedicated app and fleet files were authorized;
-central runtime/Queue/delivery wiring is owned concurrently. No sibling worktree
-source was copied, edited, run or represented as merged.
+## Protected provisioning decision
 
-1. **Orchestration lifecycle:** initialize once at the existing invocation; reserve
-   candidate/Queue/runtime-turn/infrastructure/decision-delivery counters before
-   the corresponding existing owning-service effect. Reload after an uncertain
-   response before retry; never create another root or reset a counter. Current
-   public app append deliberately accepts only the original session and does not
-   admit a worker role. The production worker must use a narrowly scoped service
-   boundary that independently admits its exact role authority, not impersonate
-   this principal API or accept a boolean callback. Stage checkpoints must reference
-   actual controller-validated evidence and retain candidate/Queue/run identity.
-2. **Transport lifetime:** the controller must retain the existing service-owned
-   bounded execution after HTTP disconnect. Do not use request `ctx` as the run
-   lifetime. Retain admitted hard deadlines; do not extend grants with console TTL.
-3. **Role continuation:** implemented dedicated app APIs now attach a normally
-   authenticated observation, admit each separately launched role with actual
-   AuthorityCommands admission, and repeat fresh admission through
-   `CheckContributionRoleAs`. The original RuntimeBinding stays immutable.
-   RoleAuthority includes a retained epoch and stable `Ref()` independent of
-   checkpoint head. Successors remain denied: role-process acknowledgement alone
-   yields `ErrNativeQuiescenceUnavailable`, never release or replacement success.
-4. **Stop proof:** dedicated Hermes `StopContributionRole` produces a private
-   sealed role-process proof only after actual `command.Wait` and process-group
-   quiescence. `StopContributionRoleAs` first persists a fence then persists the
-   exact proof binding/boot/process-start acknowledgement. Timeout/restart leaves
-   requested custody. This proof explicitly does NOT cover separately owned native
-   source/check effects; the trusted native join is still absent. Session ended,
-   PID absence/reuse, lease expiry or `Close()==nil` cannot substitute for that join.
-   Runtime authority expiry still needs integrated native-child quiescence.
-5. **Delivery:** #378 `Authority.Admit(ctx, intent, writing)` must reload cancellation,
-   current epoch/role admission/deadline before each effect. `Repository.Reserve`,
-   `Finish`, `Fence` remain the sole delivery intent/outcome owner. `Source.WithAccepted`
-   must preserve accepted candidate binding. Unknown effects quarantine conflicting
-   work until authoritative same-target reconciliation; confirmed merge is immutable.
-   Do not add a second delivery log here or turn a continuity checkpoint into a
-   successful GitHub effect. Cancellation fence and reservation need a shared
-   serializable owner boundary, not a check-then-unfenced remote write.
-6. **Protected decision delivery:** qualify the real protected adapter before
-   claiming executing. Record actual request/delivery/readback and independent
-   approval references. An unavailable adapter yields no pending human request and
-   no unchanged redispatch; no account/channel switching, fake terminal or agent
-   operation of confirmation controls. Observation records cannot authorize effects.
-7. **Cancellation:** consumers must read the sticky existing control at every
-   consequential boundary, request bounded child shutdown and retain custody until
-   durable exact stop proof. The current source cancellation API records intent,
-   not completed cancellation. `#379` must independently join these boundaries.
+`ExecuteContributionAs` invokes a trusted owning-service delivery port only when
+an exact sealed role lacks verified provisioning. The real API constructor installs
+`internal/api/contribution_decision_delivery.go`: it resolves the intent from the
+canonical contract/current stage/candidate/control/role, reserves delivery before
+launch, and invokes the existing inode-pinned hidden companion with FD3 bearer
+custody and the exact owning config. No arbitrary command, automatic approval,
+new queue or effect store is introduced.
 
-## Evidence tier and launch impact
+Native password login and session/purpose-bound exact plan review remain required.
+The native review reuses the already reserved canonical plan without spending twice.
+A companion's `approved` output alone is unknown: canonical decision, exact plan,
+consumed approval and verified matching provisioning receipt must be reloaded.
+Ordinary fresh admission follows before any execution. Missing helper/transport is
+unavailable; timeout, cancellation, denial, expiry and unknown remain distinct.
+Same-intent replay reads retained status and never launches another helper, including
+requested/applying/unknown crash boundaries. Reservation is not delivery evidence.
 
-Tests exercise actual application admission and Badger persistence/reopen,
-controlled-clock deadline behavior, concurrent CAS, failure rollback, corrupt history,
-original-session/new-owner denial and transport-state negatives. Transport subjects
-and source issue reader are controlled fixtures, not real password/native approval
-or managed-provider proof. No live service, release, installed target, protected
-human decision, runtime stop or GitHub effect was exercised.
+## Native/source custody and delivery seam
 
-No CLI/config/deployment/runtime-provider changes, release archive, recording,
-checksum or contributor issue is supplied by this internal first slice. The canonical
-contribution contract, README/security/threat-model/architecture/quickstart/demo and
-release claims must not be promoted to complete continuity on this basis. Central
-integration plus independent acceptance is still required; this is not whole #377
-or #379 acceptance.
+Native command bindings use stable `run-pass-N` lineage before a binary exists.
+Frozen manifest identity is `CandidateEvidence.Digest`, not that lineage. The
+lock-held `WithContributionContinuityCandidateAs` joins the exact accepted frozen
+candidate to current lineage, same original attempt/run/policy, completed closed
+native inventories and acknowledged builder/tester stops. Both roles need current
+lineage coverage; bounded earlier pass lineages are historical, never substitution.
+`CheckContributionEffectAs` takes the actual frozen digest. Writes require its
+private synchronous live custody context; outside or retained/escaped contexts deny.
+Unknown native outcomes retain custody. These checks do not mint a GitHub effect or
+whole-contribution success; #378 owns delivery records and #379 owns joined disposition.
+
+## Evidence and remaining gates
+
+Focused protected HTTP/owning-port tests cover false-approved output, unavailable
+transport, replay and prelaunch reservation without Queue claims or provisioning.
+The managed manager fixture adds the real source-lock/native/role/effect join and
+outside/escaped-context denials. Its expensive full run must be independently rerun
+on the final candidate; compilation is not that acceptance. Controlled fixtures are
+not real protected human approval, real-provider execution or live qualification.
+Parent retains full verification, freeze, independent tester and publication decisions.

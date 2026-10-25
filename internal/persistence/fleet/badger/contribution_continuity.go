@@ -18,10 +18,10 @@ const familyContributionContinuity byte = 0x78
 // Preserve the historical hard maximum; ordinary activity cannot consume the
 // final cancellation plus request/ack slots for the three sealed roles.
 const contributionContinuityMax = 4096
-const contributionContinuitySafetyTail = 1 + 2*3
+const contributionContinuitySafetyTail = 12
 
 func contributionSafetyEvent(kind string) bool {
-	return kind == "native-completed" || kind == "native-unknown" || kind == "cancel-requested" || kind == "role-stop-requested" || kind == "role-stop-acknowledged"
+	return kind == "cancel-acknowledged" || kind == "native-boundary-closed" || kind == "native-completed" || kind == "native-unknown" || kind == "cancel-requested" || kind == "role-stop-requested" || kind == "role-stop-acknowledged"
 }
 
 var _ fleet.ContributionContinuityRepository = (*Store)(nil)
@@ -97,14 +97,6 @@ func (s *Store) AppendContributionContinuity(ctx context.Context, event contribu
 			return e
 		}
 		tail := uint64(contributionContinuitySafetyTail)
-		for _, n := range prior.NativeEffects {
-			if n.State == "reserved" {
-				tail++
-			}
-		}
-		if event.Kind == "native-reserved" {
-			tail++
-		}
 		if prior.Sequence >= contributionContinuityMax || (!contributionSafetyEvent(event.Kind) && prior.Sequence >= contributionContinuityMax-tail) {
 			return contribution.ErrContinuityExhausted
 		}
@@ -112,7 +104,7 @@ func (s *Store) AppendContributionContinuity(ctx context.Context, event contribu
 		if e != nil {
 			return e
 		}
-		if control.Stop && event.Kind != "native-completed" && event.Kind != "native-unknown" && event.Kind != "cancel-requested" && event.Kind != "role-stop-requested" && event.Kind != "role-stop-acknowledged" {
+		if control.Stop && !contributionSafetyEvent(event.Kind) && event.Kind != "native-completed" && event.Kind != "native-unknown" && event.Kind != "cancel-requested" && event.Kind != "role-stop-requested" && event.Kind != "role-stop-acknowledged" {
 			return contribution.ErrContinuityFenced
 		}
 		if e = checkContributionNativeFence(txn, c, prior, event); e != nil {

@@ -39,6 +39,8 @@ var (
 )
 
 type Service struct {
+	// ContributionDecisionDelivery is installed by trusted owning-server composition only.
+	ContributionDecisionDelivery func(context.Context, core.Subject, string, string) (string, error)
 	// DashboardActionAuthentication is installed once by the owning console
 	// before serving. Only explicitly dashboard-capable operations consult it.
 	DashboardActionAuthentication func(core.Subject) error
@@ -57,18 +59,20 @@ type Service struct {
 
 	CredentialAuthority *credentials.Authority
 	// ContributionReader is an owning-controller dependency, never request authority.
-	ContributionReader ContributionSourceReader
-	FleetRepository    fleet.Repository
-	Fleet              *orchestration.FleetService
-	QueueWorker        *orchestration.QueueWorker
-	nativeConnectionMu sync.Mutex
-	nativeReviews      map[string]nativeConnectionReview
-	loopRunMu          sync.Mutex      // guards Run admission/preparation and foreground worker ownership
-	loopRunWorkers     map[string]bool // guarded by loopRunMu; durable claims remain the execution fence
-	doerTaskMu         sync.Mutex      // foreground retained-task continuation in this owning service
-	capMu              sync.RWMutex
-	capabilities       map[[32]byte]broker.Capability
-	brokerRequests     map[[32]byte]map[[32]byte]struct{}
+	ContributionReader     ContributionSourceReader
+	FleetRepository        fleet.Repository
+	Fleet                  *orchestration.FleetService
+	QueueWorker            *orchestration.QueueWorker
+	contributionDecisionMu sync.Mutex // serializes owning-service delivery before durable reservation
+	nativeConnectionMu     sync.Mutex
+	nativeReviews          map[string]nativeConnectionReview
+	loopRunMu              sync.Mutex                         // guards Run admission/preparation and foreground worker ownership
+	contributionRuns       map[string]*contributionRunControl // guarded by loopRunMu
+	loopRunWorkers         map[string]bool                    // guarded by loopRunMu; durable claims remain the execution fence
+	doerTaskMu             sync.Mutex                         // foreground retained-task continuation in this owning service
+	capMu                  sync.RWMutex
+	capabilities           map[[32]byte]broker.Capability
+	brokerRequests         map[[32]byte]map[[32]byte]struct{}
 }
 
 // AuditAuthority is the narrow append and verification boundary that hardened

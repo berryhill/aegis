@@ -29,17 +29,17 @@ type ContributionExecutionResult struct {
 // ExecuteContributionAs owns preparation, exact binding and processing for the
 // already sealed intake. It does not publish a Graph or acquire new approvals.
 func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subject, key string) (result ContributionExecutionResult, err error) {
-	s.loopRunMu.Lock()
 	var work *orchestration.WorkRequest
-	defer func() {
-		if work == nil {
-			s.loopRunMu.Unlock()
-		}
-	}()
 	c, view, err := s.ReadContributionAs(ctx, subject, key)
 	if err != nil {
 		return result, err
 	}
+	runCtx, finish, registerErr := s.beginContributionRun(ctx, c)
+	if registerErr != nil {
+		return result, registerErr
+	}
+	defer finish()
+	ctx = runCtx
 	result.Execution = &view
 	lv, err := s.GetLoopViewAs(ctx, subject, c.Loop.ID, c.Loop.Revision)
 	if err != nil || lv.Revision.Digest != c.Loop.Digest {
@@ -56,7 +56,7 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 	}
 	// Durable attempts and active controller ownership are replay fences, including
 	// the binding-to-claim interval. Never replace a spent execution with a new one.
-	if s.loopRunWorkers[c.QueueItemID] || len(view.Attempts) > 0 || (!view.Projection.State.IsPreparation() && view.Projection.State != queue.StateQueued) {
+	if len(view.Attempts) > 0 || (!view.Projection.State.IsPreparation() && view.Projection.State != queue.StateQueued) {
 		result.Reason = "existing_execution"
 		if record, readErr := s.ReadContributionExecutionAs(ctx, subject, key); readErr == nil {
 			result.Candidate = &record
@@ -85,8 +85,25 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 			return result, nil
 		}
 		if !verified {
-			result.Reason = "provisioning_receipt_missing"
-			return result, nil
+			result.Reason = "decision_delivery_unavailable"
+			if s.ContributionDecisionDelivery == nil {
+				return result, nil
+			}
+			status, deliveryErr := s.ContributionDecisionDelivery(ctx, subject, key, result.RequiredRole)
+			if deliveryErr != nil {
+				return result, deliveryErr
+			}
+			result.Reason = "decision_delivery_" + status
+			if status != "approved" {
+				return result, nil
+			}
+			// Transport output is not provisioning authority. Re-read ordinary
+			// canonical state and then repeat normal fresh role admission below.
+			verified, e = s.hasVerifiedReceipt(role.Charter.Digest)
+			if e != nil || !verified || s.requirePrincipal(subject) != nil {
+				result.Reason = "provisioning_receipt_missing"
+				return result, nil
+			}
 		}
 		charter, e := s.GetCharter(role.Charter.ID, role.Charter.Revision)
 		if e != nil || charter.Digest != role.Charter.Digest {
@@ -100,6 +117,21 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 		}
 	}
 	result.RequiredRole, result.RequiredCharter = "", nil
+	// Persist entry into effectful preparation before a session can be launched.
+	_, preparation, _, prepErr := s.ObserveContributionContinuityAs(ctx, subject, key)
+	if prepErr != nil {
+		return result, prepErr
+	}
+	if preparation.Sequence == 0 {
+		preparation, prepErr = s.RecordContributionContinuityAs(ctx, subject, c.SessionID, key, ContributionContinuityInput{ContractDigest: c.Digest, Kind: "initialize"})
+		if prepErr != nil {
+			return result, prepErr
+		}
+	}
+	_, prepErr = s.RecordContributionContinuityAs(ctx, subject, c.SessionID, key, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: preparation.Sequence, ExpectedDigest: preparation.Digest, Kind: "checkpoint", Stage: "prepare", Candidate: c.RunID, Evidence: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.Key, Digest: c.Digest}})
+	if prepErr != nil {
+		return result, prepErr
+	}
 	input := QueueLoopInput{Agent: c.Controller, Loop: c.Loop, IdempotencyKey: c.Key}
 	prepared, err := s.prepareQueuedLoop(ctx, subject, input, lv, QueueLoopResult{RequestID: c.Key, QueueItemID: c.QueueItemID}, c.RunID, &work)
 	if err != nil {
@@ -110,15 +142,7 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 	if work == nil {
 		return result, nil
 	}
-	if s.loopRunWorkers == nil {
-		s.loopRunWorkers = make(map[string]bool)
-	}
-	s.loopRunWorkers[c.QueueItemID] = true
-	s.loopRunMu.Unlock()
-	defer func() { s.loopRunMu.Lock(); delete(s.loopRunWorkers, c.QueueItemID); s.loopRunMu.Unlock() }()
-	// The admitted owning service, not HTTP transport, owns this bounded run.
-	runCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), c.Deadline)
-	defer cancel()
+	// The registered service context owns this run, not the HTTP caller.
 	_, err = s.ProcessQueueItemAs(runCtx, subject, *work)
 	ctx = runCtx
 	if errors.Is(err, orchestration.ErrContributionCandidatePending) {

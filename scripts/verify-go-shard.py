@@ -3,7 +3,9 @@
 
 API alternates the actual mode's sorted default inventory; orchestration isolates
 the measured contribution integration and assigns every other current/future
-test, runnable example and fuzz target to its remainder. All children/seeds run.
+test, runnable example and fuzz target to its remainder. Manager isolates its
+three measured contribution integrations with the same inventory mechanism.
+All children/seeds run.
 Benchmarks are inventoried but not run by default. TestMain runs in each process.
 All other packages remain exact-once, including future packages.
 """
@@ -18,6 +20,12 @@ ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
 ORCHESTRATION = ROOT + 'internal/orchestration'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
+MANAGER = ROOT + 'internal/managergateway'
+MANAGER_TESTS = {
+    'manager-contribution-repair': 'TestContributionManagerApprovedNativeRepair',
+    'manager-contribution-disconnect': 'TestContributionManagerDisconnectKeepsValidAuthorityExecution',
+    'manager-contribution-resume': 'TestContributionManagerExpiredFrozenCandidateExplicitFreshResume',
+}
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
@@ -25,6 +33,8 @@ GROUPS = {
     'implementation': ('internal/implementation',),
     'orchestration': ('internal/orchestration',),
     'orchestration-contribution': ('internal/orchestration',),
+    'manager': ('internal/managergateway',),
+    **{group: ('internal/managergateway',) for group in MANAGER_TESTS},
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
     # CI race timing: update alone takes 368-373s; never pair it with the remainder.
@@ -52,13 +62,14 @@ def groups(packages):
     expected = Counter({p: 1 for p in set(assigned)})
     expected[API] = 2
     expected[ORCHESTRATION] = 2
+    expected[MANAGER] = 4
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, MANAGER: 3}):
         raise ValueError('package coverage mismatch')
     return selected
 
@@ -88,6 +99,11 @@ def test_pattern(names, group):
         if CONTRIBUTION_TEST not in names:
             raise ValueError('missing contribution integration test')
         selected = [name for name in names if (name == CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+    elif group == 'manager' or group in MANAGER_TESTS:
+        if not set(MANAGER_TESTS.values()) <= set(names):
+            raise ValueError('missing manager contribution integration test')
+        selected = ([MANAGER_TESTS[group]] if group in MANAGER_TESTS else
+                    [name for name in names if name not in MANAGER_TESTS.values()])
     else:
         raise ValueError('unknown test partition')
     if not selected:
@@ -111,8 +127,8 @@ def main(argv=None):
     api = args.group in ('api-a', 'api-b')
     timeout = '12m' if args.race and api else '8m'
     command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-    if api or args.group in ('orchestration', 'orchestration-contribution'):
-        package = API if api else ORCHESTRATION
+    if api or args.group in ('orchestration', 'orchestration-contribution', 'manager') or args.group in MANAGER_TESTS:
+        package = API if api else MANAGER if args.group == 'manager' or args.group in MANAGER_TESTS else ORCHESTRATION
         listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
         names = test_inventory(listing.stdout, package)
         command += ['-run', test_pattern(names, args.group)]

@@ -53,7 +53,7 @@ func (s *Store) ReserveContributionDecision(ctx context.Context, d contribution.
 		}
 		// Use the existing reducer and log: this does not reset original authority.
 		at := d.RequestedAt
-		event, e := contribution.SealContinuityEvent(contribution.ContinuityEvent{SchemaVersion: contribution.ContinuitySchema, QueueItemID: c.QueueItemID, ContractDigest: c.Digest, OwnerID: c.OwnerID, SessionID: c.SessionID, Sequence: state.Sequence + 1, PreviousDigest: state.Digest, Kind: "reserve", Counter: "decision-delivery", At: at})
+		event, e := contribution.SealContinuityEvent(contribution.ContinuityEvent{SchemaVersion: contribution.ContinuitySchema, QueueItemID: c.QueueItemID, ContractDigest: c.Digest, OwnerID: c.OwnerID, SessionID: c.SessionID, Sequence: state.Sequence + 1, PreviousDigest: state.Digest, Kind: "reserve", Counter: "decision-delivery", OperationID: d.ID, At: at})
 		if e != nil {
 			return e
 		}

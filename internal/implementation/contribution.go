@@ -402,6 +402,9 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 				return record, err
 			}
 			record.Frozen = &candidate
+			// apply advanced this trusted context to the exact edited preimages.
+			// Retain it with the freeze so resume cannot revert to base preimages.
+			record.Expected = cloneContext(expected)
 			record.BoundaryIndex = candidate.Index
 			record.BoundarySource = frozen.Digest
 			record.State = "phase_boundary"

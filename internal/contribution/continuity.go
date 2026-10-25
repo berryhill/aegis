@@ -59,26 +59,27 @@ type ContinuityEvent struct {
 }
 
 type Continuity struct {
-	Continuation      *Continuation             `json:"continuation,omitempty"`
-	Reservations      map[string]string         `json:"reservations,omitempty"`
-	NativeBoundaries  map[string]NativeBoundary `json:"native_boundaries,omitempty"`
-	NativeEffects     map[string]NativeEffect   `json:"native_effects,omitempty"`
-	RoleEpochs        map[string]uint64         `json:"role_epochs,omitempty"`
-	CandidateEvidence reference.DigestRef       `json:"candidate_evidence"`
-	RoleStops         map[string]RoleStop       `json:"role_stops,omitempty"`
-	Observations      map[string]bool           `json:"observations,omitempty"`
-	RoleAuthorities   map[string]RoleAuthority  `json:"role_authorities,omitempty"`
-	QueueItemID       string                    `json:"queue_item_id"`
-	ContractDigest    string                    `json:"contract_digest"`
-	Sequence          uint64                    `json:"sequence"`
-	Digest            string                    `json:"digest"`
-	Limits            ContinuityLimits          `json:"limits"`
-	Used              Counters                  `json:"used"`
-	Stage             string                    `json:"stage"`
-	Candidate         string                    `json:"candidate"`
-	LastAt            time.Time                 `json:"last_at"`
-	CancelRequested   bool                      `json:"cancel_requested"`
-	Decisions         map[string]string         `json:"decisions"`
+	Continuation       *Continuation             `json:"continuation,omitempty"`
+	Reservations       map[string]string         `json:"reservations,omitempty"`
+	NativeBoundaries   map[string]NativeBoundary `json:"native_boundaries,omitempty"`
+	NativeEffects      map[string]NativeEffect   `json:"native_effects,omitempty"`
+	RoleEpochs         map[string]uint64         `json:"role_epochs,omitempty"`
+	CandidateEvidence  reference.DigestRef       `json:"candidate_evidence"`
+	RoleStops          map[string]RoleStop       `json:"role_stops,omitempty"`
+	Observations       map[string]bool           `json:"observations,omitempty"`
+	RoleAuthorities    map[string]RoleAuthority  `json:"role_authorities,omitempty"`
+	QueueItemID        string                    `json:"queue_item_id"`
+	ContractDigest     string                    `json:"contract_digest"`
+	Sequence           uint64                    `json:"sequence"`
+	Digest             string                    `json:"digest"`
+	Limits             ContinuityLimits          `json:"limits"`
+	Used               Counters                  `json:"used"`
+	Stage              string                    `json:"stage"`
+	Candidate          string                    `json:"candidate"`
+	LastAt             time.Time                 `json:"last_at"`
+	CancelAcknowledged bool                      `json:"cancel_acknowledged"`
+	CancelRequested    bool                      `json:"cancel_requested"`
+	Decisions          map[string]string         `json:"decisions"`
 }
 
 func ContinuityStage(stage string) bool {
@@ -148,7 +149,7 @@ func validContinuityPayload(e ContinuityEvent) bool {
 		payload.RoleStop = nil
 	case "role-admitted":
 		payload.RoleAuthority = nil
-	case "observation", "cancel-requested":
+	case "observation", "cancel-requested", "cancel-acknowledged":
 	default:
 		return false
 	}
@@ -171,10 +172,10 @@ func ApplyContinuity(c Contract, prior Continuity, e ContinuityEvent) (Continuit
 	}
 	// Expiry does not prevent preserving cancellation intent. It never renews the
 	// original deadline, grants or runtime. Stop acknowledgement is separate.
-	if e.Kind != "native-boundary-closed" && e.Kind != "native-completed" && e.Kind != "native-unknown" && e.Kind != "cancel-requested" && e.Kind != "role-stop-requested" && e.Kind != "role-stop-acknowledged" && !e.At.Before(c.Deadline) {
+	if e.Kind != "cancel-acknowledged" && e.Kind != "native-boundary-closed" && e.Kind != "native-completed" && e.Kind != "native-unknown" && e.Kind != "cancel-requested" && e.Kind != "role-stop-requested" && e.Kind != "role-stop-acknowledged" && !e.At.Before(c.Deadline) {
 		return prior, ErrContinuityExhausted
 	}
-	if prior.CancelRequested && e.Kind != "native-boundary-closed" && e.Kind != "native-completed" && e.Kind != "native-unknown" && e.Kind != "role-stop-requested" && e.Kind != "role-stop-acknowledged" {
+	if prior.CancelRequested && e.Kind != "cancel-acknowledged" && e.Kind != "native-boundary-closed" && e.Kind != "native-completed" && e.Kind != "native-unknown" && e.Kind != "role-stop-requested" && e.Kind != "role-stop-acknowledged" {
 		return prior, ErrContinuityFenced
 	}
 	next := prior
@@ -296,6 +297,27 @@ func ApplyContinuity(c Contract, prior Continuity, e ContinuityEvent) (Continuit
 				return prior, ErrContinuityConflict
 			}
 			next.Decisions[e.DecisionID] = e.DecisionOutcome
+		case "cancel-acknowledged":
+			if !prior.CancelRequested || prior.CancelAcknowledged {
+				return prior, ErrContinuityFenced
+			}
+			for role, r := range prior.RoleAuthorities {
+				stop, ok := prior.RoleStops[role]
+				if !ok || !stop.Acknowledged || stop.Authority != r {
+					return prior, ErrNativeQuiescenceUnavailable
+				}
+			}
+			for _, b := range prior.NativeBoundaries {
+				if !b.Closed {
+					return prior, ErrNativeQuiescenceUnavailable
+				}
+			}
+			for _, n := range prior.NativeEffects {
+				if n.State != "completed" {
+					return prior, ErrNativeQuiescenceUnavailable
+				}
+			}
+			next.CancelAcknowledged = true
 		case "cancel-requested":
 			next.CancelRequested = true
 		default:

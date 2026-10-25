@@ -164,11 +164,14 @@ func TestContributionManagerExecuteJourney(t *testing.T) {
 	if e != nil || len(items) != 0 || reader.calls != 0 {
 		t.Fatal("ordinary or malformed text admitted work")
 	}
-	for _, input := range []string{"/contribute select " + ref.ID, "/contribute run " + reader.source.URL.URL + " local-only", "/contribute run " + reader.source.URL.URL + " local-only", "/contribute status", "/contribute narrow local-only", "/contribute stop", "/contribute status"} {
+	for _, input := range []string{"/contribute select " + ref.ID, "/contribute run " + reader.source.URL.URL + " local-only", "/contribute run " + reader.source.URL.URL + " local-only", "/contribute status", "/contribute narrow local-only", "/contribute stop"} {
 		result, e := s.Execute(ctx, subject, id, token, input)
 		if e != nil {
 			t.Fatalf("%s: %v %+v", input, e, result)
 		}
+	}
+	if _, err := s.Execute(ctx, subject, id, token, "/contribute status"); err == nil {
+		t.Fatal("terminal invocation rediscovered")
 	}
 	items, e = r.ListQueueItems(ctx)
 	if e != nil || len(items) != 1 || reader.calls != 1 {
@@ -200,7 +203,7 @@ func TestContributionManagerManagedPrerequisiteDenial(t *testing.T) {
 	}
 	for range 2 {
 		result, e := s.Execute(ctx, subject, id, token, "/contribute run "+reader.source.URL.URL)
-		if (e != nil && e != app.ErrDenied) || result.State != "blocked" || result.Reason != "provisioning_receipt_missing" {
+		if (e != nil && e != app.ErrDenied) || result.State != "blocked" || result.Reason != "decision_delivery_unavailable" {
 			t.Fatalf("missing exact independent prerequisite: %+v %v", result, e)
 		}
 		execution := result.Data["execution"].(app.ContributionExecutionResult)

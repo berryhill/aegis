@@ -108,12 +108,14 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	stageNow := time.Now().UTC()
 	s.Now = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return stageNow }
 	lifetime := int64(300)
-	if expiry {
-		lifetime = 60
-		s.Config.Principal.AuthTTL = time.Minute
-	}
 	subject, e := s.Authenticate(ctx)
 	must(e)
+	// Fault only the initial subject; policy and fresh admission remain normal.
+	initialExpiry := subject.ExpiresAt
+	if expiry {
+		subject.ExpiresAt = stageNow.Add(time.Minute)
+		initialExpiry = subject.ExpiresAt
+	}
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
 	must(e)
 	defer repository.Close()
@@ -167,7 +169,7 @@ if [ "$1" = "--version" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install direc
 exec sleep 240
 `), 0700))
 	must(os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(script), 0700))
-	adapter := hermes.New(executable, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	adapter := hermes.NewWithClock(executable, slog.New(slog.NewTextHandler(io.Discard, nil)), s.Now)
 	s.Hermes = adapter
 	s.Config.HermesExecutable = executable
 	routed, err := orchestration.NewRoutedRuntimeAdapter(adapter, s.Config.StateDir)
@@ -248,6 +250,14 @@ exec sleep 240
 		}
 		subject, e = s.Authenticate(ctx)
 		must(e)
+		if s.Config.Principal.AuthTTL != 5*time.Minute || lifetime != 300 || !subject.ExpiresAt.Equal(s.Now().Add(5*time.Minute)) {
+			t.Fatal("fresh authentication changed baseline policy")
+		}
+		freshMandate, _, previewErr := s.PreviewSessionAs(ctx, subject, "controller", 1, "", core.Environment{Name: "local"})
+		must(previewErr)
+		if !freshMandate.ExpiresAt.Equal(s.Now().Add(300 * time.Second)) {
+			t.Fatal("fresh mandate inherited initial fault")
+		}
 		_, held, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
 		must(e)
 		retained, e := s.ReadContributionExecutionAs(ctx, subject, key)
@@ -269,6 +279,16 @@ exec sleep 240
 		must(e)
 		oldAttempt, e := repository.GetAttempt(ctx, oldClaim.AttemptID)
 		must(e)
+		if !oldClaim.ExpiresAt.Equal(initialExpiry) {
+			t.Fatal("original claim not capped by initial subject")
+		}
+		for _, role := range held.RoleAuthorities {
+			mandate, readErr := s.Authority.GetMandate(ctx, role.MandateID)
+			must(readErr)
+			if !mandate.ExpiresAt.Equal(initialExpiry) {
+				t.Fatal("original role mandate not capped by initial subject")
+			}
+		}
 		if s.Now().Before(oldClaim.ExpiresAt) {
 			t.Fatal("original claim expiry not exercised")
 		}
@@ -299,7 +319,7 @@ exec sleep 240
 	if len(disconnected) != 0 && disconnected[0] && runCtx.Err() == nil {
 		t.Fatal("builder disconnect not exercised")
 	}
-	_, continuity, events, err := s.ObserveContributionContinuityAs(ctx, subject, key)
+	sealed, continuity, events, err := s.ObserveContributionContinuityAs(ctx, subject, key)
 	must(err)
 	if continuity.Used.Candidates != 2 || continuity.Used.QueueAttempts != 1 || continuity.Used.RuntimeTurns != 4 || continuity.Stage != "review" {
 		t.Fatalf("owning counters/stage: %+v", continuity)
@@ -316,10 +336,32 @@ exec sleep 240
 	if record.State != "candidate_accepted" || len(record.Passes) != 2 || record.Baseline.Outcome != "failed" || record.Passes[0].Check.Outcome != "failed" || record.Passes[1].Check.Outcome != "passed" {
 		t.Fatalf("RED repair GREEN: %+v", record)
 	}
+	// The one explicit continuation retains its admitted controller through
+	// candidate handoff; no second consent or replacement controller is needed.
 	candidate, err := s.AcceptedContributionCandidateAs(ctx, subject, key)
 	must(err)
 	if candidate.Digest != record.Passes[1].Candidate.Digest {
 		t.Fatal("accepted handoff drift")
+	}
+	controller := continuity.RoleAuthorities["controller"]
+	request := contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: sealed.QueueItemID, Digest: sealed.Digest}, RunID: sealed.RunID, QueueItemID: sealed.QueueItemID, Candidate: candidate.Digest, CandidateEvidence: continuity.CandidateEvidence, Role: "controller", Epoch: controller.Epoch, RoleAuthority: controller.Ref(), Scope: sealed.Effect}
+	if _, e := s.CheckContributionEffectAs(ctx, subject, controller.SessionID, key, request, true); e == nil {
+		t.Fatal("write outside custody")
+	}
+	var escaped context.Context
+	must(s.WithContributionContinuityCandidateAs(ctx, subject, controller.SessionID, key, func(held context.Context, frozen orchestration.ContributionCandidate) error {
+		escaped = held
+		if frozen.Digest != candidate.Digest {
+			return fmt.Errorf("frozen identity drift")
+		}
+		_, e := s.CheckContributionEffectAs(held, subject, controller.SessionID, key, request, true)
+		return e
+	}))
+	if escaped == nil {
+		t.Fatal("missing held callback")
+	}
+	if _, e := s.CheckContributionEffectAs(escaped, subject, controller.SessionID, key, request, true); e == nil {
+		t.Fatal("escaped custody context")
 	}
 	before, err := s.Authority.ListAuthorityContexts(ctx)
 	must(err)
@@ -333,7 +375,26 @@ exec sleep 240
 	must(err)
 	again, err := os.Stat(c.Workspace)
 	must(err)
-	if len(items) != 1 || reader.calls != 1 || len(before) != 4 || len(after) != len(before) || !os.SameFile(info, again) {
+	expectedAuthorities := 4
+	if expiry {
+		expectedAuthorities = 6 // original controller/builder plus independently resumed roles
+		_, fresh, history, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		if fresh.RoleEpochs["controller"] != 2 || fresh.RoleEpochs["builder"] != 2 || fresh.RoleEpochs["tester"] != 2 {
+			t.Fatalf("lost fresh role epochs: %+v", fresh.RoleEpochs)
+		}
+		intents := map[string]bool{}
+		for _, event := range history {
+			if event.Kind == "native-reserved" && event.NativeEffect != nil {
+				id := event.NativeEffect.Binding.IntentID
+				if intents[id] {
+					t.Fatalf("native intent replay: %s", id)
+				}
+				intents[id] = true
+			}
+		}
+	}
+	if len(items) != 1 || reader.calls != 1 || len(before) != expectedAuthorities || len(after) != len(before) || !os.SameFile(info, again) {
 		t.Fatalf("replay duplicated effects queue=%d reads=%d sessions=%d/%d", len(items), reader.calls, len(before), len(after))
 	}
 	for _, authority := range after {

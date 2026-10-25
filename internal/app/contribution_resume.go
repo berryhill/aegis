@@ -22,17 +22,12 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 	if err != nil {
 		return result, err
 	}
-	s.loopRunMu.Lock()
-	if s.loopRunWorkers[c.QueueItemID] {
-		s.loopRunMu.Unlock()
-		return result, contribution.ErrContinuityFenced
+	runCtx, finish, err := s.beginContributionRun(ctx, c)
+	if err != nil {
+		return result, err
 	}
-	if s.loopRunWorkers == nil {
-		s.loopRunWorkers = make(map[string]bool)
-	}
-	s.loopRunWorkers[c.QueueItemID] = true
-	s.loopRunMu.Unlock()
-	defer func() { s.loopRunMu.Lock(); delete(s.loopRunWorkers, c.QueueItemID); s.loopRunMu.Unlock() }()
+	defer finish()
+	ctx = runCtx
 	control, err := s.ReadContributionControlAs(ctx, sub, key)
 	if err != nil || control.Stop || state.CancelRequested || !s.Now().Before(c.Deadline) {
 		return result, ErrDenied
@@ -54,8 +49,6 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 			return result, contribution.ErrNativeQuiescenceUnavailable
 		}
 	}
-	runCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), c.Deadline)
-	defer cancel()
 	session, err := s.ResumeContributionRoleAs(runCtx, sub, key, "controller", ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
 	if err != nil {
 		return result, err

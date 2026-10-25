@@ -18,7 +18,7 @@ func (s *Service) CheckContributionEffectAs(ctx context.Context, sub core.Subjec
 	if err != nil {
 		return contribution.RoleAuthority{}, err
 	}
-	if in.Contract.Validate() != nil || in.Contract.ID != c.QueueItemID || in.Contract.Digest != c.Digest || in.RunID != c.RunID || in.QueueItemID != c.QueueItemID || in.Scope != c.Effect || in.Candidate == "" || in.Candidate != state.Candidate || in.CandidateEvidence.Validate() != nil || in.CandidateEvidence != state.CandidateEvidence {
+	if in.Contract.Validate() != nil || in.Contract.ID != c.QueueItemID || in.Contract.Digest != c.Digest || in.RunID != c.RunID || in.QueueItemID != c.QueueItemID || in.Scope != c.Effect || in.Candidate == "" || in.Candidate != state.CandidateEvidence.Digest || in.CandidateEvidence.Validate() != nil || in.CandidateEvidence != state.CandidateEvidence {
 		return contribution.RoleAuthority{}, ErrDenied
 	}
 	r, err := s.CheckContributionRoleAs(ctx, sub, session, key, in.Role, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
@@ -30,7 +30,7 @@ func (s *Service) CheckContributionEffectAs(ctx context.Context, sub core.Subjec
 	}
 	if writing {
 		proof, ok := ctx.Value(contributionCustodyKey{}).(*contributionCustodyProof)
-		if !ok || !proof.live.Load() || proof.service != s || proof.contract != c.Digest || proof.candidate != state.Candidate || proof.session != session || in.Role != "controller" {
+		if !ok || !proof.live.Load() || proof.service != s || proof.contract != c.Digest || proof.candidate != state.CandidateEvidence.Digest || proof.session != session || in.Role != "controller" {
 			return contribution.RoleAuthority{}, contribution.ErrNativeQuiescenceUnavailable
 		}
 		for _, role := range []string{"builder", "tester"} {

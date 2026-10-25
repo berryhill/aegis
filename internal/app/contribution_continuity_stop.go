@@ -21,7 +21,9 @@ func (s *Service) StopContributionRoleAs(ctx context.Context, sub core.Subject, 
 	if err != nil {
 		return state, err
 	}
-	return s.stopContributionRole(ctx, c, state, role, in)
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return s.stopContributionRole(cleanup, c, state, role, in)
 }
 
 // Service-owned cleanup uses the retained admitted contract and exact process
@@ -68,7 +70,7 @@ func (s *Service) stopContributionRole(ctx context.Context, c contribution.Contr
 	// Only a real retained stop request permits service-owned safety cleanup.
 	// This is not a new effect grant. Complete both Wait proof and its durable
 	// acknowledgement before returning, even if the requesting transport vanishes.
-	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	cleanup, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	ctx = cleanup
 	binding := hermes.ContributionStopBinding{SessionID: r.SessionID, RuntimeSessionID: r.RuntimeSessionID, AuthorityID: r.Authority.ID, AuthorityDigest: r.Authority.Digest, Role: role, Epoch: stop.Epoch, PID: stop.PID, ProcessStart: stop.ProcessStart}

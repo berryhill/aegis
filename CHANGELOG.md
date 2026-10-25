@@ -6,6 +6,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Wire missing-role provisioning preflight to the owning API pinned protected
+  companion, reserve the stable intent before launch and reload canonical approval
+  and provisioning receipts. Preserve non-replayable unknown outcomes. Restore
+  exact Loop selection on retained Resume; distinguish native pass lineage from
+  frozen candidate identity in accepted-source custody joins. Source-only; no
+  live-provider, installed or whole-contribution completion claim.
+
 - Default browser identity and dashboard mutation authentication to independent absolute six-hour windows (`api.console.session_ttl` and `api.console.action_auth_ttl`, each bounded at six hours). Preserve explicit shorter values and the shared fifteen-minute principal TTL. This deliberately increases dashboard stolen-cookie mutation exposure; use an explicit shorter action policy when required. No activity-based renewal or extension of mandates, native consent, runtime authority, review receipts or credential capabilities. See [the policy and launch-impact ledger](docs/implementation/issue-388-dashboard-authentication.md).
 
 - Replace the cumulative `execution` CI shard with mandatory `implementation`,

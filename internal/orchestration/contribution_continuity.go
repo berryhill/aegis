@@ -18,7 +18,7 @@ type ContributionExecutionObserver struct {
 	Native          func(context.Context, string, *exec.Cmd) error
 	Role            func(context.Context, int, string) error
 	StopRole        func(context.Context, string) error
-	Close           func(context.Context) error
+	Close           func(context.Context, bool) error
 }
 type ContributionContinuityFactory func(context.Context, core.Subject, contribution.Contract, WorkResult, execution.LaunchContract) (*ContributionExecutionObserver, error)
 
