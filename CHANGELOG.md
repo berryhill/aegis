@@ -6,6 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Preserve closed managed proposal-decode failure evidence after successful input
+  delivery. Expose content-free native coding stage references and allow bounded
+  continuation only with a validated durable rejection before implementation.
+  Historical missing classifications, uncertain effects and exhausted budgets
+  remain denied; this does not establish live coding acceptance for #385.
+
 - Default browser identity and dashboard mutation authentication to independent absolute six-hour windows (`api.console.session_ttl` and `api.console.action_auth_ttl`, each bounded at six hours). Preserve explicit shorter values and the shared fifteen-minute principal TTL. This deliberately increases dashboard stolen-cookie mutation exposure; use an explicit shorter action policy when required. No activity-based renewal or extension of mandates, native consent, runtime authority, review receipts or credential capabilities. See [the policy and launch-impact ledger](docs/implementation/issue-388-dashboard-authentication.md).
 
 - Replace the cumulative `execution` CI shard with mandatory `implementation`,
