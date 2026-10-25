@@ -80,6 +80,17 @@ Local model digest rechecks detect drift but do not atomically pin the server mo
 
 ## Verified implementation native-code boundary
 
+Native Codex connection reconciliation does not grant native-code authority.
+After independently authorized configuration changes, fresh Unix-principal
+same-selection review permits only an exactly reconstructable initial native
+block or one later exact contract line. Every older v2 commitment is reconstructed
+and validated against its own bytes and linked predecessor history; none is
+rewritten and no private config backup is stored. Show/runtime still require the
+latest full-config commitment, and connect rechecks exact review freshness before
+single-winner append-only publication. Unrelated drift, removed/broadened trust,
+ambiguous YAML and changed login selection deny. This is not atomic CAS against
+hostile same-UID configuration writers or a native-host approval mechanism.
+
 Opt-in v4 CODING additionally binds an explicit finite repository manifest to the
 task and observed source/test/module bytes. Escapes, symlinks/hardlinks, private
 paths, nontext/oversized input and source drift deny without rejected-byte output.

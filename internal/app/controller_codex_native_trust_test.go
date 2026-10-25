@@ -25,7 +25,7 @@ const additiveNativeTrust = "\nimplementation:\n  go_binary: /synthetic/go\n  au
 // The config/identity denials need no native executable. Positive cases use
 // the production qualified read-only parser with an isolated synthetic store.
 func TestControllerCodexNativeTrustReview(t *testing.T) {
-	for _, kind := range []string{"drift", "duplicate", "unknown", "model", "principal", "old-block", "profile", "selector", "foreign-preview", "valid", "account", "account-after-review", "expiry", "foreign-apply", "review-drift", "history-tamper"} {
+	for _, kind := range []string{"drift", "duplicate", "unknown", "model", "principal", "old-block", "profile", "selector", "foreign-preview", "valid", "existing-native-block", "native-history", "account", "account-after-review", "expiry", "foreign-apply", "review-drift", "history-tamper"} {
 		t.Run(kind, func(t *testing.T) {
 			ctx := context.Background()
 			s := testService(t)
@@ -54,6 +54,9 @@ func TestControllerCodexNativeTrustReview(t *testing.T) {
 			if kind == "old-block" {
 				old = append(old, []byte("implementation: {}\n")...)
 			}
+			if kind == "existing-native-block" {
+				old = append(old, []byte(additiveNativeTrust)...)
+			}
 			write := func(path string, b []byte) {
 				t.Helper()
 				if err := os.WriteFile(path, b, 0600); err != nil {
@@ -75,11 +78,26 @@ func TestControllerCodexNativeTrustReview(t *testing.T) {
 			if err := config.ConnectControllerCodex(s.ConfigFile, old, binding); err != nil {
 				t.Fatal(err)
 			}
+			if kind == "native-history" {
+				initial := append(append([]byte{}, old...), []byte(additiveNativeTrust)...)
+				write(s.ConfigFile, initial)
+				_, review, err := config.ReadControllerCodexForReview(s.ConfigFile)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := config.ReplaceControllerCodexReviewed(s.ConfigFile, initial, binding, binding, review); err != nil {
+					t.Fatal(err)
+				}
+				old = initial
+			}
 			base, err := os.ReadFile(s.ConfigFile + ".controller-codex.json")
 			if err != nil {
 				t.Fatal(err)
 			}
 			updated := append(append([]byte{}, old...), []byte(additiveNativeTrust)...)
+			if kind == "existing-native-block" || kind == "native-history" {
+				updated = append(append([]byte{}, old...), []byte("    - sha256:7be4f14b75128b7e582caf5d176d7314a6c26ed33dd8c757ff8189531703f95c\n")...)
+			}
 			switch kind {
 			case "drift":
 				updated = bytes.ReplaceAll(updated, []byte("exact original"), []byte("unrelated"))
@@ -164,7 +182,7 @@ func TestControllerCodexNativeTrustReview(t *testing.T) {
 				write(s.ConfigFile+".controller-codex.json", append(append([]byte{}, base...), ' '))
 			}
 			out, err := s.ApplyControllerCodexAs(ctx, sub, ControllerCodexApplyInput{ReviewID: review.ReviewID})
-			if kind != "valid" {
+			if kind != "valid" && kind != "existing-native-block" && kind != "native-history" {
 				if err == nil {
 					t.Fatal("invalid apply accepted")
 				}
