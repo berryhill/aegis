@@ -266,7 +266,9 @@
         "internal/api/online_loop_installed_test.go",
         "internal/api/agent_console_execution_test.go",
         "internal/api/agent_console_detail_test.go",
-        "internal/command/domain_surface_test.go"
+        "internal/command/domain_surface_test.go",
+        "internal/api/online_lifecycle_installed_test.go",
+        "internal/command/fleet_online_lifecycle_test.go"
       ],
       "cli": [
         "aegis agents",
@@ -494,13 +496,16 @@
         "internal/app/execution_debugger.go",
         "internal/app/console_queue_presentation.go",
         "internal/api/console_queue_preferences.go",
-        "internal/api/console_queue_presentation.go"
+        "internal/api/console_queue_presentation.go",
+        "internal/command/fleet_online.go"
       ],
       "tests": [
         "internal/command/queue_skill_contract_test.go",
         "internal/api/server_test.go",
         "internal/api/execution_debugger_test.go",
-        "internal/api/execution_debugger_installed_test.go"
+        "internal/api/execution_debugger_installed_test.go",
+        "internal/api/online_lifecycle_installed_test.go",
+        "internal/command/fleet_online_lifecycle_test.go"
       ],
       "cli": [
         "aegis queue",
@@ -673,7 +678,7 @@
       "skill": "aegis-operator-lifecycle-diagnostics",
       "operation": "Transparent daemon-online routing of direct-service CLI operations",
       "classification": "missing-adapter",
-      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent readback/approve-charter, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding."
+      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent registration/readback/approve-charter/enable/disable/retire, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process/cancel/revoke/expired-lease retry reclaim. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding. Ordinary retry remains unavailable without durable runtime-stop acknowledgment; online expire/exhaust remain unsupported."
     },
     {
       "skill": "aegis-evidence-disposition",

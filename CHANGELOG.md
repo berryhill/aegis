@@ -1,5 +1,7 @@
 # Changelog
 
+- Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
+
 Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
