@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "evidence_class": "structural-coverage-only",
-  "transport_boundary": "A listed CLI and a listed HTTP endpoint are distinct adapters, not interchangeable transports. Most direct-service CLI commands fail control_plane_online while the configured gateway owns state. Use only an already supplied product-owned typed online interface; do not stop the gateway, open a second writer, extract authentication material or implement a generic HTTP client. The catalog does not grant access, provide request schemas or qualify an installed executable. The enclosing verified archive binds these source references to its exact source_revision.",
+  "transport_boundary": "A listed CLI and a listed HTTP endpoint are distinct adapters, not interchangeable transports. Most direct-service CLI commands fail control_plane_online while the configured gateway owns state. Use only an already supplied product-owned typed online interface; do not stop the gateway, open a second writer, extract authentication material or implement a generic HTTP client. The catalog does not grant access, provide request schemas or qualify an installed executable. The enclosing verified archive binds these source references to its exact source_revision. Source contract only: explicit --config/--target online adapters are enumerated in skills/aegis/SKILL.md and internal/command/fleet_online.go. Shipped classification is not per-operation acceptance. Queue online list/show/result/preparations/bind-runtime/process/cancel/revoke and expired-lease-only retry are supported; ordinary retry is unavailable; expire/exhaust have offline/API primitives but missing online adapters. Graph lifecycle has no supported online application adapter. TestInstalledOnlineLifecycle accepts caller-supplied exact executable bytes; default source rebuild is not release-package proof. Managed 8448 acceptance remains unexercised.",
   "authority_boundary": "Installed skill text grants no authority. Typed product authentication, exactly one stanza, approvals, mandates, persistence and evidence remain external. No permission union; missing or ambiguous authority denies. Source/test references are navigation, not claims that behavioral tests passed.",
   "classifications": {
     "shipped": "Concrete public product transport exists; installation does not authorize use or prove acceptance.",
@@ -266,7 +266,9 @@
         "internal/api/online_loop_installed_test.go",
         "internal/api/agent_console_execution_test.go",
         "internal/api/agent_console_detail_test.go",
-        "internal/command/domain_surface_test.go"
+        "internal/command/domain_surface_test.go",
+        "internal/api/online_lifecycle_installed_test.go",
+        "internal/command/fleet_online_lifecycle_test.go"
       ],
       "cli": [
         "aegis agents",
@@ -494,13 +496,16 @@
         "internal/app/execution_debugger.go",
         "internal/app/console_queue_presentation.go",
         "internal/api/console_queue_preferences.go",
-        "internal/api/console_queue_presentation.go"
+        "internal/api/console_queue_presentation.go",
+        "internal/command/fleet_online.go"
       ],
       "tests": [
         "internal/command/queue_skill_contract_test.go",
         "internal/api/server_test.go",
         "internal/api/execution_debugger_test.go",
-        "internal/api/execution_debugger_installed_test.go"
+        "internal/api/execution_debugger_installed_test.go",
+        "internal/api/online_lifecycle_installed_test.go",
+        "internal/command/fleet_online_lifecycle_test.go"
       ],
       "cli": [
         "aegis queue",
@@ -673,7 +678,7 @@
       "skill": "aegis-operator-lifecycle-diagnostics",
       "operation": "Transparent daemon-online routing of direct-service CLI operations",
       "classification": "missing-adapter",
-      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent readback/approve-charter, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding."
+      "reason": "Explicit --target allowlist supports charter validate/import/exact show, plan preview/show, approval request/approve/reject/show, provision, session preview/start/list/show/authority, Agent registration/readback/approve-charter/enable/disable/retire, Loop publication/lifecycle, Graph publication/submission and Queue readback/bind-runtime/process/cancel/revoke/expired-lease retry reclaim. Other direct-store operations remain unsupported online; never open a second writer or infer automatic forwarding. Ordinary retry remains unavailable without durable runtime-stop acknowledgment; online expire/exhaust remain unsupported."
     },
     {
       "skill": "aegis-evidence-disposition",

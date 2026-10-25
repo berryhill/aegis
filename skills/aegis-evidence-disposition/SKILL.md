@@ -101,8 +101,8 @@ Never collapse these classes:
 Only an explicitly authorized, authenticated request for the exact input may be routed:
 
 - `aegis queue process FILE` starts one eligible attempt. The strict file binds current authority, exact queue item, worker, Loop execution, claim, Attempt, transition, disposition and artifact identities, plus a bounded lease.
-- `aegis queue retry FILE` appends a bounded retry decision for an eligible retryable item. It does not rewrite an Attempt or terminal disposition and cannot exceed the immutable attempt bound.
-- `aegis queue cancel FILE`, `expire FILE`, `exhaust FILE`, and `revoke FILE` route distinct authenticated lifecycle decisions. The command returns the cancellation record. Then use exact authenticated queue and audit readback to preserve the separately persisted transition, disposition, authority, and audit evidence; do not imply those records were returned by the mutation response.
+- `aegis queue retry FILE` supports only expired-lease reclaim (`reclaimed: true`); ordinary retry is unavailable without durable runtime-stop acknowledgment. It appends a bounded reclaim decision for an eligible claimed item. It does not rewrite an Attempt or terminal disposition and cannot exceed the immutable attempt bound.
+- `aegis queue cancel FILE` and `revoke FILE` support the owning-service online adapter. `expire FILE` and `exhaust FILE` are separate offline/API primitives without an online CLI adapter; do not bypass the owning service. These route distinct authenticated lifecycle decisions. The command returns the cancellation record. Then use exact authenticated queue and audit readback to preserve the separately persisted transition, disposition, authority, and audit evidence; do not imply those records were returned by the mutation response.
 
 Never invoke a lifecycle mutation merely to make evidence agree with a desired label. If the requested operation is reviewer acceptance, rejection, needs-review persistence, or reevaluation, state that it is unavailable and preserve the existing record.
 

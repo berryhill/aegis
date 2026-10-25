@@ -108,3 +108,7 @@ Report with these headings: operation; authenticated Aegis surface; canonical Ag
 ## Progressive disclosure
 
 Use `references/registry-fixtures.json` only as non-secret interpretation examples. Every fixture is marked `explanatory_projection_not_wire_response`: reduced fields, synthetic digests, error summaries, and history summaries are not complete serialized adapter responses or valid request templates. The registration projections preserve the real `{agent, created}` envelope; exact replay retains the same Agent content. Fixtures are not live Registry records or authority. Consult `specs/CANONICAL_DOMAINS.md`, `specs/MVP.md`, `internal/registry/model.go`, `internal/registry/source.go`, and installed command help for the current contract. Consequential actions must remain in typed Aegis services; this skill never reimplements authentication, policy, persistence, provisioning, scheduling, credential custody, or audit authority.
+
+## Owning-service online lifecycle
+
+Use `--config OWNER_CONFIG --target CONSOLE_URL` for register, list, exact show, history, approve-charter, enable, disable and retire. Use `agents show AGENT REVISION` for exact readback; omitted revision is not qualified by the online lifecycle test. Lifecycle files retain exact expected revision/digest; the verb determines the state. Unknown outcomes require authoritative history/readback before retry, never a replacement identity or second store. Disable/retire do not change runtime stop semantics.
