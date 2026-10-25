@@ -147,6 +147,15 @@ apply. Controller-Codex access-only transport separately requires Hermes 0.21.3
 and exact qualified source fingerprints. Use readiness for prerequisite discovery,
 not a Queue mutation merely to discover missing foundational approval.
 
+`local_laya_unavailable` is a closed readiness projection, not proof that a
+package or model is absent: helper/protocol failures and rejected low-confidence
+answers can share it. Preserve the same intent and inspect exact returned
+preparation/attempt facts before remediation. Do not lower confidence policy,
+rotate identities or reword the same failed task merely to obtain a different
+judgment. A separately specified acceptance case has its own truthful result;
+it does not repair or relabel an earlier blocked case. Availability, eligibility,
+runtime execution and verified completion remain separate.
+
 `loops queue FILE` with explicit activation and direct lifecycle activation
 recheck prerequisites before execution mutations. Preserve returned `request_id`,
 `required_charter` and exact blocker. `plan_preview_exact_charter` and

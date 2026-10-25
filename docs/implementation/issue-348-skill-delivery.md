@@ -66,11 +66,12 @@ Existing sessions do not adopt changes merely because installation succeeds.
 
 ## Unclosed acceptance gates
 
-Final recipe claims must reconcile actually delivered #350 interfaces and any
-intervening main changes. #377/#378/#379 remain owning integrations, not features
+The recipes now integrate delivered #350 interfaces from PR #393, merged as
+`84bf2e582483f86520efb722420ff840e47460b4`; later main changes still require
+reconciliation. #377/#378/#379 remain owning integrations, not features
 created by this documentation change. The #344/#348 real managed reusable
 publish-then-separate-exact-Run requirement on development 8448 remains a hard
-pre-merge gate, coordinated with its existing owner. Historical #384 success is
-not exact-candidate proof. Never consume/reset #385's native case or manually
+pre-merge gate. Historical #384 or #393 success is not exact-candidate #348
+proof. Never consume/reset #385's native case or manually
 create expected output. Source edits, archive, isolated installation, fresh
 session adoption, real-provider execution, CI and merge are separate evidence.

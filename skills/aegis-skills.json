@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:6342afd1db735bc03732b61f73b8b7ed7c16944477e39fdfca7b1ab219449e31",
+    "content_digest": "sha256:5ec22c16cb9214e2bb33f6dcc5d3b25e9dbc093b1ac4021b791391fe04e2c4b1",
     "source_revision": "repository"
   },
   "operations": [
@@ -255,17 +255,22 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:913e45f09181787100b03eef187431a9101b1f8a1fd96f575f6786cd89ea4b91",
+      "content_digest": "sha256:d75d7079fd6c43c0105ad8e34f13ab3b5ef10d58c754487fdf71bafed5cfa479",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:ee312c5cc47bf963274016a38fcd98131b8ffcb75596a12954b3f16c492c9cdb",
-          "size": 14351
+          "sha256": "sha256:134d7cf6d501c85b2923f79fb45f472bb1c6a760cc4d6a906f80801cc70144dd",
+          "size": 15450
         },
         {
           "path": "references/registry-fixtures.json",
           "sha256": "sha256:a9f8305e77189b8204e28c37bac3e333f1a63e522f8690ccfb4c9a74a45a7133",
           "size": 6320
+        },
+        {
+          "path": "references/register-input.v1.json",
+          "sha256": "sha256:a1679796af339cb6b779ba6216270a6c1140b5a8162525564be3ac7af3ff7fdc",
+          "size": 956
         }
       ]
     },
@@ -320,12 +325,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:9ffa70106c87749b70bfdaf2b67adce171374bddd40326710dfc1b8970d1d5b8",
+      "content_digest": "sha256:a4f23b6ce1cbdda172bcbb65b082fbd4b12282681981f2b28477ef5badb6469e",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:c8275c5ff92152150eab667ba7ed234651636158f6167607ac72fecd0a1909e7",
-          "size": 50178
+          "sha256": "sha256:d885b82aa786ae30c1b850e80ba6b25ec5ef0b3bf03b628ef92a0b3781f910fa",
+          "size": 50785
         }
       ]
     },
