@@ -28,6 +28,21 @@ Source candidate: typed Doer candidate readiness and retained-draft save/read/CA
 - Linux for Unix `SO_PEERCRED` API tests
 - `govulncheck` for vulnerability scanning
 
+## Contribution implementation and independent acceptance
+
+Read the [canonical contribution happy path](.hermes/contribution-happy-path-contract.md)
+before builder or tester work, including #375–#379. Its stage/evidence/owner matrix
+is mandatory acceptance, not a claim the v6 source executes it. Builders return a
+complete frozen source/build/policy identity; fresh independent testers have no
+product edits and report actual criterion results and missing downstream seams.
+Concrete repairs retain ownership and budget. Selected-file and native coding
+receipts do not prove whole-contribution delivery. Explicit narrower scope wins.
+Run `GOMAXPROCS=2 GOFLAGS=-p=1 go test ./internal/architecture -count=1` and relevant
+checks below. Mutation fixtures validate repository policy only, not managed/live
+execution. Preserve the separate same-revision publish/Run hard pre-merge gate;
+no-live authorization means report NOT EXERCISED and retain the gate, not fake it.
+See [the issue #386 launch ledger](docs/implementation/issue-386-launch-review.md).
+
 ## Setup and checks
 
 For repository CODING changes, preserve the [bounded native contract](docs/BOUNDED_CODING.md):

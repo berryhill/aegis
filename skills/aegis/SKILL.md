@@ -12,6 +12,18 @@ metadata:
 
 # Aegis router
 
+## Contribution acceptance boundary (#386)
+
+For contribution implementation/testing, read the repository's
+[canonical contribution happy path](../../.hermes/contribution-happy-path-contract.md)
+and mandatory #375–#379 stage/evidence/owner matrix. This repository-only reference
+is not bundled/installed adoption; #348 owns final matching distribution. Without
+a checkout use installed discovery and report missing capability, never invent
+stages/APIs. Selected-file Doer, native coding and whole-contribution success are
+separate evidence claims. Current v6 intake is not the whole autonomous journey;
+Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+
+
 Use this skill to identify the relevant Aegis product domain and point the user to a shipped, typed Aegis CLI, HTTP, or console surface. It is a router, not an implementation of those surfaces.
 
 ## Route by domain

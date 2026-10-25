@@ -1,0 +1,298 @@
+[
+  {
+    "name": "omitted-independent-tester",
+    "target": "matrix",
+    "path": "/5",
+    "value": null,
+    "want": "stage count"
+  },
+  {
+    "name": "reordered-freeze-test",
+    "target": "matrix",
+    "path": "/4/id",
+    "value": "test",
+    "want": "stage order"
+  },
+  {
+    "name": "wrong-stage-owner",
+    "target": "matrix",
+    "path": "/8/owners",
+    "value": [
+      376
+    ],
+    "want": "stage owner"
+  },
+  {
+    "name": "omitted-merge-evidence",
+    "target": "matrix",
+    "path": "/10/evidence/3",
+    "value": null,
+    "want": "stage evidence"
+  },
+  {
+    "name": "primitive-as-acceptance",
+    "target": "matrix",
+    "path": "/5/evidence/2",
+    "value": "selected-file-receipt",
+    "want": "stage evidence"
+  },
+  {
+    "name": "fictional-shipped-stage",
+    "target": "matrix",
+    "path": "/10/status",
+    "value": "implemented",
+    "want": "unqualified capability"
+  },
+  {
+    "name": "missing-recovery",
+    "target": "matrix",
+    "path": "/9/recovery",
+    "value": "",
+    "want": "incomplete obligation"
+  },
+  {
+    "name": "nonexistent-operation",
+    "target": "matrix",
+    "path": "/2/symbol",
+    "value": "CreateContributionWorktreeNotShipped",
+    "want": "source anchor"
+  },
+  {
+    "name": "missing-source",
+    "target": "matrix",
+    "path": "/8/source",
+    "value": "internal/not-shipped.go",
+    "want": "source anchor"
+  },
+  {
+    "name": "stale-entrypoint",
+    "target": "consumer",
+    "path": "/AGENTS.md",
+    "value": "# Old instructions\nRead .hermes/old-contract.md",
+    "want": "stale consumer"
+  },
+  {
+    "name": "contradictory-entrypoint",
+    "target": "consumer",
+    "path": "/AGENTS.md",
+    "value": "[contract](.hermes/contribution-happy-path-contract.md)\nprepare_feature_worktree` \u2192 `understand`",
+    "want": "contradictory consumer"
+  },
+  {
+    "name": "stale-skill",
+    "target": "consumer",
+    "path": "/skills~1aegis-loop-authoring~1SKILL.md",
+    "value": "[old](../../.hermes/old-contract.md)",
+    "want": "stale consumer"
+  },
+  {
+    "name": "contradictory-graph-recipe",
+    "target": "consumer",
+    "path": "/skills~1aegis-execution-queue~1SKILL.md",
+    "value": "[contract](../../.hermes/contribution-happy-path-contract.md)\nThe controller composes the minimal exact Graph",
+    "want": "contradictory consumer"
+  },
+  {
+    "name": "deny-selected-file-receipt",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "selected-file-receipt",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-native-go-receipt",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "native-go-receipt",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-model-pass-json",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "model-pass-json",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-build-hash",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "build-hash",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-pid",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "pid",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-queue-presence",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "queue-presence",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-pr-created",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "pr-created",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "deny-ci-only",
+    "target": "proof",
+    "path": "/events/5/evidence/2/kind",
+    "value": "ci-only",
+    "want": "weak proof substitution"
+  },
+  {
+    "name": "wrong-candidate",
+    "target": "proof",
+    "path": "/events/5/evidence/0/candidate",
+    "value": "wrong-candidate",
+    "want": "proof binding"
+  },
+  {
+    "name": "wrong-run",
+    "target": "proof",
+    "path": "/events/5/evidence/0/run",
+    "value": "wrong-run",
+    "want": "proof binding"
+  },
+  {
+    "name": "wrong-head",
+    "target": "proof",
+    "path": "/events/5/evidence/0/head",
+    "value": "wrong-head",
+    "want": "proof binding"
+  },
+  {
+    "name": "wrong-policy",
+    "target": "proof",
+    "path": "/events/5/evidence/0/policy",
+    "value": "wrong-policy",
+    "want": "proof binding"
+  },
+  {
+    "name": "builder-mints-tester-receipt",
+    "target": "proof",
+    "path": "/events/5/evidence/2/role",
+    "value": "fixture-builder-session",
+    "want": "role binding"
+  },
+  {
+    "name": "same-builder-tester",
+    "target": "proof",
+    "path": "/tester",
+    "value": "fixture-builder-session",
+    "want": "independent role"
+  },
+  {
+    "name": "stale-content",
+    "target": "proof",
+    "path": "/events/4/evidence/0/content",
+    "value": "substituted bytes",
+    "want": "corrupt content"
+  },
+  {
+    "name": "omitted-post-merge",
+    "target": "proof",
+    "path": "/events/10/evidence/4",
+    "value": null,
+    "want": "proof coverage"
+  },
+  {
+    "name": "omitted-stage",
+    "target": "proof",
+    "path": "/events/5",
+    "value": null,
+    "want": "proof stages"
+  },
+  {
+    "name": "reordered-evidence-stage",
+    "target": "proof",
+    "path": "/events/4/stage",
+    "value": "test",
+    "want": "proof order"
+  },
+  {
+    "name": "deny-failed",
+    "target": "proof",
+    "path": "/events/5/evidence/2/outcome",
+    "value": "failed",
+    "want": "uncovered criterion"
+  },
+  {
+    "name": "deny-blocked",
+    "target": "proof",
+    "path": "/events/5/evidence/2/outcome",
+    "value": "blocked",
+    "want": "uncovered criterion"
+  },
+  {
+    "name": "deny-unavailable",
+    "target": "proof",
+    "path": "/events/5/evidence/2/outcome",
+    "value": "unavailable",
+    "want": "uncovered criterion"
+  },
+  {
+    "name": "deny-not-exercised",
+    "target": "proof",
+    "path": "/events/5/evidence/2/outcome",
+    "value": "not-exercised",
+    "want": "uncovered criterion"
+  },
+  {
+    "name": "deny-skipped",
+    "target": "proof",
+    "path": "/events/5/evidence/2/outcome",
+    "value": "skipped",
+    "want": "uncovered criterion"
+  },
+  {
+    "name": "synthetic-not-live",
+    "target": "proof",
+    "path": "/events/5/evidence/2/tier",
+    "value": "live-managed-provider",
+    "want": "tier promotion"
+  },
+  {
+    "name": "narrower-local-only",
+    "target": "proof",
+    "path": "/target",
+    "value": "local-only",
+    "want": "scope boundary"
+  },
+  {
+    "name": "narrower-no-publish",
+    "target": "proof",
+    "path": "/target",
+    "value": "no-publish",
+    "want": "scope boundary"
+  },
+  {
+    "name": "narrower-no-merge",
+    "target": "proof",
+    "path": "/target",
+    "value": "no-merge",
+    "want": "scope boundary"
+  },
+  {
+    "name": "no-budget-reset",
+    "target": "proof",
+    "path": "/candidate_attempts",
+    "value": 4,
+    "want": "budget"
+  },
+  {
+    "name": "zero-queue-is-not-execution",
+    "target": "proof",
+    "path": "/queue_attempts",
+    "value": 0,
+    "want": "budget"
+  }
+]
