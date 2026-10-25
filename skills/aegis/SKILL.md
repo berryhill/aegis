@@ -85,7 +85,7 @@ allowlist in `internal/command/fleet_online.go` supports:
 - `charter import|validate|show`; `plan preview|show`;
   `approval request|approve|reject|show`; and root `provision`.
 - `session preview|start|show|authority|list`.
-- `agents register|list|show|history|approve-charter`.
+- `agents register|list|show|history|approve-charter|enable|disable|retire`.
 - `loops readiness|task-execute|task-save|task-show|task-continue` (the latter
   save/show/continue commands also have `draft-*` aliases),
   `loops setup-protected|setup-browser|setup-review|setup-decide`,
@@ -93,7 +93,8 @@ allowlist in `internal/command/fleet_online.go` supports:
   `setup-approve` is a separate protected operator-only path, never an agent
   approval action.
 - `graphs list|show|publish|submit`.
-- `queue preparations|list|result|show|process|bind-runtime`.
+- `queue preparations|list|result|show|process|bind-runtime|cancel|revoke|retry`.
+  Retry is expired-lease reclaim only, not ordinary retry or a stop acknowledgement.
 - Controller-only `controller-codex candidates PROFILE_HOME`,
   `controller-codex preview PROFILE_HOME [--credential ID] [--replace]`,
   `controller-codex connect REVIEW_ID`, `controller-codex show`, and
@@ -105,11 +106,13 @@ Reusable task Run routes to Loop authoring; exact verified `queue result`
 readback routes to Evidence and disposition. The URL selects the owning instance;
 the protected Unix API authenticates and repeats operation-specific admission.
 An approval adapter is not permission for the model to approve a human decision.
-Graph lifecycle application and general scheduling remain unsupported. Agent
-lifecycle and Queue cancel/revoke/expired-lease retry online adapters are pending
-#350, not shipped by this allowlist; CLI/API presence alone does not supply them.
+Graph lifecycle application, general scheduling, ordinary retry and online
+Queue expire/exhaust remain unsupported. Agent lifecycle and Queue
+cancel/revoke/expired-lease reclaim adapters are delivered by #350; CLI/API
+presence alone does not qualify another operation or an older installation.
 Other unlisted online operations remain unsupported. No local-store fallback is
 allowed.
+
 
 ## Progressive disclosure
 
@@ -142,3 +145,5 @@ they are not bundled execution prerequisites or permission to guess missing
 contracts. Hermes remains explicit. Installation does not enable the skill in
 Aegis-managed disposable sessions, qualify an installed runtime or modify an
 ordinary profile without an explicit operator installation action.
+
+Online `queue retry` supports expired-lease reclaim only (`reclaimed: true`). Ordinary retry remains unavailable because no durable runtime-stop acknowledgment exists. Online `queue expire` and `queue exhaust` remain unsupported; do not bypass the owning service. Agent lifecycle is append-only exact-revision CAS, not runtime stop.

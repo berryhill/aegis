@@ -69,9 +69,9 @@ Protected HTTP read surfaces expose `GET /v1/queue` and `GET /v1/queue/:item`. T
 `aegis queue process FILE` is the shipped controller operation that claims eligible narrow work, invokes the registered runtime adapter, stores content-addressed output, verifies precommitted claims, and records the resulting terminal disposition. It is consequential execution, not a read-only evidence-review command.
 
 With `--config OWNER_CONFIG --target CONSOLE_URL`, the current owning-service
-allowlist supports `queue preparations|list|show|result|bind-runtime|process`.
-Online retry/cancel/expire/exhaust/revoke adapters are absent in this base
-(pending #350); command/API presence and target flags do not provide them.
+allowlist supports `queue preparations|list|show|result|bind-runtime|process|cancel|revoke|retry`.
+Lifecycle adapters are delivered by #350; retry is expired-lease reclaim only.
+Online expire/exhaust remain absent; command/API presence and target flags do not provide them.
 Report the exact missing adapter or `online_operation_unsupported`; never use
 direct-store fallback, credential extraction or a temporary authenticated client.
 `bind-runtime` and `process` are low-level controller primitives, not operator
@@ -136,7 +136,7 @@ Only an explicitly authorized, authenticated request for the exact input may be 
 
 - `aegis queue process FILE` starts one eligible attempt. The strict file binds current authority, exact queue item, worker, Loop execution, claim, Attempt, transition, disposition and artifact identities, plus a bounded lease.
 - `aegis queue retry FILE` appends a bounded retry decision for an eligible retryable item only through a supported adapter. Ordinary retry (`reclaimed: false`) is unavailable without durable runtime-stop acknowledgment; process absence or prose cannot release a lease. Expired-lease reclaim requires exact fresh admission and `reason_code: "lease_reclaimed"`. It does not rewrite an Attempt or terminal disposition and cannot exceed the immutable attempt bound.
-- `aegis queue cancel FILE`, `expire FILE`, `exhaust FILE`, and `revoke FILE` route distinct authenticated lifecycle decisions. The command returns the cancellation record. Then use exact authenticated queue and audit readback to preserve the separately persisted transition, disposition, authority, and audit evidence; do not imply those records were returned by the mutation response.
+- `aegis queue cancel FILE` and `revoke FILE` support the owning-service online adapter. `expire FILE` and `exhaust FILE` are separate offline/API primitives without an online CLI adapter; do not bypass the owning service. These route distinct authenticated lifecycle decisions. The command returns the cancellation record. Then use exact authenticated queue and audit readback to preserve the separately persisted transition, disposition, authority, and audit evidence; do not imply those records were returned by the mutation response.
 
 Never invoke a lifecycle mutation merely to make evidence agree with a desired label. If the requested operation is reviewer acceptance, rejection, needs-review persistence, or reevaluation, state that it is unavailable and preserve the existing record.
 

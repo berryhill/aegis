@@ -12,6 +12,8 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   from complete contribution delivery. Add isolated installed-CLI recipe and
   dispatch-inventory regressions; no fleet installation or live rollout.
 
+- Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
+
 - Preserve closed managed proposal-decode failure evidence after successful input
   delivery. Expose content-free native coding stage references and allow bounded
   continuation only with a validated durable rejection before implementation.

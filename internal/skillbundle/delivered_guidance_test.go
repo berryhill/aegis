@@ -24,7 +24,7 @@ func TestDeliveredGuidanceQueueAndEvidence(t *testing.T) {
 				"#377", "#378", "#379", "Historical profiles",
 				"aegis queue preparations", "GET /v1/preparations",
 				"queue preparations|list|show|result|bind-runtime|process",
-				"pending #350", "online_operation_unsupported",
+				"delivered by #350", "online_operation_unsupported",
 				"low-level controller primitives, not operator",
 				"chores for one high-level authenticated Run",
 				"New direct Loop snapshots", "historical", "published",
@@ -66,12 +66,12 @@ func TestDeliveredGuidanceSourceDocs(t *testing.T) {
 		}, []string{"Selected-file host consent authorizes native code."}},
 		{"docs/HERMES_SKILLS.md", []string{
 			"Queue preparations/list/result/show/process/bind-runtime",
-			"adapters remain pending #350", "structural_fixture_validation",
+			"adapters are delivered by #350", "structural_fixture_validation",
 			"does not run an agent", "Unknown mutation outcomes",
 		}, []string{"structural_fixture_validation proves installed-agent behavior"}},
 		{"skills/aegis/SKILL.md", []string{
 			"queue preparations|list|result|show|process|bind-runtime",
-			"pending", "#350", "No local-store fallback",
+			"delivered by #350", "No local-store fallback",
 		}, []string{"all Queue lifecycle operations support --target"}},
 	}
 	for _, tc := range cases {

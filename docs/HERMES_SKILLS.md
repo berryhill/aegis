@@ -88,7 +88,8 @@ See the router allowlist and installed help for exact command spellings and inpu
 `queue bind-runtime FILE` adapter; it repeats controller-authority admission.
 This is explicit forwarding, not transparent forwarding of every direct-service
 CLI call. Agent lifecycle and Queue cancel/revoke/expired-lease retry online
-adapters remain pending #350. Credential intake supplies no general conversational
+adapters are delivered by #350. Ordinary retry and online Queue expire/exhaust
+remain unavailable. Credential intake supplies no general conversational
 platform adapter. Graph lifecycle mutation, general scheduling, reviewer
 reevaluation and deployment projection remain unavailable.
 CLI and API presence must not invite temporary authenticated clients, credential

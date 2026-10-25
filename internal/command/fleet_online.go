@@ -18,6 +18,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
+	"github.com/berryhill/aegis/internal/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -119,6 +120,21 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 			return usage(errors.New("agent path and exact references must match"))
 		}
 		method, path, input = http.MethodPut, "/v1/agents/"+url.PathEscape(args[0])+"/charter", proposal
+	case "agents enable", "agents disable", "agents retire":
+		var proposal app.SetAgentLifecycleInput
+		if err := decodeJSONFile(args[1], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.Expected.ID != args[0] {
+			return usage(errors.New("agent path and exact reference must match"))
+		}
+		proposal.Lifecycle = registry.LifecycleEnabled
+		if operation == "agents disable" {
+			proposal.Lifecycle = registry.LifecycleDisabled
+		} else if operation == "agents retire" {
+			proposal.Lifecycle = registry.LifecycleRetired
+		}
+		method, path, input = http.MethodPut, "/v1/agents/"+url.PathEscape(args[0])+"/lifecycle", proposal
 	case "agents list":
 		path = "/v1/agents"
 	case "agents show":
@@ -292,6 +308,24 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 		path = "/v1/queue/" + url.PathEscape(args[0]) + "/result"
 	case "queue show":
 		path = "/v1/queue/" + url.PathEscape(args[0])
+	case "queue cancel", "queue revoke":
+		var proposal app.TerminalQueueItemInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.QueueItemID == "" {
+			return usage(errors.New("queue_item_id is required"))
+		}
+		method, path, input = http.MethodPost, "/v1/queue/"+url.PathEscape(proposal.QueueItemID)+"/"+cmd.Name(), proposal
+	case "queue retry":
+		var proposal app.RetryQueueItemInput
+		if err := decodeJSONFile(args[0], &proposal); err != nil {
+			return usage(err)
+		}
+		if proposal.QueueItemID == "" {
+			return usage(errors.New("queue_item_id is required"))
+		}
+		method, path, input = http.MethodPost, "/v1/queue/"+url.PathEscape(proposal.QueueItemID)+"/retry", proposal
 	case "queue process":
 		var proposal app.ProcessQueueItemInput
 		if err := decodeJSONFile(args[0], &proposal); err != nil {
