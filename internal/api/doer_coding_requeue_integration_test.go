@@ -37,7 +37,12 @@ func TestAuthenticatedCodingNoApplyCorrectionRequeue(t *testing.T) {
 	authenticatedCodingCorrectionRequeue(t, true)
 }
 
-func authenticatedCodingCorrectionRequeue(t *testing.T, noApply bool) {
+func TestAuthenticatedCodingMalformedProposalCorrectionRequeue(t *testing.T) {
+	authenticatedCodingCorrectionRequeue(t, false, true)
+}
+
+func authenticatedCodingCorrectionRequeue(t *testing.T, noApply bool, malformedProposal ...bool) {
+	malformed := len(malformedProposal) == 1 && malformedProposal[0]
 	s := apiService(t)
 	clock := newRequeueStageClock(s.Now())
 	s.Now = clock.Now
@@ -151,6 +156,9 @@ esac
 	if noApply {
 		firstEvent = `{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fixture","payload":{"status":"error","text":"synthetic first proposal failure","error":"synthetic backend failure"}}}`
 	}
+	if malformed {
+		firstEvent = `{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"fixture","payload":{"status":"complete","text":"malformed proposal"}}}`
+	}
 	write(filepath.Join(install, "venv", "bin", "python"), fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
 [ "$HERMES_TUI_TOOLSETS" = "context_engine" ] || exit 90
@@ -209,6 +217,28 @@ while IFS= read -r rest; do :; done
 	if history.ReservedPasses != 1 || history.RemainingBudget != 1 || len(history.Passes) != 1 || history.Passes[0].Passed {
 		t.Fatalf("failed native pass: %+v", history)
 	}
+	if malformed {
+		p := history.Passes[0]
+		if p.Failure == nil || p.Failure.Code != "doer_proposal_json_invalid" || p.Input == nil || !p.Input.Delivered || len(old.Receipts) != 0 || old.Artifact != nil {
+			t.Fatalf("malformed proposal lost closed delivery/failure evidence: %+v", history)
+		}
+		rejected := 0
+		for _, stage := range history.Stages {
+			if stage.PassID == p.ID && stage.Name == "proposal_rejected" && stage.Digest != "" {
+				rejected++
+			}
+			if stage.PassID == p.ID && stage.Name == "implement" {
+				t.Fatal("malformed proposal entered implementation")
+			}
+		}
+		if rejected != 1 {
+			t.Fatal("missing exact durable proposal rejection")
+		}
+		b, err := os.ReadFile(filepath.Join(workspace, "value.go"))
+		if err != nil || string(b) != files["value.go"] {
+			t.Fatal("malformed proposal changed source", err)
+		}
+	}
 	oldWire, _ := json.Marshal(old)
 	// Observe the exact serialized input received by the synthetic provider,
 	// independently of the controller's content-free public evidence.
@@ -216,7 +246,8 @@ while IFS= read -r rest; do :; done
 		t.Helper()
 		h := v.CodingHistory[v.Attempts[0].AttemptID]
 		p := h.Passes[0]
-		if h.ContractDigest != inner || h.TaskDigest != manifest.TaskDigest || h.ContextDigest != hash(contextWire) || p.ContextIdentity != expectedContext.Identity {
+		preApply := malformed && v.Item.ItemID == old.Item.ItemID && p.ContextIdentity == ""
+		if h.ContractDigest != inner || h.TaskDigest != manifest.TaskDigest || h.ContextDigest != hash(contextWire) || (p.ContextIdentity != expectedContext.Identity && !preApply) {
 			t.Fatal("exact contract/task/source context witness mismatch")
 		}
 		b, err := os.ReadFile(filepath.Join(root, capture))
