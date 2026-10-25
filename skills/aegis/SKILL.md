@@ -72,7 +72,37 @@ CAS data (`agent_id`, `head`, `event_id`, `sequence`, `previous_digest`,
 API additions are `GET /v1/loops/inventory` and `GET`/`PUT
 /v1/loops/:loop/availability`. Confirm installed help; no local-store fallback.
 
-With `--config OWNER_CONFIG --target CONSOLE_URL`, the controller-only native-source operations are `controller-codex candidates PROFILE_HOME`, `controller-codex preview PROFILE_HOME [--credential ID]`, `controller-codex connect REVIEW_ID`, and `controller-codex show`; see the credential-authority skill. Other supported operations are `agents register|list|show|history|approve-charter`, `loops list|show|validate|publish|activate|retire|queue`, `graphs list|show|publish|submit`, and `queue list|show|result|bind-runtime|process`. Reusable task Run routes to Loop authoring; exact verified `queue result` readback routes to Evidence and disposition. Preserve each command’s positional file/reference arguments from installed help. The URL selects the owning instance; the protected Unix API performs authentication. Other online operations, Graph lifecycle application and general scheduling remain unsupported. No local-store fallback is allowed.
+With `--config OWNER_CONFIG --target CONSOLE_URL`, the source owning-service
+allowlist in `internal/command/fleet_online.go` supports:
+
+- `charter import|validate|show`; `plan preview|show`;
+  `approval request|approve|reject|show`; and root `provision`.
+- `session preview|start|show|authority|list`.
+- `agents register|list|show|history|approve-charter`.
+- `loops readiness|task-execute|task-save|task-show|task-continue` (the latter
+  save/show/continue commands also have `draft-*` aliases),
+  `loops setup-protected|setup-browser|setup-review|setup-decide`,
+  `loops queue|list|inventory|availability|archive|restore|show|publish|validate|activate|retire`.
+  `setup-approve` is a separate protected operator-only path, never an agent
+  approval action.
+- `graphs list|show|publish|submit`.
+- `queue preparations|list|result|show|process|bind-runtime`.
+- Controller-only `controller-codex candidates PROFILE_HOME`,
+  `controller-codex preview PROFILE_HOME [--credential ID] [--replace]`,
+  `controller-codex connect REVIEW_ID`, `controller-codex show`, and
+  `controller-codex probe FILE`; see the credential-authority skill.
+
+Preserve positional files/references and flags from installed help; source
+availability does not prove an older installed executable has these adapters.
+Reusable task Run routes to Loop authoring; exact verified `queue result`
+readback routes to Evidence and disposition. The URL selects the owning instance;
+the protected Unix API authenticates and repeats operation-specific admission.
+An approval adapter is not permission for the model to approve a human decision.
+Graph lifecycle application and general scheduling remain unsupported. Agent
+lifecycle and Queue cancel/revoke/expired-lease retry online adapters are pending
+#350, not shipped by this allowlist; CLI/API presence alone does not supply them.
+Other unlisted online operations remain unsupported. No local-store fallback is
+allowed.
 
 ## Progressive disclosure
 
