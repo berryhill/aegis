@@ -121,11 +121,18 @@ func TestLocalLayaProcessDoesNotInheritControllerSecrets(t *testing.T) {
 	script := "#!/bin/sh\n" +
 		"test -z \"$AEGIS_LAYA_SECRET_PROBE\" || exit 1\n" +
 		"test \"$HOME\" = '" + home + "' || exit 1\n" +
+		"test \"$OMP_NUM_THREADS\" = 2 || exit 2\n" +
+		"test \"$MKL_NUM_THREADS\" = 2 || exit 3\n" +
+		"test \"$OPENBLAS_NUM_THREADS\" = 2 || exit 4\n" +
+		"test \"$NUMEXPR_NUM_THREADS\" = 2 || exit 5\n" +
 		"printf '%s' '{\"version\":1,\"kind\":\"gate\",\"answers\":{\"specified\":{\"choice\":\"yes\",\"answer_confidence\":0.9},\"result_defined\":{\"choice\":\"yes\",\"answer_confidence\":0.9}}}'\n"
 	if err := os.WriteFile(probe, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("AEGIS_LAYA_SECRET_PROBE", "must-not-reach-child")
+	for _, name := range []string{"OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"} {
+		t.Setenv(name, "999") // Ambient resource settings must not control the child.
+	}
 	d := NewLayaDecisionAdapter(LocalLayaProcess{PythonExecutable: probe, Home: home})
 	got, err := d.Gate(context.Background(), "task")
 	if err != nil || !got.Specified || !got.ResultDefined {

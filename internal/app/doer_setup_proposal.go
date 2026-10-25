@@ -22,7 +22,7 @@ type DoerSetupProposal struct {
 }
 
 func (s *Service) ProposeDoerSetupSuccessorAs(ctx context.Context, sub core.Subject, id string, version uint64) (DoerSetupProposal, error) {
-	if err := s.requirePrincipal(sub); err != nil {
+	if err := s.RequireDashboardPrincipal(sub); err != nil {
 		return DoerSetupProposal{}, err
 	}
 	d, err := s.ReadDoerDraftAs(ctx, sub, id)
@@ -173,7 +173,7 @@ func (s *Service) doerSetupProposal(ctx context.Context, sub core.Subject, d Doe
 // host-write approval, publication or Run. Partial import/successor writes are
 // retained, not silently retried with a different proposal or widened authority.
 func (s *Service) ConfirmDoerSetupSuccessorAs(ctx context.Context, sub core.Subject, proposal DoerSetupProposal) (DoerDraft, error) {
-	if err := s.requirePrincipal(sub); err != nil {
+	if err := s.RequireDashboardPrincipal(sub); err != nil {
 		return DoerDraft{}, err
 	}
 	d, err := s.ReadDoerDraftAs(ctx, sub, proposal.DraftID)

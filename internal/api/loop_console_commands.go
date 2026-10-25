@@ -289,7 +289,7 @@ func loopCommandDefinitions(svc *app.Service) []console.CommandDefinition {
 func loopCommandAuthorityProvider(svc *app.Service) console.CommandAuthorityProvider {
 	return console.CommandAuthorityProviderFunc(func(ctx context.Context, subject core.Subject, sessionID, requirement string) (console.CommandAuthorityBinding, error) {
 		if requirement == "fleet.loop.publish.workspace" {
-			if err := svc.RequirePrincipal(subject); err != nil {
+			if err := svc.RequireDashboardPrincipal(subject); err != nil {
 				return console.CommandAuthorityBinding{}, console.ErrDenied
 			}
 			// This is a command-intent binding to the authenticated browser session,

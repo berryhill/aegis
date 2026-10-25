@@ -238,7 +238,7 @@ func consoleQueueOperationHandler(svc *app.Service, manager *console.Manager, op
 		if err != nil {
 			return mapConsoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return err
 		}
 		if err = operateConsoleQueueItem(c.Request().Context(), operator, subject, c.Param("item"), operation, newID); err != nil {
@@ -264,9 +264,10 @@ func apiHTTPErrorHandler(svc *app.Service, consoleManager *console.Manager) echo
 		if errors.Is(err, console.ErrReauthenticationRequired) {
 			consoleManager.ApplySecurityHeaders(c.Response().Header(), true)
 			model := consoleweb.PageModel{Authentication: consoleweb.AuthenticationModel{
-				SessionTTL: svc.Config.API.Console.SessionTTL.String(),
-				Status:     "This action requires fresh principal authentication. Sign in again, then review and retry the action. Nothing was executed.",
-				ReasonCode: "principal_reauthentication_required",
+				SessionTTL:    svc.Config.API.Console.SessionTTL.String(),
+				ActionAuthTTL: svc.Config.API.Console.ActionAuthTTL.String(),
+				Status:        "This action requires fresh principal authentication. Sign in again, then review and retry the action. Nothing was executed.",
+				ReasonCode:    "principal_reauthentication_required",
 			}, Surface: consoleweb.SurfaceModel{Domain: string(consoleAgents)}}
 			content, renderErr := renderConsole(c.Request().Context(), consoleweb.Document(model))
 			if renderErr == nil {
@@ -297,6 +298,12 @@ func managerGatewayWriteTimeout(cfg config.Config) time.Duration {
 }
 
 func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemetry) error {
+	return serveWithComposition(ctx, svc, telemetry, nil)
+}
+
+// serveWithComposition permits package tests to observe the owning portal before
+// listeners start. Public serving always uses the unmodified default composition.
+func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telemetry, composed func(*DoerContinuationPortal)) error {
 	if svc.Config.API.Token == "" {
 		return errors.New("api.token is required to serve the protected control plane")
 	}
@@ -315,7 +322,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		MaxPageSize:      svc.Config.API.Console.MaxPageSize,
 		PasswordVerifier: verifier,
 		PrincipalID:      svc.Config.Principal.ID,
-		PrincipalAuthTTL: svc.Config.Principal.AuthTTL,
+		ActionAuthTTL:    svc.Config.API.Console.ActionAuthTTL,
 		LoginBurst:       5,
 		LoginWindow:      5 * time.Minute,
 	}, svc.Now)
@@ -450,7 +457,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		return consoleManager.ValidateOrigin(c.Request(), false)
 	}
 	authenticationModel := func(reasonCode string) consoleweb.AuthenticationModel {
-		model := consoleweb.AuthenticationModel{SessionTTL: svc.Config.API.Console.SessionTTL.String()}
+		model := consoleweb.AuthenticationModel{SessionTTL: svc.Config.API.Console.SessionTTL.String(), ActionAuthTTL: svc.Config.API.Console.ActionAuthTTL.String()}
 		if reasonCode != "" {
 			model.Status = "Authentication failed. Enter the enrolled principal password."
 			model.ReasonCode = reasonCode
@@ -726,7 +733,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return core.Subject{}, agentOperationForm{}, consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return core.Subject{}, agentOperationForm{}, err
 		}
 		return subject, form, nil
@@ -764,7 +771,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return err
 		}
 		if err = verifyCredentialTarget(subject, svc, c.Request(), form); err != nil {
@@ -796,7 +803,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return err
 		}
 		if err = consoleManager.CancelReviewReceipt(c.Request(), credentialReviewPurpose, execute.Receipt); err != nil {
@@ -815,7 +822,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return err
 		}
 		payload, err := consoleManager.ConsumeReviewReceipt(c.Request(), credentialReviewPurpose, execute.Receipt)
@@ -871,7 +878,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return err
 		}
 		payload, err := consoleManager.ConsumeReviewReceipt(c.Request(), agentRegistrationReviewPurpose, execute.Receipt)
@@ -1368,6 +1375,9 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	})
 	e.POST("/console/queue/:item/operate", consoleQueueOperationHandler(svc, consoleManager, appConsoleQueueOperator{service: svc}, randomConsoleID))
 	registerConsoleQueuePresentation(e, svc, consoleManager, doerPortal)
+	if composed != nil {
+		composed(doerPortal)
+	}
 	e.POST("/console/loops/run", consoleLoopRunHandler(svc, consoleManager, doerPortal))
 	e.POST("/console/loops/availability", consoleLoopAvailabilityHandler(svc, consoleManager))
 	decodeCommand := func(c *echo.Context, destination any) error {
@@ -1393,7 +1403,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		if err != nil {
 			return core.Subject{}, "", consoleError(err)
 		}
-		if err = svc.RequirePrincipal(subject); err != nil {
+		if err = svc.RequireDashboardPrincipal(subject); err != nil {
 			return core.Subject{}, "", err
 		}
 		return subject, sessionID, nil
@@ -2661,6 +2671,10 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 		tcpListener = tls.NewListener(tcpListener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
 	}
 	listeners = append(listeners, tcpListener)
+	// Publish the live registry only after transport ownership and every fallible
+	// listener setup step succeed. A denied competitor must not replace it.
+	// Install before starting either the supervisor or HTTP serving goroutines.
+	svc.DashboardActionAuthentication = consoleManager.ValidateActionSubject
 	ready.Store(true)
 	defer closeListeners()
 	supervisorCtx, stopSupervisor := context.WithCancel(ctx)

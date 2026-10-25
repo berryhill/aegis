@@ -373,6 +373,46 @@ func TestControllerCodexOwningTransport(t *testing.T) {
 	if e != nil || !bytes.Equal(baseAfterAddition, originalConnection) {
 		t.Fatal("base history rewritten", e)
 	}
+	// A later exact native contract must cross the same online CLI/API boundary
+	// with the previous v2 transition still independently valid and immutable.
+	priorFactPath := s.ConfigFile + ".controller-codex.json.replacement-000002"
+	priorFact, e := os.ReadFile(priorFactPath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	updated = append(updated, []byte("    - sha256:7be4f14b75128b7e582caf5d176d7314a6c26ed33dd8c757ff8189531703f95c\n")...)
+	if e = os.WriteFile(s.ConfigFile, updated, 0600); e != nil {
+		t.Fatal(e)
+	}
+	call("GET", "/v1/controller/codex", nil, 409)
+	if _, e = s.Hermes.ResolveProviderAuthentication(ctx, h); e == nil {
+		t.Fatal("runtime admitted later unreviewed contract")
+	}
+	call("POST", "/v1/controller/codex/preview", app.ControllerCodexPreviewInput{ProfileHome: home, CredentialID: chosen, Replace: true}, 403)
+	later := cli("preview", home, "--credential", other, "--replace")
+	staleLater := cli("preview", home, "--credential", other, "--replace")
+	call("GET", "/v1/controller/codex", nil, 409)
+	laterConnected := cli("connect", later.ReviewID)
+	if laterConnected.CredentialID != other || laterConnected.AccountID != "other-account" {
+		t.Fatal("native addition changed selection")
+	}
+	call("POST", "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: staleLater.ReviewID}, 409)
+	call("POST", "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: later.ReviewID}, 403)
+	if _, e = s.Hermes.ResolveProviderAuthentication(ctx, h); e != nil {
+		t.Fatal("runtime did not adopt later reviewed commitment", e)
+	}
+	if retained, e := os.ReadFile(priorFactPath); e != nil || !bytes.Equal(retained, priorFact) {
+		t.Fatal("earlier v2 transition rewritten", e)
+	}
+	if retained, e := os.ReadFile(s.ConfigFile); e != nil || !bytes.Equal(retained, updated) {
+		t.Fatal("native config rewritten", e)
+	}
+	if retained, e := os.ReadFile(filepath.Join(home, "auth.json")); e != nil || !bytes.Equal(retained, afterReplacement) {
+		t.Fatal("native auth rewritten", e)
+	}
+	if after, e := s.GetLoopAs(ctx, sub, "preserved-loop", 1); e != nil || !reflect.DeepEqual(beforeLoop, after) {
+		t.Fatal("published Loop changed", e)
+	}
 	os.WriteFile(s.ConfigFile, append(append([]byte{}, original...), []byte("# late operator edit\n")...), 0600)
 	call("GET", "/v1/controller/codex", nil, 409)
 	if _, e = s.Hermes.ResolveProviderAuthentication(ctx, h); e == nil {
