@@ -30,6 +30,16 @@ func TestImplementationInputEvidenceBoundary(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			var prepared []byte
 			completed, calls := 0, 0
+			var failure implementation.ManagedFailure
+			req.FailureObserver = func(v implementation.ManagedFailure) error { failure = v; return nil }
+			t.Cleanup(func() {
+				if mode == "malformed" && (failure.State != "failed" || failure.Code != "doer_proposal_json_invalid" || failure.Reason != "") {
+					t.Fatalf("missing closed post-return failure: %+v", failure)
+				}
+				if mode == "unknown" && failure.Code == "doer_proposal_json_invalid" {
+					t.Fatal("unknown outcome classified as decode failure")
+				}
+			})
 			req.InputObserver = func(o implementation.InputObservation) error {
 				if !o.Completed {
 					prepared = append([]byte(nil), o.Bytes...)

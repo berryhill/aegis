@@ -13,6 +13,15 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   frozen candidate identity in accepted-source custody joins. Source-only; no
   live-provider, installed or whole-contribution completion claim.
 
+- Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
+
+- Preserve closed managed proposal-decode failure evidence after successful input
+  delivery. Expose content-free native coding stage references and allow bounded
+  continuation only with a validated durable rejection before implementation.
+  Historical missing classifications, uncertain effects and exhausted budgets
+  remain denied; this does not establish live coding acceptance for #385.
+
+
 - Default browser identity and dashboard mutation authentication to independent absolute six-hour windows (`api.console.session_ttl` and `api.console.action_auth_ttl`, each bounded at six hours). Preserve explicit shorter values and the shared fifteen-minute principal TTL. This deliberately increases dashboard stolen-cookie mutation exposure; use an explicit shorter action policy when required. No activity-based renewal or extension of mandates, native consent, runtime authority, review receipts or credential capabilities. See [the policy and launch-impact ledger](docs/implementation/issue-388-dashboard-authentication.md).
 
 - Replace the cumulative `execution` CI shard with mandatory `implementation`,
