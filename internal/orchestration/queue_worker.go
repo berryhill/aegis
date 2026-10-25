@@ -278,9 +278,13 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	}
 	leaseEnd := now.Add(request.LeaseDuration)
 	if loopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
-		_, mandate, readiness := worker.service.resolveAuthority(ctx,request.Subject,request.Authority)
-		if readiness.State != ReadinessReady { return WorkResult{},ErrWorkerDenied }
-		if mandate.ExpiresAt.Before(leaseEnd) { leaseEnd = mandate.ExpiresAt }
+		_, mandate, readiness := worker.service.resolveAuthority(ctx, request.Subject, request.Authority)
+		if readiness.State != ReadinessReady {
+			return WorkResult{}, ErrWorkerDenied
+		}
+		if mandate.ExpiresAt.Before(leaseEnd) {
+			leaseEnd = mandate.ExpiresAt
+		}
 	}
 	claim, err := queue.NewClaim(queue.Claim{ClaimID: request.ClaimID, QueueItem: digestRef(item.ItemID, item.Digest), AttemptID: request.AttemptID, WorkerID: request.WorkerID, Authority: request.Authority, ClaimedAt: now, ExpiresAt: leaseEnd})
 	if err != nil {
