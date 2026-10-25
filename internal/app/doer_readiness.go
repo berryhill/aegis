@@ -99,7 +99,7 @@ func (s *Service) doerCandidateReadinessWithSetupAs(ctx context.Context, subject
 	r.Agent = input.Agent
 	ready := DoerPrerequisiteStatus{State: "ready"}
 	// Do not require a Queue worker merely to author a registry-only definition.
-	if ctx == nil || subject.ID == "" || subject.Kind == "" || subject.Issuer == "" || subject.Method == "" || subject.AuthenticatedAt.IsZero() || subject.ExpiresAt.IsZero() || !subject.AuthenticatedAt.Before(subject.ExpiresAt) || s.Now().Before(subject.AuthenticatedAt) || s.requirePrincipal(subject) != nil {
+	if ctx == nil || subject.ID == "" || subject.Kind == "" || subject.Issuer == "" || subject.Method == "" || subject.AuthenticatedAt.IsZero() || subject.ExpiresAt.IsZero() || !subject.AuthenticatedAt.Before(subject.ExpiresAt) || s.Now().Before(subject.AuthenticatedAt) || s.RequireDashboardPrincipal(subject) != nil {
 		r.block(&r.Subject, "authenticated_subject_required")
 		return r, ErrDenied
 	}

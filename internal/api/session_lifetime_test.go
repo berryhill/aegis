@@ -10,8 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/berryhill/aegis/internal/config"
 )
 
 func TestBrowserReauthenticationReplacesIdentityAndStaleLogout(t *testing.T) {
@@ -74,10 +72,10 @@ func TestBrowserReauthenticationReplacesIdentityAndStaleLogout(t *testing.T) {
 }
 
 // Exercise real HTTP routes, not just the displayed TTL or manager admission.
-func TestBrowserLifetimeReadsAndSensitiveStepUp(t *testing.T) {
+func TestBrowserLifetimeReadsAndSensitiveStepUpWithExplicitShortPolicy(t *testing.T) {
 	start := time.Now().UTC().Truncate(time.Second)
 	var elapsed atomic.Int64
-	f := newCredentialRouteFixtureWithClock(t, config.Defaults().API.Console.SessionTTL, func() time.Time { return start.Add(time.Duration(elapsed.Load())) })
+	f := newCredentialRouteFixtureWithClock(t, time.Hour, func() time.Time { return start.Add(time.Duration(elapsed.Load())) }, 15*time.Minute)
 	get := func(path string, want int) []byte {
 		t.Helper()
 		time.Sleep(210 * time.Millisecond)

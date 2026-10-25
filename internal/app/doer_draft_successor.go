@@ -16,7 +16,7 @@ import (
 func (s *Service) ContinueDoerDraftSuccessorAs(ctx context.Context, subject core.Subject, id string, version uint64, expected, charter reference.RevisionRef) (DoerDraft, error) {
 	s.loopRunMu.Lock()
 	defer s.loopRunMu.Unlock()
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequireDashboardPrincipal(subject); err != nil {
 		return DoerDraft{}, err
 	}
 	draft, err := s.ReadDoerDraftAs(ctx, subject, id)
@@ -45,7 +45,7 @@ func (s *Service) ContinueDoerDraftSuccessorAs(ctx context.Context, subject core
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := s.requirePrincipal(subject); err != nil {
+		if err := s.RequireDashboardPrincipal(subject); err != nil {
 			return nil, err
 		}
 		set, err := decodeDoerDraftSet(raw, subject.PrincipalID)
@@ -105,7 +105,7 @@ func (s *Service) ContinueDoerDraftSuccessorAs(ctx context.Context, subject core
 // ApproveDoerDraftSuccessorAs recovers only an identical already-applied
 // immediate successor. It never retries approval with a changed expected ref.
 func (s *Service) ApproveDoerDraftSuccessorAs(ctx context.Context, subject core.Subject, id string, version uint64, input ApproveAgentCharterInput) (DoerDraft, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequireDashboardPrincipal(subject); err != nil {
 		return DoerDraft{}, err
 	}
 	d, err := s.ReadDoerDraftAs(ctx, subject, id)

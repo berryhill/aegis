@@ -174,7 +174,7 @@ func (e *runtimeAuthorityDiagnostic) Error() string { return e.reason }
 func (e *runtimeAuthorityDiagnostic) Unwrap() error { return ErrDenied }
 
 func (s *Service) fleetCommandAuthorityForAgent(ctx context.Context, subject core.Subject, exact *registry.AgentRevision) (FleetCommandAuthority, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return FleetCommandAuthority{}, err
 	}
 	if s.Authority == nil || s.AuthorityCommands == nil {
@@ -368,6 +368,32 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 	return nil
 }
 
+// AuthorizeFleetAction preserves the operation boundary at orchestration's
+// repeated effect admission. Browser freshness applies only to this closed
+// control-plane set, never runtime claims/effects/evidence/disposition.
+func (s *Service) AuthorizeFleetAction(ctx context.Context, action orchestration.FleetAction, subject core.Subject) error {
+	if ctx == nil || ctx.Err() != nil {
+		return ErrDenied
+	}
+	switch action {
+	case orchestration.FleetActionRegister, orchestration.FleetActionAgentRevision,
+		orchestration.FleetActionLoopValidate, orchestration.FleetActionLoopPublish,
+		orchestration.FleetActionLoopLifecycle, orchestration.FleetActionGraphValidate,
+		orchestration.FleetActionGraphPublish, orchestration.FleetActionSubmission,
+		orchestration.FleetActionQueueAdmission, orchestration.FleetActionQueueLifecycle:
+		return s.RequireDashboardPrincipal(subject)
+	default:
+		return s.requirePrincipal(subject)
+	}
+}
+
+func (s *Service) requireFleetDashboardPrincipal(subject core.Subject) error {
+	if err := s.RequireDashboardPrincipal(subject); err != nil {
+		return err
+	}
+	return s.requireFleetPrincipalIdentity(subject)
+}
+
 func (s *Service) requireFleetPrincipal(subject core.Subject) error {
 	if err := s.requirePrincipal(subject); err != nil {
 		return err
@@ -390,7 +416,7 @@ func (s *Service) requireFleetPrincipalIdentity(subject core.Subject) error {
 // the freshly authenticated configured principal to one exact latest enabled
 // Agent. It is not a provisioning receipt, mandate, or runtime session.
 func (s *Service) RegisteredAgentWorkspaceAs(ctx context.Context, subject core.Subject, agentID string) (orchestration.WorkspaceAuthority, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return orchestration.WorkspaceAuthority{}, err
 	}
 	if agentID == "" {
@@ -419,7 +445,7 @@ func (s *Service) RegisteredAgentWorkspace(ctx context.Context, agentID string) 
 // fleet mutations. It discovers authority only from a controller-created
 // session binding; callers cannot select a stanza or construct authority here.
 func (s *Service) FleetAuthorityForSessionAs(ctx context.Context, subject core.Subject, sessionID string) (reference.DigestRef, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return reference.DigestRef{}, err
 	}
 	authority, err := s.authorityContextForSession(ctx, sessionID)
@@ -471,7 +497,7 @@ func (s *Service) RegisterBuiltInAegisAgentAs(ctx context.Context, subject core.
 }
 
 func (s *Service) PrepareFleetAgentRegistrationAs(ctx context.Context, subject core.Subject, charterData, fixtureData []byte, fleetID, sourceID string) (AgentRegistrationProposal, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return AgentRegistrationProposal{}, err
 	}
 	canonical, err := s.ValidateCharterAs(ctx, subject, charterData)
@@ -529,7 +555,7 @@ func (s *Service) PrepareFleetAgentRegistrationAs(ctx context.Context, subject c
 }
 
 func (s *Service) RegisterFleetAgentAs(ctx context.Context, subject core.Subject, input RegisterFleetAgentInput) (FleetAgent, bool, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return FleetAgent{}, false, err
 	}
 	source, err := registry.NewCurrentFleetFixtureSource(input.Fixture)
@@ -608,7 +634,7 @@ func (s *Service) ListFleetAgentRevisions(ctx context.Context, id string) ([]reg
 }
 
 func (s *Service) SetAgentLifecycleAs(ctx context.Context, subject core.Subject, id string, input SetAgentLifecycleInput) (FleetAgent, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return FleetAgent{}, err
 	}
 	if input.Expected.ID != id {
@@ -631,7 +657,7 @@ func (s *Service) SetAgentLifecycle(ctx context.Context, id string, input SetAge
 }
 
 func (s *Service) PublishLoopAs(ctx context.Context, subject core.Subject, input PublishLoopInput) (PublishedLoop, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return PublishedLoop{}, err
 	}
 	revision, validation, err := loop.NewRevision(input.Revision)
@@ -660,7 +686,7 @@ func (s *Service) PublishLoop(ctx context.Context, input PublishLoopInput) (Publ
 }
 
 func (s *Service) SetLoopLifecycleAs(ctx context.Context, subject core.Subject, id string, input SetLoopLifecycleInput) (LoopLifecycleResult, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return LoopLifecycleResult{}, err
 	}
 	if input.Loop.ID != id {
@@ -863,7 +889,7 @@ func (s *Service) GetLoopView(ctx context.Context, id string, revision uint64) (
 }
 
 func (s *Service) PublishGraphAs(ctx context.Context, subject core.Subject, input PublishGraphInput) (PublishedGraph, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return PublishedGraph{}, err
 	}
 	var workspace *orchestration.WorkspaceAuthority
@@ -1032,7 +1058,7 @@ func (s *Service) SubmitGraphAs(ctx context.Context, subject core.Subject, reque
 }
 
 func (s *Service) submitGraphAs(ctx context.Context, subject core.Subject, request orchestration.SubmitGraphRequest) (orchestration.SubmissionDecision, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
 	}
 	request.Subject = subject
@@ -1054,7 +1080,7 @@ func (s *Service) SubmitLoopAs(ctx context.Context, subject core.Subject, reques
 }
 
 func (s *Service) submitLoopAs(ctx context.Context, subject core.Subject, request orchestration.SubmitLoopRequest) (orchestration.SubmissionDecision, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return orchestration.SubmissionDecision{}, err
 	}
 	request.Subject = subject
@@ -1324,7 +1350,7 @@ func (s *Service) BindQueueRuntime(ctx context.Context, input BindQueueRuntimeIn
 }
 
 func (s *Service) RetryQueueItemAs(ctx context.Context, subject core.Subject, input RetryQueueItemInput) (queue.Retry, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return queue.Retry{}, err
 	}
 	input.Subject = subject
@@ -1346,7 +1372,7 @@ func (s *Service) RetryQueueItem(ctx context.Context, input RetryQueueItemInput)
 }
 
 func (s *Service) CancelQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
@@ -1368,7 +1394,7 @@ func (s *Service) CancelQueueItem(ctx context.Context, input TerminalQueueItemIn
 }
 
 func (s *Service) ExpireQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
@@ -1390,7 +1416,7 @@ func (s *Service) ExpireQueueItem(ctx context.Context, input TerminalQueueItemIn
 }
 
 func (s *Service) ExhaustQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject
@@ -1412,7 +1438,7 @@ func (s *Service) ExhaustQueueItem(ctx context.Context, input TerminalQueueItemI
 }
 
 func (s *Service) RevokeQueueItemAs(ctx context.Context, subject core.Subject, input TerminalQueueItemInput) (queue.Cancellation, error) {
-	if err := s.requireFleetPrincipal(subject); err != nil {
+	if err := s.requireFleetDashboardPrincipal(subject); err != nil {
 		return queue.Cancellation{}, err
 	}
 	input.Subject = subject

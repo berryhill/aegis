@@ -109,7 +109,7 @@ func (o *recordingConsoleQueueOperator) Revoke(_ context.Context, _ core.Subject
 func consoleQueueRouteFixture(t *testing.T, svc *app.Service) (*consoleauth.Manager, *http.Cookie, string) {
 	t.Helper()
 	verifier := consoleQueuePrincipalVerifier(t, svc.Config.Principal.ID)
-	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: svc.Config.Principal.ID, PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, svc.Now)
+	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: svc.Config.Principal.ID, ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, svc.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,9 +368,7 @@ func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 			t.Error(err)
 		}
 	})
-	fleetService, err := orchestration.NewFleetService(fleetStore, svc.Authority, svc.AuthorityCommands, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
-		return svc.RequirePrincipal(subject)
-	}, nil, svc.Now)
+	fleetService, err := orchestration.NewFleetService(fleetStore, svc.Authority, svc.AuthorityCommands, svc.AuthorizeFleetAction, nil, svc.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

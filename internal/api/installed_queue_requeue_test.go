@@ -21,6 +21,7 @@ import (
 	"github.com/berryhill/aegis/internal/reference"
 	consoleweb "github.com/berryhill/aegis/web/console"
 	"github.com/labstack/echo/v5"
+	"io"
 )
 
 // requeueStageClock models elapsed authority time, not fixture CPU/I/O latency.
@@ -70,7 +71,7 @@ func TestConsoleQueueMismatchedAuthenticationRequeue(t *testing.T) {
 // Real service, Badger, worker and verifier; synthetic tool-free runtime only.
 // Initial failure uses the existing trusted CLI fixture. Every successor request
 // calls the new authenticated service entrypoint, not QueueLoop or a helper.
-func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service, clock *requeueStageClock, cli *installedLoopQueueClient, input app.QueueLoopInput, workspace, install, script string, secondFailure, consoleMode, mismatchedAuthentication bool) {
+func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service, portal *DoerContinuationPortal, clock *requeueStageClock, cli *installedLoopQueueClient, input app.QueueLoopInput, workspace, install, script string, secondFailure, consoleMode, mismatchedAuthentication bool) {
 	t.Helper()
 	python := filepath.Join(install, "venv", "bin", "python")
 	failure := strings.ReplaceAll(script, `\"edits\"`, `\"unknown_edits\"`)
@@ -129,16 +130,42 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 				t.Fatal("review changed linked successor", afterErr)
 			}
 		}
-		manager, cookie, csrf := consoleQueueRouteFixture(t, s)
-		e := echo.New()
-		e.HTTPErrorHandler = apiHTTPErrorHandler(s, manager)
-		portal := NewDoerContinuationPortal(s, manager)
-		portal.RegisterBrowser(e)
-		registerConsoleQueuePresentation(e, s, manager, portal)
+		manager := portal.manager
+		origin := s.Config.API.Console.Origin
+		browser, csrf := loginConsole(t, s.Config.API.Listen)
+		browser.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		base, err := url.Parse(origin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		base.Path = "/console/"
+		cookies := browser.Jar.Cookies(base)
+		if len(cookies) != 1 {
+			t.Fatalf("session cookies=%d", len(cookies))
+		}
+		cookie := cookies[0]
+		do := func(req *http.Request) *httptest.ResponseRecorder {
+			t.Helper()
+			req.RequestURI = ""
+			response, err := browser.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			rr := httptest.NewRecorder()
+			rr.Code = response.StatusCode
+			for key, values := range response.Header {
+				rr.Header()[key] = values
+			}
+			if _, err := io.Copy(rr.Body, response.Body); err != nil {
+				t.Fatal(err)
+			}
+			return rr
+		}
 		// Read back under the same password-session subject used by the route.
 		// The fixture must not synthesize the server's idempotency intent.
-		authRequest := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/"+old.Item.ItemID+"/requeue", nil)
-		authRequest.Header.Set("Origin", "http://127.0.0.1")
+		authRequest := httptest.NewRequest(http.MethodPost, origin+"/console/queue/"+old.Item.ItemID+"/requeue", nil)
+		authRequest.Header.Set("Origin", origin)
 		authRequest.Header.Set("X-CSRF-Token", csrf)
 		authRequest.AddCookie(cookie)
 		sub, err = manager.AuthorizeMutation(authRequest)
@@ -182,20 +209,27 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		}
 		if !mismatchedAuthentication {
 			values := url.Values{"csrf": {csrf}, "digest": {old.Item.Digest}, "expected_revision": {"0"}}
-			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/"+old.Item.ItemID+"/requeue-review", strings.NewReader(values.Encode()))
+			req := httptest.NewRequest(http.MethodPost, origin+"/console/queue/"+old.Item.ItemID+"/requeue-review", strings.NewReader(values.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			req.Header.Set("Origin", "http://127.0.0.1")
+			req.Header.Set("Origin", origin)
 			req.AddCookie(cookie)
-			rec := httptest.NewRecorder()
-			e.ServeHTTP(rec, req)
+			rec := do(req)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("requeue review: %d %s", rec.Code, rec.Body.String())
 			}
 			assertReviewUnchanged()
-			var pending doerPending
-			for _, v := range portal.pending {
-				pending = *v
+			_, currentSession, err := manager.AuthorizeCommand(authRequest)
+			if err != nil {
+				t.Fatal(err)
 			}
+			var pending doerPending
+			portal.mu.Lock()
+			for _, v := range portal.pending {
+				if v.Review.Intent.SessionID == currentSession && s.Now().Before(v.Review.Intent.ExpiresAt) {
+					pending = *v
+				}
+			}
+			portal.mu.Unlock()
 			if pending.ID == "" || pending.Review.Intent.Run.Reexecution == nil || pending.Review.Published == nil {
 				t.Fatal("missing predecessor native review")
 			}
@@ -205,7 +239,11 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 				approveRequeueNativeFixture(t, portal, id)
 				return "approved"
 			}
-			reviewed := portalPost(e, cookie, csrf, url.Values{"action": {"request-local-review"}, "intent_id": {pending.ID}})
+			values = url.Values{"csrf": {csrf}, "action": {"request-local-review"}, "intent_id": {pending.ID}}
+			req = httptest.NewRequest(http.MethodPost, origin+"/console/loops/doer/continuation", strings.NewReader(values.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("Origin", origin)
+			reviewed := do(req)
 			if reviewed.Code != 200 || !strings.Contains(reviewed.Body.String(), "Requeue exact approved predecessor") {
 				t.Fatalf("native continuation browser return: %d %s", reviewed.Code, reviewed.Body.String())
 			}
@@ -246,12 +284,11 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		consolePost = func() {
 			t.Helper()
 			values := url.Values{"csrf": {csrf}, "digest": {old.Item.Digest}, "expected_revision": {"0"}}
-			req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/queue/"+old.Item.ItemID+"/requeue", strings.NewReader(values.Encode()))
+			req := httptest.NewRequest(http.MethodPost, origin+"/console/queue/"+old.Item.ItemID+"/requeue", strings.NewReader(values.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			req.Header.Set("Origin", "http://127.0.0.1")
+			req.Header.Set("Origin", origin)
 			req.AddCookie(cookie)
-			rec := httptest.NewRecorder()
-			e.ServeHTTP(rec, req)
+			rec := do(req)
 			if expectStaleConsole {
 				// The browser boundary requests step-up before service admission.
 				// app.ErrDenied remains a separate exact 403 (covered below).

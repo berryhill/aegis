@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/labstack/echo/v5"
 	"html"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -91,6 +92,14 @@ func TestLoopQueueOneRequestApprovalResume(t *testing.T) {
 func loopQueueOneRequestJourney(t *testing.T, usable bool) {
 	svc := apiService(t)
 	configureAPIFleet(t, svc)
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	_ = probe.Close()
+	svc.Config.API.Listen = address
+	svc.Config.API.Console.Origin = "http://" + address
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- Serve(ctx, svc) }()
@@ -293,20 +302,31 @@ esac
 	// Real isolated password-authenticated Manager + setup handlers; independent
 	// human-simulated decisions. Synthetic runtime only, not live provider proof.
 	svc.Config.Credentials.Authority.DeploymentID = "synthetic-task-deployment"
-	manager, cookie, csrf := consoleQueueRouteFixture(t, svc)
-	browser := echo.New()
-	registerDoerSetupRoutes(browser, svc, manager)
+	// Use the same production manager that owns service admission. A second
+	// isolated manager must not authenticate identities for this live service.
+	waitFor(t, "tcp", address)
+	browser, csrf := loginConsole(t, address)
 	post := func(action, receipt string) *httptest.ResponseRecorder {
 		v := url.Values{"csrf": {csrf}, "draft_id": {retained.Task.ID}, "action": {action}}
 		if receipt != "" {
 			v.Set("receipt", receipt)
 		}
-		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/console/loops/doer/setup", strings.NewReader(v.Encode()))
+		req, err := http.NewRequest(http.MethodPost, "http://"+address+"/console/loops/doer/setup", strings.NewReader(v.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://127.0.0.1")
-		req.AddCookie(cookie)
+		req.Header.Set("Origin", "http://"+address)
+		response, err := browser.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
 		rr := httptest.NewRecorder()
-		browser.ServeHTTP(rr, req)
+		rr.Code = response.StatusCode
+		if _, err := io.Copy(rr.Body, response.Body); err != nil {
+			t.Fatal(err)
+		}
 		return rr
 	}
 	token := func(rr *httptest.ResponseRecorder) string {
