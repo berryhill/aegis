@@ -9,6 +9,7 @@ import (
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/evidence"
+	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/orchestration"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
@@ -20,6 +21,8 @@ import (
 	badgerdb "github.com/dgraph-io/badger/v4"
 	"io"
 	"log/slog"
+	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
@@ -36,7 +39,7 @@ func (r *fixedContributionReader) Read(_ context.Context, _ contribution.IssueUR
 	r.calls++
 	return r.source, nil
 }
-func contributionFixture(t *testing.T) (*app.Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
+func contributionFixture(t *testing.T, managed ...bool) (*app.Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
 	t.Helper()
 	ctx := context.Background()
 	s := contributionApp(t)
@@ -67,7 +70,25 @@ func contributionFixture(t *testing.T) (*app.Service, *fleetbadger.Store, core.S
 	c.Workspace = t.TempDir()
 	c.WritableFiles = []string{"value.go"}
 	c.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "fixture", Name: "TestValue"}}
-	r, _, err := loop.NewContributionRevision("contribution-profile", 1, "", c, loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "owner/repo", RepositoryID: 7, Base: strings.Repeat("b", 40), ReadAction: contribution.ReadIssueAction, Effect: "local-only", DeadlineSeconds: 60, Invariants: []string{"preserve unrelated changes"}, Exclusions: []string{"no publication or merge"}})
+	profile := loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "owner/repo", RepositoryID: 7, Base: strings.Repeat("b", 40), ReadAction: contribution.ReadIssueAction, Effect: "local-only", DeadlineSeconds: 60, Invariants: []string{"preserve unrelated changes"}, Exclusions: []string{"no publication or merge"}}
+	if len(managed) > 0 && managed[0] {
+		c.Workspace = filepath.Join(t.TempDir(), "not-created-worktree")
+		c.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "fixture", Name: "TestValue"}, {Package: "fixture", Name: "TestSecurity"}, {Package: "fixture", Name: "TestLaunch"}, {Package: "fixture", Name: "TestDenial"}}
+		content := []byte("package fixture\n")
+		c.RepositoryContext = &loop.RepositoryContext{TaskDigest: contribution.Digest([]byte(c.Task)), MaxFiles: 8, MaxFileBytes: 4096, MaxTotalBytes: 16384, Files: []loop.RepositoryContextFile{{Path: "value.go", Role: "source", Bytes: int64(len(content)), Digest: contribution.Digest(content)}}}
+		c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
+		git, _ := exec.LookPath("git")
+		git, _ = filepath.EvalSymlinks(git)
+		policy := loop.ContributionExecutionPolicy{Kind: "go-stdlib-behavior.v1", RepositoryPath: t.TempDir(), GitBinary: git, BaseBranch: "main", BuildPackage: "."}
+		for i, k := range []string{"behavior", "security", "launch", "denial"} {
+			policy.Criteria = append(policy.Criteria, loop.ContributionCriterion{ID: k, Kind: k, Test: c.Policy.RequiredTests[i]})
+		}
+		d := contribution.Digest(content)
+		policy.ReviewAssets = []loop.ContributionReviewAsset{{ID: "source", Scope: "security", Path: "value.go", BaselineDigest: d, ApprovedDigest: d}, {ID: "fixture-doc", Scope: "launch", Path: "README.md", BaselineDigest: contribution.Digest([]byte("Metadata-only profile fixture")), ApprovedDigest: contribution.Digest([]byte("Metadata-only profile fixture"))}}
+		profile.Managed = &policy
+	}
+	r, _, err := loop.NewContributionRevision("contribution-profile", 1, "", c, profile)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,6 +180,55 @@ func TestContributionManagerExecuteJourney(t *testing.T) {
 	}
 	if _, e = s.Execute(ctx, subject, id, "wrong-token", "/contribute status"); e == nil {
 		t.Fatal("unauthenticated readback")
+	}
+}
+
+// Qualification: real gateway and real app resolver/preparation; intentionally
+// missing independent approvals. No synthetic resolver and no provider claim.
+func TestContributionManagerManagedPrerequisiteDenial(t *testing.T) {
+	ctx := context.Background()
+	a, r, subject, ref, reader := contributionFixture(t, true)
+	a.ContributionReader = reader
+	s, e := New(ctx, a)
+	if e != nil {
+		t.Fatal(e)
+	}
+	id, token := "approved-intent-fixture", "fixture-token"
+	s.sessions[id] = session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: a.Now(), expires: subject.ExpiresAt, mode: "degraded"}
+	if _, e = s.Execute(ctx, subject, id, token, "/contribute select "+ref.ID); e != nil {
+		t.Fatal(e)
+	}
+	for range 2 {
+		result, e := s.Execute(ctx, subject, id, token, "/contribute run "+reader.source.URL.URL)
+		if (e != nil && e != app.ErrDenied) || result.State != "blocked" || result.Reason != "provisioning_receipt_missing" {
+			t.Fatalf("missing exact independent prerequisite: %+v %v", result, e)
+		}
+		execution := result.Data["execution"].(app.ContributionExecutionResult)
+		if execution.RequiredRole != "controller" || execution.RequiredCharter == nil || !execution.Available {
+			t.Fatalf("missing exact role/charter: %+v", execution)
+		}
+	}
+	items, e := r.ListQueueItems(ctx)
+	if e != nil || len(items) != 1 || reader.calls != 1 {
+		t.Fatalf("replay duplicated intake: %v %d %d", e, len(items), reader.calls)
+	}
+	c, view, e := a.ReadContributionAs(ctx, subject, app.ContributionIntentKey(ref, reader.source.URL.URL, ""))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if len(view.Attempts) != 0 {
+		t.Fatal("denial created attempt")
+	}
+	if _, e = os.Lstat(c.Worktree); !os.IsNotExist(e) {
+		t.Fatalf("denial created worktree: %v", e)
+	}
+	contexts, e := a.Authority.ListAuthorityContexts(ctx)
+	if e != nil || len(contexts) != 0 {
+		t.Fatalf("denial minted authority: %v %+v", e, contexts)
+	}
+	status, e := s.Execute(ctx, subject, id, token, "/contribute status")
+	if e != nil || status.Data["execution_available"] != true {
+		t.Fatalf("managed status: %+v %v", status, e)
 	}
 }
 

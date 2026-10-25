@@ -97,6 +97,8 @@ type QueueWorker struct {
 	doerHostApproval   func(context.Context, loop.DoerContract, registry.AgentRevision) error
 	doerPassCap        func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)
 	codingContinuation func(context.Context, loop.DoerContract, registry.AgentRevision) (*CodingContinuation, error)
+	contributionRoles  ContributionRoleResolver
+	contributionFetch  func(context.Context, loop.ContributionExecutionPolicy) error
 	doerProtectedPaths []string
 }
 
@@ -191,6 +193,9 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	}
 	if loop.IsImplementationSchema(loopRevision.SchemaVersion) {
 		if loopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+			if e := managedContributionProfile(loopRevision); e != nil || worker.contributionRoles == nil {
+				return WorkResult{}, fmt.Errorf("%w: supported managed contribution profile and role admission required", ErrWorkerDenied)
+			}
 			_, c, e := worker.contributionContract(ctx, item.ItemID, loopRevision)
 			if e != nil || snapshot.SchemaVersion != graph.DirectRunSnapshotSchemaVersion || c.Controller != node.Participant || c.OwnerID != submission.OwnerID || c.SubmissionID != submission.SubmissionID || c.RunID != item.GraphRunID {
 				return WorkResult{}, fmt.Errorf("%w: exact contribution contract required", ErrWorkerDenied)
@@ -199,7 +204,7 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		if item.MaxAttempts != 1 {
 			return WorkResult{}, fmt.Errorf("%w: implementation pass budget forbids Queue retries", ErrWorkerDenied)
 		}
-		if err := worker.implementation.authorize(loopRevision.Steps, participant); err != nil {
+		if err := worker.authorizeImplementationRevision(loopRevision, participant); err != nil {
 			return WorkResult{}, fmt.Errorf("%w: %v", ErrWorkerDenied, err)
 		}
 	}
@@ -309,6 +314,9 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		GraphRunID: item.GraphRunID, LoopExecutionID: loopExecution.LoopExecutionID, GraphNodeID: node.ID,
 		Authority: request.Authority, Inputs: snapshot.Inputs, Participant: participant, Launch: launch, LoopRevision: loopRevision,
 		Admission: fleetRuntimeAdmission{service: worker.service, subject: request.Subject, authority: request.Authority, agent: node.Participant, loop: node.Loop, graph: snapshot.Graph},
+	}
+	if loopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+		return worker.processContribution(runtimeCtx, request, base, runtimeRequest)
 	}
 	if loop.IsImplementationSchema(loopRevision.SchemaVersion) {
 		return worker.processImplementation(runtimeCtx, request, base, runtimeRequest, actionID)

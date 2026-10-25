@@ -46,8 +46,13 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 				s.sessions[entry.id] = current
 			}
 			s.mu.Unlock()
-			result.State, result.Reason = "accepted", "intake_accepted_execution_separate"
-			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution_started": false, "completed": false}
+			execution, executeErr := s.app.ExecuteContributionAs(ctx, entry.subject, c.Key)
+			err = executeErr
+			result.State, result.Reason = "accepted", execution.Reason
+			if execution.Available && execution.Candidate == nil && (execution.Execution == nil || len(execution.Execution.Attempts) == 0) {
+				result.State = "blocked"
+			}
+			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution": execution, "execution_started": execution.Execution != nil && len(execution.Execution.Attempts) > 0, "completed": false}
 		}
 	case "status", "stop", "narrow":
 		key := entry.contributionKey
@@ -74,8 +79,12 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			if control.Sequence > 0 {
 				target = control.Delivery
 			}
+			execution, executionErr := s.app.ContributionExecutionStatusAs(ctx, entry.subject, key)
+			if executionErr != nil {
+				return result, executionErr
+			}
 			result.State, result.Reason = "observed", "durable_contribution_readback"
-			result.Data = map[string]any{"contract_digest": c.Digest, "contract": c, "roles": c.Roles, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "queue_state": view.Projection.State, "effect": target, "control_sequence": control.Sequence, "stopped": control.Stop, "execution_available": false, "completed": false}
+			result.Data = map[string]any{"contract_digest": c.Digest, "contract": c, "roles": c.Roles, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "queue_state": view.Projection.State, "effect": target, "control_sequence": control.Sequence, "stopped": control.Stop, "execution_available": execution.Available, "execution": execution, "completed": false}
 		}
 	default:
 		err = app.ErrDenied

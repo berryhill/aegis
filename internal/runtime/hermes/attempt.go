@@ -53,6 +53,10 @@ type AttemptTurnRequest struct {
 	Bounds          AttemptBounds
 	// Controller-only fixed no-effects diagnostic; never a transport input.
 	ProviderFormatProbe bool
+	// SessionCapability is a controller-only, fixed execution callback. It runs
+	// once under fresh admission after a clean runtime session is established.
+	// No runtime text can select its inputs or grant this capability.
+	SessionCapability func(context.Context, execution.Turn) error
 }
 
 type AttemptTurnResult struct {
@@ -269,6 +273,17 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return finishAttempt(attempt, execution.StateFailed, "session_id_missing", errors.New("Hermes session.create returned no session ID"))
 	}
 	attempt.RuntimeSessionID = sessionID
+	if request.SessionCapability != nil {
+		if err = checkAdmission(turnContext, request, time.Now().UTC()); err != nil {
+			return finishAttempt(attempt, execution.StateDenied, "capability_admission_denied", err)
+		}
+		if err = request.SessionCapability(turnContext, attempt); err != nil {
+			return finishAttempt(attempt, execution.StateFailed, "session_capability_failed", err)
+		}
+		if err = checkAdmission(turnContext, request, time.Now().UTC()); err != nil {
+			return finishAttempt(attempt, execution.StateDenied, "capability_admission_denied", err)
+		}
+	}
 	if err = writeGateway(stdin, "prompt", "prompt.submit", map[string]any{"session_id": sessionID, "text": request.Input}); err != nil {
 		return finishAttempt(attempt, execution.StateFailed, "prompt_write_failed", err)
 	}

@@ -70,7 +70,7 @@ verify-repository-stages:
 	./scripts/verify_release_readiness_test.sh
 	./scripts/verify_installed_mvi_test.sh
 	./scripts/verify_release_candidate_test.sh
-	python3 -m unittest scripts/verify_go_shard_test.py scripts/verify_ci_evidence_test.py scripts/verify_release_publication_test.py scripts/fast_release_test.py scripts/release_pipeline_test.py
+	python3 -m unittest scripts/prepare_ci_go_toolchain_test.py scripts/verify_go_shard_test.py scripts/verify_ci_evidence_test.py scripts/verify_release_publication_test.py scripts/fast_release_test.py scripts/release_pipeline_test.py
 
 release-readiness:
 	./scripts/verify-release-readiness.sh "$(VERSION)" "$(SOURCE_REVISION)" "$$READINESS_MODE" "$$RELEASE_TAG"

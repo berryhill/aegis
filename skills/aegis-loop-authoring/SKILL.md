@@ -180,6 +180,22 @@ partial-apply effects and exhaustion deny rather than reset budget or
 republish. Synthetic fixtures, real managed-provider, packaged and installed
 proof are distinct tiers. See `docs/BOUNDED_CODING.md` for the source contract.
 
+## Managed contribution source candidate
+
+The managed contribution executor can retain a native candidate without declaring
+whole-contribution success or publication. Continue only the exact same durable
+run/contract/Queue attempt/base/workspace/branch at a recorded quiescent phase
+boundary under the existing custody lock and fresh effect admission. Unknown
+interrupted effects, stale attempts, foreign dirty work and consumed budgets deny;
+never clear reservations or infer #377 authority renewal. The same builder role
+is retained, each tester is separately admitted and closed before repair, and
+tester model evidence excludes source contents and filenames. Complete source
+stays in private controller custody; builder input uses only its explicitly
+admitted bounded context. Narrow sensitive-name/key checks are not a general
+secret scanner. Confirm installed capability before use: this source candidate
+is not proof of live-provider execution or final delivery. See
+`docs/managed-contribution-candidate.md`.
+
 ## Publish and verify
 
 1. Publish only after the authenticated operator explicitly requests the exact operation and reviewed file: `aegis loops publish FILE`.

@@ -1,5 +1,14 @@
 # Aegis MVP Threat Model
 
+Managed contribution tester model input is a content-free frozen identity;
+complete source remains controller-private. Explicitly admitted builder context
+can contain sensitive approved source: narrow filename/key rejection is not a
+general secret scanner. Native checks are trusted host execution, not sandboxed.
+Same-attempt phase-boundary continuation requires custody lock and unchanged
+source/Git identity; unknown interrupted effects stay held and budgets never
+reset. Noncooperating same-UID writers remain outside the advisory-lock guarantee.
+See [candidate bounds](managed-contribution-candidate.md).
+
 The exact-run debugger exposes only authenticated pinned definition context and content-free digest-linked interpreter observations. Same-origin no-store polling grants no execution authority; missing legacy observations are unknown and interpreter terminal is not disposition. The browser rejects regressing versions, history substitution and cross-run responses, marks transport loss stale, and clears protected topology on authentication loss. Local custody is not separately protected attestation. The polled current-outcome HTML is exclusively escaped server templ output, joined through the selected item's existing exact-owner verified-evidence reader. No raw diagnostic/model HTML is admitted; authentication loss clears outcome/content and initial protected data as well as topology.
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

@@ -353,6 +353,7 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 		return ErrFleetUnavailable
 	}
 	s.FleetRepository, s.Fleet, s.QueueWorker = repository, service, worker
+	worker.SetContributionRoleResolver(s.resolveContributionRole)
 	worker.SetDoerHostApprovalResolver(s.resolveDoerHostApproval)
 	worker.SetDoerPassCapResolver(s.resolveDoerPassCap)
 	worker.SetCodingContinuationResolver(s.resolveCodingContinuation)

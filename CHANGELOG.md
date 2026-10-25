@@ -8,6 +8,28 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 - Default browser identity and dashboard mutation authentication to independent absolute six-hour windows (`api.console.session_ttl` and `api.console.action_auth_ttl`, each bounded at six hours). Preserve explicit shorter values and the shared fifteen-minute principal TTL. This deliberately increases dashboard stolen-cookie mutation exposure; use an explicit shorter action policy when required. No activity-based renewal or extension of mandates, native consent, runtime authority, review receipts or credential capabilities. See [the policy and launch-impact ledger](docs/implementation/issue-388-dashboard-authentication.md).
 
+- Replace the cumulative `execution` CI shard with mandatory `implementation`,
+  `orchestration` and `orchestration-contribution` groups in normal and race modes.
+  Dynamically inventory orchestration defaults to isolate its heavy contribution
+  integration while retaining every other test, example and fuzz seed exactly
+  once. Freeze synthetic contribution authority time before worker binding;
+  retain explicit expiry/revocation denial and real native runtime limits.
+  Preserve uncached complete tests, ten-minute jobs, eight-minute package alarms
+  and cgroup limits; exact-head evidence rejects missing or cancelled successors.
+
+- Managed contribution custody permits only exact same-attempt quiescent phase
+  boundaries under the existing lock; foreign, stale, interrupted and exhausted
+  reservations remain held. Tester model evidence excludes complete source bytes
+  and paths; controller native checks retain full frozen custody. No authority
+  renewal, publication or live-provider qualification is implied.
+
+- Source candidate: add bounded managed-contribution candidate execution with
+  complete source/executable identities, retained native check evidence and
+  immutable-chain readback validation. Deterministic native repair/drift coverage
+  is not live-provider or publication acceptance; synthetic Queue integration
+  remains a distinct evidence tier; see
+  [qualification and remaining gaps](docs/managed-contribution-candidate.md).
+
 - Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls; downstream contribution delivery remains unavailable.
 
 ### Fixed
