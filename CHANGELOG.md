@@ -6,6 +6,19 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Managed contribution custody permits only exact same-attempt quiescent phase
+  boundaries under the existing lock; foreign, stale, interrupted and exhausted
+  reservations remain held. Tester model evidence excludes complete source bytes
+  and paths; controller native checks retain full frozen custody. No authority
+  renewal, publication or live-provider qualification is implied.
+
+- Source candidate: add bounded managed-contribution candidate execution with
+  complete source/executable identities, retained native check evidence and
+  immutable-chain readback validation. Deterministic native repair/drift coverage
+  is not live-provider or publication acceptance; synthetic Queue integration
+  remains a distinct evidence tier; see
+  [qualification and remaining gaps](docs/managed-contribution-candidate.md).
+
 - Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls; downstream contribution delivery remains unavailable.
 
 ### Fixed
