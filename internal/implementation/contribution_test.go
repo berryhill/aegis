@@ -132,6 +132,46 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		t.Fatal("restart reset budget")
 	}
 	v := r.Passes[1].Candidate
+	// The contribution verifier reloads the actual producer records and native
+	// observations, not a caller's PASS report or a copied candidate digest.
+	exported, exportErr := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy)
+	if exportErr != nil || len(exported) == 0 {
+		t.Fatalf("native verifier export: %v", exportErr)
+	}
+	for _, mismatch := range []string{"run", "contract", "attempt", "candidate", "policy", "cancelled", "producer-json"} {
+		t.Run("verification-"+mismatch, func(t *testing.T) {
+			run, contract, attempt, candidate, p := "run", "contract", "attempt", v.Digest, policy
+			verifyCtx := ctx
+			switch mismatch {
+			case "run":
+				run = "other-run"
+			case "contract":
+				contract = "other-contract"
+			case "attempt":
+				attempt = "other-attempt"
+			case "candidate":
+				candidate = r.Passes[0].Candidate.Digest
+			case "policy":
+				p.BuildPackage = "./other"
+			case "cancelled":
+				var cancel context.CancelFunc
+				verifyCtx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "producer-json":
+				key := contributionKey("run")
+				original, _ := e.DB.Get(key)
+				// Read's decoder accepts whitespace; the verifier requires exact
+				// canonical producer bytes, not merely equivalent parsed values.
+				if err := e.DB.Put(key, append([]byte(" "), original...)); err != nil {
+					t.Fatal(err)
+				}
+				defer e.DB.Put(key, original)
+			}
+			if _, err := e.ReloadAcceptedEvidence(verifyCtx, run, contract, attempt, candidate, p); err == nil {
+				t.Fatal("mismatched native verification accepted")
+			}
+		})
+	}
 	if v.CandidateCommit == base || v.CandidateTree == v.HeadTree {
 		t.Fatal("candidate Git identity represents base, not repaired bytes")
 	}
