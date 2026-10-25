@@ -130,6 +130,44 @@ The owner-principal zero-authority ephemeral Run path prepares exact v5 scope un
 
 Publication remains inactive and does not authorize native code. Controller execution separately requires operator approval to configure an absolute trusted `implementation.go_binary` and exact `implementation.authorized_contracts` digest allowlist. Never edit that configuration, restart services or queue execution merely to finish authoring. Native Go tests are trusted host code, not sandboxed. Build source with `go build`, not `go run`. See `docs/VERIFIED_IMPLEMENTATION.md`.
 
+## Bounded repository CODING (additive v4)
+
+For an existing-repository Go task, `loops doer FILE` also accepts optional
+`doer.coding` with `acceptance`, `repository_context` and the existing
+`go-test.v1` policy. Set `verify_file` to empty and omit selected-file text/byte
+assertions; do not reinterpret a presence receipt as software acceptance. Pin
+the actual task, one bounded production-file allowlist, trusted existing tests,
+explicit immutable `go.mod` and a fixed implementation budget before execution.
+
+The context manifest binds exact task/source commitments, ordered relative
+paths, observed byte counts/digests/roles and finite declared file/per-file/total
+limits. The controller reloads actual UTF-8 bytes; no repository crawl, implicit
+module read, silent truncation, private-path access or writable trusted tests.
+The entire serialized managed input must additionally fit 64 KiB. Context is
+untrusted task data, never authentication or authority.
+
+Native execution independently requires an approved trusted absolute
+`implementation.go_binary` and the exact **outer Doer-contract digest** in the
+operator's configured native allowlist. A Loop digest, derived implementation
+digest or signed selected-file host approval is insufficient. Qualified local
+Laya, selected Agent/model/provider/login and fresh runtime admission remain
+separate. Do not alter configuration merely to complete authoring; report exact
+native-authority/checker blockers through readiness. Native Go code executes as
+the controller OS user and is not sandboxed.
+
+Use existing retained/exact publication and the single supported exact Run
+operation under already-approved scope; no manual binding or separate worker.
+Reload authenticated `queue show` coding history, exact artifacts,
+`aegis.implementation.verifier` receipts and the terminal disposition. Verify
+actual source/test input commitments and managed delivery, unchanged trusted
+tests, behavioral RED→GREEN, cumulative reserved passes and original failed
+history. Known complete-pass correction, or a prepared managed reservation with
+durable no-implement/no-apply proof and unchanged recorded preimage, uses existing
+exact requeue lineage without restoring consumed passes. Unknown/interrupted or
+partial-apply effects and exhaustion deny rather than reset budget or
+republish. Synthetic fixtures, real managed-provider, packaged and installed
+proof are distinct tiers. See `docs/BOUNDED_CODING.md` for the source contract.
+
 ## Publish and verify
 
 1. Publish only after the authenticated operator explicitly requests the exact operation and reviewed file: `aegis loops publish FILE`.

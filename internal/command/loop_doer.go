@@ -24,7 +24,7 @@ type doerDraftInput struct {
 
 func loopDoerCmd() *cobra.Command {
 	var destination string
-	cmd := &cobra.Command{Use: "doer FILE", Short: "Build a bounded selected-file Doer Loop v4 proposal (no publication or execution)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "doer FILE", Short: "Build a bounded Doer v4 proposal: selected-file or trusted Go CODING (no execution)", Long: "Build a bounded Doer v4 publication proposal without authority or execution. Selected-file assertions preserve presence/text/exact-byte policies. Opt-in CODING binds explicit repository context and trusted Go acceptance; see docs/BOUNDED_CODING.md for the native authorization and evidence contract.", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		var input doerDraftInput
 		if err := decodeJSONFile(args[0], &input); err != nil {
 			return usage(err)

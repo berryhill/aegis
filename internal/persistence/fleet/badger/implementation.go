@@ -15,7 +15,7 @@ func (s *Store) ImplementationStore() implementation.Store { return implementati
 type implementationStore struct{ owner *Store }
 
 func implementationKey(k []byte) bool {
-	return bytes.HasPrefix(k, []byte("implementation/run/")) || bytes.HasPrefix(k, []byte("implementation/blob/")) || bytes.HasPrefix(k, []byte("implementation/step/"))
+	return bytes.HasPrefix(k, []byte("implementation/run/")) || bytes.HasPrefix(k, []byte("implementation/blob/")) || bytes.HasPrefix(k, []byte("implementation/step/")) || bytes.HasPrefix(k, []byte("implementation/successor/"))
 }
 func (s implementationStore) Get(k []byte) ([]byte, error) {
 	if !implementationKey(k) {

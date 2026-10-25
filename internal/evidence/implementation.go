@@ -53,5 +53,12 @@ func (v *BlobVerifier) VerifyImplementation(ctx context.Context, artifact Runtim
 	return r, p, err
 }
 func ValidateImplementationProvenance(p CompletionProvenance, contract string, policyVersion string, artifact RuntimeArtifact, receipts []VerificationReceipt) bool {
-	return p.implementationCheck != nil && p.implementationContract == contract && len(receipts) == 1 && receipts[0].VerifierID == "aegis.implementation.verifier" && receipts[0].Claim == "verified-implementation" && receipts[0].PolicyVersion == policyVersion && ValidateCompletionProvenance(p, artifact, receipts)
+	return ValidateImplementationBinding(p, contract, policyVersion, artifact, receipts) && ValidateCompletionProvenance(p, artifact, receipts)
+}
+
+// ValidateImplementationBinding checks the opaque verifier seal without invoking
+// external reload callbacks. Persistence must first ValidateCompletionProvenance
+// outside its transaction lock, then bind the exact immutable revision inside it.
+func ValidateImplementationBinding(p CompletionProvenance, contract string, policyVersion string, artifact RuntimeArtifact, receipts []VerificationReceipt) bool {
+	return p.implementationCheck != nil && p.implementationContract == contract && len(receipts) == 1 && receipts[0].VerifierID == "aegis.implementation.verifier" && receipts[0].Claim == "verified-implementation" && receipts[0].PolicyVersion == policyVersion && p.digest != "" && p.digest == completionProvenance(artifact, receipts).digest
 }

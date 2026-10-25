@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/berryhill/aegis/internal/config"
@@ -48,7 +49,7 @@ func (r *implementationTestRepository) CompleteQueueItem(ctx context.Context, c 
 
 // The runtime is a protocol fixture; native checks and fleet completion are real.
 func TestImplementationQueueNativeCompletion(t *testing.T) {
-	for _, mode := range []string{"first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-runtime-failure", "v4-proposal-failure", "v4-needs-input", "v4-unauthorized", "v4-existing", "v4-toolset-denied", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper", "v5-toolset-denied"} {
+	for _, mode := range []string{"v4-coding-recovery", "v4-coding", "first", "correction", "exhaustion", "unauthorized", "tamper", "cancelled", "revoked", "expired", "doer-needs-input", "doer-success", "doer-retry", "v4-success", "v4-retry", "v4-runtime-failure", "v4-proposal-failure", "v4-needs-input", "v4-unauthorized", "v4-existing", "v4-toolset-denied", "v5-success", "v5-unauthorized", "v5-wrong-digest", "v5-missing", "v5-tamper", "v5-toolset-denied"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			root := t.TempDir()
@@ -119,6 +120,19 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 					expected = "package fixture\nfunc Value() int {return 0}"
 				}
 				lr, lv, err = loop.NewDoerRevision("implementation", 1, "", loop.DoerContract{Task: "Make value.go return 42", Workspace: workspace, WritableFiles: []string{"value.go"}, VerifyFile: "value.go", ExpectedText: &expected, MaxAttempts: 2})
+				if strings.HasPrefix(mode, "v4-coding") {
+					hash := func(b []byte) string { return fmt.Sprintf("sha256:%x", sha256.Sum256(b)) }
+					m := &loop.RepositoryContext{TaskDigest: hash([]byte(contract.Task)), MaxFiles: 3, MaxFileBytes: 4096, MaxTotalBytes: 8192}
+					for _, entry := range []struct{ path, role string }{{"value.go", "source"}, {"value_test.go", "trusted_test"}, {"go.mod", "checker_input"}} {
+						b, e := os.ReadFile(filepath.Join(workspace, entry.path))
+						if e != nil {
+							t.Fatal(e)
+						}
+						m.Files = append(m.Files, loop.RepositoryContextFile{Path: entry.path, Role: entry.role, Bytes: int64(len(b)), Digest: hash(b)})
+					}
+					m.SourceDigest = implementation.RepositorySourceDigest(m)
+					lr, lv, err = loop.NewDoerRevision("implementation", 1, "", loop.DoerContract{Task: contract.Task, Workspace: workspace, WritableFiles: contract.WritableFiles, MaxAttempts: 2, Coding: &loop.DoerCoding{Acceptance: contract.Acceptance, Policy: contract.Policy, RepositoryContext: m}})
+				}
 			}
 			if strings.HasPrefix(mode, "v5-") {
 				lr, lv, err = loop.NewDoerReusableRevision("implementation", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
@@ -195,7 +209,7 @@ func TestImplementationQueueNativeCompletion(t *testing.T) {
 			if mode == "v4-proposal-failure" {
 				first = `{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"queue-runtime-session","payload":{"status":"complete","text":"private invalid proposal"}}}`
 			}
-			if mode == "correction" || mode == "exhaustion" || mode == "doer-retry" || mode == "v4-retry" {
+			if mode == "correction" || mode == "exhaustion" || mode == "doer-retry" || mode == "v4-retry" || mode == "v4-coding-recovery" {
 				first = message("0")
 			}
 			second := message("42")
@@ -301,6 +315,9 @@ while read rest; do :; done
 					}
 				}
 			}
+			if mode == "v4-coding-recovery" {
+				worker.SetDoerPassCapResolver(func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error) { return 1, nil })
+			}
 			lease := 5 * time.Minute
 			if mode == "expired" {
 				lease = time.Second
@@ -310,6 +327,47 @@ while read rest; do :; done
 			projection, readErr := repository.GetQueueProjection(ctx, "queue")
 			if readErr != nil {
 				t.Fatal(readErr)
+			}
+			if mode == "v4-coding-recovery" {
+				if err == nil || projection.State != queue.StateFailed || projection.Attempts != 1 || result.Disposition.ReasonCode != "implementation_failed" {
+					t.Fatalf("first managed failure: %+v %+v %v", result, projection, err)
+				}
+				previous := digestRef("queue", decision.Accepted.QueueItem.Digest)
+				h, e := worker.CodingHistory(ctx, previous, "attempt", lr)
+				if e != nil || h.ReservedPasses != 1 || h.RemainingBudget != 1 {
+					t.Fatalf("failed readback %+v %v", h, e)
+				}
+				if _, e = worker.CodingHistory(ctx, previous, "swapped-attempt", lr); e == nil {
+					t.Fatal("swapped attempt accepted")
+				}
+				continuation, e := worker.PrepareCodingContinuation(ctx, previous, "attempt", lr, h.Digest, "next-queue", 1)
+				if e != nil {
+					t.Fatal(e)
+				}
+				worker.SetCodingContinuationResolver(func(context.Context, loop.DoerContract, registry.AgentRevision) (*CodingContinuation, error) {
+					return continuation, nil
+				})
+				next, e := service.PrepareGraphRun(ctx, SubmitGraphRequest{Subject: subject, Authority: authorityRef, Graph: revisionRef(gr.GraphID, gr.Revision, gr.Digest), Inputs: runInputs, SubmissionID: "next-submission", IdempotencyKey: "next-submit", SnapshotID: "next-snapshot", QueueItemID: "next-queue", GraphRunID: "next-run", TransitionID: "next-queued", RejectionID: "next-rejected", MaxAttempts: 1})
+				if e != nil || next.Accepted == nil {
+					t.Fatalf("successor admission %+v %v", next, e)
+				}
+				corrected, e := worker.Process(ctx, WorkRequest{Subject: subject, Authority: authorityRef, QueueItemID: "next-queue", WorkerID: "worker", LoopExecutionID: "next-loop-execution", ClaimID: "next-claim", AttemptID: "next-attempt", ClaimTransitionID: "next-claimed", TerminalTransitionID: "next-terminal", DispositionID: "next-disposition", ArtifactID: "next-artifact", LeaseDuration: lease})
+				if e != nil || corrected.Disposition.State != execution.StateSucceeded || len(corrected.Receipts) != 1 || corrected.Receipts[0].Claim != "verified-implementation" {
+					t.Fatalf("managed correction %+v %v", corrected, e)
+				}
+				nh, e := worker.CodingHistory(ctx, digestRef("next-queue", next.Accepted.QueueItem.Digest), "next-attempt", lr)
+				if e != nil || nh.ConsumedBefore != 1 || nh.ReservedPasses != 1 || nh.CumulativeConsumed != 2 || nh.RemainingBudget != 0 || nh.PredecessorRun != "queue" || nh.PredecessorHistory != h.Digest {
+					t.Fatalf("successor readback %+v %v", nh, e)
+				}
+				after, e := worker.CodingHistory(ctx, previous, "attempt", lr)
+				if e != nil || after.Digest != h.Digest {
+					t.Fatal("predecessor history changed", e)
+				}
+				oldDisposition, e := repository.GetDispositionByGraphRun(ctx, "run")
+				if e != nil || oldDisposition.Digest != result.Disposition.Digest || oldDisposition.State != execution.StateFailed {
+					t.Fatal("historical disposition changed", e)
+				}
+				return
 			}
 			if strings.HasSuffix(mode, "toolset-denied") {
 				if err == nil || !strings.Contains(err.Error(), "doer_tool_free_authority_required") || projection.State != queue.StateQueued || projection.Attempts != 0 || result.Claim.ClaimID != "" {
@@ -438,6 +496,17 @@ while read rest; do :; done
 			}
 			if result.Disposition.State != execution.StateSucceeded || projection.State != queue.StateSucceeded || result.Artifact == nil {
 				t.Fatalf("completion: %+v %+v", result, projection)
+			}
+			if mode == "v4-coding" {
+				if len(result.Receipts) != 1 || result.Receipts[0].Claim != "verified-implementation" {
+					t.Fatal("coding used file presence", result.Receipts)
+				}
+				kernel := &implementation.Executor{DB: repository.ImplementationStore()}
+				r, e := kernel.Read("queue")
+				if e != nil || r.State != "succeeded" || len(r.Passes) != 1 {
+					t.Fatal(r, e)
+				}
+				return
 			}
 			if mode == "v5-success" {
 				if result.Artifact.MediaType != "application/json" || len(result.Receipts) != 1 || result.Receipts[0].MediaType != "application/json" {

@@ -69,6 +69,9 @@ func TestControllerCodexOwningTransport(t *testing.T) {
 	data, _ := json.Marshal(s.Config)
 	var mapping map[string]any
 	json.Unmarshal(data, &mapping)
+	// Absent and empty implementation both use defaults. Keep this fixture
+	// initially absent so the later exact additive commitment is provable.
+	delete(mapping, "implementation")
 	data, _ = yaml.Marshal(mapping)
 	original := append([]byte("# unrelated bytes preserved\n"), data...)
 	if e = os.WriteFile(s.ConfigFile, original, 0600); e != nil {
@@ -342,6 +345,33 @@ func TestControllerCodexOwningTransport(t *testing.T) {
 	afterLoop, e := s.GetLoopAs(ctx, sub, "preserved-loop", 1)
 	if e != nil || !reflect.DeepEqual(beforeLoop, afterLoop) {
 		t.Fatal("exact published Loop changed", e)
+	}
+	// An additive native trust block is not implicitly authenticated. Only the
+	// same selection can cross this exact reviewed config-commitment boundary.
+	updated := append(append([]byte{}, original...), []byte("\nimplementation:\n  go_binary: /synthetic/go\n  authorized_contracts:\n    - sha256:67b258b972d3264b4e93f2bacfac500c5c52a7a9815322e2aefb475674a7da58\n")...)
+	if e = os.WriteFile(s.ConfigFile, updated, 0600); e != nil {
+		t.Fatal(e)
+	}
+	call("GET", "/v1/controller/codex", nil, 409)
+	if _, e = s.Hermes.ResolveProviderAuthentication(ctx, h); e == nil {
+		t.Fatal("runtime admitted unreviewed config addition")
+	}
+	call("POST", "/v1/controller/codex/preview", app.ControllerCodexPreviewInput{ProfileHome: home, CredentialID: chosen, Replace: true}, 403)
+	call("POST", "/v1/controller/codex/preview", map[string]any{"profile_home": home, "credential_id": other, "replace": true, "account_id": "other-account"}, 400)
+	addition := cli("preview", home, "--credential", other, "--replace")
+	call("GET", "/v1/controller/codex", nil, 409)
+	cli("connect", addition.ReviewID)
+	call("POST", "/v1/controller/codex/connect", app.ControllerCodexApplyInput{ReviewID: addition.ReviewID}, 403)
+	if _, e = s.Hermes.ResolveProviderAuthentication(ctx, h); e != nil {
+		t.Fatal("runtime did not adopt reviewed commitment", e)
+	}
+	configAfterAddition, e := os.ReadFile(s.ConfigFile)
+	if e != nil || !bytes.Equal(configAfterAddition, updated) {
+		t.Fatal("config addition bytes rewritten", e)
+	}
+	baseAfterAddition, e := os.ReadFile(s.ConfigFile + ".controller-codex.json")
+	if e != nil || !bytes.Equal(baseAfterAddition, originalConnection) {
+		t.Fatal("base history rewritten", e)
 	}
 	os.WriteFile(s.ConfigFile, append(append([]byte{}, original...), []byte("# late operator edit\n")...), 0600)
 	call("GET", "/v1/controller/codex", nil, 409)

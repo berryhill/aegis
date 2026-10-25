@@ -30,6 +30,14 @@ Source candidate: typed Doer candidate readiness and retained-draft save/read/CA
 
 ## Setup and checks
 
+For repository CODING changes, preserve the [bounded native contract](docs/BOUNDED_CODING.md):
+freeze real source/tests before proposals, prove RED, and keep trusted tests/module
+inputs outside the writable scope. Exercise native context/input/history and the
+authenticated coding correction/requeue regression, including normal/race and
+architecture checks. Synthetic providers/native-parser fixtures are not real
+managed-provider or installed acceptance; attach those separate results to the PR.
+Do not widen native grants, authentication TTLs or host permissions to pass tests.
+
 For guided Doer changes, use isolated draft-CAS/key, exact raw-byte, signed host-approval, immutable-successor and continuation-identity tests; never launch the operator's native helper or model as a documentation check. Review [the issue 281 evidence ledger](docs/implementation/issue-281-launch-review.md) before claiming completion. Source fixtures do not satisfy the required live-source journey; extracted-candidate browser, visual and operator proof remain separate gates.
 
 Rich-manager PTY senders must wait for the next composer prompt before sending exit commands or EOF. A response marker is not readiness: the composer restores canonical terminal mode between reads, so early carriage return is translated to the editor's multiline newline. `TestManagerResponseSenderWaitsForComposerReadiness` holds the real manager in that response phase and checks the sender, clean exit, and terminal restoration without changing production terminal modes or process deadlines.

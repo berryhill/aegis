@@ -108,6 +108,10 @@ func connectionDigest(b []byte) string { sum := sha256.Sum256(b); return hex.Enc
 // config on every use. Legacy explicit YAML bindings remain supported, but any
 // sidecar conflict/drift denies rather than falling back to an old account.
 func ReadControllerCodexBinding(path string) (*ControllerCodexLogin, error) {
+	return readControllerCodexBinding(path, nil)
+}
+
+func readControllerCodexBinding(path string, review *ControllerCodexConfigReview) (*ControllerCodexLogin, error) {
 	before, err := ConnectionSnapshot(path)
 	if err != nil {
 		return nil, ErrConnectionConfig
@@ -123,6 +127,7 @@ func ReadControllerCodexBinding(path string) (*ControllerCodexLogin, error) {
 	defer unix.Close(fd)
 	data, err := connectionReadAt(fd, filepath.Base(path)+connectionSuffix)
 	var binding *ControllerCodexLogin
+	state := ControllerCodexConfigReview{ConfigSHA256: connectionDigest(before), HistorySHA256: connectionDigest(data)}
 	if errors.Is(err, syscall.ENOENT) {
 		binding = cfg.Credentials.ControllerCodexLogin
 	} else {
@@ -133,18 +138,29 @@ func ReadControllerCodexBinding(path string) (*ControllerCodexLogin, error) {
 		var record controllerConnectionRecord
 		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.DisallowUnknownFields()
-		if dec.Decode(&record) != nil || dec.Decode(new(any)) != io.EOF || record.Schema != "controller-codex-connection.v1" || record.ConfigSHA256 != connectionDigest(before) {
+		if dec.Decode(&record) != nil || dec.Decode(new(any)) != io.EOF || record.Schema != "controller-codex-connection.v1" || len(record.ConfigSHA256) != 64 {
 			return nil, ErrConnectionConfig
 		}
+		canonical, marshalErr := json.Marshal(record)
+		if marshalErr != nil || !bytes.Equal(data, canonical) {
+			return nil, ErrConnectionConfig
+		}
+		state.ConfigSHA256 = record.ConfigSHA256
 		binding = &record.Binding
 		cfg.Credentials.ControllerCodexLogin = binding
 		if cfg.Validate() != nil {
 			return nil, ErrConnectionConfig
 		}
 	}
-	binding, _, err = readControllerReplacements(fd, filepath.Base(path), before, binding)
+	binding, _, err = readControllerHistory(fd, filepath.Base(path), before, binding, &state)
 	if err != nil {
 		return nil, ErrConnectionConfig
+	}
+	if state.ConfigSHA256 != connectionDigest(before) {
+		if review == nil || !nativeTrustAddition(before, state.ConfigSHA256) {
+			return nil, ErrConnectionConfig
+		}
+		state.Additive = true
 	}
 	cfg.Credentials.ControllerCodexLogin = binding
 	if cfg.Validate() != nil {
@@ -153,6 +169,9 @@ func ReadControllerCodexBinding(path string) (*ControllerCodexLogin, error) {
 	after, err := ConnectionSnapshot(path)
 	if err != nil || !bytes.Equal(before, after) {
 		return nil, ErrConnectionConfig
+	}
+	if review != nil {
+		*review = state
 	}
 	return binding, nil
 }

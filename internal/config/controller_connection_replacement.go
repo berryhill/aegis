@@ -18,16 +18,31 @@ import (
 const maxControllerConnectionReplacements = 64
 
 type controllerReplacementRecord struct {
-	Schema         string               `json:"schema"`
-	ConfigSHA256   string               `json:"config_sha256"`
-	PreviousSHA256 string               `json:"previous_sha256"`
-	Generation     int                  `json:"generation"`
-	Binding        ControllerCodexLogin `json:"binding"`
+	Schema                string               `json:"schema"`
+	ConfigSHA256          string               `json:"config_sha256"`
+	PreviousSHA256        string               `json:"previous_sha256"`
+	Generation            int                  `json:"generation"`
+	Binding               ControllerCodexLogin `json:"binding"`
+	PreviousConfigSHA256  string               `json:"previous_config_sha256,omitempty"`
+	PreviousHistorySHA256 string               `json:"previous_history_sha256,omitempty"`
 }
 
 // Retain every connection fact. Contiguous no-replace publication is the
 // single-winner update boundary; a gap, unknown record or config drift denies.
 func readControllerReplacements(fd int, base string, snapshot []byte, current *ControllerCodexLogin) (*ControllerCodexLogin, int, error) {
+	state := ControllerCodexConfigReview{ConfigSHA256: connectionDigest(snapshot)}
+	if raw, err := connectionReadAt(fd, base+connectionSuffix); err == nil {
+		var first controllerConnectionRecord
+		if json.Unmarshal(raw, &first) != nil {
+			return nil, 0, ErrConnectionConfig
+		}
+		state.ConfigSHA256 = first.ConfigSHA256
+		state.HistorySHA256 = connectionDigest(raw)
+	}
+	return readControllerHistory(fd, base, snapshot, current, &state)
+}
+
+func readControllerHistory(fd int, base string, snapshot []byte, current *ControllerCodexLogin, state *ControllerCodexConfigReview) (*ControllerCodexLogin, int, error) {
 	prefix := base + connectionSuffix + ".replacement-"
 	scan, err := unix.Openat(fd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -62,9 +77,23 @@ func readControllerReplacements(fd int, base string, snapshot []byte, current *C
 			return nil, 0, ErrConnectionConfig
 		}
 		prior, _ := json.Marshal(current)
-		if record.Schema != "controller-codex-replacement.v1" || record.ConfigSHA256 != connectionDigest(snapshot) || record.PreviousSHA256 != connectionDigest(prior) || record.Generation != i {
+		if record.PreviousSHA256 != connectionDigest(prior) || record.Generation != i {
 			return nil, 0, ErrConnectionConfig
 		}
+		switch record.Schema {
+		case "controller-codex-replacement.v1":
+			if record.ConfigSHA256 != state.ConfigSHA256 || record.PreviousConfigSHA256 != "" || record.PreviousHistorySHA256 != "" {
+				return nil, 0, ErrConnectionConfig
+			}
+		case "controller-codex-replacement.v2":
+			if current == nil || record.Binding != *current || record.PreviousConfigSHA256 != state.ConfigSHA256 || record.PreviousHistorySHA256 != state.HistorySHA256 || record.ConfigSHA256 != connectionDigest(snapshot) || !nativeTrustAddition(snapshot, state.ConfigSHA256) {
+				return nil, 0, ErrConnectionConfig
+			}
+		default:
+			return nil, 0, ErrConnectionConfig
+		}
+		state.ConfigSHA256 = record.ConfigSHA256
+		state.HistorySHA256 = connectionDigest([]byte(state.HistorySHA256 + connectionDigest(raw)))
 		b := record.Binding
 		current = &b
 	}
@@ -74,6 +103,29 @@ func readControllerReplacements(fd int, base string, snapshot []byte, current *C
 // Replace only the exact reviewed existing operational binding. This never
 // edits operator YAML, auth files, credentials, Agent charters, or prior facts.
 func ReplaceControllerCodex(path string, expected []byte, previous, binding ControllerCodexLogin) error {
+	return replaceControllerCodex(path, expected, previous, binding, nil)
+}
+
+// Called only by the explicit one-use app review path. Runtime/show never call it.
+func ReplaceControllerCodexReviewed(path string, expected []byte, previous, binding ControllerCodexLogin, review ControllerCodexConfigReview) error {
+	if !review.Additive || previous != binding {
+		return ErrConnectionConfig
+	}
+	return replaceControllerCodex(path, expected, previous, binding, &review)
+}
+
+func replacementPredecessor(path string, review *ControllerCodexConfigReview) (*ControllerCodexLogin, error) {
+	if review == nil {
+		return ReadControllerCodexBinding(path)
+	}
+	b, state, err := ReadControllerCodexForReview(path)
+	if err != nil || state != *review {
+		return nil, ErrConnectionConfig
+	}
+	return b, nil
+}
+
+func replaceControllerCodex(path string, expected []byte, previous, binding ControllerCodexLogin, review *ControllerCodexConfigReview) error {
 	current, err := ConnectionSnapshot(path)
 	if err != nil || !bytes.Equal(current, expected) {
 		return ErrConnectionConfig
@@ -82,8 +134,8 @@ func ReplaceControllerCodex(path string, expected []byte, previous, binding Cont
 	if err != nil {
 		return ErrConnectionConfig
 	}
-	actual, err := ReadControllerCodexBinding(path)
-	if err != nil || actual == nil || *actual != previous || previous == binding {
+	actual, err := replacementPredecessor(path, review)
+	if err != nil || actual == nil || *actual != previous || previous == binding && review == nil {
 		return ErrConnectionConfig
 	}
 	cfg.Credentials.ControllerCodexLogin = &binding
@@ -117,7 +169,13 @@ func ReplaceControllerCodex(path string, expected []byte, previous, binding Cont
 		return ErrConnectionConfig
 	}
 	prior, _ := json.Marshal(&previous)
-	data, err := json.Marshal(controllerReplacementRecord{Schema: "controller-codex-replacement.v1", ConfigSHA256: connectionDigest(expected), PreviousSHA256: connectionDigest(prior), Generation: count + 1, Binding: binding})
+	record := controllerReplacementRecord{Schema: "controller-codex-replacement.v1", ConfigSHA256: connectionDigest(expected), PreviousSHA256: connectionDigest(prior), Generation: count + 1, Binding: binding}
+	if review != nil {
+		record.Schema = "controller-codex-replacement.v2"
+		record.PreviousConfigSHA256 = review.ConfigSHA256
+		record.PreviousHistorySHA256 = review.HistorySHA256
+	}
+	data, err := json.Marshal(record)
 	if err != nil {
 		return ErrConnectionConfig
 	}
@@ -144,7 +202,7 @@ func ReplaceControllerCodex(path string, expected []byte, previous, binding Cont
 	if err != nil || !bytes.Equal(current, expected) {
 		return ErrConnectionConfig
 	}
-	actual, err = ReadControllerCodexBinding(path)
+	actual, err = replacementPredecessor(path, review)
 	if err != nil || actual == nil || *actual != previous {
 		return ErrConnectionConfig
 	}

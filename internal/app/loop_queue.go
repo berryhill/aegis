@@ -71,7 +71,9 @@ func (r *QueueLoopResult) blockedDoer(reason string, schema ...string) {
 		}
 	case "doer_unsafe_workspace":
 		r.RequiredAction = "review_exact_workspace_scope"
-	case "doer_go_executable_untrusted", "doer_laya_executable_untrusted", "doer_laya_home_untrusted", "local_laya_unavailable":
+	case "doer_native_contract_unauthorized":
+		r.RequiredAction = "review_exact_native_contract_authorization"
+	case "doer_go_executable_missing", "doer_go_executable_untrusted", "doer_laya_executable_untrusted", "doer_laya_home_untrusted", "local_laya_unavailable":
 		r.RequiredAction = "review_controller_dependency_integrity"
 	case "doer_prerequisite_unavailable", "doer_runtime_unqualified", "doer_check_cancelled":
 		r.RequiredAction = "controller_diagnostic_adapter_unavailable"

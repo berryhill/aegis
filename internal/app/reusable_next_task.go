@@ -10,6 +10,10 @@ import (
 	"github.com/berryhill/aegis/internal/reference"
 )
 
+func nativeCodingRevision(revision loop.LoopRevision) bool {
+	return revision.SchemaVersion == loop.DoerRevisionSchemaVersion && revision.Doer != nil && revision.Doer.Coding != nil
+}
+
 // Concrete task scope, not an Agent-wide reservation or a new request key,
 // determines whether a failed task is being continued. Definitions grant nothing.
 func reusableNextTaskAllowed(previous, next loop.DoerContract, linked bool) bool {
@@ -41,6 +45,10 @@ func (s *Service) validateReusableNextTask(ctx context.Context, sub core.Subject
 	if err != nil || revision.Digest != in.Loop.Digest {
 		return ErrDenied
 	}
+	ctx, err = bindDoerRun(ctx, in, revision)
+	if err != nil {
+		return err
+	}
 	next, err := queuedDoerContract(ctx, revision)
 	if err != nil {
 		return err
@@ -62,7 +70,7 @@ func (s *Service) validateReusableNextTask(ctx context.Context, sub core.Subject
 // A different task between two requests must not hide an older failed budget.
 // Explicit continuation may cover only its verified immutable ancestry.
 func (s *Service) validateReusableTaskHistory(ctx context.Context, sub core.Subject, in QueueLoopInput, candidate loop.LoopRevision) error {
-	if candidate.SchemaVersion != loop.DoerReusableSchemaVersion {
+	if candidate.SchemaVersion != loop.DoerReusableSchemaVersion && !nativeCodingRevision(candidate) {
 		return nil
 	}
 	current, err := queuedDoerContract(ctx, candidate)
@@ -85,7 +93,7 @@ func (s *Service) validateReusableTaskHistory(ctx context.Context, sub core.Subj
 		if err != nil || previous.Digest != old.Source.Digest {
 			return ErrDenied
 		}
-		if previous.SchemaVersion != loop.DoerReusableSchemaVersion {
+		if previous.SchemaVersion != loop.DoerReusableSchemaVersion && !nativeCodingRevision(previous) {
 			continue
 		}
 		contract, err := s.reusableHistoricalContract(ctx, in, old, previous)
@@ -127,11 +135,12 @@ func (s *Service) reexecutionCoversQueue(sub core.Subject, in QueueLoopInput, ta
 	return false
 }
 
-// A live exact-task approval can cover its canonically budget-linked v5
+// A live exact-task approval can cover its canonically budget-linked v5 or native
+// CODING continuation. Native readiness still requires its exact contract allowlist.
 // continuation without renewing consent or changing its signed expiry. It can
 // never cover a fresh key alone, a different task/candidate, or a budget reset.
 func (s *Service) reusableApprovalCoversRun(record hostapproval.Record, requestID string, candidate, agent reference.RevisionRef) bool {
-	if record.DoerReusable == nil || record.RunRequestID == "" || record.RunRequestID == requestID || record.Candidate != candidate || record.Agent != agent {
+	if (record.DoerReusable == nil && record.Contract.Coding == nil) || record.RunRequestID == "" || record.RunRequestID == requestID || record.Candidate != candidate || record.Agent != agent {
 		return false
 	}
 	cap := record.Contract.MaxAttempts

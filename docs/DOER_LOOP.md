@@ -158,8 +158,19 @@ current account is inferred or advertised. Inspection creates no review or grant
 The opaque ID is `nc-` plus a domain-separated SHA-256 digest of the bounded
 explicit native entry ID. It is stable across token refresh, not across native
 entry replacement; missing IDs never use native `from_dict`'s generated default.
-After operator selection use `preview PROFILE_HOME --credential ID`. Its strict
-API adds optional `credential_id` to the preview input, never caller account,
+After operator selection use `preview PROFILE_HOME --credential ID`. An explicit
+same-selection `--replace` review also supports a source-candidate narrow config
+transition: one newly appended top-level `implementation` mapping, containing
+only `go_binary` and `authorized_contracts`, whose removal reconstructs the old
+bound bytes exactly. The source, opaque ID, freshly resolved account and original
+principal must remain unchanged. No prior implementation block, unrelated edit,
+unknown/duplicate key or unprovable old commitment is repairable. Preview has no
+runtime effect; the existing one-use `connect REVIEW_ID` appends a linked config
+commitment generation and preserves exact YAML and historical records. Show and
+inference deny before connect and on any later full-config drift. This does not
+approve the configuration grant itself or change Agent/model authority.
+
+The strict API adds optional `credential_id` to the preview input, never caller account,
 approval or secret fields. The five-minute single-use review binds exact source,
 ID, account, authenticated principal and config bytes. Connect rechecks all of
 these and persists the optional ID in the operational sidecar; `show` returns it.
@@ -309,7 +320,32 @@ An authoring document has `agent_id`, `loop_id`, positive `revision`, optional e
 
 Omit `expected_text` (and omit/disable `exact_bytes`) for a presence-only regular-file check. With `exact_bytes: true`, an explicit empty string requires an empty file; without it, historical outer-whitespace trimming remains in effect. The workspace must already exist and the selected file should not already satisfy the assertion. Writable paths are explicit relative paths beneath the workspace. The builder seals the task, paths, check and attempt bound in the exact Loop digest and prints the separate Doer-contract digest to stderr. Use `./scripts/build-source.sh ./aegis` from the checkout and `./aegis loops doer --help` to inspect the installed source command; do not use `go run` as a build-only substitute. A real publication requires an enabled exact Agent, fresh authority and separately reviewed activation. Authoring and publication are not runtime grants.
 
-The controller defaults to no implementation execution. The existing configuration route requires separate operator approval for an absolute trusted `implementation.go_binary`, `implementation.authorized_contracts` containing the exact printed Doer-contract digest, and absolute `implementation.laya_python` plus existing private `implementation.laya_home` with a prepopulated offline Laya checkpoint. The source candidate also accepts independently signed exact v4 host consent in place of the configured contract entry, without removing local controller/helper or fresh runtime prerequisites. The controller does not download Laya or change the operator's Hermes profile. The participant must be registered with a tool-free, credential-free Hermes authority. A Graph pins exactly one Agent/Loop node; the Queue submission permits only one Queue attempt, while the Loop permits up to three internal Hermes proposals. The actual Hermes model/provider remain those sealed in that authority context for both implementation and diagnosis/completion; the upstream Doer skill's experimental family routing is not supported here.
+For legacy selected-file contracts, the configured exact-contract route and
+independently signed exact host consent remain supported alongside qualified
+controller/helper and fresh runtime prerequisites. The local decision backend
+may use an explicit Laya interpreter/private offline home or qualified installed
+discovery; it is never downloaded as part of authoring. The participant uses a
+sealed tool-free, credential-free Hermes authority and one bounded Queue attempt
+can contain up to three implementation passes. Model/provider remain those in
+that authority, including diagnosis/completion; no experimental family router is
+added. **Selected-file host consent does not authorize native code.**
+
+### Bounded repository CODING (additive v4)
+
+The same typed builder and retained/exact Run journey accept opt-in `coding`
+with immutable explicit source/test/module context, finite limits and trusted
+`go-test.v1` behavioral acceptance. It replaces selected-file assertions rather
+than upgrading their meanings. Native execution requires the independently
+approved outer Doer-contract allowlist and trusted absolute Go checker; a native
+only configuration can retain qualified installed Laya discovery. The checker
+materializes only declared current inputs and preserves original input/context,
+failed history and cumulative remaining budget through supported correction.
+Authenticated coding history includes exact managed-input/turn commitments and
+native receipt/disposition provenance, not raw prompts or arbitrary host output.
+See [the complete CODING contract](BOUNDED_CODING.md). Native Go code is not
+sandboxed; synthetic checks do not prove real-provider acceptance.
+
+### Selected-file admission and historical cursor behavior
 
 For v4, `aegis loops queue FILE` with `activate: true` and direct lifecycle activation check the exact enabled Agent, exact charter and freshly selected tool-free/credential-free stanza with a usable model, verified receipt for that charter, current Hermes runtime/version, the exact authorized Doer contract (configured allowlist or independently signed v4 host consent), trusted executable paths, private Laya home, bounded workspace policy, and one typed local Laya gate response before creating a new activation, Graph, or Queue item. The preflight discards that gate's yes/no verdict; task eligibility is judged again before claim. Missing foundations return an inline reason such as `provisioning_receipt_missing`, `doer_model_required`, `runtime_unavailable_or_unsupported`, `local_laya_unavailable`, or `implementation_prerequisite_required`, with no new executable Queue preparation. A v4 response also carries a stable `request_id` and the exact `required_charter` reference. For a missing matching receipt, `required_action: plan_preview_exact_charter` points to the existing `aegis plan preview AGENT --revision REVISION --environment local` review entry; a verified receipt still requires a separately authenticated exact approval and provision apply. For `doer_model_required`, `required_action: review_charter_successor_with_usable_model` means a new independently reviewed charter and exact Agent/Loop bindings would be needed—not an automatic model switch. For an exact-charter receipt remedy, retry the identical request file and idempotency key; a charter successor changes authority and requires a newly reviewed request with a fresh key and exact Agent/Loop references. Do not repurpose an already rejected activation intent. An empty `graph` and `queue_item_id` here mean the prerequisite gate ran before publication/submission, not that an execution failed. Existing attempts and recorded lifecycle events still replay their immutable outcome; a compatible pending recovery repeats the gate. Structural publication remains available without these execution prerequisites. This is a point-in-time preflight, not session issuance, a guarantee of future model access, or permission to alter controller configuration. The worker repeats exact contract and fresh runtime/effect admission before a claim and each write.
 
@@ -317,7 +353,7 @@ When an authenticated v4 request has both an unusable selected model and no veri
 
 For a compatible already-accepted v4 preparation, a repeat request with an explicit item ID or the same idempotency key retains that exact ID. The optional `queue_item_id` is a recovery selector, not a changed execution intent: it must equal that request key's accepted Queue item ID. A different key cannot adopt the item. A newly missing prerequisite is appended as a no-state-change preparation diagnostic and reloaded for Queue readback, without claim or attempt. Repeating the same blocker does not duplicate its diagnostic. This does not turn a fresh unready request into a parked Queue item.
 
-The closed step sequence is eligibility (typed local Laya) → implement (bounded tool-free Hermes proposal; controller applies only allowlisted file edits) → judgment (Laya reads the report) → selected-file verification (controller reads the file independently) → either terminal assessment or bounded Hermes diagnosis and another proposal. The authenticated Queue detail shows the independently reloaded, content-free Doer cursor in recorded order so verify → diagnosis → implement is visible when it actually occurred; it never infers success from a cursor step or model verdict. A negative gate durably denies the Queue item as `doer_needs_input` before any claim/attempt. An already-satisfying target denies before claim so old bytes cannot count as new work. Both judgment and file check are observed on every pass; a model verdict never mints a receipt. The file verifier denies unsafe paths, symlinks, nonregular files, oversized output and mismatched text; content-addressed artifact, independently reloaded receipt, pinned contract and fresh authority are required for successful disposition. Failed or uncertain effects never become success.
+For selected-file contracts, the closed step sequence is eligibility (typed local Laya) → implement (bounded tool-free Hermes proposal; controller applies only allowlisted file edits) → judgment (Laya reads the report) → selected-file verification (controller reads the file independently) → either terminal assessment or bounded Hermes diagnosis and another proposal. The authenticated Queue detail shows the independently reloaded, content-free Doer cursor in recorded order so verify → diagnosis → implement is visible when it actually occurred; it never infers success from a cursor step or model verdict. A negative gate durably denies the Queue item as `doer_needs_input` before any claim/attempt. An already-satisfying target denies before claim so old bytes cannot count as new work. Both judgment and file check are observed on every pass; a model verdict never mints a receipt. The file verifier denies unsafe paths, symlinks, nonregular files, oversized output and mismatched text; content-addressed artifact, independently reloaded receipt, pinned contract and fresh authority are required for successful disposition. Failed or uncertain effects never become success.
 
 Implementation failure diagnostics retain a closed controller code in the append-only step checkpoint and expose it as `doer_steps[].failure_code` through authenticated Queue readback. Reviewed native Hermes `error_surface` layer/code pairs are advisory diagnostics only; provider/model labels, exception text, response bytes and retryability flags are never projected. Proposal decoding, missing selected edits and apply failures have separate closed codes. Missing or unrecognized native classifications stay generic. Historical untyped failures remain `step_error`: this projection cannot recover a cause that was discarded before persistence, infer it from later session cleanup, or reopen a terminal run. The Loop revision, implementation budget, fresh admission and evidence requirements are unchanged.
 

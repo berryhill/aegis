@@ -14,3 +14,10 @@ func ReplaceControllerCodex(string, []byte, ControllerCodexLogin, ControllerCode
 func ReadControllerCodexBinding(string) (*ControllerCodexLogin, error) {
 	return nil, ErrConnectionConfig
 }
+
+func ReadControllerCodexForReview(string) (*ControllerCodexLogin, ControllerCodexConfigReview, error) {
+	return nil, ControllerCodexConfigReview{}, ErrConnectionConfig
+}
+func ReplaceControllerCodexReviewed(string, []byte, ControllerCodexLogin, ControllerCodexLogin, ControllerCodexConfigReview) error {
+	return ErrConnectionConfig
+}

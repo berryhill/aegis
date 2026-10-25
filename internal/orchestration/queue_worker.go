@@ -13,6 +13,7 @@ import (
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/graph"
+
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	queue "github.com/berryhill/aegis/internal/queue"
@@ -95,6 +96,7 @@ type QueueWorker struct {
 	implementation     *ImplementationController
 	doerHostApproval   func(context.Context, loop.DoerContract, registry.AgentRevision) error
 	doerPassCap        func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)
+	codingContinuation func(context.Context, loop.DoerContract, registry.AgentRevision) (*CodingContinuation, error)
 	doerProtectedPaths []string
 }
 
