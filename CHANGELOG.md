@@ -6,10 +6,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
-- Replace the cumulative `execution` CI shard with mandatory whole-package
-  `implementation` and `orchestration` groups in normal and race modes. Preserve
-  uncached complete tests, ten-minute jobs, eight-minute package alarms and
-  cgroup limits; exact-head evidence rejects missing or cancelled successors.
+- Replace the cumulative `execution` CI shard with mandatory `implementation`,
+  `orchestration` and `orchestration-contribution` groups in normal and race modes.
+  Dynamically inventory orchestration defaults to isolate its heavy contribution
+  integration while retaining every other test, example and fuzz seed exactly
+  once. Freeze synthetic contribution authority time before worker binding;
+  retain explicit expiry/revocation denial and real native runtime limits.
+  Preserve uncached complete tests, ten-minute jobs, eight-minute package alarms
+  and cgroup limits; exact-head evidence rejects missing or cancelled successors.
 
 - Managed contribution custody permits only exact same-attempt quiescent phase
   boundaries under the existing lock; foreign, stale, interrupted and exhausted

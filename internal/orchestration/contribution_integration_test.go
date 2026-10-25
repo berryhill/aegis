@@ -104,8 +104,10 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	service, fixture, _, subject, _, _ := fleetServiceFixture(t)
+	// Authority time is a fixture stage, not native build/check wall time. Install
+	// it before workers capture the method value; real runtime limits stay live.
 	now := time.Now().UTC()
-	service.now = func() time.Time { return time.Now().UTC() }
+	service.now = func() time.Time { return now }
 	auth := service.authority.(fleetAuthorityRepository)
 	subject.AuthenticatedAt = now.Add(-time.Minute)
 	subject.ExpiresAt = now.Add(time.Hour)
@@ -509,14 +511,14 @@ while read rest; do :; done
 	})
 	t.Run("custody_pre_post_authority", func(t *testing.T) {
 		expired := subject
-		expired.ExpiresAt = time.Now().Add(-time.Hour)
+		expired.ExpiresAt = now.Add(-time.Hour)
 		called := false
 		if err := call(expired, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
 			t.Fatalf("expired admitted: %v", err)
 		}
 		saved := service.authority
 		defer func() { service.authority = saved }()
-		revoke := func() { a := auth; a.authority.ExpiresAt = time.Now().Add(-time.Hour); service.authority = a }
+		revoke := func() { a := auth; a.authority.ExpiresAt = now.Add(-time.Hour); service.authority = a }
 		revoke()
 		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
 			t.Fatalf("revoked admitted: %v", err)
@@ -575,7 +577,7 @@ while read rest; do :; done
 	}
 	worker.implementation.config.GoBinary = goBinary
 	expired := subject
-	expired.ExpiresAt = time.Now().Add(-time.Hour)
+	expired.ExpiresAt = now.Add(-time.Hour)
 	if _, e = worker.AcceptedContributionCandidate(ctx, expired, "queue", lr); !errors.Is(e, ErrWorkerDenied) {
 		t.Fatalf("stale authority: %v", e)
 	}

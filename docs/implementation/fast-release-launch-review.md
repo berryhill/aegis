@@ -147,10 +147,20 @@ cumulative whole-package cost, not evidence of a failing assertion. Replace
 normal and race modes. Exact required names are `Go normal / implementation`,
 `Go race / implementation`, `Go normal / orchestration` and
 `Go race / orchestration`; legacy execution checks cannot substitute for them.
-The complete package commands remain uncached and unfiltered with eight-minute
-alarms, ten-minute jobs and unchanged supervisor limits. No product or delivery
-test changes belong to this topology repair. The existing API split is unchanged.
-Fresh exact-head hosted success for both successors in both modes and all other
+That whole-package split remains intact; a later measured race run exposed
+373.40s contribution integration plus about 140s implementation-controller work
+inside orchestration. The additional mandatory `orchestration-contribution` group
+isolates only `TestContributionQueueNativeRepairIntegration`, in both modes.
+Both orchestration groups dynamically inventory all default tests/examples/fuzz
+targets and select anchored parent names: every remaining current/future default
+runs in orchestration, with all children/seeds and TestMain in each process.
+`Go normal / orchestration-contribution` and `Go race / orchestration-contribution`
+are required exact-head evidence; missing/cancelled checks deny even with green
+aggregates. Commands remain uncached with eight-minute alarms, ten-minute jobs
+and unchanged supervisor limits. Only the synthetic fixture's authority clock is
+fixed before binding; explicit expiry/revocation negatives and real native limits
+remain. Production admission/TTLs and the existing API split are unchanged.
+Fresh exact-head hosted success for all three successors in both modes and all other
 mandatory checks remains required; local focused regressions prove topology and
 fail-closed evidence only. Launch impact is CI configuration/evidence and these
 resource/launch notes plus CHANGELOG; runtime, security, architecture, quickstart,
@@ -161,8 +171,8 @@ no-key demo, recordings, licensing and release artifact formats are unaffected.
 The seven-group, whole-package topology above is historical. Hosted run
 40055537827 exhausted the API race package's 12-minute alarm while its active
 authenticated HTTP test had just started. The repair replaces API with `api-a`
-and `api-b` in both modes. Only API compiles twice; every other package remains
-exact-once by validated `go list ./...` set subtraction. Each API group derives
+and `api-b` in both modes. API and, after the follow-up above, orchestration compile twice; every other
+package remains exact-once by validated `go list ./...` set subtraction. Each API group derives
 the same sorted inventory from `go test [-race] -count=1 -timeout=... -list .`
 and alternates top-level names. An anchored, escaped parent-name regex preserves
 children and fuzz seeds without prefix matches. Benchmarks are recognized but
