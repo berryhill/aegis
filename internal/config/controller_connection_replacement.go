@@ -63,6 +63,8 @@ func readControllerHistory(fd int, base string, snapshot []byte, current *Contro
 	if count > maxControllerConnectionReplacements || count > 0 && current == nil {
 		return nil, 0, ErrConnectionConfig
 	}
+	records := make([]controllerReplacementRecord, count)
+	encoded := make([][]byte, count)
 	for i := 1; i <= count; i++ {
 		raw, err := connectionReadAt(fd, fmt.Sprintf("%s%06d", prefix, i))
 		if err != nil {
@@ -76,6 +78,41 @@ func readControllerHistory(fd int, base string, snapshot []byte, current *Contro
 		if err != nil || !bytes.Equal(raw, canonical) {
 			return nil, 0, ErrConnectionConfig
 		}
+		records[i-1], encoded[i-1] = record, raw
+	}
+	// Replay each transition against its own exact configuration, reconstructed
+	// from current bytes. Never persist private configuration backups or rewrite
+	// historical facts. A pending addition remains denied at runtime/readback.
+	configs := make([][]byte, count)
+	if count > 0 {
+		latest := records[count-1].ConfigSHA256
+		if connectionDigest(snapshot) != latest {
+			var ok bool
+			snapshot, ok = nativeTrustPredecessor(snapshot, latest)
+			if !ok {
+				return nil, 0, ErrConnectionConfig
+			}
+		}
+		for i := count - 1; i >= 0; i-- {
+			record := records[i]
+			if connectionDigest(snapshot) != record.ConfigSHA256 {
+				return nil, 0, ErrConnectionConfig
+			}
+			configs[i] = snapshot
+			if record.Schema == "controller-codex-replacement.v2" {
+				var ok bool
+				snapshot, ok = nativeTrustPredecessor(snapshot, record.PreviousConfigSHA256)
+				if !ok {
+					return nil, 0, ErrConnectionConfig
+				}
+			}
+		}
+		if connectionDigest(snapshot) != state.ConfigSHA256 {
+			return nil, 0, ErrConnectionConfig
+		}
+	}
+	for index, record := range records {
+		i, raw := index+1, encoded[index]
 		prior, _ := json.Marshal(current)
 		if record.PreviousSHA256 != connectionDigest(prior) || record.Generation != i {
 			return nil, 0, ErrConnectionConfig
@@ -86,7 +123,7 @@ func readControllerHistory(fd int, base string, snapshot []byte, current *Contro
 				return nil, 0, ErrConnectionConfig
 			}
 		case "controller-codex-replacement.v2":
-			if current == nil || record.Binding != *current || record.PreviousConfigSHA256 != state.ConfigSHA256 || record.PreviousHistorySHA256 != state.HistorySHA256 || record.ConfigSHA256 != connectionDigest(snapshot) || !nativeTrustAddition(snapshot, state.ConfigSHA256) {
+			if current == nil || record.Binding != *current || record.PreviousConfigSHA256 != state.ConfigSHA256 || record.PreviousHistorySHA256 != state.HistorySHA256 || !nativeTrustAddition(configs[index], state.ConfigSHA256) {
 				return nil, 0, ErrConnectionConfig
 			}
 		default:

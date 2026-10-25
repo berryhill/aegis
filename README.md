@@ -37,7 +37,8 @@ scopes and exact published definitions remain unchanged. Connection metadata is
 a separate private no-replace record; the owning YAML is never rewritten and
 config drift denies runtime use. A source candidate additionally permits an explicit
 same-selection replacement review for one exactly reconstructable appended native
-trust block; it never automatically repairs drift. See [the connection
+trust block or one later exact-contract addition to its existing allowlist;
+it never automatically repairs drift. See [the connection
 procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
 ## Retained task execution (source candidate)

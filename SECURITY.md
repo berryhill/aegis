@@ -43,7 +43,13 @@ configuration remains immutable. Same-UID/root writers are not host-sandboxed.
 An explicit same-selection `preview --replace` may review one newly appended
 `implementation` mapping containing only typed `go_binary` and
 `authorized_contracts`. Removing it must reproduce the predecessor's exact
-config commitment; aliases, duplicate keys, other drift and changed source,
+config commitment. A later addition permits only one new final plain exact
+`sha256:` contract line in the existing block allowlist; removing that line
+must reproduce every previous byte, including the checker and older contracts.
+Historical transitions are independently reconstructed against their own exact
+configurations, not reinterpreted against the newest snapshot. No configuration
+backup is persisted. Aliases, duplicate keys/contracts, broader or removed trust,
+other drift and changed source,
 selector, account or principal deny. Connect consumes the exact review and
 appends a linked commitment transition without rewriting prior generations.
 Show and inference still deny until the latest commitment matches all current

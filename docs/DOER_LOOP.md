@@ -162,8 +162,13 @@ After operator selection use `preview PROFILE_HOME --credential ID`. An explicit
 same-selection `--replace` review also supports a source-candidate narrow config
 transition: one newly appended top-level `implementation` mapping, containing
 only `go_binary` and `authorized_contracts`, whose removal reconstructs the old
-bound bytes exactly. The source, opaque ID, freshly resolved account and original
-principal must remain unchanged. No prior implementation block, unrelated edit,
+bound bytes exactly; alternatively, one new final plain exact `sha256:` contract
+line may be appended to the existing block allowlist. Removing only that line
+must reconstruct the old bytes exactly, preserving the checker and every prior
+contract. The source, opaque ID, freshly resolved account and original principal
+must remain unchanged. Prior v2 history is reconstructed and revalidated against
+its own exact configuration, without private config backups or history rewrites.
+No unrelated edit, multiple-contract addition, removed/broadened trust,
 unknown/duplicate key or unprovable old commitment is repairable. Preview has no
 runtime effect; the existing one-use `connect REVIEW_ID` appends a linked config
 commitment generation and preserves exact YAML and historical records. Show and
