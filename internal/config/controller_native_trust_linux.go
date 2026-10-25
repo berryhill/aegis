@@ -12,7 +12,7 @@ import (
 
 // Only a newly appended, unambiguous block mapping is supported. No YAML is
 // re-encoded: an exact prefix must reproduce the predecessor commitment.
-func nativeTrustAddition(raw []byte, predecessor string) bool {
+func nativeTrustBlockAddition(raw []byte, predecessor string) bool {
 	var doc yaml.Node
 	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	if dec.Decode(&doc) != nil || dec.Decode(new(yaml.Node)) != io.EOF || len(doc.Content) != 1 || !plainNativeYAML(&doc) {

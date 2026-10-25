@@ -13,10 +13,10 @@ func TestBrowserSessionTTLBounds(t *testing.T) {
 	defaults := Defaults()
 	defaults.Principal.UID = "4242"
 	defaults.Principal.User = "operator"
-	if defaults.API.Console.SessionTTL != time.Hour || defaults.Principal.AuthTTL != 15*time.Minute {
+	if defaults.API.Console.SessionTTL != 6*time.Hour || defaults.API.Console.ActionAuthTTL != 6*time.Hour || defaults.Principal.AuthTTL != 15*time.Minute {
 		t.Fatal("browser lifetime or independent principal freshness default changed")
 	}
-	for _, ttl := range []time.Duration{-time.Second, 0, time.Minute, 5 * time.Minute, time.Hour, time.Hour + time.Nanosecond} {
+	for _, ttl := range []time.Duration{-time.Second, 0, time.Minute, 5 * time.Minute, time.Hour, 6*time.Hour + time.Nanosecond} {
 		t.Run(ttl.String(), func(t *testing.T) {
 			cfg := defaults
 			cfg.API.Console.SessionTTL = ttl
@@ -208,7 +208,7 @@ func TestEnvironmentCredentialBindingsFailClosed(t *testing.T) {
 		{"incomplete TLS identity", func(c *Config) { c.API.TLSCertFile = "server.crt" }},
 		{"plaintext non-loopback console", func(c *Config) { c.API.Console.Origin = "http://192.0.2.10:8443" }},
 		{"plaintext console on non-loopback listener", func(c *Config) { c.API.Listen = "0.0.0.0:8443" }},
-		{"unbounded console session", func(c *Config) { c.API.Console.SessionTTL = time.Hour + time.Nanosecond }},
+		{"unbounded console session", func(c *Config) { c.API.Console.SessionTTL = 6*time.Hour + time.Nanosecond }},
 		{"incomplete credential authority", func(c *Config) {
 			c.Credentials.Authority = CredentialAuthority{Database: "authority.db", Custody: "systemd", KEKCredential: "aegis-kek"}
 		}},

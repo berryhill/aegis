@@ -32,6 +32,11 @@ same retained request identity and no new Graph/Queue/claim. Configured helpers
 still undergo the real availability and task-eligibility checks. Tests use
 synthetic Hermes/Laya protocol fixtures; they do not qualify a live provider.
 
+The fixed offline Laya subprocess caps OpenMP, MKL, OpenBLAS and NumExpr pools
+at two threads. Ambient thread settings and controller credentials are not
+inherited. This bounds host-sized numeric-library startup overhead without
+changing the local model, confidence policy or ten-second readiness deadline.
+
 Implementation turns receive the exact selected-file assertion (`verify_file`, optional `expected_text`, `exact_bytes`) and retry bound alongside task prose and allowlisted paths. Raw-byte assertions do not imply a trailing newline. This is input to the tool-free implementer, not model-written acceptance evidence; the controller still independently reloads and verifies the file. Host workspace paths are not included in that turn. Publication and exact same-Loop execution remain distinct supported actions; no approval or credential authority is inferred from these inputs.
 
 ### Retained create-and-execute parity
@@ -162,8 +167,13 @@ After operator selection use `preview PROFILE_HOME --credential ID`. An explicit
 same-selection `--replace` review also supports a source-candidate narrow config
 transition: one newly appended top-level `implementation` mapping, containing
 only `go_binary` and `authorized_contracts`, whose removal reconstructs the old
-bound bytes exactly. The source, opaque ID, freshly resolved account and original
-principal must remain unchanged. No prior implementation block, unrelated edit,
+bound bytes exactly; alternatively, one new final plain exact `sha256:` contract
+line may be appended to the existing block allowlist. Removing only that line
+must reconstruct the old bytes exactly, preserving the checker and every prior
+contract. The source, opaque ID, freshly resolved account and original principal
+must remain unchanged. Prior v2 history is reconstructed and revalidated against
+its own exact configuration, without private config backups or history rewrites.
+No unrelated edit, multiple-contract addition, removed/broadened trust,
 unknown/duplicate key or unprovable old commitment is repairable. Preview has no
 runtime effect; the existing one-use `connect REVIEW_ID` appends a linked config
 commitment generation and preserves exact YAML and historical records. Show and

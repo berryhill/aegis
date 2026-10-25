@@ -177,7 +177,7 @@ func (s *Service) SaveDoerDraft(ctx context.Context, input DoerDraftInput) (Doer
 // as with the other As APIs. Saving does not resolve or replace the Agent,
 // publish a Loop, grant authority, provision a runtime or create a Queue item.
 func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, input DoerDraftInput) (DoerDraft, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequireDashboardPrincipal(subject); err != nil {
 		return DoerDraft{}, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -206,7 +206,7 @@ func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, inp
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := s.requirePrincipal(subject); err != nil {
+		if err := s.RequireDashboardPrincipal(subject); err != nil {
 			return nil, err
 		}
 		set, err := decodeDoerDraftSet(raw, subject.PrincipalID)
@@ -326,7 +326,7 @@ func (s *Service) ReadDoerDraftAs(ctx context.Context, subject core.Subject, id 
 // The eventual publication service must still independently admit its exact
 // publisher and authority; this check creates neither approval nor execution.
 func (s *Service) ValidateDoerDraftPublicationAs(ctx context.Context, subject core.Subject, id string, version uint64) (DoerDraft, error) {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequireDashboardPrincipal(subject); err != nil {
 		return DoerDraft{}, err
 	}
 	draft, err := s.ReadDoerDraftAs(ctx, subject, id)

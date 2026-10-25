@@ -131,6 +131,7 @@ templ Authentication(model AuthenticationModel) {
 			}
 		</p>
 		<p class="inline-notice">Password authentication is required for every new browser session. Browser session lifetime: <strong>{ model.SessionTTL }</strong>.</p>
+		<p class="inline-notice">Dashboard sensitive-action freshness: <strong>{ model.ActionAuthTTL }</strong>. Both windows expire absolutely after successful password authentication; browsing and reconnecting do not renew them. Independent approvals and shorter operation-specific limits still apply.</p>
 		<form id="session-form" method="post" action="/console/login">
 			<label for="password">Principal password</label>
 			<input id="password" name="password" type="password" autocomplete="current-password" required/>

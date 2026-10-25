@@ -20,7 +20,7 @@ func TestPrincipalPasswordLoginCreatesBoundedExactPrincipalSessionAndThrottlesFa
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestAuthorizeCommandDerivesSessionBindingAndRepeatsMutationAdmission(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestAuthenticatedPasswordRotationInvalidatesPriorSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestPasswordRotationFailsClosedBeforeReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +186,7 @@ func TestPasswordRotationThrottlesWrongCurrentPasswordAndResetsAfterWindow(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 2, LoginWindow: 30 * time.Second}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 2, LoginWindow: 30 * time.Second}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestAuthenticatedPasswordSessionCSRFAndExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestReviewReceiptIsSessionBoundSingleUseExpiringAndReplaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: 30 * time.Second, PasswordVerifier: &verifier, LoginBurst: 10, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: 30 * time.Second, PasswordVerifier: &verifier, LoginBurst: 10, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestReviewReceiptCancellationIsExactSessionBoundAndWipesPayload(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: 5 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: 5 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
