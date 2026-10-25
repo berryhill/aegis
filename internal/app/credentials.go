@@ -317,7 +317,7 @@ func (s *Service) BackupCredentialsAs(ctx context.Context, subject core.Subject)
 }
 
 func (s *Service) requireCredentialMutation(subject core.Subject) error {
-	if err := s.requirePrincipal(subject); err != nil {
+	if err := s.RequireDashboardPrincipal(subject); err != nil {
 		return err
 	}
 	if !s.hasCredentials() {

@@ -659,8 +659,8 @@ def verify_default_session_cookie(devtools: DevTools, origin: str, login_started
     require(len(sessions) == 1, "expected exactly one browser session cookie")
     cookie = sessions[0]
     expires = cookie.get("expires", 0)
-    require(isinstance(expires, (int, float)) and login_started + 3599 <= expires <= login_finished + 3600,
-            "installed browser session does not have the default one-hour deadline")
+    require(isinstance(expires, (int, float)) and login_started + 21599 <= expires <= login_finished + 21600,
+            "installed browser session does not have the default six-hour deadline")
     require(cookie.get("httpOnly") is True and cookie.get("sameSite") == "Strict" and cookie.get("path") == "/console",
             "installed browser session cookie protections changed")
     require(not origin.startswith("https:") or cookie.get("secure") is True,
@@ -788,7 +788,7 @@ def main() -> int:
             identity_path = workspace / "registration-identity.json"
             identity_path.write_text(json.dumps(reviewed_identity), encoding="utf-8")
             identity_path.chmod(0o600)
-            print(json.dumps({"browser": "Google Chrome", "browser_authenticated_agent_registration": "pass", "default_one_hour_cookie_and_nonrenewing_navigation": "pass", "elapsed_hour_proof": False, "invalid_source_denial": "pass", "credentials_used_for_fleet_workflow": False}, sort_keys=True))
+            print(json.dumps({"browser": "Google Chrome", "browser_authenticated_agent_registration": "pass", "default_six_hour_cookie_and_nonrenewing_navigation": "pass", "elapsed_six_hour_proof": False, "invalid_source_denial": "pass", "credentials_used_for_fleet_workflow": False}, sort_keys=True))
             return 0
 
         expected = {
@@ -1223,8 +1223,8 @@ def main() -> int:
         require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
         print(json.dumps({
             "browser": "Google Chrome",
-            "default_one_hour_cookie_and_nonrenewing_navigation": "pass",
-            "elapsed_hour_proof": False,
+            "default_six_hour_cookie_and_nonrenewing_navigation": "pass",
+            "elapsed_six_hour_proof": False,
             "password_login": "pass",
             "password_rotation": "pass",
             "old_session_invalidation": "pass",

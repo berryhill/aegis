@@ -42,7 +42,8 @@ scopes and exact published definitions remain unchanged. Connection metadata is
 a separate private no-replace record; the owning YAML is never rewritten and
 config drift denies runtime use. A source candidate additionally permits an explicit
 same-selection replacement review for one exactly reconstructable appended native
-trust block; it never automatically repairs drift. See [the connection
+trust block or one later exact-contract addition to its existing allowlist;
+it never automatically repairs drift. See [the connection
 procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
 ## Retained task execution (source candidate)
@@ -186,7 +187,7 @@ The binding is mandatory. Precedence is:
 
 ## Authenticated gateway and console
 
-Browser password login defaults to one fixed hour (`api.console.session_ttl: 1h`, also the maximum), without sliding renewal. Sensitive actions still require independent fresh principal authentication (fifteen minutes by default); explicit password reauthentication replaces the old session and its pending reviews. Existing explicit shorter lifetimes, including the example's `5m`, remain unchanged on upgrade. See the [quickstart's lifetime and configuration guidance](docs/QUICKSTART.md#verify-the-console-and-daemon-ownership-contract).
+Browser password login defaults to six fixed hours (`api.console.session_ttl: 6h`, also the maximum), without sliding renewal. Dashboard sensitive actions use `api.console.action_auth_ttl` (six hours by default and maximum); shared `principal.auth_ttl` remains fifteen minutes for non-dashboard authority; explicit password reauthentication replaces the old session and its pending reviews. Existing explicit shorter lifetimes, including the example's `5m`, remain unchanged on upgrade. See the [quickstart's lifetime and configuration guidance](docs/QUICKSTART.md#verify-the-console-and-daemon-ownership-contract).
 
 The gateway-backed Linux terminal supports [guided protected credential creation](docs/TERMINAL_CREDENTIALS.md): ask `can we add a secret for a test?`, review and explicitly approve non-secret metadata, then enter and confirm the value in Aegis's no-echo dialog. Creation independently reloads metadata and returns a metadata-only receipt (or explicit committed-but-incompletely-confirmed status) to the same conversation; ordinary chat never becomes a credential-value intake endpoint.
 

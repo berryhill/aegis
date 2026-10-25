@@ -96,7 +96,7 @@ func consoleQueuePresentationHandler(svc *app.Service, manager *console.Manager,
 		if err != nil {
 			return mapConsoleError(err)
 		}
-		if err = svc.RequirePrincipal(sub); err != nil {
+		if err = svc.RequireDashboardPrincipal(sub); err != nil {
 			return err
 		}
 		view, err := svc.ConsoleQueuePresentationAs(request.Context(), sub, c.Param("item"), values.Get("digest"))

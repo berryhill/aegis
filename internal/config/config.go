@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/layout"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 )
 
 const InitializationTemporaryPrefix = ".aegis.yaml.init-"
@@ -240,10 +241,100 @@ type API struct {
 	Console         APIConsole    `mapstructure:"console" json:"console"`
 }
 type APIConsole struct {
-	Origin      string        `mapstructure:"origin" json:"origin"`
-	SessionTTL  time.Duration `mapstructure:"session_ttl" json:"session_ttl"`
-	MaxPageSize int           `mapstructure:"max_page_size" json:"max_page_size"`
+	Origin        string        `mapstructure:"origin" json:"origin"`
+	SessionTTL    time.Duration `mapstructure:"session_ttl" json:"session_ttl"`
+	ActionAuthTTL time.Duration `mapstructure:"action_auth_ttl" json:"action_auth_ttl"`
+	MaxPageSize   int           `mapstructure:"max_page_size" json:"max_page_size"`
 }
+
+// MarshalJSON emits human-readable policy units, including when Config is
+// serialized by owning-service and installed-target configuration producers.
+func (c APIConsole) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Origin        string `json:"origin"`
+		SessionTTL    string `json:"session_ttl"`
+		ActionAuthTTL string `json:"action_auth_ttl"`
+		MaxPageSize   int    `json:"max_page_size"`
+	}{c.Origin, c.SessionTTL.String(), c.ActionAuthTTL.String(), c.MaxPageSize})
+}
+
+// UnmarshalJSON retains the former typed JSON nanosecond representation;
+// numeric JSON is nanoseconds, never seconds or hours. YAML/env require units.
+func (c *APIConsole) UnmarshalJSON(data []byte) error {
+	type plain APIConsole
+	var wire struct {
+		*plain
+		Session json.RawMessage `json:"session_ttl"`
+		Action  json.RawMessage `json:"action_auth_ttl"`
+	}
+	// A custom unmarshaler must enforce its own closed object schema; the
+	// caller's DisallowUnknownFields cannot inspect inside this boundary.
+	keys := json.NewDecoder(strings.NewReader(string(data)))
+	if token, err := keys.Token(); err != nil || token != json.Delim('{') {
+		return fmt.Errorf("dashboard console must be an object")
+	}
+	seen := make(map[string]bool)
+	for keys.More() {
+		token, err := keys.Token()
+		if err != nil {
+			return err
+		}
+		key, ok := token.(string)
+		if !ok || seen[key] {
+			return fmt.Errorf("duplicate dashboard console key %q", key)
+		}
+		seen[key] = true
+		switch key {
+		case "origin", "session_ttl", "action_auth_ttl", "max_page_size":
+		default:
+			return fmt.Errorf("unknown dashboard console key %q", key)
+		}
+		var raw json.RawMessage
+		if err := keys.Decode(&raw); err != nil {
+			return err
+		}
+		if string(raw) == "null" {
+			return fmt.Errorf("null dashboard console key %q", key)
+		}
+	}
+	if _, err := keys.Token(); err != nil {
+		return err
+	}
+	wire.plain = (*plain)(c)
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	for _, field := range []struct {
+		raw json.RawMessage
+		dst *time.Duration
+	}{{wire.Session, &c.SessionTTL}, {wire.Action, &c.ActionAuthTTL}} {
+		if len(field.raw) == 0 {
+			continue
+		}
+		var text string
+		var value time.Duration
+		if json.Unmarshal(field.raw, &text) == nil {
+			parsed, err := time.ParseDuration(text)
+			if err != nil {
+				return err
+			}
+			value = parsed
+		} else {
+			if string(field.raw) == "null" {
+				return fmt.Errorf("null dashboard policy")
+			}
+			if err := json.Unmarshal(field.raw, &value); err != nil {
+				return err
+			}
+		}
+		if value <= 0 || value > 6*time.Hour {
+			return fmt.Errorf("dashboard policy must be positive and at most 6h")
+		}
+		*field.dst = value
+	}
+	return nil
+}
+
 type Retention struct {
 	DesignHomes  bool `mapstructure:"design_homes" json:"design_homes"`
 	SessionHomes bool `mapstructure:"session_homes" json:"session_homes"`
@@ -339,7 +430,7 @@ func Defaults() Config {
 }
 
 func DefaultsFor(resolved layout.Layout) Config {
-	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20, Console: APIConsole{Origin: "http://127.0.0.1:8443", SessionTTL: time.Hour, MaxPageSize: 100}}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
+	return Config{StateDir: resolved.State, RuntimeDefault: "hermes", HermesExecutable: "hermes", Principal: Principal{ID: "principal", Name: "Principal", AuthTTL: 15 * time.Minute}, API: API{Listen: "127.0.0.1:8443", ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second, MaxBodyBytes: 1 << 20, Console: APIConsole{Origin: "http://127.0.0.1:8443", SessionTTL: 6 * time.Hour, ActionAuthTTL: 6 * time.Hour, MaxPageSize: 100}}, Audit: Audit{CheckpointDir: resolved.AuditCheckpoints}, Credentials: Credentials{References: map[string]EnvironmentCredentialBinding{}, ProviderAuth: map[string]EnvironmentCredentialBinding{}}, Manager: Manager{Enabled: true, Runtime: "hermes", SecurityContext: "secrets-manager", CleanupTimeout: 10 * time.Second, Hermes: ManagerHermes{ContextLength: 65536, GatewayStartTimeout: 20 * time.Second, TurnTimeout: 5 * time.Minute, MaximumResponseBytes: 1 << 20}, Inference: ManagerInference{Runtime: "ollama", Mode: "managed", Executable: "ollama", KeepAlive: 5 * time.Minute, StartTimeout: 30 * time.Second, RequestTimeout: 5 * time.Minute, MaximumRequestBytes: 4 << 20, MaximumResponseBytes: 4 << 20}, Ingress: ManagerIngress{MaximumMessageBytes: 256 << 10, MaximumMessageRunes: 256 << 10, ScanTimeout: 250 * time.Millisecond, BoundedDecodeDepth: 2}, Transcript: ManagerTranscript{Retention: "session"}}}
 }
 
 // WithStateDir changes the state root while preserving explicit paths.
@@ -411,7 +502,7 @@ func (c Config) Validate() error {
 			es = append(es, errors.New("plaintext API console requires a loopback TCP listener"))
 		}
 	}
-	if c.API.Console.SessionTTL <= 0 || c.API.Console.SessionTTL > time.Hour || c.API.Console.MaxPageSize < 1 || c.API.Console.MaxPageSize > 1000 {
+	if c.API.Console.SessionTTL <= 0 || c.API.Console.SessionTTL > 6*time.Hour || c.API.Console.ActionAuthTTL <= 0 || c.API.Console.ActionAuthTTL > 6*time.Hour || c.API.Console.MaxPageSize < 1 || c.API.Console.MaxPageSize > 1000 {
 		es = append(es, errors.New("API console limits must be positive and bounded"))
 	}
 	if c.Audit.CheckpointDir == "" {
@@ -542,12 +633,13 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 	v.SetDefault("api.max_body_bytes", d.API.MaxBodyBytes)
 	v.SetDefault("api.console.origin", d.API.Console.Origin)
 	v.SetDefault("api.console.session_ttl", d.API.Console.SessionTTL)
+	v.SetDefault("api.console.action_auth_ttl", d.API.Console.ActionAuthTTL)
 	v.SetDefault("api.console.max_page_size", d.API.Console.MaxPageSize)
 	v.SetDefault("audit.checkpoint_dir", d.Audit.CheckpointDir)
 	v.SetDefault("manager", d.Manager)
 	v.SetEnvPrefix("AEGIS")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.token_file", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "api.console.origin", "api.console.session_ttl", "api.console.max_page_size", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
+	for _, k := range []string{"state_dir", "runtime_default", "hermes_executable", "principal.id", "principal.name", "principal.uid", "principal.user", "principal.auth_ttl", "api.listen", "api.unix_socket", "api.token", "api.token_file", "api.tls_cert_file", "api.tls_key_file", "api.read_timeout", "api.write_timeout", "api.shutdown_timeout", "api.max_body_bytes", "api.console.origin", "api.console.session_ttl", "api.console.action_auth_ttl", "api.console.max_page_size", "retention.design_homes", "retention.session_homes", "audit.checkpoint_dir", "manager.enabled", "manager.cleanup_timeout", "manager.inference.mode", "manager.inference.executable", "manager.inference.endpoint", "manager.inference.model", "manager.inference.model_digest", "manager.inference.certification"} {
 		_ = v.BindEnv(k)
 	}
 	if flags != nil {
@@ -555,15 +647,74 @@ func load(path string, flags *pflag.FlagSet) (Config, error) {
 			return Config{}, err
 		}
 	}
+	fileDashboardPolicy := map[string]any{}
 	if path != "" {
 		v.SetConfigFile(path)
 		if err := v.ReadInConfig(); err != nil {
 			return Config{}, fmt.Errorf("read config: %w", err)
 		}
+		// Viper drops explicit YAML/JSON null values, which must not turn a
+		// malformed policy into the six-hour default. Preserve presence here.
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".yaml", ".yml", ".json":
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return Config{}, err
+			}
+			var raw map[string]any
+			if err := yaml.Unmarshal(data, &raw); err != nil {
+				return Config{}, fmt.Errorf("read dashboard policy: %w", err)
+			}
+			if api, ok := raw["api"].(map[string]any); ok {
+				if value, exists := api["console"]; exists {
+					if _, ok := value.(map[string]any); !ok {
+						return Config{}, fmt.Errorf("dashboard console must be an object")
+					}
+				}
+				if console, ok := api["console"].(map[string]any); ok {
+					for _, key := range []string{"session_ttl", "action_auth_ttl"} {
+						if value, exists := console[key]; exists {
+							fileDashboardPolicy["api.console."+key] = value
+						}
+					}
+				}
+			}
+		}
 	}
 	var c Config
+	// Preserve strict unknown-field diagnostics before policy-value validation.
 	if err := v.UnmarshalExact(&c); err != nil {
 		return Config{}, fmt.Errorf("strict config decode: %w", err)
+	}
+	// Dashboard policy must use explicit duration units. Viper's weak numeric
+	// conversion would otherwise interpret a bare integer as nanoseconds.
+	for _, key := range []string{"api.console.session_ttl", "api.console.action_auth_ttl"} {
+		env := "AEGIS_" + strings.ToUpper(strings.ReplaceAll(key, ".", "_"))
+		raw, explicit := v.Get(key), v.InConfig(key)
+		if value, ok := fileDashboardPolicy[key]; ok {
+			raw, explicit = value, true
+		}
+		if value, ok := os.LookupEnv(env); ok {
+			raw, explicit = value, true
+		}
+		if explicit {
+			value, ok := raw.(string)
+			// Only JSON retains the legacy typed Config integer-nanosecond
+			// encoding. Never infer seconds, accept numeric strings, or apply
+			// this compatibility rule to YAML or environment overrides.
+			_, fromEnv := os.LookupEnv(env)
+			if !ok && !fromEnv && strings.EqualFold(filepath.Ext(path), ".json") {
+				if nanos, integer := raw.(int); integer {
+					value, ok = time.Duration(nanos).String(), true
+				} else if nanos, integer := raw.(int64); integer {
+					value, ok = time.Duration(nanos).String(), true
+				}
+			}
+			ttl, err := time.ParseDuration(value)
+			if !ok || err != nil || ttl <= 0 || ttl > 6*time.Hour {
+				return Config{}, fmt.Errorf("invalid configuration: %s requires a duration with units, positive and at most 6h", key)
+			}
+		}
 	}
 	if !configurationValueSet(v, flags, "audit.checkpoint_dir", "AEGIS_AUDIT_CHECKPOINT_DIR") {
 		c.Audit.CheckpointDir = filepath.Join(c.StateDir, "audit-checkpoints")

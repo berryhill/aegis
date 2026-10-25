@@ -140,6 +140,20 @@ operational record at `OWNER_CONFIG.controller-codex.json`, bound to the exact
 reviewed config digest and source/exact optional credential ID/account/principal. Every show/runtime resolution
 revalidates it; config drift, unsafe metadata or existing-record conflicts deny.
 Concurrent config edits are preserved, not protected by a claimed same-UID CAS.
+After a separately owner-approved exact native trust addition, the explicit
+same-selection `preview PROFILE_HOME --credential ID --replace` / `connect REVIEW_ID`
+path can reconcile the connection commitment. Supported deltas are one appended
+typed native `implementation` block or one new final plain exact `sha256:` contract
+line in its existing allowlist. Removing only the approved addition must recover
+the previous bytes exactly. The checker, previous contracts, login selection and
+all unrelated config remain unchanged. Preview grants no runtime effect; connect
+rechecks exact config/history freshness and appends an immutable generation.
+Earlier generations are independently reconstructed and validated, not rewritten.
+Removed/broadened trust, duplicate/malformed YAML, unrelated edits, stale reviews
+or substituted history deny. This reconciles an operational connection only; it
+does not approve the native host grant itself, restart the worker, change a Loop,
+reset a pass budget or request duplicate Run consent. Never edit a live allowlist
+merely to cure readiness. After an uncertain connect result use show before retry.
 Legacy YAML bindings remain supported only without a conflicting sidecar. Runtime
 resolution adopts the exact record without restart. It never inherits a default/global profile,
 selects another pool account, refreshes, imports or copies a login through tools.

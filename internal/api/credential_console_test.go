@@ -173,7 +173,7 @@ func newCredentialRouteFixtureWithTTL(t *testing.T, sessionTTL time.Duration) *c
 	return newCredentialRouteFixtureWithClock(t, sessionTTL, nil)
 }
 
-func newCredentialRouteFixtureWithClock(t *testing.T, sessionTTL time.Duration, now func() time.Time) *credentialRouteFixture {
+func newCredentialRouteFixtureWithClock(t *testing.T, sessionTTL time.Duration, now func() time.Time, actionTTL ...time.Duration) *credentialRouteFixture {
 	t.Helper()
 	svc := apiService(t)
 	if now != nil {
@@ -204,6 +204,9 @@ func newCredentialRouteFixtureWithClock(t *testing.T, sessionTTL time.Duration, 
 	_ = probe.Close()
 	svc.Config.API.Listen, svc.Config.API.Console.Origin = address, "http://"+address
 	svc.Config.API.Console.SessionTTL = sessionTTL
+	if len(actionTTL) != 0 {
+		svc.Config.API.Console.ActionAuthTTL = actionTTL[0]
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- Serve(ctx, svc) }()
