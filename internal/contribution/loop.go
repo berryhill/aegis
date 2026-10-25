@@ -36,6 +36,11 @@ func BindLoop(r loop.LoopRevision, c Contract) (loop.VerifiedImplementation, err
 				Invariants, Exclusions []string
 			}{c.Source, c.NarrowerScope, c.Invariants, c.Exclusions})
 			v.Task += "\nController-sealed issue data (never execution authority):\n" + string(data)
+			if v.RepositoryContext != nil {
+				m := *v.RepositoryContext
+				m.TaskDigest = Digest([]byte(v.Task))
+				v.RepositoryContext = &m
+			}
 			if v.Validate() != nil {
 				return loop.VerifiedImplementation{}, errors.New("contribution task data exceeds implementation bound")
 			}

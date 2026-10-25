@@ -36,6 +36,29 @@ ceiling or a replacement for cgroup enforcement.
 
 ## Launch-asset impact review
 
+Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
+`implementation`, `orchestration`, `orchestration-contribution`, `cli`,
+`persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
+`execution` shard was replaced by separate implementation/orchestration packages.
+Within orchestration, the contribution integration alone measured 373.40s and the
+implementation controller about 140s: together they exceed the eight-minute alarm.
+Both orchestration groups inventory the actual mode's complete default tests via
+`go test [-race] -count=1 -timeout=8m -list .`. An anchored escaped parent-name
+selection isolates `TestContributionQueueNativeRepairIntegration` in the
+contribution group; every other current/future test, runnable example and fuzz
+target belongs to orchestration. All children/seeds execute and TestMain runs in
+each process. Missing/invalid inventories or a missing contribution target deny.
+Each retains a ten-minute job and `-count=1 -timeout=8m`. Existing API partitions,
+alarms and other job exceptions remain unchanged. Other packages, including future
+packages, remain exact-once. All three successor groups in both modes are mandatory
+for exact-head evidence; cancellation/missing evidence denies with green aggregates.
+The synthetic contribution fixture installs immutable authoritative time before
+worker/service clock capture, preventing wall-time native checks from expiring its
+300-second authority contract/claim. Explicit expired-subject and revoked-host
+negatives remain; production freshness, TTLs and real native timeouts are unchanged.
+Toolchain preparation, cgroup/CPU/memory limits and success-only aggregates are
+unchanged. Focused local script tests are not hosted timing proof.
+
 - Updated CONTRIBUTING.md: the complete bounded gate and Linux/systemd/cgroup-v2 prerequisites, explicit macOS verification denial, focused supervised command, inherited defaults and limits.
 - Updated CHANGELOG.md: verification resource/termination and authority-close corrections.
 - Updated CI and release workflows: retain all tests, race, vet, vulnerability, archive/checksum and installed gates behind supervision. No release is published by this change.

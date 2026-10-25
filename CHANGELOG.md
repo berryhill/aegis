@@ -6,6 +6,28 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Replace the cumulative `execution` CI shard with mandatory `implementation`,
+  `orchestration` and `orchestration-contribution` groups in normal and race modes.
+  Dynamically inventory orchestration defaults to isolate its heavy contribution
+  integration while retaining every other test, example and fuzz seed exactly
+  once. Freeze synthetic contribution authority time before worker binding;
+  retain explicit expiry/revocation denial and real native runtime limits.
+  Preserve uncached complete tests, ten-minute jobs, eight-minute package alarms
+  and cgroup limits; exact-head evidence rejects missing or cancelled successors.
+
+- Managed contribution custody permits only exact same-attempt quiescent phase
+  boundaries under the existing lock; foreign, stale, interrupted and exhausted
+  reservations remain held. Tester model evidence excludes complete source bytes
+  and paths; controller native checks retain full frozen custody. No authority
+  renewal, publication or live-provider qualification is implied.
+
+- Source candidate: add bounded managed-contribution candidate execution with
+  complete source/executable identities, retained native check evidence and
+  immutable-chain readback validation. Deterministic native repair/drift coverage
+  is not live-provider or publication acceptance; synthetic Queue integration
+  remains a distinct evidence tier; see
+  [qualification and remaining gaps](docs/managed-contribution-candidate.md).
+
 - Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls; downstream contribution delivery remains unavailable.
 
 ### Fixed
