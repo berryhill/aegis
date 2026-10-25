@@ -17,6 +17,27 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	if r.Policy.Validate() != nil || r.RunID != id || int(r.Consumed) < len(r.Passes) {
 		return bad
 	}
+	if r.Frozen != nil {
+		v := *r.Frozen
+		wire, err := e.DB.Get([]byte("contribution/candidate/" + v.Digest))
+		expected, _ := json.Marshal(v)
+		if err != nil || !bytes.Equal(wire, expected) || v.Toolchain != r.FrozenToolchain || v.Contract != r.Contract || v.QueueAttempt != r.QueueAttempt || v.Pass != r.Consumed || int(r.Consumed) != len(r.Passes)+1 || v.Policy != contributionPolicyDigest(r.Policy) || !validContributionRole(v.Builder) || previousBytes(e.DB, v.Executable) == nil || previousBytes(e.DB, v.Toolchain) == nil {
+			return bad
+		}
+		d := v.Digest
+		v.Digest = ""
+		expected, _ = json.Marshal(v)
+		if digest(expected) != d {
+			return bad
+		}
+		source := v.Source
+		d = source.Digest
+		source.Digest = ""
+		expected, _ = json.Marshal(source)
+		if digest(expected) != d {
+			return bad
+		}
+	}
 	if r.Baseline.OutputDigest != "" {
 		wire, err := e.DB.Get([]byte("contribution/baseline/" + digest([]byte(id))))
 		expected, _ := json.Marshal(r.Baseline)

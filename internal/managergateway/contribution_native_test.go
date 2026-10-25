@@ -24,13 +24,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 // Deterministic protocol qualification, not real-provider proof.
 func TestContributionManagerApprovedNativeRepair(t *testing.T) { contributionManagerNativeRepair(t) }
-func contributionManagerNativeRepair(t *testing.T) {
+func TestContributionManagerDisconnectKeepsValidAuthorityExecution(t *testing.T) {
+	contributionManagerNativeRepair(t, true)
+}
+func TestContributionManagerExpiredFrozenCandidateExplicitFreshResume(t *testing.T) {
+	contributionManagerNativeRepair(t, false, true)
+}
+func contributionManagerNativeRepair(t *testing.T, disconnected ...bool) {
 	ctx := context.Background()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "source")
@@ -96,7 +103,15 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	s := contributionApp(t)
-	s.Now = func() time.Time { return time.Now().UTC() }
+	expiry := len(disconnected) > 1 && disconnected[1]
+	var clockMu sync.Mutex
+	stageNow := time.Now().UTC()
+	s.Now = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return stageNow }
+	lifetime := int64(300)
+	if expiry {
+		lifetime = 60
+		s.Config.Principal.AuthTTL = time.Minute
+	}
 	subject, e := s.Authenticate(ctx)
 	must(e)
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
@@ -104,7 +119,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	defer repository.Close()
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
-		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: 300}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
 		cc, err := core.Canonicalize(charter)
 		must(err)
 		must(s.Store.SaveCharter(cc))
@@ -141,6 +156,9 @@ case "$n" in 1) text='%s';; 3) text='%s';; *) text='"synthetic inspection only"'
 printf '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"%%s","payload":{"status":"complete","text":%%s}}}\n' "$sid" "$text"
 while read rest; do :; done
 `, filepath.Join(root, "turns"), filepath.Join(root, "turns"), filepath.Join(root, "turns"), nativeJSON(message(1)), nativeJSON(message(2)))
+	if len(disconnected) != 0 && disconnected[0] {
+		script = strings.Replace(script, "read prompt", "if [ \"$n\" = 1 ]; then touch '"+filepath.Join(root, "builder-ready")+"'; while [ ! -f '"+filepath.Join(root, "builder-release")+"' ]; do sleep 0.01; done; fi\nread prompt", 1)
+	}
 	installation := filepath.Join(root, "install")
 	must(os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700))
 	executable := filepath.Join(root, "hermes")
@@ -163,6 +181,19 @@ exec sleep 240
 	worker, err := orchestration.NewQueueWorker(repository, fs, s.Store, verifier, routed, s.Now)
 	must(err)
 	must(s.ConfigureFleet(repository, fs, worker))
+	if expiry {
+		paused := false
+		worker.SetContributionCheckpointObserver(func(_ context.Context, cp implementation.ContributionCheckpoint) error {
+			if cp.Stage == "freeze" && !paused {
+				paused = true
+				clockMu.Lock()
+				stageNow = stageNow.Add(61 * time.Second)
+				clockMu.Unlock()
+				return fmt.Errorf("controlled frozen expiry hold")
+			}
+			return nil
+		})
+	}
 	goBin, _ := exec.LookPath("go")
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}
@@ -184,11 +215,100 @@ exec sleep 240
 	gateway.sessions[id] = session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: s.Now(), expires: subject.ExpiresAt, mode: "degraded"}
 	_, err = gateway.Execute(ctx, subject, id, token, "/contribute select "+lrRef.ID)
 	must(err)
-	result, err := gateway.Execute(ctx, subject, id, token, "/contribute run "+issue.URL)
+	runCtx, disconnect := context.WithCancel(ctx)
+	defer disconnect()
+	if len(disconnected) != 0 && disconnected[0] {
+		go func() {
+			deadline := time.NewTimer(90 * time.Second)
+			defer deadline.Stop()
+			tick := time.NewTicker(10 * time.Millisecond)
+			defer tick.Stop()
+			for {
+				select {
+				case <-deadline.C:
+					return
+				case <-tick.C:
+					if _, e := os.Stat(filepath.Join(root, "builder-ready")); e == nil {
+						disconnect()
+						_ = os.WriteFile(filepath.Join(root, "builder-release"), []byte("release"), 0600)
+						return
+					}
+				}
+			}
+		}()
+	}
+	result, err := gateway.Execute(runCtx, subject, id, token, "/contribute run "+issue.URL)
+	key := app.ContributionIntentKey(lrRef, issue.URL, "")
+	if expiry {
+		if err == nil {
+			t.Fatal("expired run unexpectedly finished effects")
+		}
+		if _, e := s.ResumeContributionAs(ctx, subject, key); e == nil {
+			t.Fatal("expired subject resumed")
+		}
+		subject, e = s.Authenticate(ctx)
+		must(e)
+		_, held, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		retained, e := s.ReadContributionExecutionAs(ctx, subject, key)
+		must(e)
+		if retained.State != "phase_boundary" || retained.Frozen == nil || retained.Consumed != 1 || held.Used.Candidates != 1 || held.Used.RuntimeTurns != 1 || held.Stage != "freeze" {
+			t.Fatalf("expiry did not retain exact frozen stage: %+v %+v", retained, held)
+		}
+		wrong := subject
+		wrong.PrincipalID = "different-owner"
+		if _, e = s.ResumeContributionAs(ctx, wrong, key); e == nil {
+			t.Fatal("wrong owner resumed")
+		}
+		if _, e = s.ResumeContributionRoleAs(ctx, subject, key, "controller", app.ContributionContinuityInput{ContractDigest: held.ContractDigest, ExpectedSequence: held.Sequence - 1, ExpectedDigest: held.Digest}); e == nil {
+			t.Fatal("stale epoch resumed")
+		}
+		oldProjection, e := repository.GetQueueProjection(ctx, held.QueueItemID)
+		must(e)
+		oldClaim, e := repository.GetClaim(ctx, oldProjection.ActiveClaimID)
+		must(e)
+		oldAttempt, e := repository.GetAttempt(ctx, oldClaim.AttemptID)
+		must(e)
+		if s.Now().Before(oldClaim.ExpiresAt) {
+			t.Fatal("original claim expiry not exercised")
+		}
+		id = "fresh-explicit-resume-manager"
+		gateway.sessions[id] = session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: s.Now(), expires: subject.ExpiresAt, mode: "degraded"}
+		result, err = gateway.Execute(ctx, subject, id, token, "/contribute resume "+key)
+		if err != nil {
+			t.Fatalf("fresh explicit resume: %+v %v", result, err)
+		}
+		newProjection, e := repository.GetQueueProjection(ctx, held.QueueItemID)
+		must(e)
+		newClaim, e := repository.GetClaim(ctx, newProjection.ActiveClaimID)
+		must(e)
+		newAttempt, e := repository.GetAttempt(ctx, newClaim.AttemptID)
+		must(e)
+		if newClaim != oldClaim || newAttempt != oldAttempt || newProjection.Attempts != 1 {
+			t.Fatal("resume changed canonical attempt/claim")
+		}
+		resumed, e := s.ReadContributionExecutionAs(ctx, subject, key)
+		must(e)
+		if len(resumed.Passes) != 2 || resumed.Passes[0].Candidate.Digest != retained.Frozen.Digest {
+			t.Fatal("resume rebuilt or substituted frozen candidate")
+		}
+	}
 	if err != nil {
 		t.Fatalf("run: %+v %v", result, err)
 	}
-	key := app.ContributionIntentKey(lrRef, issue.URL, "")
+	if len(disconnected) != 0 && disconnected[0] && runCtx.Err() == nil {
+		t.Fatal("builder disconnect not exercised")
+	}
+	_, continuity, events, err := s.ObserveContributionContinuityAs(ctx, subject, key)
+	must(err)
+	if continuity.Used.Candidates != 2 || continuity.Used.QueueAttempts != 1 || continuity.Used.RuntimeTurns != 4 || continuity.Stage != "review" {
+		t.Fatalf("owning counters/stage: %+v", continuity)
+	}
+	for _, event := range events {
+		if event.Kind == "reserve" && event.OperationID == "" {
+			t.Fatal("owning reservation missing stable operation identity")
+		}
+	}
 	record, err := s.ReadContributionExecutionAs(ctx, subject, key)
 	if err != nil {
 		t.Fatalf("readback after %+v: %v", result, err)

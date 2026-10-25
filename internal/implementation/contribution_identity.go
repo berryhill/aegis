@@ -32,7 +32,7 @@ func (e *ManagedContribution) freezeGit(ctx context.Context, p loop.Contribution
 		cmd := exec.CommandContext(ctx, p.GitBinary, append([]string{"-C", workspace, "-c", "core.hooksPath=/dev/null"}, args...)...)
 		cmd.Env = []string{"PATH=" + filepath.Dir(p.GitBinary), "HOME=" + e.StateRoot, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_INDEX_FILE=" + name, "GIT_AUTHOR_NAME=Aegis candidate controller", "GIT_AUTHOR_EMAIL=candidate@aegis.invalid", "GIT_COMMITTER_NAME=Aegis candidate controller", "GIT_COMMITTER_EMAIL=candidate@aegis.invalid", "GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z"}
 		cmd.Stdin = strings.NewReader(string(input))
-		b, err := cmd.Output()
+		b, err := e.commandOutput(ctx, cmd)
 		return strings.TrimSpace(string(b)), err
 	}
 	if _, err = run(nil, "read-tree", "--empty"); err != nil {

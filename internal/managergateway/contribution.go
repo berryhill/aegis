@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/slash"
+	"time"
 )
 
 func (s *Service) contribute(ctx context.Context, entry session, request slash.Request) (slash.Result, error) {
@@ -54,6 +55,24 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			}
 			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution": execution, "execution_started": execution.Execution != nil && len(execution.Execution.Attempts) > 0, "completed": false}
 		}
+	case "resume":
+		key := entry.contributionKey
+		if len(args) == 2 {
+			key = args[1]
+		}
+		execution, e := s.app.ResumeContributionAs(ctx, entry.subject, key)
+		err = e
+		if err == nil {
+			s.mu.Lock()
+			current, ok := s.sessions[entry.id]
+			if ok && current.token == entry.token {
+				current.contributionKey = key
+				s.sessions[entry.id] = current
+			}
+			s.mu.Unlock()
+			result.State, result.Reason = "accepted", execution.Reason
+			result.Data = map[string]any{"execution": execution, "completed": false}
+		}
 	case "status", "stop", "narrow":
 		key := entry.contributionKey
 		if len(args) == 2 && args[0] != "narrow" {
@@ -94,7 +113,9 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 	if auditOutcome == "selected" || auditOutcome == "observed" {
 		auditOutcome = "completed"
 	}
-	if auditErr := s.app.AuditManagerCommand(ctx, entry.subject, "manager.contribution", auditOutcome, result.Reason, "", ""); auditErr != nil {
+	auditCtx, cancelAudit := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancelAudit()
+	if auditErr := s.app.AuditManagerCommand(auditCtx, entry.subject, "manager.contribution", auditOutcome, result.Reason, "", ""); auditErr != nil {
 		return result, auditErr
 	}
 	return result, err

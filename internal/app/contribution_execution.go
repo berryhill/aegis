@@ -116,7 +116,11 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 	s.loopRunWorkers[c.QueueItemID] = true
 	s.loopRunMu.Unlock()
 	defer func() { s.loopRunMu.Lock(); delete(s.loopRunWorkers, c.QueueItemID); s.loopRunMu.Unlock() }()
-	_, err = s.ProcessQueueItemAs(ctx, subject, *work)
+	// The admitted owning service, not HTTP transport, owns this bounded run.
+	runCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), c.Deadline)
+	defer cancel()
+	_, err = s.ProcessQueueItemAs(runCtx, subject, *work)
+	ctx = runCtx
 	if errors.Is(err, orchestration.ErrContributionCandidatePending) {
 		err = nil
 	}
@@ -177,14 +181,37 @@ func (s *Service) resolveContributionRole(ctx context.Context, subject core.Subj
 	if err != nil || agent.Digest != expected.Agent.Digest || agent.Charter != expected.Charter || agent.Runtime != expected.Runtime || agent.Lifecycle != registry.LifecycleEnabled || agent.Ownership.OwnerID != c.OwnerID {
 		return orchestration.ContributionRole{}, deny
 	}
-	mandate, _, err := s.PreviewSessionAs(ctx, subject, agent.Charter.ID, agent.Charter.Revision, "", core.Environment{Name: "local"})
-	if err != nil {
-		return orchestration.ContributionRole{}, err
+	var continued *core.Session
+	_, continuity, _, observeErr := s.ObserveContributionContinuityAs(ctx, subject, c.Key)
+	if observeErr != nil {
+		return orchestration.ContributionRole{}, observeErr
+	}
+	name := []string{"controller", "builder", "tester"}[index]
+	if _, exists := continuity.RoleAuthorities[name]; exists {
+		session, e := s.ResumeContributionRoleAs(ctx, subject, c.Key, name, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: continuity.Sequence, ExpectedDigest: continuity.Digest})
+		if e != nil {
+			return orchestration.ContributionRole{}, e
+		}
+		continued = &session
+	}
+	var mandate core.Mandate
+	if continued != nil {
+		mandate = continued.Mandate
+	} else {
+		mandate, _, err = s.PreviewSessionAs(ctx, subject, agent.Charter.ID, agent.Charter.Revision, "", core.Environment{Name: "local"})
+		if err != nil {
+			return orchestration.ContributionRole{}, err
+		}
 	}
 	if mandate.CharterDigest != agent.Charter.Digest || len(mandate.Tools) != 0 || len(mandate.Capabilities) != 0 || len(mandate.Scopes.Credentials) != 0 {
 		return orchestration.ContributionRole{}, deny
 	}
-	session, err := s.StartSessionAs(ctx, subject, mandate.ID)
+	var session core.Session
+	if continued != nil {
+		session = *continued
+	} else {
+		session, err = s.StartSessionAs(ctx, subject, mandate.ID)
+	}
 	if err != nil {
 		return orchestration.ContributionRole{}, err
 	}
@@ -206,6 +233,20 @@ func (s *Service) resolveContributionRole(ctx context.Context, subject core.Subj
 	}{c.Digest, index, launch}); err != nil {
 		return orchestration.ContributionRole{}, errors.Join(err, closeRole(context.WithoutCancel(ctx)))
 	}
+	// Actual effects require an already registered canonical role, before the
+	// worker's first validation (the observer subsequently verifies this binding).
+	if continued == nil {
+		_, state, _, e := s.ObserveContributionContinuityAs(ctx, subject, c.Key)
+		if e == nil {
+			state, e = s.AttachContributionObservationAs(ctx, subject, session.ID, c.Key, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
+		}
+		if e == nil {
+			_, e = s.AdmitContributionRoleAs(ctx, subject, session.ID, c.Key, name, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
+		}
+		if e != nil {
+			return orchestration.ContributionRole{}, errors.Join(e, closeRole(context.WithoutCancel(ctx)))
+		}
+	}
 	return orchestration.ContributionRole{Agent: agent, Launch: launch, Admission: contributionRoleAdmission{s, c, index}, Close: closeRole}, nil
 }
 
@@ -218,6 +259,23 @@ type contributionRoleAdmission struct {
 func (a contributionRoleAdmission) CheckRuntimeAdmission(ctx context.Context, launch execution.LaunchContract, at time.Time) (execution.AdmissionDecision, error) {
 	decision := execution.AdmissionDecision{AuthorityContextID: launch.AuthorityContext.ID, AuthorityContextDigest: launch.AuthorityContext.Digest, CheckedAt: at}
 	s := a.service
+	if err := ctx.Err(); err != nil {
+		return decision, err
+	}
+	if a.index < 0 || a.index >= len(a.contract.Roles) {
+		return decision, ErrDenied
+	}
+	// Reload durable role, epoch, cancellation and stop controls for every
+	// prompt, source effect and native command, not only the native wrapper.
+	_, state, _, err := s.ObserveContributionContinuityAs(ctx, launch.Mandate.Subject, a.contract.Key)
+	if err != nil {
+		return decision, ErrDenied
+	}
+	name := []string{"controller", "builder", "tester"}[a.index]
+	role, err := s.CheckContributionRoleAs(ctx, launch.Mandate.Subject, launch.AuthorityContext.SessionID, a.contract.Key, name, ContributionContinuityInput{ContractDigest: a.contract.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
+	if err != nil || role.Authority.ID != launch.AuthorityContext.ID || role.Authority.Digest != launch.AuthorityContext.Digest || role.MandateID != launch.Mandate.ID {
+		return decision, ErrDenied
+	}
 	expected := a.contract.Roles[a.index]
 	if !at.Before(a.contract.Deadline) || launch.Mandate.CharterDigest != expected.Charter.Digest || s.validateMandateAt(launch.Mandate, at) != nil {
 		return decision, ErrDenied

@@ -16,7 +16,11 @@ func (e *ManagedContribution) resumeBoundary(ctx context.Context, r Contribution
 	bad := errors.New("exact quiescent contribution phase boundary required; reservation held")
 	identity, _ := json.Marshal(c)
 	owner, err := e.DB.Get([]byte("contribution/workspace/" + digest([]byte(c.Workspace))))
-	if err != nil || string(owner) != run || r.RunID != run || r.Contract != contract || r.QueueAttempt != attempt || r.Base != base || r.Workspace != c.Workspace || r.Implementation != digest(identity) || contributionPolicyDigest(r.Policy) != contributionPolicyDigest(p) || r.State != "phase_boundary" || r.Expected == nil || r.Baseline.Outcome != "failed" || int(r.Consumed) != len(r.Passes) || r.Consumed >= c.MaxPasses {
+	want := len(r.Passes)
+	if r.Frozen != nil {
+		want++
+	}
+	if err != nil || string(owner) != run || r.RunID != run || r.Contract != contract || r.QueueAttempt != attempt || r.Base != base || r.Workspace != c.Workspace || r.Implementation != digest(identity) || contributionPolicyDigest(r.Policy) != contributionPolicyDigest(p) || r.State != "phase_boundary" || r.Expected == nil || r.Baseline.Outcome != "failed" || int(r.Consumed) != want || (r.Frozen == nil && r.Consumed >= c.MaxPasses) {
 		return bad
 	}
 	if err = e.admit(ctx, "worktree-resume"); err != nil {
@@ -24,7 +28,7 @@ func (e *ManagedContribution) resumeBoundary(ctx context.Context, r Contribution
 	}
 	origin, err := e.git(ctx, p, p.RepositoryPath, "remote", "get-url", "origin")
 	if err != nil || e.Repository == "" || strings.TrimSpace(string(origin)) != "https://github.com/"+e.Repository+".git" {
-		return bad
+		return errors.Join(bad, err)
 	}
 	source, err := Inventory(ctx, c.Workspace)
 	if err != nil || source.Digest != r.BoundarySource {
@@ -32,7 +36,7 @@ func (e *ManagedContribution) resumeBoundary(ctx context.Context, r Contribution
 	}
 	index, err := e.git(ctx, p, c.Workspace, "ls-files", "--stage", "-z")
 	if err != nil || digest(index) != r.BoundaryIndex {
-		return bad
+		return errors.Join(bad, err)
 	}
 	for _, check := range []struct {
 		args []string
@@ -44,7 +48,7 @@ func (e *ManagedContribution) resumeBoundary(ctx context.Context, r Contribution
 	} {
 		actual, err := e.git(ctx, p, c.Workspace, check.args...)
 		if err != nil {
-			return bad
+			return errors.Join(bad, err)
 		}
 		want := check.want
 		if want == "" {
@@ -57,6 +61,9 @@ func (e *ManagedContribution) resumeBoundary(ctx context.Context, r Contribution
 		if strings.TrimSpace(string(actual)) != want {
 			return bad
 		}
+	}
+	if r.Frozen != nil {
+		return e.revalidate(ctx, c, p, *r.Frozen)
 	}
 	if len(r.Passes) > 0 {
 		return e.revalidate(ctx, c, p, r.Passes[len(r.Passes)-1].Candidate)

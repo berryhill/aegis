@@ -542,6 +542,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	addGatewayRecovery(root, deps, o)
 	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
 	root.AddCommand(NewDoerSetupCompanionCommand(func() string { return o.configFile }))
+	root.AddCommand(NewContributionDecisionCompanionCommand(func() string { return o.configFile }))
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {

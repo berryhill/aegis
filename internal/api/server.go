@@ -926,6 +926,7 @@ func ServeWithTelemetry(ctx context.Context, svc *app.Service, telemetry Telemet
 	})
 	registerDoerSetupRoutes(e, svc, consoleManager)
 	registerDoerProtectedSetupRoutes(e, svc, consoleManager)
+	RegisterContributionDecisionRoutes(e, svc, consoleManager)
 	doerPortal := NewDoerContinuationPortal(svc, consoleManager)
 	doerPortal.RegisterBrowser(e)
 	e.GET("/console/loops/doer", func(c *echo.Context) error {
