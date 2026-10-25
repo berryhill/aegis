@@ -98,9 +98,13 @@ success. Readiness is observation, not a grant.
 For an exact owner-approved native-only configuration addition that invalidates a
 config-bound native Codex connection, the existing explicit `controller-codex
 preview ... --replace` / `connect REVIEW_ID` path supports a narrow same-selection
-review. Removing the one appended native-trust mapping must reconstruct the
-previous exact configuration commitment. Other drift, an existing implementation
-block, ambiguity, source/selector/account changes or stale history deny. Preview
+review. Removing the one appended native-trust mapping, or the one new final
+plain exact `sha256:` contract line in an existing block allowlist, must reconstruct
+the previous exact configuration commitment. The checker and all older contracts
+remain byte-for-byte unchanged. Each prior connection transition is independently
+revalidated against its exact historical configuration without rewriting history
+or persisting private configuration backups. Other drift, multiple new contracts,
+removed/broadened trust, ambiguity, source/selector/account changes or stale history deny. Preview
 has no runtime effect; connect rechecks the one-use review and retains append-only
 history. Runtime/show still require the latest full configuration commitment.
 This is not general configuration repair or atomic CAS against hostile same-UID
