@@ -138,6 +138,24 @@ regenerated, no tag or release is published, and production behavior is unchange
 
 ## Remaining acceptance
 
+### Measured execution deadline follow-up
+
+The execution job at `232dbfe` completed `internal/implementation` in 382.390s
+before `internal/orchestration` ran into the ten-minute job deadline. This is
+cumulative whole-package cost, not evidence of a failing assertion. Replace
+`execution` with singleton `implementation` and `orchestration` groups in both
+normal and race modes. Exact required names are `Go normal / implementation`,
+`Go race / implementation`, `Go normal / orchestration` and
+`Go race / orchestration`; legacy execution checks cannot substitute for them.
+The complete package commands remain uncached and unfiltered with eight-minute
+alarms, ten-minute jobs and unchanged supervisor limits. No product or delivery
+test changes belong to this topology repair. The existing API split is unchanged.
+Fresh exact-head hosted success for both successors in both modes and all other
+mandatory checks remains required; local focused regressions prove topology and
+fail-closed evidence only. Launch impact is CI configuration/evidence and these
+resource/launch notes plus CHANGELOG; runtime, security, architecture, quickstart,
+no-key demo, recordings, licensing and release artifact formats are unaffected.
+
 ### API cumulative-deadline follow-up
 
 The seven-group, whole-package topology above is historical. Hosted run

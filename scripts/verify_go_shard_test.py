@@ -29,6 +29,8 @@ class ShardTests(unittest.TestCase):
             self.assertEqual(grouped['api-a'], [shard.API])
             self.assertEqual(grouped['api-b'], [shard.API])
             self.assertEqual(grouped['update'], [shard.ROOT + 'internal/update'])
+            for heavy in ('implementation', 'orchestration'):
+                self.assertEqual(grouped[heavy], [shard.ROOT + 'internal/' + heavy])
             remainder = sorted(p for p in packages if p not in {shard.ROOT + p for paths in shard.GROUPS.values() for p in paths})
             self.assertEqual(grouped['remainder-a'], remainder[::2])
             self.assertEqual(grouped['remainder-b'], remainder[1::2])
@@ -39,7 +41,7 @@ class ShardTests(unittest.TestCase):
                 shard.inventory(text)
         with self.assertRaises(ValueError):
             shard.groups([p for p in self.packages() if p != shard.API])
-        for duplicate in ('internal/api', 'internal/update'):
+        for duplicate in ('internal/api', 'internal/update', 'internal/implementation', 'internal/orchestration'):
             with mock.patch.dict(shard.GROUPS, {'overlap': (duplicate,)}), self.assertRaises(ValueError):
                 shard.groups(self.packages())
 
@@ -74,6 +76,9 @@ class ShardTests(unittest.TestCase):
                     self.assertIn('-count=1', command)
                     self.assertIn('-timeout=12m' if race and api else '-timeout=8m', command)
                     self.assertEqual('-run' in command, api)
+                    if group in ('implementation', 'orchestration'):
+                        self.assertEqual(command, ['go', 'test', *(['-race'] if race else []),
+                                                  '-count=1', '-timeout=8m', shard.ROOT + 'internal/' + group])
                     if api:
                         inventory = run.call_args_list[1].args[0]
                         self.assertEqual('-race' in inventory, race)

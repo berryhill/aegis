@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Replace the cumulative `execution` CI shard with mandatory whole-package
+  `implementation` and `orchestration` groups in normal and race modes. Preserve
+  uncached complete tests, ten-minute jobs, eight-minute package alarms and
+  cgroup limits; exact-head evidence rejects missing or cancelled successors.
+
 - Managed contribution custody permits only exact same-attempt quiescent phase
   boundaries under the existing lock; foreign, stale, interrupted and exhausted
   reservations remain held. Tester model evidence excludes complete source bytes

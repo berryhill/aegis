@@ -36,6 +36,19 @@ ceiling or a replacement for cgroup enforcement.
 
 ## Launch-asset impact review
 
+Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
+`implementation`, `orchestration`, `cli`, `persistence`, `update`, `remainder-a`
+and `remainder-b`. The measured cumulative `execution` shard is replaced by
+the two singleton whole-package groups `internal/implementation` and
+`internal/orchestration`. Each retains a ten-minute job and the flags
+`-count=1 -timeout=8m`, with no test-name filtering. Existing API partitions/alarms
+and other job exceptions remain unchanged. Every non-API package, including future
+packages, is assigned exactly once; only API retains its existing two-partition
+discovery. Both successor checks in both modes are mandatory for exact-head
+evidence, and cancellation/missing evidence denies even with green aggregates.
+Toolchain preparation, cgroup/CPU/memory limits and success-only aggregates are
+unchanged. Focused local script tests are not hosted timing proof.
+
 - Updated CONTRIBUTING.md: the complete bounded gate and Linux/systemd/cgroup-v2 prerequisites, explicit macOS verification denial, focused supervised command, inherited defaults and limits.
 - Updated CHANGELOG.md: verification resource/termination and authority-close corrections.
 - Updated CI and release workflows: retain all tests, race, vet, vulnerability, archive/checksum and installed gates behind supervision. No release is published by this change.

@@ -18,7 +18,9 @@ API = ROOT + 'internal/api'
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
-    'execution': ('internal/implementation', 'internal/orchestration'),
+    # Measured execution-job deadline: keep both dominant whole packages alone.
+    'implementation': ('internal/implementation',),
+    'orchestration': ('internal/orchestration',),
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
     # CI race timing: update alone takes 368-373s; never pair it with the remainder.

@@ -15,7 +15,7 @@ REQUIRED_JOBS = frozenset({"Exact-head release readiness", "Race tests", "Reposi
                            "Authority denial matrix", "Vulnerability scan",
                            "Release package and installed proof"}
                           | {f"Go {mode} / {group}" for mode in ("normal", "race")
-                             for group in ("api-a", "api-b", "execution", "cli", "persistence", "update", "remainder-a", "remainder-b")})
+                             for group in ("api-a", "api-b", "implementation", "orchestration", "cli", "persistence", "update", "remainder-a", "remainder-b")})
 
 
 def validate_sha(value):

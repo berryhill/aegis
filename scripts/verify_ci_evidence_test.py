@@ -54,7 +54,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_each_rebalanced_shard_is_required_in_both_modes(self):
         for mode in ('normal', 'race'):
-            for group in ('api-a', 'api-b', 'update', 'remainder-a', 'remainder-b'):
+            for group in ('api-a', 'api-b', 'implementation', 'orchestration', 'update', 'remainder-a', 'remainder-b'):
                 name = f'Go {mode} / {group}'
                 with self.subTest(name=name):
                     self.assertIn(name, MODULE.REQUIRED_JOBS)
@@ -63,8 +63,19 @@ class EvidenceTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'missing'):
                         MODULE.validate(run, jobs, SHA, 456)
 
+    def test_cancelled_execution_successors_deny_even_with_green_aggregates(self):
+        for mode in ('normal', 'race'):
+            for group in ('implementation', 'orchestration'):
+                name = f'Go {mode} / {group}'
+                for status in ('cancelled', 'skipped', 'failure'):
+                    with self.subTest(name=name, status=status):
+                        run, jobs = self.fixture()
+                        next(job for job in jobs if job['name'] == name)['conclusion'] = status
+                        with self.assertRaises(ValueError):
+                            MODULE.validate(run, jobs, SHA, 456)
+
     def test_unknown_successful_shard_and_legacy_api_are_denied(self):
-        for name in ('Go race / api', 'Go normal / api-c', 'unknown successful gate'):
+        for name in ('Go race / api', 'Go normal / api-c', 'Go normal / execution', 'Go race / execution', 'unknown successful gate'):
             run, jobs = self.fixture()
             jobs.append(dict(jobs[0], id=999, name=name))
             with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'unknown'):

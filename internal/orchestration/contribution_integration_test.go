@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/execution"
+	"reflect"
 
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
@@ -326,6 +328,128 @@ while read rest; do :; done
 		if string(beforeWire) != string(afterWire) {
 			t.Fatal("custody changed proof or cumulative budget")
 		}
+	})
+	t.Run("custody_callback_source_deep_clone", func(t *testing.T) {
+		before, err := worker.ContributionExecutionReadback("run")
+		must(err)
+		beforeWire, err := json.Marshal(before)
+		must(err)
+		if len(candidate.Source.Files) == 0 || len(candidate.Source.Files[0].Content) == 0 {
+			t.Fatal("fixture needs a nonempty source file")
+		}
+		for _, target := range []string{"gate", "action"} {
+			for _, mutation := range []string{"content_bytes", "slice_element_path"} {
+				t.Run(target+"/"+mutation, func(t *testing.T) {
+					assertClean := func(got ContributionCandidate) {
+						t.Helper()
+						if !reflect.DeepEqual(got, candidate) {
+							t.Fatal("callback did not receive the original private candidate/source anchor")
+						}
+					}
+					mutate := func(got ContributionCandidate) {
+						if mutation == "content_bytes" {
+							got.Source.Files[0].Content[0] ^= 0xff
+						} else {
+							got.Source.Files[0] = implementation.SourceFile{Path: "mutated-callback-path", Content: []byte("copy only")}
+						}
+					}
+					gateCalls, actionCalls := 0, 0
+					must(call(subject, func(_ context.Context, got ContributionCandidate) error {
+						gateCalls++
+						assertClean(got)
+						if target == "gate" {
+							mutate(got)
+						}
+						return nil
+					}, func(_ context.Context, got ContributionCandidate) error {
+						actionCalls++
+						assertClean(got)
+						if target == "action" {
+							mutate(got)
+						}
+						return nil
+					}))
+					if gateCalls != 2 || actionCalls != 1 {
+						t.Fatalf("callback counts: gates=%d action=%d", gateCalls, actionCalls)
+					}
+					after, err := worker.ContributionExecutionReadback("run")
+					must(err)
+					afterWire, err := json.Marshal(after)
+					must(err)
+					if !bytes.Equal(beforeWire, afterWire) {
+						t.Fatal("callback mutated durable proof or cumulative budget")
+					}
+					reloaded, err := worker.AcceptedContributionCandidate(ctx, subject, "queue", lr)
+					must(err)
+					assertClean(reloaded)
+					source, err := implementation.Inventory(ctx, record.Workspace)
+					must(err)
+					if !reflect.DeepEqual(source, candidate.Source) {
+						t.Fatal("callback mutated actual source")
+					}
+				})
+			}
+		}
+	})
+	t.Run("custody_git_index_pre_post", func(t *testing.T) {
+		workspaceGit := func(args ...string) string {
+			t.Helper()
+			b, err := exec.Command(git, append([]string{"-C", record.Workspace}, args...)...).CombinedOutput()
+			if err != nil {
+				t.Fatalf("fixture git %v: %s %v", args, b, err)
+			}
+			return strings.TrimSpace(string(b))
+		}
+		head := workspaceGit("rev-parse", "HEAD")
+		indexPath := workspaceGit("rev-parse", "--path-format=absolute", "--git-path", "index")
+		index, err := os.ReadFile(indexPath)
+		must(err)
+		indexInfo, err := os.Stat(indexPath)
+		must(err)
+		stage := workspaceGit("ls-files", "--stage", "-z")
+		restore := func() {
+			t.Helper()
+			must(os.WriteFile(indexPath, index, indexInfo.Mode().Perm()))
+			if workspaceGit("rev-parse", "HEAD") != head || workspaceGit("ls-files", "--stage", "-z") != stage {
+				t.Fatal("fixture Git identity not restored exactly")
+			}
+			actual, err := os.ReadFile(indexPath)
+			must(err)
+			if !bytes.Equal(actual, index) {
+				t.Fatal("fixture index bytes not restored exactly")
+			}
+			source, err := implementation.Inventory(ctx, record.Workspace)
+			must(err)
+			if !reflect.DeepEqual(source, candidate.Source) {
+				t.Fatal("Git-only drift changed source bytes")
+			}
+		}
+		defer restore()
+		drift := func() {
+			t.Helper()
+			workspaceGit("update-index", "--force-remove", "value.go")
+			if workspaceGit("ls-files", "--stage", "-z") == stage || workspaceGit("rev-parse", "HEAD") != head {
+				t.Fatal("fixture did not introduce index-only drift")
+			}
+			source, err := implementation.Inventory(ctx, record.Workspace)
+			must(err)
+			if !reflect.DeepEqual(source, candidate.Source) {
+				t.Fatal("index-only drift changed source bytes")
+			}
+		}
+		drift()
+		called := false
+		err = call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; return nil })
+		if err == nil || err.Error() != "frozen Git identity changed" || called {
+			t.Fatalf("pre-callback index drift: action=%t err=%v", called, err)
+		}
+		restore()
+		err = call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; drift(); return nil })
+		if !called || err == nil || err.Error() != "frozen Git identity changed" {
+			t.Fatalf("during-callback index drift: action=%t err=%v", called, err)
+		}
+		restore()
+		must(call(subject, gate, noop))
 	})
 	t.Run("custody_post_gate_denial", func(t *testing.T) {
 		denied := errors.New("post-action epoch revoked")
