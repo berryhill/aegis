@@ -21,6 +21,7 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 // packages executable. A missing entry deliberately means that the package is
 // an outer composition package rather than a protected inner layer.
 var allowedInternalImports = map[string][]string{
+	"internal/delivery":          {"internal/contribution", "internal/credentials"}, // Closed effects; authority and persistence are injected.
 	"internal/reference":         {},
 	"internal/registry":          {"internal/reference"},
 	"internal/loop":              {"internal/reference"},                                       // Pure immutable references only; never contribution intake.
@@ -36,7 +37,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/disposition":       {"internal/execution", "internal/reference"},
 	"internal/store":             {"internal/core", "internal/continuation", "internal/hostapproval"},
 	"internal/persistence":       {"internal/core", "internal/persistence"},
-	"internal/persistence/fleet": {"internal/contribution", "internal/core", "internal/disposition", "internal/doerbinding", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
+	"internal/persistence/fleet": {"internal/delivery", "internal/contribution", "internal/core", "internal/disposition", "internal/doerbinding", "internal/evidence", "internal/execution", "internal/graph", "internal/implementation", "internal/loop", "internal/persistence", "internal/queue", "internal/reference", "internal/registry"},
 	"internal/credentials":       {"internal/credentials"},
 	"internal/manager":           {"internal/config", "internal/credentials"},
 	"internal/principalauth":     {},
@@ -53,8 +54,8 @@ var allowedInternalImports = map[string][]string{
 var classifiedTestOnlyFamilies = map[string]struct{}{"testprocess": {}}
 
 var classifiedProductionFamilies = map[string]struct{}{
-	"contribution": {},
-	"api":          {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {}, "continuation": {}, "hostapproval": {},
+	"contribution": {}, "delivery": {},
+	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {}, "continuation": {}, "hostapproval": {},
 	"core": {}, "credentials": {}, "disposition": {}, "doerbinding": {}, "evidence": {}, "execution": {}, "graph": {},
 	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "looprun": {}, "manager": {}, "managergateway": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
