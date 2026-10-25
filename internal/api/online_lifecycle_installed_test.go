@@ -1,10 +1,15 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,14 +54,34 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	binary := filepath.Join(repo, ".aegis350-lifecycle-test-bin")
-	t.Cleanup(func() { os.Remove(binary) })
-	build := exec.Command("sh", "scripts/build-source.sh", binary)
-	build.Dir = repo
-	build.Env = append(os.Environ(), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.worktree", "GIT_CONFIG_VALUE_0="+repo)
-	if out, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
-		t.Fatalf("build: %v %s", err, out)
+	binary := os.Getenv("AEGIS_TEST_PACKAGED_EXECUTABLE")
+	if binary == "" {
+		binary = filepath.Join(repo, ".aegis350-lifecycle-test-bin")
+		t.Cleanup(func() { os.Remove(binary) })
+		build := exec.Command("sh", "scripts/build-source.sh", binary)
+		build.Dir = repo
+		build.Env = append(os.Environ(), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=core.worktree", "GIT_CONFIG_VALUE_0="+repo)
+		if out, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
+			t.Fatalf("build: %v %s", err, out)
+		}
+	} else if !filepath.IsAbs(binary) {
+		t.Fatal("AEGIS_TEST_PACKAGED_EXECUTABLE must be absolute")
 	}
+	info, err := os.Lstat(binary)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+		t.Fatalf("invalid test executable: %v", err)
+	}
+	executableBytes, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("test executable=%s sha256=%x supplied=%t", binary, sha256.Sum256(executableBytes), os.Getenv("AEGIS_TEST_PACKAGED_EXECUTABLE") != "")
+	t.Cleanup(func() {
+		after, err := os.ReadFile(binary)
+		if err != nil || sha256.Sum256(after) != sha256.Sum256(executableBytes) {
+			t.Error("test executable changed during journey", err)
+		}
+	})
 	save := func(name string, value any) string {
 		t.Helper()
 		raw, err := json.Marshal(value)
@@ -86,11 +111,33 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 		}
 		return out
 	}
-	deny := func(args ...string) {
+	agentSnapshot := func() []byte {
+		revisions, err := store.ListAgentRevisions(ctx, "builder")
+		if err != nil {
+			t.Fatal(err)
+		}
+		registration, err := store.GetAgentRegistration(ctx, "builder")
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(struct {
+			Registration registry.AgentRegistration
+			Revisions    []registry.AgentRevision
+		}{registration, revisions})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	deny := func(diagnostic string, args ...string) {
 		t.Helper()
+		before := agentSnapshot()
 		out, err := run(cfg, target, args...)
-		if err == nil {
-			t.Fatalf("admitted %v: %s", args, out)
+		if err == nil || !bytes.Contains(out, []byte(diagnostic)) {
+			t.Fatalf("expected denial %q for %v: %v %s", diagnostic, args, err, out)
+		}
+		if after := agentSnapshot(); !bytes.Equal(before, after) {
+			t.Fatal("denial mutated canonical Agent history")
 		}
 	}
 
@@ -137,7 +184,7 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 
 	conflict := registration
 	conflict.Fixture = json.RawMessage(strings.Replace(string(fixture), `"owner"`, `"foreign-owner"`, 1))
-	deny("agents", "register", save("registration-conflict.json", conflict))
+	deny("HTTP 409", "agents", "register", save("registration-conflict.json", conflict))
 	current := registered.Agent
 	readAgent := func() app.FleetAgent {
 		t.Helper()
@@ -172,13 +219,13 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 			t.Fatal("durable lifecycle readback differs")
 		}
 	}
-	deny("agents", "disable", "builder", save("stale.json", stale))
+	deny("HTTP 409", "agents", "disable", "builder", save("stale.json", stale))
 	wrong := lifecycleInput(current)
 	wrong.Expected.Digest = "sha256:" + strings.Repeat("b", 64)
-	deny("agents", "disable", "builder", save("wrong.json", wrong))
+	deny("HTTP 409", "agents", "disable", "builder", save("wrong.json", wrong))
 	foreign := lifecycleInput(current)
 	foreign.Expected.ID = "foreign-agent"
-	deny("agents", "disable", "builder", save("foreign.json", foreign))
+	deny("agent path and exact reference must match", "agents", "disable", "builder", save("foreign.json", foreign))
 	var history []registry.AgentRevision
 	if err := json.Unmarshal(ok("agents", "history", "builder"), &history); err != nil || len(history) != 3 || !reflect.DeepEqual(history[0], registered.Agent.Revision) || !reflect.DeepEqual(history[2], current.Revision) {
 		t.Fatalf("append-only history or immutable registration drift: %v %+v", err, history)
@@ -192,7 +239,8 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 		if err := os.WriteFile(p, data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		deny("agents", "disable", "builder", p)
+		diagnostic := map[string]string{"unknown": `json: unknown field "unknown"`, "trailing": "trailing JSON value", "malformed": "unexpected EOF"}[name]
+		deny(diagnostic, "agents", "disable", "builder", p)
 	}
 	wrongConfig := svc.Config
 	wrongConfig.StateDir = filepath.Join(t.TempDir(), "absent")
@@ -258,7 +306,11 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 			if err != nil || projection.State != want || view.Projection.State != want || view.Disposition == nil || string(view.Disposition.State) != string(want) || view.Item.Digest != accepted.Accepted.QueueItem.Digest || view.Item.MaxAttempts != 2 || len(view.Claims) != 0 || cancellation.QueueItem.Digest != view.Item.Digest {
 				t.Fatalf("durable terminal: %v %+v", err, view)
 			}
-			deny("queue", verb, save("terminal-again.json", terminal))
+			canonicalBefore := ok("queue", "show", id)
+			deny("HTTP 403", "queue", verb, save("terminal-again.json", terminal))
+			if canonicalAfter := ok("queue", "show", id); !bytes.Equal(canonicalBefore, canonicalAfter) {
+				t.Fatal("terminal denial mutated full canonical Queue history")
+			}
 			after, err := store.GetQueueProjection(ctx, id)
 			if err != nil || !reflect.DeepEqual(after, projection) {
 				t.Fatalf("terminal denial mutation: %v", err)
@@ -343,30 +395,30 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 	seedClaim(1)
 	before := readQueue(id)
 	retry := app.RetryQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, RetryID: id + "-retry", TransitionID: id + "-retried", Reclaimed: true}
-	denyUnchanged := func(input app.RetryQueueItemInput) {
+	denyUnchanged := func(diagnostic string, input app.RetryQueueItemInput) {
 		t.Helper()
-		projection, err := store.GetQueueProjection(ctx, id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		deny("queue", "retry", save("denied-retry.json", input))
-		after, err := store.GetQueueProjection(ctx, id)
-		if err != nil || !reflect.DeepEqual(projection, after) {
-			t.Fatal("denied retry mutated projection", err)
+		projection := readQueue(id)
+		deny(diagnostic, "queue", "retry", save("denied-retry.json", input))
+		after := readQueue(id)
+		if !reflect.DeepEqual(projection, after) {
+			t.Fatal("denied retry mutated canonical history")
 		}
 	}
-	denyUnchanged(retry) // live lease
+	denyUnchanged("HTTP 403", retry) // live lease
 	ordinary := retry
 	ordinary.Reclaimed = false
-	denyUnchanged(ordinary) // no stop acknowledgement exists; ordinary retry unavailable
+	denyUnchanged("HTTP 409", ordinary) // no stop acknowledgement exists; ordinary retry unavailable
 	wrongAuthority := retry
 	wrongAuthority.WorkspaceAgentID = ""
 	wrongAuthority.Authority = authority.Authority
 	wrongAuthority.Authority.Digest = "sha256:" + strings.Repeat("f", 64)
-	denyUnchanged(wrongAuthority)
+	denyUnchanged("HTTP 403", wrongAuthority)
+	badReason := retry
+	badReason.ReasonCode = orchestration.ReasonOperatorCancelled
 	clock.Advance(2 * time.Second)
+	denyUnchanged("HTTP 403", badReason)
 	ordinary.Reclaimed = false
-	denyUnchanged(ordinary)
+	denyUnchanged("HTTP 403", ordinary)
 	var reclaimed queue.Retry
 	if err := json.Unmarshal(ok("queue", "retry", save("reclaim.json", retry)), &reclaimed); err != nil {
 		t.Fatal(err)
@@ -375,19 +427,103 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 	if !reclaimed.Reclaimed || reclaimed.AttemptNumber != 1 || reclaimed.ClaimID != before.Claims[0].ClaimID || reclaimed.OccurredAt.Before(before.Claims[0].ExpiresAt) || after.Projection.State != queue.StateQueued || after.Projection.Attempts != 1 || after.Item.Digest != before.Item.Digest || after.Item.MaxAttempts != 2 || !reflect.DeepEqual(after.GraphRun, before.GraphRun) || !reflect.DeepEqual(after.LoopExecutions, before.LoopExecutions) || !reflect.DeepEqual(after.Attempts, before.Attempts) || len(after.Retries) != 1 {
 		t.Fatalf("reclaim identity/budget drift: before=%+v after=%+v", before, after)
 	}
-	denyUnchanged(retry) // stale replay cannot release a second claim
+	denyUnchanged("HTTP 403", retry) // stale replay cannot release a second claim
 	seedClaim(2)
 	clock.Advance(2 * time.Second)
 	retry.RetryID += "-exhausted"
 	retry.TransitionID += "-exhausted"
-	denyUnchanged(retry)
+	denyUnchanged("HTTP 403", retry)
 	exhausted := readQueue(id)
 	if exhausted.Projection.Attempts != 2 || len(exhausted.Attempts) != 2 || len(exhausted.LoopExecutions) != 1 || exhausted.Item.Digest != before.Item.Digest {
 		t.Fatal("consumed budget or causal identities reset")
 	}
-	ok("queue", "cancel", save("cancel-reclaim.json", app.TerminalQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, CancellationID: id + "-cancel", TransitionID: id + "-cancelled"}))
-	denyUnchanged(retry) // terminal cannot reopen
+	{
+		// Explicit canonical seeded active claim using the sole owning fixture store.
+		id := "lifecycle-claimed-cancel"
+		request := submission
+		request.SubmissionID = id + "-submission"
+		request.IdempotencyKey = id
+		request.SnapshotID = id + "-snapshot"
+		request.QueueItemID = id
+		request.GraphRunID = id + "-run"
+		request.TransitionID = id + "-accepted"
+		request.RejectionID = id + "-rejected"
+		var admitted orchestration.SubmissionDecision
+		if err := json.Unmarshal(ok("graphs", "submit", save("claimed-submit.json", request)), &admitted); err != nil || admitted.Accepted == nil {
+			t.Fatalf("claimed submit: %v", err)
+		}
+		ok("queue", "bind-runtime", save("claimed-bind.json", app.BindQueueRuntimeInput{AgentID: "builder", Authority: authority.Authority, QueueItemID: id, BindingID: id + "-binding", TransitionID: id + "-bound"}))
+		le, err := execution.NewLoopExecution(execution.LoopExecution{LoopExecutionID: id + "-loop", GraphRunID: id + "-run", GraphNodeID: "work", Loop: lr, Participant: lifecycleInput(current).Expected, CreatedAt: clock.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.CreateLoopExecution(ctx, le, fact); err != nil {
+			t.Fatal(err)
+		}
+		claim, err := queue.NewClaim(queue.Claim{ClaimID: id + "-claim", QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: id, Digest: admitted.Accepted.QueueItem.Digest}, AttemptID: id + "-attempt", WorkerID: "abandoned", Authority: authority.Authority, ClaimedAt: clock.Now(), ExpiresAt: clock.Now().Add(time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		attempt, err := execution.NewAttempt(execution.Attempt{AttemptID: claim.AttemptID, GraphRunID: le.GraphRunID, LoopExecutionID: le.LoopExecutionID, QueueItem: claim.QueueItem, ClaimID: claim.ClaimID, AttemptNumber: 1, CreatedAt: clock.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		transition, err := queue.NewTransition(queue.QueueTransition{TransitionID: id + "-claimed", QueueItemID: id, From: queue.StateQueued, To: queue.StateClaimed, ClaimID: claim.ClaimID, Reason: "abandoned fixture", OccurredAt: clock.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.ClaimQueueItem(ctx, claim, attempt, transition, fact); err != nil {
+			t.Fatal(err)
+		}
+		before := readQueue(id)
+		stopProxy := lifecycleResponseLossProxy(t, svc.Config.API.UnixSocket, func(status int) bool {
+			projection, err := store.GetQueueProjection(ctx, id)
+			return err == nil && status == http.StatusOK && projection.State == queue.StateCancelled
+		})
+		out, unknownErr := run(cfg, target, "queue", "cancel", save("claimed-cancel.json", app.TerminalQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, CancellationID: id + "-cancel", TransitionID: id + "-cancelled"}))
+		stopProxy()
+		if unknownErr == nil || !bytes.Contains(out, []byte("execution_outcome_unknown")) {
+			t.Fatalf("queue lost response: %v %s", unknownErr, out)
+		}
+		after := readQueue(id) // canonical reconciliation BEFORE any repeat
+		if after.Disposition == nil || after.Projection.State != queue.StateCancelled || len(after.Claims) != 1 || !reflect.DeepEqual(before.Item, after.Item) || !reflect.DeepEqual(before.Claims, after.Claims) || !reflect.DeepEqual(before.Attempts, after.Attempts) || !reflect.DeepEqual(before.GraphRun, after.GraphRun) || !reflect.DeepEqual(before.LoopExecutions, after.LoopExecutions) {
+			t.Fatal("claimed cancel unknown-outcome identity/disposition drift")
+		}
+	}
+	// Claimed revoke: same Queue/run/Loop/attempt and a durable disposition; no stop acknowledgment.
+	claimedBefore := readQueue(id)
+	ok("queue", "revoke", save("revoke-claimed.json", app.TerminalQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, CancellationID: id + "-revoke", TransitionID: id + "-revoked"}))
+	claimedAfter := readQueue(id)
+	if claimedAfter.Disposition == nil || claimedAfter.Projection.State != queue.StateRevoked || len(claimedAfter.Claims) != 2 || !reflect.DeepEqual(claimedBefore.Item, claimedAfter.Item) || !reflect.DeepEqual(claimedBefore.Attempts, claimedAfter.Attempts) || !reflect.DeepEqual(claimedBefore.GraphRun, claimedAfter.GraphRun) || !reflect.DeepEqual(claimedBefore.LoopExecutions, claimedAfter.LoopExecutions) {
+		t.Fatal("claimed revoke identity/disposition drift")
+	}
+	denyUnchanged("HTTP 403", retry)
+	deny("HTTP 403", "queue", "cancel", save("cancel-reclaim.json", app.TerminalQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, CancellationID: id + "-cancel", TransitionID: id + "-cancelled"}))
+	denyUnchanged("HTTP 403", retry) // terminal cannot reopen
 
+	// TEST-ONLY transparent Unix response-loss proxy: request bytes (including auth)
+	// are copied opaquely. Real service remains sole store owner. Drop only a fully
+	// received successful mutation response, therefore AFTER the handler committed.
+	stopProxy := lifecycleResponseLossProxy(t, svc.Config.API.UnixSocket, func(status int) bool { return status == http.StatusCreated })
+	beforeUnknown := current
+	out, unknownErr := run(cfg, target, "agents", "disable", "builder", save("unknown-agent.json", lifecycleInput(current)))
+	stopProxy()
+	if unknownErr == nil || !bytes.Contains(out, []byte("execution_outcome_unknown")) {
+		t.Fatalf("lost committed response: %v %s", unknownErr, out)
+	}
+	var unknownHistory []registry.AgentRevision
+	if err := json.Unmarshal(ok("agents", "history", "builder"), &unknownHistory); err != nil || len(unknownHistory) != int(beforeUnknown.Revision.Revision)+1 {
+		t.Fatalf("unknown canonical history: %v %+v", err, unknownHistory)
+	}
+	current.Revision = unknownHistory[len(unknownHistory)-1]
+	current = readAgent()
+	if current.Revision.AgentID != beforeUnknown.Revision.AgentID || current.Revision.Revision != beforeUnknown.Revision.Revision+1 || current.Revision.Lifecycle != registry.LifecycleDisabled {
+		t.Fatal("unknown outcome did not reconcile exact Agent before repeat")
+	}
+	// Restore enabled state through supported CLI, not a second writer.
+	if err := json.Unmarshal(ok("agents", "enable", "builder", save("unknown-enable.json", lifecycleInput(current))), &current); err != nil {
+		t.Fatal(err)
+	}
 	if err := json.Unmarshal(ok("agents", "retire", "builder", save("retire.json", lifecycleInput(current))), &current); err != nil {
 		t.Fatal(err)
 	}
@@ -395,9 +531,70 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 	if retired.Revision.Lifecycle != registry.LifecycleRetired {
 		t.Fatal("retirement not durable")
 	}
-	deny("agents", "enable", "builder", save("enable-retired.json", lifecycleInput(retired)))
+	deny("HTTP 409", "agents", "enable", "builder", save("enable-retired.json", lifecycleInput(retired)))
 	if got := readAgent(); !reflect.DeepEqual(got, retired) {
 		t.Fatal("retired denial mutated Agent")
 	}
 	t.Log("PASS: compiled CLI, real Serve/Unix peer+bearer, Badger Agent replay/lifecycle/stale/digest/retired denial; Queue cancel/revoke durable dispositions and terminal denial; strict decode, auth, target/config no-second-store")
+}
+
+// lifecycleResponseLossProxy never reads request/authentication bytes. It buffers
+// raw response bytes only to drop one complete committed response, otherwise
+// forwards those exact bytes. No alternate client, authority or store is created.
+func lifecycleResponseLossProxy(t *testing.T, socket string, drop func(int) bool) func() {
+	t.Helper()
+	backend := socket + ".back"
+	if err := os.Rename(socket, backend); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(socket, 0600); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			downstream, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer downstream.Close()
+				upstream, err := net.Dial("unix", backend)
+				if err != nil {
+					return
+				}
+				defer upstream.Close()
+				go func() { _, _ = io.Copy(upstream, downstream) }()
+				reader := bufio.NewReader(upstream)
+				for {
+					var raw bytes.Buffer
+					response, err := http.ReadResponse(bufio.NewReader(io.TeeReader(reader, &raw)), nil)
+					if err != nil {
+						return
+					}
+					_, err = io.Copy(io.Discard, response.Body)
+					response.Body.Close()
+					if err != nil {
+						return
+					}
+					if drop(response.StatusCode) {
+						return
+					}
+					if _, err = downstream.Write(raw.Bytes()); err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return func() {
+		listener.Close()
+		os.Remove(socket)
+		if err := os.Rename(backend, socket); err != nil {
+			t.Error(err)
+		}
+	}
 }

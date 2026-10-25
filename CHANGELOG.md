@@ -1,12 +1,12 @@
 # Changelog
 
-- Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
-
 Execution preparation now uses `preparation-pending`; legacy `awaiting-runtime` records remain readable and recoverable under the same Queue ID. The exact-Loop queue action executes within already approved scope through session creation/reuse, runtime binding and the bounded foreground worker. Blockers return inline; the unrequested Preparation page/navigation and repeated Queue overview prerequisite blocks have been removed. See [the implementation boundary](specs/EXECUTION_PREPARATION.md).
 
 This project follows a Keep a Changelog-style structure. Development builds report version `dev`, while the release workflow injects the exact tag version.
 
 ## Unreleased
+
+- Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
 
 - Default browser identity and dashboard mutation authentication to independent absolute six-hour windows (`api.console.session_ttl` and `api.console.action_auth_ttl`, each bounded at six hours). Preserve explicit shorter values and the shared fifteen-minute principal TTL. This deliberately increases dashboard stolen-cookie mutation exposure; use an explicit shorter action policy when required. No activity-based renewal or extension of mandates, native consent, runtime authority, review receipts or credential capabilities. See [the policy and launch-impact ledger](docs/implementation/issue-388-dashboard-authentication.md).
 
