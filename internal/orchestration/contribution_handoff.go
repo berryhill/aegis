@@ -20,7 +20,7 @@ func (w *QueueWorker) SetContributionFetch(fetch func(context.Context, loop.Cont
 
 // AcceptedContributionCandidate exports intermediate evidence under the original
 // controller authority. It never issues replacement sessions or renews authority.
-func (w *QueueWorker) AcceptedContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision) (implementation.ContributionCandidate, error) {
+func (w *QueueWorker) acceptedContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision, consume func(*implementation.ManagedContribution, string, string, loop.ContributionExecutionPolicy) (implementation.ContributionCandidate, error)) (implementation.ContributionCandidate, error) {
 	deny := fmt.Errorf("%w: exact current contribution handoff admission required", ErrWorkerDenied)
 	if w == nil || w.repository == nil || w.service == nil || w.now == nil || w.implementation == nil || !filepath.IsAbs(w.implementation.config.GoBinary) || w.contributionRoles == nil {
 		return implementation.ContributionCandidate{}, deny
@@ -86,5 +86,25 @@ func (w *QueueWorker) AcceptedContributionCandidate(ctx context.Context, subject
 	if err := engine.Admit(ctx, "candidate-handoff"); err != nil {
 		return implementation.ContributionCandidate{}, err
 	}
-	return engine.AcceptedCandidate(sealed.RunID, sealed.Digest, *revision.Contribution.Managed)
+	return consume(engine, sealed.RunID, sealed.Digest, *revision.Contribution.Managed)
+}
+
+// AcceptedContributionCandidate is diagnostic readback, not a custody lease.
+func (w *QueueWorker) AcceptedContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision) (implementation.ContributionCandidate, error) {
+	return w.acceptedContributionCandidate(ctx, subject, queueID, revision, func(e *implementation.ManagedContribution, run, contract string, p loop.ContributionExecutionPolicy) (implementation.ContributionCandidate, error) {
+		return e.AcceptedCandidate(run, contract, p)
+	})
+}
+
+// ContributionQuiescenceGate must validate exact controller stop/epoch evidence.
+// A nil role.Close result, idle map, lease expiry or readback is not stop proof.
+type ContributionQuiescenceGate = implementation.ContributionQuiescenceGate
+
+// WithAcceptedContributionCandidate holds cooperative kernel source custody for
+// the entire synchronous action. It grants no commit, remote or stop authority.
+func (w *QueueWorker) WithAcceptedContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision, gate ContributionQuiescenceGate, action func(context.Context, ContributionCandidate) error) error {
+	_, err := w.acceptedContributionCandidate(ctx, subject, queueID, revision, func(e *implementation.ManagedContribution, run, contract string, p loop.ContributionExecutionPolicy) (implementation.ContributionCandidate, error) {
+		return implementation.ContributionCandidate{}, e.WithAcceptedCandidate(ctx, run, contract, p, gate, action)
+	})
+	return err
 }

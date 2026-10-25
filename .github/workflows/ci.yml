@@ -29,8 +29,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Harden installed Go executable permissions
-        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"
@@ -63,8 +63,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Harden installed Go executable permissions
-        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"
@@ -98,8 +98,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Harden installed Go executable permissions
-        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"
@@ -124,8 +124,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Harden installed Go executable permissions
-        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"
@@ -149,8 +149,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Harden installed Go executable permissions
-        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"
@@ -174,8 +174,8 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Harden installed Go executable permissions
-        run: chmod go-w "$(go env GOROOT)/bin/go"
+      - name: Prepare exact hosted Go distribution permissions
+        run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"
       - name: Prepare verification cgroup supervisor
         run: |
           sudo systemctl start "user@$(id -u).service"

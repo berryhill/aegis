@@ -92,3 +92,71 @@ Skill/launch impact: existing shipped contribution/intake instructions must not
 advertise whole-contribution execution or delivery from this intermediate path.
 No release, installation, production activation, model or provider change is
 included. Full launch-asset synchronization remains required before completion.
+
+
+## Downstream source-custody consumer seam (#376)
+
+`Service.WithAcceptedContributionCandidateAs(ctx, subject, key, gate, action) error`
+resolves sealed intake and immutable Loop server-side, then calls
+`QueueWorker.WithAcceptedContributionCandidate`. The kernel API
+`ManagedContribution.WithAcceptedCandidate` holds the existing exclusive advisory
+workspace lock throughout the synchronous action and pre/post checks.
+`AcceptedContributionCandidateAs` and `AcceptedCandidate` keep their exact
+candidate/error return types as diagnostic readback, **not custody leases**.
+
+Exact Go signatures (the Queue candidate and gate types alias implementation):
+```go
+func (s *Service) WithAcceptedContributionCandidateAs(ctx context.Context, subject core.Subject, key string, gate orchestration.ContributionQuiescenceGate, action func(context.Context, orchestration.ContributionCandidate) error) error
+func (w *QueueWorker) WithAcceptedContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision, gate ContributionQuiescenceGate, action func(context.Context, ContributionCandidate) error) error
+func (e *ManagedContribution) WithAcceptedCandidate(ctx context.Context, run, contract string, policy loop.ContributionExecutionPolicy, gate ContributionQuiescenceGate, action func(context.Context, ContributionCandidate) error) error
+```
+
+The gate runs before and after the callback under the same source lock. Both
+receive independently cloned proof; neither can mutate the retained proof anchor.
+
+CI preparation uses `scripts/prepare-ci-go-toolchain.py` only for the exact
+GitHub-hosted `RUNNER_TOOL_CACHE/go/$GO_VERSION/$arch` setup-go distribution.
+It removes group/other write across that complete distribution without changing
+read/execute bits or parent directories; workstation execution, path drift,
+symlinks, hardlinks and non-job-owned entries fail closed. The production native
+toolchain identity and complete mode/source gate remain unchanged. Both normal
+and race shards remain mandatory under their existing time bounds.
+
+The shared fresh admission retains authenticated subject, host approval, sealed
+contract/policy, Queue claim/attempt, execution, controller Agent and runtime
+authority checks. Under lock it reloads immutable evidence and verifies full source,
+Git HEAD/tree/index, executable bytes and toolchain before and after the action,
+including on callback failure. Callback errors remain discoverable with errors.Is/As.
+Any source/evidence/Git identity drift denies; no old receipt is rewritten.
+The callback grants no source edits, commit, remote/publication, merge or stop
+authority. #378 separately owns actual author/committer commit binding.
+
+`ContributionQuiescenceGate` is mandatory controller-supplied exact stop/epoch
+validation. Nil returns `implementation.ErrContributionQuiescenceUnavailable`;
+there is no production default-allow gate. #377 must supply exact run/claim/epoch
+and durable quiescence validation. A successful gate is a controller assertion,
+not #376-generated stop proof. Nil role.Close, an idle map, dead PID, expired lease
+or readback is not durable stop or replacement-writer authority. Existing claims
+about tester closure describe application lifecycle only, not crash-safe stop.
+Current roles are tool-free and edits controller-owned: this seam proves
+cooperative kernel exclusion and checked identity, not a sandbox for noncooperating
+native code. All callback work must finish before return; no asynchronous source
+access may survive it. Post-check failure cannot undo prior effects: consumers
+must reserve/reconcile effects and enforce their own authority gates.
+
+The callback does not allocate a new candidate, change durable Consumed/pass
+history, or reset Queue attempts, runtime turns, decision attempts, infrastructure
+rechecks or original absolute deadline. #377/#378 consume the same root and
+cumulative budget. Source/input/mode/index/HEAD/binary/toolchain/policy/evidence
+drift invalidates dependent acceptance and requires admitted same-root rebuild,
+freeze, fresh independent test and review within remaining budget. Never reset
+counters, reopen terminal Queue work or treat readback as publication custody.
+
+Focused synthetic Queue regression (not real-provider or durable-stop proof):
+```sh
+GOMAXPROCS=2 GOFLAGS=-p=1 go test ./internal/orchestration -run '^TestContributionQueueNativeRepairIntegration/tester_close_failure_false$' -count=1 -timeout=180s
+```
+Custody subtests reuse the fixture for lock-held concurrent writer exclusion,
+callback error preservation, missing/denied gates, expired/revoked authority and
+pre/post source/evidence drift. The synthetic gate is not #377 implementation.
+No publication adapter or broad CI repair scheduler is added.

@@ -101,7 +101,8 @@ func contributionPolicyDigest(p loop.ContributionExecutionPolicy) string {
 
 var ErrContributionHandoffDenied = errors.New("contribution handoff dependencies denied")
 
-// AcceptedCandidate is an internal downstream handoff, never final disposition.
+// AcceptedCandidate is diagnostic readback, not a source custody lease or final
+// disposition. Use WithAcceptedCandidate for a synchronous downstream consumer.
 // The caller must supply the currently admitted exact immutable contract/policy.
 func (e *ManagedContribution) AcceptedCandidate(run, contract string, policy loop.ContributionExecutionPolicy) (ContributionCandidate, error) {
 	if e == nil || e.DB == nil || e.Admit == nil || !filepath.IsAbs(e.GoBinary) {

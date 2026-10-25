@@ -19,6 +19,7 @@ import (
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/store"
+	"golang.org/x/sys/unix"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -255,6 +256,11 @@ while read rest; do :; done
 		if errors.As(e, &failure) {
 			t.Fatalf("production contribution: %v cause=%+v", e, failure.cause)
 		}
+		if r, readErr := worker.ContributionExecutionReadback("run"); readErr == nil {
+			if output, outputErr := repository.ImplementationStore().Get([]byte("implementation/blob/" + r.Baseline.OutputDigest)); outputErr == nil {
+				t.Logf("baseline native output: %s", output)
+			}
+		}
 		t.Fatalf("production contribution: %v", e)
 	}
 	record, e := worker.ContributionExecutionReadback("run")
@@ -286,6 +292,153 @@ while read rest; do :; done
 	if candidate.Digest != record.Passes[1].Candidate.Digest {
 		t.Fatal("handoff drift")
 	}
+
+	// Synthetic controller gate only: not durable process-stop evidence.
+	gate := func(context.Context, ContributionCandidate) error { return nil }
+	call := func(actor core.Subject, g ContributionQuiescenceGate, action func(context.Context, ContributionCandidate) error) error {
+		return worker.WithAcceptedContributionCandidate(ctx, actor, "queue", lr, g, action)
+	}
+	noop := func(context.Context, ContributionCandidate) error { return nil }
+	t.Run("custody_gate_clone_and_budget", func(t *testing.T) {
+		before, err := worker.ContributionExecutionReadback("run")
+		must(err)
+		beforeWire, err := json.Marshal(before)
+		must(err)
+		gateCalls := 0
+		must(call(subject, func(_ context.Context, got ContributionCandidate) error {
+			gateCalls++
+			got.Digest = "mutated copy"
+			return nil
+		}, func(_ context.Context, got ContributionCandidate) error {
+			if got.Digest != candidate.Digest {
+				t.Fatal("gate mutated proof anchor")
+			}
+			got.Digest = "mutated action copy"
+			return nil
+		}))
+		if gateCalls != 2 {
+			t.Fatalf("pre/post gate calls: %d", gateCalls)
+		}
+		after, err := worker.ContributionExecutionReadback("run")
+		must(err)
+		afterWire, err := json.Marshal(after)
+		must(err)
+		if string(beforeWire) != string(afterWire) {
+			t.Fatal("custody changed proof or cumulative budget")
+		}
+	})
+	t.Run("custody_post_gate_denial", func(t *testing.T) {
+		denied := errors.New("post-action epoch revoked")
+		calls := 0
+		called := false
+		err := call(subject, func(context.Context, ContributionCandidate) error {
+			calls++
+			if calls == 2 {
+				return denied
+			}
+			return nil
+		}, func(context.Context, ContributionCandidate) error { called = true; return nil })
+		if !called || !errors.Is(err, denied) {
+			t.Fatalf("post gate ignored: %v", err)
+		}
+	})
+	t.Run("custody_missing_quiescence", func(t *testing.T) {
+		if err := call(subject, nil, noop); !errors.Is(err, implementation.ErrContributionQuiescenceUnavailable) {
+			t.Fatalf("missing gate: %v", err)
+		}
+	})
+	t.Run("custody_lock_and_callback_error", func(t *testing.T) {
+		sentinel := errors.New("callback failed")
+		called := false
+		err := call(subject, gate, func(_ context.Context, got ContributionCandidate) error {
+			called = true
+			if got.Digest != candidate.Digest {
+				t.Fatal("wrong candidate")
+			}
+			result := make(chan error, 1)
+			go func() {
+				f, err := os.Open(record.Workspace)
+				if err != nil {
+					result <- err
+					return
+				}
+				defer f.Close()
+				err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+				if err == nil {
+					unix.Flock(int(f.Fd()), unix.LOCK_UN)
+				}
+				result <- err
+			}()
+			if err := <-result; !errors.Is(err, unix.EWOULDBLOCK) {
+				t.Fatalf("concurrent writer not excluded: %v", err)
+			}
+			return sentinel
+		})
+		if !called || !errors.Is(err, sentinel) {
+			t.Fatalf("callback error lost: %v", err)
+		}
+		f, err := os.Open(record.Workspace)
+		must(err)
+		defer f.Close()
+		must(unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+		must(unix.Flock(int(f.Fd()), unix.LOCK_UN))
+	})
+	t.Run("custody_pre_post_authority", func(t *testing.T) {
+		expired := subject
+		expired.ExpiresAt = time.Now().Add(-time.Hour)
+		called := false
+		if err := call(expired, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
+			t.Fatalf("expired admitted: %v", err)
+		}
+		saved := service.authority
+		defer func() { service.authority = saved }()
+		revoke := func() { a := auth; a.authority.ExpiresAt = time.Now().Add(-time.Hour); service.authority = a }
+		revoke()
+		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
+			t.Fatalf("revoked admitted: %v", err)
+		}
+		service.authority = saved
+		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { revoke(); return nil }); err == nil {
+			t.Fatal("post-callback revocation accepted")
+		}
+	})
+	t.Run("custody_source_pre_post", func(t *testing.T) {
+		path := filepath.Join(record.Workspace, "custody-drift")
+		must(os.WriteFile(path, []byte("drift"), 0600))
+		called := false
+		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
+			t.Fatalf("pre-drift admitted: %v", err)
+		}
+		must(os.Remove(path))
+		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { return os.WriteFile(path, []byte("drift"), 0600) }); err == nil {
+			t.Fatal("post-drift accepted")
+		}
+		must(os.Remove(path))
+	})
+	t.Run("custody_evidence_pre_post", func(t *testing.T) {
+		db := repository.ImplementationStore()
+		key := []byte("contribution/candidate/" + candidate.Digest)
+		wire, err := db.Get(key)
+		must(err)
+		defer db.Put(key, wire)
+		must(db.Put(key, []byte("corrupt")))
+		called := false
+		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
+			t.Fatalf("pre-evidence drift admitted: %v", err)
+		}
+		must(db.Put(key, wire))
+		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { return db.Put(key, []byte("corrupt")) }); err == nil {
+			t.Fatal("post-evidence drift accepted")
+		}
+	})
+	t.Run("custody_gate_denial", func(t *testing.T) {
+		denied := errors.New("unknown exact stop epoch")
+		called := false
+		err := call(subject, func(context.Context, ContributionCandidate) error { return denied }, func(context.Context, ContributionCandidate) error { called = true; return nil })
+		if called || !errors.Is(err, denied) {
+			t.Fatalf("gate bypassed: %v", err)
+		}
+	})
 	stale := lr
 	stale.Digest = contribution.Digest([]byte("stale"))
 	if _, e = worker.AcceptedContributionCandidate(ctx, subject, "queue", stale); e == nil {
