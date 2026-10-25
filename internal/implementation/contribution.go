@@ -430,9 +430,6 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 		if err = e.revalidate(ctx, c, p, candidate); err != nil {
 			return record, err
 		}
-		if err = e.revalidate(ctx, c, p, candidate); err != nil {
-			return record, err
-		}
 		if check.Outcome == "passed" {
 			check.Review, err = e.persistReview(candidate, p)
 			if err != nil {
@@ -595,9 +592,7 @@ func (e *ManagedContribution) check(ctx context.Context, c loop.VerifiedImplemen
 	return ContributionCheck{Outcome: status, OutputDigest: d, RequiredTests: c.Policy.RequiredTests}, output, err
 }
 func (e *ManagedContribution) build(ctx context.Context, c loop.VerifiedImplementation, p loop.ContributionExecutionPolicy, source SourceInventory) (string, error) {
-	if _, err := e.verifyToolchain(ctx); err != nil {
-		return "", err
-	}
+	// native performs complete toolchain validation before and after execution.
 	if err := e.admit(ctx, "build"); err != nil {
 		return "", err
 	}
@@ -619,9 +614,6 @@ func (e *ManagedContribution) build(ctx context.Context, c loop.VerifiedImplemen
 	return e.blob(b)
 }
 func (e *ManagedContribution) revalidate(ctx context.Context, c loop.VerifiedImplementation, p loop.ContributionExecutionPolicy, v ContributionCandidate) error {
-	if _, err := e.verifyToolchain(ctx); err != nil {
-		return err
-	}
 	if err := e.admit(ctx, "candidate-verify"); err != nil {
 		return err
 	}
@@ -646,13 +638,14 @@ func (e *ManagedContribution) revalidate(ctx context.Context, c loop.VerifiedImp
 			return errors.New("frozen Git identity changed")
 		}
 	}
-	_, err = e.verifyToolchain(ctx)
-	if err != nil || e.toolchainDigest != v.Toolchain {
-		return errors.New("frozen toolchain changed")
-	}
 	b, err := e.DB.Get(blobKey(v.Executable))
 	if err != nil || digest(b) != v.Executable {
 		return errors.New("candidate executable missing or substituted")
+	}
+	// Source, Git and blob observations execute no Go code. Inventory the entire
+	// toolchain once at this final validation point, still against the frozen ID.
+	if _, err = e.verifyToolchain(ctx); err != nil || e.toolchainDigest != v.Toolchain {
+		return errors.New("frozen toolchain changed")
 	}
 	return nil
 }

@@ -222,6 +222,26 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	if err = e.revalidate(ctx, c, policy, v); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("toolchain_substitution_during_readonly_observations", func(t *testing.T) {
+		oldGo, oldAdmit := e.GoBinary, e.Admit
+		defer func() { e.GoBinary, e.Admit = oldGo, oldAdmit }()
+		reads := 0
+		e.Admit = func(ctx context.Context, effect string) error {
+			if err := oldAdmit(ctx, effect); err != nil {
+				return err
+			}
+			if effect == "git-read-or-worktree" {
+				reads++
+				if reads == 3 {
+					e.GoBinary = filepath.Join(t.TempDir(), "missing", "bin", "go")
+				}
+			}
+			return nil
+		}
+		if err := e.revalidate(ctx, c, policy, v); err == nil || reads != 3 {
+			t.Fatalf("late toolchain substitution accepted or final observation not reached: reads=%d err=%v", reads, err)
+		}
+	})
 	e.DB.Put(blobKey(r.Passes[0].Check.OutputDigest), []byte("forged"))
 	if _, err = e.Read("run"); err == nil {
 		t.Fatal("corrupt prior failure accepted")

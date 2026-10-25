@@ -2,6 +2,7 @@ package implementation
 
 import (
 	"context"
+	"fmt"
 	"github.com/berryhill/aegis/internal/loop"
 	"os"
 	"path/filepath"
@@ -11,7 +12,7 @@ import (
 
 func TestNativeToolchainComponentIdentity(t *testing.T) {
 	ctx := context.Background()
-	kernel, _ := fixture(t)
+	kernel, c := fixture(t)
 	base := t.TempDir()
 	if err := os.Chmod(base, 0700); err != nil {
 		t.Fatal(err)
@@ -34,7 +35,19 @@ func TestNativeToolchainComponentIdentity(t *testing.T) {
 		t.Run(p, func(t *testing.T) {
 			p = filepath.Join(base, p)
 			old, _ := os.ReadFile(p)
-			os.WriteFile(p, []byte("substituted"), 0600)
+			info, err := os.Stat(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Equal size and restored mtime must not hide substituted bytes.
+			replacement := append([]byte(nil), old...)
+			replacement[0] ^= 0xff
+			if err := os.WriteFile(p, replacement, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chtimes(p, info.ModTime(), info.ModTime()); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := e.verifyToolchain(ctx); err == nil {
 				t.Fatal("component substitution accepted")
 			}
@@ -59,6 +72,52 @@ func TestNativeToolchainComponentIdentity(t *testing.T) {
 	if _, err := e.verifyToolchain(ctx); err == nil {
 		t.Fatal("missing input accepted")
 	}
+	if err := os.WriteFile(p, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("native_pre_and_post_execution", func(t *testing.T) {
+		// Synthetic executable: boundary ordering, not Go qualification.
+		marker := filepath.Join(t.TempDir(), "executed")
+		script := fmt.Sprintf("#!/bin/sh\nprintf ran > %q\nprintf substituted > %q\n", marker, filepath.Join(base, "VERSION"))
+		if err := os.WriteFile(e.GoBinary, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(e.GoBinary, 0700); err != nil {
+			t.Fatal(err)
+		}
+		e.toolchainDigest = ""
+		e.StateRoot, e.Admit = t.TempDir(), kernel.Admit
+		if _, err := e.verifyToolchain(ctx); err != nil {
+			t.Fatal(err)
+		}
+		source, err := Inventory(ctx, c.Workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		component := filepath.Join(base, "VERSION")
+		original, err := os.ReadFile(component)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(component, []byte("pre-execution drift"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.native(ctx, c, source, nil); err == nil {
+			t.Fatal("pre-execution drift accepted")
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("substituted toolchain executed: %v", err)
+		}
+		if err := os.WriteFile(component, original, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.native(ctx, c, source, nil); err == nil {
+			t.Fatal("post-execution drift accepted")
+		}
+		if _, err := os.Stat(marker); err != nil {
+			t.Fatalf("post-execution boundary was not reached: %v", err)
+		}
+	})
 }
 
 func TestCandidateReviewGate(t *testing.T) {

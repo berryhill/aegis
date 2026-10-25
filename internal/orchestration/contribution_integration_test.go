@@ -451,6 +451,12 @@ while read rest; do :; done
 			t.Fatalf("during-callback index drift: action=%t err=%v", called, err)
 		}
 		restore()
+		callbackErr := errors.New("action failed with index drift")
+		err = call(subject, gate, func(context.Context, ContributionCandidate) error { drift(); return callbackErr })
+		if !errors.Is(err, callbackErr) || !strings.Contains(err.Error(), "frozen Git identity changed") {
+			t.Fatalf("failed callback suppressed error or post-action drift: %v", err)
+		}
+		restore()
 		must(call(subject, gate, noop))
 	})
 	t.Run("custody_post_gate_denial", func(t *testing.T) {
@@ -536,6 +542,12 @@ while read rest; do :; done
 			t.Fatalf("pre-drift admitted: %v", err)
 		}
 		must(os.Remove(path))
+		if err := call(subject, func(context.Context, ContributionCandidate) error {
+			return os.WriteFile(path, []byte("gate drift"), 0600)
+		}, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
+			t.Fatalf("gate source drift admitted action: %v", err)
+		}
+		must(os.Remove(path))
 		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { return os.WriteFile(path, []byte("drift"), 0600) }); err == nil {
 			t.Fatal("post-drift accepted")
 		}
@@ -551,6 +563,10 @@ while read rest; do :; done
 		called := false
 		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
 			t.Fatalf("pre-evidence drift admitted: %v", err)
+		}
+		must(db.Put(key, wire))
+		if err := call(subject, func(context.Context, ContributionCandidate) error { return db.Put(key, []byte("gate corrupt")) }, func(context.Context, ContributionCandidate) error { called = true; return nil }); err == nil || called {
+			t.Fatalf("gate evidence drift admitted action: %v", err)
 		}
 		must(db.Put(key, wire))
 		if err := call(subject, gate, func(context.Context, ContributionCandidate) error { return db.Put(key, []byte("corrupt")) }); err == nil {

@@ -61,10 +61,8 @@ func (e *ManagedContribution) WithAcceptedCandidate(ctx context.Context, run, co
 	if err = gate(ctx, clone()); err != nil {
 		return err
 	}
-	if err = e.revalidate(ctx, loop.VerifiedImplementation{Workspace: r.Workspace}, policy, v); err != nil {
-		return err
-	}
 	// The gate itself is controller code: evidence must still match after it.
+	// One immutable reload and complete validation immediately precede the action.
 	check := func() error {
 		after, err := e.Read(run)
 		if err != nil {
