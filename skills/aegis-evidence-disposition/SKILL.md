@@ -14,6 +14,18 @@ metadata:
 
 # Aegis evidence and disposition
 
+## Contribution acceptance boundary (#386)
+
+For contribution implementation/testing, read the repository's
+[canonical contribution happy path](../../.hermes/contribution-happy-path-contract.md)
+and mandatory #375–#379 stage/evidence/owner matrix. This repository-only reference
+is not bundled/installed adoption; #348 owns final matching distribution. Without
+a checkout use installed discovery and report missing capability, never invent
+stages/APIs. Selected-file Doer, native coding and whole-contribution success are
+separate evidence claims. Current v6 intake is not the whole autonomous journey;
+Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+
+
 Use this skill to inspect one authority-bound Execution Queue item's immutable lineage, explain whether exact evidence satisfies its pinned Graph and Loop revisions, and route only shipped authenticated lifecycle operations to Aegis. The model may organize returned records and identify missing or conflicting evidence. It cannot verify bytes, mint receipts, authenticate a reviewer, choose authority, or record a disposition itself.
 
 ## Authority and evidence boundary

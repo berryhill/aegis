@@ -4,11 +4,15 @@
 
 ## Acceptance index
 
-### Temporary Hermes GitHub issue contribution routing
+### Contribution acceptance
 
-“Hey, implement this GitHub issue” and equivalent owner implementation requests route through `AGENTS.md` to [implementation-delivery-contract.md](implementation-delivery-contract.md) and the existing engineering skills. This temporary procedure is replaced only by an explicitly adopted Aegis-managed contribution workflow; it is not automatic product Loop execution.
-
-Read [Implementation and delivery contract](implementation-delivery-contract.md) for every implementation, repair, publication or deployment request. It defines working end-to-end behavior, default PR/CI/merge ownership, separately authorized release/activation, genuine gates and completion evidence. Explicit document-only or local-only scope remains binding.
+Read the [canonical contribution happy path](contribution-happy-path-contract.md)
+for implementation and independent tester acceptance, including #375–#379.
+This is the only contribution lifecycle/stage/evidence matrix. Read the
+[generic delivery contract](implementation-delivery-contract.md) for request
+scope, authority, release/activation and reporting rules. Temporary Hermes
+engineering routing does not imply autonomous product execution. Explicit
+local-only or document-only scope remains binding.
 
 | Document | Read when | Required outcome |
 | --- | --- | --- |

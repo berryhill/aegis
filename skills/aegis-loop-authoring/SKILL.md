@@ -14,6 +14,18 @@ metadata:
 
 # Aegis Loop authoring
 
+## Contribution acceptance boundary (#386)
+
+For contribution implementation/testing, read the repository's
+[canonical contribution happy path](../../.hermes/contribution-happy-path-contract.md)
+and mandatory #375–#379 stage/evidence/owner matrix. This repository-only reference
+is not bundled/installed adoption; #348 owns final matching distribution. Without
+a checkout use installed discovery and report missing capability, never invent
+stages/APIs. Selected-file Doer, native coding and whole-contribution success are
+separate evidence claims. Current v6 intake is not the whole autonomous journey;
+Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+
+
 Use this skill to draft, validate, publish, inspect, activate, or retire an immutable Aegis Loop revision. Route every consequential operation to the shipped typed Aegis Loop service. The model may propose a typed definition and explain returned records; Aegis authenticates the caller, admits authority, validates and digests the definition, persists immutable revisions and provenance, appends lifecycle events, and returns authoritative readback.
 
 ## Authority and domain boundary
@@ -258,7 +270,7 @@ The authenticated Loops Console retains the selected-file v4 task as an owner-bo
 
 If the browser principal cannot select the local-OS-only tool-free stanza, use the draft's contextual independent local-review control. The product launches its native approval companion with protected inherited transport and an exact peer/process binding. Do not manually invoke `aegis doer-approval-companion`, copy transport material, implement a client for its protected continuation endpoints, or describe that hidden command as the builder UX. Independent approval binds the exact browser session/requester, draft version, candidate, Agent/charter/runtime and unchanged Run intent; it does not relabel the password principal as local OS, union permissions, publish, or automatically Run. Decline, cancellation, expiry, drift and unavailable native review remain distinct blockers. Observe authoritative signed approval/readiness before returning to publication and the same Run intent; a companion exit or browser status is not approval evidence. If the required product control is unavailable in the installed release, report the missing adapter rather than teaching a manual workaround.
 
-The controller composes the minimal exact Graph, prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Foundational v4 blockers reserve a durable request intent but create no Graph or executable Queue item; an already admitted Queue item may instead remain in non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
+The controller uses direct Loop submission for new intents and preserves historical synthetic Graph replay; it prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Foundational v4 blockers reserve a durable request intent but create no Graph or executable Queue item; an already admitted Queue item may instead remain in non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
 
 The durable `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. An interrupted preparation with no reusable authority remains blocked as `session_preparation_in_progress_or_interrupted`; explicit operator recovery is required. Do not delete the fence or mint substitute authority as automatic crash handling.
 
