@@ -1,6 +1,6 @@
 # Aegis MVP Architecture
 
-Read-only execution debugger: interpreter → atomic cursor observations → verified digest-linked Doer trace → exact-run application projection → authenticated Console polling/replay. Graph definition dependencies are not execution scheduling or verified artifact handoffs. See [execution debugger](EXECUTION_DEBUGGER.md).
+Read-only execution debugger: interpreter → atomic cursor observations → verified digest-linked Doer trace → exact-run application projection → authenticated Console polling/replay. Graph definition dependencies are not execution scheduling or verified artifact handoffs. The same authenticated read joins a canonical escaped current-outcome template through the existing owner/evidence result reader; history replay never changes that current observation. See [execution debugger](EXECUTION_DEBUGGER.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow
 [ephemeral preparation policy](../DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).

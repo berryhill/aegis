@@ -1,0 +1,59 @@
+package consoleweb
+
+templ QueueOutcome(q *QueueDetailModel) {
+ <section class="reconstruction-warning" aria-label="Current execution outcome" role="status" aria-live="polite" data-queue-outcome>
+  <p data-outcome-freshness>Current authoritative observation — independent of history replay.</p>
+  <h3>Current execution outcome · { queueOutcomeState(queueCurrentOutcomeState(q)) }</h3>
+  if q.TerminalOutcome == "" {
+   <p>No authoritative terminal disposition is available.</p>
+  }
+  <p>{ queueOutcomeMessage(queueCurrentOutcomeState(q)) }</p>
+  <p>Recorded execution reason · <code>{ SafeQueueOutcomeReason(q.DispositionReason) }</code></p>
+  if q.TerminalOutcome == "failed" {
+   <p>A more detailed cause was not recorded or is unavailable on this surface. Interpreter progress, Requeue eligibility and topology are not an execution cause or verified result.</p>
+  }
+  if q.RunResult != nil && q.RunResult.Verified {
+   <p>Verification · verified selected-file evidence, independently reloaded.</p>
+  } else {
+   <p>Verification · not independently established on this surface. Consult the canonical disposition and evidence reader.</p>
+  }
+  <details><summary>Inspect authoritative disposition and evidence</summary>
+   <p>Disposition · { queueOptionalField(q.DispositionID) }</p>
+   <p>Verified selected-result references, when authorized, are listed below. Other result types require their canonical evidence reader; no native checker details are inferred here.</p>
+  </details>
+ </section>
+}
+
+func queueCurrentOutcomeState(q *QueueDetailModel) string {
+ if q.TerminalOutcome != "" {return q.TerminalOutcome}
+ // Never upgrade a projection-only success or failure to a disposition.
+ switch q.CurrentState {case "queued", "claimed", "running", "cancelled", "denied", "expired", "revoked": return q.CurrentState}
+ return ""
+}
+
+func queueOutcomeState(state string) string {
+ switch state {
+ case "queued", "claimed", "running", "succeeded", "failed", "denied", "cancelled", "expired", "revoked": return state
+ default: return "unobserved"
+ }
+}
+
+func queueOutcomeMessage(state string) string {
+ switch state {
+ case "succeeded": return "The authoritative Queue disposition records success. Selected content is a separate owner-authorized evidence read; native and Graph results are not selected-file output."
+ case "failed": return "The authoritative Queue disposition records execution failure."
+ case "denied": return "Execution was denied; no verified success is claimed."
+ case "cancelled": return "Execution was cancelled; no verified success is claimed."
+ case "expired": return "Execution expired; no verified success is claimed."
+ case "revoked": return "Execution authority was revoked; no verified success is claimed."
+ default: return "No authoritative terminal disposition is available. Process exit and interpreter terminal do not establish Queue success."
+ }
+}
+
+// Closed public vocabulary: backend strings must never become a generic error banner.
+func SafeQueueOutcomeReason(reason string) string {
+ switch reason {
+ case "implementation_failed", "verification_failed", "evidence_satisfied", "evidence_failed", "cancelled", "expired", "revoked", "denied": return reason
+ default: return "unavailable"
+ }
+}

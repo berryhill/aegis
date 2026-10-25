@@ -9,6 +9,7 @@
   // checkpoint/ordinal identity; a delayed response cannot roll back facts.
   if (!root.dataset.debuggerInitial) return;
   let latest = JSON.parse(root.dataset.debuggerInitial);
+  let authLost = false, lastOutcomeHTML = "";
   let following = true, replay = Infinity, fresh = false, lastRead = 0, pausedFacts = [];
   let scope = latest.direct ? latest.nodes[0].node_id : "";
   // Presentation preferences only. Never persist facts, credentials or authority.
@@ -49,6 +50,8 @@
     historyInput.max = String(facts.length); historyInput.value = String(following ? facts.length : Math.min(replay, facts.length));
     followButton.textContent = following ? "Pause following" : "Follow live";
     const closed = queueClosed(latest);
+    const outcomeFreshness = root.querySelector('[data-outcome-freshness]');
+    if (outcomeFreshness) outcomeFreshness.textContent = fresh ? 'Current authoritative observation — independent of history replay.' : 'Last authoritative observation — stale / disconnected; refresh unconfirmed.';
     root.dataset.debuggerFresh = String(fresh && following && !closed);
     status.textContent = `${following ? "Current" : "Historical replay — presentation paused; execution is not controlled"} · ${fresh ? "fresh observations" : "stale / disconnected — progress unconfirmed"} · Queue ${latest.state}${latest.terminal ? " · evidence-backed disposition " + latest.disposition_id : " · no evidence-backed terminal disposition"}`;
     root.querySelector("[data-debugger-notice]").textContent = latest.notice;
@@ -154,23 +157,47 @@
   historyInput.addEventListener("input", () => { if (following) pausedFacts = allFacts(); following = false; replay = Number(historyInput.value); render(); persist(); });
   scopeInput.addEventListener("change", () => { scope = scopeInput.value; render(); persist(); });
   const poll = async () => {
-    if (!root.isConnected) return;
+    if (!root.isConnected || authLost) return;
     const controller = new AbortController(), deadline = setTimeout(() => controller.abort(), 4000);
     try {
       const url = new URL(root.dataset.debuggerUrl, location.origin); url.searchParams.set("cursor", latest.watermark);
       const response = await fetch(url, { credentials:"same-origin", cache:"no-store", signal:controller.signal, headers:{Accept:"application/json"} });
-      if (response.status === 401 || response.status === 403) { root.replaceChildren(make("p", "Session expired. Authenticate again to inspect execution.")); return; }
+      if (response.status === 401 || response.status === 403) {
+        authLost = true; latest = null; pausedFacts = []; pausedKeys = null; selection = {}; nodes = []; panels = [];
+        delete root.dataset.debuggerInitial; delete root.dataset.debuggerFresh;
+        try { sessionStorage.removeItem(storageKey); } catch (_) {}
+        root.replaceChildren(make("p", "Session expired. Authenticate again to inspect execution.")); return;
+      }
       if (!response.ok) throw Error("observations unavailable");
       const next = await response.json();
-      if (next.queue_id !== latest.queue_id || next.snapshot_digest !== latest.snapshot_digest || next.version < latest.version || (queueClosed(latest) && (!queueClosed(next) || latest.state !== next.state))) throw Error("stale snapshot");
+      if (authLost || !root.isConnected) return;
+      if (next.queue_id !== latest.queue_id || next.graph_run_id !== latest.graph_run_id || next.snapshot_digest !== latest.snapshot_digest || next.version < latest.version || (queueClosed(latest) && (!queueClosed(next) || latest.state !== next.state))) throw Error("stale snapshot");
       const oldFacts = allFacts();
       const nextFacts = new Map(next.nodes.flatMap(n => n.attempts.flatMap(a => a.facts.map(f => [`${a.id}/${f.sequence}/${f.ordinal}`, f.digest]))));
       if (oldFacts.some(f => nextFacts.get(`${f.attempt}/${f.sequence}/${f.ordinal}`) !== f.digest)) throw Error("history gap or substitution");
-      latest = next; fresh = true; lastRead = Date.now(); render(true);
-    } catch (_) { fresh = false; render(); }
+      latest = next; fresh = true; lastRead = Date.now();
+      const outcome = root.querySelector('[data-queue-current-outcome]');
+      // HTML is exclusively the escaped canonical server template, from this
+      // authenticated same-origin exact-run read; never observation/model HTML.
+      if (outcome && typeof next.outcome_html === 'string' && lastOutcomeHTML !== next.outcome_html) {
+        const oldDetails = [...outcome.querySelectorAll('details')];
+        const open = oldDetails.map(el => el.open);
+        const focusedSummary = oldDetails.findIndex(el => el.querySelector('summary') === document.activeElement);
+        outcome.innerHTML = next.outcome_html;
+        lastOutcomeHTML = next.outcome_html;
+        const details = [...outcome.querySelectorAll('details')];
+        details.forEach((el, index) => { el.open = !!open[index]; });
+        if (focusedSummary >= 0) details[focusedSummary]?.querySelector('summary')?.focus({preventScroll:true});
+      }
+      const badge = root.querySelector('[data-current-queue-state]');
+      if (badge) { badge.textContent = next.state; badge.className = 'lifecycle state-large ' + next.state; }
+      const terminal = root.querySelector('[data-current-terminal-state]');
+      if (terminal) terminal.textContent = next.terminal ? 'Terminal outcome · ' + next.state : '';
+      render(true);
+    } catch (_) { if (authLost || !root.isConnected) return; fresh = false; render(); }
     finally { clearTimeout(deadline); }
     if (root.isConnected) setTimeout(poll, 1500);
   };
   render(); poll();
-  const staleCheck = setInterval(() => { if (!root.isConnected) { clearInterval(staleCheck); return; } if (fresh && Date.now() - lastRead > 6000) { fresh = false; render(); } }, 2000);
+  const staleCheck = setInterval(() => { if (!root.isConnected || authLost) { clearInterval(staleCheck); return; } if (fresh && Date.now() - lastRead > 6000) { fresh = false; render(); } }, 2000);
 })()

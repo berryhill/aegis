@@ -275,11 +275,11 @@ func TestExecutionDebuggerPublishedGraphConsoleBrowser(t *testing.T) {
 	executionDebuggerConsoleBrowser(t, true)
 }
 
-func executionDebuggerConsoleBrowser(t *testing.T, publishedGraph bool) {
+func executionDebuggerConsoleBrowser(t *testing.T, publishedGraph bool, terminal ...bool) {
 	if os.Getenv("AEGIS_DEBUGGER_BROWSER_TEST") != "1" {
 		t.Skip("opt-in Python Playwright controlled fixture")
 	}
-	svc, _, _, executor, done := debuggerFixtureKind(t, publishedGraph)
+	svc, subject, _, executor, done := debuggerFixtureKind(t, publishedGraph)
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -307,6 +307,12 @@ func executionDebuggerConsoleBrowser(t *testing.T, publishedGraph bool) {
 	if publishedGraph {
 		command.Env = append(command.Env, "AEGIS_DEBUGGER_GRAPH=1")
 	}
+	if len(terminal) > 0 && terminal[0] {
+		command.Env = append(command.Env, "AEGIS_DEBUGGER_TERMINAL=1")
+		if len(terminal) > 1 && terminal[1] {
+			command.Env = append(command.Env, "AEGIS_DEBUGGER_SUCCESS=1")
+		}
+	}
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -319,6 +325,9 @@ func executionDebuggerConsoleBrowser(t *testing.T, publishedGraph bool) {
 	released := false
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "RECORD_CONTROLLED_DISPOSITION" && len(terminal) > 0 && terminal[0] {
+			recordDebuggerDisposition(t, svc, subject, len(terminal) > 1 && terminal[1])
+		}
 		t.Log(line)
 		if line == "RELEASE_CONTROLLED_EXECUTOR" && !released {
 			released = true
