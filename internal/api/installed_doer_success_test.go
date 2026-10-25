@@ -118,7 +118,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	requeueBrowser := len(recovery) > 0 && recovery[0] == "linked-requeue-console-mismatched-authentication" && os.Getenv("AEGIS_QUEUE_REQUEUE_BROWSER_TEST") == "1"
 	// One fixture owns Serve and its transport lease. Browser helpers attach
 	// to this listener; they must never start another server on these stores.
-	if resultBrowser || requeueBrowser {
+	if resultBrowser || requeueBrowser || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue-console") {
 		probe, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -127,9 +127,16 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		_ = probe.Close()
 		svc.Config.API.Console.Origin = "http://" + svc.Config.API.Listen
 	}
+	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue-console") {
+		svc.Config.API.Console.SessionTTL = 2 * time.Minute
+		svc.Config.API.Console.ActionAuthTTL = time.Minute
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, svc) }()
+	portalReady := make(chan *DoerContinuationPortal, 1)
+	go func() {
+		done <- serveWithComposition(ctx, svc, noopTelemetry{}, func(p *DoerContinuationPortal) { portalReady <- p })
+	}()
 	defer func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -137,7 +144,8 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		}
 	}()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
-	if resultBrowser || requeueBrowser {
+	owningPortal := <-portalReady
+	if resultBrowser || requeueBrowser || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue-console") {
 		waitFor(t, "tcp", svc.Config.API.Listen)
 	}
 	client := unixClient(svc.Config.API.UnixSocket)
@@ -482,7 +490,7 @@ done
 
 	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {
 		if strings.HasPrefix(recovery[0], "linked-requeue") {
-			installedPersistedRequeue(t, ctx, svc, requeueClock, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
+			installedPersistedRequeue(t, ctx, svc, owningPortal, requeueClock, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
 			return
 		}
 		svc.Config.Principal.AuthTTL = 10 * time.Second

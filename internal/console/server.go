@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,18 +44,19 @@ type Config struct {
 	SessionTTL       time.Duration
 	MaxPageSize      int
 	PrincipalID      string
-	PrincipalAuthTTL time.Duration
+	ActionAuthTTL    time.Duration
 	PasswordVerifier *principalauth.Record
 	LoginBurst       int
 	LoginWindow      time.Duration
 }
 
 type session struct {
-	subject    core.Subject
-	csrf       string
-	csrfHash   [32]byte
-	expires    time.Time
-	generation uint64
+	subject     core.Subject
+	csrf        string
+	csrfHash    [32]byte
+	expires     time.Time
+	actionUntil time.Time
+	generation  uint64
 }
 
 type reviewReceipt struct {
@@ -79,7 +81,7 @@ type Manager struct {
 }
 
 func New(config Config, now func() time.Time) (*Manager, error) {
-	if now == nil || config.SessionTTL <= 0 || config.SessionTTL > time.Hour || config.MaxPageSize < 1 || config.MaxPageSize > 1000 {
+	if now == nil || config.SessionTTL <= 0 || config.SessionTTL > 6*time.Hour || config.MaxPageSize < 1 || config.MaxPageSize > 1000 {
 		return nil, fmt.Errorf("%w: console limits must be positive and bounded", ErrInvalidInput)
 	}
 	origin, err := url.Parse(config.Origin)
@@ -90,7 +92,7 @@ func New(config Config, now func() time.Time) (*Manager, error) {
 		return nil, fmt.Errorf("%w: plaintext console transport is restricted to loopback", ErrInvalidInput)
 	}
 	if config.PasswordVerifier != nil {
-		if config.PrincipalID == "" || config.PrincipalAuthTTL <= 0 || config.PrincipalAuthTTL > 15*time.Minute || config.PasswordVerifier.PrincipalID != config.PrincipalID || config.LoginBurst < 1 || config.LoginBurst > 20 || config.LoginWindow <= 0 || config.LoginWindow > 15*time.Minute {
+		if config.PrincipalID == "" || config.ActionAuthTTL <= 0 || config.ActionAuthTTL > 6*time.Hour || config.PasswordVerifier.PrincipalID != config.PrincipalID || config.LoginBurst < 1 || config.LoginBurst > 20 || config.LoginWindow <= 0 || config.LoginWindow > 15*time.Minute {
 			return nil, fmt.Errorf("%w: principal password authentication configuration is invalid", ErrInvalidInput)
 		}
 	}
@@ -164,12 +166,15 @@ func (m *Manager) Login(request *http.Request, client string, password []byte) (
 	}
 	delete(m.loginFailures, client)
 	m.mu.Unlock()
+	// Authentication starts only after successful password verification, not at
+	// request arrival. Failed authentication never changes an issued deadline.
+	now = m.now()
 	subjectValue, _, err := opaque()
 	if err != nil {
 		return "", "", time.Time{}, core.Subject{}, fmt.Errorf("generate principal authentication subject: %w", err)
 	}
 	// Browser identity lifetime is independent of sensitive-operation freshness.
-	// Mutation admission returns a copy bounded by PrincipalAuthTTL instead.
+	// Mutation admission returns a copy bounded by ActionAuthTTL instead.
 	subject := core.Subject{ID: "password:" + subjectValue, Kind: "principal", PrincipalID: m.config.PrincipalID, Issuer: "aegis-principal-auth", Method: "password", AuthenticatedAt: now, ExpiresAt: now.Add(m.config.SessionTTL)}
 	sessionValue, sessionDigest, err := opaque()
 	if err != nil {
@@ -189,7 +194,7 @@ func (m *Manager) Login(request *http.Request, client string, password []byte) (
 		m.mu.Unlock()
 		return "", "", time.Time{}, core.Subject{}, ErrInvalidCredentials
 	}
-	m.sessions[sessionDigest] = session{subject: subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires, generation: generation}
+	m.sessions[sessionDigest] = session{subject: subject, csrf: csrf, csrfHash: sha256.Sum256([]byte(csrf)), expires: expires, actionUntil: now.Add(m.config.ActionAuthTTL), generation: generation}
 	m.mu.Unlock()
 	return sessionValue, csrf, expires, subject, nil
 }
@@ -216,7 +221,7 @@ func (m *Manager) IssueReviewReceipt(request *http.Request, purpose string, payl
 		return "", ErrUnauthenticated
 	}
 	expires := now.Add(reviewReceiptTTL)
-	freshUntil := candidate.subject.AuthenticatedAt.Add(m.config.PrincipalAuthTTL)
+	freshUntil := candidate.actionUntil
 	if candidate.subject.AuthenticatedAt.IsZero() || candidate.subject.AuthenticatedAt.After(now) || !now.Before(freshUntil) {
 		return "", ErrReauthenticationRequired
 	}
@@ -302,11 +307,43 @@ func (m *Manager) Authenticate(request *http.Request) (core.Subject, error) {
 	defer m.mu.Unlock()
 	m.prune(now)
 	candidate, ok := m.sessions[digest]
-	if !ok || candidate.generation != m.generation || !now.Before(candidate.expires) || !now.Before(candidate.subject.ExpiresAt) || candidate.subject.PrincipalID == "" {
+	if !ok || candidate.generation != m.generation || !now.Before(candidate.expires) || !now.Before(candidate.subject.ExpiresAt) || candidate.subject.AuthenticatedAt.IsZero() || candidate.subject.AuthenticatedAt.After(now) || candidate.subject.PrincipalID != m.config.PrincipalID {
 		delete(m.sessions, digest)
 		return core.Subject{}, ErrUnauthenticated
 	}
 	return candidate.subject, nil
+}
+
+// ValidateActionSubject is the live, dashboard-only application admission hook.
+// A serialized subject, asserted timestamp, or shared principal identity is not
+// enough: it must match an issued, unrevoked session and its ORIGINAL deadline.
+// It never changes AuthenticatedAt or grants non-dashboard principal authority.
+func (m *Manager) ValidateActionSubject(subject core.Subject) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := m.now()
+	m.prune(now)
+	for _, candidate := range m.sessions {
+		if candidate.subject.ID != subject.ID {
+			continue
+		}
+		expected := candidate.subject
+		if candidate.actionUntil.Before(expected.ExpiresAt) {
+			expected.ExpiresAt = candidate.actionUntil
+		}
+		identity := candidate.subject
+		if !reflect.DeepEqual(subject, expected) && !reflect.DeepEqual(subject, identity) {
+			return ErrDenied
+		}
+		if candidate.generation != m.generation || candidate.subject.PrincipalID != m.config.PrincipalID || candidate.subject.AuthenticatedAt.IsZero() || candidate.subject.AuthenticatedAt.After(now) || !now.Before(candidate.expires) || !now.Before(subject.ExpiresAt) {
+			return ErrUnauthenticated
+		}
+		if candidate.actionUntil.IsZero() || !now.Before(candidate.actionUntil) {
+			return ErrReauthenticationRequired
+		}
+		return nil
+	}
+	return ErrUnauthenticated
 }
 
 func (m *Manager) AuthorizeMutation(request *http.Request) (core.Subject, error) {
@@ -314,10 +351,16 @@ func (m *Manager) AuthorizeMutation(request *http.Request) (core.Subject, error)
 	if err != nil {
 		return core.Subject{}, err
 	}
-	now := m.now()
-	freshUntil := subject.AuthenticatedAt.Add(m.config.PrincipalAuthTTL)
-	if subject.AuthenticatedAt.IsZero() || subject.AuthenticatedAt.After(now) || !now.Before(freshUntil) {
-		return core.Subject{}, ErrReauthenticationRequired
+	cookie, _ := request.Cookie(CookieName)
+	m.mu.Lock()
+	candidate, ok := m.sessions[sha256.Sum256([]byte(cookie.Value))]
+	m.mu.Unlock()
+	if !ok {
+		return core.Subject{}, ErrUnauthenticated
+	}
+	freshUntil := candidate.actionUntil
+	if err := m.ValidateActionSubject(subject); err != nil {
+		return core.Subject{}, err
 	}
 	if freshUntil.Before(subject.ExpiresAt) {
 		subject.ExpiresAt = freshUntil

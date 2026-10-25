@@ -109,7 +109,7 @@ func (o *recordingConsoleQueueOperator) Revoke(_ context.Context, _ core.Subject
 func consoleQueueRouteFixture(t *testing.T, svc *app.Service) (*consoleauth.Manager, *http.Cookie, string) {
 	t.Helper()
 	verifier := consoleQueuePrincipalVerifier(t, svc.Config.Principal.ID)
-	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: svc.Config.Principal.ID, PrincipalAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, svc.Now)
+	manager, err := consoleauth.New(consoleauth.Config{Origin: "http://127.0.0.1", SessionTTL: 2 * time.Minute, MaxPageSize: 100, PrincipalID: svc.Config.Principal.ID, ActionAuthTTL: time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, svc.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -368,9 +368,7 @@ func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 			t.Error(err)
 		}
 	})
-	fleetService, err := orchestration.NewFleetService(fleetStore, svc.Authority, svc.AuthorityCommands, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
-		return svc.RequirePrincipal(subject)
-	}, nil, svc.Now)
+	fleetService, err := orchestration.NewFleetService(fleetStore, svc.Authority, svc.AuthorityCommands, svc.AuthorizeFleetAction, nil, svc.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,8 +572,31 @@ func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, svc) }()
+	owner := make(chan *consoleauth.Manager, 1)
+	go func() {
+		done <- serveWithComposition(ctx, svc, nil, func(portal *DoerContinuationPortal) { owner <- portal.manager })
+	}()
+	manager := <-owner
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	// An HTTP response synchronizes with hook installation before reading it.
+	client := unixClient(svc.Config.API.UnixSocket)
+	response, err := client.Get("http://unix/livez")
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	login := httptest.NewRequest(http.MethodPost, svc.Config.API.Console.Origin+"/console/login", nil)
+	login.Header.Set("Origin", svc.Config.API.Console.Origin)
+	_, _, _, subject, err := manager.Login(login, "singleton-regression", []byte("api-principal-password"))
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if err := svc.DashboardActionAuthentication(subject); err != nil {
+		cancel()
+		t.Fatalf("owning dashboard subject rejected before denial: %v", err)
+	}
 	before, err := os.Lstat(svc.Config.API.UnixSocket)
 	if err != nil {
 		cancel()
@@ -592,8 +613,12 @@ func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 		cancel()
 		t.Fatalf("singleton denial mutated active socket: before=%v after=%v err=%v", before, after, err)
 	}
+	if err := svc.DashboardActionAuthentication(subject); err != nil {
+		cancel()
+		t.Fatalf("singleton denial replaced owning dashboard authentication: %v", err)
+	}
 	request, _ := http.NewRequest(http.MethodGet, "http://unix/livez", nil)
-	response, err := unixClient(svc.Config.API.UnixSocket).Do(request)
+	response, err = unixClient(svc.Config.API.UnixSocket).Do(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		cancel()
 		t.Fatalf("first daemon was disturbed: response=%v err=%v", response, err)

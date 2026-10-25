@@ -19,7 +19,7 @@ func TestShortBrowserLifetimeExpiresBeforePrincipalFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: 15 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: 5 * time.Minute, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: 15 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestOneHourBrowserIdentityAndIndependentFreshness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: time.Hour, MaxPageSize: 100, PrincipalID: "principal", PrincipalAuthTTL: 15 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
+	manager, err := New(Config{Origin: "https://console.example.test", SessionTTL: time.Hour, MaxPageSize: 100, PrincipalID: "principal", ActionAuthTTL: 15 * time.Minute, PasswordVerifier: &verifier, LoginBurst: 3, LoginWindow: time.Minute}, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}

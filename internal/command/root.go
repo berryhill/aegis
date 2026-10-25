@@ -276,9 +276,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 				return nil, errors.Join(fmt.Errorf("open fleet repository: %w", fleetErr), closeOpened())
 			}
 			openedFleet = fleetStore
-			fleetService, fleetErr := orchestration.NewFleetService(fleetStore, authority, authority, func(_ context.Context, _ orchestration.FleetAction, subject core.Subject) error {
-				return service.RequirePrincipal(subject)
-			}, nil, service.Now)
+			fleetService, fleetErr := orchestration.NewFleetService(fleetStore, authority, authority, service.AuthorizeFleetAction, nil, service.Now)
 			if fleetErr == nil {
 				var verifier *evidence.BlobVerifier
 				verifier, fleetErr = evidence.NewBlobVerifier(st)
