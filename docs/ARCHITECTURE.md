@@ -1,5 +1,15 @@
 # Aegis MVP Architecture
 
+Managed contribution source path (intermediate candidate only): exact admitted
+Queue attempt → private linked-worktree custody → bounded builder proposal →
+controller apply/build/freeze → fresh tool-free tester + immutable native checks
+→ retained candidate evidence. Completed failing checks permit exact same-attempt
+phase-boundary continuation under the existing custody lock, without authority
+renewal or budget reset. Tester model input excludes source bytes and paths;
+controller native checks use the complete private frozen inventory. Candidate
+acceptance does not publish or declare whole-contribution success. See
+[candidate qualification](managed-contribution-candidate.md).
+
 Read-only execution debugger: interpreter → atomic cursor observations → verified digest-linked Doer trace → exact-run application projection → authenticated Console polling/replay. Graph definition dependencies are not execution scheduling or verified artifact handoffs. The same authenticated read joins a canonical escaped current-outcome template through the existing owner/evidence result reader; history replay never changes that current observation. See [execution debugger](EXECUTION_DEBUGGER.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

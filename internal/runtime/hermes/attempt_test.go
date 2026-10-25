@@ -52,9 +52,20 @@ printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.compl
 while read rest; do :; done
 `)
 	request := validAttemptTurnRequest(root)
+	capabilityCalls := 0
+	request.SessionCapability = func(ctx context.Context, live execution.Turn) error {
+		capabilityCalls++
+		if live.RuntimeSessionID != "runtime-session-1" || live.AuthorityContextID != request.Launch.AuthorityContext.ID || live.State != execution.StateStarted {
+			t.Fatal("capability lacks live exact tester binding")
+		}
+		return ctx.Err()
+	}
 	result, err := adapter.AttemptTurn(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if capabilityCalls != 1 {
+		t.Fatalf("capability calls=%d", capabilityCalls)
 	}
 	if result.Output != "bounded answer" {
 		t.Fatalf("output = %q", result.Output)
@@ -280,5 +291,32 @@ func TestAppendBoundedCountsBytesAcrossDeltas(t *testing.T) {
 	}
 	if output.String() != "é" {
 		t.Fatalf("partial over-bound output was appended: %q", output.String())
+	}
+}
+
+// Deterministic protocol qualification only, not real-provider acceptance.
+func TestAttemptSessionCapabilityFailureCannotBecomeModelPass(t *testing.T) {
+	adapter, root := attemptTestAdapter(t, `#!/bin/sh
+[ -n "$HERMES_MODEL" ] && [ "$HERMES_MODEL" = "$HERMES_TUI_MODEL" ] || exit 91
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
+read tools
+printf '%s\n' '{"jsonrpc":"2.0","id":"aegis-tools","result":{"total":0,"sections":[]}}'
+read create
+printf '%s\n' '{"jsonrpc":"2.0","id":"create","result":{"session_id":"runtime-session-1"}}'
+read prompt
+printf '%s\n' '{"jsonrpc":"2.0","id":"prompt","result":{"accepted":true}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","session_id":"runtime-session-1","payload":{}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-1","payload":{"delta":"bounded "}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"runtime-session-1","payload":{"delta":"answer"}}}'
+printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"runtime-session-1","payload":{"status":"complete","text":"bounded answer"}}}'
+while read rest; do :; done
+`)
+	request := validAttemptTurnRequest(root)
+	failure := errors.New("controller criterion custody denied")
+	calls := 0
+	request.SessionCapability = func(context.Context, execution.Turn) error { calls++; return failure }
+	result, err := adapter.AttemptTurn(context.Background(), request)
+	if !errors.Is(err, failure) || calls != 1 || result.Attempt.State == execution.StateSucceeded {
+		t.Fatalf("callback failure accepted: calls=%d result=%+v err=%v", calls, result, err)
 	}
 }

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Bounded Go groups; only API compiles twice, with exact-once default tests.
+"""Bounded Go groups with dynamically complete, exact-once default tests.
 
-API inventories the actual mode's Go test binary, then alternates sorted top-level
-tests, runnable examples and fuzz targets (including all their children/seeds).
-Benchmarks are inventoried but not run by default. TestMain runs normally in each
-partition. Every non-API package remains exact-once, including future packages.
+API alternates the actual mode's sorted default inventory; orchestration isolates
+the measured contribution integration and assigns every other current/future
+test, runnable example and fuzz target to its remainder. All children/seeds run.
+Benchmarks are inventoried but not run by default. TestMain runs in each process.
+All other packages remain exact-once, including future packages.
 """
 import argparse
 import json
@@ -15,10 +16,15 @@ import sys
 
 ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
+ORCHESTRATION = ROOT + 'internal/orchestration'
+CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
-    'execution': ('internal/implementation', 'internal/orchestration'),
+    # Measured package deadline: isolate the dominant contribution integration.
+    'implementation': ('internal/implementation',),
+    'orchestration': ('internal/orchestration',),
+    'orchestration-contribution': ('internal/orchestration',),
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
     # CI race timing: update alone takes 368-373s; never pair it with the remainder.
@@ -45,13 +51,14 @@ def groups(packages):
     assigned = [package for names in selected.values() for package in names]
     expected = Counter({p: 1 for p in set(assigned)})
     expected[API] = 2
+    expected[ORCHESTRATION] = 2
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1}):
         raise ValueError('package coverage mismatch')
     return selected
 
@@ -73,9 +80,16 @@ def test_inventory(text, package=API):
 
 
 def test_pattern(names, group):
-    if group not in ('api-a', 'api-b'):
-        raise ValueError('unknown API partition')
-    selected = names[0 if group == 'api-a' else 1::2]
+    if not names or len(names) != len(set(names)):
+        raise ValueError('empty or duplicate default test inventory')
+    if group in ('api-a', 'api-b'):
+        selected = names[0 if group == 'api-a' else 1::2]
+    elif group in ('orchestration', 'orchestration-contribution'):
+        if CONTRIBUTION_TEST not in names:
+            raise ValueError('missing contribution integration test')
+        selected = [name for name in names if (name == CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+    else:
+        raise ValueError('unknown test partition')
     if not selected:
         raise ValueError('empty Go test partition')
     # No slash: matching a parent deliberately executes all subtests/fuzz seeds.
@@ -97,9 +111,10 @@ def main(argv=None):
     api = args.group in ('api-a', 'api-b')
     timeout = '12m' if args.race and api else '8m'
     command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-    if api:
-        listing = subprocess.run([*command, '-list', '.', API], text=True, stdout=subprocess.PIPE, check=True)
-        names = test_inventory(listing.stdout)
+    if api or args.group in ('orchestration', 'orchestration-contribution'):
+        package = API if api else ORCHESTRATION
+        listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
+        names = test_inventory(listing.stdout, package)
         command += ['-run', test_pattern(names, args.group)]
     command += selected
     print(json.dumps({'group': args.group, 'race': args.race, 'total_packages': len(packages), 'selected_packages': len(selected), 'command': command}), flush=True)
