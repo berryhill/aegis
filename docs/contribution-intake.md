@@ -16,6 +16,13 @@ The public GitHub reader denies redirects, pull requests, missing author provena
 
 Status reads the original contract and current append-only control target/sequence. Controls use current authenticated manager-session provenance. Every control read reconstructs the immutable sequence, validates canonical digests and previous links, contract/owner/Queue identity, narrowing and sticky stop, and compares the head with history. Missing, malformed or rolled-back heads deny. Control writes use the store lifetime transaction helper and append an authoritative audit event atomically.
 
+## Canonical acceptance
+
+Consume the [canonical contribution happy path](../.hermes/contribution-happy-path-contract.md)
+and its mandatory stage/evidence/owner matrix for #375–#379. This intake document
+is adapter-specific guidance, not an alternate lifecycle. Source intake and control
+fixtures do not qualify downstream builder, tester, delivery or installed behavior.
+
 ## Capability boundary
 
 This change implements #375 intake, not the parent #373 or siblings #376–379. Non-local contribution delivery execution is unavailable. `no-merge` and `no-publish` are not aliases for successful local-only execution. The selected-file executor cannot attest whole-contribution delivery; a Queue terminal state alone never means the contribution is complete. Status reports `completed: false` and does not claim a builder/tester/delivery journey ran.

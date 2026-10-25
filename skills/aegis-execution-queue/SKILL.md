@@ -13,6 +13,18 @@ metadata:
 
 # Aegis Execution Queue lifecycle
 
+## Contribution acceptance boundary (#386)
+
+For contribution implementation/testing, read the repository's
+[canonical contribution happy path](../../.hermes/contribution-happy-path-contract.md)
+and mandatory #375–#379 stage/evidence/owner matrix. This repository-only reference
+is not bundled/installed adoption; #348 owns final matching distribution. Without
+a checkout use installed discovery and report missing capability, never invent
+stages/APIs. Selected-file Doer, native coding and whole-contribution success are
+separate evidence claims. Current v6 intake is not the whole autonomous journey;
+Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+
+
 Use this skill to inspect durable Queue history or route one explicitly authorized process, retry, reclaim, cancel, expire, exhaust, or revoke operation through the shipped typed Aegis service. The model may explain records and prepare a proposed request file; Aegis authenticates the principal, performs fresh authority admission, validates immutable bindings, commits lifecycle facts and authoritative audit atomically, invokes the registered runtime adapter, verifies evidence, and determines disposition.
 
 ## Authority and execution boundary
@@ -166,6 +178,6 @@ When the operator says “queue it” for an approved exact bounded Loop, use th
 
 `aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` selects only the same request key's exact accepted Queue item for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
 
-The controller composes the minimal exact Graph, prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
+The controller uses direct Loop submission for new intents and preserves historical synthetic Graph replay; it prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
 
 The durable `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. An interrupted preparation with no reusable authority remains blocked as `session_preparation_in_progress_or_interrupted`; explicit operator recovery is required. Do not delete the fence or mint substitute authority as automatic crash handling.

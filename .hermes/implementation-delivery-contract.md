@@ -1,18 +1,13 @@
 # Implementation and delivery contract
 
-## Temporary Hermes GitHub issue contribution routing
+## Canonical contribution procedure
 
-Owner requests such as “Hey, implement this GitHub issue”, “implement this issue”, and “fix this GitHub issue”, with an issue reference, invoke this engineering procedure. The agent must load and use `aegis-implementation-model` and `aegis-development-loop` before selecting execution tools. Read the issue and relevant discussion, including latest owner instructions; establish bounded domain obligations, observable acceptance, security invariants and delivery scope. Reconcile existing task/session/worktree/branch/PR ownership before starting or resuming; never duplicate execution or overlap source writers.
-
-Use the active `aegis_implementation_loop` through a real execution-capable conductor as specified by the engineering skills. `FlowExecutor.run_task_flow()` rendering is not engineering execution. Verify the supported conductor and approval delivery before dispatch; distinguish parent-attended conduction from autonomous dispatcher execution. Classify an unanswerable detached-worker approval as `approval_transport_unavailable`; do not redispatch unchanged failures or evade a gate. Report a missing capability accurately rather than claiming the loop ran.
-
-Retain the engineering lifecycle and evidence for each performed step:
-
-`prepare_feature_worktree` → `understand` → `inspect` → `trace` → `implement_minimally` → `test_the_behavior` → `diagnose_and_repeat` → `review_security_boundaries` → `review_launch_assets` → `final_verification` → `report_concisely` → `push_feature_branch` → `watch_cicd` → `merge_on_success_or_loop`.
-
-Use one source-owning builder, then freeze executable identity and complete source identity covering staged, unstaged and untracked source. A fresh independent tester must not modify product code and must exercise affected real journeys in isolated development state. Require acceptance before release; send concrete failures back for bounded repair, rebuild and retest. The parent independently verifies evidence and retains delivery ownership through PR, exact-head CI and protected-base merge/readback. A handoff prompt, worker verdict or passing sample is not completion.
-
-This is a temporary Hermes contribution procedure until an explicitly adopted Aegis-managed contribution workflow replaces it, not a request to author or run a product Loop. Do not create PlanStore/TaskQueue records merely to install these repository instructions. For actual contributions, follow the applicable skills' supported existing execution and ownership paths and the owner's scope. No new queue, daemon, dispatcher, conductor framework or management UI is required. Preserve narrower scope and genuine authority gates; no unsolicited release or live activation. An additive question or request for a handoff prompt does not cancel an active implementation; stop only on explicit cancellation or a genuinely replacing objective.
+Read the [canonical contribution happy path](contribution-happy-path-contract.md)
+before implementation, repair, testing or delivery. It alone defines the ordered
+contribution lifecycle, builder/freeze/fresh tester/repair handoffs, stage/evidence
+ownership, temporary Hermes execution routing, exact-head publication/merge and
+recovery/completion boundary. This document retains generic request semantics and
+delivery rules; it is not an alternate contribution procedure.
 
 ## Meaning of owner requests
 
@@ -46,14 +41,13 @@ A shared-owner or external gate blocks only the portion that requires it. Comple
 
 ## PR and merge closure
 
-1. Work from freshly fetched protected-base source in an isolated feature worktree; keep the canonical checkout and unrelated work intact.
-2. Review the final scope and launch-asset impact. Stage only the intended files; preserve private/ignored state and secrets.
-3. Verify the intended GitHub actor and exact repository access using approved profile-scoped credential custody before writes. Never borrow another identity.
-4. Commit, push and create/update the task-owned PR. Keep its body consistent with current scope, tests and remaining acceptance boundaries.
-5. Require local head, remote feature head and PR head equality. Observe required CI on that exact head, independent review where required, clean mergeability and current-base compatibility. Missing checks are not passing checks.
-6. Repair concrete CI or merge conflicts within scope using supported non-force operations, reverify the resulting head, and merge on green without bypassing rulesets, review holds or protected controls. Existing merge authorization needs no repeated consent.
-7. Read back PR MERGED, merge SHA and inclusion on the remote protected base. Verify applicable post-merge CI; a feature-head pass is not evidence for a failing base-head run. Preserve an honest pending state while checks run.
-8. Reconcile existing task/flow/dependency/issue state only from real delivery evidence through supported owner APIs, when such records belong to this task. Do not create bookkeeping work or close a broader issue merely to describe a smaller merged slice as complete.
+Use the canonical matrix's publish/checks/merge/dispose boundaries. Parent retains
+publication ownership and the repository/base lease through exact remote readback;
+a local patch or open PR is not closure. Scope-only/local-only instructions forbid
+unsolicited publication. Reconcile existing task/flow/dependency/issue state only
+from actual delivery evidence through supported owner APIs when those records
+already belong to this task. Do not create bookkeeping records to imply delivery
+or close a broader issue for a smaller slice.
 
 ## Release and live activation closure
 
