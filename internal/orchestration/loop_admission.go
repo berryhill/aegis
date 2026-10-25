@@ -23,6 +23,12 @@ func (w *QueueWorker) ValidateLoopAdmissionContext(ctx context.Context, value lo
 	if _, err := executableAction(value); err != nil {
 		return err
 	}
+	if value.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+		if err := managedContributionProfile(value); err != nil {
+			return err
+		}
+		return w.authorizeImplementationRevision(value, agent)
+	}
 	if value.SchemaVersion == loop.DoerRevisionSchemaVersion {
 		return w.validateDoerReadiness(ctx, value, agent)
 	}

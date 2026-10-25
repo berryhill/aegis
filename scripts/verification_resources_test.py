@@ -43,8 +43,10 @@ class ResourceTests(unittest.TestCase):
             jobs = text.split('      - uses: actions/setup-go@v6')[1:]
             self.assertTrue(jobs)
             for job in jobs:
-                self.assertIn('run: chmod go-w "$(go env GOROOT)/bin/go"',
-                              job.split('      - name: Prepare verification')[0])
+                expected = ('run: python3 scripts/prepare-ci-go-toolchain.py --goroot "$(go env GOROOT)" --version "$GO_VERSION"'
+                            if workflow == 'ci.yml' else
+                            'run: chmod go-w "$(go env GOROOT)/bin/go"')
+                self.assertIn(expected, job.split('      - name: Prepare verification')[0])
 
     def client(self):
         client = DevTools.__new__(DevTools)

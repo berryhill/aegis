@@ -1,5 +1,10 @@
 # Aegis
 
+Source candidate: [managed contribution candidates](docs/managed-contribution-candidate.md)
+retain bounded native repair/check evidence, exact owned phase-boundary custody
+and content-free tester model input. Candidate acceptance is not GitHub delivery,
+whole-contribution success, authority renewal or live-provider qualification.
+
 Doer v4 also supports opt-in [bounded repository CODING](docs/BOUNDED_CODING.md):
 controller-collected source/test bytes, immutable context commitments, separately
 authorized offline Go tests, and native evidence-gated software acceptance. Legacy

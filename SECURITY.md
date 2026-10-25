@@ -1,5 +1,13 @@
 # Security Policy
 
+Managed contribution source inventories stay in private controller custody;
+tester model evidence includes schema/digest only, never complete source bytes
+or filenames. Builder context is explicitly admitted and bounded. Narrow
+sensitive-name/private-key checks are not a general secret scanner. Exact
+phase-boundary continuation holds unknown effects and preserves consumed budget;
+advisory custody does not exclude noncooperating host writers. See
+[qualification](docs/managed-contribution-candidate.md).
+
 The authenticated exact-run execution debugger is read-only and excludes raw task/model/cursor/file payloads. Durable interpreter observations are not authority, verification receipts or evidence-backed Queue completion. Auth loss clears the protected browser workspace; legacy boundaries remain unknown. See [debugger boundary](docs/EXECUTION_DEBUGGER.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow

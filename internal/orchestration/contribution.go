@@ -31,9 +31,10 @@ func (w *QueueWorker) contributionContract(ctx context.Context, id string, r loo
 		}
 		effect = control.Delivery
 	}
-	// Selected-file v3 cannot attest whole-contribution delivery.
-	if effect != string(contribution.DeliveryLocal) || c.Effect != string(contribution.DeliveryLocal) {
-		return loop.VerifiedImplementation{}, c, errors.New("contribution delivery execution unavailable")
+	// Candidate execution is independent of the later delivery target. It never
+	// performs or attests GitHub effects, nor falls back to selected-file v3.
+	if !contribution.DeliveryNarrows(c.Effect, effect) {
+		return loop.VerifiedImplementation{}, c, deny
 	}
 	for _, ref := range []reference.RevisionRef{c.Controller, c.Builder, c.Tester} {
 		a, e := w.repository.LatestAgentRevision(ctx, ref.ID)
