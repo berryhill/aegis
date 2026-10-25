@@ -65,8 +65,8 @@ func (e *Executor) continuationContext(id string, c loop.VerifiedImplementation)
 }
 
 // The durable implement report precedes every apply in managed doer.v1.
-// Absence is a witness only for a validated prepared final reservation, never
-// for generic, interrupted or partially applied histories.
+// A delivered reservation additionally needs its durable closed decode rejection.
+// Missing historical classifications are never reconstructed.
 func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (string, string, error) {
 	reject := errors.New("native coding no-apply witness unavailable")
 	if r.State != "failed" || len(r.Passes) == 0 {
@@ -76,7 +76,7 @@ func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (st
 	if last.ContextStateDigest != "" && last.WorkspaceDigest != "" && last.OutputDigest != "" {
 		return last.ContextStateDigest, "completed-check.v1", nil
 	}
-	if !r.ManagedInput || c.DecisionMode != "doer.v1" || c.RepositoryContext == nil || r.ContextDigest == "" || last.Input == nil || last.Input.Delivered || last.WorkspaceDigest != "" || last.OutputDigest != "" || last.ContextStateDigest != "" || last.ContextIdentity != "" || last.Passed || r.ConsumedBefore+uint16(len(r.Passes)) >= uint16(c.MaxPasses) {
+	if !r.ManagedInput || c.DecisionMode != "doer.v1" || c.RepositoryContext == nil || r.ContextDigest == "" || last.Input == nil || (last.Input.Delivered && (last.Failure == nil || !IsProposalRejection(*last.Failure))) || last.WorkspaceDigest != "" || last.OutputDigest != "" || last.ContextStateDigest != "" || last.ContextIdentity != "" || last.Passed || r.ConsumedBefore+uint16(len(r.Passes)) >= uint16(c.MaxPasses) {
 		return "", "", reject
 	}
 	if e.revalidateInputs(c, r, false) != nil {
@@ -91,6 +91,7 @@ func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (st
 		}
 	}
 	gate := false
+	rejections := 0
 	for _, s := range r.Stages {
 		if _, err := e.StageOutput(r.RunID, s); err != nil {
 			return "", "", reject
@@ -103,15 +104,24 @@ func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (st
 				return "", "", reject
 			}
 			gate = true
+		case "proposal_rejected":
+			if s.PassID == last.ID {
+				b, x := e.StageOutput(r.RunID, s)
+				var f ManagedFailure
+				if x != nil || json.Unmarshal(b, &f) != nil || last.Failure == nil || f != *last.Failure || !IsProposalRejection(f) {
+					return "", "", reject
+				}
+				rejections++
+			}
 		case "input_prepared", "input_delivered", "implement", "judgment", "check", "diagnosis":
 		default:
 			return "", "", reject
 		}
-		if s.PassID == last.ID && s.Name != "input_prepared" {
+		if s.PassID == last.ID && s.Name != "input_prepared" && !(last.Input.Delivered && (s.Name == "input_delivered" || s.Name == "proposal_rejected")) {
 			return "", "", reject
 		}
 	}
-	if !gate {
+	if !gate || (last.Input.Delivered && rejections != 1) {
 		return "", "", reject
 	}
 	preimage := r.ContextDigest

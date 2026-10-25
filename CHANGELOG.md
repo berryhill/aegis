@@ -6,6 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Preserve closed managed proposal-decode failure evidence after successful input
+  delivery. Expose content-free native coding stage references and allow bounded
+  continuation only with a validated durable rejection before implementation.
+  Historical missing classifications, uncertain effects and exhausted budgets
+  remain denied; this does not establish live coding acceptance for #385.
+
 - Replace the cumulative `execution` CI shard with mandatory `implementation`,
   `orchestration` and `orchestration-contribution` groups in normal and race modes.
   Dynamically inventory orchestration defaults to isolate its heavy contribution

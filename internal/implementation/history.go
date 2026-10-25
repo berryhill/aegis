@@ -12,20 +12,21 @@ import (
 // History is a content-free native custody projection, not a completion receipt.
 // ReservedPasses includes proposals which failed before producing check evidence.
 type History struct {
-	ConsumedBefore     uint16 `json:"consumed_before"`
-	CumulativeConsumed uint16 `json:"cumulative_consumed"`
-	RemainingBudget    uint16 `json:"remaining_budget"`
-	PredecessorRun     string `json:"predecessor_run,omitempty"`
-	PredecessorHistory string `json:"predecessor_history,omitempty"`
-	RunID              string `json:"run_id"`
-	ContractDigest     string `json:"contract_digest"`
-	TaskDigest         string `json:"task_digest"`
-	ContextDigest      string `json:"context_digest,omitempty"`
-	State              string `json:"state"`
-	ReservedPasses     uint16 `json:"reserved_passes"`
-	Passes             []Pass `json:"passes"`
-	Digest             string `json:"digest"`
-	AcceptanceGate     string `json:"acceptance_gate"`
+	Stages             []Stage `json:"stages,omitempty"`
+	ConsumedBefore     uint16  `json:"consumed_before"`
+	CumulativeConsumed uint16  `json:"cumulative_consumed"`
+	RemainingBudget    uint16  `json:"remaining_budget"`
+	PredecessorRun     string  `json:"predecessor_run,omitempty"`
+	PredecessorHistory string  `json:"predecessor_history,omitempty"`
+	RunID              string  `json:"run_id"`
+	ContractDigest     string  `json:"contract_digest"`
+	TaskDigest         string  `json:"task_digest"`
+	ContextDigest      string  `json:"context_digest,omitempty"`
+	State              string  `json:"state"`
+	ReservedPasses     uint16  `json:"reserved_passes"`
+	Passes             []Pass  `json:"passes"`
+	Digest             string  `json:"digest"`
+	AcceptanceGate     string  `json:"acceptance_gate"`
 }
 
 // History never rereads host files: historical evidence remains readable after
@@ -142,6 +143,49 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (History, e
 			return out, reject
 		}
 	}
+	seenStages := map[string]bool{}
+	for _, s := range r.Stages {
+		switch s.Name {
+		case "gate", "input_prepared", "input_delivered", "proposal_rejected", "implement", "judgment", "check", "diagnosis":
+		default:
+			return out, reject
+		}
+		key := s.PassID + "/" + s.Name
+		if seenStages[key] {
+			return out, reject
+		}
+		seenStages[key] = true
+		if s.Name == "gate" {
+			if s.PassID != "" {
+				return out, reject
+			}
+		} else {
+			found := false
+			for _, p := range r.Passes {
+				if p.ID == s.PassID {
+					found = true
+				}
+			}
+			if !found {
+				return out, reject
+			}
+		}
+		b, x := e.StageOutput(id, s)
+		if x != nil {
+			return out, reject
+		}
+		if s.Name == "proposal_rejected" {
+			var f ManagedFailure
+			if json.Unmarshal(b, &f) != nil || !IsProposalRejection(f) {
+				return out, reject
+			}
+			for _, p := range r.Passes {
+				if p.ID == s.PassID && (p.Failure == nil || *p.Failure != f || p.Input == nil || !p.Input.Delivered) {
+					return out, reject
+				}
+			}
+		}
+	}
 	if err = e.revalidateInputs(c, r, r.State == "succeeded"); err != nil {
 		return out, err
 	}
@@ -153,6 +197,7 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (History, e
 		return out, err
 	}
 	out = History{RunID: id, ContractDigest: cd, TaskDigest: digest([]byte(c.Task)), ContextDigest: r.ContextDigest, State: r.State, ReservedPasses: uint16(len(r.Passes)), Passes: append([]Pass(nil), r.Passes...), Digest: digest(b), AcceptanceGate: "trusted offline go-test.v1; historical presence is not software acceptance"}
+	out.Stages = append([]Stage(nil), r.Stages...)
 	out.ConsumedBefore = r.ConsumedBefore
 	out.CumulativeConsumed = r.ConsumedBefore + out.ReservedPasses
 	out.RemainingBudget = uint16(c.MaxPasses) - out.CumulativeConsumed
