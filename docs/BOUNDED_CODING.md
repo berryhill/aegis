@@ -198,7 +198,13 @@ partial effects, missing/corrupt evidence, source drift, swapped references and
 conflicting successors deny. Do not republish, rotate uncertain intent or create
 a successor merely to evade failure. A pre-apply continuation must reverify the
 recorded preimage, retain its consumed pass and prepared/not-delivered distinction,
-and cannot infer a stop acknowledgment or a historical failure cause. Missing
+and cannot infer a stop acknowledgment or a historical failure cause. A successfully
+returned managed turn rejected by strict proposal decoding additionally requires
+its existing closed `proposal_rejected` stage, matching failure classification,
+validated prepared/delivered input custody and no implement/check/apply evidence.
+Authenticated `coding_history.stages` exposes only stage name, pass and digest;
+it never exposes payloads. Delivery alone or a missing old classification does
+not make an earlier failure recoverable. Missing
 witnesses, unknown/interrupted outcomes and partial applies still deny. Distinct
 tasks can retire only exactly owned, idle, terminal zero-authority coding runtimes;
 they do not reset the failed task's budget. First reconcile authoritative history.

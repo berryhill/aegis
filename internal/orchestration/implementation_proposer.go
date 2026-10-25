@@ -87,7 +87,16 @@ func (p HermesPatchProposer) propose(ctx context.Context, request implementation
 			return implementation.Proposal{}, err
 		}
 	}
-	return decodePatch([]byte(result.Output), reported)
+	proposal, err := decodePatch([]byte(result.Output), reported)
+	if err != nil && request.FailureObserver != nil {
+		var closed *doerFailure
+		if errors.As(err, &closed) {
+			if x := request.FailureObserver(implementation.ManagedFailure{State: "failed", Code: closed.code}); x != nil {
+				return implementation.Proposal{}, x
+			}
+		}
+	}
+	return proposal, err
 }
 func decodePatchProposal(wire []byte) ([]implementation.Edit, error) {
 	p, err := decodePatch(wire, false)
