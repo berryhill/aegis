@@ -572,8 +572,31 @@ func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 	svc := apiService(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, svc) }()
+	owner := make(chan *consoleauth.Manager, 1)
+	go func() {
+		done <- serveWithComposition(ctx, svc, nil, func(portal *DoerContinuationPortal) { owner <- portal.manager })
+	}()
+	manager := <-owner
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
+	// An HTTP response synchronizes with hook installation before reading it.
+	client := unixClient(svc.Config.API.UnixSocket)
+	response, err := client.Get("http://unix/livez")
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	login := httptest.NewRequest(http.MethodPost, svc.Config.API.Console.Origin+"/console/login", nil)
+	login.Header.Set("Origin", svc.Config.API.Console.Origin)
+	_, _, _, subject, err := manager.Login(login, "singleton-regression", []byte("api-principal-password"))
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	if err := svc.DashboardActionAuthentication(subject); err != nil {
+		cancel()
+		t.Fatalf("owning dashboard subject rejected before denial: %v", err)
+	}
 	before, err := os.Lstat(svc.Config.API.UnixSocket)
 	if err != nil {
 		cancel()
@@ -590,8 +613,12 @@ func TestServeSingletonDeniesBeforeActiveSocketMutation(t *testing.T) {
 		cancel()
 		t.Fatalf("singleton denial mutated active socket: before=%v after=%v err=%v", before, after, err)
 	}
+	if err := svc.DashboardActionAuthentication(subject); err != nil {
+		cancel()
+		t.Fatalf("singleton denial replaced owning dashboard authentication: %v", err)
+	}
 	request, _ := http.NewRequest(http.MethodGet, "http://unix/livez", nil)
-	response, err := unixClient(svc.Config.API.UnixSocket).Do(request)
+	response, err = unixClient(svc.Config.API.UnixSocket).Do(request)
 	if err != nil || response.StatusCode != http.StatusOK {
 		cancel()
 		t.Fatalf("first daemon was disturbed: response=%v err=%v", response, err)

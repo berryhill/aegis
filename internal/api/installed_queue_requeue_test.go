@@ -133,6 +133,9 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		manager := portal.manager
 		origin := s.Config.API.Console.Origin
 		browser, csrf := loginConsole(t, s.Config.API.Listen)
+		// Requeue can synchronously replay durable execution; the metadata/login
+		// client's five-second bound is not the fixture's bounded write policy.
+		browser.Timeout = s.Config.API.WriteTimeout
 		browser.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 		base, err := url.Parse(origin)
 		if err != nil {
@@ -147,7 +150,11 @@ func installedPersistedRequeue(t *testing.T, ctx context.Context, s *app.Service
 		do := func(req *http.Request) *httptest.ResponseRecorder {
 			t.Helper()
 			req.RequestURI = ""
+			started := time.Now()
 			response, err := browser.Do(req)
+			if req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/requeue") {
+				t.Logf("real HTTP requeue elapsed=%s client_bound=%s error=%v", time.Since(started), browser.Timeout, err)
+			}
 			if err != nil {
 				t.Fatal(err)
 			}

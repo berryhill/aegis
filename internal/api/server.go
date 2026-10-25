@@ -329,7 +329,6 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 	if err != nil {
 		return fmt.Errorf("configure console: %w", err)
 	}
-	svc.DashboardActionAuthentication = consoleManager.ValidateActionSubject
 	managerGateway, err := managergateway.New(ctx, svc)
 	if err != nil {
 		return fmt.Errorf("configure manager gateway: %w", err)
@@ -2672,6 +2671,10 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		tcpListener = tls.NewListener(tcpListener, &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12})
 	}
 	listeners = append(listeners, tcpListener)
+	// Publish the live registry only after transport ownership and every fallible
+	// listener setup step succeed. A denied competitor must not replace it.
+	// Install before starting either the supervisor or HTTP serving goroutines.
+	svc.DashboardActionAuthentication = consoleManager.ValidateActionSubject
 	ready.Store(true)
 	defer closeListeners()
 	supervisorCtx, stopSupervisor := context.WithCancel(ctx)
