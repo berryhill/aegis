@@ -10,6 +10,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Bound the fixed offline Laya helper's numeric-library thread pools to two
+  without inheriting ambient pool settings or extending readiness deadlines.
+
 - Repair same-selection native Codex review after one later exact native-contract
   allowlist addition, including existing append-only v2 connection history.
   Reconstruct and validate each historical configuration independently; preserve

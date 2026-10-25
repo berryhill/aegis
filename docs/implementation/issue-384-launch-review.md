@@ -10,6 +10,18 @@ connection reconciliation does not approve it. Native host tests are not sandbox
 Startup native-worker capability wiring remains unchanged: this repair does not
 hot-reconfigure a worker or automatically restart a deployment.
 
+During authorized development recovery, the exact native addition and supported
+same-login reconciliation succeeded. After the necessary development restart,
+the helper probe exposed numeric-library startup overhead: the unchanged model
+answered the exact task in about 15 seconds with host-default threading, versus
+about 8.9 seconds with two-thread pools under the existing ten-second bound.
+The follow-up caps only the fixed offline helper's OpenMP/MKL/OpenBLAS/NumExpr
+pools. A trusted subprocess regression is RED before that cap and GREEN after;
+it also rejects inherited ambient pool sizes while retaining secret isolation.
+No timeout, model, protocol, confidence threshold or authority lifetime is widened.
+This diagnostic is not native coding acceptance; real owning-service readiness
+and the retained Run's separate artifact/receipt/disposition remain required.
+
 ## Reproduction and exact rejection path
 
 At base `52bfce39464868c102da1a51e0acd75a2218b36d`, new trusted regressions
@@ -69,7 +81,7 @@ no Loop mutation and no Graph/Queue creation, not a managed-provider execution.
 | Focused contributor issues | Existing issue 384 defines source scope; 349/359/385 retain separate acceptance; no new external issue created |
 | Distributed skill | Updated credential-authority same-selection limits and refreshed canonical bundle manifest |
 
-## Evidence tiers and remaining gates
+## Builder-stage evidence tiers and remaining gates
 
 Builder proof is retained in ignored `.aegis-e2e/issue384-proof/`: original RED,
 focused normal/race, boundary regression logs and frozen source/executable inventory.
@@ -79,7 +91,9 @@ is not behavioral agent execution. Full repository `make verify`, independent
 frozen-candidate testing, real-provider selected-file acceptance, exact-head CI and
 source delivery remain parent-owned gates, not claimed here.
 
-No release, production config, native login selection, provider/model, TTL,
-service restart or live Run is changed. The retained issue-385 native intent and
-its two-pass budget are not executed or consumed. No live native RED-to-GREEN,
-8448 acceptance or historical-record rewrite is claimed.
+The original builder changed no release, production config, login selection,
+provider/model, TTL, service or live Run. The later parent-authorized development
+native-trust transition and restart are described above; they do not establish
+native RED-to-GREEN acceptance. The retained issue-385 intent and its two-pass
+budget remain separate and unconsumed at this recovery checkpoint. No production
+rollout, release or historical-record rewrite is claimed.
