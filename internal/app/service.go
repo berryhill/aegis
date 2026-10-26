@@ -41,6 +41,8 @@ var (
 type Service struct {
 	// ContributionDecisionDelivery is installed by trusted owning-server composition only.
 	ContributionDecisionDelivery func(context.Context, core.Subject, string, string) (string, error)
+	// Trusted #378 owning-controller composition only; nil keeps nonlocal stop pending.
+	ContributionPublicationQuiescer ContributionPublicationQuiescer
 	// DashboardActionAuthentication is installed once by the owning console
 	// before serving. Only explicitly dashboard-capable operations consult it.
 	DashboardActionAuthentication func(core.Subject) error

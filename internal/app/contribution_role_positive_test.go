@@ -152,6 +152,7 @@ func TestContributionRoleAuthorityPositiveAppAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	exercisePublicationQuiescencePort(t, s, c, state)
 	r := state.RoleAuthorities["controller"]
 	request := contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.QueueItemID, Digest: c.Digest}, RunID: c.RunID, QueueItemID: c.QueueItemID, Candidate: state.CandidateEvidence.Digest, CandidateEvidence: state.CandidateEvidence, Role: "controller", Epoch: r.Epoch, RoleAuthority: stable, Scope: c.Effect}
 	if _, err = s.CheckContributionEffectAs(ctx, sub, r.SessionID, c.Key, request, false); err != nil {
@@ -217,6 +218,24 @@ func TestContributionRoleAuthorityPositiveAppAdmission(t *testing.T) {
 	if e = s.Store.Save("sessions", r.SessionID, originalSession); e != nil {
 		t.Fatal(e)
 	}
+	// Missing process identity must not manufacture an acknowledgement from
+	// absence. Restore the retained session; the real stop path owns any ack.
+	missingPID := originalSession
+	missingPID.RuntimePID = 0
+	missingPID.ProcessStart = ""
+	if e = s.Store.Save("sessions", r.SessionID, missingPID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.StopContributionRoleAs(ctx, sub, c.Key, "controller", input()); e == nil {
+		t.Fatal("missing PID acknowledged")
+	}
+	if e = s.Store.Save("sessions", r.SessionID, originalSession); e != nil {
+		t.Fatal(e)
+	}
+	_, state, _, e = s.ObserveContributionContinuityAs(ctx, sub, c.Key)
+	if e != nil || state.RoleStops["controller"].Acknowledged {
+		t.Fatal("missing PID false ack", e)
+	}
 	now = now.Add(30 * time.Second)
 	sub.AuthenticatedAt = now
 	sub.ExpiresAt = now.Add(time.Minute)
@@ -232,6 +251,49 @@ func TestContributionRoleAuthorityPositiveAppAdmission(t *testing.T) {
 	if _, err = s.CheckContributionRoleAs(ctx, sub, r.SessionID, c.Key, "controller", input()); err == nil {
 		t.Fatal("expiry ignored")
 	}
+	// A fresh owner may reconcile exact history without reviving expired roles.
+	assertObservation := func() {
+		t.Helper()
+		before, _, e := repo.GetContributionContinuity(ctx, c.QueueItemID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		authorities, e := s.Authority.ListAuthorityContexts(ctx)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = s.CheckContributionEffectAs(ctx, sub, "fresh-observer", c.Key, request, false); e != nil {
+			t.Fatal("historical observation", e)
+		}
+		if _, e = s.CheckContributionEffectAs(ctx, sub, r.SessionID, c.Key, request, true); e == nil {
+			t.Fatal("historical write admitted")
+		}
+		foreign := sub
+		foreign.PrincipalID = "foreign"
+		if _, e = s.CheckContributionEffectAs(ctx, foreign, r.SessionID, c.Key, request, false); e == nil {
+			t.Fatal("foreign historical observation")
+		}
+		after, _, e := repo.GetContributionContinuity(ctx, c.QueueItemID)
+		if e != nil || after.Digest != before.Digest || after.Used != before.Used {
+			t.Fatal("observation mutated continuity", e)
+		}
+		got, e := s.Authority.ListAuthorityContexts(ctx)
+		if e != nil || len(got) != len(authorities) {
+			t.Fatal("observation minted authority", e)
+		}
+	}
+	assertObservation()
+	_, state, _, err = s.ObserveContributionContinuityAs(ctx, sub, c.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelInput := input()
+	cancelInput.Kind = "cancel-requested"
+	state, err = s.RecordContributionContinuityAs(ctx, sub, "fresh-owner", c.Key, cancelInput)
+	if err != nil {
+		t.Fatal("postdeadline cancellation", err)
+	}
+	assertObservation()
 	root, err := repo.GetQueueRuntimeBinding(ctx, c.QueueItemID)
 	if err != nil || root.Digest != rootDigest {
 		t.Fatal("root mutated", err)

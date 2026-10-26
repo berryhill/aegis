@@ -68,8 +68,36 @@ native inventories and acknowledged builder/tester stops. Both roles need curren
 lineage coverage; bounded earlier pass lineages are historical, never substitution.
 `CheckContributionEffectAs` takes the actual frozen digest. Writes require its
 private synchronous live custody context; outside or retained/escaped contexts deny.
-Unknown native outcomes retain custody. These checks do not mint a GitHub effect or
-whole-contribution success; #378 owns delivery records and #379 owns joined disposition.
+Unknown native outcomes retain custody. `writing=false` is a distinct fresh
+same-owner historical observation check: exact contract/run/Queue/frozen candidate,
+original role-authority reference and epoch, and approved contract scope remain
+required. The session argument identifies the observing session on this path; it
+need not revive the historical runtime. Cancellation, role stop and runtime expiry
+do not deny this read or mint a new mandate, authority, event or counter. #378 must
+separately admit the exact original effect intent, credential binding and typed
+Read/Reconcile operation; this neutral check never authorizes a write.
+These checks do not mint a GitHub effect or whole-contribution success; #378 owns
+delivery records and #379 owns joined disposition.
+
+Whole cancellation commits sticky stop before signalling the exact retained run
+and waits at most 15 seconds for its actual done channel. Missing owner, mismatched
+process identity, unknown native effects and failed/timed-out stops stay pending;
+process absence is not acknowledgement. Fresh-owner cancellation after deadline
+is safety cleanup only. Confirmed Queue terminal history is immutable.
+
+The compiled #378 integration port is
+`Service.ContributionPublicationQuiescer`, implementing
+`QuiesceContributionPublication(context.Context, app.ContributionPublicationBinding) error`.
+The binding carries exact `Contract` (Queue ID/digest), `RunID`, `QueueItemID`,
+`Candidate` (frozen evidence ref), `Controller` (role-authority ref), and `Epoch`.
+Trusted controller composition alone installs it. It is called only after sticky
+cancellation; #378 must join its real `Repository.Fence`, in-flight effects and
+unknown/confirmed same-intent remote readbacks, returning nil only for durable
+quiescence of that exact binding. Missing port, missing candidate/controller and
+port errors keep cancellation pending. No caller boolean/default allow, second
+remote effect log, remote retry or credential grant exists here. Local-only has no
+authorized remote effects. Nonlocal cancellation remains **unqualified** until
+#378 implements and independently tests the actual owning-repository join.
 
 ## Evidence and remaining gates
 

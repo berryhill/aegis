@@ -125,8 +125,9 @@ func (s *Service) cancelContributionInSession(ctx context.Context, sub core.Subj
 		return err
 	}
 	if !state.CancelAcknowledged {
-		// No remote publication quiescence port exists in this slice. Never infer it.
-		if c.Effect != "local-only" {
+		// Local-only admits no remote effects. Every other scope requires the
+		// real publication owner's exact fence/readback join, never absence inference.
+		if !s.quiesceContributionPublication(cleanup, c, state) {
 			return nil
 		}
 		_, current, e := s.ReadContributionAs(cleanup, sub, key)

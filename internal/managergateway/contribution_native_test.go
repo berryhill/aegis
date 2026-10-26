@@ -15,6 +15,7 @@ import (
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
+	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
@@ -405,6 +406,58 @@ exec sleep 240
 				t.Fatal("role authority survived close")
 			}
 		}
+	}
+	// Actual manager cancellation of the accepted candidate: no second resume or
+	// consent, no authority/counter reset, and Queue terminal only after stop joins.
+	_, rootBefore, err := s.ReadContributionAs(ctx, subject, key)
+	must(err)
+	_, err = gateway.Execute(ctx, subject, id, token, "/contribute stop "+key)
+	must(err)
+	_, stopped, _, err := s.ObserveContributionContinuityAs(ctx, subject, key)
+	must(err)
+	if !stopped.CancelRequested || !stopped.CancelAcknowledged || stopped.Used != continuity.Used {
+		t.Fatalf("accepted candidate stop not joined: %+v", stopped)
+	}
+	for role := range stopped.RoleAuthorities {
+		if !stopped.RoleStops[role].Acknowledged {
+			t.Fatalf("role %s not acknowledged", role)
+		}
+		if b, ok := stopped.NativeBoundaries[role]; ok && !b.Closed {
+			t.Fatalf("native %s open", role)
+		}
+	}
+	_, rootAfter, err := s.ReadContributionAs(ctx, subject, key)
+	must(err)
+	if rootAfter.Projection.State != queue.StateCancelled || rootBefore.RuntimeAuthorityBinding == nil || rootAfter.RuntimeAuthorityBinding == nil || rootAfter.RuntimeAuthorityBinding.Digest != rootBefore.RuntimeAuthorityBinding.Digest {
+		t.Fatal("stop replaced root or missed terminal")
+	}
+	status, err := s.ReadContributionContinuityViewAs(ctx, subject, key)
+	must(err)
+	if !status.CancelRequested || !status.CancelAcknowledged {
+		t.Fatal("sanitized cancel status missing")
+	}
+	for _, role := range status.Roles {
+		if !role.StopRequested || !role.StopAcknowledged {
+			t.Fatal("sanitized stop status missing")
+		}
+	}
+	_, err = gateway.Execute(ctx, subject, id, token, "/contribute stop "+key)
+	must(err)
+	_, repeated, _, err := s.ObserveContributionContinuityAs(ctx, subject, key)
+	must(err)
+	if repeated.Digest != stopped.Digest {
+		t.Fatal("repeated stop mutated history")
+	}
+	if _, e := s.CheckContributionEffectAs(ctx, subject, controller.SessionID, key, request, true); e == nil {
+		t.Fatal("cancelled write admitted")
+	}
+	if _, e := s.CheckContributionEffectAs(ctx, subject, controller.SessionID, key, request, false); e != nil {
+		t.Fatal("cancelled historical reconciliation", e)
+	}
+	finalAuthorities, err := s.Authority.ListAuthorityContexts(ctx)
+	must(err)
+	if len(finalAuthorities) != len(after) {
+		t.Fatal("stop minted authority")
 	}
 	t.Cleanup(func() {
 		for _, authority := range after {

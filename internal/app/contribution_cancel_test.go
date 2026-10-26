@@ -11,7 +11,8 @@ import (
 )
 
 func TestContributionWholeCancelJoinsExactChild(t *testing.T) {
-	s, _, sub, ref, reader := contributionFixtureAt(t, time.Now().UTC())
+	now := time.Now().UTC()
+	s, _, sub, ref, reader := contributionFixtureClock(t, func() time.Time { return now }, true)
 	c, err := s.admitContributionAs(context.Background(), sub, "original", ref, reader.source.URL.URL, "whole-stop", "local-only", reader)
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +34,11 @@ func TestContributionWholeCancelJoinsExactChild(t *testing.T) {
 	waited := make(chan struct{})
 	release := make(chan struct{})
 	go func() { _ = child.Wait(); close(waited); <-release; finish() }()
+	// Fresh owner safety cleanup remains available beyond the contribution
+	// deadline, but cannot renew any runtime/effect authority.
+	now = c.Deadline.Add(time.Second)
+	sub.AuthenticatedAt = now
+	sub.ExpiresAt = now.Add(time.Minute)
 	stopped := make(chan error, 1)
 	go func() { stopped <- s.StopContributionInSessionAs(context.Background(), sub, "fresh-session", c.Key) }()
 	select {

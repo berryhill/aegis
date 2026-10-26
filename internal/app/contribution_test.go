@@ -32,11 +32,14 @@ func contributionFixture(t *testing.T) (*Service, *fleetbadger.Store, core.Subje
 	return contributionFixtureAt(t, time.Time{})
 }
 func contributionFixtureAt(t *testing.T, now time.Time) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
+	return contributionFixtureClock(t, func() time.Time { return now }, !now.IsZero())
+}
+func contributionFixtureClock(t *testing.T, clock func() time.Time, fixed bool) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
 	t.Helper()
 	ctx := context.Background()
 	s := testService(t)
-	if !now.IsZero() {
-		s.Now = func() time.Time { return now }
+	if fixed {
+		s.Now = clock
 	}
 	repo, err := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
 	if err != nil {

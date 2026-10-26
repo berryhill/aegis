@@ -21,9 +21,23 @@ func (s *Service) CheckContributionEffectAs(ctx context.Context, sub core.Subjec
 	if in.Contract.Validate() != nil || in.Contract.ID != c.QueueItemID || in.Contract.Digest != c.Digest || in.RunID != c.RunID || in.QueueItemID != c.QueueItemID || in.Scope != c.Effect || in.Candidate == "" || in.Candidate != state.CandidateEvidence.Digest || in.CandidateEvidence.Validate() != nil || in.CandidateEvidence != state.CandidateEvidence {
 		return contribution.RoleAuthority{}, ErrDenied
 	}
-	r, err := s.CheckContributionRoleAs(ctx, sub, session, key, in.Role, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
-	if err != nil {
-		return r, err
+	// Observation is not runtime continuation. Preserve the original admitted
+	// role identity even after stop/expiry; no mandate, counter or event is minted.
+	var r contribution.RoleAuthority
+	if !writing {
+		if err := s.requirePrincipal(sub); err != nil {
+			return r, err
+		}
+		var exists bool
+		r, exists = state.RoleAuthorities[in.Role]
+		if !exists || session == "" || r.Epoch != state.RoleEpochs[in.Role] {
+			return contribution.RoleAuthority{}, ErrDenied
+		}
+	} else {
+		r, err = s.CheckContributionRoleAs(ctx, sub, session, key, in.Role, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
+		if err != nil {
+			return r, err
+		}
 	}
 	if in.Epoch != r.Epoch || in.RoleAuthority != r.Ref() {
 		return contribution.RoleAuthority{}, ErrDenied
