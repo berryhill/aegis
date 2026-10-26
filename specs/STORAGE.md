@@ -93,3 +93,15 @@ Passing unit tests does not promote an unlisted combination to qualified status.
 ### Verified implementation custody
 
 `internal/implementation` owns the bounded native-action kernel and its run/pass records. It imports only the Loop contract and uses an opaque byte-store port; it never imports an engine. The fleet Badger owner supplies that port over the existing fleet-v1 writer, durability and lifecycle, not a separately opened database. Run reservations are atomic create-only writes; stored checker output and workspace snapshots are digest-verified on read. These operational implementation records cannot grant authority. Orchestration supplies the evidence-owned verifier callback; evidence has no dependency on the native executor or Loop domain. Final completion reloads the exact Loop contract and revalidates persisted checker custody and current workspace before success.
+
+## Bounded Graph node canonical facts (#317 source)
+
+Within the existing fleet-v1 Badger store, canonical families `0x67`
+(GraphNodeAdmission, key GraphRun/node) and `0x68` (GraphNodeCheckpoint,
+key GraphRun/node) use strict versioned envelope codecs. They are not rebuildable
+projections. Startup validates family key shape, envelope/digest, exact stored
+claim/execution/attempt/Loop/pass-cap bindings, predecessor lineage and terminal
+consistency. Corruption denies reopening, never silently drops history. Physical
+Badger snapshots retain both namespaces; no new engine/platform qualification is
+claimed. Checkpoints preserve non-success without fabricated artifacts/receipts;
+aggregate success independently reloads both successful nodes and evidence bytes.

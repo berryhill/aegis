@@ -58,6 +58,8 @@ const (
 	familyVerificationReceipt       = 0x64
 	familyDisposition               = 0x65
 	familyDispositionByRun          = 0x66
+	familyGraphNode                 = 0x67
+	familyGraphNodeCheckpoint       = 0x68
 	familyAudit                     = 0x40
 )
 

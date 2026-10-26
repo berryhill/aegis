@@ -112,3 +112,27 @@ After interruption, inspect exact Graph readback and authoritative submission/qu
 Graph definitions and submission inputs must contain no authentication material, credential values, broker capabilities, private prompts, raw runtime output, host paths, or secret-shaped canaries. Report only bounded non-secret authority references and provenance returned by Aegis; never expose credential or capability values.
 
 Consult `specs/CANONICAL_DOMAINS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `specs/STORAGE.md`, `internal/graph/model.go`, `internal/orchestration/fleet_service.go`, the root `README.md`, and installed command help for normative and shipped behavior. Installing this advisory skill grants no Aegis identity, authority, publication right, submission right, queue claim, runtime capability, filesystem/network access, or completion evidence.
+
+## Bounded producer → consumer source candidate (#317)
+
+The source worker additionally supports one exact two-node producer/consumer chain:
+paired raw v2 nodes or paired managed selected-file v7 nodes, one outer Queue
+attempt, and no general scheduler. v7 pins one initially absent selected output
+per separate non-nested workspace, exact UTF-8 verification and 1–2 implementation
+passes per node. The consumer receives independently reloaded producer artifact
+bytes and exact causal lineage, never a workspace path or the expected assertion.
+Fresh runtime, provider, host-write and authority admissions remain mandatory.
+Tool-free proposals and controller writes are not a host filesystem sandbox.
+
+Authenticated `queue show` / existing Queue HTTP readback adds optional typed
+`graph_nodes`: exact admissions, pass caps, input lineage, node dispositions,
+artifacts and receipts, independently of root success or failure. It exposes no
+managed contract, private workspace, source bytes or credential values. Missing
+admission/checkpoint remains missing; corrupt reads fail closed. Root fields keep
+their historical meaning. Generic strict `loops validate FILE` / `loops publish
+FILE` can carry a canonical v7 definition; no new managed builder command or
+browser launch workflow is implied. Confirm installed capabilities separately.
+
+Synthetic protocol and durable regressions do not qualify a real provider,
+installed target, contribution delivery, or general multi-node scheduling.
+See `docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md` for the bounded source contract.
