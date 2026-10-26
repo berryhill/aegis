@@ -233,4 +233,3 @@ caches. No existing assertion, production code or authority was changed. Raw
 review-home-red.log and review-home-green.log are retained alongside the other
 fixture-hermeticity evidence. The source candidate must be refrozen after this
 review correction; earlier worker hashes are historical, not the final freeze.
-
