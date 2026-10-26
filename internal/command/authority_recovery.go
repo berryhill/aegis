@@ -2,6 +2,7 @@ package command
 
 import (
 	"errors"
+	"fmt"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/initialize"
 	"github.com/spf13/cobra"
@@ -9,7 +10,7 @@ import (
 
 func authorityRecoveryCmd(o *rootOptions, profile ExecutionProfile) *cobra.Command {
 	group := &cobra.Command{Use: "authority", Short: "Offline operational authority maintenance"}
-	group.AddCommand(&cobra.Command{Use: "recover-interrupted", Short: "Authenticate and validate one interrupted-open authority generation; preserve evidence", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	group.AddCommand(&cobra.Command{Use: "recover-interrupted", Short: "Authenticate and verify interrupted authority and fleet state; preserve evidence", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if o.target != "" {
 			return errors.New("interrupted authority recovery is offline only")
 		}
@@ -27,12 +28,15 @@ func authorityRecoveryCmd(o *rootOptions, profile ExecutionProfile) *cobra.Comma
 		if err != nil {
 			return err
 		}
+		if _, err = fmt.Fprintln(cmd.ErrOrStderr(), "Authenticate to verify this instance's interrupted authority and fleet state. Original evidence is preserved; recovery does not renew runtime grants or replay unknown effects."); err != nil {
+			return err
+		}
 		password, err := provider.Acquire(cmd.Context(), AuthorityPassphraseRequest{Intent: PrincipalPasswordAuthenticate, Input: cmd.InOrStdin(), Diagnostic: cmd.ErrOrStderr()})
 		if err != nil {
 			return err
 		}
 		defer clear(password)
-		result, err := initialize.RecoverInterruptedAuthority(cmd.Context(), cfg, password)
+		result, err := initialize.RecoverInterruptedInstance(cmd.Context(), cfg, password)
 		// Emit retained evidence custody even when verification refuses recovery.
 		if result.EvidencePath != "" {
 			if outErr := output(cmd, result); outErr != nil {

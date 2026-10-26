@@ -29,9 +29,18 @@ func (r *fixedContributionReader) Read(_ context.Context, _ contribution.IssueUR
 	return r.source, nil
 }
 func contributionFixture(t *testing.T) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
+	return contributionFixtureAt(t, time.Time{})
+}
+func contributionFixtureAt(t *testing.T, now time.Time) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
+	return contributionFixtureClock(t, func() time.Time { return now }, !now.IsZero())
+}
+func contributionFixtureClock(t *testing.T, clock func() time.Time, fixed bool) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
 	t.Helper()
 	ctx := context.Background()
 	s := testService(t)
+	if fixed {
+		s.Now = clock
+	}
 	repo, err := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
 	if err != nil {
 		t.Fatal(err)

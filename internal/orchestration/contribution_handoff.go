@@ -2,14 +2,20 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
 	"github.com/berryhill/aegis/internal/core"
+	executiondomain "github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/queue"
 )
+
+// ErrNoContributionContinuation permits the original path only after a positive
+// canonical read proves that no continuation was ever admitted.
+var ErrNoContributionContinuation = errors.New("no contribution continuation")
 
 // SetContributionFetch supplies a controller-owned fixture transport only. It is
 // not a WorkRequest/model input. Nil preserves strict production HTTPS fetch;
@@ -58,7 +64,7 @@ func (w *QueueWorker) acceptedContributionCandidate(ctx context.Context, subject
 			return fmt.Errorf("%w: projection", deny)
 		}
 		claim, err := w.repository.GetClaim(c, projection.ActiveClaimID)
-		if err != nil || claim.QueueItem != digestRef(item.ItemID, item.Digest) || claim.AttemptID != record.QueueAttempt || !w.now().Before(claim.ExpiresAt) {
+		if err != nil || claim.QueueItem != digestRef(item.ItemID, item.Digest) || claim.AttemptID != record.QueueAttempt {
 			return fmt.Errorf("%w: claim", deny)
 		}
 		attempt, err := w.repository.GetAttempt(c, claim.AttemptID)
@@ -74,6 +80,22 @@ func (w *QueueWorker) acceptedContributionCandidate(ctx context.Context, subject
 			return fmt.Errorf("%w: host", deny)
 		}
 		authority, mandate, ready := w.service.resolveAuthority(c, subject, claim.Authority)
+		if w.contributionCurrent != nil {
+			current, admission, e := w.contributionCurrent(c, subject, sealed, claim)
+			if !errors.Is(e, ErrNoContributionContinuation) {
+				if e != nil || admission == nil || !agentMatchesAuthority(agent, current.AuthorityContext, current.Mandate) {
+					return deny
+				}
+				decision, e := admission.CheckRuntimeAdmission(c, current, w.now())
+				if e != nil {
+					return e
+				}
+				return executiondomain.ValidateAdmission(current, decision, w.now())
+			}
+		}
+		if !w.now().Before(claim.ExpiresAt) {
+			return fmt.Errorf("%w: claim lease", deny)
+		}
 		if ready.State != ReadinessReady || authority.ID != claim.Authority.ID || authority.Digest != claim.Authority.Digest || !agentMatchesAuthority(agent, authority, mandate) {
 			return fmt.Errorf("%w: authority", deny)
 		}

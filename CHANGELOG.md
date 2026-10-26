@@ -6,6 +6,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Wire missing-role provisioning preflight to the owning API pinned protected
+  companion, reserve the stable intent before launch and reload canonical approval
+  and provisioning receipts. Preserve non-replayable unknown outcomes. Restore
+  exact Loop selection on retained Resume; distinguish native pass lineage from
+  frozen candidate identity in accepted-source custody joins. Source-only; no
+  live-provider, installed or whole-contribution completion claim.
+
 - Add repository engineering acceptance-port custody: reserve workstation main
   8448/8098, dynamically claim 8450–8469 with foreground lifetime supervision,
   actual socket checks and isolated-state guidance. No product authority,
@@ -16,6 +23,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   owning-service dispatch from help/API presence and selected-file/native checks
   from complete contribution delivery. Add isolated installed-CLI recipe and
   dispatch-inventory regressions; no fleet installation or live rollout.
+
 
 
 - Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.

@@ -70,6 +70,9 @@ func Open(ctx context.Context, root string) (*Store, error) {
 		return nil, cause
 	}
 
+	if err = requireFleetRecoveryComplete(clean); err != nil {
+		return fail(err)
+	}
 	dbPath := filepath.Join(clean, "store.badger")
 	_, dbErr := os.Lstat(dbPath)
 	_, cleanErr := os.Lstat(filepath.Join(clean, "CLEAN"))

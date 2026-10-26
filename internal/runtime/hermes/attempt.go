@@ -73,7 +73,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		return AttemptTurnResult{}, err
 	}
 	authority := request.Launch.AuthorityContext
-	now := time.Now().UTC()
+	now := a.now()
 	if err := checkAdmission(ctx, request, now); err != nil {
 		return AttemptTurnResult{}, err
 	}
@@ -83,11 +83,11 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	// The deadline is never later than the caller's bound or the immutable
 	// authority cutoff, and covers discovery and process setup as well as model
 	// execution. Caller cancellation is inherited by the child context.
-	deadline := now.Add(request.Bounds.Duration)
-	if authority.ExpiresAt.Before(deadline) {
-		deadline = authority.ExpiresAt
+	duration := request.Bounds.Duration
+	if remaining := authority.ExpiresAt.Sub(now); remaining < duration {
+		duration = remaining
 	}
-	turnContext, cancel := context.WithDeadline(ctx, deadline)
+	turnContext, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
 	descriptor, err := a.Discover(turnContext)
@@ -137,7 +137,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 		authContext, authCancel := context.WithDeadline(turnContext, providerToken.expiresAt.Add(-ProviderTokenRefreshMargin))
 		defer authCancel()
 		turnContext = authContext
-		if err = checkAdmission(turnContext, request, time.Now().UTC()); err != nil {
+		if err = checkAdmission(turnContext, request, a.now()); err != nil {
 			return AttemptTurnResult{}, err
 		}
 		if err = writeProviderAuthentication(home, providerToken); err != nil {
@@ -173,7 +173,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	var release func() error
 	if authority.Authority.Hermes.LocalInference != nil {
 		var cleanup func()
-		release, cleanup, err = prepareLocal(turnContext, command, authority.Authority.Hermes, func(c context.Context) error { return checkAdmission(c, request, time.Now().UTC()) })
+		release, cleanup, err = prepareLocal(turnContext, command, authority.Authority.Hermes, func(c context.Context) error { return checkAdmission(c, request, a.now()) })
 		if err != nil {
 			return AttemptTurnResult{}, err
 		}
@@ -194,7 +194,7 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 
 	// Recheck through the authoritative source as close as possible to process
 	// start. Historical projections and model input cannot satisfy this gate.
-	startedAt := time.Now().UTC()
+	startedAt := a.now()
 	if err = checkAdmission(ctx, request, startedAt); err != nil {
 		return AttemptTurnResult{}, err
 	}
@@ -226,13 +226,13 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	attempt.StartedAt = &startedAt
 
 	if err = command.Start(); err != nil {
-		return finishAttempt(attempt, execution.StateFailed, "runtime_start_failed", err)
+		return a.finishAttempt(attempt, execution.StateFailed, "runtime_start_failed", err)
 	}
 	if release != nil {
 		if err = release(); err != nil {
 			_ = command.Process.Kill()
 			_ = command.Wait()
-			return finishAttempt(attempt, execution.StateDenied, "local_inference_release_denied", err)
+			return a.finishAttempt(attempt, execution.StateDenied, "local_inference_release_denied", err)
 		}
 	}
 	go func() { _, _ = io.Copy(io.Discard, stderr) }()
@@ -246,46 +246,46 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 	if _, err = waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
 		return message.Method == "event" && message.Params.Type == "gateway.ready"
 	}); err != nil {
-		return finishContextError(attempt, authority.ExpiresAt, turnContext, err)
+		return a.finishContextError(attempt, authority.ExpiresAt, turnContext, err)
 	}
 	if toolsets == emptyToolset {
 		if err = verifyEmptyGateway(turnContext, stdin, messages, readErrors); err != nil {
-			return finishAttempt(attempt, execution.StateDenied, "tool_isolation_failed", err)
+			return a.finishAttempt(attempt, execution.StateDenied, "tool_isolation_failed", err)
 		}
 	}
 	if err = writeGateway(stdin, "create", "session.create", map[string]any{"cols": 100, "source": "aegis-attempt"}); err != nil {
-		return finishAttempt(attempt, execution.StateFailed, "session_create_write_failed", err)
+		return a.finishAttempt(attempt, execution.StateFailed, "session_create_write_failed", err)
 	}
 	created, err := waitGateway(turnContext, messages, readErrors, func(message gatewayMessage) bool {
 		return fmt.Sprint(message.ID) == "create"
 	})
 	if err != nil {
-		return finishContextError(attempt, authority.ExpiresAt, turnContext, err)
+		return a.finishContextError(attempt, authority.ExpiresAt, turnContext, err)
 	}
 	if created.Error != nil {
-		return finishAttempt(attempt, execution.StateFailed, "session_create_failed", errors.New("Hermes session.create failed"))
+		return a.finishAttempt(attempt, execution.StateFailed, "session_create_failed", errors.New("Hermes session.create failed"))
 	}
 	sessionID := fmt.Sprint(created.Result["session_id"])
 	if sessionID == "" || sessionID == "<nil>" {
 		sessionID = fmt.Sprint(created.Result["id"])
 	}
 	if sessionID == "" || sessionID == "<nil>" {
-		return finishAttempt(attempt, execution.StateFailed, "session_id_missing", errors.New("Hermes session.create returned no session ID"))
+		return a.finishAttempt(attempt, execution.StateFailed, "session_id_missing", errors.New("Hermes session.create returned no session ID"))
 	}
 	attempt.RuntimeSessionID = sessionID
 	if request.SessionCapability != nil {
-		if err = checkAdmission(turnContext, request, time.Now().UTC()); err != nil {
-			return finishAttempt(attempt, execution.StateDenied, "capability_admission_denied", err)
+		if err = checkAdmission(turnContext, request, a.now()); err != nil {
+			return a.finishAttempt(attempt, execution.StateDenied, "capability_admission_denied", err)
 		}
 		if err = request.SessionCapability(turnContext, attempt); err != nil {
-			return finishAttempt(attempt, execution.StateFailed, "session_capability_failed", err)
+			return a.finishAttempt(attempt, execution.StateFailed, "session_capability_failed", err)
 		}
-		if err = checkAdmission(turnContext, request, time.Now().UTC()); err != nil {
-			return finishAttempt(attempt, execution.StateDenied, "capability_admission_denied", err)
+		if err = checkAdmission(turnContext, request, a.now()); err != nil {
+			return a.finishAttempt(attempt, execution.StateDenied, "capability_admission_denied", err)
 		}
 	}
 	if err = writeGateway(stdin, "prompt", "prompt.submit", map[string]any{"session_id": sessionID, "text": request.Input}); err != nil {
-		return finishAttempt(attempt, execution.StateFailed, "prompt_write_failed", err)
+		return a.finishAttempt(attempt, execution.StateFailed, "prompt_write_failed", err)
 	}
 
 	var output strings.Builder
@@ -295,26 +295,26 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			return (request.ProviderFormatProbe && message.Method == "event" && message.Params.Type == "aegis.provider-format-error") || (message.Method == "event" && message.Params.SessionID == sessionID && (message.Params.Type == "message.start" || message.Params.Type == "message.delta" || message.Params.Type == "message.complete" || message.Params.Type == "error")) || fmt.Sprint(message.ID) == "prompt"
 		})
 		if waitErr != nil {
-			return finishContextError(attempt, authority.ExpiresAt, turnContext, waitErr)
+			return a.finishContextError(attempt, authority.ExpiresAt, turnContext, waitErr)
 		}
 		if message.Error != nil {
-			return finishAttempt(attempt, execution.StateFailed, "prompt_rejected", errors.New("Hermes prompt failed"))
+			return a.finishAttempt(attempt, execution.StateFailed, "prompt_rejected", errors.New("Hermes prompt failed"))
 		}
 		switch message.Params.Type {
 		case "aegis.provider-format-error":
 			if request.ProviderFormatProbe {
-				return finishRuntimeFailure(attempt, message.Params.Payload, true)
+				return a.finishRuntimeFailure(attempt, message.Params.Payload, true)
 			}
 		case "message.start":
 			messageStarted = true
 		case "message.delta":
 			if messageStarted {
 				if err = appendBounded(&output, attemptPayloadText(message.Params.Payload), request.Bounds.OutputBytes); err != nil {
-					return finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
+					return a.finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
 				}
 			}
 		case "error":
-			return finishRuntimeFailure(attempt, message.Params.Payload, request.ProviderFormatProbe)
+			return a.finishRuntimeFailure(attempt, message.Params.Payload, request.ProviderFormatProbe)
 		case "message.complete":
 			if !messageStarted {
 				continue
@@ -323,30 +323,30 @@ func (a *Adapter) AttemptTurn(ctx context.Context, request AttemptTurnRequest) (
 			// untrusted prose, never evidence that the runtime turn succeeded.
 			status, ok := message.Params.Payload["status"].(string)
 			if !ok {
-				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status missing or malformed"))
+				return a.finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status missing or malformed"))
 			}
 			switch status {
 			case "interrupted":
-				return finishAttempt(attempt, execution.StateCancelled, "runtime_turn_interrupted", context.Canceled)
+				return a.finishAttempt(attempt, execution.StateCancelled, "runtime_turn_interrupted", context.Canceled)
 			case "error":
-				return finishRuntimeFailure(attempt, message.Params.Payload, request.ProviderFormatProbe)
+				return a.finishRuntimeFailure(attempt, message.Params.Payload, request.ProviderFormatProbe)
 			case "complete":
 			default:
-				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status unknown"))
+				return a.finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion status unknown"))
 			}
 			text, ok := message.Params.Payload["text"].(string)
 			if !ok || message.Params.Payload["error"] != nil {
-				return finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion payload invalid"))
+				return a.finishAttempt(attempt, execution.StateFailed, "runtime_completion_invalid", errors.New("Hermes completion payload invalid"))
 			}
 			// The terminal payload is authoritative for response bytes; streamed
 			// previews may be partial and must not replace the final response.
 			output.Reset()
 			if err = appendBounded(&output, text, request.Bounds.OutputBytes); err != nil {
-				return finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
+				return a.finishAttempt(attempt, execution.StateFailed, "output_bound_exceeded", err)
 			}
-			finishedAt := time.Now().UTC()
+			finishedAt := a.now()
 			if !finishedAt.Before(authority.ExpiresAt) {
-				return finishAttempt(attempt, execution.StateExpired, "authority_expired", ErrAttemptDenied)
+				return a.finishAttempt(attempt, execution.StateExpired, "authority_expired", ErrAttemptDenied)
 			}
 			if err = checkAdmission(turnContext, request, finishedAt); err != nil {
 				return finishAttemptAt(attempt, execution.StateDenied, "authority_no_longer_effective", finishedAt, err)
@@ -451,18 +451,18 @@ func attemptPayloadText(payload map[string]any) string {
 	return ""
 }
 
-func finishContextError(attempt execution.Turn, expiresAt time.Time, ctx context.Context, err error) (AttemptTurnResult, error) {
+func (a *Adapter) finishContextError(attempt execution.Turn, expiresAt time.Time, ctx context.Context, err error) (AttemptTurnResult, error) {
 	if ctx.Err() != nil {
-		if !time.Now().UTC().Before(expiresAt) {
-			return finishAttempt(attempt, execution.StateExpired, "authority_expired", ctx.Err())
+		if !a.now().Before(expiresAt) {
+			return a.finishAttempt(attempt, execution.StateExpired, "authority_expired", ctx.Err())
 		}
-		return finishAttempt(attempt, execution.StateCancelled, "turn_cancelled_or_timed_out", ctx.Err())
+		return a.finishAttempt(attempt, execution.StateCancelled, "turn_cancelled_or_timed_out", ctx.Err())
 	}
-	return finishAttempt(attempt, execution.StateFailed, "runtime_gateway_failed", err)
+	return a.finishAttempt(attempt, execution.StateFailed, "runtime_gateway_failed", err)
 }
 
-func finishAttempt(attempt execution.Turn, state execution.State, reason string, cause error) (AttemptTurnResult, error) {
-	return finishAttemptAt(attempt, state, reason, time.Now().UTC(), cause)
+func (a *Adapter) finishAttempt(attempt execution.Turn, state execution.State, reason string, cause error) (AttemptTurnResult, error) {
+	return finishAttemptAt(attempt, state, reason, a.now(), cause)
 }
 
 func finishAttemptAt(attempt execution.Turn, state execution.State, reason string, finishedAt time.Time, cause error) (AttemptTurnResult, error) {

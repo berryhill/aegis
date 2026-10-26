@@ -354,6 +354,9 @@ func (s *Service) ConfigureFleet(repository fleet.Repository, service *orchestra
 	}
 	s.FleetRepository, s.Fleet, s.QueueWorker = repository, service, worker
 	worker.SetContributionRoleResolver(s.resolveContributionRole)
+	worker.SetContributionContinuityFactory(s.contributionExecutionObserver)
+	worker.SetContributionPreclaim(s.reserveContributionInitialAttempt)
+	worker.SetContributionCurrentAdmission(s.currentContributionAdmission)
 	worker.SetDoerHostApprovalResolver(s.resolveDoerHostApproval)
 	worker.SetDoerPassCapResolver(s.resolveDoerPassCap)
 	worker.SetCodingContinuationResolver(s.resolveCodingContinuation)

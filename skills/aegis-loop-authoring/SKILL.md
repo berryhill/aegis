@@ -14,6 +14,18 @@ metadata:
 
 # Aegis Loop authoring
 
+## Retained contribution continuity
+
+Use `/contribute resume [reference]` for a retained invocation under fresh
+same-owner authentication. Read the [implementation guide](../../docs/continuity/contribution-continuity.md)
+for exact canonical readback, protected role-provision review, immutable original
+Queue/claim/attempt, cumulative counters, unknown-outcome custody and native
+quiescence requirements. Login alone is neither approval nor task consent.
+Frozen candidate digests differ from pre-freeze pass lineage; write admission
+requires the private synchronous accepted-source custody join. Doer same-session
+controls and existing synthetic/live/installed qualification tiers are unchanged.
+No whole-contribution completion follows from a candidate or primitive receipt.
+
 ## Contribution acceptance boundary (#386)
 
 For contribution implementation/testing, read the repository's

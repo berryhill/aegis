@@ -1,5 +1,12 @@
 # Security Policy
 
+Retained contribution provisioning uses the owning API's inode-pinned protected
+companion and exact canonical plan/consumed approval/verified receipt readback.
+Companion status and six-hour dashboard authentication cannot grant role or native
+authority. Unknown outcomes remain non-replayable; write admission requires live
+private source custody and acknowledged native quiescence. See
+[continuity boundaries](docs/continuity/contribution-continuity.md).
+
 Managed contribution source inventories stay in private controller custody;
 tester model evidence includes schema/digest only, never complete source bytes
 or filenames. Builder context is explicitly admitted and bounded. Narrow

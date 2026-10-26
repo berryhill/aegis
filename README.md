@@ -1,5 +1,9 @@
 # Aegis
 
+Source-only [retained contribution continuity](docs/continuity/contribution-continuity.md)
+uses `/contribute resume [reference]`, exact protected provisioning readback and
+closed native custody joins. It is not whole-contribution or live qualification.
+
 Source candidate: [managed contribution candidates](docs/managed-contribution-candidate.md)
 retain bounded native repair/check evidence, exact owned phase-boundary custody
 and content-free tester model input. Candidate acceptance is not GitHub delivery,

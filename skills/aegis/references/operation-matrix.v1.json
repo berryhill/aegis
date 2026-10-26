@@ -51,6 +51,10 @@
     {
       "path": "aegis doer-setup-companion",
       "reason": "Hidden product-launched independent password/native-review companion; not an agent-operated terminal or public skill transport."
+    },
+    {
+      "path": "aegis contribution-decision-companion",
+      "reason": "Hidden inode-pinned contribution provisioning review companion; independent enrolled-password authentication and exact one-use review are required. Not an agent-operated approval command."
     }
   ],
   "framework_exclusions": [
@@ -238,12 +242,18 @@
       "sources": [
         "internal/command/root.go",
         "internal/api/server.go",
-        "internal/command/fleet_online.go"
+        "internal/command/fleet_online.go",
+        "internal/api/contribution_decision.go",
+        "internal/api/contribution_decision_delivery.go",
+        "internal/command/contribution_decision.go",
+        "internal/app/contribution_decision.go"
       ],
       "tests": [
         "internal/command/domain_surface_test.go",
         "internal/api/server_test.go",
-        "internal/command/fleet_online_preparation_test.go"
+        "internal/command/fleet_online_preparation_test.go",
+        "internal/api/contribution_decision_test.go",
+        "internal/api/contribution_decision_delivery_test.go"
       ],
       "cli": [
         "aegis plan",
@@ -266,7 +276,12 @@
         "POST /v1/approvals/:id/decision",
         "POST /v1/provision",
         "GET /v1/receipts",
-        "GET /v1/receipts/:id"
+        "GET /v1/receipts/:id",
+        "POST /console/contribution/decision-native/login",
+        "POST /console/contribution/decision-native/logout",
+        "POST /console/contribution/decision-native/review",
+        "POST /console/contribution/decision-native/decision",
+        "POST /console/contribution/decision-native/read"
       ],
       "transport_classification": "shipped"
     },
