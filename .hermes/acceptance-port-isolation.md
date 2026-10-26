@@ -78,16 +78,20 @@ The probe closes before the child's real bind: uncooperative software can still
 race it. The child's OS bind remains final; a bind failure is failure, not license
 to kill/reuse another listener or fall back to main.
 
-A small guardian holds the claim through spawn, execution and complete owned
-process-group shutdown. SIGINT/SIGTERM/SIGHUP request owned-group shutdown;
+A wrapper and small guardian share the same locked open-file description through
+spawn, execution and complete owned process-group shutdown. Both are subreapers.
+SIGINT/SIGTERM/SIGHUP request owned-group shutdown;
 normal/failed child exit also cleans ordinary descendants. After three seconds
 remaining owned group members receive SIGKILL. The lock stays held until the
 group is gone; an uninterruptible child can therefore block cleanup rather than
 release falsely. Failed launch releases custody without changing pool files.
 Wrapper SIGKILL/abrupt death closes a private pipe; the guardian then shuts down
-and reaps the owned group before release. Linux parent-death signaling also
-protects the direct child if the guardian itself crashes. The child inherits the
-claim descriptor as additional lifetime protection. These are cooperative
+and reaps the owned group before release. Before exec, the foreground child
+registers its newly created group over a private pipe that is closed before the
+command runs. If the guardian crashes, the surviving wrapper retains the lock,
+adopts ordinary descendants and shuts down that exact registered group before
+release. Linux parent-death signaling also protects the direct child. The child
+inherits the claim descriptor as additional lifetime protection. These are cooperative
 foreground process controls, **not confinement**: commands must not daemonize,
 close inherited custody and escape into another session, or arrange external
 service ownership. Simultaneous forced death of guardian and deliberately escaped
@@ -97,7 +101,9 @@ surviving listener is occupied, not reclaimable. Never kill other owners.
 
 The wrapper propagates normal child exit status, uses 128+signal for handled
 interruption/child signal death, and 125 for setup/spawn denial. Its own SIGKILL
-is reported by the caller as signal death. The sole helper metadata event contains
+is reported by the caller as signal death. Argument and setup/spawn errors use
+closed diagnostics, never raw OS exception filenames or command arguments.
+The sole helper metadata event contains
 chosen port and owner-child/supervisor PIDs, not argv, environment, secrets or
 configuration contents. Child output is passed through unchanged: keep secrets
 out of fixture output. The helper inherits the invoking environment; use a

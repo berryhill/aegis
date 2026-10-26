@@ -21,6 +21,11 @@ class Denied(RuntimeError):
     pass
 
 
+class SafeArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.exit(2, 'candidate port denied: invalid arguments\n')
+
+
 def open_pool(path):
     """Pin existing components; a private owned ancestor protects inner modes."""
     path = Path(path)
@@ -110,21 +115,44 @@ def reap():
             return
 
 
-def supervise(args, owner_pipe):
+def subreaper():
     # Orphaned ordinary descendants are reaped here, not left as group zombies.
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
         raise Denied('subreaper unavailable')
+    return libc
+
+
+def cleanup_group(pgid, child=None):
+    if owned_group_exists(pgid):
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    deadline = time.monotonic() + 3
+    while owned_group_exists(pgid):
+        if child is not None:
+            child.poll()
+        reap()
+        if time.monotonic() >= deadline:
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        time.sleep(0.02)
+    if child is not None:
+        child.wait()
+
+
+def supervise(args, owner_pipe, port, lock_fd, group_pipe):
+    libc = subreaper()
     stopped = []
     def stop(signum, _frame):
         stopped.append(signum)
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, stop)
-    pool_fd = open_pool(args.pool)
-    lock_fd = None
     child = None
     try:
-        port, lock_fd = claim(pool_fd, args.ports or PORTS)
         if stopped or select.select([owner_pipe], [], [], 0)[0]:
             return 130
         env = dict(os.environ, AEGIS_ACCEPTANCE_PORT=str(port))
@@ -137,8 +165,12 @@ def supervise(args, owner_pipe):
                 os._exit(125)
             if os.getppid() != supervisor_pid:
                 os._exit(125)
+            # Register only our new group before exec can create descendants.
+            # The command cannot observe or pass this private notification pipe.
+            os.write(group_pipe, str(os.getpid()).encode('ascii'))
+            os.close(group_pipe)
         child = subprocess.Popen(command, env=env, start_new_session=True,
-                                 pass_fds=(lock_fd,), preexec_fn=child_setup)
+                                 pass_fds=(lock_fd, group_pipe), preexec_fn=child_setup)
         print(json.dumps({'event': 'candidate_port_claimed', 'port': port,
                           'supervisor_pid': os.getpid(), 'child_pid': child.pid}),
               file=sys.stderr, flush=True)
@@ -154,29 +186,11 @@ def supervise(args, owner_pipe):
     finally:
         if child is not None:
             # Leader exit does not imply all its ordinary descendants exited.
-            if owned_group_exists(child.pid):
-                try:
-                    os.killpg(child.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-            deadline = time.monotonic() + 3
-            while owned_group_exists(child.pid):
-                child.poll()
-                reap()
-                if time.monotonic() >= deadline:
-                    try:
-                        os.killpg(child.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                time.sleep(0.02)
-            child.wait()
-        if lock_fd is not None:
-            os.close(lock_fd)
-        os.close(pool_fd)
+            cleanup_group(child.pid, child)
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = SafeArgumentParser(description=__doc__)
     parser.add_argument('--pool', default=os.environ.get('AEGIS_ACCEPTANCE_PORT_POOL'),
                         help='existing shared lock directory (required; no implicit pool)')
     parser.add_argument('--ports', type=int, nargs='+', help='test/diagnostic subset of candidate pool')
@@ -188,21 +202,40 @@ def main():
         parser.error('Linux, explicit --pool/environment and foreground command required')
     if os.geteuid() == 0 or os.getuid() != os.geteuid():
         parser.error('refuse privileged invocation')
+    # Both custodians retain this same locked open-file description.
+    pool_fd = open_pool(args.pool)
+    try:
+        port, lock_fd = claim(pool_fd, args.ports or PORTS)
+    finally:
+        os.close(pool_fd)
+    try:
+        return run_guardian(args, port, lock_fd)
+    finally:
+        os.close(lock_fd)
+
+
+def run_guardian(args, port, lock_fd):
+    subreaper()
     read_fd, write_fd = os.pipe()
+    group_read, group_write = os.pipe()
     # Guardian retains the claim when the invoking wrapper is SIGKILLed. EOF
     # triggers group shutdown; the launched command cannot inherit this pipe.
     pid = os.fork()
     if pid == 0:
         os.close(write_fd)
+        os.close(group_read)
         try:
-            code = supervise(args, read_fd)
-        except (Denied, OSError, subprocess.SubprocessError) as exc:
-            print('candidate port denied: ' + str(exc), file=sys.stderr, flush=True)
+            code = supervise(args, read_fd, port, lock_fd, group_write)
+        except Exception:
+            print('candidate port denied: setup or spawn failed',
+                  file=sys.stderr, flush=True)
             code = 125
         finally:
             os.close(read_fd)
+            os.close(group_write)
         os._exit(code)
     os.close(read_fd)
+    os.close(group_write)
     def forward(sig, _frame):
         try:
             os.kill(pid, sig)
@@ -213,10 +246,26 @@ def main():
     try:
         _, status = os.waitpid(pid, 0)
         code = os.waitstatus_to_exitcode(status)
+        if code < 0:
+            # Guardian death reparents ordinary descendants to this subreaper.
+            # The trusted pre-exec notification never names ambient listeners.
+            group = os.read(group_read, 32)
+            if group:
+                cleanup_group(int(group))
         return code if code >= 0 else 128 - code
     finally:
+        os.close(group_read)
         os.close(write_fd)
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Denied as exc:
+        # Only closed constant messages authored above, not OS exceptions.
+        print('candidate port denied: ' + str(exc), file=sys.stderr)
+        sys.exit(125)
+    except Exception:
+        # OSError.filename and subprocess errors can contain argv/private paths.
+        print('candidate port denied: setup or spawn failed', file=sys.stderr)
+        sys.exit(125)

@@ -199,6 +199,43 @@ class PortTests(unittest.TestCase):
         self.assertEqual(137, p.wait(timeout=8))
         self.gone(port)
 
+    def test_guardian_crash_cleans_ordinary_grandchild_before_release(self):
+        port = self.free_ports()[0]
+        code = ('import subprocess,sys,time; subprocess.Popen([sys.executable,"-c",'
+                + repr(SERVER) + ']); time.sleep(60)')
+        p = self.launch(code=code, ports=[port])
+        self.ready(p)
+        assert p.stderr is not None
+        self.assertTrue(select.select([p.stderr], [], [], 5)[0])
+        record = json.loads(p.stderr.readline())
+        try:
+            os.kill(record['supervisor_pid'], signal.SIGKILL)
+            self.assertEqual(137, p.wait(timeout=8))
+            self.gone(port)
+            fd = helper.open_pool(self.pool)
+            try:
+                _, claimed = helper.claim(fd, [port])
+                os.close(claimed)
+            finally:
+                os.close(fd)
+        finally:
+            # This group belongs exclusively to this private test fixture.
+            try:
+                os.killpg(record['child_pid'], signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def test_setup_spawn_and_argument_errors_do_not_echo_input(self):
+        canary = 'PORT_TEST_FAKE_SECRET_CANARY'
+        for args in (
+                ['--pool', str(self.pool), '--', '/nonexistent-' + canary],
+                ['--pool', str(self.pool / canary), '--', 'never-launch'],
+                ['--pool', str(self.pool), '--ports', canary, '--', 'never-launch']):
+            result = subprocess.run([sys.executable, str(HELPER), *args],
+                                    capture_output=True, text=True, timeout=5)
+            self.assertIn(result.returncode, (2, 125))
+            self.assertNotIn(canary, result.stdout + result.stderr)
+
     def test_missing_and_other_writable_lock_fail_closed(self):
         port = self.free_ports()[0]
         lock = self.pool / f'{port}.lock'

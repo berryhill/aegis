@@ -18,6 +18,8 @@ The parent independently ran the port/context suite: real concurrent claims, bus
 
 An inert fixture also claimed and bound an available port from the real operator pool, then released it. This is helper acceptance, not product execution. No gateway was restarted, configured or moved. No real-provider Loop/Graph/Trigger/contribution execution was performed for this tooling change. No production/user data or retained execution budgets were changed.
 
+The first independent tester rejected guardian-death grandchild custody and argv-derived spawn diagnostics. The parent reproduced both failures, added regressions, retained the failed frozen candidate/evidence and repaired the surviving-wrapper custody plus closed argument/setup diagnostics. Both causal regressions and the full 19-test port/context suite then passed. Fresh independent retest and exact-head CI remain separate gates before delivery.
+
 ## Launch-asset impact review
 
 Changed: AGENTS.md and engineering routing/contracts, CONTRIBUTING.md, CHANGELOG.md, source router skill/manifest, scripts and verification wiring. This file records the bounded launch/security review.
