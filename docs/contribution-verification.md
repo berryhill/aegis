@@ -104,6 +104,14 @@ to validate existing Check/Merge/Issue payloads and reviewed requirements. Full
 remote-proof/merge/later-corruption qualification and final #377/private-custody
 integration remain gaps. This consumer must not be used as issue-close authority.
 
+Independent review found that an optional PR update could select its own PR
+number for validation. The repair resolves that target from the owned creation
+effect or an independent reviewed pin, rejects contradictory/duplicate creation
+references, and binds the intent, observation, request target, number and canonical
+URL to that same PR. The original counterexample failed before the repair;
+focused normal/race regressions now pass. These remain controlled semantic tests,
+not a remote mutation or a whole-contribution disposition.
+
 ## Mandatory production join still pending
 
 The above work does NOT implement the complete final contribution verifier or
@@ -115,9 +123,10 @@ producer integrations are installed.
   Final verification must reload their real immutable history and consume live
   source custody; a caller-supplied role label, stop digest or nil gate is invalid.
 - #378 owns durable delivery intents/observation history and sanitized remote
-  proof. The privately integrated published PR #396 source now supplies sealed
-  history and per-check/review/protection readback consumed above; this is not a
-  claim that #396 merged, main is ready or remote behavior is independently accepted.
+  proof. PR #396 merged at `f3b8fa81918f51ec1a3fe12c3a0964aa6848629d` and is
+  integrated here; its sealed history and per-check/review/protection readback
+  supply the consumed source interfaces. Source merge does not establish the
+  remaining productive authority/quiescer join or real remote acceptance.
 - Pre-issue-close verification must produce an opaque exact-scope authorization
   over complete accepted behavior and merge proof. Final disposition follows
   actual scope-correct issue readback, avoiding a circular dependency in which

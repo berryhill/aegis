@@ -7,6 +7,10 @@ import (
 
 func retainedDeliveryPublication(proof delivery.ReadbackProof, p ContributionDeliveryPolicy, pr uint64) bool {
 	i := proof.Intent
+	if (i.Operation == delivery.PullRequest || i.Operation == delivery.UpdatePullRequest) &&
+		(pr == 0 || proof.Result.PR != pr || (i.Operation == delivery.UpdatePullRequest && i.PR != pr)) {
+		return false
+	}
 	actor, repository, effect := false, false, false
 	for _, f := range proof.Facts {
 		if f.HTTPStatus != 200 {
@@ -22,7 +26,7 @@ func retainedDeliveryPublication(proof delivery.ReadbackProof, p ContributionDel
 				effect = true
 			}
 		case "pull":
-			if (i.Operation == delivery.PullRequest || i.Operation == delivery.UpdatePullRequest) && f.HTMLURL == fmt.Sprintf("https://github.com/%s/pull/%d", i.Repository, pr) && f.Target.Repository == i.Repository && f.Number == pr && f.User != nil && f.User.Login == p.Actor && !f.Draft && f.Head != nil && f.Base != nil && f.Head.SHA == i.Head && f.Head.Ref == p.Branch && f.Base.Ref == p.Binding.Base && f.Base.SHA == p.BaseHead && f.Head.Repo.ID == i.RepositoryID && f.Base.Repo.ID == i.RepositoryID && f.Head.Repo.FullName == i.Repository && f.Base.Repo.FullName == i.Repository {
+			if (i.Operation == delivery.PullRequest || i.Operation == delivery.UpdatePullRequest) && f.HTMLURL == fmt.Sprintf("https://github.com/%s/pull/%d", i.Repository, pr) && f.Target.Repository == i.Repository && f.Target.PR == pr && f.Number == pr && f.User != nil && f.User.Login == p.Actor && !f.Draft && f.Head != nil && f.Base != nil && f.Head.SHA == i.Head && f.Head.Ref == p.Branch && f.Base.Ref == p.Binding.Base && f.Base.SHA == p.BaseHead && f.Head.Repo.ID == i.RepositoryID && f.Base.Repo.ID == i.RepositoryID && f.Head.Repo.FullName == i.Repository && f.Base.Repo.FullName == i.Repository {
 				effect = true
 			}
 		}

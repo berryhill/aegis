@@ -107,7 +107,15 @@ func assessRetainedPublication(h delivery.HistorySnapshot, p ContributionDeliver
 		case delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest:
 			pr := r.PR
 			if i.Operation == delivery.UpdatePullRequest {
-				pr = i.PR
+				// An optional effect cannot select the target it is being checked
+				// against. Resolve from the owned creation or independent policy pin.
+				var e error
+				pr, e = retainedContributionPR(h, p)
+				if e != nil || pr == 0 || i.PR != pr || r.PR != pr {
+					return "pr_invalid"
+				}
+			} else if i.Operation == delivery.PullRequest && p.PR != 0 && pr != p.PR {
+				return "pr_invalid"
 			}
 			if !retainedDeliveryPublication(proof, p, pr) {
 				return "publication_invalid"
@@ -121,4 +129,28 @@ func assessRetainedPublication(h delivery.HistorySnapshot, p ContributionDeliver
 	}
 
 	return "publication_assessed"
+}
+
+// Resolve the existing owned creation, never an optional update's own target.
+// A reviewed nonzero pin is useful to individual proof helpers; the complete
+// history verifier separately requires the actual creation effect to exist.
+func retainedContributionPR(h delivery.HistorySnapshot, p ContributionDeliveryPolicy) (uint64, error) {
+	pr, found := p.PR, false
+	for _, chain := range h.Histories {
+		if len(chain) == 0 {
+			return 0, delivery.ErrDenied
+		}
+		r := chain[len(chain)-1].Record
+		if r.Intent.Reference != p.Binding.Reference || r.Intent.Operation != delivery.PullRequest || r.Outcome != delivery.Confirmed {
+			continue
+		}
+		if found || r.PR == 0 || (pr != 0 && r.PR != pr) {
+			return 0, delivery.ErrDenied
+		}
+		pr, found = r.PR, true
+	}
+	if pr == 0 {
+		return 0, delivery.ErrDenied
+	}
+	return pr, nil
 }
