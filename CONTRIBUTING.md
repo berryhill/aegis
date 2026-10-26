@@ -1,5 +1,10 @@
 # Contributing to Aegis
 
+Before launching an engineering acceptance candidate, read the repository-owned
+[port-isolation workflow](.hermes/acceptance-port-isolation.md). Main 8448/8098 is
+reserved; dynamically claim 8450–8469 with isolated state and lifetime custody.
+This is development tooling, not a new Aegis product operation or authority grant.
+
 ## Retained Doer protected setup (source candidate)
 
 `loops setup-protected FILE` routes only exact draft ID/version and independent

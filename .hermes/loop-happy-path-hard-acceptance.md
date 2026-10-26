@@ -6,6 +6,11 @@ This document defines acceptance; saving it does not authorize execution, implem
 
 ## Target and discovery
 
+For source-candidate testing first read [acceptance port isolation](acceptance-port-isolation.md).
+Candidates dynamically claim 8450–8469; main-only 8448/8098 is reserved for
+Matt/Xander clean-main integration. The installed URL below is historical target
+context, not a candidate default. Location does not change any criterion below.
+
 Target deployment:
 https://silas-workstation.taild7c550.ts.net:8446/console
 

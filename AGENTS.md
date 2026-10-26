@@ -1,5 +1,22 @@
 # Aegis Project Memory and Working Rules
 
+## Candidate acceptance port isolation — read before launch
+
+Read [.hermes/acceptance-port-isolation.md](.hermes/acceptance-port-isolation.md)
+before candidate acceptance. On silas-workstation, external **8448** and actual
+backend **127.0.0.1:8098** are reserved together for Matt/Xander clean-main
+integration, never builder candidates. Builders dynamically claim ANY available
+port **8450–8469**, with one shared existing flock pool and actual socket check,
+held across the entire foreground server/test/stop lifetime. Use
+`scripts/acceptance_port.py` with the explicit operator pool; no fixed assignments,
+parallel claim roots, deletion/replacement of lock inodes, killing other listeners,
+service changes or new network exposure. Bind loopback and isolate worktree,
+configuration, state/database, workspace and test identity. Never copy main's
+configuration/credentials/history or borrow its authority. Port location changes
+do not waive Loop/Graph/Trigger, real-provider or installed-target acceptance.
+Existing sessions need explicit adoption; fresh effective loader verification is
+required, not merely `/reload-skills`.
+
 ## Project identity
 
 Aegis is an open-source identity, trust, and session-control layer for agents running on explicit existing AI runtimes.

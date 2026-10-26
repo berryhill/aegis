@@ -21,6 +21,10 @@ Plain implementation includes verified merge, not an unsolicited release or live
 
 ## Working behavior and acceptance
 
+Before candidate launch follow [acceptance port isolation](acceptance-port-isolation.md):
+reserved main 8448/8098 is not a builder target; dynamically claim 8450–8469 with
+isolated state and lifetime custody. This changes location, not the required proof.
+
 Define the domain obligation, observable journey, starting state, bounded scope, denial behavior and evidence before editing. Reproduce reported failures and add a regression. Implement the actual integration, not a stub, mocked success, hardcoded expected output or manually coordinated substitute for missing product behavior.
 
 Read the applicable hard acceptance contracts indexed in [README.md](README.md). Preserve exact immutable identities and required authority/evidence. Mark scope coverage honestly: implemented-and-tested, implemented-but-live-proof-pending, or not implemented. Tests prove only what they actually exercise.
