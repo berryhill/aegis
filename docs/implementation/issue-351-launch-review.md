@@ -17,6 +17,7 @@ decoded data fields; the companion's null/duplicate/unknown policy is unchanged.
 Historical result reads verify full canonical history and the relevant recorded
 interval instead of resurrecting live grants. Current effect admission is unchanged.
 
+
 The regression uses synthetic registered participants with real isolated service
 persistence. It verifies different recorded owners under the configured principal,
 owned publication/activation/successor mutation, foreign-owner denial, shared
@@ -65,7 +66,7 @@ update only the affected boundaries and procedures. No release is generated.
 | Quickstart and no-key demo | Unaffected; no live model/demo run performed for this test/documentation change. Their existing limited evidence claims remain. |
 | Recording | Unaffected and historical; no new recording or successful runtime output synthesized. |
 | Release binaries/checksums | Not generated or published by this source contribution. Development package proof remains separately identified, not a release. |
-| Contributor backlog/issues | Unaffected; #351 is the controlling issue and remains open. No new issue or rollout is inferred. |
+| Contributor backlog/issues | #351 remains the context. The owner merged its scoped admission/recipe PR #398 and closed the issue; this follow-on runtime repair does not reverse that action or treat closure as pilot evidence. No new issue or rollout is inferred. |
 | Source-owned skills and manifest | Minimal Loop/Queue/evidence/approval guidance updated and canonical manifest regenerated from combined source; no new command, route, installer or skill family. |
 
 ## Follow-on regression and review evidence
@@ -101,6 +102,15 @@ consumer canonical-fact regression and malformed/substituted binding tests pass.
 These are scoped local/source and synthetic-provider results, not repository-wide
 CI, genuine human decisions, live-provider proof or final merge acceptance.
 
+The owner subsequently merged the original three-file #398 as `d67d5142` and
+closed #351. Continue this explicitly approved runtime repair in a linked
+follow-on branch, preserving that issue action. Integrate `ac3934f3` current main
+(including #317/#399) non-forcibly; preserve both source boundary notices and
+regenerate the skill manifest from combined skills. The follow-on must receive
+new frozen-source/executable checks and exact-head CI; neither earlier base's
+results nor the issue closure qualify the integrated candidate.
+
+
 ## Mandatory acceptance still pending
 
 Do not merge merely because source tests or CI are green. Preserve the
@@ -120,6 +130,7 @@ generation; unrelated skills and the shared tree were unchanged. That installed
 generation and the current source candidate have distinct identities, not an
 automatic new-code deployment claim. Runtime/provisioning/host decisions and real
 Runs remain separate. #385's original case and budget remain deferred and untouched.
+
 
 PR publication may carry this scoped source work for review and exact-head CI;
 it must not close #351, claim live acceptance, or waive the merge gate. Release,

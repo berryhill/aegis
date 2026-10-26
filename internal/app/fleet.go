@@ -272,7 +272,16 @@ func (v QueueExecutionView) IsDirectLoop() bool {
 	return v.SourceKind == graph.SourceDirectLoop
 }
 
+// GraphNodeView exposes causal facts only, never managed contracts or source bytes.
+type GraphNodeView struct {
+	Admission   fleet.GraphNodeAdmission       `json:"admission"`
+	Disposition *disposition.Record            `json:"disposition,omitempty"`
+	Artifact    *evidence.RuntimeArtifact      `json:"artifact,omitempty"`
+	Receipts    []evidence.VerificationReceipt `json:"receipts,omitempty"`
+}
+
 type QueueExecutionView struct {
+	GraphNodes []GraphNodeView         `json:"graph_nodes,omitempty"`
 	Debugger   *ExecutionDebugger      `json:"debugger,omitempty"`
 	SourceKind graph.SourceKind        `json:"source_kind"`
 	Source     reference.RevisionRef   `json:"source"`
@@ -1193,6 +1202,10 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		topology, loadErr := s.Fleet.ResolveRunTopology(ctx, snapshot)
 		if loadErr != nil || len(topology.Nodes) == 0 {
 			return nil, fleet.ErrCorrupt
+		}
+		view.GraphNodes, loadErr = readGraphNodes(ctx, s.FleetRepository, item, topology.Nodes)
+		if loadErr != nil {
+			return nil, loadErr
 		}
 		view.SourceKind, view.Source, view.Inputs = graph.SourcePublishedGraph, snapshot.Graph, snapshot.Inputs
 		if snapshot.SchemaVersion == graph.DirectRunSnapshotSchemaVersion {

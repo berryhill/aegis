@@ -5,6 +5,16 @@ uses exact controller-mediated workspace, protected setup and evidence bindings.
 Different recorded ownership is not independent profile authentication. Retained
 setup review is not consent or execution; isolated tests do not qualify a live pilot.
 
+## #317 bounded chain source boundary
+
+The current source adds the exact raw-v2 / managed-v7 two-node chain and optional
+typed Queue node checkpoint readback described in
+[the source contract](docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md).
+Earlier single-node-only descriptions below refer to the historical qualified
+vertical, not a denial of this additive source path. General scheduling,
+real-provider qualification and installed acceptance remain separate and unproven.
+
+
 Source candidate: [managed contribution candidates](docs/managed-contribution-candidate.md)
 retain bounded native repair/check evidence, exact owned phase-boundary custody
 and content-free tester model input. Candidate acceptance is not GitHub delivery,
