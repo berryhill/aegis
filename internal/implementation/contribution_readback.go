@@ -17,10 +17,31 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	if r.Policy.Validate() != nil || r.RunID != id || int(r.Consumed) < len(r.Passes) {
 		return bad
 	}
-	if r.Baseline.OutputDigest != "" {
-		wire, err := e.DB.Get([]byte("contribution/baseline/" + digest([]byte(id))))
-		expected, _ := json.Marshal(r.Baseline)
-		if err != nil || !bytes.Equal(wire, expected) || previousBytes(e.DB, r.Baseline.OutputDigest) == nil {
+	// Reload independently of mutable baseline fields. Preparation may legitimately
+	// have no baseline yet, but progress beyond it must retain actual RED proof.
+	completedBaseline := r.Consumed > 0 || len(r.Passes) > 0 || r.Expected != nil || r.BoundarySource != "" || r.BoundaryIndex != "" ||
+		r.State == "phase_boundary" || r.State == "candidate_accepted" || r.State == "candidate_budget_exhausted"
+	wire, baselineErr := e.DB.Get([]byte("contribution/baseline/" + digest([]byte(id))))
+	emptyBaseline, _ := json.Marshal(ContributionCheck{})
+	expectedBaseline, _ := json.Marshal(r.Baseline)
+	if !errors.Is(baselineErr, ErrNotFound) || completedBaseline || !bytes.Equal(emptyBaseline, expectedBaseline) {
+		if baselineErr != nil || !bytes.Equal(wire, expectedBaseline) {
+			return bad
+		}
+		output := previousBytes(e.DB, r.Baseline.OutputDigest)
+		if output == nil || !exactContributionTests(r.Baseline, r.Policy) || r.Baseline.Review != "" || len(r.Baseline.Criteria) != 0 {
+			return bad
+		}
+		if r.Baseline.Outcome != "failed" && r.Baseline.Outcome != "passed" {
+			return bad
+		}
+		if r.Baseline.Outcome == "passed" && !requiredTestsPassed(output, r.Baseline.RequiredTests) {
+			return bad
+		}
+		if r.Baseline.Outcome == "failed" && requiredTestsPassed(output, r.Baseline.RequiredTests) {
+			return bad
+		}
+		if completedBaseline && (r.Baseline.Outcome != "failed" || !requiredRegressionFailed(output, r.Baseline.RequiredTests)) {
 			return bad
 		}
 	}
@@ -59,13 +80,9 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 		if !bytes.Equal(actual, wanted) || !independentContributionRole(v.Builder, p.Tester) {
 			return bad
 		}
-		if len(p.Check.RequiredTests) != len(r.Policy.Criteria) {
+		if !exactContributionTests(p.Check, r.Policy) || (p.Check.Outcome != "passed" && p.Check.Outcome != "failed") ||
+			(p.Check.Outcome == "failed" && requiredTestsPassed(output, p.Check.RequiredTests)) {
 			return bad
-		}
-		for j, criterion := range r.Policy.Criteria {
-			if p.Check.RequiredTests[j] != criterion.Test {
-				return bad
-			}
 		}
 		for _, prior := range r.Passes[:i] {
 			if prior.Tester.SessionID == p.Tester.SessionID || prior.Tester.AuthorityID == p.Tester.AuthorityID || prior.Tester.RuntimeSessionID == p.Tester.RuntimeSessionID {
@@ -97,6 +114,18 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 func contributionPolicyDigest(p loop.ContributionExecutionPolicy) string {
 	b, _ := json.Marshal(p)
 	return digest(b)
+}
+
+func exactContributionTests(check ContributionCheck, policy loop.ContributionExecutionPolicy) bool {
+	if len(check.RequiredTests) != len(policy.Criteria) {
+		return false
+	}
+	for i, criterion := range policy.Criteria {
+		if check.RequiredTests[i] != criterion.Test {
+			return false
+		}
+	}
+	return true
 }
 
 var ErrContributionHandoffDenied = errors.New("contribution handoff dependencies denied")

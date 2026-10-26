@@ -65,6 +65,8 @@ func TestContributionIndependentReloadRejectsSubstitution(t *testing.T) {
 		})
 	}
 	r := ContributionReceipt{Schema: ContributionReceiptV1, Binding: m.Binding, Manifest: ref, Boundary: m.Target, Outcome: "merged-unresolved", Reason: "merged_validation_unresolved", Merge: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Evidence: []string{m.CandidateEvidence, m.AuthorityEvidence}, ObservedAt: m.ObservedAt}
+	r.Evidence = append(r.Evidence, m.DeliveryEvidence...)
+	r.Evidence = append(r.Evidence, m.IssueEvidence)
 	w, _ := MarshalContributionReceipt(r)
 	rr, _ := s.PutBlob(w)
 	if _, err := v.ReloadContributionReceipt(ctx, rr, m.Binding, ref, r.Evidence); err != nil {

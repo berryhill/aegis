@@ -38,12 +38,29 @@ func (v *BlobVerifier) ReloadContributionReceipt(ctx context.Context, ref string
 	if err != nil || r.Binding != expected || r.Manifest != manifest || len(r.Evidence) != len(required) {
 		return ContributionReceipt{}, ErrContributionEvidence
 	}
+	// Caller-selected evidence cannot widen the immutable target or omit its proof.
+	m, err := v.ReloadContributionManifest(ctx, r.Manifest, expected, r.Boundary)
+	if err != nil {
+		return ContributionReceipt{}, ErrContributionEvidence
+	}
 	seen := map[string]bool{}
 	for _, x := range required {
 		if !validDigest(x) || seen[x] {
 			return ContributionReceipt{}, ErrContributionEvidence
 		}
 		seen[x] = true
+	}
+	obligations := append([]string{m.CandidateEvidence, m.AuthorityEvidence}, m.DeliveryEvidence...)
+	if m.IssueEvidence != "" {
+		obligations = append(obligations, m.IssueEvidence)
+	}
+	if len(required) != len(obligations) {
+		return ContributionReceipt{}, ErrContributionEvidence
+	}
+	for _, ref := range obligations {
+		if !seen[ref] {
+			return ContributionReceipt{}, ErrContributionEvidence
+		}
 	}
 	for _, x := range r.Evidence {
 		if !seen[x] {

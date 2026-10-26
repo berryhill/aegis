@@ -2,6 +2,7 @@ package implementation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -132,7 +133,70 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		t.Fatal("restart reset budget")
 	}
 	v := r.Passes[1].Candidate
+	t.Run("independent-missing-baseline-rejected", func(t *testing.T) {
+		key := contributionKey("run")
+		original, err := e.DB.Get(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer e.DB.Put(key, original)
+		copy := r
+		copy.Baseline = ContributionCheck{Outcome: "failed"}
+		wire, _ := json.Marshal(copy)
+		if err := e.DB.Put(key, wire); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy); err == nil {
+			t.Fatal("native export accepted missing immutable RED baseline")
+		}
+	})
 	// The contribution verifier reloads the actual producer records and native
+	for _, mutation := range []string{"immutable-missing", "output-missing", "wrong-tests", "fake-red", "baseline-criteria", "baseline-outcome", "pass-outcome"} {
+		t.Run("baseline-proof-"+mutation, func(t *testing.T) {
+			key := contributionKey("run")
+			original, _ := e.DB.Get(key)
+			baselineKey := []byte("contribution/baseline/" + digest([]byte("run")))
+			immutable, _ := e.DB.Get(baselineKey)
+			defer e.DB.Put(key, original)
+			defer e.DB.Put(baselineKey, immutable)
+			var copy ContributionRecord
+			if err := json.Unmarshal(original, &copy); err != nil {
+				t.Fatal(err)
+			}
+			switch mutation {
+			case "immutable-missing":
+				if err := e.DB.Put(baselineKey, nil); err != nil {
+					t.Fatal(err)
+				}
+			case "output-missing":
+				copy.Baseline.OutputDigest = digest([]byte("absent"))
+			case "wrong-tests":
+				copy.Baseline.RequiredTests = copy.Baseline.RequiredTests[:1]
+			case "fake-red":
+				copy.Baseline.OutputDigest = copy.Passes[1].Check.OutputDigest
+			case "baseline-criteria":
+				copy.Baseline.Criteria = copy.Passes[1].Check.Criteria
+			case "baseline-outcome":
+				copy.Baseline.Outcome = "passed"
+			case "pass-outcome":
+				copy.Passes[0].Check.Outcome = "unknown"
+				passKey := []byte(fmt.Sprintf("contribution/acceptance/%s/1", digest([]byte("run"))))
+				old, _ := e.DB.Get(passKey)
+				defer e.DB.Put(passKey, old)
+				wire, _ := json.Marshal(copy.Passes[0])
+				e.DB.Put(passKey, wire)
+			}
+			if mutation != "immutable-missing" {
+				wire, _ := json.Marshal(copy.Baseline)
+				e.DB.Put(baselineKey, wire)
+			}
+			wire, _ := json.Marshal(copy)
+			e.DB.Put(key, wire)
+			if _, err := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy); err == nil {
+				t.Fatal("invalid baseline/pass proof accepted")
+			}
+		})
+	}
 	// observations, not a caller's PASS report or a copied candidate digest.
 	exported, exportErr := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy)
 	if exportErr != nil || len(exported) == 0 {
