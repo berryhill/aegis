@@ -84,13 +84,13 @@ func assessRetainedPublication(h delivery.HistorySnapshot, p ContributionDeliver
 				}
 				pub := req.Publication
 				if i.Head != spec.Commit || pub.Tree != spec.Tree || pub.Parent != spec.Parent || pub.MessageDigest != contribution.Digest([]byte(p.Message)) || pub.Author.Name != p.Author.Name || pub.Author.Email != p.Author.Email || pub.Committer.Name != p.Committer.Name || pub.Committer.Email != p.Committer.Email {
-					return "publication_invalid"
+					return "publication_authorship_invalid"
 				}
 				// Adapter dates may use equivalent UTC offset spelling; compare instants.
 				for _, v := range []string{pub.Author.Date, pub.Committer.Date} {
 					parsed, e := time.Parse(time.RFC3339, v)
 					if e != nil || !parsed.Equal(stamp) {
-						return "publication_invalid"
+						return "publication_timestamp_invalid"
 					}
 				}
 			}
@@ -118,7 +118,7 @@ func assessRetainedPublication(h delivery.HistorySnapshot, p ContributionDeliver
 				return "pr_invalid"
 			}
 			if !retainedDeliveryPublication(proof, p, pr) {
-				return "publication_invalid"
+				return "publication_readback_invalid"
 			}
 		case delivery.TransferGraph:
 			// Exact graph payload is checked separately by the owning canonical

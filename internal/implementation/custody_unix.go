@@ -3,6 +3,8 @@
 package implementation
 
 import (
+	"errors"
+	"fmt"
 	"golang.org/x/sys/unix"
 	"os"
 	"os/exec"
@@ -18,6 +20,9 @@ func lockWorkspace(path string) (func(), error) {
 	}
 	if err = unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		f.Close()
+		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+			return nil, fmt.Errorf("%w: %w", ErrWorkspaceBusy, err)
+		}
 		return nil, err
 	}
 	return func() { unix.Flock(int(f.Fd()), unix.LOCK_UN); f.Close() }, nil

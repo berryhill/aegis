@@ -108,12 +108,12 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 	projection := &ContributionDeliverySource{service: s, subject: subject, key: key, policyRef: ref, policies: policies}
 	plan, projectionErr := projection.project(ctx, p.Binding.Reference, p, candidate)
 	if projectionErr != nil {
-		return fail("publication_invalid")
+		return fail("publication_projection_invalid")
 	}
 	git := &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}
 	actualCommit := git.Reconcile(ctx, plan.Commit)
 	if actualCommit.Outcome != delivery.Confirmed || actualCommit.Head != plan.Head || actualCommit.Tree != plan.Commit.Tree {
-		return fail("publication_invalid")
+		return fail("publication_local_state_invalid")
 	}
 	if code == "retained_delivery_verified" {
 		code = assessRetainedPublication(h, p, target, plan.Commit, plan.Objects)

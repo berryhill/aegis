@@ -270,6 +270,66 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		t.Fatal("typed failure packet missing")
 	}
 	t.Logf("candidate source=%s executable=%s head-anchor=%s", v.Source.Digest, v.Executable, v.HeadCommit)
+	for _, mode := range []string{"terminal-last", "failed-action", "failed-post-gate", "source-drift", "generic-unchanged"} {
+		t.Run("terminal-lifecycle-"+mode, func(t *testing.T) {
+			originalAdmit := e.Admit
+			defer func() { e.Admit = originalAdmit }()
+			terminalCalled, actionCalled, gates := false, false, 0
+			e.Admit = func(ctx context.Context, effect string) error {
+				if terminalCalled {
+					t.Error("admission/effect after terminal commit")
+					return errors.New("after terminal")
+				}
+				return originalAdmit(ctx, effect)
+			}
+			path := filepath.Join(c.Workspace, "value.go")
+			original, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			defer os.WriteFile(path, original, 0600)
+			gate := func(context.Context, ContributionCandidate) error {
+				gates++
+				if mode == "failed-post-gate" && gates == 2 {
+					return errors.New("post gate denied")
+				}
+				return nil
+			}
+			action := func(context.Context, ContributionCandidate) error {
+				actionCalled = true
+				if mode == "failed-action" {
+					return errors.New("action failed")
+				}
+				if mode == "source-drift" {
+					return os.WriteFile(path, []byte("changed after acceptance"), 0600)
+				}
+				return nil
+			}
+			commit := func(context.Context, ContributionCandidate) error {
+				if !actionCalled || gates != 2 {
+					t.Fatal("commit before action/post gate")
+				}
+				unlock, err := lockWorkspace(c.Workspace)
+				if err == nil {
+					unlock()
+					t.Fatal("workspace lock released before terminal commit")
+				}
+				terminalCalled = true
+				return nil
+			}
+			var terminalErr error
+			if mode == "generic-unchanged" {
+				terminalErr = e.WithAcceptedCandidate(ctx, "run", "contract", policy, gate, action)
+			} else {
+				terminalErr = e.WithAcceptedCandidateFinalization(ctx, "run", "contract", policy, gate, action, commit)
+			}
+			wantCommit := mode == "terminal-last"
+			wantError := mode == "failed-action" || mode == "failed-post-gate" || mode == "source-drift"
+			if terminalCalled != wantCommit || (terminalErr != nil) != wantError || gates != 2 {
+				t.Fatalf("mode=%s commit=%t gates=%d err=%v", mode, terminalCalled, gates, terminalErr)
+			}
+		})
+	}
 	for _, kind := range []string{"source", "new", "ignored", "mode", "index", "toolchain", "executable", "README.md", "generated.txt", "review-ledger"} {
 		t.Run(kind, func(t *testing.T) {
 			p := filepath.Join(c.Workspace, "value.go")

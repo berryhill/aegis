@@ -10,12 +10,35 @@ import (
 	executiondomain "github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/queue"
 )
 
 // ErrNoContributionContinuation permits the original path only after a positive
 // canonical read proves that no continuation was ever admitted.
 var ErrNoContributionContinuation = errors.New("no contribution continuation")
+
+var ErrContributionCustodyBusy = implementation.ErrWorkspaceBusy
+
+// Read-only synchronization for finalizer winner reconciliation. The path is
+// resolved from the exact retained owning contract, never selected by a caller.
+func (w *QueueWorker) WaitContributionFinalization(ctx context.Context, subject core.Subject, queueID, run, contract string) error {
+	if w == nil || w.repository == nil {
+		return ErrWorkerDenied
+	}
+	owner, ok := w.repository.(fleet.ContributionRepository)
+	if !ok {
+		return ErrWorkerDenied
+	}
+	c, err := owner.GetContributionForQueue(ctx, queueID)
+	if err != nil {
+		return err
+	}
+	if c.OwnerID != subject.PrincipalID || c.QueueItemID != queueID || c.RunID != run || c.Digest != contract {
+		return ErrWorkerDenied
+	}
+	return implementation.WaitWorkspaceCustody(ctx, c.Worktree)
+}
 
 // SetContributionFetch supplies a controller-owned fixture transport only. It is
 // not a WorkRequest/model input. Nil preserves strict production HTTPS fetch;
@@ -127,6 +150,18 @@ type ContributionQuiescenceGate = implementation.ContributionQuiescenceGate
 func (w *QueueWorker) WithAcceptedContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision, gate ContributionQuiescenceGate, action func(context.Context, ContributionCandidate) error) error {
 	_, err := w.acceptedContributionCandidate(ctx, subject, queueID, revision, func(e *implementation.ManagedContribution, run, contract string, p loop.ContributionExecutionPolicy) (implementation.ContributionCandidate, error) {
 		return implementation.ContributionCandidate{}, e.WithAcceptedCandidate(ctx, run, contract, p, gate, action)
+	})
+	return err
+}
+
+// Only the explicit immutable final-verification profile may select the
+// terminal-last custody lifecycle. The generic handoff above is unchanged.
+func (w *QueueWorker) WithFinalizableContributionCandidate(ctx context.Context, subject core.Subject, queueID string, revision loop.LoopRevision, gate ContributionQuiescenceGate, action, terminal func(context.Context, ContributionCandidate) error) error {
+	if revision.Contribution == nil || revision.Contribution.FinalVerification != "aegis.contribution.final.v1" || terminal == nil {
+		return ErrWorkerDenied
+	}
+	_, err := w.acceptedContributionCandidate(ctx, subject, queueID, revision, func(e *implementation.ManagedContribution, run, contract string, p loop.ContributionExecutionPolicy) (implementation.ContributionCandidate, error) {
+		return implementation.ContributionCandidate{}, e.WithAcceptedCandidateFinalization(ctx, run, contract, p, gate, action, terminal)
 	})
 	return err
 }

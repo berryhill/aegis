@@ -22,6 +22,34 @@ import (
 // CompleteQueueItem atomically publishes immutable evidence metadata, the
 // terminal disposition, the queue transition, and authoritative audit fact.
 func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader) error {
+	return s.completeQueueItem(ctx, completion, fact, evidenceReader, nil)
+}
+
+// CompleteContributionQueueItem admits either original-lease completion or the
+// explicit current-role/continuation report variant. Generic completion retains
+// its original checks; continuation never renews the historical claim authority.
+// Every contribution anchor is independently reloaded in the same transaction.
+func (s *Store) CompleteContributionQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, reader fleet.EvidenceReader) error {
+
+	if completion.Artifact == nil || reader == nil || !evidence.ValidateContributionFinalBinding(completion.Provenance, *completion.Artifact, completion.Receipts) {
+		return fleet.ErrConflict
+	}
+	wire, err := reader.GetBlob(completion.Artifact.ContentRef)
+	if err != nil {
+		return fleet.ErrConflict
+	}
+	report, err := evidence.DecodeContributionTerminalReport(completion.Artifact.ContentRef, wire)
+	if err != nil {
+		return fleet.ErrConflict
+	}
+	state, reason, ok := evidence.ContributionTerminalMapping(report.Outcome)
+	if !ok || completion.Disposition.State != execution.State(state) || completion.Disposition.ReasonCode != reason {
+		return fleet.ErrConflict
+	}
+	return s.completeQueueItem(ctx, completion, fact, reader, &report)
+}
+
+func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader, contributionReport *evidence.ContributionTerminalReport) error {
 	dispositionWire, err := disposition.Marshal(completion.Disposition)
 	if err != nil {
 		return err
@@ -82,7 +110,15 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 		// Lease expiry only permits recording the exact still-active claim's
 		// evidence-free expired outcome. It does not extend execution authority
 		// or permit late success (or any other late disposition).
-		if !completion.Transition.OccurredAt.Before(storedClaim.ExpiresAt) &&
+		completingAuthority := storedClaim.Authority
+		currentContribution := contributionReport != nil && contributionReport.Current != nil
+		if currentContribution {
+			if !validContributionCurrentCompletion(txn, *contributionReport, storedClaim, completion.Transition.OccurredAt) {
+				return fleet.ErrConflict
+			}
+			completingAuthority = contributionReport.Current.Authority
+		}
+		if !currentContribution && !completion.Transition.OccurredAt.Before(storedClaim.ExpiresAt) &&
 			(completion.Disposition.State != execution.StateExpired || completion.Transition.To != queue.StateExpired || completion.Artifact != nil || len(completion.Receipts) != 0) {
 			return fleet.ErrConflict
 		}
@@ -94,7 +130,7 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 		if e != nil || attempt.ClaimID != storedClaim.ClaimID || attempt.GraphRunID != completion.Disposition.GraphRunID || attempt.LoopExecutionID != completion.Disposition.LoopExecutionID || attempt.QueueItem != completion.Disposition.QueueItem {
 			return fleet.ErrConflict
 		}
-		if completion.Disposition.Authority != storedClaim.Authority || completion.Transition.QueueItemID != storedClaim.QueueItem.ID || completion.Transition.ClaimID != storedClaim.ClaimID || completion.Transition.From != queue.StateClaimed || queueState(completion.Disposition.State) != completion.Transition.To || completion.Transition.Reason != completion.Disposition.ReasonCode || !completion.Transition.OccurredAt.Equal(completion.Disposition.OccurredAt) {
+		if completion.Disposition.Authority != completingAuthority || completion.Transition.QueueItemID != storedClaim.QueueItem.ID || completion.Transition.ClaimID != storedClaim.ClaimID || completion.Transition.From != queue.StateClaimed || queueState(completion.Disposition.State) != completion.Transition.To || completion.Transition.Reason != completion.Disposition.ReasonCode || !completion.Transition.OccurredAt.Equal(completion.Disposition.OccurredAt) {
 			return fleet.ErrConflict
 		}
 		if fact.Event.Type != "fleet.disposition.recorded" || fact.Event.Reason != completion.Disposition.ReasonCode || fact.Event.Outcome != string(completion.Disposition.State) || fact.Event.Metadata["disposition_id"] != completion.Disposition.DispositionID || fact.Event.Metadata["transition_id"] != completion.Transition.TransitionID || fact.Event.Metadata["terminal_at"] != completion.Disposition.OccurredAt.UTC().Format(time.RFC3339Nano) {
@@ -136,6 +172,13 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			}
 			mandateID = binding.MandateID
 		}
+		if currentContribution {
+			p := contributionReport.Current
+			if p.OriginalMandate != mandateID || fact.Event.Metadata["original_authority"] != storedClaim.Authority.ID || fact.Event.Metadata["original_mandate"] != mandateID || fact.Event.Metadata["completing_authority"] != p.Authority.ID || fact.Event.Metadata["completing_mandate"] != p.Mandate || fact.Event.StanzaID != p.Stanza {
+				return fleet.ErrConflict
+			}
+			mandateID = p.Mandate
+		}
 		if fact.Event.MandateID != mandateID {
 			return fleet.ErrConflict
 		}
@@ -145,7 +188,7 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			return fleet.ErrConflict
 		}
 		if completion.Artifact != nil {
-			if len(completion.Disposition.ArtifactIDs) != 1 || completion.Disposition.ArtifactIDs[0] != completion.Artifact.ID || completion.Artifact.AttemptID != attempt.AttemptID || completion.Artifact.AuthorityContextID != storedClaim.Authority.ID || completion.Artifact.AuthorityContextDigest != storedClaim.Authority.Digest || completion.Artifact.RunID != attempt.LoopExecutionID {
+			if len(completion.Disposition.ArtifactIDs) != 1 || completion.Disposition.ArtifactIDs[0] != completion.Artifact.ID || completion.Artifact.AttemptID != attempt.AttemptID || completion.Artifact.AuthorityContextID != completingAuthority.ID || completion.Artifact.AuthorityContextDigest != completingAuthority.Digest || completion.Artifact.RunID != attempt.LoopExecutionID {
 				return fleet.ErrConflict
 			}
 		} else if len(completion.Disposition.ArtifactIDs) != 0 {
@@ -162,9 +205,21 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			allPassed = allPassed && receipt.Outcome == evidence.Passed && receipt.ObservedDigest == completion.Artifact.Digest
 		}
 		if completion.Disposition.State == execution.StateSucceeded {
-			if completion.Artifact == nil || !allPassed || !exactRequiredEvidence(txn, attempt, completion) {
+			if completion.Artifact == nil || !allPassed {
 				return fleet.ErrConflict
 			}
+			qualified := false
+			if contributionReport != nil {
+				qualified = exactContributionTerminalEvidence(txn, attempt, completion, *contributionReport)
+			} else {
+				qualified = exactRequiredEvidence(txn, attempt, completion)
+			}
+			if completion.Artifact == nil || !allPassed || !qualified {
+				return fleet.ErrConflict
+			}
+		}
+		if contributionReport != nil && (completion.Artifact == nil || !allPassed || !exactContributionTerminalEvidence(txn, attempt, completion, *contributionReport)) {
+			return fleet.ErrConflict
 		}
 		terminalProjection, e := queue.NewProjection(queue.Projection{QueueItemID: storedClaim.QueueItem.ID, State: completion.Transition.To, Attempts: projection.Attempts, AvailableAt: projection.AvailableAt, LastTransitionID: completion.Transition.TransitionID, UpdatedAt: completion.Transition.OccurredAt})
 		if e != nil {

@@ -26,7 +26,10 @@ func retainedDeliveryPublication(proof delivery.ReadbackProof, p ContributionDel
 				effect = true
 			}
 		case "pull":
-			if (i.Operation == delivery.PullRequest || i.Operation == delivery.UpdatePullRequest) && f.HTMLURL == fmt.Sprintf("https://github.com/%s/pull/%d", i.Repository, pr) && f.Target.Repository == i.Repository && f.Target.PR == pr && f.Number == pr && f.User != nil && f.User.Login == p.Actor && !f.Draft && f.Head != nil && f.Base != nil && f.Head.SHA == i.Head && f.Head.Ref == p.Branch && f.Base.Ref == p.Binding.Base && f.Base.SHA == p.BaseHead && f.Head.Repo.ID == i.RepositoryID && f.Base.Repo.ID == i.RepositoryID && f.Head.Repo.FullName == i.Repository && f.Base.Repo.FullName == i.Repository {
+			// Creation is independently read back from the scoped collection.
+			// Updates, unlike collection discovery, must name the exact PR.
+			targetMatches := f.Target.PR == pr || (i.Operation == delivery.PullRequest && f.Target.PR == 0)
+			if (i.Operation == delivery.PullRequest || i.Operation == delivery.UpdatePullRequest) && f.HTMLURL == fmt.Sprintf("https://github.com/%s/pull/%d", i.Repository, pr) && f.Target.Repository == i.Repository && targetMatches && f.Number == pr && f.User != nil && f.User.Login == p.Actor && !f.Draft && f.Head != nil && f.Base != nil && f.Head.SHA == i.Head && f.Head.Ref == p.Branch && f.Base.Ref == p.Binding.Base && f.Base.SHA == p.BaseHead && f.Head.Repo.ID == i.RepositoryID && f.Base.Repo.ID == i.RepositoryID && f.Head.Repo.FullName == i.Repository && f.Base.Repo.FullName == i.Repository {
 				effect = true
 			}
 		}

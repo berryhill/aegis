@@ -7,6 +7,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/reference"
 )
@@ -17,6 +18,7 @@ import (
 type ContributionPreClosureAuthorization struct {
 	service                                                                              *Service
 	key, owner, contract, candidate, native, history, continuity, policy, claim, attempt string
+	scope, outcome, cause                                                                string
 }
 
 // ContributionFinalVerifier is installed only by trusted controller composition.
@@ -38,11 +40,26 @@ func NewContributionFinalVerifier(s *Service, ref reference.DigestRef, policies 
 // reconciliation is deliberately not a prerequisite: final post-closure readback
 // must subsequently join the exact authorization and canonical disposition.
 func (v *ContributionFinalVerifier) VerifyPreClosureAs(ctx context.Context, sub core.Subject, key string) (*ContributionPreClosureAuthorization, RetainedDeliveryAssessment, error) {
+	return v.verifyContributionAuthorization(ctx, sub, key, "merge")
+}
+
+func (v *ContributionFinalVerifier) verifyContributionAuthorization(ctx context.Context, sub core.Subject, key, mode string) (*ContributionPreClosureAuthorization, RetainedDeliveryAssessment, error) {
 	empty := RetainedDeliveryAssessment{Status: "not-verified", Code: "verification_denied", MergeRefs: []string{}}
+	if mode != "merge" && mode != "narrow" && mode != "held" {
+		return nil, empty, ErrDenied
+	}
 	if v == nil || v.service == nil || v.policies == nil {
 		return nil, empty, ErrDenied
 	}
 	s := v.service
+	sealed, _, lookupErr := s.ReadContributionAs(ctx, sub, key)
+	if lookupErr != nil {
+		return nil, empty, ErrDenied
+	}
+	definition, lookupErr := s.FleetRepository.GetLoopRevision(ctx, sealed.Loop.ID, sealed.Loop.Revision)
+	if lookupErr != nil || definition.Digest != sealed.Loop.Digest || definition.Contribution == nil || definition.Contribution.FinalVerification != evidence.ContributionFinalPolicy {
+		return nil, empty, ErrDenied
+	}
 	assessment, err := s.AssessContributionRetainedDeliveryAs(ctx, sub, key, v.policy, v.policies)
 	if err != nil {
 		return nil, assessment, ErrDenied
@@ -51,8 +68,10 @@ func (v *ContributionFinalVerifier) VerifyPreClosureAs(ctx context.Context, sub 
 		assessment.Code = code
 		return nil, assessment, ErrDenied
 	}
-	if assessment.Status != "retained-delivery-evidence-assessed" || assessment.Code != "continuity_verification_required" {
-		return fail("delivery_not_verified")
+	if mode != "held" && (assessment.Status != "retained-delivery-evidence-assessed" || assessment.Code != "continuity_verification_required") {
+		// Preserve the closed owning verifier diagnostic instead of erasing the
+		// first failed producer join behind a generic preclosure label.
+		return nil, assessment, ErrDenied
 	}
 	p, err := v.policies.ResolveContributionDeliveryPolicy(ctx, v.policy)
 	p = p.snapshot()
@@ -60,7 +79,14 @@ func (v *ContributionFinalVerifier) VerifyPreClosureAs(ctx context.Context, sub 
 		return fail("policy_invalid")
 	}
 	var authorization *ContributionPreClosureAuthorization
-	err = s.WithContributionContinuityCandidateAs(ctx, sub, p.ControllerSession, key, func(cctx context.Context, candidate orchestration.ContributionCandidate) error {
+	contract, currentState, _, currentErr := s.ObserveContributionContinuityAs(ctx, sub, key)
+	currentRole, hasRole := currentState.RoleAuthorities["controller"]
+	if currentErr != nil || !hasRole {
+		return fail("current_controller_unavailable")
+	}
+	stage := "source_custody_denied"
+	action := func(cctx context.Context, candidate orchestration.ContributionCandidate) error {
+		stage = "continuity_history_invalid"
 		c, state, events, e := s.ObserveContributionContinuityAs(cctx, sub, key)
 		if e != nil {
 			return e
@@ -68,29 +94,37 @@ func (v *ContributionFinalVerifier) VerifyPreClosureAs(ctx context.Context, sub 
 		if e = verifyFinalContinuity(c, state, events); e != nil {
 			return e
 		}
-		if c.Effect != "verified-protected-base-merge" || state.CancelRequested || !s.Now().Before(c.Deadline) || state.CandidateEvidence.Digest != candidate.Digest || candidate.Digest != p.Binding.Candidate {
+		stage = "continuity_scope_invalid"
+		if state.CancelRequested || !s.Now().Before(c.Deadline) || state.CandidateEvidence.Digest != candidate.Digest || candidate.Digest != p.Binding.Candidate {
 			return ErrDenied
 		}
 		control, e := s.ReadContributionControlAs(cctx, sub, key)
-		if e != nil || control.Stop || (control.Sequence > 0 && control.Delivery != c.Effect) {
+		if e != nil || control.Stop {
+			return ErrDenied
+		}
+		scope, e := effectiveContributionScope(c, control)
+		if e != nil || (mode == "merge" && scope != "verified-protected-base-merge") || (mode == "narrow" && scope == "verified-protected-base-merge") {
 			return ErrDenied
 		}
 		role, ok := state.RoleAuthorities["controller"]
-		if !ok || role.SessionID != p.ControllerSession || role.Epoch != p.Binding.FenceEpoch || role.Ref().Digest != p.Binding.RoleBinding {
+		if !ok || role != currentRole {
 			return ErrDenied
 		}
 		request := contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.QueueItemID, Digest: c.Digest}, RunID: c.RunID, QueueItemID: c.QueueItemID, Candidate: candidate.Digest, CandidateEvidence: state.CandidateEvidence, Role: "controller", Epoch: role.Epoch, RoleAuthority: role.Ref(), Scope: c.Effect}
-		if _, e = s.CheckContributionEffectAs(cctx, sub, p.ControllerSession, key, request, true); e != nil {
+		stage = "continuity_admission_denied"
+		if _, e = s.CheckContributionEffectAs(cctx, sub, role.SessionID, key, request, true); e != nil {
 			return e
 		}
 		record, e := s.ReadContributionExecutionAs(cctx, sub, key)
+		stage = "continuity_native_roles_invalid"
 		if e != nil {
 			return e
 		}
-		if e = verifyFinalNativeRoles(c, state, events, record); e != nil {
+		if e = s.verifyFinalNativeRoles(c, state, events, record); e != nil {
 			return e
 		}
 		_, view, e := s.ReadContributionAs(cctx, sub, key)
+		stage = "continuity_claim_invalid"
 		if e != nil {
 			return e
 		}
@@ -109,10 +143,12 @@ func (v *ContributionFinalVerifier) VerifyPreClosureAs(ctx context.Context, sub 
 		// Read current owning native/delivery evidence without reacquiring source
 		// custody. These read methods do not call WithAcceptedCandidate.
 		again, e := s.ReadContributionCandidateEvidenceAs(cctx, sub, key)
+		stage = "continuity_native_evidence_changed"
 		if e != nil || again.EvidenceRef != assessment.NativeRef {
 			return ErrDenied
 		}
 		history, e := s.ReadContributionDeliveryHistoryAs(cctx, sub, key)
+		stage = "continuity_delivery_history_changed"
 		if e != nil {
 			return e
 		}
@@ -121,21 +157,46 @@ func (v *ContributionFinalVerifier) VerifyPreClosureAs(ctx context.Context, sub 
 			return ErrDenied
 		}
 		policyAfter, e := v.policies.ResolveContributionDeliveryPolicy(cctx, v.policy)
+		stage = "continuity_policy_changed"
 		if e != nil || policyAfter.Digest() != p.Digest() {
 			return ErrDenied
 		}
 		_, after, afterEvents, e := s.ObserveContributionContinuityAs(cctx, sub, key)
+		stage = "continuity_head_changed"
 		if e != nil || verifyFinalContinuity(c, after, afterEvents) != nil || after.Digest != state.Digest {
 			return ErrDenied
 		}
-		if _, e = s.CheckContributionEffectAs(cctx, sub, p.ControllerSession, key, request, true); e != nil {
+		if _, e = s.CheckContributionEffectAs(cctx, sub, role.SessionID, key, request, true); e != nil {
 			return e
 		}
-		authorization = &ContributionPreClosureAuthorization{service: s, key: key, owner: sub.PrincipalID, contract: c.Digest, candidate: candidate.Digest, native: assessment.NativeRef, history: assessment.HistoryRef, continuity: state.Digest, policy: v.policy.Digest, claim: claim.ClaimID, attempt: claim.AttemptID}
+		stage = "source_postcondition_denied"
+		outcome, cause := "succeeded", ""
+		if mode == "narrow" {
+			outcome = "narrower-target-completed"
+		}
+		if mode == "held" {
+			outcome, cause = classifyContributionHeldHistory(history, candidate.Digest)
+			if outcome == "" {
+				return ErrDenied
+			}
+		}
+		authorization = &ContributionPreClosureAuthorization{service: s, key: key, owner: sub.PrincipalID, contract: c.Digest, candidate: candidate.Digest, native: assessment.NativeRef, history: assessment.HistoryRef, continuity: state.Digest, policy: v.policy.Digest, claim: claim.ClaimID, attempt: claim.AttemptID, scope: scope, outcome: outcome, cause: cause}
 		return nil
-	})
+	}
+	if proof, ok := ctx.Value(contributionCustodyKey{}).(*contributionCustodyProof); ok {
+		if proof == nil || !proof.live.Load() || proof.service != s || proof.contract != contract.Digest || proof.candidate != currentState.CandidateEvidence.Digest || proof.session != currentRole.SessionID {
+			return fail("source_custody_invalid")
+		}
+		candidate, e := s.AcceptedContributionCandidateAs(ctx, sub, key)
+		if e != nil {
+			return fail("native_unavailable")
+		}
+		err = action(ctx, candidate)
+	} else {
+		err = s.WithContributionContinuityCandidateAs(ctx, sub, currentRole.SessionID, key, action)
+	}
 	if err != nil {
-		return fail("continuity_verification_denied")
+		return fail(stage)
 	}
 	if authorization == nil {
 		return fail("verification_denied")
@@ -193,20 +254,22 @@ func verifyFinalContinuity(c contribution.Contract, state contribution.Continuit
 	return nil
 }
 
-func verifyFinalNativeRoles(c contribution.Contract, state contribution.Continuity, events []contribution.ContinuityEvent, r orchestration.ContributionRecord) error {
+func (s *Service) verifyFinalNativeRoles(c contribution.Contract, state contribution.Continuity, events []contribution.ContinuityEvent, r orchestration.ContributionRecord) error {
 	if r.RunID != c.RunID || r.Contract != c.Digest || r.State != "candidate_accepted" || len(r.Passes) == 0 || int(r.Consumed) != len(r.Passes) || uint32(r.Consumed) != state.Used.Candidates {
 		return ErrDenied
 	}
 	matches := func(role string, id orchestration.ContributionRoleIdentity, lineage string) bool {
 		for _, event := range events {
 			a := event.RoleAuthority
-			if event.Kind != "role-admitted" || a == nil || a.Role != role || a.Binding.Agent.Digest != id.AgentDigest || a.Binding.Charter.Digest != id.CharterDigest || a.Authority.ID != id.AuthorityID || a.Authority.Digest != id.AuthorityDigest || a.MandateID != id.MandateID || a.SessionID != id.SessionID || a.RuntimeSessionID != id.RuntimeSessionID {
+			if event.Kind != "role-admitted" || a == nil || a.Role != role || a.Binding.Agent.Digest != id.AgentDigest || a.Binding.Charter.Digest != id.CharterDigest || a.Authority.ID != id.AuthorityID || a.Authority.Digest != id.AuthorityDigest || a.MandateID != id.MandateID || a.SessionID != id.SessionID {
 				continue
 			}
 			for _, effect := range state.NativeEffects {
 				b := effect.Binding
 				if effect.State == "completed" && b.Role == role && b.Epoch == a.Epoch && b.Authority == a.Ref() && b.RunID == c.RunID && b.QueueItemID == c.QueueItemID && b.AttemptID == r.QueueAttempt && b.Candidate == lineage && b.PolicyDigest == c.TemplateDigest {
-					return true
+					if s.matchesContributionTurn(c, state, *a, id, lineage, r.QueueAttempt, b.ClaimID) {
+						return true
+					}
 				}
 			}
 		}

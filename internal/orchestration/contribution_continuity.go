@@ -12,6 +12,7 @@ import (
 // ContributionExecutionObserver is installed once by the owning application.
 // It sees actual role launches and exact native Cmds, never model assertions.
 type ContributionExecutionObserver struct {
+	SessionTurn     func(context.Context, string, execution.Turn) error
 	ContinueBuilder func(context.Context, implementation.ContributionRoleIdentity, implementation.ContributionRoleIdentity) error
 	Checkpoint      func(context.Context, implementation.ContributionCheckpoint) error
 	Turn            func(context.Context, string) error
