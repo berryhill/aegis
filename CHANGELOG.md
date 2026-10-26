@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add repository engineering acceptance-port custody: reserve workstation main
+  8448/8098, dynamically claim 8450–8469 with foreground lifetime supervision,
+  actual socket checks and isolated-state guidance. No product authority,
+  service activation, network exposure or acceptance-criterion changes.
+
 - Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
 
 - Preserve closed managed proposal-decode failure evidence after successful input

@@ -14,6 +14,14 @@ metadata:
 
 ## Contribution acceptance boundary (#386)
 
+For source-candidate listener setup, read the checkout's
+[engineering port-isolation policy](../../.hermes/acceptance-port-isolation.md)
+and root `AGENTS.md`: reserved main 8448/8098 is not a candidate target; builders
+dynamically claim 8450–8469 with isolated state and lifetime custody. This is
+repository engineering guidance, not another product skill, shipped CLI flag,
+authority grant or proof of installed adoption. Without a checkout, request the
+owner's policy rather than invent a helper or change services. All product gates remain.
+
 For contribution implementation/testing, read the repository's
 [canonical contribution happy path](../../.hermes/contribution-happy-path-contract.md)
 and mandatory #375–#379 stage/evidence/owner matrix. This repository-only reference

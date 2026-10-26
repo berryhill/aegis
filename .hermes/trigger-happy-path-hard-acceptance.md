@@ -10,6 +10,11 @@ Target deployment: https://silas-workstation.taild7c550.ts.net:8446/console
 
 Use the current installed workstation version and supported typed owning-service interfaces. Load aegis and relevant installed product skills; confirm actual command help and current source before selecting schemas or operations. Do not invent commands, endpoints, receipts, node types or scheduler behavior.
 
+Source candidates follow [acceptance port isolation](acceptance-port-isolation.md):
+dynamically claim 8450–8469, never reserved main 8448/8098. Named installed URLs
+remain separate targets, not candidate defaults. No Trigger, Graph, real-event or
+provider criterion changes with this location policy.
+
 Related contracts:
 
 - [Graph hard acceptance](graph-happy-path-hard-acceptance.md)
