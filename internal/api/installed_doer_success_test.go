@@ -54,6 +54,7 @@ func TestRetainedDoerExactRunParity(t *testing.T) {
 }
 
 func TestRetainedDoerSlowHelperExecutionParity(t *testing.T) {
+	t.Parallel()
 	installedOnlineDoerExactBytesSuccess(t, true, "retained-slow")
 }
 

@@ -380,7 +380,15 @@ func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.ConfigureFleet(fleetStore, fleetService, worker); err != nil {
+	// Synthetic NoKey fixtures must not discover the operator's installed runtime.
+	// ConfigureFleet only stores callbacks; restore the adapter before any use.
+	err = func() error {
+		original := svc.Hermes
+		svc.Hermes = nil
+		defer func() { svc.Hermes = original }()
+		return svc.ConfigureFleet(fleetStore, fleetService, worker)
+	}()
+	if err != nil {
 		t.Fatal(err)
 	}
 	return fleetStore

@@ -261,6 +261,7 @@ func assertQueueScopeBands(t *testing.T, bands map[string]queueScopeBand) {
 	}
 }
 func TestConsoleQueueScopeAuthenticatedRoutes(t *testing.T) {
+	t.Parallel()
 	svc, address := queueScopeFixture(t)
 	client, _ := loginConsole(t, address)
 	base := "http://" + address

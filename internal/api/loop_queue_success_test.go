@@ -31,6 +31,7 @@ import (
 )
 
 func TestExactLoopQueueImplementationSuccessReplay(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"auto", "ready", "failed-launch", "interrupted"} {
 		t.Run(mode, func(t *testing.T) { exactLoopQueueImplementationSuccessReplay(t, mode) })
 	}
