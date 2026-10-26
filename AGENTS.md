@@ -1,5 +1,22 @@
 # Aegis Project Memory and Working Rules
 
+## Candidate acceptance port isolation — read before launch
+
+Read [.hermes/acceptance-port-isolation.md](.hermes/acceptance-port-isolation.md)
+before candidate acceptance. On silas-workstation, external **8448** and actual
+backend **127.0.0.1:8098** are reserved together for Matt/Xander clean-main
+integration, never builder candidates. Builders dynamically claim ANY available
+port **8450–8469**, with one shared existing flock pool and actual socket check,
+held across the entire foreground server/test/stop lifetime. Use
+`scripts/acceptance_port.py` with the explicit operator pool; no fixed assignments,
+parallel claim roots, deletion/replacement of lock inodes, killing other listeners,
+service changes or new network exposure. Bind loopback and isolate worktree,
+configuration, state/database, workspace and test identity. Never copy main's
+configuration/credentials/history or borrow its authority. Port location changes
+do not waive Loop/Graph/Trigger, real-provider or installed-target acceptance.
+Existing sessions need explicit adoption; fresh effective loader verification is
+required, not merely `/reload-skills`.
+
 ## Project identity
 
 Aegis is an open-source identity, trust, and session-control layer for agents running on explicit existing AI runtimes.
@@ -195,8 +212,8 @@ When behavior, command syntax, configuration, architecture, trust boundaries, de
 
 The working Go implementation is under `cmd/aegis` and `internal/`. Build with `./scripts/build-source.sh ./aegis` to bind and verify Git provenance in nested linked worktrees. The verified command groups are `runtime`, `config`, `design`, `charter`, `plan`, `approval`, `provision`, `session`, `audit`, `agents`, `loops`, `graphs`, `queue`, and `serve`. See `README.md` and `examples/` for the executable workflow.
 
-The public CLI/API now proves one bounded, credential-independent fleet-control vertical: immutable Agent registration, authority-bound Loop publication and append-only activation/retirement, immutable Graph publication, durable admission or rejection, one registered runtime-routed single-node Queue worker with bounded Hermes gateway execution, independently reloaded evidence-gated disposition, disposable runtime-home cleanup, and exact historical readback. The authenticated console additionally supports bounded Graph compose/publish and typed-run submission through exact immutable references, server-derived runtime-session authority, same-origin CSRF protection, canonical typed inputs, conflict-detecting idempotency, and fail-closed admission. This is not proof of general fleet orchestration or live-provider/model acceptance. Graph lifecycle application, browser mutation outside those bounded Graph forms, multi-node/general scheduling, dirty-store recovery, and automated queue lifecycle remain launch work.
+The public CLI/API supports immutable Agent registration, authority-bound Loop publication and append-only activation/retirement, immutable Graph publication, durable admission or rejection, bounded runtime-routed Queue execution, independently reloaded evidence-gated disposition, disposable runtime-home cleanup and historical readback. New direct Loop requests use SubmitLoopAs without publishing a synthetic Graph; historical Graph-backed intents retain their exact replay path. Retained task-execute composes publication and Run, while separate immutable publication and exact Run remain independently verifiable actions. Preparation is not executable admission or runtime execution. The authenticated console supports bounded definition and execution controls with exact references, server-derived authority, same-origin CSRF protection and conflict-detecting idempotency. These source capabilities are not live-provider qualification or complete v6 contribution delivery: managed candidate acceptance remains separate from continuity, GitHub delivery and joined final disposition. General multi-node scheduling and automated Queue lifecycle remain unavailable.
 
-The Hermes adapter supports `>=0.18.0,<0.19.0`, uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.
+The Hermes adapter accepts stable `>=0.18.0` without a general upper cap; exact charter constraints and protocol/capability checks still apply. General eligibility is not qualification of every provider transport: controller-owned Codex access-only transport separately requires Hermes 0.21.3 and the adapter's exact transport-source fingerprints. Existing narrower approved charter constraints are not rewritten. The adapter uses safe mode and disposable homes, and treats Hermes toolsets as the MVP hard capability unit. Design uses Hermes's structured TUI-gateway stdio protocol through `--draft` or `--smoke`; it never uses one-shot mode. Provisioning is restricted to deterministic Aegis-owned artifacts under the configured state directory. These process/home controls are not a host sandbox.
 
 The qualified persistence envelope is deliberately narrower than the release build matrix: session authority uses Badger and credential custody uses bbolt only in the exact combinations listed in `specs/STORAGE.md`. Canonical facts, rebuildable projections, operational metadata, blobs, runtime state, and credential custody are separate classes; no derived state or cross-store partial result may grant authority.

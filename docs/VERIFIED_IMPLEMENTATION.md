@@ -58,7 +58,17 @@ Online validation resolves the named latest enabled registered Agent under authe
 
 Publication grants no host authority. The controller defaults to no implementation execution. After separate explicit operator approval of a configuration change, `implementation.go_binary` must name an absolute trusted Go executable and `implementation.authorized_contracts` must contain the exact contract digest returned by the draft builder. That digest binds workspace, writable files, task, acceptance, bounds and test policy. It is not the Loop revision digest. Never add it automatically, change owner configuration, restart a service, provision an Agent or execute work as part of authoring/publication.
 
-The integrated Queue worker additionally requires normal exact Graph/Loop bindings, fresh controller runtime authority/admission and a Hermes participant with no tools or credentials. The controller admits each effect, records implementation passes, obtains bounded patch proposals through Hermes, and independently reloads the implementation evidence before terminal success. Process exit or model narration alone cannot complete the Queue item.
+The integrated Queue worker additionally requires exact immutable execution
+bindings, fresh controller runtime authority/admission and a Hermes participant
+with no tools or credentials. New single-operation Loop Run intents use direct
+Loop submission (`SubmitLoopAs` / `submitLoopAs`) and publish no synthetic Graph.
+`QueueLoopAs` preserves exact historical synthetic Graph replay through the
+existing Graph submission path; it does not migrate or rewrite those histories.
+This is not general Graph scheduling or a claim that every Loop schema has a
+single-operation Run adapter. The controller admits each effect, records
+implementation passes, obtains bounded patch proposals through Hermes, and
+independently reloads the implementation evidence before terminal success.
+Process exit or model narration alone cannot complete the Queue item.
 
 For `doer.v1`, the operator must separately configure absolute `implementation.laya_python` (an interpreter with the local `laya` package) and `implementation.laya_home` (an existing private mode-0700 directory with a preinstalled checkpoint/cache). An unset or partially configured pair denies the mode; it is not installed or downloaded by Loop publication. The fixed embedded helper receives a bounded JSON task or report through stdin and returns typed decisions. It receives a minimal environment, no controller credential variables, and no shell command, but Python, the model and native Go tests are not host or network sandboxes. The decision backend fails closed on missing, low-confidence, malformed or ambiguous answers; it does not select authority. Within the existing one Queue claim, a negative task gate records `needs_input` with zero implementation passes and a failed Queue disposition reason `implementation_needs_input`. A positive gate permits a bounded Hermes patch proposal with a report; Laya judges that report, the controller runs the precommitted native Go tests regardless of judgment, and a failed pass supplies both results to a tool-free Hermes diagnosis turn before another pass. Only independent native-check evidence and all required judgment fields together permit completion. The terminal Hermes assessment is non-authoritative and its failure does not change the verified result. Exact stage payloads are retained in content-addressed implementation custody; Queue retry/attempt numbers are separate from the internal pass count.
 

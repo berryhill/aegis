@@ -86,9 +86,10 @@ type DoerSetupModel struct {
 type DoerSetupCharterModel struct{ Ref, Details string }
 
 type AuthenticationModel struct {
-	Status     string
-	ReasonCode string
-	SessionTTL string
+	Status        string
+	ReasonCode    string
+	SessionTTL    string
+	ActionAuthTTL string
 }
 
 type SurfaceModel struct {

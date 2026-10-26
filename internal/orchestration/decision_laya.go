@@ -268,7 +268,10 @@ func (p LocalLayaProcess) Run(ctx context.Context, input []byte) ([]byte, error)
 	cmd := exec.CommandContext(ctx, p.PythonExecutable, "-I", "-B", "-c", layaHelperSource)
 	// Do not project the controller's ambient credentials into a local model
 	// subprocess. A separately configured private cache is the only home state.
-	cmd.Env = []string{"HOME=" + p.Home, "HF_HOME=" + filepath.Join(p.Home, ".cache", "huggingface"), "PYTHONNOUSERSITE=1", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1"}
+	// Bound numeric-library worker pools instead of inheriting host-sized CPU
+	// defaults. Cold helper startup must fit the existing readiness deadline;
+	// this changes neither model selection nor protocol/confidence policy.
+	cmd.Env = []string{"HOME=" + p.Home, "HF_HOME=" + filepath.Join(p.Home, ".cache", "huggingface"), "PYTHONNOUSERSITE=1", "HF_HUB_OFFLINE=1", "TRANSFORMERS_OFFLINE=1", "OMP_NUM_THREADS=2", "MKL_NUM_THREADS=2", "OPENBLAS_NUM_THREADS=2", "NUMEXPR_NUM_THREADS=2"}
 	cmd.Dir = p.Home
 	cmd.Stdin = bytes.NewReader(input)
 	var stdout limitedLayaWriter

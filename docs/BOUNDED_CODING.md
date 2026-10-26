@@ -98,9 +98,13 @@ success. Readiness is observation, not a grant.
 For an exact owner-approved native-only configuration addition that invalidates a
 config-bound native Codex connection, the existing explicit `controller-codex
 preview ... --replace` / `connect REVIEW_ID` path supports a narrow same-selection
-review. Removing the one appended native-trust mapping must reconstruct the
-previous exact configuration commitment. Other drift, an existing implementation
-block, ambiguity, source/selector/account changes or stale history deny. Preview
+review. Removing the one appended native-trust mapping, or the one new final
+plain exact `sha256:` contract line in an existing block allowlist, must reconstruct
+the previous exact configuration commitment. The checker and all older contracts
+remain byte-for-byte unchanged. Each prior connection transition is independently
+revalidated against its exact historical configuration without rewriting history
+or persisting private configuration backups. Other drift, multiple new contracts,
+removed/broadened trust, ambiguity, source/selector/account changes or stale history deny. Preview
 has no runtime effect; connect rechecks the one-use review and retains append-only
 history. Runtime/show still require the latest full configuration commitment.
 This is not general configuration repair or atomic CAS against hostile same-UID
@@ -194,7 +198,13 @@ partial effects, missing/corrupt evidence, source drift, swapped references and
 conflicting successors deny. Do not republish, rotate uncertain intent or create
 a successor merely to evade failure. A pre-apply continuation must reverify the
 recorded preimage, retain its consumed pass and prepared/not-delivered distinction,
-and cannot infer a stop acknowledgment or a historical failure cause. Missing
+and cannot infer a stop acknowledgment or a historical failure cause. A successfully
+returned managed turn rejected by strict proposal decoding additionally requires
+its existing closed `proposal_rejected` stage, matching failure classification,
+validated prepared/delivered input custody and no implement/check/apply evidence.
+Authenticated `coding_history.stages` exposes only stage name, pass and digest;
+it never exposes payloads. Delivery alone or a missing old classification does
+not make an earlier failure recoverable. Missing
 witnesses, unknown/interrupted outcomes and partial applies still deny. Distinct
 tasks can retire only exactly owned, idle, terminal zero-authority coding runtimes;
 they do not reset the failed task's budget. First reconcile authoritative history.

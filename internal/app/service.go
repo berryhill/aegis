@@ -39,18 +39,21 @@ var (
 )
 
 type Service struct {
-	Config            config.Config
-	ConfigFile        string // exact owning config path; non-secret companion instance selector
-	Store             *store.Store
-	Authority         core.AuthorityRepository
-	AuthorityCommands core.AuthorityCommandRepository
-	Audit             AuditAuthority
-	Hermes            *hermes.Adapter
-	Log               *slog.Logger
-	Now               func() time.Time
-	Current           func() (*user.User, error)
-	LookupEnv         func(string) (string, bool)
-	LocalHermesHome   func(string, string) (string, error)
+	// DashboardActionAuthentication is installed once by the owning console
+	// before serving. Only explicitly dashboard-capable operations consult it.
+	DashboardActionAuthentication func(core.Subject) error
+	Config                        config.Config
+	ConfigFile                    string // exact owning config path; non-secret companion instance selector
+	Store                         *store.Store
+	Authority                     core.AuthorityRepository
+	AuthorityCommands             core.AuthorityCommandRepository
+	Audit                         AuditAuthority
+	Hermes                        *hermes.Adapter
+	Log                           *slog.Logger
+	Now                           func() time.Time
+	Current                       func() (*user.User, error)
+	LookupEnv                     func(string) (string, bool)
+	LocalHermesHome               func(string, string) (string, error)
 
 	CredentialAuthority *credentials.Authority
 	// ContributionReader is an owning-controller dependency, never request authority.
@@ -282,6 +285,20 @@ func (s *Service) RequirePrincipalIdentity(sub core.Subject) error {
 // transports. It does not accept browser- or model-selected identity fields.
 func (s *Service) RequirePrincipal(sub core.Subject) error { return s.requirePrincipal(sub) }
 
+// RequireDashboardPrincipal admits bounded dashboard control operations, not
+// mandates, native host consent, foundational approvals or credential capabilities.
+// Unknown/revoked browser subjects never fall back to the longer identity expiry
+// or to a shorter shared TTL which could defeat an explicit dashboard policy.
+func (s *Service) RequireDashboardPrincipal(sub core.Subject) error {
+	if sub.Method != "password" || s.DashboardActionAuthentication == nil {
+		return s.requirePrincipal(sub)
+	}
+	if s.RequirePrincipalIdentity(sub) != nil || sub.Kind != "principal" || sub.Issuer != "aegis-principal-auth" || s.DashboardActionAuthentication(sub) != nil {
+		return fmt.Errorf("%w: dashboard action requires a live fresh authenticated session", ErrDenied)
+	}
+	return nil
+}
+
 // AuditConsoleSession emits metadata-only browser authentication evidence.
 // Session, password, CSRF, cookie, and bearer material are never accepted.
 func (s *Service) AuditConsoleSession(ctx context.Context, subject core.Subject, outcome, reason string) error {
@@ -302,7 +319,7 @@ func (s *Service) ImportCharter(ctx context.Context, data []byte) (core.Canonica
 
 func (s *Service) ImportCharterAs(ctx context.Context, sub core.Subject, data []byte) (core.CanonicalCharter, error) {
 	var err error
-	if err = s.requirePrincipal(sub); err != nil {
+	if err = s.RequireDashboardPrincipal(sub); err != nil {
 		return core.CanonicalCharter{}, err
 	}
 	c, err := core.DecodeCharter(strings.NewReader(string(data)))

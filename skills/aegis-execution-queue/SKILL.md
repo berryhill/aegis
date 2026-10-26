@@ -21,8 +21,20 @@ and mandatory #375–#379 stage/evidence/owner matrix. This repository-only refe
 is not bundled/installed adoption; #348 owns final matching distribution. Without
 a checkout use installed discovery and report missing capability, never invent
 stages/APIs. Selected-file Doer, native coding and whole-contribution success are
-separate evidence claims. Current v6 intake is not the whole autonomous journey;
-Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+separate evidence claims. Current source includes partial #376 managed-candidate
+prepare/build/freeze/test/repair/review, not the whole autonomous journey.
+`internal/implementation/contribution.go` and
+`internal/orchestration/contribution_executor.go` implement the bounded approved
+Go profile with source custody, native checks, separate builder/tester sessions
+and candidate-bound review. `candidate_accepted` remains intermediate;
+`ErrContributionCandidatePending` explicitly withholds final disposition.
+Historical profiles without `managed` remain intake-only. The canonical matrix's
+source observations are historical: reinspect source, do not repeat stale stage
+statuses or imply #377 authority/quiescence, #378 delivery or #379 joined proof
+is complete. Queue/model/build/PR/CI alone cannot attest the whole contribution.
+Narrower scope and real gates prevail.
+Without a checkout, read the same canonical contract at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
 
 
 Use this skill to inspect durable Queue history or route one explicitly authorized process, retry, reclaim, cancel, expire, exhaust, or revoke operation through the shipped typed Aegis service. The model may explain records and prepare a proposed request file; Aegis authenticates the principal, performs fresh authority admission, validates immutable bindings, commits lifecycle facts and authoritative audit atomically, invokes the registered runtime adapter, verifies evidence, and determines disposition.
@@ -34,7 +46,7 @@ Use this skill to inspect durable Queue history or route one explicitly authoriz
 - The model must not invent or repair authority, Queue, Graph, Loop, participant, claim, attempt, runtime, evidence, receipt, disposition, transition, or lifecycle identifiers.
 - A claim is a bounded single-winner lease, not runtime admission. Aegis repeats fresh admission before claim, runtime effect, evidence verification, and terminal disposition.
 - Browser state and request fields do not grant authority. The authenticated console derives authority and operation identities server-side; CLI and HTTP files carry strict typed references consumed by the same application service.
-- A registered-Agent workspace may submit and manage only Queue work carrying its matching owner provenance and only when that exact Agent revision participates in the Graph. Such work begins `preparation-pending`; workspace authority cannot claim or process it.
+- A registered-Agent workspace may submit and manage only Queue work carrying its matching owner provenance; Graph submissions additionally require that exact Agent revision to participate in the Graph. Such work begins `preparation-pending`; workspace authority cannot claim or process it.
 - The Aegis controller must commit a fresh `RuntimeBinding` and repeat normal admission before transition to claimable `queued` state and before every effect. No native agent transport, automatic binder, polling loop, or automatic execution is implied.
 
 ## Confirm the shipped surface
@@ -42,6 +54,7 @@ Use this skill to inspect durable Queue history or route one explicitly authoriz
 First use `aegis queue --help`. The compatible CLI operations are:
 
 - `aegis queue list`
+- `aegis queue preparations` (nonexecutable preparation inventory; `GET /v1/preparations`)
 - `aegis queue show ITEM`
 - `aegis queue result ITEM` (exact owner-authorized v5 selected-file result; `GET /v1/queue/:item/result`; route to primary `aegis-evidence-disposition` skill)
 - `aegis queue bind-runtime FILE` (controller-only; `POST /v1/queue/:item/bind-runtime`)
@@ -52,7 +65,7 @@ First use `aegis queue --help`. The compatible CLI operations are:
 - `aegis queue exhaust FILE`
 - `aegis queue revoke FILE`
 
-Protected HTTP equivalents are `GET /v1/queue`, `GET /v1/queue/:item`, and `POST /v1/queue/:item/process|retry|cancel|expire|exhaust|revoke`. There is no separate reclaim command: lease-eligible reclaim uses `retry` with the typed reclaimed decision and exact reason `lease_reclaimed`. If an operation is absent from installed help, report it unavailable instead of inventing a scheduler, worker, command, endpoint, transition, policy result, or receipt.
+Protected HTTP equivalents are `GET /v1/queue`, `GET /v1/queue/:item`, and `POST /v1/queue/:item/process|retry|cancel|expire|exhaust|revoke`. CLI/API presence is not online adapter availability. With `--config OWNER_CONFIG --target CONSOLE_URL`, the owning-service allowlist supports `queue preparations|list|show|result|bind-runtime|process|cancel|revoke|retry`. The lifecycle adapters are delivered by #350; retry is expired-lease reclaim only. Online expire/exhaust adapters remain absent; flags do not supply them. Report `online_operation_unsupported` or the exact missing adapter, never open another writer or invent a client. There is no separate reclaim command: lease-eligible reclaim uses the low-level `retry` primitive with the typed reclaimed decision and exact reason `lease_reclaimed`, only where a supported authenticated adapter exists. If an operation is absent from installed help, report it unavailable instead of inventing a scheduler, worker, command, endpoint, transition, policy result, or receipt.
 
 Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, and general multi-node execution are unavailable. The shipped processor is the registered runtime-routed, bounded single-node path; do not describe it as a general scheduler.
 
@@ -60,9 +73,9 @@ Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, an
 
 Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` for exact historical readback. Keep these records distinct:
 
-- The immutable Queue item binds one accepted submission, normalized Graph snapshot, Graph run, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. Workspace-originated authority is control-plane ownership, not runtime authority: read `preparation-pending` and its later immutable runtime binding separately, and never infer one from the other. The item is not rewritten by lifecycle changes.
+- The immutable Queue item binds one accepted submission, snapshot, run identity, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. New direct Loop snapshots pin the exact Loop and participant without a published Graph; historical Graph snapshots retain their exact Graph/Agent/Loop pins and replay path. Internal Graph-run identity does not imply a published Graph is required. Workspace-originated authority is control-plane ownership, not runtime authority: read `preparation-pending` and its later immutable runtime binding separately, and never infer one from the other. Workspace preparation is nonexecutable, not claimable `queued` work. The item is not rewritten by lifecycle changes.
 - The Queue projection is rebuildable current state derived from canonical lifecycle records. It reports state, attempt count, availability, active claim, and transition head, but cannot grant authority.
-- The Graph run is the stable parent execution identity for the accepted snapshot. A Loop execution is the stable child identity for one exact Graph node, Loop revision, and participant revision across retries.
+- The run is the stable parent execution identity for the accepted snapshot (including internally named Graph-run records for direct Loop work). A Loop execution is the stable child identity for the exact pinned Loop and participant across retries, with Graph-node causality only where present.
 - Each attempt is one numbered bounded try under that same Graph run and Loop execution. A retry creates a new attempt only when work is claimed again; it never creates a new Queue item or substitutes immutable definitions.
 - A claim binds one attempt, worker, exact authority, claim time, and lease expiry. A live lease excludes reclaim; lease expiry makes reclaim eligible but does not itself authorize it.
 - Dependencies gate claim eligibility. A listed item is not claimable until every exact dependency has the required successful terminal evidence; never bypass or reinterpret a dependency from prose.
@@ -80,15 +93,19 @@ retry `backoff` is an integer nanosecond count, not a string such as `"1s"`.
 
 ## Bind workspace work to runtime authority
 
+`bind-runtime` and `process` are low-level controller primitives, not operator
+chores for one high-level authenticated Run. For that journey use `loops queue`
+below; the controller handles admitted preparation/binding/foreground execution.
+
 `aegis queue bind-runtime FILE` is the shipped CLI boundary. Its strict object contains exactly `agent_id`, `authority` (an existing authenticated runtime authority `id`/`digest` reference), `queue_item_id`, `binding_id`, and `transition_id`. The authenticated principal supplies the exact registered Agent selector; Aegis derives its workspace internally and checks the Queue owner's provenance. The Agent selector is not runtime authority. Obtain the runtime reference through the controller's supported authenticated session path; never construct an authority object from prose.
 
-The response is `{ "binding": ..., "created": ... }`. Preserve the binding and transition identities across reconciliation of an unknown outcome. Read back the binding and Queue projection before processing; binding does not execute an attempt. Use the protected `POST /v1/queue/:item/bind-runtime` adapter or `aegis --config OWNER_CONFIG --target CONSOLE_URL queue bind-runtime FILE` while the gateway owns state. The same online flags support `queue process FILE`, `queue list`, and `queue show ITEM`. A direct-store `control_plane_online` denial must not be bypassed. Never stop the daemon, open a second writer, or extract tokens. Processing uses a bounded execution deadline; an unknown outcome requires exact Queue readback before any retry, not automatic resubmission.
+The response is `{ "binding": ..., "created": ... }`. Preserve the binding and transition identities across reconciliation of an unknown outcome. Read back the binding and Queue projection before processing; binding does not execute an attempt. Use the protected `POST /v1/queue/:item/bind-runtime` adapter or `aegis --config OWNER_CONFIG --target CONSOLE_URL queue bind-runtime FILE` while the gateway owns state. The same online flags support `queue process FILE`, `queue list`, `queue preparations`, `queue show ITEM`, `queue cancel FILE`, `queue revoke FILE`, and expired-lease-only `queue retry FILE`. Online expire/exhaust and ordinary retry remain unavailable. A direct-store `control_plane_online` denial must not be bypassed. Never stop the daemon, open a second writer, or extract tokens. Processing uses a bounded execution deadline; an unknown outcome requires exact Queue readback before any retry, not automatic resubmission.
 
 ## Process one eligible item
 
 1. Read the exact item immediately before action. Require queued projection state, `available_at` eligibility, remaining `max_attempts` budget, satisfied dependencies, no live claim, and the exact registered runtime route.
 2. Obtain explicit authorization for this exact operation. Prepare one strict process request containing current `authority`, exact `queue_item_id`, nonempty `worker_id`, stable `loop_execution_id`, fresh `claim_id`, fresh `attempt_id`, fresh claim and terminal transition IDs, fresh disposition and artifact IDs, and a bounded `lease_duration` in the installed wire format.
-3. Run `aegis queue process FILE`. Aegis supports only the narrow shipped Graph shape and denies unsupported execution before claim rather than guessing an order.
+3. Run `aegis queue process FILE`. Aegis supports admitted direct Loop snapshots and the narrow historical Graph shape, and denies unsupported execution before claim rather than guessing an order. The high-level Run handles this primitive internally; it does not require another consent or worker command.
 4. Inspect the returned claim, attempt, artifact, receipts, and disposition, then run `aegis queue show ITEM`. Require exact IDs and digests, incremented attempt number, runtime route, terminal transition, content-addressed artifact, every required valid receipt, exact disposition, and matching projection.
 5. If authority disappears after claim, preserve the distinct denied terminal result. If runtime execution or evidence verification fails, preserve failed or denied disposition and its receipts; never convert process exit into success.
 
@@ -178,6 +195,13 @@ When the operator says “queue it” for an approved exact bounded Loop, use th
 
 `aegis loops queue FILE` (including the product-owned online adapter) and `POST /v1/loops/queue` accept exact `agent` and `loop` revision references, `idempotency_key`, optional normalized `inputs`, and explicit `activate: true` when activation is intended. `queue_item_id` selects only the same request key's exact accepted Queue item for recovery without changing its immutable identity. Inspect the returned reason and current execution projection; HTTP success alone is not execution success.
 
-The controller uses direct Loop submission for new intents and preserves historical synthetic Graph replay; it prepares or reuses one session only within already approved charter/provisioning scope, binds fresh same-Agent runtime authority, and invokes the bounded foreground worker in this single authenticated request. Foundational approval and provisioning are never automated. Missing prerequisites remain durable non-executable preparation. This is not a background scheduler or live-provider acceptance claim.
+The controller uses direct Loop submission for new intents and preserves historical synthetic Graph replay; no published Graph is required for a new direct Loop Run. It prepares or reuses one session only within already approved scope (including the narrow zero-authority ephemeral preparation above), binds fresh same-Agent runtime authority, and invokes the admitted bounded foreground worker in this single authenticated request. Foundational approval and actual provisioning are never automated. Fresh unmet prerequisites return inline without a new executable Queue item; existing workspace preparations remain nonexecutable. This is not a background scheduler or live-provider acceptance claim.
+
+Same-intent recovery preserves immutable failed history and cumulative budgets.
+A supported linked Requeue retains exact predecessor evidence and remaining
+implementation passes; a new key, Queue attempt or candidate cannot reset them.
+A returned selected-file artifact/receipt proves only its selected assertion;
+trusted native coding requires its own immutable native policy and receipts.
+Neither is whole-contribution verification or managed-provider proof.
 
 The durable `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. An interrupted preparation with no reusable authority remains blocked as `session_preparation_in_progress_or_interrupted`; explicit operator recovery is required. Do not delete the fence or mint substitute authority as automatic crash handling.

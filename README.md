@@ -42,7 +42,8 @@ scopes and exact published definitions remain unchanged. Connection metadata is
 a separate private no-replace record; the owning YAML is never rewritten and
 config drift denies runtime use. A source candidate additionally permits an explicit
 same-selection replacement review for one exactly reconstructable appended native
-trust block; it never automatically repairs drift. See [the connection
+trust block or one later exact-contract addition to its existing allowlist;
+it never automatically repairs drift. See [the connection
 procedure and limits](docs/DOER_LOOP.md#explicit-native-hermes-connection-linux-source-candidate).
 
 ## Retained task execution (source candidate)
@@ -89,7 +90,7 @@ The executable includes a Doer authoring template discoverable with `aegis loops
 
 The Console's selected-file template now publishes under the registered-Agent workspace without a runtime session; its published v4 detail offers a native authenticated Run request through the existing Loop/Graph/Queue controller. The Run result distinguishes a resumable prerequisite blocker from actual Queue execution and links exact evidence readback. An incompatible authentication stanza, `none` model, missing receipt, or unapproved local Doer contract still denies execution.
 
-`aegis loops doer-reusable FILE` builds a reusable typed v5 draft without a task, workspace, authority or execution grant. The single-node Queue worker binds exact typed Graph-run inputs to an operator-allowlisted per-run contract digest before claiming and independently verifies content-addressed JSON evidence. The v4 `loops queue` shortcut denies v5; the Console shows v5 lifecycle separately from runtime readiness and has no one-action typed-run confirmation yet. The Loop detail draws bounded cyclic transitions with arrows and visible labels instead of suppressing all edges. See [the reusable draft and binding contract](docs/DOER_LOOP.md#reusable-typed-v5-definition).
+`aegis loops doer-reusable FILE` builds a reusable typed v5 draft without a task, workspace, authority or execution grant. The single-node Queue worker binds exact typed Graph-run inputs to an operator-allowlisted per-run contract digest before claiming and independently verifies content-addressed JSON evidence. New `loops queue` intents use direct Loop submission, including v5 with normalized typed inputs, without publishing a reusable Graph. Existing historical Graph-backed intents replay their exact stored Graph and snapshot semantics; they are not converted into new direct runs. Exact per-run contract authorization and fresh runtime admission still apply. The Console shows v5 lifecycle separately from runtime readiness and has no browser typed-run launch form. The Loop detail draws bounded cyclic transitions with arrows and visible labels instead of suppressing all edges. See [the reusable draft and binding contract](docs/DOER_LOOP.md#reusable-typed-v5-definition).
 
 Aegis is a Go control plane for authenticated, trust-stanza-bound sessions over an explicit Hermes Agent runtime. It does not hide Hermes, infer authority from prompts, or treat the model as an approver or provisioner.
 
@@ -186,7 +187,7 @@ The binding is mandatory. Precedence is:
 
 ## Authenticated gateway and console
 
-Browser password login defaults to one fixed hour (`api.console.session_ttl: 1h`, also the maximum), without sliding renewal. Sensitive actions still require independent fresh principal authentication (fifteen minutes by default); explicit password reauthentication replaces the old session and its pending reviews. Existing explicit shorter lifetimes, including the example's `5m`, remain unchanged on upgrade. See the [quickstart's lifetime and configuration guidance](docs/QUICKSTART.md#verify-the-console-and-daemon-ownership-contract).
+Browser password login defaults to six fixed hours (`api.console.session_ttl: 6h`, also the maximum), without sliding renewal. Dashboard sensitive actions use `api.console.action_auth_ttl` (six hours by default and maximum); shared `principal.auth_ttl` remains fifteen minutes for non-dashboard authority; explicit password reauthentication replaces the old session and its pending reviews. Existing explicit shorter lifetimes, including the example's `5m`, remain unchanged on upgrade. See the [quickstart's lifetime and configuration guidance](docs/QUICKSTART.md#verify-the-console-and-daemon-ownership-contract).
 
 The gateway-backed Linux terminal supports [guided protected credential creation](docs/TERMINAL_CREDENTIALS.md): ask `can we add a secret for a test?`, review and explicitly approve non-secret metadata, then enter and confirm the value in Aegis's no-echo dialog. Creation independently reloads metadata and returns a metadata-only receipt (or explicit committed-but-incompletely-confirmed status) to the same conversation; ordinary chat never becomes a credential-value intake endpoint.
 

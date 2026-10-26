@@ -118,7 +118,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	requeueBrowser := len(recovery) > 0 && recovery[0] == "linked-requeue-console-mismatched-authentication" && os.Getenv("AEGIS_QUEUE_REQUEUE_BROWSER_TEST") == "1"
 	// One fixture owns Serve and its transport lease. Browser helpers attach
 	// to this listener; they must never start another server on these stores.
-	if resultBrowser || requeueBrowser {
+	if resultBrowser || requeueBrowser || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue-console") {
 		probe, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -127,9 +127,16 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		_ = probe.Close()
 		svc.Config.API.Console.Origin = "http://" + svc.Config.API.Listen
 	}
+	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue-console") {
+		svc.Config.API.Console.SessionTTL = 2 * time.Minute
+		svc.Config.API.Console.ActionAuthTTL = time.Minute
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, svc) }()
+	portalReady := make(chan *DoerContinuationPortal, 1)
+	go func() {
+		done <- serveWithComposition(ctx, svc, noopTelemetry{}, func(p *DoerContinuationPortal) { portalReady <- p })
+	}()
 	defer func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -137,7 +144,8 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		}
 	}()
 	waitFor(t, "unix", svc.Config.API.UnixSocket)
-	if resultBrowser || requeueBrowser {
+	owningPortal := <-portalReady
+	if resultBrowser || requeueBrowser || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue-console") {
 		waitFor(t, "tcp", svc.Config.API.Listen)
 	}
 	client := unixClient(svc.Config.API.UnixSocket)
@@ -187,9 +195,18 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	var registered struct {
 		Agent app.FleetAgent `json:"agent"`
 	}
-	// Registration's public owning-service API is used because the online CLI
-	// transport deliberately does not allow registration.
-	apiRequest(t, client, http.MethodPost, "/v1/agents", app.NewRegisterFleetAgentInput(fixture, "journey-fleet", "journey-source"), &registered, http.StatusCreated)
+	// Exercise the advertised installed CLI through the actual owning service.
+	registrationPath := filepath.Join(cli.root, "registration.json")
+	registrationJSON, err := json.Marshal(app.NewRegisterFleetAgentInput(fixture, "journey-fleet", "journey-source"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registrationPath, registrationJSON, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cli.run(&registered, "agents", "register", registrationPath); err != nil {
+		t.Fatal(err)
+	}
 	workspace := t.TempDir()
 	text := "hello"
 	contract := loop.DoerContract{Task: "Create result.txt containing hello", Workspace: workspace, WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, MaxAttempts: 2, ExactBytes: true}
@@ -224,11 +241,18 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	revision := publication.Revision
 	if reusable {
 		contract.ExactBytes = false // v5 retains its declared trimmed-text assertion.
-		revision, _, err = loop.NewDoerReusableRevision("journey-doer", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
+		reusablePath := write("reusable-authoring.json", map[string]any{"agent_id": charter.AgentID, "loop_id": "journey-doer", "revision": 1, "idempotency_key": "journey-publish", "doer_reusable": loop.DoerReusableContract{MaxAttempts: 2}})
+		reusableBytes, err := exec.Command(cli.binary, "loops", "doer-reusable", reusablePath).Output()
 		if err != nil {
 			t.Fatal(err)
 		}
-		publication.Revision = revision
+		// Decode into a fresh envelope: omitted v4-only fields must not survive
+		// from the separately constructed selected-file proposal above.
+		publication = app.PublishLoopInput{}
+		if err := json.Unmarshal(reusableBytes, &publication); err != nil {
+			t.Fatal(err)
+		}
+		revision = publication.Revision
 		if len(revision.Outputs) != 0 {
 			t.Fatal("canonical reusable Doer unexpectedly declares outputs")
 		}
@@ -260,8 +284,8 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 		IdempotencyKey: "journey-request", Activate: true}
 	var retained app.DoerDraft
 	if retainedTask {
-		retained, err = svc.SaveDoerDraftAs(ctx, subject, app.DoerDraftInput{CreationKey: "retained-parity", Agent: input.Agent, LoopID: revision.LoopID, Revision: 1, Contract: contract})
-		if err != nil {
+		retainedPath := write("retained.json", app.DoerDraftInput{CreationKey: "retained-parity", Agent: input.Agent, LoopID: revision.LoopID, Revision: 1, Contract: contract})
+		if err := cli.run(&retained, "loops", "task-save", retainedPath); err != nil {
 			t.Fatal(err)
 		}
 		input.IdempotencyKey = retained.PublicationKey + "-run"
@@ -482,7 +506,7 @@ done
 
 	if len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked") {
 		if strings.HasPrefix(recovery[0], "linked-requeue") {
-			installedPersistedRequeue(t, ctx, svc, requeueClock, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
+			installedPersistedRequeue(t, ctx, svc, owningPortal, requeueClock, cli, input, workspace, install, script, strings.HasSuffix(recovery[0], "failure"), strings.HasPrefix(recovery[0], "linked-requeue-console"), recovery[0] == "linked-requeue-console-mismatched-authentication")
 			return
 		}
 		svc.Config.Principal.AuthTTL = 10 * time.Second
