@@ -131,6 +131,13 @@ func validContinuityPayload(e ContinuityEvent) bool {
 		payload.Continuation = nil
 	case "initialize":
 		payload.Limits = Counters{}
+	case "delivery-readiness-reserved":
+		payload.Counter = ""
+		payload.OperationID = ""
+		payload.RoleAuthority = nil
+		payload.Stage = ""
+		payload.Candidate = ""
+		payload.Evidence = reference.DigestRef{}
 	case "reserve":
 		payload.Counter = ""
 		payload.OperationID = ""
@@ -163,7 +170,7 @@ func ApplyContinuity(c Contract, prior Continuity, e ContinuityEvent) (Continuit
 	if _, err := Marshal(c); err != nil {
 		return prior, ErrContinuityConflict
 	}
-	if (e.SessionID != c.SessionID && e.Kind != "cancel-requested" && e.Kind != "observation" && e.Kind != "role-admitted" && e.Kind != "role-stop-requested" && e.Kind != "role-stop-acknowledged" && e.Kind != "native-reserved" && e.Kind != "native-completed" && e.Kind != "native-unknown" && e.Kind != "native-boundary-open" && e.Kind != "native-boundary-extend" && e.Kind != "native-boundary-closed") || !validContinuityPayload(e) {
+	if (e.SessionID != c.SessionID && e.Kind != "delivery-readiness-reserved" && e.Kind != "cancel-requested" && e.Kind != "observation" && e.Kind != "role-admitted" && e.Kind != "role-stop-requested" && e.Kind != "role-stop-acknowledged" && e.Kind != "native-reserved" && e.Kind != "native-completed" && e.Kind != "native-unknown" && e.Kind != "native-boundary-open" && e.Kind != "native-boundary-extend" && e.Kind != "native-boundary-closed") || !validContinuityPayload(e) {
 		return prior, ErrContinuityConflict
 	}
 	sealed, err := SealContinuityEvent(e)
@@ -220,6 +227,10 @@ func ApplyContinuity(c Contract, prior Continuity, e ContinuityEvent) (Continuit
 			}
 		case "observation", "role-admitted":
 			if err := applyRoleAuthority(c, prior, e, &next); err != nil {
+				return prior, err
+			}
+		case "delivery-readiness-reserved":
+			if err := applyDeliveryReadiness(prior, e, &next); err != nil {
 				return prior, err
 			}
 		case "reserve":

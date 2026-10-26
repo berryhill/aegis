@@ -98,7 +98,12 @@ func (s *Service) appendContributionReadinessReservation(ctx context.Context, se
 	// a concurrent winner. Deny ALL error paths, retaining any committed charge.
 	// In particular, never refresh the head, increment again, or grant permission
 	// from another caller's found reservation. This is not exactly-once HTTP.
-	e, err := contribution.SealContinuityEvent(contribution.ContinuityEvent{SchemaVersion: contribution.ContinuitySchema, QueueItemID: c.QueueItemID, ContractDigest: c.Digest, OwnerID: c.OwnerID, SessionID: session, Sequence: state.Sequence + 1, PreviousDigest: state.Digest, Kind: "reserve", Counter: "infrastructure-recheck", OperationID: id, At: s.Now()})
+	role := state.RoleAuthorities["controller"]
+	stage := "checks"
+	if i.Operation == delivery.Merge {
+		stage = "merge"
+	}
+	e, err := contribution.SealContinuityEvent(contribution.ContinuityEvent{SchemaVersion: contribution.ContinuitySchema, QueueItemID: c.QueueItemID, ContractDigest: c.Digest, OwnerID: c.OwnerID, SessionID: session, Sequence: state.Sequence + 1, PreviousDigest: state.Digest, Kind: "delivery-readiness-reserved", Counter: "infrastructure-recheck", OperationID: id, RoleAuthority: &role, Stage: stage, Candidate: state.Candidate, Evidence: state.CandidateEvidence, At: s.Now()})
 	if err != nil {
 		return err
 	}

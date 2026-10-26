@@ -43,8 +43,6 @@ func (s *Service) ObserveContributionContinuityAs(ctx context.Context, subject c
 // authority, stop acknowledgements, an approval receipt or an effect outcome.
 // Expected head makes uncertain responses reconcilable without double spending.
 type ContributionContinuityInput struct {
-	// OperationID identifies an idempotent reservation in the existing root history.
-	OperationID      string
 	ContractDigest   string
 	ExpectedSequence uint64
 	ExpectedDigest   string
@@ -92,7 +90,7 @@ func (s *Service) RecordContributionContinuityAs(ctx context.Context, subject co
 			}
 		}
 	}
-	event := contribution.ContinuityEvent{SchemaVersion: contribution.ContinuitySchema, QueueItemID: c.QueueItemID, ContractDigest: c.Digest, OwnerID: c.OwnerID, SessionID: session, Sequence: state.Sequence + 1, PreviousDigest: state.Digest, Kind: in.Kind, Counter: in.Counter, OperationID: in.OperationID, Stage: in.Stage, Candidate: in.Candidate, Evidence: in.Evidence, DecisionID: in.DecisionID, DecisionOutcome: in.DecisionOutcome, At: s.Now()}
+	event := contribution.ContinuityEvent{SchemaVersion: contribution.ContinuitySchema, QueueItemID: c.QueueItemID, ContractDigest: c.Digest, OwnerID: c.OwnerID, SessionID: session, Sequence: state.Sequence + 1, PreviousDigest: state.Digest, Kind: in.Kind, Counter: in.Counter, Stage: in.Stage, Candidate: in.Candidate, Evidence: in.Evidence, DecisionID: in.DecisionID, DecisionOutcome: in.DecisionOutcome, At: s.Now()}
 	if in.Kind == "initialize" {
 		event.Limits = contribution.ContinuityLimits{Candidates: uint32(c.CandidateBudget), QueueAttempts: 1, RuntimeTurns: 128, InfrastructureRechecks: 2, DecisionDeliveries: 8}
 	}

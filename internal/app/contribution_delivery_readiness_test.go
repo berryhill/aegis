@@ -8,87 +8,73 @@ import (
 	"testing"
 
 	"github.com/berryhill/aegis/internal/contribution"
+	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/delivery"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/reference"
 )
 
-func TestContributionReadinessCanonicalReservations(t *testing.T) {
+func TestContributionReadinessGenericForeignDenied(t *testing.T) {
 	ctx := context.Background()
-	s, _, subject, ref, reader := contributionFixture(t)
+	s, _, subject, ref, reader := contributionAuthorityFixture(t)
 	c, err := s.admitContributionAs(ctx, subject, "original", ref, reader.source.URL.URL, "readiness", "local-only", reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, err := s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, ContributionContinuityInput{ContractDigest: c.Digest, Kind: "initialize"})
+	st, err := s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, ContributionContinuityInput{ContractDigest: c.Digest, Kind: "initialize"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := func(id string) ContributionContinuityInput {
-		return ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest, Kind: "reserve", Counter: "infrastructure-recheck", OperationID: id}
-	}
-	first := input("readiness/check/1")
-	// Generic Record remains original-session-only; role ports must not weaken it.
-	if _, err := s.RecordContributionContinuityAs(ctx, subject, "foreign-controller-session", c.Key, first); err == nil {
-		t.Fatal("generic foreign-session reservation admitted")
-	}
-	// Simultaneous attempts use one exact head and one canonical operation ID.
-	var wg sync.WaitGroup
-	errs := make(chan error, 2)
-	for n := 0; n < 2; n++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, e := s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, first)
-			errs <- e
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	success := 0
-	for e := range errs {
-		if e == nil {
-			success++
-		} else if !errors.Is(e, contribution.ErrContinuityConflict) {
-			t.Fatal(e)
+	for _, counter := range []string{"infrastructure-recheck", "candidate", "queue-attempt", "runtime-turn", "decision-delivery"} {
+		if _, err = s.RecordContributionContinuityAs(ctx, subject, "foreign-controller", c.Key, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: st.Sequence, ExpectedDigest: st.Digest, Kind: "reserve", Counter: counter}); err == nil {
+			t.Fatal("foreign generic reserve")
 		}
 	}
-	if success != 1 {
-		t.Fatalf("CAS winners %d", success)
-	}
-	_, state, _, err = s.ObserveContributionContinuityAs(ctx, subject, c.Key)
-	if err != nil || state.Used.InfrastructureRechecks != 1 || state.Reservations[first.OperationID] != "infrastructure-recheck" {
-		t.Fatalf("unknown-response readback %+v %v", state, err)
-	}
-	// Fresh service calls and a changed checkpoint do not replenish root spending.
-	checkpoint := ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest, Kind: "checkpoint", Stage: "merge", Candidate: "candidate-two", Evidence: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "candidate-two", Digest: contribution.Digest([]byte("second"))}}
-	state, err = s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, checkpoint)
+}
+
+// These records are accounting fixtures, NOT native effect admission or grants.
+func readinessAccountingRole(t *testing.T, s *Service, sub core.Subject, c contribution.Contract, st contribution.Continuity) contribution.Continuity {
+	t.Helper()
+	ctx := context.Background()
+	binding, _ := contribution.SealedRole(c, "controller")
+	m, _, err := s.PreviewSessionAs(ctx, sub, binding.Charter.ID, binding.Charter.Revision, "principal", core.Environment{Name: "local"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Replaying the same operation at a fresh head must not double consume.
-	state, err = s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, input(first.OperationID))
-	if err != nil || state.Used.InfrastructureRechecks != 1 {
-		t.Fatalf("replay %+v %v", state, err)
+	session, err := s.StartSessionAs(ctx, sub, m.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	state, err = s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, input("readiness/merge/2"))
-	if err != nil || state.Used.InfrastructureRechecks != 2 {
-		t.Fatalf("second %+v %v", state, err)
+	t.Cleanup(func() { _ = s.TerminateSession(ctx, session.ID, "cleanup") })
+	authority, err := s.authorityContextForSession(ctx, session.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err = s.RecordContributionContinuityAs(ctx, subject, "original", c.Key, input("readiness/check/3"))
-	if !errors.Is(err, contribution.ErrContinuityExhausted) {
-		t.Fatal(fmt.Sprintf("global ceiling: %v", err))
+	_, _, err = s.BindQueueRuntimeAs(ctx, sub, BindQueueRuntimeInput{AgentID: c.Controller.ID, Authority: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: authority.ID, Digest: authority.Digest}, QueueItemID: c.QueueItemID, BindingID: "root-binding", TransitionID: "root-bound"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	foreign := subject
-	foreign.PrincipalID = "foreign"
-	if _, err = s.RecordContributionContinuityAs(ctx, foreign, "original", c.Key, input("foreign")); err == nil {
-		t.Fatal("foreign spend")
+	input := func() ContributionContinuityInput {
+		return ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: st.Sequence, ExpectedDigest: st.Digest}
 	}
-	cancelled, cancel := context.WithCancel(ctx)
-	cancel()
-	if _, err = s.RecordContributionContinuityAs(cancelled, subject, "original", c.Key, input("cancelled")); err == nil {
-		t.Fatal("cancelled spend")
+	st, err = s.AttachContributionObservationAs(ctx, sub, session.ID, c.Key, input())
+	if err != nil {
+		t.Fatal(err)
 	}
+	st, err = s.AdmitContributionRoleAs(ctx, sub, session.ID, c.Key, "controller", input())
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := input()
+	in.Kind = "checkpoint"
+	in.Stage = "checks"
+	in.Candidate = "candidate"
+	in.Evidence = reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "candidate", Digest: contribution.Digest([]byte("candidate"))}
+	st, err = s.RecordContributionContinuityAs(ctx, sub, c.SessionID, c.Key, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
 }
 
 // This tests the post-admission accounting seam with the real Service and Badger.
@@ -97,7 +83,7 @@ func TestContributionReadinessAttemptAccounting(t *testing.T) {
 	for _, concurrent := range []bool{false, true} {
 		t.Run(fmt.Sprint(concurrent), func(t *testing.T) {
 			ctx := context.Background()
-			s, _, subject, ref, reader := contributionFixture(t)
+			s, _, subject, ref, reader := contributionAuthorityFixture(t)
 			c, err := s.admitContributionAs(ctx, subject, "original", ref, reader.source.URL.URL, "readiness-attempt", "local-only", reader)
 			if err != nil {
 				t.Fatal(err)
@@ -106,6 +92,7 @@ func TestContributionReadinessAttemptAccounting(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			state = readinessAccountingRole(t, s, subject, c, state)
 			i := delivery.Intent{Operation: delivery.CheckDelivery, Reference: delivery.Reference{Contract: c.Digest, Run: c.RunID}}
 			if concurrent {
 				var wg sync.WaitGroup
@@ -114,7 +101,7 @@ func TestContributionReadinessAttemptAccounting(t *testing.T) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						errs <- s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state)
+						errs <- s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state)
 					}()
 				}
 				wg.Wait()
@@ -129,7 +116,7 @@ func TestContributionReadinessAttemptAccounting(t *testing.T) {
 					t.Fatalf("permissions for same global slot: %d", winners)
 				}
 			} else {
-				if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state); err != nil {
+				if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -140,11 +127,11 @@ func TestContributionReadinessAttemptAccounting(t *testing.T) {
 				t.Fatalf("held charge: %+v %v", state, err)
 			}
 			// An ambiguous duplicate cannot acquire another caller's accepted permission.
-			if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, old); err == nil {
+			if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, old); err == nil {
 				t.Fatal("stale CAS granted HTTP")
 			}
 			// Same exact UNKNOWN intent, fresh controller: charge NEXT slot, not a veto.
-			if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state); err != nil {
+			if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state); err != nil {
 				t.Fatal(err)
 			}
 			_, state, _, err = s.ObserveContributionContinuityAs(ctx, subject, c.Key)
@@ -153,7 +140,7 @@ func TestContributionReadinessAttemptAccounting(t *testing.T) {
 			}
 			for _, op := range []delivery.Operation{delivery.CheckDelivery, delivery.Merge} {
 				i.Operation = op
-				if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state); !errors.Is(err, delivery.ErrReadinessExhausted) {
+				if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state); !errors.Is(err, delivery.ErrReadinessExhausted) {
 					t.Fatalf("global ceiling %v", err)
 				}
 			}
@@ -173,7 +160,7 @@ func (s readinessLostResponseStore) AppendContributionContinuity(ctx context.Con
 
 func TestContributionReadinessLostResponseRetainsCharge(t *testing.T) {
 	ctx := context.Background()
-	s, store, subject, ref, reader := contributionFixture(t)
+	s, store, subject, ref, reader := contributionAuthorityFixture(t)
 	c, err := s.admitContributionAs(ctx, subject, "original", ref, reader.source.URL.URL, "readiness-loss", "local-only", reader)
 	if err != nil {
 		t.Fatal(err)
@@ -182,10 +169,11 @@ func TestContributionReadinessLostResponseRetainsCharge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state = readinessAccountingRole(t, s, subject, c, state)
 	i := delivery.Intent{Operation: delivery.CheckDelivery, Reference: delivery.Reference{Contract: c.Digest, Run: c.RunID}}
 	// Actual Badger commits, then only the response is replaced with an error.
 	s.FleetRepository = readinessLostResponseStore{store}
-	if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state); err == nil {
+	if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state); err == nil {
 		t.Fatal("lost response granted read")
 	}
 	s.FleetRepository = store
@@ -193,14 +181,14 @@ func TestContributionReadinessLostResponseRetainsCharge(t *testing.T) {
 	if err != nil || state.Used.InfrastructureRechecks != 1 {
 		t.Fatalf("lost charge %+v %v", state, err)
 	}
-	if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state); err != nil {
+	if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state); err != nil {
 		t.Fatal(err)
 	}
 	_, state, _, err = s.ObserveContributionContinuityAs(ctx, subject, c.Key)
 	if err != nil || state.Used.InfrastructureRechecks != 2 {
 		t.Fatalf("next charge %+v %v", state, err)
 	}
-	if err = s.appendContributionReadinessReservation(ctx, "original", i, 2, c, state); !errors.Is(err, delivery.ErrReadinessExhausted) {
+	if err = s.appendContributionReadinessReservation(ctx, state.RoleAuthorities["controller"].SessionID, i, 2, c, state); !errors.Is(err, delivery.ErrReadinessExhausted) {
 		t.Fatalf("exhaustion: %v", err)
 	}
 }
