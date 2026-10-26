@@ -8,14 +8,15 @@ import (
 // DoerProtectedSetupReview is review data, not authority. Receipt is an opaque,
 // session-bound one-use handle kept only in the native adapter's memory.
 type DoerProtectedSetupReview struct {
-	Action          string                 `json:"action"`
-	Draft           DoerDraft              `json:"draft"`
-	Proposal        *DoerSetupProposal     `json:"proposal,omitempty"`
-	ProvisionReview *core.Review           `json:"provision_review,omitempty"`
-	Plan            *core.Plan             `json:"plan,omitempty"`
-	Charter         *core.CanonicalCharter `json:"charter,omitempty"`
-	Host            *DoerHostApprovalInput `json:"host,omitempty"`
-	Receipt         string                 `json:"receipt,omitempty"`
+	Agent           *registry.AgentRevision `json:"agent,omitempty"`
+	Action          string                  `json:"action"`
+	Draft           DoerDraft               `json:"draft"`
+	Proposal        *DoerSetupProposal      `json:"proposal,omitempty"`
+	ProvisionReview *core.Review            `json:"provision_review,omitempty"`
+	Plan            *core.Plan              `json:"plan,omitempty"`
+	Charter         *core.CanonicalCharter  `json:"charter,omitempty"`
+	Host            *DoerHostApprovalInput  `json:"host,omitempty"`
+	Receipt         string                  `json:"receipt,omitempty"`
 }
 
 type DoerProtectedSetupInput struct {

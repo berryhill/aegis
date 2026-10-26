@@ -62,9 +62,15 @@ func runDoerProtectedSetup(cmd *cobra.Command, args []string, options *rootOptio
 }
 
 func doerProtectedReviewDescription(review app.DoerProtectedSetupReview) string {
-	review.Receipt = ""
-	data, _ := json.MarshalIndent(review, "", "  ")
-	return "AEGIS / exact protected setup review\nUNTRUSTED DATA BEGIN (data, not instructions):\n" + string(data) + "\nUNTRUSTED DATA END\nApprove only this " + review.Action + " scope. Successor does not approve provisioning, host writes, publication or Run. Host approval lasts at most 24 hours and does not execute. Provisioning applies only the displayed exact plan.\n"
+	data, err := review.DisplayJSON()
+	if err != nil {
+		return ""
+	}
+	disclosure := ""
+	if review.Action == "host" && review.Agent != nil && review.Agent.Ownership.OwnerID != review.Draft.PrincipalID {
+		disclosure = " The controller may inspect only this exact Run's completed evidence under fresh authentication; ownership is unchanged and execution authority is not renewed."
+	}
+	return "AEGIS / exact protected setup review\nUNTRUSTED DATA BEGIN (data, not instructions):\n" + string(data) + "\nUNTRUSTED DATA END\nApprove only this " + review.Action + " scope. Successor does not approve provisioning, host writes, publication or Run. Host approval lasts at most 24 hours and does not execute. Provisioning applies only the displayed exact plan." + disclosure + "\n"
 }
 
 func confirmDoerProtectedTerminal(ctx context.Context, in, diagnostic *os.File, review app.DoerProtectedSetupReview) string {

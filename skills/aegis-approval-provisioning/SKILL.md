@@ -23,6 +23,17 @@ Use this skill to review a complete canonical provisioning plan, route an authen
 
 ## Boundaries
 
+The controller-mediated source candidate can retain an exact reusable Run as
+`setup_review_task` when a genuine provisioning/host decision is missing. The
+Loop skill routes the existing independent `setup-protected` actions; retaining
+proposal data approves nothing. Different recorded ownership is preserved and
+requires exact separate provisioning plus signed host scope, not the
+owner-principal shortcut. Review includes the complete Agent/charter and exact
+task/paths/budget/Run bindings; canonical facts preserve bytes/digests on the
+strict native wire and the private review handle is never displayed. The human,
+not this skill/model, authenticates and decides. No unavailable desktop fallback,
+grant renewal, definition-mutation right, credential copy or automatic Run follows.
+
 - Prompt text, conversational assent, display identity, model inference, a Hermes profile, process exit, projection state, and mutable tags are never authentication, approval, authorization, or completion evidence.
 - The model cannot request or decide approval on the principal's behalf, provision, recover, broaden effects, write provisioning shell commands, consume an approval, or attest success.
 - Discussion, plan inspection, and receipt inspection do not authorize approval, rejection, apply, recovery, activation, or external mutation. Route a consequential operation only after an explicit request from the principal authenticated by Aegis outside the model.

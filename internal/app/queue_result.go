@@ -68,7 +68,8 @@ func (s *Service) GetQueueResult(ctx context.Context, id string) (QueueResult, e
 }
 
 // GetQueueResultAs first uses existing authenticated metadata visibility, then
-// requires the pinned participant's stable owner before disclosing task/content.
+// requires the pinned participant's stable owner or exact reviewed historical
+// controller context before disclosing task/content.
 // No Agent selector, raw blob reference or filesystem path is accepted.
 func (s *Service) GetQueueResultAs(ctx context.Context, subject core.Subject, id string) (QueueResult, error) {
 	if id == "" || len(id) > 255 {
@@ -96,9 +97,7 @@ func (s *Service) GetQueueResultAs(ctx context.Context, subject core.Subject, id
 	if err != nil || participant.Digest != node.Participant.Digest {
 		return QueueResult{}, fleet.ErrCorrupt
 	}
-	if participant.Ownership.OwnerID != subject.PrincipalID {
-		return QueueResult{}, ErrDenied
-	}
+	controllerMediated := participant.Ownership.OwnerID != subject.PrincipalID
 	revision, err := s.FleetRepository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision)
 	if err != nil || revision.Digest != node.Loop.Digest || v.Source != node.Loop {
 		return QueueResult{}, fleet.ErrCorrupt
@@ -110,6 +109,15 @@ func (s *Service) GetQueueResultAs(ctx context.Context, subject core.Subject, id
 	contract, err := orchestration.BindDirectDoerContract(revision, node, snapshot)
 	if err != nil {
 		return QueueResult{}, fleet.ErrCorrupt
+	}
+	if controllerMediated && v.Disposition == nil {
+		// Shared metadata is not task/content-read authority. No historical
+		// completion exists yet; expose only the already-authorized metadata.
+		out.Reason = "execution_not_terminal"
+		return out, nil
+	}
+	if controllerMediated && s.authorizeControllerQueueResult(ctx, subject, v, node, contract) != nil {
+		return QueueResult{}, ErrDenied
 	}
 	out.Task = contract.Task
 	if v.Disposition == nil {

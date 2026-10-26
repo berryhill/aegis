@@ -63,7 +63,7 @@ func (s *Service) hostApprovalAgent(ctx context.Context, ref reference.RevisionR
 	if e != nil {
 		return exact, e
 	}
-	if exact.Validate() != nil || latest.Validate() != nil || registration.Validate() != nil || initial.Validate() != nil || agentRevisionRef(initial) != registration.InitialRevision || agentRevisionRef(exact) != ref || agentRevisionRef(latest) != ref || exact.Lifecycle != registry.LifecycleEnabled || latest.Lifecycle != registry.LifecycleEnabled || initial.Ownership.OwnerID != exact.Ownership.OwnerID || exact.Ownership.OwnerID != s.Config.Principal.ID {
+	if exact.Validate() != nil || latest.Validate() != nil || registration.Validate() != nil || initial.Validate() != nil || agentRevisionRef(initial) != registration.InitialRevision || agentRevisionRef(exact) != ref || agentRevisionRef(latest) != ref || exact.Lifecycle != registry.LifecycleEnabled || latest.Lifecycle != registry.LifecycleEnabled || initial.Ownership.OwnerID != exact.Ownership.OwnerID {
 		return exact, ErrDenied
 	}
 	return exact, nil
@@ -81,7 +81,7 @@ func (s *Service) ApproveDoerHostWriteAs(ctx context.Context, subject core.Subje
 			return DoerHostApproval{}, ErrDenied
 		}
 	}
-	draft, e := s.ValidateDoerDraftPublicationAs(ctx, subject, input.DraftID, input.DraftVersion)
+	draft, e := s.ValidateDoerDraftHostReviewAs(ctx, subject, input.DraftID, input.DraftVersion)
 	if e != nil {
 		return DoerHostApproval{}, e
 	}
@@ -89,7 +89,7 @@ func (s *Service) ApproveDoerHostWriteAs(ctx context.Context, subject core.Subje
 	if e != nil {
 		return DoerHostApproval{}, e
 	}
-	candidate, _, e := loop.NewDoerRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+	candidate, e := s.doerHostReviewCandidate(ctx, subject, draft)
 	if e != nil {
 		return DoerHostApproval{}, e
 	}
@@ -104,10 +104,20 @@ func (s *Service) ApproveDoerHostWriteAs(ctx context.Context, subject core.Subje
 	expires := now.Add(24 * time.Hour)
 	// Host consent is bounded independently of authentication continuation.
 	r := hostapproval.Record{Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: draft.Agent, Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: draft.PreviousDigest, Contract: draft.Contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires}
+	if agent.Ownership.OwnerID != subject.PrincipalID {
+		r.ControllerSubjectID = subject.ID
+	}
+	if draft.HostRun != nil {
+		r.RunRequestID = queueLoopRequestID(subject, *draft.HostRun)
+		r.DoerReusable = candidate.DoerReusable
+		if r.ControllerSubjectID != "" {
+			r.RunInputDigest = draft.HostReviewInputDigest()
+		}
+	}
 	if s.requirePrincipal(subject) != nil || !s.Now().Before(subject.AuthenticatedAt.Add(s.Config.Principal.AuthTTL)) {
 		return DoerHostApproval{}, ErrDenied
 	}
-	if _, e = s.ValidateDoerDraftPublicationAs(ctx, subject, input.DraftID, input.DraftVersion); e != nil {
+	if _, e = s.ValidateDoerDraftHostReviewAs(ctx, subject, input.DraftID, input.DraftVersion); e != nil {
 		return DoerHostApproval{}, e
 	}
 	if _, e = s.hostApprovalAgent(ctx, draft.Agent); e != nil {
@@ -128,10 +138,18 @@ func (s *Service) ReadDoerHostWriteApprovalAs(ctx context.Context, subject core.
 	if s.requirePrincipal(subject) != nil {
 		return DoerHostApproval{}, ErrDenied
 	}
-	if _, e := s.hostApprovalAgent(ctx, agent); e != nil {
+	fresh, e := s.hostApprovalAgent(ctx, agent)
+	if e != nil {
 		return DoerHostApproval{}, e
 	}
-	return s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, subject.PrincipalID, agent, c, s.Now())
+	record, e := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, fresh.Ownership.OwnerID, agent, c, s.Now())
+	if e != nil {
+		return DoerHostApproval{}, e
+	}
+	if record.PrincipalID != subject.PrincipalID || (fresh.Ownership.OwnerID != subject.PrincipalID && record.ControllerSubjectID == "") {
+		return DoerHostApproval{}, ErrDenied
+	}
+	return record, nil
 }
 
 // Resolve is installed in the worker, not exposed as browser authority input.
@@ -151,6 +169,15 @@ func (s *Service) resolveDoerHostApproval(ctx context.Context, c loop.DoerContra
 	record, e := s.Store.ReadDoerHostApproval(s.Config.Credentials.Authority.DeploymentID, fresh.Ownership.OwnerID, ref, c, s.Now())
 	if e != nil {
 		return e
+	}
+	if record.PrincipalID != s.Config.Principal.ID || (fresh.Ownership.OwnerID != s.Config.Principal.ID && record.ControllerSubjectID == "") {
+		return ErrDenied
+	}
+	if record.RunInputDigest != "" {
+		var identity string
+		if s.Store.Load("queue-loop-intent", record.RunRequestID, &identity) != nil || record.RunInputDigest != "sha256:"+identity {
+			return ErrDenied
+		}
 	}
 	if record.RunRequestID != "" {
 		requestID, candidate, workerScope := orchestration.DoerExecutionScope(ctx)

@@ -14,7 +14,7 @@ import (
 	"github.com/berryhill/aegis/internal/store"
 )
 
-// This policy prepares only an owner-principal's zero-authority disposable
+// This policy prepares only an independently admitted zero-authority disposable
 // Doer session. It is NOT provisioning: no provisioned mapping is read or
 // written by Hermes.Launch. RequiredOperations (including provision) remain
 // unchanged and enforced for actual provisioning and general session entry.
@@ -37,23 +37,35 @@ func (s *Service) doerEphemeralPreparationAllowed(ctx context.Context, subject c
 	if err != nil || canonical.Digest != candidate.Digest {
 		return false
 	}
-	if _, err := queuedDoerContract(ctx, candidate); err != nil {
+	contract, err := queuedDoerContract(ctx, candidate)
+	if err != nil {
 		return false
 	}
 	fresh, err := s.hostApprovalAgent(ctx, agentRevisionRef(agent))
 	if err != nil || fresh.Digest != agent.Digest || agent.Runtime.Adapter != "hermes" || agent.Runtime.Runtime != "hermes-agent" || agent.Runtime.Target != "aegis-owned-ephemeral" {
 		return false
 	}
-	charter, err := s.GetCharter(agent.Charter.ID, agent.Charter.Revision)
-	if err != nil || charter.Digest != agent.Charter.Digest || charter.Charter.Runtime.Target != agent.Runtime.Target {
+	if !s.doerControllerCharterAllowed(ctx, subject, agent) {
 		return false
 	}
-	decision, err := s.Select(charter, subject, "", core.Environment{Name: "local"})
-	if err != nil || decision.Selected == nil {
-		return false
+	if agent.Ownership.OwnerID != subject.PrincipalID {
+		// A different recorded owner never inherits the legacy exact-Run shortcut.
+		verified, err := s.hasVerifiedReceipt(agent.Charter.Digest)
+		if err != nil || !verified {
+			return false
+		}
+		record, err := s.ReadDoerHostWriteApprovalAs(ctx, subject, agentRevisionRef(agent), contract)
+		if err != nil || record.Candidate != loopRevisionRef(candidate) {
+			return false
+		}
+		if candidate.SchemaVersion == loop.DoerReusableSchemaVersion {
+			intent, ok := ctx.Value(exactDoerRunKey{}).(exactDoerRun)
+			if !ok || record.RunRequestID != intent.requestID || record.Candidate != intent.candidate {
+				return false
+			}
+		}
 	}
-	st := decision.Selected
-	return len(st.Grant.Capabilities) == 0 && len(st.Grant.Tools) == 0 && len(st.Hermes.Toolsets) == 0 && len(st.Scopes.Memory) == 0 && len(st.Scopes.Credentials) == 0 && st.Hermes.Profile == "" && !st.Hermes.PersistentHome && len(st.Hermes.MCPServers) == 0 && len(st.Hermes.Plugins) == 0
+	return true
 }
 
 // Only exact authenticated QueueLoop or retained task execution installs this
@@ -164,6 +176,10 @@ func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subj
 		// Resolve rechecks either this exact signed Run or its canonical
 		// same-task v5 continuation under the unchanged approval lifetime.
 		return nil
+	}
+	// Never auto-approve or refresh non-owner host authority from Run consent.
+	if agent.Ownership.OwnerID != subject.PrincipalID {
+		return ErrDenied
 	}
 	now := s.Now().UTC()
 	expires := subject.ExpiresAt

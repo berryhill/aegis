@@ -212,7 +212,38 @@ retries the same retained Run. Do not create replacement definitions or output.
 
 `loops readiness FILE [--probe]` and authenticated `POST /v1/loops/doer/readiness` also accept `{ "agent": EXACT_AGENT_REF, "loop": EXACT_V5_LOOP_REF, "inputs": TYPED_RUN_INPUTS }`, without `candidate`. They resolve the published immutable revision and use the same pure direct-contract binder as Run. Optional `idempotency_key` and `activate` describe the intended Run payload for principal-scoped request identity and retained-payload conflict checks; readiness never reserves that key or activates the Loop. Omit them when only inspecting the contract. Default inspection never calls the helper; `--probe` explicitly requests bounded protocol qualification, not task execution.
 
-Blocked Run responses retain `request_id`, `readiness.contract_digest`, ordered prerequisite statuses and a closed `required_action`. Readiness exclusively accepts a v4 `candidate` or an exact published v5 `loop` with normalized `inputs` and optional intent key/activation choice; mixed shapes, partial references, null and unknown fields deny before effects. Existing zero omitted typed structs remain compatible. V4 absent/invalid/expired host consent returns `review_exact_host_write_contract`, preserving the supported exact protected review boundary; no URL or authority is inferred. Controller capability, host grant custody (absent/invalid/expired), protected workspace, trusted executable/home integrity, helper availability and cancellation are distinct; unknown backend text is not returned. Downstream checks remain `not_checked`. The existing signed host-review record is v4-bound: `exact_v5_host_review_adapter_unavailable` explicitly reports that a protected reusable-v5 review adapter is unavailable. It is not an approval or a suggestion to edit configuration, publish v4, or let an agent approve. Existing independently authorized exact contracts remain subject to fresh worker admission. Console's v4 Run form does not collect reusable inputs; use the typed owning-service interface for v5, not a substituted v4 task.
+Blocked Run responses retain `request_id`, `readiness.contract_digest`, ordered
+prerequisite statuses and a closed `required_action`. Readiness exclusively accepts
+a v4 `candidate` or exact published v5 `loop` with normalized inputs; mixed shapes,
+partial refs, null and unknown fields deny. Observation never retains setup,
+reserves intent, approves scope or executes. V4 host causes retain
+`review_exact_host_write_contract`. The matching source candidate returns v5
+`review_exact_reusable_run_host_write` and an actual Run can retain a
+`setup_review_task` for exact provisioning/host review. Older services reporting
+`exact_v5_host_review_adapter_unavailable` remain unavailable; do not edit config,
+substitute v4 or fabricate approval to escape that result.
+
+The retained task binds the original normalized `host_run`, immutable v5 and Agent
+refs, contract, key and fixed lifetime. Identical blocked Run replay reuses it.
+Request existing `loops setup-protected` with its returned ID/version and required
+`provision` or `host` action; the human authenticates and decides independently.
+Neither action publishes, activates, issues a runtime session or executes. A
+different recorded owner requires exact provisioning plus signed host consent
+binding the owner, controller approver, deployment, Agent, candidate, contract and
+complete Run-input digest. It never inherits the owner-principal shortcut. Resume
+the unchanged original queue payload/key after authoritative readback. This is
+controller mediation, not independent profile authentication or authority union.
+
+Protected review carries exact validated canonical Agent/charter JSON as explicit
+data strings on the wire so legitimate nullable canonical fields preserve their
+bytes and digests. The native consumer's null/duplicate/unknown-field policy is
+unchanged; encoded facts have their own strict domain decoding and digest checks.
+The human sees complete readable facts with no private review handle. Current
+runtime/effect admission stays live; historical completed-result inspection uses
+fresh reader authentication and verified facts at recorded evidence time, without
+renewing or resurrecting execution authority. Isolated fixtures are not genuine
+human approval, live-provider or complete pilot acceptance. Console's v4 Run form
+still does not collect reusable inputs; use the typed v5 interface.
 
 ## Protected setup through installed skills (source candidate)
 
