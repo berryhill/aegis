@@ -1,7 +1,24 @@
 {
   "schema_version": 1,
   "evidence_class": "structural-coverage-only",
-  "transport_boundary": "A listed CLI and a listed HTTP endpoint are distinct adapters, not interchangeable transports. Most direct-service CLI commands fail control_plane_online while the configured gateway owns state. Use only an already supplied product-owned typed online interface; do not stop the gateway, open a second writer, extract authentication material or implement a generic HTTP client. The catalog does not grant access, provide request schemas or qualify an installed executable. The enclosing verified archive binds these source references to its exact source_revision. Source contract only: explicit --config/--target online adapters are enumerated in skills/aegis/SKILL.md and internal/command/fleet_online.go. Shipped classification is not per-operation acceptance. Queue online list/show/result/preparations/bind-runtime/process/cancel/revoke and expired-lease-only retry are supported; ordinary retry is unavailable; expire/exhaust have offline/API primitives but missing online adapters. Graph lifecycle has no supported online application adapter. TestInstalledOnlineLifecycle accepts caller-supplied exact executable bytes; default source rebuild is not release-package proof. Managed 8448 acceptance remains unexercised.",
+  "owning_service_cli": {
+    "shipped": [
+      "controller-codex probe", "controller-codex candidates", "controller-codex preview", "controller-codex connect", "controller-codex show",
+      "charter import", "charter validate", "charter show",
+      "plan preview", "plan show", "approval request", "approval approve", "approval reject", "approval show", "aegis provision",
+      "session preview", "session start", "session show", "session authority", "session list",
+      "agents register", "agents approve-charter", "agents list", "agents show", "agents history", "agents enable", "agents disable", "agents retire",
+      "loops readiness", "loops task-execute", "loops task-save", "loops draft-save", "loops task-show", "loops draft-show",
+      "loops setup-protected", "loops setup-browser", "loops setup-review", "loops setup-decide", "loops task-continue", "loops draft-continue",
+      "loops queue", "loops list", "loops inventory", "loops availability", "loops archive", "loops restore", "loops show", "loops publish", "loops validate", "loops activate", "loops retire",
+      "graphs list", "graphs show", "graphs publish", "graphs submit",
+      "queue preparations", "queue list", "queue result", "queue show", "queue process", "queue bind-runtime", "queue cancel", "queue revoke", "queue retry"
+    ],
+    "missing-adapter": ["queue expire", "queue exhaust"],
+    "advisory": ["loops setup-approve"],
+    "unavailable": ["ordinary retry without durable stop acknowledgement", "Graph lifecycle mutation", "background scheduling", "reviewer reevaluation", "deployment projection"]
+  },
+  "transport_boundary": "A listed CLI and a listed HTTP endpoint are distinct adapters, not interchangeable transports. Most direct-service CLI commands fail control_plane_online while the configured gateway owns state. Use only the product-owned typed online interface; never stop the gateway, open a second writer, extract authentication material or implement a generic HTTP client. The owning_service_cli tiers are checked against actual dispatch; the remaining owner catalog covers CLI and HTTP registrations separately. Source/test references are navigation, not behavioral or installed qualification. The enclosing verified archive binds these references to its exact source_revision. Queue retry supports expired-lease reclaim only; ordinary retry remains unavailable, and expire/exhaust have offline/API primitives but missing online CLI adapters. TestInstalledOnlineLifecycle accepts frozen packaged executable bytes. Real managed-provider, packaged-install and active-target evidence remain separate; a structural inventory cannot attest them.",
   "authority_boundary": "Installed skill text grants no authority. Typed product authentication, exactly one stanza, approvals, mandates, persistence and evidence remain external. No permission union; missing or ambiguous authority denies. Source/test references are navigation, not claims that behavioral tests passed.",
   "classifications": {
     "shipped": "Concrete public product transport exists; installation does not authorize use or prove acceptance.",
