@@ -18,6 +18,100 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class InstalledFleetVerticalContract(unittest.TestCase):
+    def exercise_console_port(self, supplied, *, occupied=False, restart=False):
+        """Run real main setup, stopping before any product operation."""
+        proof = runpy.run_path(str(REPO / "scripts/verify-installed-fleet-vertical.py"))
+
+        class ProductBoundary(Exception):
+            pass
+
+        environment = {"AEGIS_INSTALLED_CONSOLE_BROWSER": "mock-browser",
+                       "AEGIS_INSTALLED_CONSOLE_REPO": str(REPO)}
+        if supplied is not None:
+            environment["AEGIS_ACCEPTANCE_PORT"] = supplied
+        with tempfile.TemporaryDirectory(dir=REPO) as directory, \
+                mock.patch.dict("os.environ", environment, clear=True), \
+                mock.patch.object(sys, "argv", ["proof", sys.executable, directory]), \
+                mock.patch("socket.socket") as sockets, \
+                mock.patch("subprocess.run") as run, \
+                mock.patch("subprocess.Popen") as popen:
+            probe = sockets.return_value.__enter__.return_value
+            probe.getsockname.return_value = ("127.0.0.1", 47965)
+            if occupied:
+                probe.bind.side_effect = OSError("address already in use")
+            # First call is mocked auth initialization; next is charter validation.
+            run.side_effect = [mock.Mock(), ProductBoundary()]
+            try:
+                proof["main"]()
+            except SystemExit:
+                run.assert_not_called()
+                popen.assert_not_called()
+                if occupied:
+                    assert supplied is not None
+                    probe.bind.assert_called_once_with(("127.0.0.1", int(supplied)))
+                    probe.setsockopt.assert_not_called()
+                    probe.getsockname.assert_not_called()
+                else:
+                    sockets.assert_not_called()
+                raise
+            except ProductBoundary as exc:
+                trace = exc.__traceback__
+                while trace is not None and trace.tb_frame.f_code.co_name != "main":
+                    trace = trace.tb_next
+                assert trace is not None
+                state = trace.tb_frame.f_locals
+            else:
+                self.fail("main did not reach the product boundary")
+            config = Path(directory, "aegis.yaml").read_text()
+            if restart:
+                server = popen.return_value
+                server.poll.return_value = None
+                server.wait.return_value = 0
+                with mock.patch("urllib.request.urlopen") as urlopen, \
+                        mock.patch.dict(state["browser_phase"].__globals__,
+                                        {"run_owned": mock.Mock(return_value=mock.Mock(returncode=0, stdout=b""))}), \
+                        mock.patch.object(sys, "stdout"):
+                    state["browser_phase"]("registration-readback")
+                    state["browser_phase"]("reconstruction")
+                self.assertEqual(urlopen.call_args_list,
+                                 [mock.call(state["console_origin"] + "/console", timeout=1)] * 2)
+                self.assertEqual(popen.call_count, 2)
+                for call in popen.call_args_list:
+                    self.assertEqual(call.args[0][-1], "serve")
+                    self.assertEqual(call.args[0][2], str(Path(directory, "aegis.yaml")))
+                self.assertEqual(server.terminate.call_count, 2)
+                self.assertEqual(server.wait.call_count, 2)
+                server.kill.assert_not_called()
+            return state["console_port"], config, probe.bind.call_args_list
+
+    def test_helper_port_boundaries_wire_main_config_and_restart(self) -> None:
+        for port in (8450, 8469):
+            with self.subTest(port=port):
+                selected, config, binds = self.exercise_console_port(str(port), restart=True)
+                self.assertEqual(selected, port)
+                self.assertIn(f"listen: 127.0.0.1:{port}\n", config)
+                self.assertIn(f"origin: http://127.0.0.1:{port}\n", config)
+                self.assertIn(f".installed-console-{port}.sock", config)
+                self.assertEqual(binds, [mock.call(("127.0.0.1", port))])
+
+    def test_absent_helper_port_preserves_hermetic_ephemeral_fallback(self) -> None:
+        selected, config, binds = self.exercise_console_port(None)
+        self.assertEqual(selected, 47965)
+        self.assertIn("listen: 127.0.0.1:47965\n", config)
+        self.assertEqual(binds, [mock.call(("127.0.0.1", 0))])
+
+    def test_invalid_helper_port_denied_before_socket_or_process(self) -> None:
+        for value in ("", "8448", "8098", "8449", "8470", "0", "65536", "-8450",
+                      "+8450", "08450", " 8450", "8450 ", "8450\n", "8450.0",
+                      "８４５０", "٨٤٥٠", "8_450", "abc"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(SystemExit, "AEGIS_ACCEPTANCE_PORT"):
+                    self.exercise_console_port(value)
+
+    def test_occupied_helper_port_fails_without_fallback_or_takeover(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "console port unavailable"):
+            self.exercise_console_port("8450", occupied=True)
+
     def test_gateway_answers_empty_tools_preflight_before_session(self) -> None:
         tree = ast.parse((REPO / "scripts/verify-installed-fleet-vertical.py").read_text())
         gateway_source = next(node.args[0] for node in ast.walk(tree)
