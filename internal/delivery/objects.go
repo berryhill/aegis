@@ -76,12 +76,7 @@ func privatePath(s string) bool {
 	return false
 }
 func secretBytes(b []byte) bool {
-	for _, s := range []string{"-----BEGIN ", "github_pat_", "ghp_", "AKIA", "PRIVATE KEY", "password=", "token="} {
-		if bytes.Contains(b, []byte(s)) {
-			return true
-		}
-	}
-	return closing.Match(b)
+	return publicationCredential.Match(b) || closing.Match(b)
 }
 func treeEntries(raw []byte) ([]treeEntry, error) {
 	entries := []treeEntry{}

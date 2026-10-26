@@ -22,7 +22,7 @@ import (
 // CompleteQueueItem atomically publishes immutable evidence metadata, the
 // terminal disposition, the queue transition, and authoritative audit fact.
 func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader) error {
-	return s.completeQueueItem(ctx, completion, fact, evidenceReader, nil)
+	return s.completeQueueItem(ctx, completion, fact, evidenceReader, nil, false)
 }
 
 // CompleteContributionQueueItem admits either original-lease completion or the
@@ -46,10 +46,10 @@ func (s *Store) CompleteContributionQueueItem(ctx context.Context, completion fl
 	if !ok || completion.Disposition.State != execution.State(state) || completion.Disposition.ReasonCode != reason {
 		return fleet.ErrConflict
 	}
-	return s.completeQueueItem(ctx, completion, fact, reader, &report)
+	return s.completeQueueItem(ctx, completion, fact, reader, &report, false)
 }
 
-func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader, contributionReport *evidence.ContributionTerminalReport) error {
+func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader, contributionReport *evidence.ContributionTerminalReport, aggregate bool) error {
 	dispositionWire, err := disposition.Marshal(completion.Disposition)
 	if err != nil {
 		return err
@@ -95,6 +95,9 @@ func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completi
 		}
 	}
 	return s.update(ctx, func(txn *badgerdb.Txn) error {
+		if aggregate && !exactGraphAggregate(txn, completion, evidenceReader) {
+			return fleet.ErrConflict
+		}
 		claimWire, e := get(txn, key(familyClaim, completion.Claim.ClaimID))
 		if e != nil {
 			return e
@@ -211,6 +214,8 @@ func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completi
 			qualified := false
 			if contributionReport != nil {
 				qualified = exactContributionTerminalEvidence(txn, attempt, completion, *contributionReport)
+			} else if aggregate {
+				qualified = exactNodeEvidence(txn, attempt, completion)
 			} else {
 				qualified = exactRequiredEvidence(txn, attempt, completion)
 			}
@@ -230,12 +235,12 @@ func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completi
 			return e
 		}
 		if completion.Artifact != nil {
-			if e = create(txn, key(familyRuntimeArtifact, completion.Artifact.ID), artifactWire); e != nil {
+			if e = createCompletionEvidence(txn, key(familyRuntimeArtifact, completion.Artifact.ID), artifactWire, aggregate); e != nil {
 				return e
 			}
 		}
 		for index, receipt := range completion.Receipts {
-			if e = create(txn, key(familyVerificationReceipt, receipt.ID), receiptWires[index]); e != nil {
+			if e = createCompletionEvidence(txn, key(familyVerificationReceipt, receipt.ID), receiptWires[index], aggregate); e != nil {
 				return e
 			}
 		}
@@ -259,6 +264,11 @@ func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completi
 }
 
 func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, completion fleet.Completion) bool {
+	child, err := loadLoopExecution(txn, attempt.LoopExecutionID)
+	return err == nil && exactSingleNodeCompletion(txn, attempt, child) && exactNodeEvidence(txn, attempt, completion)
+}
+
+func exactNodeEvidence(txn *badgerdb.Txn, attempt execution.Attempt, completion fleet.Completion) bool {
 	executionWire, err := get(txn, key(familyLoopExecution, attempt.LoopExecutionID))
 	if err != nil {
 		return false

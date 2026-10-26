@@ -129,6 +129,15 @@ func validateLoopValidationResult(result LoopValidationResult) error {
 }
 
 func canonicalRevision(value LoopRevision) LoopRevision {
+	if value.ManagedDoer != nil {
+		c := *value.ManagedDoer
+		c.Doer.WritableFiles = append([]string(nil), c.Doer.WritableFiles...)
+		if c.Doer.ExpectedText != nil {
+			text := *c.Doer.ExpectedText
+			c.Doer.ExpectedText = &text
+		}
+		value.ManagedDoer = &c
+	}
 	if value.Contribution != nil {
 		p := *value.Contribution
 		p.Invariants = append([]string(nil), p.Invariants...)

@@ -7,7 +7,11 @@ import (
 )
 
 // ReadinessBudget is the trusted #377 infrastructure counter owner, NOT a new
-// counter. ReserveReadiness must durably consume one root-global recheck before
+// counter. Each ReserveReadiness call charges a NEW root-global read ATTEMPT,
+// including crashes before HTTP and uncertain CAS responses (no refund/reuse).
+// A deterministic reservation ID does not prove a concurrent caller owns a read.
+// Deny ambiguous CAS errors even if that ID is found; never claim exactly-once HTTP.
+// ReserveReadiness must durably consume one root-global recheck before
 // returning nil, bound to this exact Reference and Check/Merge intent. maximum
 // is a ceiling on the EXISTING cumulative root counter, across candidates,
 // phases, processes and Run invocations. Never reset or silently renew it.

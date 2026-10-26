@@ -1,5 +1,14 @@
 # Aegis Project Memory and Working Rules
 
+## #317 bounded chain source boundary
+
+The current source adds the exact raw-v2 / managed-v7 two-node chain and optional
+typed Queue node checkpoint readback described in
+[the source contract](docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md).
+Earlier single-node-only descriptions below refer to the historical qualified
+vertical, not a denial of this additive source path. General scheduling,
+real-provider qualification and installed acceptance remain separate and unproven.
+
 ## Candidate acceptance port isolation — read before launch
 
 Read [.hermes/acceptance-port-isolation.md](.hermes/acceptance-port-isolation.md)

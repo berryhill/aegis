@@ -20,8 +20,15 @@ against **#377's existing root-global infrastructure counter**, validating exact
 root/contract/candidate and Check/Merge ID plus native continuity. That owner must
 retain consumption across candidates, phases, processes and repeated Run calls;
 the Conductor's additional per-invocation ceiling cannot replace persistence.
-Actual #377 integration remains a hard gate. The finite test budget is explicitly
-qualification-only, not a production owner implementation.
+The productive owner validates actual private authority and fresh instructions
+before charging the existing counter. Each call reserves a NEW ATTEMPT using the
+exact intent and next GLOBAL slot, even if UNKNOWN and its revision are unchanged.
+A crash before HTTP or uncertain committed CAS response retains the charge, with
+no refund, replay freebie or revision-generation veto. One fixed-head CAS is
+attempted per call; all CAS errors deny HTTP, even if the deterministic ID exists,
+because a concurrent winner cannot be distinguished from an uncertain own write.
+The next call may consume the next slot, never replay the mutation/effect intent.
+This conservative attempt accounting does not claim exactly-once HTTP.
 
 Canonical Check reservation returns freshness before any HTTP. Its first read
 uses Reconcile/read-only while retaining fresh reservation/CAS semantics. Every

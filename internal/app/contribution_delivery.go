@@ -9,6 +9,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/orchestration"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
@@ -17,10 +18,26 @@ import (
 
 var ErrContributionDeliveryUnavailable = errors.New("contribution delivery native continuity integration unavailable")
 
-// ContributionDeliveryPolicy is trusted controller configuration, not a runtime
-// request or model artifact. Its entire exact scope is content-addressed and must
-// be resolved from the controller's immutable reviewed policy store.
+// ContributionDeliveryPolicy is a reproducible controller projection, not a
+// grant, runtime request or model artifact. Productive callers use the concrete
+// trusted controller, which derives it from canonical state and server policy.
+// ContributionDeliveryCredentialPin is immutable nonsecret approval metadata, not authority.
+type ContributionDeliveryCredentialPin struct {
+	Key             credentials.CredentialBindingKey
+	BindingRevision uint64
+	SecretRecord    string
+	Version         uint64
+	Destination     string
+	Actor           string
+	RepositoryID    uint64
+	Operations      []delivery.Operation
+}
+
 type ContributionDeliveryPolicy struct {
+	// OriginalCommit preserves the exact publication payload, including reviewed files.
+	// Nil retains legacy policy digests and denies historical Publish reconstruction.
+	OriginalCommit *delivery.CommitSpec               `json:",omitempty"`
+	CredentialPin  *ContributionDeliveryCredentialPin `json:",omitempty"`
 	// ControllerSession is an explicit trusted controller-role pin, never inferred from intake.
 	ControllerSession                                                           string
 	Binding                                                                     fleetbadger.ContributionDeliveryBinding
@@ -38,6 +55,19 @@ type ContributionDeliveryPolicy struct {
 // snapshot detaches slices from the trusted immutable resolver store. Callers
 // must not mutate incoming policy storage concurrently with resolution.
 func (p ContributionDeliveryPolicy) snapshot() ContributionDeliveryPolicy {
+	if p.CredentialPin != nil {
+		pin := *p.CredentialPin
+		pin.Operations = slices.Clone(pin.Operations)
+		p.CredentialPin = &pin
+	}
+	if p.OriginalCommit != nil {
+		commit := *p.OriginalCommit
+		commit.Files = slices.Clone(commit.Files)
+		for n := range commit.Files {
+			commit.Files[n].Bytes = slices.Clone(commit.Files[n].Bytes)
+		}
+		p.OriginalCommit = &commit
+	}
 	p.AllowedFiles = slices.Clone(p.AllowedFiles)
 	p.RequiredChecks = slices.Clone(p.RequiredChecks)
 	p.RequiredReviewers = slices.Clone(p.RequiredReviewers)
@@ -86,12 +116,11 @@ type contributionContinuityCandidateOwner interface {
 // NewContributionDeliverySource is productive only with the actual #377 owner.
 // The legacy gate parameter is not a substitute for that owner or its private proof.
 func NewContributionDeliverySource(s *Service, subject core.Subject, key string, ref reference.DigestRef, policies ContributionDeliveryPolicyResolver, _ orchestration.ContributionQuiescenceGate) (*ContributionDeliverySource, error) {
-	owner, ok := any(s).(contributionContinuityCandidateOwner)
-	if s == nil || !ok {
+	if s == nil {
 		return nil, ErrContributionDeliveryUnavailable
 	}
 	return newContributionDeliverySource(s, subject, key, ref, policies, func(ctx context.Context, session string, action func(context.Context, orchestration.ContributionCandidate) error) error {
-		return owner.WithContributionContinuityCandidateAs(ctx, subject, session, key, action)
+		return s.WithContributionContinuityCandidateAs(ctx, subject, session, key, action)
 	})
 }
 
@@ -160,6 +189,9 @@ func (s *ContributionDeliverySource) WithAccepted(ctx context.Context, ref deliv
 		if x != nil {
 			return delivery.ErrDenied
 		}
+		if x = s.service.retainContributionDeliveryPolicy(cctx, policy); x != nil {
+			return delivery.ErrDenied
+		}
 		if x = action(cctx, p); x != nil {
 			return x
 		}
@@ -225,6 +257,21 @@ func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.R
 // canonical Badger custody and actual native Source integration. It is not an
 // automatic manager hook; unavailable #377 composition remains unavailable.
 func (s *Service) RunContributionDeliveryAs(ctx context.Context, subject core.Subject, key string, ref delivery.Reference, policyRef reference.DigestRef, policies ContributionDeliveryPolicyResolver, authority delivery.Authority, adapter delivery.Adapter, repair delivery.RepairOwner, completion delivery.CompletionOwner, readiness ...delivery.ReadinessOption) (delivery.DeliveryResult, error) {
+	if installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner); ok {
+		if installed.service != s {
+			return delivery.DeliveryResult{}, delivery.ErrDenied
+		}
+		leave, err := installed.enter(ctx, subject, key)
+		if err != nil {
+			return delivery.DeliveryResult{}, err
+		}
+		defer leave()
+	} else {
+		c, _, err := s.ReadContributionAs(ctx, subject, key)
+		if err != nil || c.Effect != "local-only" {
+			return delivery.DeliveryResult{}, ErrContributionDeliveryUnavailable
+		}
+	}
 	if policies == nil || authority == nil || adapter == nil {
 		return delivery.DeliveryResult{}, ErrContributionDeliveryUnavailable
 	}
@@ -254,6 +301,21 @@ func (s *Service) RunContributionDeliveryAs(ctx context.Context, subject core.Su
 // The trusted caller supplies per-effect authority; the actual #377 owner
 // supplies custody. Missing integrations deny. No manager continuation or transport is silently installed.
 func (s *Service) ExecuteContributionDeliveryAs(ctx context.Context, subject core.Subject, key string, ref delivery.Reference, policyRef reference.DigestRef, policies ContributionDeliveryPolicyResolver, gate orchestration.ContributionQuiescenceGate, authority delivery.Authority, adapter delivery.Adapter, op delivery.Operation) (delivery.Record, error) {
+	if installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner); ok {
+		if installed.service != s {
+			return delivery.Record{}, delivery.ErrDenied
+		}
+		leave, err := installed.enter(ctx, subject, key)
+		if err != nil {
+			return delivery.Record{}, err
+		}
+		defer leave()
+	} else {
+		c, _, err := s.ReadContributionAs(ctx, subject, key)
+		if err != nil || c.Effect != "local-only" {
+			return delivery.Record{}, ErrContributionDeliveryUnavailable
+		}
+	}
 	if authority == nil || adapter == nil {
 		return delivery.Record{}, ErrContributionDeliveryUnavailable
 	}

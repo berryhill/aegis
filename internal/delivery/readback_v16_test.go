@@ -97,7 +97,9 @@ func TestV16LatestReviewsActualHTTP(t *testing.T) {
 			if e != nil {
 				t.Fatal(e)
 			}
-			e = g.reviews(context.Background(), []byte("synthetic"), Intent{Repository: p.Repository, PR: 7, Head: p.Head, Actor: p.Actor}, []string{"reviewer", "second"})
+			readCtx, mode := enterAdapterMode(context.Background(), Intent{Repository: p.Repository, PR: 7, Head: p.Head, Actor: p.Actor}, true)
+			defer mode.active.Store(false)
+			e = g.reviews(readCtx, []byte("synthetic"), Intent{Repository: p.Repository, PR: 7, Head: p.Head, Actor: p.Actor}, []string{"reviewer", "second"})
 			if (e != nil) != deny {
 				t.Fatal("latest reviewer decision incorrect", e)
 			}

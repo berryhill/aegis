@@ -47,6 +47,7 @@ type RuntimeRequest struct {
 	Launch          execution.LaunchContract
 	Admission       execution.AdmissionChecker
 	LoopRevision    loop.LoopRevision
+	ArtifactInputs  []VerifiedGraphArtifactInput
 }
 
 type RuntimeResult struct {
@@ -141,8 +142,8 @@ type WorkResult struct {
 	Disposition disposition.Record             `json:"disposition"`
 }
 
-// Process executes the narrow one-node MVI graph. Unsupported graph shapes
-// deny before claim rather than guessing an execution order.
+// Process executes a single-node run or the exact two-node raw artifact chain.
+// Other graph shapes deny before claim rather than guessing execution order.
 func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (WorkResult, error) {
 	item, err := worker.repository.GetQueueItem(ctx, request.QueueItemID)
 	if err != nil {
@@ -172,6 +173,9 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 		return WorkResult{}, fmt.Errorf("%w: exact snapshot unavailable", ErrWorkerDenied)
 	}
 	topology, err := worker.service.ResolveRunTopology(ctx, snapshot)
+	if err == nil && len(topology.Nodes) == 2 {
+		return worker.processRawChain(ctx, request, item, snapshot)
+	}
 	if err != nil || len(topology.Nodes) != 1 {
 		return WorkResult{}, fmt.Errorf("%w: exact single-node topology required", ErrWorkerDenied)
 	}
@@ -496,8 +500,8 @@ func evidenceClaims(revision loop.LoopRevision, actionID string) map[string]loop
 }
 
 func executableAction(revision loop.LoopRevision) (string, error) {
-	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion || revision.SchemaVersion == loop.DoerReusableSchemaVersion {
-		if loop.ValidateRevision(revision).Outcome != loop.ValidationValid || (revision.Doer == nil && revision.DoerReusable == nil) {
+	if revision.SchemaVersion == loop.DoerRevisionSchemaVersion || revision.SchemaVersion == loop.DoerReusableSchemaVersion || revision.SchemaVersion == loop.ManagedDoerSchemaVersion {
+		if loop.ValidateRevision(revision).Outcome != loop.ValidationValid || (revision.Doer == nil && revision.DoerReusable == nil && revision.ManagedDoer == nil) {
 			return "", errors.New("exact Doer revision required")
 		}
 		return "verify", nil

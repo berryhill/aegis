@@ -14,6 +14,8 @@ import sys
 
 ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
+IMPLEMENTATION = ROOT + 'internal/implementation'
+IMPLEMENTATION_TEST = 'TestManagedContributionRepairAndCustody'
 ORCHESTRATION = ROOT + 'internal/orchestration'
 IMPLEMENTATION = ROOT + 'internal/implementation'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
@@ -34,6 +36,7 @@ MANAGER_TESTS = {
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
+    # Contribution repair/custody measured 54.43s normal; preserve the 8m cap.
     'implementation': ('internal/implementation',),
     'implementation-contribution': ('internal/implementation',),
     'orchestration': ('internal/orchestration',),

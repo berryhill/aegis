@@ -81,6 +81,32 @@ class ShardTests(unittest.TestCase):
                         shard.test_pattern([name for name in names if name != missing], group)
             self.assertEqual(Counter(seen), Counter(names))
 
+    def test_implementation_exact_once_current_future_defaults_and_missing_target(self):
+        for count in (0, 1, 47, 48):
+            names = sorted([shard.IMPLEMENTATION_TEST, shard.IMPLEMENTATION_TEST + 'Future',
+                            'TestManagedNoApplyContinuation', 'Example', 'FuzzFuture'] +
+                           [f'TestFuture{i}' for i in range(count)])
+            seen = []
+            for group in ('implementation', 'implementation-contribution'):
+                pattern = shard.test_pattern(names, group)
+                selected = [name for name in names if re.fullmatch(pattern, name)]
+                if group == 'implementation-contribution':
+                    self.assertEqual(selected, [shard.IMPLEMENTATION_TEST])
+                seen.extend(selected)
+                with self.assertRaises(ValueError):
+                    shard.test_pattern([name for name in names if name != shard.IMPLEMENTATION_TEST], group)
+            self.assertEqual(Counter(seen), Counter(names))
+
+    def test_implementation_missing_inventory_never_executes_in_both_modes(self):
+        for race in (False, True):
+            for group in ('implementation', 'implementation-contribution'):
+                for listing in ('', 'TestFuture\nExample\nok\t' + shard.IMPLEMENTATION + '\t0.001s\n'):
+                    results = [mock.Mock(stdout='\n'.join(self.packages())), mock.Mock(stdout=listing)]
+                    with mock.patch.object(shard.subprocess, 'run', side_effect=results) as run:
+                        with self.assertRaises(ValueError):
+                            shard.main(['--group', group] + (['--race'] if race else []))
+                        self.assertEqual(run.call_count, 2)
+
     def test_orchestration_missing_target_or_inventory_never_executes(self):
         for group in ('orchestration', 'orchestration-contribution'):
             for listing in ('', 'TestFuture\nExample\nok\t' + shard.ORCHESTRATION + '\t0.001s\n'):
@@ -129,6 +155,8 @@ class ShardTests(unittest.TestCase):
                         selected = names[0 if group == 'api-a' else 1::2] if api else [name for name in names if (name == target) == group.endswith('-contribution')]
                         if group.startswith('manager'):
                             selected = [shard.MANAGER_TESTS[group]] if group in shard.MANAGER_TESTS else [name for name in names if name not in shard.MANAGER_TESTS.values()]
+                        if group.startswith('implementation'):
+                            selected = [name for name in names if (name == shard.IMPLEMENTATION_TEST) == (group == 'implementation-contribution')]
                         self.assertEqual(inventory[-1], package)
                         for name in names:
                             self.assertEqual(bool(re.search(pattern, name)), name in selected)
