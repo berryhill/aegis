@@ -77,7 +77,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	}
 	runGit("init", "-b", "main")
 	runGit("add", ".")
-	runGit("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "base")
+	runGit("-c", "user.name=Xander", "-c", "user.email=xander@agents.tarxan.io", "commit", "-m", "base")
 	base := runGit("rev-parse", "HEAD")
 	runGit("remote", "add", "origin", "https://github.com/fixture/controlled.git")
 	c := loop.ImplementationDraft("Repair multi-file behavior", "Behavior, security and built executable pass")
