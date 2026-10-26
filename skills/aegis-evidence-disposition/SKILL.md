@@ -86,7 +86,7 @@ For a direct reusable v5 Run, use `--config OWNER_CONFIG --target CONSOLE_URL qu
 The response includes the exact task, status, verification and source; only verified success includes named `result`, its artifact/receipt/contract/file references, encoding, media type, size and content. UTF-8 or explicit base64 preserves the verified bytes; do not treat v5's JSON proof envelope as the selected file. Results are read from immutable storage, not today's workspace. Pending/failed work has no verified result; corrupt/substituted evidence denies. Elapsed time explicitly includes Queue waiting; usage is unavailable when unmeasured, never fabricated zero. This requested owner-authorized work product is distinct from raw runtime logs, private prompts or credential material, which must not be exposed.
 
 1. Read `aegis queue show ITEM`. If the item ID is not exact, use authenticated `aegis queue list` only to find an immutable queue identity; never select by a mutable label or model guess.
-2. Preserve the accepted submission and every immutable reference returned by queue readback: submission and idempotency identities, snapshot reference, runtime, mandate and authority references, maximum attempts, and causal Graph-run identity. The current public queue view does not return the Graph-run snapshot body or its normalized typed inputs. Do not claim those fields were reconstructed from `queue show`; report full snapshot inspection as unavailable on this surface.
+2. Preserve the accepted submission and every immutable reference returned by queue readback: submission and idempotency identities, snapshot reference, runtime, mandate and authority references, maximum attempts, and causal Graph-run identity. The public Queue view returns exact source references and normalized inputs, but not the complete snapshot body; preserve that distinction.
 3. Preserve queue state as a projection, then gather every transition, claim and lease, retry, cancellation, Loop execution, and Attempt in returned order. Match queue item digest, Graph run, Loop execution, attempt number, claim, and authority context throughout.
 4. For each terminal attempt, gather the typed runtime artifact, its artifact and content digests, media type, producer Agent ID, action, run, attempt, authority context, and creation time. `content_ref` must equal the artifact digest. The artifact `owner_id` is the producing participant Agent ID; it is not registry ownership, reviewer identity, or authority.
 5. Gather every verification receipt: receipt and artifact identities, attempt, action, run, owner, authority context, verifier, policy version, exact claim, media type, expected and observed digests, outcome, failure category, content-addressed evidence reference, and observation time.
@@ -97,7 +97,7 @@ The response includes the exact task, status, verification and source; only veri
 
 Use returned Aegis evidence to explain the authoritative result; do not independently promote it to a new fact.
 
-1. Start from the exact Graph-run snapshot reference, not current or latest definitions. The controller internally reloads the snapshot and exact definitions during consequential admission. For public inspection, use only exact revision references actually returned by authenticated surfaces, such as Loop references in Loop executions, with `aegis loops show LOOP REVISION` and `aegis graphs show GRAPH REVISION`. Because `queue show` does not expose the snapshot body, do not claim complete public reconstruction of its normalized inputs or Graph reference when those identifiers are unavailable. Definition retirement or a newer revision does not invalidate intact historical evidence, and current definitions cannot substitute for pinned ones.
+1. Start from the exact Graph-run snapshot reference, not current or latest definitions. The controller internally reloads the snapshot and exact definitions during consequential admission. For public inspection, use only exact revision references actually returned by authenticated surfaces, such as Loop references in Loop executions, with `aegis loops show LOOP REVISION` and `aegis graphs show GRAPH REVISION`. Use returned source and normalized inputs; the complete snapshot body is not exposed by `queue show`. Definition retirement or a newer revision does not invalidate intact historical evidence, and current definitions cannot substitute for pinned ones.
 2. Require the artifact to validate and bind the same Attempt, Loop execution action, producer participant Agent ID, authority context, and run. Require `content_ref == digest`.
 3. Aegis's verifier must freshly reload the blob addressed by `content_ref`, recompute its SHA-256 content reference, and compare it with both artifact digest and the immutable claim's expected digest. Runtime-returned bytes, a filename, projection, or caller-provided copy are insufficient.
 4. Match required evidence by exact claim, producer action, verifier ID, policy version, media type, and expected digest from the pinned Loop. Require exactly one valid receipt for every required claim; reject missing, duplicate, additional-substitution, stale, mismatched, malformed, or unverifiable receipts.
@@ -157,3 +157,27 @@ authoritative readback, not blind resubmission or a replacement publication.
 Consult `references/evidence-fixtures.json` only for non-secret structural examples. Fixtures are evaluation data, not live records, authority, reviewer identity, or proof. Never include authentication material, credential values, broker capabilities, private prompts, raw runtime output, host paths, runtime homes, or secret-shaped canaries in fixtures, reports, logs, commands, or model context.
 
 Consult `specs/CANONICAL_DOMAINS.md`, `specs/MVP.md`, `specs/STORAGE.md`, `internal/evidence/model.go`, `internal/evidence/verifier.go`, `internal/disposition/model.go`, `internal/orchestration/queue_worker.go`, `internal/persistence/fleet/badger/completion.go`, the root `README.md`, and installed command help for normative and shipped behavior. Installing this advisory skill grants no identity, authority, queue claim, runtime capability, reviewer power, evidence custody, disposition right, filesystem/network access, or completion evidence.
+
+## Bounded producer → consumer source candidate (#317)
+
+The source worker additionally supports one exact two-node producer/consumer chain:
+paired raw v2 nodes or paired managed selected-file v7 nodes, one outer Queue
+attempt, and no general scheduler. v7 pins one initially absent selected output
+per separate non-nested workspace, exact UTF-8 verification and 1–2 implementation
+passes per node. The consumer receives independently reloaded producer artifact
+bytes and exact causal lineage, never a workspace path or the expected assertion.
+Fresh runtime, provider, host-write and authority admissions remain mandatory.
+Tool-free proposals and controller writes are not a host filesystem sandbox.
+
+Authenticated `queue show` / existing Queue HTTP readback adds optional typed
+`graph_nodes`: exact admissions, pass caps, input lineage, node dispositions,
+artifacts and receipts, independently of root success or failure. It exposes no
+managed contract, private workspace, source bytes or credential values. Missing
+admission/checkpoint remains missing; corrupt reads fail closed. Root fields keep
+their historical meaning. Generic strict `loops validate FILE` / `loops publish
+FILE` can carry a canonical v7 definition; no new managed builder command or
+browser launch workflow is implied. Confirm installed capabilities separately.
+
+Synthetic protocol and durable regressions do not qualify a real provider,
+installed target, contribution delivery, or general multi-node scheduling.
+See `docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md` for the bounded source contract.

@@ -1,5 +1,14 @@
 # Security Policy
 
+## #317 bounded chain source boundary
+
+The current source adds the exact raw-v2 / managed-v7 two-node chain and optional
+typed Queue node checkpoint readback described in
+[the source contract](docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md).
+Earlier single-node-only descriptions below refer to the historical qualified
+vertical, not a denial of this additive source path. General scheduling,
+real-provider qualification and installed acceptance remain separate and unproven.
+
 Managed contribution source inventories stay in private controller custody;
 tester model evidence includes schema/digest only, never complete source bytes
 or filenames. Builder context is explicitly admitted and bounded. Narrow

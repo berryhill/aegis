@@ -37,7 +37,7 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 	add := func(code, path, message string) {
 		issues = append(issues, ValidationIssue{Code: code, Path: path, Message: message})
 	}
-	if revision.SchemaVersion != RevisionSchemaVersion && !IsImplementationSchema(revision.SchemaVersion) && revision.SchemaVersion != DoerRevisionSchemaVersion && revision.SchemaVersion != DoerReusableSchemaVersion {
+	if revision.SchemaVersion != RevisionSchemaVersion && !IsImplementationSchema(revision.SchemaVersion) && revision.SchemaVersion != DoerRevisionSchemaVersion && revision.SchemaVersion != DoerReusableSchemaVersion && revision.SchemaVersion != ManagedDoerSchemaVersion {
 		add("schema.unsupported", "schema_version", "unsupported Loop revision schema version")
 	}
 	if !validID(revision.LoopID) {
@@ -134,7 +134,11 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 				add("terminal.transition", "steps."+step.ID, "terminal steps cannot transition")
 			}
 			if step.Terminal != nil {
-				validateMappings(step.OutputPorts, revision.Outputs, step.Terminal.OutputMappings, "steps."+step.ID+".terminal.output_mappings", false, add)
+				outputs := revision.Outputs
+				if revision.SchemaVersion == ManagedDoerSchemaVersion && step.Terminal.Outcome == OutcomeFailed {
+					outputs = nil
+				}
+				validateMappings(step.OutputPorts, outputs, step.Terminal.OutputMappings, "steps."+step.ID+".terminal.output_mappings", false, add)
 			}
 		case StepGate:
 			if len(outs) < 2 {
@@ -188,8 +192,13 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 	} else if revision.DoerReusable != nil {
 		add("doer_reusable.version", "doer_reusable", "reusable Doer contract requires v5")
 	}
+	if revision.SchemaVersion == ManagedDoerSchemaVersion {
+		validateManagedDoerRevision(revision, add)
+	} else if revision.ManagedDoer != nil {
+		add("managed_doer.version", "managed_doer", "managed Doer contract requires v7")
+	}
 	for _, step := range revision.Steps {
-		if revision.SchemaVersion != DoerRevisionSchemaVersion && revision.SchemaVersion != DoerReusableSchemaVersion && step.Executable != nil {
+		if revision.SchemaVersion != DoerRevisionSchemaVersion && revision.SchemaVersion != DoerReusableSchemaVersion && revision.SchemaVersion != ManagedDoerSchemaVersion && step.Executable != nil {
 			add("doer.version", "steps."+step.ID+".executable", "executable binding requires v4 or v5")
 		}
 	}

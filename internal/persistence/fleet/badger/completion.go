@@ -22,6 +22,10 @@ import (
 // CompleteQueueItem atomically publishes immutable evidence metadata, the
 // terminal disposition, the queue transition, and authoritative audit fact.
 func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader) error {
+	return s.completeQueueItem(ctx, completion, fact, evidenceReader, false)
+}
+
+func (s *Store) completeQueueItem(ctx context.Context, completion fleet.Completion, fact fleet.AuditFact, evidenceReader fleet.EvidenceReader, aggregate bool) error {
 	dispositionWire, err := disposition.Marshal(completion.Disposition)
 	if err != nil {
 		return err
@@ -67,6 +71,9 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 		}
 	}
 	return s.update(ctx, func(txn *badgerdb.Txn) error {
+		if aggregate && !exactGraphAggregate(txn, completion, evidenceReader) {
+			return fleet.ErrConflict
+		}
 		claimWire, e := get(txn, key(familyClaim, completion.Claim.ClaimID))
 		if e != nil {
 			return e
@@ -162,7 +169,7 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			allPassed = allPassed && receipt.Outcome == evidence.Passed && receipt.ObservedDigest == completion.Artifact.Digest
 		}
 		if completion.Disposition.State == execution.StateSucceeded {
-			if completion.Artifact == nil || !allPassed || !exactRequiredEvidence(txn, attempt, completion) {
+			if completion.Artifact == nil || !allPassed || !(aggregate && exactNodeEvidence(txn, attempt, completion) || !aggregate && exactRequiredEvidence(txn, attempt, completion)) {
 				return fleet.ErrConflict
 			}
 		}
@@ -175,12 +182,12 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 			return e
 		}
 		if completion.Artifact != nil {
-			if e = create(txn, key(familyRuntimeArtifact, completion.Artifact.ID), artifactWire); e != nil {
+			if e = createCompletionEvidence(txn, key(familyRuntimeArtifact, completion.Artifact.ID), artifactWire, aggregate); e != nil {
 				return e
 			}
 		}
 		for index, receipt := range completion.Receipts {
-			if e = create(txn, key(familyVerificationReceipt, receipt.ID), receiptWires[index]); e != nil {
+			if e = createCompletionEvidence(txn, key(familyVerificationReceipt, receipt.ID), receiptWires[index], aggregate); e != nil {
 				return e
 			}
 		}
@@ -204,6 +211,11 @@ func (s *Store) CompleteQueueItem(ctx context.Context, completion fleet.Completi
 }
 
 func exactRequiredEvidence(txn *badgerdb.Txn, attempt execution.Attempt, completion fleet.Completion) bool {
+	child, err := loadLoopExecution(txn, attempt.LoopExecutionID)
+	return err == nil && exactSingleNodeCompletion(txn, attempt, child) && exactNodeEvidence(txn, attempt, completion)
+}
+
+func exactNodeEvidence(txn *badgerdb.Txn, attempt execution.Attempt, completion fleet.Completion) bool {
 	executionWire, err := get(txn, key(familyLoopExecution, attempt.LoopExecutionID))
 	if err != nil {
 		return false

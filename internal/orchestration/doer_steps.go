@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -37,13 +38,23 @@ type doerStepExecutor struct {
 	failure            []string
 	observation        evidence.SelectedFileResult
 	selectedEditDigest string
+	managedResult      func(context.Context) (json.RawMessage, error)
+	lastError          error
 }
 
-func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequest) (looprun.StepResult, error) {
+func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequest) (out looprun.StepResult, err error) {
+	defer func() {
+		if err != nil && e != nil {
+			e.lastError = err
+		}
+	}()
 	if e == nil || e.roles.Admit == nil {
 		return looprun.StepResult{}, errors.New("Doer executor binding unavailable")
 	}
 	if request.Step.Kind == loop.StepTerminal && request.Step.Executable == nil {
+		if e.managedResult != nil {
+			return looprun.StepResult{Outputs: request.Inputs}, nil
+		}
 		return looprun.StepResult{Outputs: looprun.Values{}}, nil
 	}
 	if request.Step.Executable == nil {
@@ -147,6 +158,13 @@ func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequ
 			e.failure = append(e.failure, "independent_verification:output_not_from_this_pass")
 		}
 		if len(e.failure) == 0 {
+			if e.managedResult != nil {
+				raw, err := e.managedResult(ctx)
+				if err != nil {
+					return result, err
+				}
+				result.Outputs["result"] = raw
+			}
 			result.Branch = "verified"
 		} else if e.attempts < cap {
 			result.Branch = "retry"
@@ -166,6 +184,9 @@ func (e *doerStepExecutor) Execute(ctx context.Context, request looprun.StepRequ
 		}
 		e.feedback = feedback
 	case loop.DoerCompletion:
+		if e.managedResult != nil {
+			result.Outputs = request.Inputs
+		}
 		// The best-effort non-authoritative report runs after terminal checkpoint.
 		if request.Step.Kind != loop.StepAction {
 			return result, errors.New("completion action shape invalid")
