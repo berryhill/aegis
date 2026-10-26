@@ -106,10 +106,22 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (out Inte
 	if err = ctx.Err(); err != nil {
 		return
 	}
-	for _, p := range []string{filepath.Dir(root), root} {
-		if err = recoverySecure(p, true); err != nil {
-			return
-		}
+	// Absence is compatible with legacy authority-only instances, but only
+	// beneath an existing private, non-aliased persistence parent. Never create
+	// a fleet or lock as a side effect of authenticated recovery.
+	parent := filepath.Dir(root)
+	resolved, e := filepath.EvalSymlinks(parent)
+	if e != nil || resolved != parent {
+		return out, errors.New("unsafe fleet recovery ancestry")
+	}
+	if err = recoverySecure(parent, true); err != nil {
+		return
+	}
+	if _, err = os.Lstat(root); errors.Is(err, os.ErrNotExist) {
+		return out, nil
+	}
+	if err = recoverySecure(root, true); err != nil {
+		return
 	}
 	lock := filepath.Join(root, "WRITER.lock")
 	if err = recoverySecure(lock, false); err != nil {
@@ -157,6 +169,48 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (out Inte
 	r, e := readFleetRecovery(root)
 	if e != nil && !errors.Is(e, os.ErrNotExist) {
 		return out, e
+	}
+	// A clean close needs no physical activation. Pending receipts must use
+	// the original recovery below, including a crash after CLEAN publication.
+	if _, x := os.Lstat(filepath.Join(root, "CLEAN")); x == nil && (errors.Is(e, os.ErrNotExist) || r.Phase == "completed") {
+		if err = recoverySecure(filepath.Join(root, "CLEAN"), false); err != nil {
+			return
+		}
+		b, x := os.ReadFile(filepath.Join(root, "CLEAN"))
+		if x != nil || string(b) != schemaVersion+"\n" {
+			return out, errors.New("invalid fleet CLEAN marker")
+		}
+		if _, x = os.Lstat(filepath.Join(root, "DIRTY")); !errors.Is(x, os.ErrNotExist) {
+			return out, errors.New("conflicting fleet lifecycle markers")
+		}
+		if errors.Is(e, os.ErrNotExist) {
+			if _, x = os.Lstat(filepath.Join(root, "recovery-evidence")); !errors.Is(x, os.ErrNotExist) {
+				return out, errors.New("fleet recovery evidence lacks receipt")
+			}
+		} else {
+			if r.Principal != principal {
+				return out, errors.New("fleet recovery principal conflict")
+			}
+			d, x := physical.Directory(ctx, filepath.Join(r.Evidence, "store"), "")
+			if x != nil || d != r.Original {
+				return out, errors.New("fleet recovery evidence changed")
+			}
+		}
+		// Inventory checks reject symlink/hardlink/unsafe engine files before
+		// the read-only engine verifies format, schema and canonical families.
+		if _, err = physical.Directory(ctx, selected, ""); err != nil {
+			return
+		}
+		db, x := badgerdb.Open(recoveryOptions(selected).WithReadOnly(true))
+		if x != nil {
+			return out, x
+		}
+		_, _, x = verifyFleetRecovery(ctx, db)
+		err = errors.Join(x, db.VerifyChecksum(), db.Close())
+		if err == nil && e == nil {
+			out.EvidencePath, out.Records, out.Recovered = r.Evidence, r.Records, true
+		}
+		return
 	}
 	// A completed operation is reusable until normal Open changes its engine.
 	if e == nil && r.Phase == "completed" {
