@@ -86,12 +86,11 @@ type contributionContinuityCandidateOwner interface {
 // NewContributionDeliverySource is productive only with the actual #377 owner.
 // The legacy gate parameter is not a substitute for that owner or its private proof.
 func NewContributionDeliverySource(s *Service, subject core.Subject, key string, ref reference.DigestRef, policies ContributionDeliveryPolicyResolver, _ orchestration.ContributionQuiescenceGate) (*ContributionDeliverySource, error) {
-	owner, ok := any(s).(contributionContinuityCandidateOwner)
-	if s == nil || !ok {
+	if s == nil {
 		return nil, ErrContributionDeliveryUnavailable
 	}
 	return newContributionDeliverySource(s, subject, key, ref, policies, func(ctx context.Context, session string, action func(context.Context, orchestration.ContributionCandidate) error) error {
-		return owner.WithContributionContinuityCandidateAs(ctx, subject, session, key, action)
+		return s.WithContributionContinuityCandidateAs(ctx, subject, session, key, action)
 	})
 }
 
@@ -225,6 +224,21 @@ func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.R
 // canonical Badger custody and actual native Source integration. It is not an
 // automatic manager hook; unavailable #377 composition remains unavailable.
 func (s *Service) RunContributionDeliveryAs(ctx context.Context, subject core.Subject, key string, ref delivery.Reference, policyRef reference.DigestRef, policies ContributionDeliveryPolicyResolver, authority delivery.Authority, adapter delivery.Adapter, repair delivery.RepairOwner, completion delivery.CompletionOwner, readiness ...delivery.ReadinessOption) (delivery.DeliveryResult, error) {
+	if installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner); ok {
+		if installed.service != s {
+			return delivery.DeliveryResult{}, delivery.ErrDenied
+		}
+		leave, err := installed.enter(ctx, subject, key)
+		if err != nil {
+			return delivery.DeliveryResult{}, err
+		}
+		defer leave()
+	} else {
+		c, _, err := s.ReadContributionAs(ctx, subject, key)
+		if err != nil || c.Effect != "local-only" {
+			return delivery.DeliveryResult{}, ErrContributionDeliveryUnavailable
+		}
+	}
 	if policies == nil || authority == nil || adapter == nil {
 		return delivery.DeliveryResult{}, ErrContributionDeliveryUnavailable
 	}
@@ -254,6 +268,21 @@ func (s *Service) RunContributionDeliveryAs(ctx context.Context, subject core.Su
 // The trusted caller supplies per-effect authority; the actual #377 owner
 // supplies custody. Missing integrations deny. No manager continuation or transport is silently installed.
 func (s *Service) ExecuteContributionDeliveryAs(ctx context.Context, subject core.Subject, key string, ref delivery.Reference, policyRef reference.DigestRef, policies ContributionDeliveryPolicyResolver, gate orchestration.ContributionQuiescenceGate, authority delivery.Authority, adapter delivery.Adapter, op delivery.Operation) (delivery.Record, error) {
+	if installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner); ok {
+		if installed.service != s {
+			return delivery.Record{}, delivery.ErrDenied
+		}
+		leave, err := installed.enter(ctx, subject, key)
+		if err != nil {
+			return delivery.Record{}, err
+		}
+		defer leave()
+	} else {
+		c, _, err := s.ReadContributionAs(ctx, subject, key)
+		if err != nil || c.Effect != "local-only" {
+			return delivery.Record{}, ErrContributionDeliveryUnavailable
+		}
+	}
 	if authority == nil || adapter == nil {
 		return delivery.Record{}, ErrContributionDeliveryUnavailable
 	}

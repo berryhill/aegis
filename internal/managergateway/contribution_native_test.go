@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
@@ -32,6 +33,12 @@ import (
 
 // Deterministic protocol qualification, not real-provider proof.
 func TestContributionManagerApprovedNativeRepair(t *testing.T) { contributionManagerNativeRepair(t) }
+func TestContributionDeliveryJointNative(t *testing.T) {
+	contributionManagerNativeRepair(t, false, false, true)
+}
+func TestContributionDeliveryJointNativeNonlocalCancellation(t *testing.T) {
+	contributionManagerNativeRepair(t, false, false, false, true)
+}
 func TestContributionManagerDisconnectKeepsValidAuthorityExecution(t *testing.T) {
 	contributionManagerNativeRepair(t, true)
 }
@@ -137,7 +144,12 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		_, err = repository.RegisterAgent(ctx, registry.AgentRegistration{SchemaVersion: registry.AgentRegistrationSchemaVersion, AgentID: id, Source: agent.Source, InitialRevision: ref}, agent, fleet.AuditFact{Event: core.AuditEvent{Type: "fixture.created", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: "succeeded", Reason: "isolated fixture"}})
 		must(err)
 	}
-	lr, lv, e := loop.NewContributionRevision("managed", 1, "", c, loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "fixture/controlled", RepositoryID: 7, Base: base, ReadAction: contribution.ReadIssueAction, Effect: "local-only", DeadlineSeconds: 300, Invariants: []string{"preserve trusted tests"}, Exclusions: []string{"no GitHub effects"}, Managed: &policy})
+	nonlocalCancellation := len(disconnected) > 3 && disconnected[3]
+	effect := "local-only"
+	if nonlocalCancellation {
+		effect = "verified-protected-base-merge"
+	}
+	lr, lv, e := loop.NewContributionRevision("managed", 1, "", c, loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "fixture/controlled", RepositoryID: 7, Base: base, ReadAction: contribution.ReadIssueAction, Effect: effect, DeadlineSeconds: 300, Invariants: []string{"preserve trusted tests"}, Exclusions: []string{"no GitHub effects"}, Managed: &policy})
 	if e != nil {
 		t.Fatalf("revision: %v %+v", e, lv.Issues)
 	}
@@ -145,6 +157,12 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	message := func(n int) string {
 		p, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package main\nfunc Value() int{return 40}\n")}, {Path: "offset.go", Content: []byte(fmt.Sprintf("package main\nfunc Offset() int{return %d}\n", n))}}})
 		return string(p)
+	}
+	// Only the independent cancellation target skips the deliberately wrong proposal.
+	// Native baseline, trusted checks and the two-candidate ceiling remain real.
+	initialOffset, expectedPasses := 1, 2
+	if nonlocalCancellation {
+		initialOffset, expectedPasses = 2, 1
 	}
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
@@ -160,7 +178,7 @@ printf '{"jsonrpc":"2.0","method":"event","params":{"type":"message.start","sess
 case "$n" in 1) text='%s';; 3) text='%s';; *) text='"synthetic inspection only"';; esac
 printf '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"%%s","payload":{"status":"complete","text":%%s}}}\n' "$sid" "$text"
 while read rest; do :; done
-`, filepath.Join(root, "turns"), filepath.Join(root, "turns"), filepath.Join(root, "turns"), nativeJSON(message(1)), nativeJSON(message(2)))
+`, filepath.Join(root, "turns"), filepath.Join(root, "turns"), filepath.Join(root, "turns"), nativeJSON(message(initialOffset)), nativeJSON(message(2)))
 	if len(disconnected) != 0 && disconnected[0] {
 		script = strings.Replace(script, "read prompt", "if [ \"$n\" = 1 ]; then touch '"+filepath.Join(root, "builder-ready")+"'; while [ ! -f '"+filepath.Join(root, "builder-release")+"' ]; do sleep 0.01; done; fi\nread prompt", 1)
 	}
@@ -186,17 +204,22 @@ exec sleep 240
 	worker, err := orchestration.NewQueueWorker(repository, fs, s.Store, verifier, routed, s.Now)
 	must(err)
 	must(s.ConfigureFleet(repository, fs, worker))
-	if expiry {
-		paused := false
-		worker.SetContributionCheckpointObserver(func(_ context.Context, cp implementation.ContributionCheckpoint) error {
-			if cp.Stage == "freeze" && !paused {
-				paused = true
-				clock.Advance(61 * time.Second)
-				return fmt.Errorf("controlled frozen expiry hold")
-			}
-			return nil
-		})
-	}
+	paused := false
+	var observedMu sync.Mutex
+	var observedRun context.Context
+	worker.SetContributionCheckpointObserver(func(checkpointCtx context.Context, cp implementation.ContributionCheckpoint) error {
+		observedMu.Lock()
+		observedRun = checkpointCtx
+		observedMu.Unlock()
+		logContributionRunContext(t, "checkpoint", checkpointCtx)
+		t.Logf("G1 checkpoint stage=%s run=%s attempt=%s subject_live=%t", cp.Stage, cp.RunID, cp.AttemptID, s.Now().Before(subject.ExpiresAt))
+		if expiry && cp.Stage == "freeze" && !paused {
+			paused = true
+			clock.Advance(61 * time.Second)
+			return fmt.Errorf("controlled frozen expiry hold")
+		}
+		return nil
+	})
 	goBin, _ := exec.LookPath("go")
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}
@@ -318,14 +341,39 @@ exec sleep 240
 		}
 	}
 	if err != nil {
-		t.Fatalf("run: %+v %v", result, err)
+		observedMu.Lock()
+		lastRun := observedRun
+		observedMu.Unlock()
+		logContributionRunContext(t, "failure-last-checkpoint", lastRun)
+		// Read canonical private state without minting replacement authority. Keep
+		// diagnostics closed: references, stages and time relationships only.
+		items, readErr := repository.ListQueueItems(ctx)
+		if readErr == nil {
+			for _, item := range items {
+				state, _, stateErr := repository.GetContributionContinuity(ctx, item.ItemID)
+				projection, projectionErr := repository.GetQueueProjection(ctx, item.ItemID)
+				t.Logf("G1 boundary queue=%s stage=%s sequence=%d continuity_read=%t projection_read=%t state=%s subject_live=%t", item.ItemID, state.Stage, state.Sequence, stateErr == nil, projectionErr == nil, projection.State, s.Now().Before(subject.ExpiresAt))
+				if projection.ActiveClaimID != "" {
+					claim, claimErr := repository.GetClaim(ctx, projection.ActiveClaimID)
+					t.Logf("G1 claim ref=%s read=%t live=%t", projection.ActiveClaimID, claimErr == nil, s.Now().Before(claim.ExpiresAt))
+				}
+				for name, role := range state.RoleAuthorities {
+					mandate, mandateErr := s.Authority.GetMandate(ctx, role.MandateID)
+					t.Logf("G1 role=%s epoch=%d session=%s mandate=%s read=%t mandate_live=%t subject_live=%t", name, role.Epoch, role.SessionID, role.MandateID, mandateErr == nil, s.Now().Before(mandate.ExpiresAt), s.Now().Before(mandate.Subject.ExpiresAt))
+				}
+			}
+		}
+		t.Fatalf("run error_type=%T denied=%t", err, err == app.ErrDenied)
 	}
 	if len(disconnected) != 0 && disconnected[0] && runCtx.Err() == nil {
 		t.Fatal("builder disconnect not exercised")
 	}
 	sealed, continuity, events, err := s.ObserveContributionContinuityAs(ctx, subject, key)
 	must(err)
-	if continuity.Used.Candidates != 2 || continuity.Used.QueueAttempts != 1 || continuity.Used.RuntimeTurns != 4 || continuity.Stage != "review" {
+	if sealed.CandidateBudget != 2 {
+		t.Fatal("fixture changed sealed two-candidate ceiling")
+	}
+	if continuity.Used.Candidates != uint32(expectedPasses) || continuity.Used.QueueAttempts != 1 || continuity.Used.RuntimeTurns != uint32(2*expectedPasses) || continuity.Stage != "review" {
 		t.Fatalf("owning counters/stage: %+v", continuity)
 	}
 	for _, event := range events {
@@ -337,14 +385,17 @@ exec sleep 240
 	if err != nil {
 		t.Fatalf("readback after %+v: %v", result, err)
 	}
-	if record.State != "candidate_accepted" || len(record.Passes) != 2 || record.Baseline.Outcome != "failed" || record.Passes[0].Check.Outcome != "failed" || record.Passes[1].Check.Outcome != "passed" {
-		t.Fatalf("RED repair GREEN: %+v", record)
+	if record.State != "candidate_accepted" || record.Consumed != uint8(expectedPasses) || len(record.Passes) != expectedPasses || record.Baseline.Outcome != "failed" {
+		t.Fatalf("native RED baseline / actual candidate accounting: %+v", record)
+	}
+	if record.Passes[expectedPasses-1].Check.Outcome != "passed" || (!nonlocalCancellation && record.Passes[0].Check.Outcome != "failed") {
+		t.Fatalf("native candidate GREEN / deliberate repair: %+v", record)
 	}
 	// The one explicit continuation retains its admitted controller through
 	// candidate handoff; no second consent or replacement controller is needed.
 	candidate, err := s.AcceptedContributionCandidateAs(ctx, subject, key)
 	must(err)
-	if candidate.Digest != record.Passes[1].Candidate.Digest {
+	if candidate.Digest != record.Passes[expectedPasses-1].Candidate.Digest {
 		t.Fatal("accepted handoff drift")
 	}
 	controller := continuity.RoleAuthorities["controller"]
@@ -380,6 +431,9 @@ exec sleep 240
 	again, err := os.Stat(c.Workspace)
 	must(err)
 	expectedAuthorities := 4
+	if nonlocalCancellation {
+		expectedAuthorities = 3 // controller, first builder and first independent tester only
+	}
 	if expiry {
 		expectedAuthorities = 6 // original controller/builder plus independently resumed roles
 		_, fresh, history, e := s.ObserveContributionContinuityAs(ctx, subject, key)
@@ -412,6 +466,19 @@ exec sleep 240
 	}
 	// Delivery consumes the accepted candidate while its admitted controller
 	// and source custody remain valid; cancellation must fence later effects.
+	if nonlocalCancellation {
+		contributionDeliveryJointNativeCancellation(t, s, subject, key, controller.SessionID, candidate)
+		return
+	}
+	if len(disconnected) > 2 && disconnected[2] {
+		t.Cleanup(func() {
+			for _, a := range after {
+				_ = s.RevokeSession(context.Background(), a.SessionID, "joint fixture cleanup")
+			}
+		})
+		contributionDeliveryJointNative(t, s, subject, key, controller.SessionID, candidate)
+		return // Canonical reservation exists; nil publication quiescer remains blocked.
+	}
 	contributionDeliveryNativeBridge(t, s, subject, key, controller.SessionID, candidate)
 	// Actual manager cancellation of the accepted candidate: no second resume or
 	// consent, no authority/counter reset, and Queue terminal only after stop joins.
@@ -495,4 +562,45 @@ func (c *contributionStageClock) Advance(d time.Duration) {
 	defer c.mu.Unlock()
 	c.at = c.at.Add(d)
 }
+
+// Observe only closed context states, never arbitrary error/cause strings. A
+// cancelled last checkpoint after return may be cleanup, not the first denial.
+func contributionContextCode(err error) string {
+	switch {
+	case err == nil:
+		return "live"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	default:
+		return "other"
+	}
+}
+func logContributionRunContext(t *testing.T, boundary string, ctx context.Context) {
+	t.Helper()
+	if ctx == nil {
+		t.Logf("G1 context boundary=%s observed=false", boundary)
+		return
+	}
+	deadline, hasDeadline := ctx.Deadline()
+	t.Logf("G1 context boundary=%s observed=true has_deadline=%t wall_deadline_elapsed=%t err=%s cause=%s", boundary, hasDeadline, hasDeadline && !time.Now().Before(deadline), contributionContextCode(ctx.Err()), contributionContextCode(context.Cause(ctx)))
+}
+
+func TestContributionLogicalClockDoesNotExtendAbsoluteRunDeadline(t *testing.T) {
+	// Past absolute deadlines are synchronous: no sleeps or changed production clock.
+	clock := &contributionStageClock{at: time.Now().UTC().Add(-10 * time.Minute)}
+	logicalStart := clock.Now()
+	deadline := logicalStart.Add(300 * time.Second)
+	run, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	if !clock.Now().Before(deadline) || !clock.Now().Equal(logicalStart) {
+		t.Fatal("fixed authority clock unexpectedly advanced")
+	}
+	if run.Err() != context.DeadlineExceeded || context.Cause(run) != context.DeadlineExceeded {
+		t.Fatal("absolute Go deadline did not expire independently of logical authority")
+	}
+	logContributionRunContext(t, "deterministic-expiry", run)
+}
+
 func nativeJSON(s string) string { b, _ := json.Marshal(s); return string(b) }

@@ -1,5 +1,36 @@
 # Delivery readback producer v1 (source-qualified V19 bridge)
 
+## Cold readback and publication stop composition
+
+Trusted controller composition can install
+`app.InstallContributionDeliveryPublicationOwner` in the existing Service port.
+It requires immutable policy-by-digest lookup, the closed GitHub adapter and a
+provider of **already fresh** same-owner read authority. This callback must not
+reauthenticate, renew runtime authority or rotate credentials. Remote delivery
+entry points deny without this installed owner; local-only execution retains its
+existing separate path. No remote composition is installed automatically.
+
+The owner's `ReconcileAs(ctx, subject, contributionKey)` reloads canonical root
+history and exact policy definitions internally. It verifies the complete original
+intent payload before invoking only `GitHub.Reconcile` and canonical `Finish` CAS.
+PR, Check and Merge metadata can come from exact immutable policy; issue completion
+and narrowed scope require the original retained proof when not otherwise
+reconstructible. Missing metadata/policy/read rights/credentials deny and retain
+UNKNOWN. Graph/object/local artifacts are not reconstructed by this cold path.
+
+Cancellation uses canonical sticky Stop, drains this installed owner's active
+Run/Execute calls, then reloads canonical effects. Empty tracking after restart
+never proves absence. The Badger absence check inspects canonical intake, indexes,
+Queue/run joins and retained publication/history families in one snapshot. Unknown
+mutations hold cancellation pending; Check and TransferGraph status do not count
+as remote mutations. A retained irreversible merge remains merged-but-unresolved,
+not permission to repeat the merge or claim whole-contribution completion.
+
+Focused tests cover loopback lost-merge cold readback and exact-payload denial
+with synthetic credentials/memory CAS, separately real Badger absence/deleted-index
+and actual app call-lifetime drain/sticky Stop. These are not a joined
+Badger-plus-loopback cancellation acceptance test or live-provider qualification.
+
 `internal/delivery/readback.go` produces closed `aegis.delivery.readback.v1`
 inside the HTTP adapter. Bounded typed facts retain requested repository, checked
 head, ref, PR, comparison base/head, exact upstream selected identities and
