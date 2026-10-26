@@ -12,3 +12,7 @@ type ContributionRecord = implementation.ContributionRecord
 type ContributionCandidate = implementation.ContributionCandidate
 
 func IsContributionNotFound(err error) bool { return errors.Is(err, implementation.ErrNotFound) }
+
+// ContributionCheckpoint and ContributionRoleIdentity preserve the implementation owner.
+type ContributionCheckpoint = implementation.ContributionCheckpoint
+type ContributionRoleIdentity = implementation.ContributionRoleIdentity

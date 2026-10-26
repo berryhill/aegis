@@ -9,7 +9,6 @@ import (
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/execution"
-	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/reference"
@@ -153,7 +152,7 @@ func (s *Service) contributionExecutionObserver(ctx context.Context, sub core.Su
 		}
 		return e
 	}
-	return &orchestration.ContributionExecutionObserver{ContinueBuilder: func(ctx context.Context, old, fresh implementation.ContributionRoleIdentity) error {
+	return &orchestration.ContributionExecutionObserver{ContinueBuilder: func(ctx context.Context, old, fresh orchestration.ContributionRoleIdentity) error {
 		st, err := head(ctx)
 		if err != nil {
 			return err
@@ -186,7 +185,7 @@ func (s *Service) contributionExecutionObserver(ctx context.Context, sub core.Su
 			}
 		}
 		return ErrDenied
-	}, Checkpoint: func(ctx context.Context, cp implementation.ContributionCheckpoint) error {
+	}, Checkpoint: func(ctx context.Context, cp orchestration.ContributionCheckpoint) error {
 		if cp.RunID != c.RunID || cp.AttemptID != base.Attempt.AttemptID {
 			return ErrDenied
 		}

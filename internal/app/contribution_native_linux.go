@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/execution"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	"github.com/berryhill/aegis/internal/runtime/hermes"
 	"os/exec"
@@ -47,7 +48,7 @@ func (s *Service) runContributionNativeCommandAs(ctx context.Context, sub core.S
 		}
 		return contribution.ErrContinuityConflict
 	}
-	return hermes.RunContributionNative(ctx, b, cmd, func(ctx context.Context) error {
+	err = hermes.RunContributionNative(ctx, b, cmd, func(ctx context.Context) error {
 		_, err := s.CheckContributionRoleAs(ctx, sub, session, key, b.Role, ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
 		if err != nil {
 			return err
@@ -62,4 +63,8 @@ func (s *Service) runContributionNativeCommandAs(ctx context.Context, sub core.S
 		}
 		return appendFact(ctx, "native-unknown", "unknown")
 	})
+	if errors.Is(err, execution.ErrInvalidNativeCommand) {
+		return contribution.ErrContinuityConflict
+	}
+	return err
 }

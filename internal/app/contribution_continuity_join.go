@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
-	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/orchestration"
 	"sync/atomic"
 )
@@ -29,13 +28,13 @@ func (s *Service) WithContributionContinuityCandidateAs(ctx context.Context, sub
 		if err != nil {
 			return err
 		}
-		lineage := (implementation.ContributionCheckpoint{RunID: c.RunID, Pass: candidate.Pass}).Lineage()
+		lineage := (orchestration.ContributionCheckpoint{RunID: c.RunID, Pass: candidate.Pass}).Lineage()
 		if candidate.Contract != c.Digest || candidate.Pass == 0 || candidate.Pass > c.CandidateBudget || state.Candidate != lineage || candidate.Digest != state.CandidateEvidence.Digest {
 			return ErrDenied
 		}
 		known := map[string]bool{}
 		for pass := uint8(0); pass <= candidate.Pass; pass++ {
-			known[(implementation.ContributionCheckpoint{RunID: c.RunID, Pass: pass}).Lineage()] = true
+			known[(orchestration.ContributionCheckpoint{RunID: c.RunID, Pass: pass}).Lineage()] = true
 		}
 		if _, err = s.CheckContributionRoleAs(ctx, sub, session, key, "controller", ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest}); err != nil {
 			return err

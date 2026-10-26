@@ -2,13 +2,12 @@ package contribution
 
 import (
 	"encoding/json"
-	"errors"
 	"github.com/berryhill/aegis/internal/reference"
 )
 
 // RoleAuthority is an append-only association, never an authority grant. The
 // application must reload and admit its exact context before every use.
-var ErrNativeQuiescenceUnavailable = errors.New("contribution native quiescence unavailable")
+var ErrNativeQuiescenceUnavailable = reference.ErrNativeQuiescenceUnavailable
 
 type RoleAuthority struct {
 	Epoch                  uint64              `json:"epoch"`

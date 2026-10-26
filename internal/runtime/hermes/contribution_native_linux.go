@@ -4,8 +4,7 @@ package hermes
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/berryhill/aegis/internal/contribution"
+	"github.com/berryhill/aegis/internal/execution"
 	"os/exec"
 	"syscall"
 	"time"
@@ -14,31 +13,20 @@ import (
 // NativeCompletion is minted only by the exact owned Cmd.Wait and group-empty join.
 // It proves quiescence, NOT command success, authority, or source custody release.
 type NativeCompletion struct {
-	binding contribution.NativeBinding
+	binding execution.NativeBinding
 	joined  bool
 }
 
-func (p NativeCompletion) Binding() contribution.NativeBinding { return p.binding }
-func (p NativeCompletion) Joined() bool                        { return p.joined }
-func NativeCommandDigest(cmd *exec.Cmd) string {
-	if cmd == nil {
-		return ""
-	}
-	b, _ := json.Marshal(struct {
-		Path string
-		Args []string
-		Dir  string
-		Env  []string
-	}{cmd.Path, cmd.Args, cmd.Dir, cmd.Env})
-	return contribution.Digest(b)
-}
+func (p NativeCompletion) Binding() execution.NativeBinding { return p.binding }
+func (p NativeCompletion) Joined() bool                     { return p.joined }
+func NativeCommandDigest(cmd *exec.Cmd) string              { return execution.NativeCommandDigest(cmd) }
 
 // RunContributionNative accepts only an already constructed/qualified internal
 // command. Reserve must durably fence it before Start. Finish is persistence-only.
 // No shell, command parser, approval, successor or HTTP route is introduced here.
-func RunContributionNative(ctx context.Context, b contribution.NativeBinding, cmd *exec.Cmd, reserve func(context.Context) error, finish func(context.Context, NativeCompletion) error) error {
+func RunContributionNative(ctx context.Context, b execution.NativeBinding, cmd *exec.Cmd, reserve func(context.Context) error, finish func(context.Context, NativeCompletion) error) error {
 	if cmd == nil || cmd.Process != nil || cmd.SysProcAttr != nil || b.CommandDigest != NativeCommandDigest(cmd) || reserve == nil || finish == nil {
-		return contribution.ErrContinuityConflict
+		return execution.ErrInvalidNativeCommand
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -86,7 +74,7 @@ func RunContributionNative(ctx context.Context, b contribution.NativeBinding, cm
 		}
 		select {
 		case <-cleanup.Done():
-			return complete(NativeCompletion{binding: b}, contribution.ErrNativeQuiescenceUnavailable)
+			return complete(NativeCompletion{binding: b}, execution.ErrNativeQuiescenceUnavailable)
 		case <-tick.C:
 		}
 	}

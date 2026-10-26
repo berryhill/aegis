@@ -20,8 +20,8 @@ import (
 	"time"
 )
 
-// NewContributionDecisionCompanionCommand is deliberately hidden and not yet
-// centrally registered. Only the pinned owning-service launcher supplies fd 3.
+// NewContributionDecisionCompanionCommand is deliberately hidden and not
+// public. Only the pinned owning-service launcher supplies fd 3.
 func NewContributionDecisionCompanionCommand(configPath func() string) *cobra.Command {
 	var socket, origin, key, id, role string
 	c := &cobra.Command{Use: "contribution-decision-companion", Hidden: true, Args: cobra.NoArgs, SilenceUsage: true}
