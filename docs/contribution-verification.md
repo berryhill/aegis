@@ -121,6 +121,40 @@ not a remote mutation or a whole-contribution disposition.
 
 ## Mandatory production join still pending
 
+### Current final-verifier core (not yet terminal integration)
+
+`NewContributionFinalVerifier` binds the actual Service and trusted reviewed policy
+resolver. `VerifyPreClosureAs` takes only an authenticated retained key. It uses
+the retained native/delivery owner assessment, then enters the actual #377
+`WithContributionContinuityCandidateAs` private source-custody gate. It replays
+canonical immutable continuity events through `ApplyContinuity`, checks the exact
+projection/cumulative counters, joins historical native builder/tester identities
+to actual admitted RoleAuthority events and completed native-command bindings,
+requires native quiescence and fresh controller `CheckContributionEffectAs`, and
+checks the original claim/attempt plus any actual bounded continuation. Policy,
+history/native references and continuity head are reloaded before minting an
+opaque private-field `ContributionPreClosureAuthorization`. Narrower scopes do
+not mint issue-close authority. `RevalidatePreClosureAs` repeats that owning join
+and rejects forged/stale/service-substituted authorization.
+
+The core compiles and negative normal/race tests cover forged authorization,
+missing native joins and corrupt/absent immutable history. A complete positive
+core mint using actual full merge-scope retained proof has NOT yet been qualified.
+There is no installed finalizer, terminal-report producer, completion adapter or
+manager hook from this core yet. Those are unfinished implementation, not PASS.
+
+The actual canonical `CompleteQueueItem` transaction still explicitly permits
+only evidence-free EXPIRED completion after the original claim expires. A #377
+Continuation does not change that check. Its contribution-only final-completion
+contract must be agreed with the owning store: revalidate the exact original
+claim/attempt and continuation head, current independently admitted controller,
+private custody and opaque verifier provenance atomically without renewing the
+original Claim/RuntimeBinding or weakening generic late-success denial. Until
+that supported branch exists, do not emulate late completion with a caller flag,
+overwrite claim expiry or create an unindexed terminal-result blob. Final issue
+readback, canonical DispositionByRun/result retrieval and the manager-to-finalizer
+hook remain explicit unfinished integrations.
+
 The above work does NOT implement the complete final contribution verifier or
 register whole-contribution success. No accepting callbacks or temporary fake
 producer integrations are installed.
