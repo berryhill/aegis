@@ -50,19 +50,23 @@ var ErrAbsent = errors.Join(ErrDenied, errors.New("doer_host_approval_absent"))
 var ErrExpired = errors.Join(ErrDenied, errors.New("doer_host_approval_expired"))
 
 type Record struct {
-	Purpose        string                `json:"purpose"`
-	DeploymentID   string                `json:"deployment_id"`
-	PrincipalID    string                `json:"principal_id"`
-	OwnerID        string                `json:"owner_id"`
-	Agent          reference.RevisionRef `json:"agent"`
-	Candidate      reference.RevisionRef `json:"candidate"`
-	PreviousDigest string                `json:"previous_digest,omitempty"`
-	Contract       loop.DoerContract     `json:"contract"`
-	ContractDigest string                `json:"contract_digest"`
-	ApprovedAt     time.Time             `json:"approved_at"`
-	ExpiresAt      time.Time             `json:"expires_at"`
-	KeyID          string                `json:"key_id"`
-	Signature      []byte                `json:"signature"`
+	// Nonempty only after an independent protected controller decision for a
+	// differently owned participant. Omitted on historical owner-principal facts.
+	ControllerSubjectID string                `json:"controller_subject_id,omitempty"`
+	RunInputDigest      string                `json:"run_input_digest,omitempty"`
+	Purpose             string                `json:"purpose"`
+	DeploymentID        string                `json:"deployment_id"`
+	PrincipalID         string                `json:"principal_id"`
+	OwnerID             string                `json:"owner_id"`
+	Agent               reference.RevisionRef `json:"agent"`
+	Candidate           reference.RevisionRef `json:"candidate"`
+	PreviousDigest      string                `json:"previous_digest,omitempty"`
+	Contract            loop.DoerContract     `json:"contract"`
+	ContractDigest      string                `json:"contract_digest"`
+	ApprovedAt          time.Time             `json:"approved_at"`
+	ExpiresAt           time.Time             `json:"expires_at"`
+	KeyID               string                `json:"key_id"`
+	Signature           []byte                `json:"signature"`
 	// Nonempty only for an exact authenticated owner-principal Run, not a
 	// separate human setup decision. Signed with the complete exact scope.
 	RunRequestID          string `json:"run_request_id,omitempty"`
@@ -111,7 +115,13 @@ func (r Record) canonical() ([]byte, error) {
 	if ce != nil || candidate.Digest != r.Candidate.Digest {
 		return nil, ErrDenied
 	}
-	if e != nil || d != r.ContractDigest || r.Purpose != Purpose || r.DeploymentID == "" || r.PrincipalID == "" || r.OwnerID != r.PrincipalID || r.Agent.Validate() != nil || r.Candidate.Validate() != nil || r.KeyID == "" || r.ApprovedAt.IsZero() || !r.ApprovedAt.Before(r.ExpiresAt) || r.ExpiresAt.Sub(r.ApprovedAt) > 24*time.Hour {
+	if (r.OwnerID != r.PrincipalID) != (r.ControllerSubjectID != "") || r.OwnerID == "" {
+		return nil, ErrDenied
+	}
+	if (r.ControllerSubjectID != "" && r.DoerReusable != nil) != (r.RunInputDigest != "") || (r.RunInputDigest != "" && (reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "run-input", Digest: r.RunInputDigest}).Validate() != nil) {
+		return nil, ErrDenied
+	}
+	if e != nil || d != r.ContractDigest || r.Purpose != Purpose || r.DeploymentID == "" || r.PrincipalID == "" || r.Agent.Validate() != nil || r.Candidate.Validate() != nil || r.KeyID == "" || r.ApprovedAt.IsZero() || !r.ApprovedAt.Before(r.ExpiresAt) || r.ExpiresAt.Sub(r.ApprovedAt) > 24*time.Hour {
 		return nil, ErrDenied
 	}
 	r.Signature = nil

@@ -1,5 +1,10 @@
 # Aegis
 
+Source candidate: the [two-participant pilot](docs/TWO_PARTICIPANT_PILOT.md)
+uses exact controller-mediated workspace, protected setup and evidence bindings.
+Different recorded ownership is not independent profile authentication. Retained
+setup review is not consent or execution; isolated tests do not qualify a live pilot.
+
 Source candidate: [managed contribution candidates](docs/managed-contribution-candidate.md)
 retain bounded native repair/check evidence, exact owned phase-boundary custody
 and content-free tester model input. Candidate acceptance is not GitHub delivery,

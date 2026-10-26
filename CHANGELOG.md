@@ -6,6 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Source candidate #351: retain exact reusable Run setup for independent protected
+  provisioning/host review of differently recorded owners, bind signed consent to
+  complete Run inputs, and preserve historical result inspection without renewing
+  execution authority. Add canonical native-review wire and denial/replay/history
+  regressions. Real-provider two-participant pilot acceptance remains pending.
+
 - Add repository engineering acceptance-port custody: reserve workstation main
   8448/8098, dynamically claim 8450–8469 with foreground lifetime supervision,
   actual socket checks and isolated-state guidance. No product authority,

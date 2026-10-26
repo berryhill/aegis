@@ -14,7 +14,7 @@ import (
 // The owning service reloads canonical state; helper exit text is never authority.
 func verifyDoerProtectedResult(cfg config.Config, review app.DoerProtectedSetupReview, result app.DoerProtectedSetupResult) bool {
 	before, after := review.Draft, result.Draft
-	if before.ID != after.ID || before.PrincipalID != after.PrincipalID || !reflect.DeepEqual(before.Contract, after.Contract) || !before.CreatedAt.Equal(after.CreatedAt) || !before.ExpiresAt.Equal(after.ExpiresAt) {
+	if before.ID != after.ID || before.PrincipalID != cfg.Principal.ID || before.PrincipalID != after.PrincipalID || !reflect.DeepEqual(before.Contract, after.Contract) || !before.CreatedAt.Equal(after.CreatedAt) || !before.ExpiresAt.Equal(after.ExpiresAt) {
 		return false
 	}
 	switch review.Action {
@@ -31,7 +31,28 @@ func verifyDoerProtectedResult(cfg config.Config, review app.DoerProtectedSetupR
 			return false
 		}
 		digest, e := after.Contract.Digest()
-		return e == nil && h.Purpose == hostapproval.Purpose && h.Agent.Validate() == nil && h.Candidate.Validate() == nil && h.KeyID != "" && len(h.Signature) == 64 && !h.ApprovedAt.IsZero() && h.ApprovedAt.Before(h.ExpiresAt) && h.ExpiresAt.Sub(h.ApprovedAt) <= 24*time.Hour && h.DeploymentID == cfg.Credentials.Authority.DeploymentID && h.PrincipalID == before.PrincipalID && h.OwnerID == before.PrincipalID && h.Agent == after.Agent && reflect.DeepEqual(h.Contract, after.Contract) && h.ContractDigest == digest && h.ContractDigest == review.Host.ExpectedContractDigest && h.Candidate.Digest == review.Host.ExpectedCandidateDigest && h.Candidate.ID == after.LoopID && h.Candidate.Revision == after.Revision && h.PreviousDigest == after.PreviousDigest && time.Now().Before(h.ExpiresAt)
+		owner := before.PrincipalID
+		if review.Agent != nil {
+			a := review.Agent
+			if a.Validate() != nil || (reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: a.AgentID, Revision: a.Revision, Digest: a.Digest}) != after.Agent {
+				return false
+			}
+			owner = a.Ownership.OwnerID
+		}
+		if h.OwnerID != owner || (owner != before.PrincipalID) != (h.ControllerSubjectID != "") {
+			return false
+		}
+		if after.HostRun != nil {
+			if h.Candidate != after.HostRun.Loop || h.RunRequestID != after.HostReviewRequestID() || h.DoerReusable == nil {
+				return false
+			}
+			if owner != before.PrincipalID && h.RunInputDigest != after.HostReviewInputDigest() {
+				return false
+			}
+		} else if h.RunRequestID != "" || h.DoerReusable != nil {
+			return false
+		}
+		return e == nil && h.Purpose == hostapproval.Purpose && h.Agent.Validate() == nil && h.Candidate.Validate() == nil && h.KeyID != "" && len(h.Signature) == 64 && !h.ApprovedAt.IsZero() && h.ApprovedAt.Before(h.ExpiresAt) && h.ExpiresAt.Sub(h.ApprovedAt) <= 24*time.Hour && h.DeploymentID == cfg.Credentials.Authority.DeploymentID && h.PrincipalID == before.PrincipalID && h.Agent == after.Agent && reflect.DeepEqual(h.Contract, after.Contract) && h.ContractDigest == digest && h.ContractDigest == review.Host.ExpectedContractDigest && h.Candidate.Digest == review.Host.ExpectedCandidateDigest && h.Candidate.ID == after.LoopID && h.Candidate.Revision == after.Revision && h.PreviousDigest == after.PreviousDigest && time.Now().Before(h.ExpiresAt)
 	case "provision":
 		r, p := result.Provisioning, review.Plan
 		if !reflect.DeepEqual(before, after) || p == nil || review.Charter == nil || r == nil || result.Successor != nil || result.Host != nil {

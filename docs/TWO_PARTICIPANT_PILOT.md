@@ -110,6 +110,18 @@ service supplies direct submission, preparation/binding and foreground execution
 no manually authored one-node Graph, per-task republication or separate operator
 worker is part of this recipe.
 
+When the matching source-candidate service returns `setup_review_task` for a
+missing exact provisioning or host decision, keep its returned ID/version and
+original normalized `host_run`. Request the existing independently operated
+`loops setup-protected` action for the required `provision` or `host` review;
+never operate human authentication/approval controls or use `setup-approve` from
+an agent terminal. Verify the exact receipt/host fact, then resume the unchanged
+`loops queue` payload/key. Review retention is not a grant or executable Queue.
+The different-owner path requires separate provisioning and signed exact scope;
+it does not inherit the owner-principal shortcut. Older services lacking this
+adapter remain unavailable. This recipe does not claim that a source candidate
+or installed advisory bundle is already live-provider-qualified.
+
 Freeze the two task contracts and allowed paths/budgets before execution. Tasks
 must be distinguishable and their actual runtime results causally verified. These
 two v5 Runs prove reusable selected-file behavior only. Current v5 inputs are

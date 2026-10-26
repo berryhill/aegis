@@ -1,5 +1,15 @@
 # Aegis MVP Threat Model
 
+Two-participant controller-mediated source candidate: workspace ownership alone
+cannot authorize runtime effects or content reads. Independent protected review
+binds the exact recorded owner, authenticated principal, canonical Agent/charter,
+deployment, Loop, contract and complete normalized Run input digest. Current
+runtime/effect admission remains live; historical completed-result authorization
+replays the fully verified canonical history at the recorded evidence time and
+reloads exact signed host facts and content evidence. It issues no grant and does
+not resurrect expired/revoked authority. Canonical Agent/charter JSON is explicit
+validated review data on the native wire, not a caller-provided approval.
+
 Managed contribution tester model input is a content-free frozen identity;
 complete source remains controller-private. Explicitly admitted builder context
 can contain sensitive approved source: narrow filename/key rejection is not a

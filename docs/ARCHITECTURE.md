@@ -1,5 +1,14 @@
 # Aegis MVP Architecture
 
+The two-participant source path is authenticated exact Run → retained setup review
+when necessary → independent existing native provisioning/host decision → fresh
+runtime binding/admission → bounded worker → independently reloaded evidence.
+The retained setup task preserves the original v5 publication and Run identity;
+it does not publish a replacement Graph/Loop, approve itself or become executable
+Queue work. Historical result reads reconstruct exact immutable provenance and
+recorded-time authority/host facts, separately from current execution admission.
+Stable-owner definition mutation and zero/multiple-stanza denial remain unchanged.
+
 Managed contribution source path (intermediate candidate only): exact admitted
 Queue attempt → private linked-worktree custody → bounded builder proposal →
 controller apply/build/freeze → fresh tool-free tester + immutable native checks

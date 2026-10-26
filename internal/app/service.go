@@ -408,7 +408,13 @@ func selectorMatches(sel core.IdentitySelector, sub core.Subject, env core.Envir
 }
 
 func (s *Service) Select(c core.CanonicalCharter, sub core.Subject, requested string, env core.Environment) (core.Decision, error) {
-	now := s.Now()
+	return selectCharterAt(c, sub, requested, env, s.Now())
+}
+
+// selectCharterAt is pure. Runtime callers always enter through Select's current
+// clock; the historical result reader uses only a recorded immutable issuance.
+// It neither authenticates a new subject nor issues or renews any authority.
+func selectCharterAt(c core.CanonicalCharter, sub core.Subject, requested string, env core.Environment, now time.Time) (core.Decision, error) {
 	trusted := map[string]any{"subject_id": sub.ID, "principal_id": sub.PrincipalID, "issuer": sub.Issuer, "method": sub.Method, "environment": env, "requested_stanza": requested, "charter_digest": c.Digest}
 	d := core.Decision{TrustedInputs: trusted}
 	deny := func(reason string, err error) (core.Decision, error) {

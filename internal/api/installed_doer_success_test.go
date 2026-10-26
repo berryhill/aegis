@@ -41,6 +41,18 @@ func TestInstalledOnlineReusableDoerDirectAdmission(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true, "reusable")
 }
 
+func TestIssue351InstalledControllerParticipantRunResult(t *testing.T) {
+	installedOnlineDoerExactBytesSuccess(t, true, "reusable-controller")
+}
+
+func TestIssue351InstalledControllerHistoricalResults(t *testing.T) {
+	for _, mode := range []string{"authority-expiry", "host-expiry", "revoked", "disabled", "retired"} {
+		t.Run(mode, func(t *testing.T) {
+			installedOnlineDoerExactBytesSuccess(t, true, "reusable-controller-history-"+mode)
+		})
+	}
+}
+
 func TestInstalledOnlineReusableDoerFailureContinuity(t *testing.T) {
 	installedOnlineDoerExactBytesSuccess(t, true, "reusable-continuity")
 }
@@ -87,6 +99,11 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	if retainedTask {
 		recovery = nil
 	}
+	controllerParticipant := len(recovery) > 0 && strings.HasPrefix(recovery[0], "reusable-controller")
+	controllerHistory := ""
+	if controllerParticipant {
+		controllerHistory = strings.TrimPrefix(recovery[0], "reusable-controller-history-")
+	}
 	continuity := len(recovery) > 0 && recovery[0] == "reusable-continuity"
 	reusable := len(recovery) > 0 && strings.HasPrefix(recovery[0], "reusable")
 	if reusable {
@@ -94,7 +111,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	}
 	svc := apiService(t)
 	var requeueClock *requeueStageClock
-	if slowHelper || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue") {
+	if slowHelper || (controllerParticipant && controllerHistory != "reusable-controller") || len(recovery) > 0 && strings.HasPrefix(recovery[0], "linked-requeue") {
 		// Install before Fleet, worker and Serve capture Now: every authority
 		// consumer, including password/native authentication, shares this clock.
 		requeueClock = newRequeueStageClock(svc.Now())
@@ -155,6 +172,14 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	}
 	model := "proof-no-key"
 	cli := newInstalledLoopQueueClient(t, svc)
+	if controllerParticipant && controllerHistory != "reusable-controller" {
+		// Cold compilation must not consume a real context deadline before the
+		// synthetic clock's first admitted runtime stage. Keep all clock users
+		// on the same method value and reauthenticate at the aligned stage.
+		if delta := time.Now().UTC().Sub(requeueClock.Now()); delta > 0 {
+			requeueClock.Advance(delta)
+		}
+	}
 	subject, err = svc.AuthenticateUnixPeer(ctx, uint32(os.Getuid()))
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +209,9 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 	if singleRun {
 		owner = svc.Config.Principal.ID
 		svc.Config.Credentials.Authority.DeploymentID = "single-run-fixture"
+	}
+	if controllerParticipant {
+		owner = "separately-recorded-owner"
 	}
 	fixture, err := json.Marshal(registry.CurrentFleetFixture{SchemaVersion: registry.CurrentFleetFixtureSchemaVersion, FleetID: "journey-fleet", Agents: []registry.CurrentFleetAgent{{SourceID: "journey-source", AgentID: charter.AgentID,
 		Runtime:   registry.RuntimeBinding{Adapter: charter.Runtime.Adapter, Runtime: charter.Runtime.Runtime, Target: charter.Runtime.Target},
@@ -316,7 +344,7 @@ func installedOnlineDoerExactBytesSuccess(t *testing.T, singleRun bool, recovery
 			t.Fatal(err)
 		}
 		expectedReason, expectedAction := "provisioning_receipt_missing", "plan_preview_exact_charter"
-		if singleRun {
+		if singleRun && !controllerParticipant {
 			expectedReason, expectedAction = "doer_runtime_unconfigured", "configure_controller_doer_runtime"
 		}
 		if pending.Reason != expectedReason || pending.RequiredAction != expectedAction || pending.RequiredCharter == nil || pending.RequiredCharter.Digest != canonical.Digest || pending.RequestID == "" || pending.QueueItemID != "" || pending.Execution != nil {
@@ -403,7 +431,7 @@ esac
 		unapproved.Inputs = append([]graph.NormalizedInput(nil), input.Inputs...)
 		unapproved.Inputs[0].Value = json.RawMessage(`"Different unapproved task"`)
 		denied, err := cli.queue(unapproved)
-		if err != nil || denied.Reason != "doer_host_approval_absent" || denied.RequiredAction != "exact_v5_host_review_adapter_unavailable" || denied.Readiness == nil || denied.Readiness.Controller.State != "blocked" || denied.Readiness.Helper.State != "not_checked" || denied.QueueItemID != "" || denied.Execution != nil {
+		if err != nil || denied.Reason != "doer_host_approval_absent" || denied.RequiredAction != "review_exact_reusable_run_host_write" || denied.Readiness == nil || denied.Readiness.Controller.State != "blocked" || denied.Readiness.Helper.State != "not_checked" || denied.QueueItemID != "" || denied.Execution != nil || denied.SetupReviewTask == nil {
 			t.Fatalf("unapproved task admitted: %+v %v", denied, err)
 		}
 		var items []app.QueueExecutionView
@@ -417,6 +445,15 @@ esac
 			t.Fatal("unapproved task wrote result")
 		}
 	}
+	if controllerParticipant {
+		// A different recorded owner does not inherit the owner-principal's
+		// provisioning exemption. The original Run supplies the retained exact
+		// review; the fixture separately authenticates on the actual native route.
+		if pending.SetupReviewTask == nil || pending.SetupReviewTask.HostRun == nil {
+			t.Fatal("missing retained exact provisioning review")
+		}
+		approveIssue351FixtureProvision(t, svc, *pending.SetupReviewTask)
+	}
 	if reusable && singleRun {
 		readiness, err := svc.ReadDoerReadinessAs(ctx, subject, app.DoerReadinessInput{Agent: input.Agent, Loop: input.Loop, Inputs: input.Inputs, IdempotencyKey: input.IdempotencyKey, Activate: input.Activate})
 		if err != nil || readiness.Controller.State != "blocked" {
@@ -425,6 +462,19 @@ esac
 		if _, err := svc.ReadDoerHostWriteApprovalAs(ctx, subject, input.Agent, contract); err == nil {
 			t.Fatal("publication, activation intent or readiness minted host approval")
 		}
+	}
+	if controllerParticipant {
+		// Isolated synthetic independent-password consent through the real protected
+		// review/decision routes. Never a live human approval or provider claim.
+		blocked, err := cli.queue(input)
+		if err != nil || blocked.SetupReviewTask == nil || blocked.SetupReviewTask.HostRun == nil || blocked.QueueItemID != "" || blocked.Execution != nil || blocked.SetupReviewTask.Agent != input.Agent || blocked.SetupReviewTask.HostRun.Loop != input.Loop || blocked.SetupReviewTask.HostRun.IdempotencyKey != input.IdempotencyKey {
+			t.Fatalf("exact retained host-review handoff: %+v %v", blocked, err)
+		}
+		replay, err := cli.queue(input)
+		if err != nil || !reflect.DeepEqual(replay.SetupReviewTask, blocked.SetupReviewTask) || !reflect.DeepEqual(blocked.SetupReviewTask, pending.SetupReviewTask) {
+			t.Fatal("same blocked Run created a new review task", err)
+		}
+		approveIssue351FixtureHost(t, svc, *blocked.SetupReviewTask)
 	}
 	if err := svc.QueueWorker.ValidateLoopAdmission(published.Revision, agent); err != nil && !singleRun {
 		t.Fatalf("Doer controller fixture prerequisites: %v", err)
@@ -441,6 +491,18 @@ esac
 			t.Fatalf("fixture receipt not verified: %s", receipt.Status)
 		}
 
+	}
+	var reviewedSetup map[string][]json.RawMessage
+	if controllerParticipant {
+		reviewedSetup = map[string][]json.RawMessage{}
+		for _, bucket := range []string{"plans", "approvals", "receipts"} {
+			if err := svc.Store.List(bucket, func(raw json.RawMessage) error {
+				reviewedSetup[bucket] = append(reviewedSetup[bucket], append(json.RawMessage(nil), raw...))
+				return nil
+			}); err != nil || len(reviewedSetup[bucket]) != 1 {
+				t.Fatalf("missing exact independent fixture setup for %s: %v", bucket, err)
+			}
+		}
 	}
 	// The gateway fixture returns a patch, never a verification claim. The
 	// controller's selected-file verifier independently reloads the real bytes.
@@ -751,12 +813,23 @@ done
 	}
 	if singleRun {
 		for _, bucket := range []string{"plans", "approvals", "receipts"} {
-			if err := svc.Store.List(bucket, func(json.RawMessage) error { t.Errorf("single Run fabricated %s", bucket); return nil }); err != nil && !os.IsNotExist(err) {
+			var observed []json.RawMessage
+			if err := svc.Store.List(bucket, func(raw json.RawMessage) error {
+				observed = append(observed, append(json.RawMessage(nil), raw...))
+				return nil
+			}); err != nil && !os.IsNotExist(err) {
 				t.Fatal(err)
+			}
+			if controllerParticipant {
+				if !reflect.DeepEqual(observed, reviewedSetup[bucket]) {
+					t.Fatalf("Run changed or fabricated reviewed %s", bucket)
+				}
+			} else if len(observed) != 0 {
+				t.Errorf("single Run fabricated %s", bucket)
 			}
 		}
 		grant, err := svc.ReadDoerHostWriteApprovalAs(ctx, subject, input.Agent, contract)
-		if err != nil || grant.RunRequestID != result.RequestID || grant.Candidate != input.Loop || !reflect.DeepEqual(grant.Contract, contract) || !reflect.DeepEqual(grant.DoerReusable, published.Revision.DoerReusable) || grant.ExpiresAt.After(grant.ApprovedAt.Add(svc.Config.Principal.AuthTTL)) {
+		if err != nil || grant.RunRequestID != result.RequestID || grant.Candidate != input.Loop || !reflect.DeepEqual(grant.Contract, contract) || !reflect.DeepEqual(grant.DoerReusable, published.Revision.DoerReusable) || (!controllerParticipant && grant.ExpiresAt.After(grant.ApprovedAt.Add(svc.Config.Principal.AuthTTL))) {
 			t.Fatalf("exact Run scope: %+v %v", grant, err)
 		}
 		currentCharter, err := svc.GetCharter(charter.AgentID, 1)
@@ -776,6 +849,13 @@ done
 	var afterReplay app.QueueExecutionView
 	if err := cli.run(&afterReplay, "queue", "show", result.QueueItemID); err != nil {
 		t.Fatal(err)
+	}
+	if controllerParticipant {
+		testQueueResultDenials(t, svc, subject, result.QueueItemID, client)
+		if controllerHistory != "reusable-controller" {
+			testIssue351ControllerHistoricalResult(t, svc, input, contract, result.QueueItemID, requeueClock, controllerHistory)
+		}
+		return
 	}
 	if reusable {
 		second := input
