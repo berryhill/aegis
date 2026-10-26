@@ -29,7 +29,7 @@ var _ delivery.Authority = (*ContributionDeliveryContinuityAuthority)(nil)
 // delivery requires its own operation-specific scope and payload qualification.
 // Construction performs historical validation, never grants write permission.
 func NewContributionDeliveryContinuityAuthority(ctx context.Context, s *Service, subject core.Subject, key, controllerSession string, request contribution.EffectAdmissionRequest, intent delivery.Intent) (*ContributionDeliveryContinuityAuthority, error) {
-	if s == nil || controllerSession == "" || request.Role != "controller" || request.RoleAuthority.ID != controllerSession || intent.Operation != delivery.Commit || intent.Policy == "" || intent.ID == "" || intent.Payload == "" {
+	if ctx == nil || ctx.Err() != nil || s == nil || controllerSession == "" || request.Role != "controller" || request.RoleAuthority.ID != controllerSession || intent.Operation != delivery.Commit || intent.Policy == "" || intent.ID == "" || intent.Payload == "" {
 		return nil, delivery.ErrDenied
 	}
 	c, state, _, err := s.ObserveContributionContinuityAs(ctx, subject, key)

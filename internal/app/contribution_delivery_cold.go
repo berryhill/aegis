@@ -27,6 +27,7 @@ type ContributionDeliveryPublicationOwner struct {
 	github       *delivery.GitHub
 	freshSubject func(context.Context) (core.Subject, error)
 	mu           sync.Mutex
+	controller   *ContributionDeliveryController // immutable trusted setup, guarded by mu
 	active       map[string]int
 	changed      chan struct{}
 }

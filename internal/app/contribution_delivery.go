@@ -17,9 +17,9 @@ import (
 
 var ErrContributionDeliveryUnavailable = errors.New("contribution delivery native continuity integration unavailable")
 
-// ContributionDeliveryPolicy is trusted controller configuration, not a runtime
-// request or model artifact. Its entire exact scope is content-addressed and must
-// be resolved from the controller's immutable reviewed policy store.
+// ContributionDeliveryPolicy is a reproducible controller projection, not a
+// grant, runtime request or model artifact. Productive callers use the concrete
+// trusted controller, which derives it from canonical state and server policy.
 type ContributionDeliveryPolicy struct {
 	// ControllerSession is an explicit trusted controller-role pin, never inferred from intake.
 	ControllerSession                                                           string

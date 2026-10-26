@@ -47,13 +47,17 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 				s.sessions[entry.id] = current
 			}
 			s.mu.Unlock()
-			execution, executeErr := s.app.ExecuteContributionAs(ctx, entry.subject, c.Key)
+			journey, executeErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, c.Key)
+			execution := journey.Execution
 			err = executeErr
 			result.State, result.Reason = "accepted", execution.Reason
+			if journey.HeldReason != "" {
+				result.State, result.Reason = "unavailable", journey.HeldReason
+			}
 			if execution.Available && execution.Candidate == nil && (execution.Execution == nil || len(execution.Execution.Attempts) == 0) {
 				result.State = "blocked"
 			}
-			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution": execution, "execution_started": execution.Execution != nil && len(execution.Execution.Attempts) > 0, "completed": false}
+			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution": execution, "delivery": journey.Delivery, "held_stage": journey.HeldStage, "held_reason": journey.HeldReason, "execution_started": execution.Execution != nil && len(execution.Execution.Attempts) > 0, "completed": false}
 		}
 	case "status", "resume":
 		ref := ""
