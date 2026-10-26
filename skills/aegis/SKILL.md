@@ -28,8 +28,15 @@ and mandatory #375–#379 stage/evidence/owner matrix. This repository-only refe
 is not bundled/installed adoption; #348 owns final matching distribution. Without
 a checkout use installed discovery and report missing capability, never invent
 stages/APIs. Selected-file Doer, native coding and whole-contribution success are
-separate evidence claims. Current v6 intake is not the whole autonomous journey;
-Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+separate evidence claims. The managed v6 Go profile includes #376 bounded
+prepare/build/freeze/independent-test/repair/review; candidate acceptance is
+intermediate, not #377 continuity, #378 delivery or #379 joined disposition.
+Legacy profiles without managed execution remain intake-only. Neither a role
+declaration nor Queue/model/build/PR/CI alone attests the whole contribution.
+The single contract is also available without a checkout at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
+Its source-observation matrix is historical, not a permanent capability verdict.
+Narrower scope and real gates prevail.
 
 
 Use this skill to identify the relevant Aegis product domain and point the user to a shipped, typed Aegis CLI, HTTP, or console surface. It is a router, not an implementation of those surfaces.
@@ -80,7 +87,40 @@ CAS data (`agent_id`, `head`, `event_id`, `sequence`, `previous_digest`,
 API additions are `GET /v1/loops/inventory` and `GET`/`PUT
 /v1/loops/:loop/availability`. Confirm installed help; no local-store fallback.
 
-With `--config OWNER_CONFIG --target CONSOLE_URL`, the controller-only native-source operations are `controller-codex candidates PROFILE_HOME`, `controller-codex preview PROFILE_HOME [--credential ID]`, `controller-codex connect REVIEW_ID`, and `controller-codex show`; see the credential-authority skill. Other supported operations are `agents register|list|show|history|approve-charter|enable|disable|retire`, `loops list|show|validate|publish|activate|retire|queue`, `graphs list|show|publish|submit`, and `queue list|show|result|preparations|bind-runtime|process|cancel|revoke|retry`. Reusable task Run routes to Loop authoring; exact verified `queue result` readback routes to Evidence and disposition. Preserve each command’s positional file/reference arguments from installed help. The URL selects the owning instance; the protected Unix API performs authentication. Other online operations, Graph lifecycle application and general scheduling remain unsupported. No local-store fallback is allowed.
+With `--config OWNER_CONFIG --target CONSOLE_URL`, the source owning-service
+allowlist in `internal/command/fleet_online.go` supports:
+
+- `charter import|validate|show`; `plan preview|show`;
+  `approval request|approve|reject|show`; and root `provision`.
+- `session preview|start|show|authority|list`.
+- `agents register|list|show|history|approve-charter|enable|disable|retire`.
+- `loops readiness|task-execute|task-save|task-show|task-continue` (the latter
+  save/show/continue commands also have `draft-*` aliases),
+  `loops setup-protected|setup-browser|setup-review|setup-decide`,
+  `loops queue|list|inventory|availability|archive|restore|show|publish|validate|activate|retire`.
+  `setup-approve` is a separate protected operator-only path, never an agent
+  approval action.
+- `graphs list|show|publish|submit`.
+- `queue preparations|list|result|show|process|bind-runtime|cancel|revoke|retry`.
+  Retry is expired-lease reclaim only, not ordinary retry or a stop acknowledgement.
+- Controller-only `controller-codex candidates PROFILE_HOME`,
+  `controller-codex preview PROFILE_HOME [--credential ID] [--replace]`,
+  `controller-codex connect REVIEW_ID`, `controller-codex show`, and
+  `controller-codex probe FILE`; see the credential-authority skill.
+
+Preserve positional files/references and flags from installed help; source
+availability does not prove an older installed executable has these adapters.
+Reusable task Run routes to Loop authoring; exact verified `queue result`
+readback routes to Evidence and disposition. The URL selects the owning instance;
+the protected Unix API authenticates and repeats operation-specific admission.
+An approval adapter is not permission for the model to approve a human decision.
+Graph lifecycle application, general scheduling, ordinary retry and online
+Queue expire/exhaust remain unsupported. Agent lifecycle and Queue
+cancel/revoke/expired-lease reclaim adapters are delivered by #350; CLI/API
+presence alone does not qualify another operation or an older installation.
+Other unlisted online operations remain unsupported. No local-store fallback is
+allowed.
+
 
 ## Progressive disclosure
 

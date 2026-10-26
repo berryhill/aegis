@@ -48,6 +48,22 @@ If an operation is absent from installed help, label it unavailable. There is no
 
 ## Register one existing participant
 
+Start from bundled `references/register-input.v1.json` for the complete strict
+request shape, not the explanatory response projections. Its example identities
+and all-a charter digest are synthetic and must not be submitted unchanged.
+Replace the fleet/source/Agent selectors, runtime binding, owner/accountability,
+exact already-imported charter reference and reviewed declarations with the
+approved participant's actual inputs. Keep `identity` consistent with the one
+selected fixture candidate. Do not add principal, token, mandate or approval
+fields. The example provides no authority or preconfigured authenticated owner.
+
+Prerequisites are an existing explicitly selected owning configuration/target,
+its supported authenticated Unix transport, and the exact canonical charter.
+For isolated acceptance these are declared test-fixture starting state, not
+hidden worker chores; for live use resolve them through the owning controller.
+If absent, report that prerequisite rather than inventing credentials, importing
+a different profile, initializing a second store or claiming a recipe passed.
+
 1. For the general CLI/HTTP fixture path, require a canonical charter to have already been imported. That path does not import it. The manager-only default-profile confirmation described below is the narrow exception: it saves one deterministic canonical charter as part of its exact two-phase transaction.
 2. Prepare one strict JSON request file with exactly `fixture` and `identity`. `fixture` is an embedded `aegis.current-fleet.fixture.v1` object. `identity` contains exact `fleet_id`, `kind: "current-fleet"`, and `source_id`. Do not add caller identity or authority fields.
 3. In the selected fixture candidate, preserve:
