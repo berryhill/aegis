@@ -54,6 +54,56 @@ and atomic completion remain authoritative. A report's content hash or valid
 JSON is not verifier provenance and must never be passed to the generic
 artifact verifier to manufacture whole-contribution success.
 
+## Retained native/delivery assessment (source integration, not completion)
+
+`Service.AssessContributionRetainedDeliveryAs` accepts an authenticated retained
+key and a trusted-controller reviewed policy reference/resolver. It calls the
+actual native candidate and delivery-history read owners, reloads native bytes
+from private blob custody, compares the native candidate/immutable Loop policy
+and delivery binding, validates sealed history, and repeats policy, native,
+control and history readback before returning. It does not enter source custody
+or effect callbacks. The result contains only closed codes and private evidence
+references; it is not a final receipt, current GitHub admission or source lease.
+
+The history assessment distinguishes local/no-publish commit-only evidence,
+no-merge publication/PR/check evidence and merge-target evidence. Required remote
+observations must parse their retained proof; independently resolved check,
+reviewer, protection and post-check requirements cannot be self-selected by that
+proof. Earlier candidate histories are retained but cannot satisfy current effects.
+Available same-root valid merge-envelope references survive subsequent native or
+policy failure. If the canonical history owner rejects the entire snapshot before
+returning it, this consumer cannot recover a partial merge history: a supported
+owner readback preserving those irreversible references remains a coordination gap.
+
+Qualification currently covers real app/Badger canonical history, fresh/stale/
+foreign admission, unknown versus confirmed commit, policy/candidate/role/epoch/
+tree/head/chain substitution, false scope promotion and reviewed-requirement
+substitution. Native absence denies rather than using a fake acceptance callback.
+The positive Service + canonical Badger + actual native accepted producer +
+intent-reserved Engine local commit composition is now exercised by
+`TestRetainedDeliveryNativeComposition`. It verifies RED/GREEN native execution,
+actual native blob reload, retained local assessment and unchanged claimed Queue
+disposition. Protocol transport/reservation authority/quiescence remain synthetic;
+this is NOT #377 native Wait, provider or GitHub qualification. Wrong authorship,
+committer, timestamp, message, approved paths, source, tree, toolchain, actor,
+candidate, role, stale/foreign subjects and stop are covered in that fixture.
+
+The assessment now derives the reviewed authored commit and object graph using
+actual `delivery.Git.ProjectAccepted`, then independently reads the committed
+branch/object via read-only `Git.Reconcile`. It compares retained observations
+to that exact head/tree; present optional current effects cannot silently fail or
+omit proof. Upload-commit metadata/message/tree/parent is compared to independently
+reviewed policy, and PR facts require canonical URL/creator/head/base.
+
+Exact Commit/Publish/PR/object intent payload validation remains unavailable until
+#378 exports its pure owning `ValidateIntentForPlan(plan, intent)` equivalent.
+No private producer preimages were copied. Accordingly the product returns
+`retained-publication-assessed` with `intent_payload_unavailable`, never verified
+delivery, even when its implemented joins pass. Actual `ParseReadback` continues
+to validate existing Check/Merge/Issue payloads and reviewed requirements. Full
+remote-proof/merge/later-corruption qualification and final #377/private-custody
+integration remain gaps. This consumer must not be used as issue-close authority.
+
 ## Mandatory production join still pending
 
 The above work does NOT implement the complete final contribution verifier or
@@ -64,11 +114,10 @@ producer integrations are installed.
   epochs, native Wait/stop/quiescence, current controls and cumulative counters.
   Final verification must reload their real immutable history and consume live
   source custody; a caller-supplied role label, stop digest or nil gate is invalid.
-- #378 owns actual durable delivery intents/observation history and sanitized
-  remote proof. At interface coordination its `Observation` retained commit/tree/
-  merge/base/PR but not the complete per-check/review/protection facts. Its owner
-  is adding those proof records and a root/history reload surface. Do not invent
-  those missing facts or pass fixture observations as production provenance.
+- #378 owns durable delivery intents/observation history and sanitized remote
+  proof. The privately integrated published PR #396 source now supplies sealed
+  history and per-check/review/protection readback consumed above; this is not a
+  claim that #396 merged, main is ready or remote behavior is independently accepted.
 - Pre-issue-close verification must produce an opaque exact-scope authorization
   over complete accepted behavior and merge proof. Final disposition follows
   actual scope-correct issue readback, avoiding a circular dependency in which
