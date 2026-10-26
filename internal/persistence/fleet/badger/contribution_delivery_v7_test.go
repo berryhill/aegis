@@ -57,7 +57,25 @@ func TestContributionDeliveryV7AdvancedBaseHistory(t *testing.T) {
 	}
 	a.observation.Outcome = delivery.Confirmed
 	a.observation.Code = "merged_verified"
-	confirmed, err := e.Execute(ctx, p.Reference, delivery.Merge)
+	// The bare Engine now correctly holds a known merge without budget.
+	held, err := e.Execute(ctx, p.Reference, delivery.Merge)
+	if err != nil || held != partial {
+		t.Fatal(held, err)
+	}
+	// Qualification-only explicit single read admission; production Conductor
+	// requires the persistent #377 ReadinessBudget before this read.
+	guard := func(c context.Context) error {
+		if err := r.Fence(c, first.Intent, false); err != nil {
+			return err
+		}
+		return auth.Admit(c, first.Intent, false)
+	}
+	observed := a.Reconcile(ctx, first.Intent, p, guard)
+	joined, err := delivery.RetainObservation(partial, observed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirmed, err := r.Finish(ctx, partial, joined)
 	if err != nil || confirmed.Outcome != delivery.Confirmed || confirmed.Intent != first.Intent || confirmed.Merge != partial.Merge || confirmed.Tree != partial.Tree || confirmed.Head != partial.Head || confirmed.PR != partial.PR || confirmed.BaseHead != partial.BaseHead || a.writes != 1 {
 		t.Fatal(confirmed, err, a.writes)
 	}

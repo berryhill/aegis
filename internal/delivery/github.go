@@ -98,6 +98,11 @@ func (g *GitHub) request(ctx context.Context, secret []byte, method, path string
 	if e != nil || len(b) > 1<<20 {
 		return errRemote
 	}
+	if c, ok := ctx.Value(readbackKey{}).(*readbackCollector); ok && len(secret) > 0 && bytes.Contains(b, secret) {
+		c.overflow = true
+	} else {
+		captureReadback(ctx, path, response.StatusCode, b)
+	}
 	if response.StatusCode == 404 {
 		return errAbsent
 	}
@@ -128,8 +133,11 @@ type repository struct {
 }
 
 func (g *GitHub) identity(ctx context.Context, s []byte, i Intent, write bool) (repository, error) {
-	var actor struct{ Login string }
-	if g.request(ctx, s, "GET", "/user", nil, &actor) != nil || actor.Login != i.Actor {
+	var actor struct {
+		Login string
+		ID    uint64
+	}
+	if g.request(ctx, s, "GET", "/user", nil, &actor) != nil || actor.Login != i.Actor || actor.ID == 0 {
 		return repository{}, ErrDenied
 	}
 	var r repository
@@ -161,6 +169,7 @@ type remoteBranch struct {
 	}
 }
 type pull struct {
+	HTMLURL        string `json:"html_url"`
 	User           struct{ Login string }
 	Number         uint64
 	State          string
@@ -173,7 +182,7 @@ type pull struct {
 }
 
 func validatePull(r pull, i Intent, merged bool) error {
-	if r.Number == 0 || (i.PR != 0 && i.PR != r.Number) || r.Draft || r.Head.Ref != i.Branch || r.Head.SHA != i.Head || r.Base.Ref != i.Base || r.Head.Repo.ID != i.RepositoryID || r.Base.Repo.ID != i.RepositoryID || r.Head.Repo.FullName != i.Repository || r.Base.Repo.FullName != i.Repository {
+	if !canonicalPullURL(r.HTMLURL, i.Repository, r.Number) || r.User.Login != i.Actor || r.Number == 0 || (i.PR != 0 && i.PR != r.Number) || r.Draft || r.Head.Ref != i.Branch || r.Head.SHA != i.Head || r.Base.Ref != i.Base || r.Head.Repo.ID != i.RepositoryID || r.Base.Repo.ID != i.RepositoryID || r.Head.Repo.FullName != i.Repository || r.Base.Repo.FullName != i.Repository {
 		return ErrDenied
 	}
 	if merged {
@@ -236,6 +245,9 @@ func (g *GitHub) Reconcile(ctx context.Context, i Intent, p Plan, guard Guard) O
 	return g.perform(ctx, i, p, guard, false)
 }
 func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, write bool) (o Observation) {
+	c := &readbackCollector{requirements: requirementsFor(p)}
+	ctx = context.WithValue(ctx, readbackKey{}, c)
+	defer func() { o = sealReadback(i, o, c) }()
 	if i.Operation == TransferGraph {
 		expected, e := intentFor(p, TransferGraph)
 		if e != nil || expected != i || guard == nil || guard(ctx) != nil || !permits(p.Delivery, TransferGraph) || g.review(ctx, i, p) != nil {
@@ -422,6 +434,53 @@ func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, wri
 				}
 			}
 			o = Observation{Outcome: Confirmed, Head: i.Head, PR: i.PR}
+		case CheckDelivery:
+			// This operation has no mutation path, including on reconciliation.
+			if i.PR == 0 {
+				return ErrDenied
+			}
+			pr, err := g.readPull(ctx, s, i)
+			if err != nil {
+				return err
+			}
+			o = Observation{Outcome: Unknown, Code: "base_gate", Head: i.Head, PR: i.PR}
+			if pr.Merged {
+				return ErrDenied
+			}
+			base, err := g.ref(ctx, s, i, i.Base)
+			if err != nil || base != i.BaseHead {
+				return ErrDenied
+			}
+			head, err := g.ref(ctx, s, i, i.Branch)
+			if err != nil || head != i.Head {
+				return ErrDenied
+			}
+			if pr.Mergeable != nil && !*pr.Mergeable && pr.MergeableState == "dirty" {
+				return errMergeConflict
+			}
+			if pr.Mergeable == nil || !*pr.Mergeable || pr.MergeableState != "clean" {
+				return ErrDenied
+			}
+			var ancestry struct {
+				Status string
+				Behind int `json:"behind_by"`
+			}
+			if g.request(ctx, s, "GET", prefix+"/compare/"+i.BaseHead+"..."+i.Head, nil, &ancestry) != nil || (ancestry.Status != "ahead" && ancestry.Status != "identical") || ancestry.Behind != 0 {
+				return ErrDenied
+			}
+			o.Code = "protection_gate"
+			if g.strictProtection(ctx, s, i, p) != nil {
+				return ErrDenied
+			}
+			o.Code = "ci_gate"
+			if err = g.checks(ctx, s, i, i.Head, p.RequiredChecks); err != nil {
+				return err
+			}
+			o.Code = "review_gate"
+			if err = g.reviews(ctx, s, i, p.RequiredReviewers); err != nil {
+				return err
+			}
+			o.Outcome, o.Code = Confirmed, "delivery_checked"
 		case Merge:
 			if i.PR == 0 {
 				return ErrDenied
@@ -500,13 +559,15 @@ func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, wri
 			path := fmt.Sprintf("%s/issues/%d", prefix, p.Intake.Source.URL.Number)
 			var issue struct {
 				ID          uint64
+				Number      uint64
+				StateReason string `json:"state_reason"`
 				State       string
 				PullRequest json.RawMessage `json:"pull_request"`
 			}
 			if e = g.request(ctx, s, "GET", path, nil, &issue); e != nil {
 				return e
 			}
-			if issue.ID != p.Intake.Source.IssueID || len(issue.PullRequest) > 0 {
+			if issue.ID != p.Intake.Source.IssueID || issue.Number != uint64(p.Intake.Source.URL.Number) || len(issue.PullRequest) > 0 {
 				return ErrDenied
 			}
 			if issue.State != "closed" {
@@ -526,7 +587,7 @@ func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, wri
 					return e
 				}
 			}
-			if issue.ID != p.Intake.Source.IssueID || issue.State != "closed" || len(issue.PullRequest) > 0 {
+			if issue.ID != p.Intake.Source.IssueID || issue.Number != uint64(p.Intake.Source.URL.Number) || issue.StateReason != "completed" || issue.State != "closed" || len(issue.PullRequest) > 0 {
 				return errRemote
 			}
 			o = Observation{Outcome: Confirmed, Code: "issue_closed"}
@@ -538,6 +599,15 @@ func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, wri
 	if e != nil {
 		if o.Merge != "" {
 			o.Outcome, o.Code = Unknown, "merged_validation_unresolved"
+		} else if i.Operation == CheckDelivery {
+			// Held reads remain retryable UNKNOWN; only concrete failures are terminal.
+			o.Outcome = Unknown
+			if errors.Is(e, errChecksFailed) {
+				o.Outcome, o.Code = Failed, "ci_failed"
+			}
+			if errors.Is(e, errMergeConflict) {
+				o.Outcome, o.Code = Failed, "merge_conflict"
+			}
 		} else if attempted || !write {
 			o.Outcome, o.Code = Unknown, "remote_unknown"
 		} else if errors.Is(e, errMergeConflict) {
@@ -642,7 +712,9 @@ func (g *GitHub) reviews(ctx context.Context, s []byte, i Intent, required []str
 		} else {
 			latest[r.User.Login] = r.State
 		}
-		if r.State == "CHANGES_REQUESTED" {
+	}
+	for _, state := range latest {
+		if state == "CHANGES_REQUESTED" {
 			return ErrDenied
 		}
 	}
@@ -695,6 +767,16 @@ func (g *GitHub) merged(ctx context.Context, s []byte, i Intent, p Plan, pr pull
 	if g.checks(ctx, s, i, pr.MergeCommit, p.PostMergeChecks) != nil {
 		return errRemote
 	}
+	if g.strictProtection(ctx, s, i, p) != nil || g.checks(ctx, s, i, i.Head, p.RequiredChecks) != nil || g.reviews(ctx, s, i, p.RequiredReviewers) != nil {
+		return errRemote
+	}
+	var ancestry struct {
+		Status string
+		Behind int `json:"behind_by"`
+	}
+	if g.request(ctx, s, "GET", "/repos/"+i.Repository+"/compare/"+i.BaseHead+"..."+i.Head, nil, &ancestry) != nil || (ancestry.Status != "ahead" && ancestry.Status != "identical") || ancestry.Behind != 0 {
+		return errRemote
+	}
 	o.Outcome = Confirmed
 	o.Code = "merged_verified"
 	return nil
@@ -715,8 +797,8 @@ func (a ClosedAdapter) localTarget(ctx context.Context, i Intent, p Plan) bool {
 	if e != nil || strings.TrimSpace(string(root)) != a.Git.Directory {
 		return false
 	}
-	tree, commit, e := a.Git.prepare(ctx, p.Commit)
-	return e == nil && tree == p.Commit.Tree && commit == p.Commit.Commit
+	object, e := authoredObject(p.Commit)
+	return e == nil && object.OID == p.Commit.Commit
 }
 
 func (a ClosedAdapter) Apply(ctx context.Context, i Intent, p Plan, g Guard) Observation {

@@ -97,7 +97,7 @@ func serveObjects(t *testing.T, p Plan, f *objectServer) *GitHub {
 		}
 		switch r.URL.Path {
 		case "/user":
-			send(map[string]any{"login": p.Actor})
+			send(map[string]any{"login": p.Actor, "id": 42})
 			return
 		case "/repos/owner/repo":
 			send(map[string]any{"id": 1, "full_name": p.Repository, "default_branch": "main", "permissions": map[string]bool{"push": true}})

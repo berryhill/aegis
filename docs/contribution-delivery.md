@@ -1,9 +1,148 @@
 # Contribution delivery adapter candidate (#378)
 
-This is source-only adapter work, **not working whole-contribution publication**,
-not an activated Loop, and not durable managed-runtime integration. The existing
-application still denies unavailable contribution delivery; this patch does not
-replace that with a hardcoded success or blocked-stage simulation.
+## Fresh instruction scope at the delivery sink
+
+Both application delivery entrypoints wrap the supplied real authority for canonical reservation/fencing and engine effects. Every fresh write admission reloads the authenticated sealed contract/current controls and uses the existing contribution Reader for exactly the approved profile read action and issue URL. Repository/issue/creator identity, title/body, open state and complete discussion identities/content must still match. Observation time, ETag/wire digest and incidental issue update time are not semantic changes. Changed, incomplete or unreadable instructions hold scope with a fixed typed denial before effects; untrusted edits never grant rights, mint owner cancellation/approval, replace the intent key, or replenish budgets. The actual actor/native authority remains mandatory and is repeated after the read.
+
+Read-only same-intent reconciliation delegates to the real read authority without requiring an open issue or a new source read. Thus an authorized own issue-close postread is not rejected because that write closed the issue. This is a point-in-time reread, not an atomic transaction with GitHub, and does not prove native continuity or full-scope completion.
+
+## V20 bounded controller readiness
+
+Trusted composition may supply `WithReadiness(NewRecheckPolicy(...), budget)` to
+`NewConductor` or the optional typed `RunContributionDeliveryAs` dependency.
+`NewRecheckPolicy` accepts only maximum 1–2 and delay 0–30 seconds. No runtime
+request, grant, consent prompt, default accepting counter or new owner is added.
+The delay and read admission must remain inside the sealed intake deadline.
+One Source callback/private context survives the cancellable timer and all reads.
+
+`ReadinessBudget.ReserveReadiness(ctx, exactIntent, maximum)` must durably reserve
+against **#377's existing root-global infrastructure counter**, validating exact
+root/contract/candidate and Check/Merge ID plus native continuity. That owner must
+retain consumption across candidates, phases, processes and repeated Run calls;
+the Conductor's additional per-invocation ceiling cannot replace persistence.
+Actual #377 integration remains a hard gate. The finite test budget is explicitly
+qualification-only, not a production owner implementation.
+
+Canonical Check reservation returns freshness before any HTTP. Its first read
+uses Reconcile/read-only while retaining fresh reservation/CAS semantics. Every
+extra Check read and every post-merge readiness retry reserves budget first;
+missing policy/budget, deadline, cancellation, unavailable owner and exhaustion
+hold explicitly. Confirmed/Failed/Denied records do not retry HTTP. Existing
+UNKNOWN cannot be escaped with a new intent, candidate, key or Run-local counter.
+Post-merge retries only reconcile the same Merge intent after a persisted merge
+fact; pending/exhausted results preserve Merge and canonical history. No second
+Merge API mutation is issued.
+
+An UNKNOWN write **without** a known Merge fact is different from ordinary
+readiness: the existing Engine admits at most one exact same-intent read-only
+reconciliation per operation invocation, through fresh read fence/authority. It
+never resends mutation or loops on that uncertainty. Once it discovers the merge
+fact, any subsequent readiness read requires the root-global budget. This is
+bounded existing reconciliation admission, not silent policy renewal.
+
+No review/check/protection/TTL rule or named-review support changes. #379 remains
+mandatory for issue disposition. No launch/CLI/credential operation is added.
+
+## V13 bounded controller-owned sequence
+
+`delivery.Conductor.Run` holds exactly one accepted-source callback and its private
+context for Commit -> ordered graph Publish -> canonical own non-draft PR result
+-> closed `CheckDelivery` checkpoint -> permitted Merge and exact post-merge
+readback. PR numbers from policy/callers are ignored. `executeAccepted` reuses the
+existing Engine reservation/CAS/replay graph path without reacquiring Source.
+The result lists completed/held operations and exact refs; it is not canonical
+Queue state or whole-contribution disposition.
+
+`CheckDelivery` performs production HTTP reads of exact head, current base,
+ancestry, mergeability, required checks, independent reviews and pinned protection.
+Missing/pending/skipped/stale gates remain held. Concrete CI/conflict failures are
+persisted before the existing RepairOwner receives their exact root/intent/digest.
+Missing repair ownership holds; no candidate or builder is manufactured. Optional
+bounded readiness reads use the explicit persistent #377 budget port described
+below; without policy/budget, reconnect retains UNKNOWN without another HTTP read.
+Unknown publication/PR/merge effects reconcile the same reserved intent, never
+resending mutation. Merged-but-failed postchecks retain the immutable merge fact.
+
+Local-only/no-publish runs stop after Commit. No-merge stops at published/checked.
+Issue closure is attempted only after the trusted #379 CompletionOwner returns a
+verified immutable full-scope reference; without that owner the issue stays open.
+The joined verifier is not implemented here. `RunContributionDeliveryAs` assembles
+the real Source/Badger/Engine/Conductor from trusted dependencies; actual #377
+composition and automatic manager hooks remain pending, not silently installed.
+
+Qualification includes sequence/replay/concurrency/context/narrowing/held gates,
+repair handoff and a **syntheticHTTP**, not realGitHub, pipeline using production
+object publication and GitHub PR/check/merge HTTP operations. Its local commit
+port is synthetic; this is not live protected-repository acceptance. Focused
+normal/race/vet and architecture results are retained with the V13 freeze.
+
+
+This is **not working whole-contribution publication** or an activated Loop.
+The application now has an explicit synchronous downstream consumer, backed by
+canonical Badger delivery reservations and the actual #376 accepted-candidate
+custody callback. Automatic manager continuation is not installed. The real #377
+native quiescence gate and per-effect authority remain required controller-owned
+dependencies; nil integration reports unavailable, never simulated success.
+
+## V11 policy isolation and functional authority clock
+
+Resolved trusted policy slices and projected Plan check/reviewer lists are detached
+copies. Synchronous and retained callbacks cannot mutate the canonical resolver
+policy through these values; concurrent writes to incoming policy pointers are
+not granted authority or made safe by this copy. The resolver remains a trusted
+immutable controller store, not a hostile same-UID sandbox.
+
+The manager native fixture injects one synchronized logical stage clock into app,
+Fleet, worker and manager before capture. All existing 300-second authority TTLs
+and contribution deadlines remain unchanged; real native tools/context deadlines
+remain live. Explicit final clock advancement tests expiry denial. Epoch/role/actor
+pins remain policy projections, not actual-current per-effect #377 admission.
+Evidence is confined to `.acceptance/v11/`; tester V10 remains immutable.
+
+## V9 accepted-source application bridge
+
+`internal/app/contribution_delivery.go` resolves a content-addressed immutable
+reviewed controller policy, reloads sealed intake and the real accepted candidate
+through `WithAcceptedContributionCandidateAs`, checks exact bindings and current
+narrowing, and projects publication objects while the kernel owns the workspace.
+Policy/control are reloaded at both native gate boundaries; the kernel rechecks
+source, toolchain, evidence and authority after the synchronous callback.
+`ExecuteContributionDeliveryAs` consumes an existing sealed key/reference using
+the canonical Badger adapter and Engine, with no new queue or credentials.
+
+`Git.ProjectAccepted` compares every accepted tree entry against the complete
+inventory, including ignored inputs and read-only trusted tests. Only changed or
+deleted entries require the reviewed allowlist. Projection is read-only: it reads
+the existing frozen graph, retains exact accepted tree/blob bytes and replaces
+only its final commit with canonical reviewed author/committer, date and message
+bytes/OID computed in memory. It creates no objects, private index, refs or source
+changes. Unsupported metadata is denied rather than normalized. The synthetic
+freeze commit remains only a historical anchor. Actual private-index Git plumbing
+and object writes occur only in the reserved, freshly authorized Commit effect;
+its actual tree/commit must equal the pure projection before updating the branch.
+
+Focused tests cover real native #376 build/repair/acceptance and kernel custody,
+publication projection and wrong tree/inventory/scope/parent denial. The existing
+`TestContributionManagerApprovedNativeRepair` now continues the same authenticated
+manager -> application -> Queue -> real #376 role resolver -> accepted-candidate
+fixture through actual `NewContributionDeliverySource(...).WithAccepted` and its
+full Plan callback. It checks exact intake/candidate/source/tree/base/workspace/
+Loop/attempt/epoch/role pins, actual publication author/committer metadata, unchanged
+full tree/HEAD/index, exclusion of the synthetic freeze commit, and synchronous
+kernel custody (a nested application handoff cannot acquire the workspace).
+Post-positive denials exercise project checks for tree/source/attempt/policy/owner
+and other bindings after real gate entry, plus wrong subject, nil gate, callback
+source drift, policy drift and current sticky stop. The policy resolver is a
+trusted immutable controller fixture; the gate checks the exact real candidate
+but supplies **SYNTHETIC quiescence only**. This is positive application callback
+fixture proof, not native #377 Wait/claim/stop acknowledgement, real-provider,
+remote publication or automatic manager/conductor integration acceptance.
+Builder evidence and the new frozen candidate are under `.acceptance/v9/`;
+fresh independent acceptance remains the parent's separate responsibility.
+
+Launch impact: detailed delivery documentation and dependency-direction validation
+changed. No CLI, quickstart, release, license, conduct or deployment surface changed;
+existing no-key demonstration and released binaries are not delivery proof.
 
 ## Implemented contracts
 
@@ -127,18 +266,18 @@ added. Actual owner integration and repeated repaired-revision transitions remai
 unimplemented. Local-to-remote accepted object transfer is now implemented in
 controlled local Git/synthetic HTTP qualification; actual remote transfer is NOT EXERCISED.
 
-## Required integration interfaces (NOT implemented)
+## Integration status and remaining required interfaces (NOT shipped)
 
 | Owner | Required bridge / remaining gate |
 | --- | --- |
-| #376 source/custody | Reload sealed contract, complete accepted candidate and independent tester evidence; enforce exclusive quiescent custody throughout `Source.WithAccepted`. `AcceptedCandidate` returning/revalidating a value is NOT this callback custody. |
-| #376 accepted Git identity | Its frozen candidate uses synthetic controller author/committer, year-2000 timestamp and fixed message. Do not publish that as verified human authorship. Supply a reviewed actual author/committer commit with accepted tree and independently validated tested-head relationship. No equality is invented here. |
+| #376 source/custody | Implemented application `ContributionDeliverySource.WithAccepted` reloads sealed intake and the real accepted candidate under kernel callback custody. Actual native #377 quiescence/stop acknowledgement and production controller wiring remain unavailable. A read-only returned candidate alone is not custody. |
+| #376 accepted Git identity | Implemented `Git.ProjectAccepted` validates the complete accepted tree/inventory and projects a distinct publication commit with reviewed policy author/committer, timestamp and message. The synthetic freeze commit is not published. Trusted actual authorship review and real remote qualification remain external. |
 | canonical persistence owner | Implemented on concrete canonical Badger Store: `ContributionDelivery`, `Reserve/Finish/Fence`, exact sealed intake/Queue/run binding, retained repository/base/branch custody, immutable history, CAS and audit. External actual-current-fence Authority remains mandatory; no production #377 authority or conductor wiring is installed. |
 | #377 authority/controller | Fresh exact role/mandate/current narrowing/stop and actor/repository/ref/privacy admission; authorized read-only reconciliation after stop/revocation where permitted. Existing credential authority `Use/UseResolved` is a possible primitive, not installed delivery scopes. Do not widen policy automatically. |
 | credential/privacy owners | `CredentialCustody` implements exact pinned existing binding/deployment/destination/record/version/revision and closed operation/repository/actor checks using `Authority.UseResolved`; no create/bind/grant/widen. Production owner construction and trusted `Privacy` audience review remain required. No encrypted-authority fixture or live credential use is claimed in this cycle; loopback HTTP is synthetic-only. |
 | object transfer | Implemented: closed local extraction and remote blob/tree/commit create/readback with canonical local OIDs, reserved child intents and read-only UNKNOWN reconciliation. Existing owner source/custody must supply the accepted graph projection; no production wiring or actual remote transfer is claimed. |
 | #376/#377 repair | Real cumulative candidate/infrastructure budgets, same-builder handoff, rebuild/refreeze/fresh independent acceptance and updated exact-head checks. `ForwardRepair` is a port, not a running repair loop. |
-| #375/#377 orchestration | Ordered observable Loop/check/readback operations and durable controller wiring into existing application/runtime; no new daemon/queue. No central application or runtime files changed here. |
+| #375/#377 orchestration | Ordered observable Loop/check/readback operations and durable controller wiring into existing application/runtime; no new daemon/queue. The typed application Source and synchronous consumer exist; automatic manager/conductor delivery continuation and real native #377 acknowledgement remain unavailable. |
 | #379 verifier | Independently reload and join actual accepted source, roles, checks, merge, completion and issue/result readback before disposition. Merge alone is not full success. |
 
 Delivery restrictions use `internal/contribution/policy.go` canonical values:
@@ -252,3 +391,37 @@ Builder normal/race/vet and architecture logs plus source/executable/toolchain
 identity are retained under `.acceptance/v5/`. Prior tester evidence is immutable;
 fresh independent parent testing and the remaining canonical integration are not
 replaced by these builder regressions.
+
+
+## v12 context-preserving custody seam
+
+`delivery.Source.WithAccepted(ctx, ref, func(context.Context, Plan) error)`
+passes the **exact** owning callback context to Reserve, Fence, Authority,
+adapter, Finish and every graph child. Caller cancellation is checked without
+replacing the private context. Retained callbacks and guards cannot authorize
+work after synchronous return; duplicate callbacks do not reacquire custody.
+
+The productive app constructor requires the exact observed #377 service method
+`WithContributionContinuityCandidateAs(context.Context, core.Subject, string,
+string, func(context.Context, orchestration.ContributionCandidate) error) error`.
+Its session argument is the explicit reviewed `ControllerSession` policy pin
+(included in the policy digest), never the manager/intake/builder session.
+#377 owns private proof creation, lifetime and current controller-role admission;
+trusted per-effect authority must validate the matching session through #377's
+actual effect admission. Neither policy resolution nor an Authority port grants
+rights by itself. The productive runner invokes #377 exactly once and never
+nests a second #376 lock. On this #376-only base, absent #377 returns
+`ErrContributionDeliveryUnavailable`; missing session pins deny. No fake receipt
+or automatic qualification fallback exists.
+
+`NewQualificationContributionDeliverySource` explicitly selects the existing
+#376 lock-held kernel with a **synthetic** gate for tests only. The manager-to-
+Source qualification remains real #376 kernel evidence, not productive #377,
+actual auto-run, provider, remote delivery or installed runtime acceptance.
+Sentinel port tests and fake owning-runner transport tests are separately
+synthetic context-transport evidence. Actual #377 runtime proof remains
+UNAVAILABLE until its owner integration and fresh independent acceptance.
+Policy slices are detached, and policy/current controls are checked before and
+after the synchronous action under custody. No model inputs or private tokens
+are exposed. Launch assets outside this dedicated API/gate documentation are
+unaffected by this internal integration seam; no release/deployment is claimed.

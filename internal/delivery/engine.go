@@ -10,6 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/berryhill/aegis/internal/contribution"
 )
@@ -21,6 +24,7 @@ const (
 	Publish           Operation = "github.feature_ref.v1"
 	PullRequest       Operation = "github.non_draft_pr.v1"
 	UpdatePullRequest Operation = "github.update_owned_pr.v1"
+	CheckDelivery     Operation = "github.check_delivery.v1"
 	Merge             Operation = "github.merge.v1"
 	ReconcileIssue    Operation = "github.issue_disposition.v1"
 )
@@ -80,6 +84,7 @@ type Intent struct {
 	PR                                                         uint64
 }
 type Observation struct {
+	ProofJSON, ProofDigest            string
 	Outcome                           Outcome
 	Code, Head, Tree, Merge, BaseHead string
 	PR                                uint64
@@ -107,7 +112,7 @@ type Repository interface {
 	Fence(context.Context, Intent, bool) error
 }
 type Source interface {
-	WithAccepted(context.Context, Reference, func(Plan) error) error
+	WithAccepted(context.Context, Reference, func(context.Context, Plan) error) error
 }
 
 // Authority must perform fresh role/mandate/scope/control admission for this
@@ -145,7 +150,7 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 		return Intent{}, ErrDenied
 	}
 	switch op {
-	case Commit, Publish, PullRequest, UpdatePullRequest, Merge, ReconcileIssue, TransferGraph, UploadBlob, UploadTree, UploadCommit:
+	case Commit, Publish, PullRequest, UpdatePullRequest, CheckDelivery, Merge, ReconcileIssue, TransferGraph, UploadBlob, UploadTree, UploadCommit:
 	default:
 		return Intent{}, ErrDenied
 	}
@@ -183,9 +188,10 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 		}
 		i.ID = digest(struct{ Slot, OID string }{i.ID, p.Object.OID})
 		i.Payload = digest(struct {
-			Intent Intent
-			Object GitObject
-		}{i, p.Object})
+			Intent       Intent
+			ObjectDigest string
+			Publication  *ReadbackPublication
+		}{i, digest(p.Object), publicationFor(p.Object)})
 		return i, nil
 	}
 	// Positive operation schemas, not whole-Plan hashing with exclusions.
@@ -220,7 +226,7 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 			PR          uint64
 			Title, Body string
 		}{c, p.PR, p.PRTitle, p.PRBody})
-	case Merge:
+	case CheckDelivery, Merge:
 		i.PR = p.PR
 		i.Payload = digest(struct {
 			Target                        common
@@ -243,7 +249,7 @@ func permits(target string, op Operation) bool {
 	case "local-only", "no-publish":
 		return op == Commit
 	case "no-merge":
-		return op == Commit || op == Publish || op == PullRequest || op == UpdatePullRequest || op == UploadBlob || op == UploadTree || op == UploadCommit || op == TransferGraph
+		return op == Commit || op == Publish || op == PullRequest || op == UpdatePullRequest || op == CheckDelivery || op == UploadBlob || op == UploadTree || op == UploadCommit || op == TransferGraph
 	case "verified-protected-base-merge":
 		return true
 	}
@@ -253,55 +259,86 @@ func (e *Engine) Execute(ctx context.Context, ref Reference, op Operation) (resu
 	if e == nil || e.owner == nil || e.source == nil || e.authority == nil || e.adapter == nil {
 		return result, ErrDenied
 	}
-	err = e.source.WithAccepted(ctx, ref, func(p Plan) error {
+	var mu sync.Mutex
+	active, called := true, false
+	caller := ctx
+	err = e.source.WithAccepted(ctx, ref, func(ctx context.Context, p Plan) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if !active || called || ctx == nil || ctx.Err() != nil || caller.Err() != nil {
+			return ErrDenied
+		}
+		called = true
 		if p.Reference != ref {
 			return ErrDenied
 		}
-		if op == UploadBlob || op == UploadTree || op == UploadCommit {
-			root, x := e.executePlan(ctx, p, TransferGraph)
-			if x != nil {
-				return x
-			}
-			if root.Outcome != Confirmed {
-				result = root
-				return nil
-			}
-		}
-		if op == Publish && len(p.Objects) > 0 {
-			if validateGraph(p) != nil {
-				return ErrDenied
-			}
-			// Reserve the immutable whole-graph projection before any child. Repairs
-			// cannot switch graph/OIDs to escape an UNKNOWN child effect.
-			root, x := e.executePlan(ctx, p, TransferGraph)
-			if x != nil {
-				return x
-			}
-			if root.Outcome != Confirmed {
-				result = root
-				return nil
-			}
-			for _, o := range p.Objects {
-				child := p
-				child.Object = o
-				r, x := e.executePlan(ctx, child, objectOp(o))
-				if x != nil {
-					return x
-				}
-				if r.Outcome != Confirmed {
-					result = r
-					return nil
-				}
-			}
-		}
-		result, err = e.executePlan(ctx, p, op)
+		result, err = e.executeAccepted(ctx, p, op, caller)
 		return err
 	})
+	mu.Lock()
+	active = false
+	if !called && err == nil {
+		err = ErrDenied
+	}
+	mu.Unlock()
 	return
 }
 
-func (e *Engine) executePlan(ctx context.Context, p Plan, op Operation) (result Record, err error) {
+// executeAccepted runs an operation without reacquiring source custody.
+func (e *Engine) executeAccepted(ctx context.Context, p Plan, op Operation, caller context.Context) (result Record, err error) {
+	if op == UploadBlob || op == UploadTree || op == UploadCommit {
+		root, x := e.executePlan(ctx, p, TransferGraph, caller)
+		if x != nil {
+			return result, x
+		}
+		if root.Outcome != Confirmed {
+			result = root
+			return result, nil
+		}
+	}
+	if op == Publish && len(p.Objects) > 0 {
+		if validateGraph(p) != nil {
+			return result, ErrDenied
+		}
+		// Reserve the immutable whole-graph projection before any child. Repairs
+		// cannot switch graph/OIDs to escape an UNKNOWN child effect.
+		root, x := e.executePlan(ctx, p, TransferGraph, caller)
+		if x != nil {
+			return result, x
+		}
+		if root.Outcome != Confirmed {
+			result = root
+			return result, nil
+		}
+		for _, o := range p.Objects {
+			child := p
+			child.Object = o
+			r, x := e.executePlan(ctx, child, objectOp(o), caller)
+			if x != nil {
+				return result, x
+			}
+			if r.Outcome != Confirmed {
+				result = r
+				return result, nil
+			}
+		}
+	}
+	return e.executePlan(ctx, p, op, caller)
+}
+
+func (e *Engine) executePlan(ctx context.Context, p Plan, op Operation, caller context.Context) (result Record, err error) {
+	return e.executePlanReadiness(ctx, p, op, caller, nil)
+}
+
+// beforeRead runs after canonical reservation and before any extra readiness HTTP.
+func (e *Engine) executePlanReadiness(ctx context.Context, p Plan, op Operation, caller context.Context, beforeRead func(Record) error) (result Record, err error) {
+	var live atomic.Bool
+	live.Store(true)
+	defer live.Store(false)
 	err = func() error {
+		if ctx == nil || ctx.Err() != nil || caller.Err() != nil {
+			return ErrDenied
+		}
 		i, x := intentFor(p, op)
 		if x != nil {
 			return x
@@ -317,11 +354,24 @@ func (e *Engine) executePlan(ctx context.Context, p Plan, op Operation) (result 
 		if r.Outcome == Confirmed || r.Outcome == Denied || r.Outcome == Failed {
 			return nil
 		}
+		// Decide freshness BEFORE reading. A first Check reservation is read-only,
+		// but remains fresh for persistence/CAS; it is not a second reservation.
+		if !fresh && (op == CheckDelivery || op == Merge && r.Merge != "") {
+			if beforeRead == nil {
+				return nil
+			}
+			if x := beforeRead(r); x != nil {
+				return x
+			}
+		}
 		guard := func(c context.Context) error {
-			if c.Err() != nil {
+			if !live.Load() || caller.Err() != nil || ctx.Err() != nil || c == nil || c.Err() != nil {
 				return ErrDenied
 			}
-			if e.owner.Fence(c, i, fresh) != nil || e.authority.Admit(c, i, fresh) != nil {
+			if !fresh && (op == CheckDelivery || op == Merge && r.Merge != "") && (p.Intake.Deadline.IsZero() || !time.Now().Before(p.Intake.Deadline)) {
+				return ErrDenied
+			}
+			if e.owner.Fence(ctx, i, fresh && op != CheckDelivery) != nil || e.authority.Admit(ctx, i, fresh && op != CheckDelivery) != nil {
 				return ErrDenied
 			}
 			return nil
@@ -334,7 +384,7 @@ func (e *Engine) executePlan(ctx context.Context, p Plan, op Operation) (result 
 			observation = Observation{Outcome: Denied, Code: "admission_denied"}
 		} else if fresh && !permits(p.Delivery, op) {
 			observation = Observation{Outcome: Denied, Code: "delivery_restricted"}
-		} else if fresh {
+		} else if fresh && op != CheckDelivery {
 			observation = e.adapter.Apply(ctx, i, p, guard)
 		} else {
 			observation = e.adapter.Reconcile(ctx, i, p, guard)
@@ -361,8 +411,11 @@ func (e *Engine) executePlan(ctx context.Context, p Plan, op Operation) (result 
 			if mergeErr != nil {
 				return mergeErr
 			}
-			if !fresh && merged.Outcome != Confirmed {
+			if !fresh && op != CheckDelivery && merged.Outcome != Confirmed {
 				merged.Outcome = Unknown
+			}
+			if ctx.Err() != nil || caller.Err() != nil {
+				return ErrDenied
 			}
 			result, x = e.owner.Finish(ctx, r, merged)
 			if !errors.Is(x, ErrConflict) || attempt == 1 {

@@ -32,21 +32,27 @@ type githubFixture struct {
 	conflict                                          bool
 	actor, repo, base, head, check, review, mergeTree string
 	writes                                            int
+	reads, initialPending, postPending, mergeWrites   int
 	pr                                                bool
 	merged                                            bool
 	postFail                                          bool
 	lost                                              bool
 }
 
-func newGithubFixture(t *testing.T) (*GitHub, *githubFixture, Plan) {
+func newGithubFixture(t *testing.T, plans ...Plan) (*GitHub, *githubFixture, Plan) {
 	t.Helper()
 	p := fixturePlan()
+	if len(plans) > 0 {
+		p = plans[0]
+	}
 	p.PR = 7
 	p.RequiredChecks = []string{"test"}
 	p.PostMergeChecks = []string{"test"}
 	p.RequiredReviewers = []string{"reviewer"}
 	p.MergeMethod = "squash"
-	p.Commit.Tree = strings.Repeat("d", 40)
+	if p.Commit.Tree == "" {
+		p.Commit.Tree = strings.Repeat("d", 40)
+	}
 	p.PRTitle = "Scoped contribution"
 	p.ProtectionPolicy = digest(fixtureProtection())
 	p.PRBody = "Bounded accepted change"
@@ -61,10 +67,12 @@ func newGithubFixture(t *testing.T) (*GitHub, *githubFixture, Plan) {
 		}
 		if r.Method != "GET" {
 			f.writes++
+		} else {
+			f.reads++
 		}
 		switch r.URL.Path {
 		case "/user":
-			send(map[string]any{"login": f.actor})
+			send(map[string]any{"login": f.actor, "id": 42})
 		case "/repos/owner/repo":
 			send(map[string]any{"id": 1, "full_name": f.repo, "default_branch": "main", "permissions": map[string]bool{"push": true}, "allow_squash_merge": true})
 		case "/repos/owner/repo/rules/branches/main":
@@ -103,6 +111,7 @@ func newGithubFixture(t *testing.T) (*GitHub, *githubFixture, Plan) {
 		case "/repos/owner/repo/pulls/7/reviews":
 			send([]any{map[string]any{"id": 1, "user": map[string]string{"login": "reviewer"}, "state": f.review, "commit_id": f.head, "submitted_at": "2026-01-01T00:00:00Z"}})
 		case "/repos/owner/repo/pulls/7/merge":
+			f.mergeWrites++
 			if f.review != "APPROVED" {
 				http.Error(w, "required independent current-head approval", 405)
 				return
@@ -123,10 +132,18 @@ func newGithubFixture(t *testing.T) (*GitHub, *githubFixture, Plan) {
 		default:
 			if strings.HasSuffix(r.URL.Path, "/check-runs") {
 				conclusion := f.check
+				if !f.merged && f.initialPending > 0 {
+					f.initialPending--
+					conclusion = ""
+				}
+				if f.merged && strings.Contains(r.URL.Path, strings.Repeat("e", 40)) && f.postPending > 0 {
+					f.postPending--
+					conclusion = ""
+				}
 				if f.merged && f.postFail {
 					conclusion = "failure"
 				}
-				send(map[string]any{"total_count": 1, "check_runs": []any{map[string]string{"name": "test", "head_sha": strings.Split(r.URL.Path, "/")[5], "status": "completed", "conclusion": conclusion}}})
+				send(map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"id": 123, "app": map[string]any{"id": 55, "slug": "ci"}, "name": "test", "head_sha": strings.Split(r.URL.Path, "/")[5], "status": "completed", "conclusion": conclusion}}})
 			} else if strings.HasSuffix(r.URL.Path, "/status") {
 				send(map[string]any{"total_count": 0, "statuses": []any{}})
 			} else if strings.Contains(r.URL.Path, "/git/commits/") {
@@ -157,7 +174,7 @@ func (f *githubFixture) pull(p Plan) map[string]any {
 		mergeable = false
 		stateCode = "dirty"
 	}
-	return map[string]any{"user": map[string]string{"login": f.actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": merge, "mergeable": mergeable, "mergeable_state": stateCode, "body": f.body, "title": f.title, "head": map[string]any{"sha": f.head, "ref": p.Branch, "repo": map[string]any{"id": 1, "full_name": f.repo}}, "base": map[string]any{"sha": p.BaseHead, "ref": p.Base, "repo": map[string]any{"id": 1, "full_name": f.repo}}}
+	return map[string]any{"html_url": "https://github.com/owner/repo/pull/7", "user": map[string]string{"login": f.actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": merge, "mergeable": mergeable, "mergeable_state": stateCode, "body": f.body, "title": f.title, "head": map[string]any{"sha": f.head, "ref": p.Branch, "repo": map[string]any{"id": 1, "full_name": f.repo}}, "base": map[string]any{"sha": p.BaseHead, "ref": p.Base, "repo": map[string]any{"id": 1, "full_name": f.repo}}}
 }
 func TestGitHubMergeExactHeadAndReadback(t *testing.T) {
 	g, f, p := newGithubFixture(t)

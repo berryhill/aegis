@@ -5,10 +5,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestV7LoopbackPartialMergeThenAdvancedBaseGreen(t *testing.T) {
 	g, f, p := newGithubFixture(t)
+	p.Intake.Deadline = time.Now().Add(time.Minute)
 	f.lost, f.postFail = true, true
 	m := &memoryOwner{}
 	e := NewEngine(m, fixtureSource{p}, &fixtureAuthority{}, g)
@@ -40,7 +42,8 @@ func TestV7LoopbackPartialMergeThenAdvancedBaseGreen(t *testing.T) {
 	if current.Outcome != Confirmed || current.BaseHead != strings.Repeat("f", 40) {
 		t.Fatal(current)
 	}
-	done, err := e.Execute(ctx, p.Reference, Merge)
+	// Explicit finite qualification admission for the existing post-merge read.
+	done, err := e.executePlanReadiness(ctx, p, Merge, ctx, func(Record) error { return nil })
 	if err != nil || done.Outcome != Confirmed || done.Intent != first.Intent || done.Merge != partial.Merge || done.Tree != partial.Tree || done.Head != partial.Head || done.PR != partial.PR || done.BaseHead != partial.BaseHead {
 		t.Fatal(done, err)
 	}
@@ -130,6 +133,7 @@ func TestV7ObservationValidationAndAbsentFacts(t *testing.T) {
 
 func TestV7StoppedReadNeedsAuthority(t *testing.T) {
 	g, f, p := newGithubFixture(t)
+	p.Intake.Deadline = time.Now().Add(time.Minute)
 	f.lost, f.postFail = true, true
 	m := &memoryOwner{}
 	auth := &fixtureAuthority{}
@@ -143,7 +147,7 @@ func TestV7StoppedReadNeedsAuthority(t *testing.T) {
 		t.Fatal(r, err)
 	}
 	auth.denied = true
-	if _, err = e.Execute(context.Background(), p.Reference, Merge); !errors.Is(err, ErrDenied) {
+	if _, err = e.executePlanReadiness(context.Background(), p, Merge, context.Background(), func(Record) error { return nil }); !errors.Is(err, ErrDenied) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

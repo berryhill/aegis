@@ -23,7 +23,7 @@ func NewCredentialCustody(a *credentials.Authority, key credentials.CredentialBi
 	c := &CredentialCustody{a, key, destination, record, repository, actor, version, revision, repositoryID, map[Operation]bool{}}
 	for _, op := range ops {
 		switch op {
-		case UploadBlob, UploadTree, UploadCommit, Publish, PullRequest, UpdatePullRequest, Merge, ReconcileIssue:
+		case UploadBlob, UploadTree, UploadCommit, Publish, PullRequest, UpdatePullRequest, CheckDelivery, Merge, ReconcileIssue:
 		default:
 			return nil, ErrDenied
 		}

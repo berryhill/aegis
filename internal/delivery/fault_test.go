@@ -64,7 +64,7 @@ func TestRemoteRefLostResponseNoBlindResend(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/user":
-			send(map[string]string{"login": p.Actor})
+			send(map[string]any{"login": p.Actor, "id": 42})
 		case "/repos/owner/repo":
 			send(map[string]any{"id": 1, "full_name": p.Repository, "default_branch": p.Base, "permissions": map[string]bool{"push": true}})
 		case "/repos/owner/repo/git/ref/heads/contribution/run":

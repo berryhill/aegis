@@ -85,8 +85,8 @@ func (a *fixtureAdapter) Reconcile(_ context.Context, i Intent, _ Plan, _ Guard)
 
 type fixtureSource struct{ plan Plan }
 
-func (s fixtureSource) WithAccepted(ctx context.Context, _ Reference, fn func(Plan) error) error {
-	return fn(s.plan)
+func (s fixtureSource) WithAccepted(ctx context.Context, _ Reference, fn func(context.Context, Plan) error) error {
+	return fn(ctx, s.plan)
 }
 
 type fixtureAuthority struct{ denied bool }

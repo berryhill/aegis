@@ -156,7 +156,7 @@ func (g *Git) prepare(ctx context.Context, s CommitSpec) (string, string, error)
 		return "", "", e
 	}
 	env = append(env, "GIT_AUTHOR_NAME="+s.Author.Name, "GIT_AUTHOR_EMAIL="+s.Author.Email, "GIT_COMMITTER_NAME="+s.Committer.Name, "GIT_COMMITTER_EMAIL="+s.Committer.Email, "GIT_AUTHOR_DATE="+s.Timestamp, "GIT_COMMITTER_DATE="+s.Timestamp)
-	commit, e := g.run(ctx, env, []byte(s.Message), "commit-tree", strings.TrimSpace(string(tree)), "-p", s.Parent)
+	commit, e := g.run(ctx, env, []byte(s.Message), "-c", "i18n.commitEncoding=UTF-8", "commit-tree", strings.TrimSpace(string(tree)), "-p", s.Parent)
 	return strings.TrimSpace(string(tree)), strings.TrimSpace(string(commit)), e
 }
 func (g *Git) Commit(ctx context.Context, s CommitSpec, guard Guard) Observation {

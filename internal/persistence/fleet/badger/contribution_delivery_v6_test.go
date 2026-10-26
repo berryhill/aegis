@@ -12,8 +12,8 @@ import (
 
 type v6Source struct{ p delivery.Plan }
 
-func (s v6Source) WithAccepted(_ context.Context, _ delivery.Reference, f func(delivery.Plan) error) error {
-	return f(s.p)
+func (s v6Source) WithAccepted(ctx context.Context, _ delivery.Reference, f func(context.Context, delivery.Plan) error) error {
+	return f(ctx, s.p)
 }
 
 type v6PartialAdapter struct{ writes, reads int }

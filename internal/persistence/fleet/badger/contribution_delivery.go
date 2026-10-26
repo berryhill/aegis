@@ -96,7 +96,7 @@ func (r *ContributionDeliveryRepository) contract(txn *badgerdb.Txn) (contributi
 }
 func deliveryOperation(op delivery.Operation) bool {
 	switch op {
-	case delivery.Commit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.Merge, delivery.ReconcileIssue, delivery.TransferGraph, delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit:
+	case delivery.Commit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge, delivery.ReconcileIssue, delivery.TransferGraph, delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit:
 		return true
 	}
 	return false
@@ -185,42 +185,9 @@ func (r *ContributionDeliveryRepository) Fence(ctx context.Context, i delivery.I
 	})
 }
 
-// DeliveryObservation seals every append and links its predecessor. Head is only
-// a checked projection of this complete, append-only canonical history.
-type DeliveryObservation struct {
-	Record                 delivery.Record
-	PreviousDigest, Digest string
-}
-
-// delivery.Record embeds Observation with a second Outcome field; its default
-// JSON encoding loses the embedded field. Use an explicit disk-only envelope.
-type deliveryObservationWire struct {
-	Intent                 delivery.Intent
-	Outcome                delivery.Outcome
-	Observation            delivery.Observation
-	Revision               uint64
-	PreviousDigest, Digest string
-}
-
-func (v DeliveryObservation) MarshalJSON() ([]byte, error) {
-	return json.Marshal(deliveryObservationWire{v.Record.Intent, v.Record.Outcome, v.Record.Observation, v.Record.Revision, v.PreviousDigest, v.Digest})
-}
-func (v *DeliveryObservation) UnmarshalJSON(b []byte) error {
-	var w deliveryObservationWire
-	d := json.NewDecoder(bytes.NewReader(b))
-	d.DisallowUnknownFields()
-	if reference.RejectDuplicateObjectKeys(b) != nil || d.Decode(&w) != nil || d.Decode(new(any)) != io.EOF {
-		return fleet.ErrCorrupt
-	}
-	*v = DeliveryObservation{Record: delivery.Record{Intent: w.Intent, Outcome: w.Outcome, Observation: w.Observation, Revision: w.Revision}, PreviousDigest: w.PreviousDigest, Digest: w.Digest}
-	return nil
-}
-
-type deliveryPublication struct {
-	QueueItemID, OwnerID, Key, Run, Contract, Repository, Base, Branch string
-	RepositoryID                                                       uint64
-	Digest                                                             string
-}
+// DeliveryObservation retains the exact neutral canonical wire convention.
+type DeliveryObservation = delivery.HistoryEnvelope
+type deliveryPublication = delivery.PublicationRoot
 
 func deliveryWire(v any) []byte { b, _ := json.Marshal(v); return b }
 func strictDelivery(b []byte, v any) error {
@@ -265,6 +232,23 @@ func (r *ContributionDeliveryRepository) owner(txn *badgerdb.Txn, i delivery.Int
 			return e
 		}
 	}
+	rootKey := key(familyContributionPublication, "root", b.OwnerID, b.Key)
+	rootWire, rootFound, err := optional(txn, rootKey)
+	if err != nil {
+		return err
+	}
+	if rootFound {
+		if !bytes.Equal(rootWire, deliveryWire(want)) {
+			return fleet.ErrCorrupt
+		}
+	} else {
+		if !createMissing {
+			return fleet.ErrCorrupt
+		}
+		if err = create(txn, rootKey, deliveryWire(want)); err != nil {
+			return err
+		}
+	}
 	// Retain the exact slot separately from its observations: deleting an entire
 	// history must not manufacture a fresh effect under surviving custody.
 	slotKey := key(familyContributionPublication, fmt.Sprint(i.RepositoryID), i.Base, "slot", i.ID)
@@ -305,6 +289,9 @@ func loadDeliveryHistory(txn *badgerdb.Txn, id string) ([]DeliveryObservation, e
 	for it.Rewind(); it.Valid(); it.Next() {
 		if !bytes.Equal(it.Item().Key(), headKey) {
 			count++
+			if count > 2048 {
+				return nil, fleet.ErrCorrupt
+			}
 		}
 	}
 	if !found {
@@ -325,7 +312,7 @@ func loadDeliveryHistory(txn *badgerdb.Txn, id string) ([]DeliveryObservation, e
 			return nil, fleet.ErrCorrupt
 		}
 		var v DeliveryObservation
-		if strictDelivery(wire, &v) != nil {
+		if strictDelivery(wire, &v) != nil || delivery.ValidateHistoryEnvelope(v) != nil {
 			return nil, fleet.ErrCorrupt
 		}
 		d := v.Digest
@@ -352,32 +339,9 @@ func loadDeliveryHistory(txn *badgerdb.Txn, id string) ([]DeliveryObservation, e
 	}
 	return out, nil
 }
-func validDeliveryOutcome(o delivery.Outcome) bool {
-	return o == delivery.Unknown || o == delivery.Confirmed || o == delivery.Failed || o == delivery.Denied
-}
+func validDeliveryOutcome(o delivery.Outcome) bool { return delivery.ValidHistoryOutcome(o) }
 func deliveryTransition(old delivery.Record, o delivery.Observation) error {
-	if !validDeliveryOutcome(o.Outcome) || len(o.Code) > 256 {
-		return delivery.ErrDenied
-	}
-	for _, s := range []string{o.Head, o.Tree, o.Merge, o.BaseHead} {
-		if s != "" && !deliverySHA.MatchString(s) {
-			return delivery.ErrDenied
-		}
-	}
-	if old.Outcome != delivery.Unknown && old.Observation != o {
-		return delivery.ErrConflict
-	}
-	// Positive remote facts never disappear or change, even on a denied or unknown
-	// post-merge result. A later correction requires a separate admitted intent.
-	for _, p := range [][2]string{{old.Head, o.Head}, {old.Tree, o.Tree}, {old.Merge, o.Merge}, {old.BaseHead, o.BaseHead}} {
-		if p[0] != "" && p[0] != p[1] {
-			return delivery.ErrConflict
-		}
-	}
-	if old.PR != 0 && old.PR != o.PR {
-		return delivery.ErrConflict
-	}
-	return nil
+	return delivery.ValidateHistoryTransition(old, o)
 }
 func (r *ContributionDeliveryRepository) append(txn *badgerdb.Txn, record delivery.Record, previous string) error {
 	v := DeliveryObservation{Record: record, PreviousDigest: previous}
@@ -479,11 +443,11 @@ func (r *ContributionDeliveryRepository) Finish(ctx context.Context, old deliver
 		if last.Record != old {
 			return delivery.ErrConflict
 		}
-		// BaseHead retains the first historical containment observation, not the
-		// current protected branch tip. A later authorized read can prove a newer
-		// containing base without rewriting history or stranding this intent.
-		if old.BaseHead != "" && o.BaseHead != "" && deliverySHA.MatchString(o.BaseHead) {
-			o.BaseHead = old.BaseHead
+		if old.BaseHead != "" && o.BaseHead != "" && old.BaseHead != o.BaseHead {
+			o, e = delivery.RetainObservation(old, o)
+			if e != nil {
+				return e
+			}
 		}
 		if e = deliveryTransition(old, o); e != nil {
 			return e

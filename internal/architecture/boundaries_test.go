@@ -21,7 +21,7 @@ const moduleInternal = "github.com/berryhill/aegis/internal/"
 // packages executable. A missing entry deliberately means that the package is
 // an outer composition package rather than a protected inner layer.
 var allowedInternalImports = map[string][]string{
-	"internal/delivery":          {"internal/contribution", "internal/credentials"}, // Closed effects; authority and persistence are injected.
+	"internal/delivery":          {"internal/contribution", "internal/credentials", "internal/implementation", "internal/reference"}, // Consumes real frozen inventories; no kernel authority is minted.
 	"internal/reference":         {},
 	"internal/registry":          {"internal/reference"},
 	"internal/loop":              {"internal/reference"},                                       // Pure immutable references only; never contribution intake.
@@ -44,7 +44,7 @@ var allowedInternalImports = map[string][]string{
 	"internal/skillbundle":       {"internal/skillbundle"},
 	"internal/localinference":    {"internal/core"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/localinference", "internal/store"},
-	"internal/app":               {"internal/contribution", "internal/config", "internal/continuation", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/hostapproval", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
+	"internal/app":               {"internal/delivery", "internal/contribution", "internal/config", "internal/continuation", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/hostapproval", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
 	"internal/managergateway":    {"internal/app", "internal/core", "internal/credentials", "internal/manager", "internal/slash"},
 	"internal/console":           {"internal/core", "internal/principalauth"},
 	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway", "internal/principalauth"},
