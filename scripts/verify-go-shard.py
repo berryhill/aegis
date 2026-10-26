@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bounded Go groups with dynamically complete, exact-once default tests.
 
-API alternates the actual mode's sorted default inventory; orchestration isolates
-the measured contribution integration and assigns every other current/future
+API alternates the actual mode's sorted default inventory; implementation and
+orchestration isolate their measured contribution tests and assign every other current/future
 test, runnable example and fuzz target to its remainder. All children/seeds run.
 Benchmarks are inventoried but not run by default. TestMain runs in each process.
 All other packages remain exact-once, including future packages.
@@ -17,12 +17,21 @@ import sys
 ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
 ORCHESTRATION = ROOT + 'internal/orchestration'
+IMPLEMENTATION = ROOT + 'internal/implementation'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
+IMPLEMENTATION_CONTRIBUTION_TEST = 'TestManagedContributionRepairAndCustody'
+PARTITIONS = {
+    'orchestration': (ORCHESTRATION, CONTRIBUTION_TEST),
+    'orchestration-contribution': (ORCHESTRATION, CONTRIBUTION_TEST),
+    'implementation': (IMPLEMENTATION, IMPLEMENTATION_CONTRIBUTION_TEST),
+    'implementation-contribution': (IMPLEMENTATION, IMPLEMENTATION_CONTRIBUTION_TEST),
+}
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
     # Measured package deadline: isolate the dominant contribution integration.
     'implementation': ('internal/implementation',),
+    'implementation-contribution': ('internal/implementation',),
     'orchestration': ('internal/orchestration',),
     'orchestration-contribution': ('internal/orchestration',),
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
@@ -52,13 +61,14 @@ def groups(packages):
     expected = Counter({p: 1 for p in set(assigned)})
     expected[API] = 2
     expected[ORCHESTRATION] = 2
+    expected[IMPLEMENTATION] = 2
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1}):
         raise ValueError('package coverage mismatch')
     return selected
 
@@ -84,10 +94,11 @@ def test_pattern(names, group):
         raise ValueError('empty or duplicate default test inventory')
     if group in ('api-a', 'api-b'):
         selected = names[0 if group == 'api-a' else 1::2]
-    elif group in ('orchestration', 'orchestration-contribution'):
-        if CONTRIBUTION_TEST not in names:
+    elif group in PARTITIONS:
+        _, target = PARTITIONS[group]
+        if target not in names:
             raise ValueError('missing contribution integration test')
-        selected = [name for name in names if (name == CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+        selected = [name for name in names if (name == target) == group.endswith('-contribution')]
     else:
         raise ValueError('unknown test partition')
     if not selected:
@@ -111,8 +122,8 @@ def main(argv=None):
     api = args.group in ('api-a', 'api-b')
     timeout = '12m' if args.race and api else '8m'
     command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-    if api or args.group in ('orchestration', 'orchestration-contribution'):
-        package = API if api else ORCHESTRATION
+    if api or args.group in PARTITIONS:
+        package = API if api else PARTITIONS[args.group][0]
         listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
         names = test_inventory(listing.stdout, package)
         command += ['-run', test_pattern(names, args.group)]

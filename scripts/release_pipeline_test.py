@@ -36,6 +36,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn(heavy, groups)
             self.assertEqual(shard.GROUPS[heavy], ('internal/' + heavy,))
         self.assertEqual(shard.GROUPS['orchestration-contribution'], ('internal/orchestration',))
+        self.assertEqual(shard.GROUPS['implementation-contribution'], ('internal/implementation',))
         self.assertIn("mode: [normal, race]", matrix)
         self.assertIn("fail-fast: false", matrix)
         names = {re.search(r"^    name: (.+)$", block, re.M)[1] for key, block in self.jobs.items() if key != "go-shards"}
