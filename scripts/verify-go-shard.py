@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Bounded Go groups with dynamically complete, exact-once default tests.
 
-API alternates the actual mode's sorted default inventory; orchestration isolates
-the measured contribution integration and assigns every other current/future
+API alternates the actual mode's sorted default inventory; implementation and
+orchestration isolate their measured contribution integrations and assign every other current/future
 test, runnable example and fuzz target to its remainder. Manager isolates its
 four contribution integrations with the same inventory mechanism.
 All children/seeds run.
@@ -18,6 +18,8 @@ import sys
 
 ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
+IMPLEMENTATION = ROOT + 'internal/implementation'
+IMPLEMENTATION_TEST = 'TestManagedContributionRepairAndCustody'
 ORCHESTRATION = ROOT + 'internal/orchestration'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
 MANAGER = ROOT + 'internal/managergateway'
@@ -30,8 +32,9 @@ MANAGER_TESTS = {
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
-    # Measured package deadline: isolate the dominant contribution integration.
+    # Contribution repair/custody measured 54.43s normal; preserve the 8m cap.
     'implementation': ('internal/implementation',),
+    'implementation-contribution': ('internal/implementation',),
     'orchestration': ('internal/orchestration',),
     'orchestration-contribution': ('internal/orchestration',),
     'manager': ('internal/managergateway',),
@@ -62,6 +65,7 @@ def groups(packages):
     assigned = [package for names in selected.values() for package in names]
     expected = Counter({p: 1 for p in set(assigned)})
     expected[API] = 2
+    expected[IMPLEMENTATION] = 2
     expected[ORCHESTRATION] = 2
     expected[MANAGER] = 1 + len(MANAGER_TESTS)
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
@@ -70,7 +74,7 @@ def groups(packages):
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, MANAGER: len(MANAGER_TESTS)}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, IMPLEMENTATION: 1, ORCHESTRATION: 1, MANAGER: len(MANAGER_TESTS)}):
         raise ValueError('package coverage mismatch')
     return selected
 
@@ -96,6 +100,10 @@ def test_pattern(names, group):
         raise ValueError('empty or duplicate default test inventory')
     if group in ('api-a', 'api-b'):
         selected = names[0 if group == 'api-a' else 1::2]
+    elif group in ('implementation', 'implementation-contribution'):
+        if IMPLEMENTATION_TEST not in names:
+            raise ValueError('missing implementation contribution integration test')
+        selected = [name for name in names if (name == IMPLEMENTATION_TEST) == (group == 'implementation-contribution')]
     elif group in ('orchestration', 'orchestration-contribution'):
         if CONTRIBUTION_TEST not in names:
             raise ValueError('missing contribution integration test')
@@ -136,8 +144,9 @@ def main(argv=None):
         api = group in ('api-a', 'api-b')
         timeout = '12m' if args.race and api else '8m'
         command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-        if api or group in ('orchestration', 'orchestration-contribution', 'manager') or group in MANAGER_TESTS:
-            package = API if api else MANAGER if group == 'manager' or group in MANAGER_TESTS else ORCHESTRATION
+        if api or group in ('implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager') or group in MANAGER_TESTS:
+            package = (API if api else IMPLEMENTATION if group.startswith('implementation') else
+                       MANAGER if group == 'manager' or group in MANAGER_TESTS else ORCHESTRATION)
             if package not in inventories:
                 listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
                 inventories[package] = test_inventory(listing.stdout, package)
