@@ -73,6 +73,29 @@ func TestSyntheticFleetFixtureHermeticity(t *testing.T) {
 		if err := os.WriteFile(fake, []byte("#!/bin/sh\nexit 99\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
+		originalStore, originalFleet, originalWorker := svc.Store, svc.Fleet, svc.QueueWorker
+		if err := originalWorker.ConfigureImplementation(config.Implementation{GoBinary: fake}, svc.Config.StateDir, original); err != nil {
+			t.Fatalf("native-Go-only implementation configuration: %v", err)
+		}
+		if err := configureSyntheticAPIFleet(svc, fleetStore, originalFleet, originalWorker); err != nil {
+			t.Fatalf("synthetic fleet rewire: %v", err)
+		}
+		if _, err := os.Lstat(runtimePath); !os.IsNotExist(err) {
+			t.Errorf("synthetic rewire leaked runtime directory: %s (err=%v)", runtimePath, err)
+		}
+		if svc.Hermes != original {
+			t.Error("synthetic rewire did not restore the exact original Hermes pointer")
+		}
+		afterRewire, err := json.Marshal(svc.Config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, afterRewire) {
+			t.Error("synthetic rewire changed Config JSON bytes")
+		}
+		if svc.Store != originalStore || svc.FleetRepository != fleetStore || svc.Fleet != originalFleet || svc.QueueWorker != originalWorker {
+			t.Error("synthetic rewire changed expected store, service or worker pointer identities")
+		}
 		fakeHome := filepath.Join(root, name, "fake-laya-home")
 		if err := os.Mkdir(fakeHome, 0700); err != nil {
 			t.Fatal(err)

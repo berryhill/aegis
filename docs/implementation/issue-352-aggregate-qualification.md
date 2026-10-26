@@ -233,3 +233,49 @@ caches. No existing assertion, production code or authority was changed. Raw
 review-home-red.log and review-home-green.log are retained alongside the other
 fixture-hermeticity evidence. The source candidate must be refrozen after this
 review correction; earlier worker hashes are historical, not the final freeze.
+
+## Superseding synthetic rewire repair
+
+Baseline for this repair is clean `qualify/352-aggregate-repair` at
+`2d700ab13bda15ee48af2224a8e8513d48ab75ee`. The factory-only isolation above
+was incomplete: native-Go-only ConfigureImplementation followed by a direct
+ConfigureFleet rewire could rediscover installed Laya metadata and create
+state/runtime. Production discovery is intended and remains unchanged.
+
+The typed test helper `configureSyntheticAPIFleet` now calls the same
+`svc.ConfigureFleet(repo, fleetService, worker)` with only `svc.Hermes`
+temporarily nil, restoring its exact original pointer with defer. All synthetic
+ConfigureFleet entry points use it: configureAPIFleet's initial factory, the
+loop_queue_success_test.go worker rewire and the installed_hello_chain_test.go
+worker rewire. The nil window is synchronous setup only; no configuration,
+admission, runtime-directory removal, deadlines or production behavior changes.
+
+TestSyntheticFleetFixtureHermeticity retains its original first/second fixture
+isolation and assertions, and adds native-Go-only configuration with the existing
+absolute fake GoBinary and no Laya values, followed by the real synthetic rewire.
+It asserts runtime-path absence, unchanged Config JSON bytes, exact original
+Hermes pointer and expected store/repository/service/worker pointer identities.
+The later explicit fake Laya configuration still succeeds with original Hermes.
+
+Actual TDD: the initial typed helper delegated unchanged to ConfigureFleet while
+the original factory protection remained. The new regression compiled and failed
+both runtime-path-absence assertions (err=nil), exit 1, package 4.021s. After
+adding the nil/defer window and routing all three entry points, the SAME regression
+passed, exit 0, package 1.172s. App startup check passed, exit 0, 0.006s;
+the exact failed-launch API subtest passed, exit 0, 1.511s. Exact commands,
+environment and complete observed outputs are retained in
+`/home/silas/a352s/.352-rewire-qualification.md`.
+
+All six existing entry t.Parallel insertions remain. Unlike the earlier candidate,
+the loop_queue_success_test.go direct rewire is an additional explicit fixture-only
+exception: no six-file byte-equality claim applies to this candidate. Existing
+assertions, parameters, operation order, deadlines, fault paths, latencies and
+expected output are unchanged. Diff review and gofmt listing passed.
+
+Launch impact: test setup isolation only; the production/public launch surface is
+unaffected. No launch asset edit is required for this repair. Earlier launch asset
+review is historical; full launch currency, remote releases/checksums, recordings
+and contributor issue verification were not repeated. No release readiness claim.
+No commits, pushes, deployments, installed-runtime execution or external writes.
+Full normal/race, other API cases, archives, independent frozen-candidate testing
+and broader issue 352 qualification remain parent-owned and NOT EXERCISED here.

@@ -77,7 +77,7 @@ while read rest; do :; done
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.ConfigureFleet(store, svc.Fleet, worker); err != nil {
+	if err = configureSyntheticAPIFleet(svc, store, svc.Fleet, worker); err != nil {
 		t.Fatal(err)
 	}
 	home := filepath.Join(root, "import-home")
