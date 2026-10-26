@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -96,7 +97,8 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	s := contributionApp(t)
-	s.Now = func() time.Time { return time.Now().UTC() }
+	clock := &contributionStageClock{at: time.Now().UTC()}
+	s.Now = clock.Now
 	subject, e := s.Authenticate(ctx)
 	must(e)
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
@@ -230,6 +232,38 @@ exec sleep 240
 			_ = s.RevokeSession(context.Background(), authority.SessionID, "fixture cleanup")
 		}
 	})
+	controllerSession := ""
+	for _, a := range after {
+		if a.AgentID == "controller" {
+			controllerSession = a.SessionID
+		}
+	}
+	if controllerSession == "" {
+		t.Fatal("missing admitted controller session")
+	}
+	contributionDeliveryNativeBridge(t, s, subject, key, controllerSession, candidate)
+	// Expiry is explicit and last: functional native checks retain all 300s TTLs.
+	clock.Advance(301 * time.Second)
+	if _, err := gateway.Execute(ctx, subject, id, token, "/contribute status "+key); err == nil {
+		t.Fatal("expired manager authority accepted")
+	}
+	if _, err := s.AcceptedContributionCandidateAs(ctx, subject, key); err == nil {
+		t.Fatal("expired app authority accepted")
+	}
 	t.Log("authenticated manager -> real app role resolver -> Queue -> native multi-file RED/repair/GREEN -> accepted readback and same-intent replay; deterministic Hermes protocol, NOT real-provider proof")
+}
+
+// One synchronized logical authority clock is installed before any consumer
+// captures s.Now. Native Go tools and context deadlines remain real.
+type contributionStageClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *contributionStageClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.at }
+func (c *contributionStageClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
 }
 func nativeJSON(s string) string { b, _ := json.Marshal(s); return string(b) }

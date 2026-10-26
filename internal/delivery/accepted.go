@@ -1,0 +1,119 @@
+package delivery
+
+import (
+	"bytes"
+	"context"
+	"slices"
+	"strings"
+
+	"github.com/berryhill/aegis/internal/implementation"
+)
+
+// ProjectAccepted is pure: it reads frozen Git objects and projects authored
+// publication bytes/OID in memory, without object/index/ref writes. The caller must
+// hold real accepted-candidate custody. The synthetic freeze commit is never the
+// publication identity. Every tree entry (including ignored/read-only inputs)
+// must match the full inventory; only changed entries require the reviewed scope.
+func (g *Git) ProjectAccepted(ctx context.Context, c implementation.ContributionCandidate, s CommitSpec, allowed []string) (CommitSpec, []GitObject, error) {
+	deny := func() (CommitSpec, []GitObject, error) { return CommitSpec{}, nil, ErrDenied }
+	if !sha.MatchString(c.CandidateCommit) || !sha.MatchString(c.CandidateTree) || s.Parent != c.Base || c.HeadCommit != c.Base || s.Tree != c.CandidateTree || c.Source.Schema != "aegis.contribution.source.v1" {
+		return deny()
+	}
+	parents, e := g.run(ctx, nil, nil, "rev-list", "--parents", "-n", "1", c.CandidateCommit)
+	if e != nil || strings.TrimSpace(string(parents)) != c.CandidateCommit+" "+c.Base {
+		return deny()
+	}
+	tree, e := g.run(ctx, nil, nil, "rev-parse", c.CandidateCommit+"^{tree}")
+	if e != nil || strings.TrimSpace(string(tree)) != c.CandidateTree {
+		return deny()
+	}
+	type entry struct{ mode, oid string }
+	read := func(oid string) (map[string]entry, error) {
+		if !sha.MatchString(oid) {
+			return nil, ErrDenied
+		}
+		b, e := g.run(ctx, nil, nil, "ls-tree", "-r", "-z", oid)
+		if e != nil {
+			return nil, ErrDenied
+		}
+		out := map[string]entry{}
+		for _, line := range bytes.Split(b, []byte{0}) {
+			if len(line) == 0 {
+				continue
+			}
+			fields := bytes.SplitN(line, []byte{'\t'}, 2)
+			if len(fields) != 2 {
+				return nil, ErrDenied
+			}
+			h := strings.Fields(string(fields[0]))
+			p := string(fields[1])
+			if len(h) != 3 || h[1] != "blob" || !safePath(p) || privatePath(p) || (h[0] != "100644" && h[0] != "100755") || !sha.MatchString(h[2]) {
+				return nil, ErrDenied
+			}
+			if _, ok := out[p]; ok {
+				return nil, ErrDenied
+			}
+			out[p] = entry{h[0], h[2]}
+		}
+		return out, nil
+	}
+	accepted, e := read(c.CandidateTree)
+	if e != nil || len(accepted) != len(c.Source.Files) {
+		return deny()
+	}
+	base, e := read(c.Base)
+	if e != nil {
+		return deny()
+	}
+	scope := map[string]bool{}
+	for _, p := range allowed {
+		if !safePath(p) || privatePath(p) || scope[p] {
+			return deny()
+		}
+		scope[p] = true
+	}
+	seen := map[string]bool{}
+	s.Files = nil
+	for _, f := range c.Source.Files {
+		mode := "100644"
+		if f.Mode&0111 != 0 {
+			mode = "100755"
+		}
+		a, ok := accepted[f.Path]
+		if !ok || seen[f.Path] || a.mode != mode || a.oid != objectOID("blob", f.Content) {
+			return deny()
+		}
+		seen[f.Path] = true
+		if b, ok := base[f.Path]; !ok || b != a {
+			if !scope[f.Path] {
+				return deny()
+			}
+			s.Files = append(s.Files, File{f.Path, mode, append([]byte(nil), f.Content...)})
+		}
+	}
+	for p := range base {
+		if !seen[p] {
+			if !scope[p] {
+				return deny()
+			}
+			s.Files = append(s.Files, File{Path: p, Mode: "000000"})
+		}
+	}
+	slices.SortFunc(s.Files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
+	if g.files(s) != nil {
+		return deny()
+	}
+	authored, e := authoredObject(s)
+	if e != nil || authored.OID == c.CandidateCommit {
+		return deny()
+	}
+	// Read only the already frozen #376 graph. Its exact tree/blob objects are
+	// retained; only the final synthetic commit is replaced in memory.
+	objects, e := g.ExtractObjects(ctx, c.CandidateCommit, s.Tree, s.Parent)
+	if e != nil || len(objects) == 0 || objects[len(objects)-1].Kind != "commit" || objects[len(objects)-1].OID != c.CandidateCommit {
+		return deny()
+	}
+	objects[len(objects)-1] = authored
+	s.Commit = authored.OID
+	return s, objects, nil
+}
