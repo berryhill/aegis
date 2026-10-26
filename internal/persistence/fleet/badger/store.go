@@ -133,7 +133,7 @@ func (s *Store) ensureSchema(ctx context.Context) error {
 		if string(value) != schemaVersion {
 			return errors.New("fleet schema does not match fleet-v1")
 		}
-		return nil
+		return validateGraphNodeFamilies(txn)
 	})
 }
 

@@ -27,3 +27,27 @@ This is process and Hermes-state isolation, not host filesystem, network, contai
 Session records bind the mandate, process identity, clean runtime home, start time, status, and termination reason. Revocation is an append-only authority fact rather than an in-place mutation of a mandate or authority context. Expired, revoked, invalid, missing, or PID-reused runtimes are terminated and fail closed through Aegis. Stanza changes, downshifts, and all other material authority changes require a newly issued mandate, newly instantiated authority context, and clean session; authority is never switched or expanded in place.
 
 Runtime admission reads the verified session-authority relationship defined in `STORAGE.md`; it does not admit from a cached transition root, runtime home, session projection, lifecycle marker, or model statement. A missing, dirty, substituted, cross-family, ambiguous, expired, or revoked relationship denies. Hermes runtime state is disposable and never becomes canonical session authority.
+
+## Bounded producer → consumer source candidate (#317)
+
+The source worker additionally supports one exact two-node producer/consumer chain:
+paired raw v2 nodes or paired managed selected-file v7 nodes, one outer Queue
+attempt, and no general scheduler. v7 pins one initially absent selected output
+per separate non-nested workspace, exact UTF-8 verification and 1–2 implementation
+passes per node. The consumer receives independently reloaded producer artifact
+bytes and exact causal lineage, never a workspace path or the expected assertion.
+Fresh runtime, provider, host-write and authority admissions remain mandatory.
+Tool-free proposals and controller writes are not a host filesystem sandbox.
+
+Authenticated `queue show` / existing Queue HTTP readback adds optional typed
+`graph_nodes`: exact admissions, pass caps, input lineage, node dispositions,
+artifacts and receipts, independently of root success or failure. It exposes no
+managed contract, private workspace, source bytes or credential values. Missing
+admission/checkpoint remains missing; corrupt reads fail closed. Root fields keep
+their historical meaning. Generic strict `loops validate FILE` / `loops publish
+FILE` can carry a canonical v7 definition; no new managed builder command or
+browser launch workflow is implied. Confirm installed capabilities separately.
+
+Synthetic protocol and durable regressions do not qualify a real provider,
+installed target, contribution delivery, or general multi-node scheduling.
+See `docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md` for the bounded source contract.
