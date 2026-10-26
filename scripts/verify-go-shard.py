@@ -115,28 +115,39 @@ def test_pattern(names, group):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--group', choices=GROUPS, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument('--group', choices=GROUPS)
+    selection.add_argument('--all', action='store_true', help='run every existing group sequentially')
     parser.add_argument('--race', action='store_true')
     parser.add_argument('--list-only', action='store_true')
     args = parser.parse_args(argv)
     result = subprocess.run(['go', 'list', './...'], text=True, stdout=subprocess.PIPE, check=True)
     packages = inventory(result.stdout)
-    selected = groups(packages)[args.group]
-    if not selected:
-        raise ValueError('selected group has no packages')
+    grouped = groups(packages)
     mode = ['-race'] if args.race else []
-    api = args.group in ('api-a', 'api-b')
-    timeout = '12m' if args.race and api else '8m'
-    command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-    if api or args.group in ('orchestration', 'orchestration-contribution', 'manager') or args.group in MANAGER_TESTS:
-        package = API if api else MANAGER if args.group == 'manager' or args.group in MANAGER_TESTS else ORCHESTRATION
-        listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
-        names = test_inventory(listing.stdout, package)
-        command += ['-run', test_pattern(names, args.group)]
-    command += selected
-    print(json.dumps({'group': args.group, 'race': args.race, 'total_packages': len(packages), 'selected_packages': len(selected), 'command': command}), flush=True)
-    if not args.list_only:
-        subprocess.run(command, check=True)
+    commands = []
+    inventories = {}
+    # Validate the complete requested plan before executing any tests. Reuse one
+    # actual-mode inventory per split package so all partitions share a snapshot.
+    for group in GROUPS if args.all else (args.group,):
+        selected = grouped[group]
+        if not selected:
+            raise ValueError('selected group has no packages')
+        api = group in ('api-a', 'api-b')
+        timeout = '12m' if args.race and api else '8m'
+        command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
+        if api or group in ('orchestration', 'orchestration-contribution', 'manager') or group in MANAGER_TESTS:
+            package = API if api else MANAGER if group == 'manager' or group in MANAGER_TESTS else ORCHESTRATION
+            if package not in inventories:
+                listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
+                inventories[package] = test_inventory(listing.stdout, package)
+            command += ['-run', test_pattern(inventories[package], group)]
+        command += selected
+        commands.append((group, selected, command))
+    for group, selected, command in commands:
+        print(json.dumps({'group': group, 'race': args.race, 'total_packages': len(packages), 'selected_packages': len(selected), 'command': command}), flush=True)
+        if not args.list_only:
+            subprocess.run(command, check=True)
     return 0
 
 

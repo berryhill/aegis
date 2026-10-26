@@ -28,8 +28,18 @@ func TestContributionDeliverySourceRequiresNativeIntegration(t *testing.T) {
 	p := ContributionDeliveryPolicy{ControllerSession: "synthetic-controller-session"}
 	r := &reviewedDeliveryFixture{policy: p}
 	ref := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "reviewed-delivery", Digest: p.Digest()}
-	if _, e := NewContributionDeliverySource(s, subject, c.Key, ref, r, nil); !errors.Is(e, ErrContributionDeliveryUnavailable) {
-		t.Fatal(e)
+	if source, e := NewContributionDeliverySource(nil, subject, c.Key, ref, r, nil); source != nil || !errors.Is(e, ErrContributionDeliveryUnavailable) {
+		t.Fatalf("nil service: source=%v err=%v", source, e)
+	}
+	// The real service now owns continuity custody. Constructing its source does
+	// not grant an intake-only contribution approved role/candidate authority.
+	native, e := NewContributionDeliverySource(s, subject, c.Key, ref, r, nil)
+	if e != nil || native == nil {
+		t.Fatalf("native source: source=%v err=%v", native, e)
+	}
+	nativeCalled := false
+	if e = native.WithAccepted(context.Background(), delivery.Reference{}, func(context.Context, delivery.Plan) error { nativeCalled = true; return nil }); !errors.Is(e, delivery.ErrDenied) || nativeCalled {
+		t.Fatalf("intake reached native effect: called=%v err=%v", nativeCalled, e)
 	}
 	gateCalls := 0
 	source, e := NewQualificationContributionDeliverySource(s, subject, c.Key, ref, r, func(context.Context, orchestration.ContributionCandidate) error { gateCalls++; return nil })
