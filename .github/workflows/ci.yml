@@ -49,7 +49,7 @@ jobs:
       fail-fast: false
       matrix:
         mode: [normal, race]
-        group: [api-a, api-b, implementation, orchestration, orchestration-contribution, manager, manager-contribution-repair, manager-contribution-disconnect, manager-contribution-resume, cli, persistence, update, remainder-a, remainder-b]
+        group: [api-a, api-b, implementation, orchestration, orchestration-contribution, manager, manager-contribution-repair, manager-contribution-disconnect, manager-contribution-resume, manager-contribution-restart, cli, persistence, update, remainder-a, remainder-b]
     runs-on: ubuntu-latest
     # Include toolchain setup/compilation outside the Go test-process budget.
     # All other jobs retain their existing bound; coverage is never skipped.

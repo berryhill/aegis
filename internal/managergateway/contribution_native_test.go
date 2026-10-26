@@ -40,7 +40,10 @@ func TestContributionManagerExpiredFrozenCandidateExplicitFreshResume(t *testing
 }
 func contributionManagerNativeRepair(t *testing.T, disconnected ...bool) {
 	ctx := context.Background()
-	root := t.TempDir()
+	root := os.Getenv("AEGIS_RESTART_ROOT")
+	if root == "" {
+		root = t.TempDir()
+	}
 	repoPath := filepath.Join(root, "source")
 	must := func(e error) {
 		t.Helper()
@@ -103,7 +106,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		d := contribution.Digest([]byte(files[asset.path]))
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
-	s := contributionApp(t)
+	s := contributionAppAt(t, filepath.Join(root, "state"), true)
 	expiry := len(disconnected) > 1 && disconnected[1]
 	var clockMu sync.Mutex
 	stageNow := time.Now().UTC()
@@ -201,6 +204,9 @@ exec sleep 240
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}
 	must(worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
+	if os.Getenv("AEGIS_RESTART_PHASE") == "initial" {
+		installRestartCheckpoint(t, s, repository, worker, root, lrRef)
+	}
 	worker.SetContributionFetch(func(context.Context, loop.ContributionExecutionPolicy) error {
 		runGit("fetch", "--no-tags", repoPath, "main")
 		return nil

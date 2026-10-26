@@ -27,11 +27,21 @@ type ContributionStopProof struct {
 	binding      ContributionStopBinding
 	boot         string
 	acknowledged bool
+	kind         string
 }
 
 func (p ContributionStopProof) Binding() ContributionStopBinding { return p.binding }
-func (p ContributionStopProof) BootID() string                   { return p.boot }
-func (p ContributionStopProof) RoleProcessAcknowledged() bool    { return p.acknowledged }
+func (p ContributionStopProof) Kind() string {
+	if p.kind != "" {
+		return p.kind
+	}
+	if p.acknowledged {
+		return "owned-wait.v1"
+	}
+	return ""
+}
+func (p ContributionStopProof) BootID() string                { return p.boot }
+func (p ContributionStopProof) RoleProcessAcknowledged() bool { return p.acknowledged }
 func (a *Adapter) StopContributionRole(ctx context.Context, b ContributionStopBinding) (ContributionStopProof, error) {
 	if b.SessionID == "" || b.RuntimeSessionID == "" || b.AuthorityID == "" || b.AuthorityDigest == "" || b.Role == "" || b.Epoch == 0 || b.PID <= 0 || b.ProcessStart == "" {
 		return ContributionStopProof{}, ErrContributionStopUnavailable

@@ -9,6 +9,7 @@ type RoleStop struct {
 	PID          int           `json:"pid"`
 	ProcessStart string        `json:"process_start"`
 	BootID       string        `json:"boot_id,omitempty"`
+	ProofKind    string        `json:"proof_kind,omitempty"`
 	Acknowledged bool          `json:"acknowledged"`
 }
 
@@ -24,13 +25,20 @@ func applyRoleStop(prior Continuity, e ContinuityEvent, next *Continuity) error 
 	old, exists := prior.RoleStops[current.Role]
 	switch e.Kind {
 	case "role-stop-requested":
-		if exists || r.Acknowledged || r.BootID != "" {
+		if exists || r.Acknowledged || (r.BootID != "" || r.ProofKind != "") {
 			return ErrContinuityFenced
 		}
 	case "role-stop-acknowledged":
 		expected := *r
 		expected.Acknowledged = false
 		expected.BootID = ""
+		expected.ProofKind = ""
+		if r.ProofKind != "" && r.ProofKind != "owned-wait.v1" && r.ProofKind != "recovered-pidfd-exit.v1" {
+			return ErrContinuityConflict
+		}
+		if r.ProofKind == "recovered-pidfd-exit.v1" && (current.BootID == "" || current.BootID != r.BootID || current.PID != r.PID || current.ProcessStart != r.ProcessStart) {
+			return ErrContinuityConflict
+		}
 		if !exists || old != expected || !r.Acknowledged || r.BootID == "" {
 			return ErrContinuityConflict
 		}

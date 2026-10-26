@@ -56,6 +56,42 @@ func TestRecoveryWALStrictProof(t *testing.T) {
 		})
 	}
 }
+func TestRecoveryTrimsOnlyProvenValueLogSuffix(t *testing.T) {
+	for _, corrupt := range []bool{false, true} {
+		t.Run(map[bool]string{false: "zero-tail", true: "nonzero-tail-denied"}[corrupt], func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "000001.vlog")
+			key := binary.BigEndian.AppendUint64([]byte("key"), ^uint64(1))
+			good := append(make([]byte, 20), testLogRecord(0, key, []byte("retained-value"))...)
+			b := append(append([]byte(nil), good...), make([]byte, 1<<20)...)
+			if corrupt {
+				b[len(b)-1] = 1
+			}
+			if err := os.WriteFile(path, b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := proveAndTrimLogs(context.Background(), root)
+			if corrupt {
+				if err == nil {
+					t.Fatal("nonzero suffix accepted")
+				}
+				info, statErr := os.Stat(path)
+				if statErr != nil || info.Size() != int64(len(b)) {
+					t.Fatal("damaged log truncated", statErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != string(good) {
+				t.Fatal("record bytes lost or preallocation retained", err)
+			}
+		})
+	}
+}
+
 func TestRecoveryResumesOnlyProvenPublication(t *testing.T) {
 	for _, kind := range []string{"valid", "wrong-principal", "changed-evidence"} {
 		t.Run(kind, func(t *testing.T) {

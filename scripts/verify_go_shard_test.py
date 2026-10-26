@@ -24,7 +24,7 @@ class ShardTests(unittest.TestCase):
             packages = self.packages() + [shard.ROOT + f'future-{i:02d}' for i in range(count)]
             grouped = shard.groups(list(reversed(packages)))
             union = [p for group in grouped.values() for p in group]
-            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1, shard.ORCHESTRATION: 1, shard.MANAGER: 3}))
+            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1, shard.ORCHESTRATION: 1, shard.MANAGER: len(shard.MANAGER_TESTS)}))
             self.assertEqual(grouped, shard.groups(packages))
             self.assertEqual(grouped['api-a'], [shard.API])
             self.assertEqual(grouped['api-b'], [shard.API])

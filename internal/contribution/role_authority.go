@@ -10,6 +10,10 @@ import (
 var ErrNativeQuiescenceUnavailable = reference.ErrNativeQuiescenceUnavailable
 
 type RoleAuthority struct {
+	BootID                 string              `json:"boot_id,omitempty"`
+	PID                    int                 `json:"pid,omitempty"`
+	ProcessStart           string              `json:"process_start,omitempty"`
+	UID                    uint32              `json:"uid,omitempty"`
 	Epoch                  uint64              `json:"epoch"`
 	SessionID              string              `json:"session_id"`
 	RuntimeSessionID       string              `json:"runtime_session_id"`

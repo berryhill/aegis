@@ -243,7 +243,10 @@ func resumeRecovery(ctx context.Context, root, principal string) (InterruptedRec
 		return fail()
 	}
 	evidence, e := recoveryDirectory(ctx, filepath.Join(r.Evidence, "store"), "")
-	if e != nil || evidence != r.EvidenceDigest {
+	if e != nil {
+		return result, true, e
+	}
+	if evidence != r.EvidenceDigest {
 		return fail()
 	}
 	work := filepath.Join(r.Evidence, "work")

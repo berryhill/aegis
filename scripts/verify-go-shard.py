@@ -4,7 +4,7 @@
 API alternates the actual mode's sorted default inventory; orchestration isolates
 the measured contribution integration and assigns every other current/future
 test, runnable example and fuzz target to its remainder. Manager isolates its
-three measured contribution integrations with the same inventory mechanism.
+four contribution integrations with the same inventory mechanism.
 All children/seeds run.
 Benchmarks are inventoried but not run by default. TestMain runs in each process.
 All other packages remain exact-once, including future packages.
@@ -25,6 +25,7 @@ MANAGER_TESTS = {
     'manager-contribution-repair': 'TestContributionManagerApprovedNativeRepair',
     'manager-contribution-disconnect': 'TestContributionManagerDisconnectKeepsValidAuthorityExecution',
     'manager-contribution-resume': 'TestContributionManagerExpiredFrozenCandidateExplicitFreshResume',
+    'manager-contribution-restart': 'TestContributionManagerHardRestartFrozenCandidateResume',
 }
 GROUPS = {
     'api-a': ('internal/api',),
@@ -62,14 +63,14 @@ def groups(packages):
     expected = Counter({p: 1 for p in set(assigned)})
     expected[API] = 2
     expected[ORCHESTRATION] = 2
-    expected[MANAGER] = 4
+    expected[MANAGER] = 1 + len(MANAGER_TESTS)
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, MANAGER: 3}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, MANAGER: len(MANAGER_TESTS)}):
         raise ValueError('package coverage mismatch')
     return selected
 

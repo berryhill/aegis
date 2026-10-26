@@ -3,8 +3,8 @@
 ## Manager contribution inventory partitions
 
 Both normal and race require `manager`, `manager-contribution-repair`,
-`manager-contribution-disconnect`, and `manager-contribution-resume`. The three
-measured top-level integrations are isolated by actual-mode complete inventory;
+`manager-contribution-disconnect`, `manager-contribution-resume`, and
+`manager-contribution-restart`. The four top-level integrations are isolated by actual-mode complete inventory;
 all other current/future tests, examples and fuzz seeds remain in `manager`.
 Missing targets deny before execution. `TestMain`, uncached coverage, 8-minute
 package, 10-minute manager job and existing cgroup limits are unchanged.
@@ -55,7 +55,7 @@ ceiling or a replacement for cgroup enforcement.
 Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
 `implementation`, `orchestration`, `orchestration-contribution`, `manager`,
 `manager-contribution-repair`, `manager-contribution-disconnect`,
-`manager-contribution-resume`, `cli`,
+`manager-contribution-resume`, `manager-contribution-restart`, `cli`,
 `persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
 `execution` shard was replaced by separate implementation/orchestration packages.
 Within orchestration, the contribution integration alone measured 373.40s and the

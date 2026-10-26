@@ -29,6 +29,10 @@ func (s *Service) StopContributionRoleAs(ctx context.Context, sub core.Subject, 
 // Service-owned cleanup uses the retained admitted contract and exact process
 // identity, not an expired caller grant. It can only fence/stop, never resume.
 func (s *Service) stopContributionRole(ctx context.Context, c contribution.Contract, state contribution.Continuity, role string, in ContributionContinuityInput) (contribution.Continuity, error) {
+	return s.stopContributionRoleMode(ctx, c, state, role, in, false)
+}
+
+func (s *Service) stopContributionRoleMode(ctx context.Context, c contribution.Contract, state contribution.Continuity, role string, in ContributionContinuityInput, recover bool) (contribution.Continuity, error) {
 	var err error
 	if in.ContractDigest != c.Digest || in.ExpectedSequence != state.Sequence || in.ExpectedDigest != state.Digest {
 		return state, contribution.ErrContinuityConflict
@@ -57,6 +61,7 @@ func (s *Service) stopContributionRole(ctx context.Context, c contribution.Contr
 		exact := pending
 		exact.Acknowledged = false
 		exact.BootID = ""
+		exact.ProofKind = ""
 		if exact != stop {
 			return state, contribution.ErrContinuityConflict
 		}
@@ -74,7 +79,15 @@ func (s *Service) stopContributionRole(ctx context.Context, c contribution.Contr
 	defer cancel()
 	ctx = cleanup
 	binding := hermes.ContributionStopBinding{SessionID: r.SessionID, RuntimeSessionID: r.RuntimeSessionID, AuthorityID: r.Authority.ID, AuthorityDigest: r.Authority.Digest, Role: role, Epoch: stop.Epoch, PID: stop.PID, ProcessStart: stop.ProcessStart}
-	proof, err := s.Hermes.StopContributionRole(ctx, binding)
+	var proof hermes.ContributionStopProof
+	if recover {
+		if r.BootID == "" || r.PID != stop.PID || r.ProcessStart != stop.ProcessStart {
+			return state, ErrDenied
+		}
+		proof, err = s.Hermes.RecoverContributionRole(ctx, binding, r.BootID, r.UID)
+	} else {
+		proof, err = s.Hermes.StopContributionRole(ctx, binding)
+	}
 	if err != nil {
 		return state, err
 	}
@@ -83,6 +96,7 @@ func (s *Service) stopContributionRole(ctx context.Context, c contribution.Contr
 	}
 	stop.Acknowledged = true
 	stop.BootID = proof.BootID()
+	stop.ProofKind = proof.Kind()
 	// Keep the genuine adapter proof in this invocation while retrying only
 	// the canonical acknowledgement CAS. Never re-signal for a head race.
 	for attempts := 0; attempts < 16; attempts++ {
@@ -104,6 +118,7 @@ func (s *Service) stopContributionRole(ctx context.Context, c contribution.Contr
 		expected := stop
 		expected.Acknowledged = false
 		expected.BootID = ""
+		expected.ProofKind = ""
 		if pending != expected {
 			return fresh, contribution.ErrContinuityConflict
 		}

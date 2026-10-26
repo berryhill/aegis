@@ -105,16 +105,23 @@ func contributionFixture(t *testing.T, managed ...bool) (*app.Service, *fleetbad
 }
 
 func contributionApp(t *testing.T) *app.Service {
-	st, e := store.Open(filepath.Join(t.TempDir(), "state"))
+	return contributionAppAt(t, filepath.Join(t.TempDir(), "state"), true)
+}
+func contributionAppAt(t *testing.T, state string, initialize bool) *app.Service {
+	st, e := store.Open(state)
 	if e != nil {
 		t.Fatal(e)
 	}
-	cfg := config.Defaults()
-	cfg.StateDir = st.Root()
+	cfg := config.Defaults().WithStateDir(st.Root())
 	cfg.Principal = config.Principal{ID: "principal-1", UID: "4242", User: "operator", AuthTTL: 5 * time.Minute}
+	if os.Getenv("AEGIS_RESTART_PHASE") != "" {
+		configureRestartPrincipal(t, &cfg, initialize)
+	}
 	path := filepath.Join(st.Root(), "persistence", "authority-v1")
-	if _, e = authoritybadger.Initialize(context.Background(), path); e != nil {
-		t.Fatal(e)
+	if initialize {
+		if _, e = authoritybadger.Initialize(context.Background(), path); e != nil {
+			t.Fatal(e)
+		}
 	}
 	a, e := authoritybadger.Open(context.Background(), path)
 	if e != nil {
@@ -122,7 +129,9 @@ func contributionApp(t *testing.T) *app.Service {
 	}
 	t.Cleanup(func() { a.Close() })
 	s := app.New(cfg, st, a, a, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	s.Current = func() (*user.User, error) { return &user.User{Uid: "4242", Username: "operator"}, nil }
+	s.Current = func() (*user.User, error) {
+		return &user.User{Uid: cfg.Principal.UID, Username: cfg.Principal.User}, nil
+	}
 	return s
 }
 func configureContributionFleet(t *testing.T, s *app.Service, r fleet.Repository) {

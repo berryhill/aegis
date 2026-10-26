@@ -53,7 +53,14 @@ func (s *Service) checkContributionRole(ctx context.Context, sub core.Subject, c
 	if err != nil || original.OwnerAgent != c.Controller || original.Submission.ID != c.SubmissionID {
 		return denied, ErrDenied
 	}
-	return contribution.RoleAuthority{SessionID: sessionID, RuntimeSessionID: session.RuntimeSessionID, Role: role, Binding: binding, Authority: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: a.ID, Digest: a.Digest}, MandateID: m.ID, OriginalRuntimeBinding: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: original.BindingID, Digest: original.Digest}}, nil
+	if s.Hermes == nil {
+		return denied, ErrDenied
+	}
+	boot, uid, err := s.Hermes.ContributionProcessIdentity(session.RuntimeSessionID, session.RuntimePID, session.ProcessStart)
+	if err != nil {
+		return denied, err
+	}
+	return contribution.RoleAuthority{BootID: boot, PID: session.RuntimePID, ProcessStart: session.ProcessStart, UID: uid, SessionID: sessionID, RuntimeSessionID: session.RuntimeSessionID, Role: role, Binding: binding, Authority: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: a.ID, Digest: a.Digest}, MandateID: m.ID, OriginalRuntimeBinding: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: original.BindingID, Digest: original.Digest}}, nil
 }
 
 // AttachContributionObservationAs records a normally authenticated same-owner

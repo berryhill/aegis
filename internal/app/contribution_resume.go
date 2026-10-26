@@ -44,6 +44,22 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 	if err != nil || claim.AttemptID != record.QueueAttempt {
 		return result, ErrDenied
 	}
+	needsRecovery := false
+	for role := range state.RoleAuthorities {
+		if !contribution.NativeRoleQuiescent(state, role) {
+			needsRecovery = true
+		}
+	}
+	if needsRecovery {
+		err = s.QueueWorker.WithContributionRecovery(ctx, sub, c.QueueItemID, func(locked context.Context) error {
+			var e error
+			state, e = s.recoverContributionRoles(locked, c, state)
+			return e
+		})
+		if err != nil {
+			return result, err
+		}
+	}
 	for role := range state.RoleAuthorities {
 		if !contribution.NativeRoleQuiescent(state, role) {
 			return result, contribution.ErrNativeQuiescenceUnavailable
