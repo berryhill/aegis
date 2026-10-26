@@ -3,6 +3,10 @@
 Establish and exercise a hard end-to-end acceptance case for Aegis Graphs: a producer → consumer workflow with verified artifact handoff. This is product acceptance, not a schema demonstration or two manually coordinated Loop runs.
 
 Target deployment:
+
+Source candidates follow [acceptance port isolation](acceptance-port-isolation.md):
+dynamically claim 8450–8469, never reserved main 8448/8098. The installed URL below
+is historical target context, not a candidate default; all Graph criteria remain.
 https://silas-workstation.taild7c550.ts.net:8446/console
 
 Use the current installed workstation version first. The URL selects the owning deployment; use installed Aegis skills and supported typed owning-service interfaces. Do not use browser automation unless explicitly requested.

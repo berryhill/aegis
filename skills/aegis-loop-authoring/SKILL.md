@@ -34,8 +34,15 @@ and mandatory #375–#379 stage/evidence/owner matrix. This repository-only refe
 is not bundled/installed adoption; #348 owns final matching distribution. Without
 a checkout use installed discovery and report missing capability, never invent
 stages/APIs. Selected-file Doer, native coding and whole-contribution success are
-separate evidence claims. Current v6 intake is not the whole autonomous journey;
-Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+separate evidence claims. The managed v6 Go profile includes #376 bounded
+prepare/build/freeze/independent-test/repair/review; candidate acceptance is
+intermediate, not #377 continuity, #378 delivery or #379 joined disposition.
+Legacy profiles without managed execution remain intake-only. Neither a role
+declaration nor Queue/model/build/PR/CI alone attests the whole contribution.
+The single contract is also available without a checkout at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
+Its source-observation matrix is historical, not a permanent capability verdict.
+Narrower scope and real gates prevail.
 
 
 Use this skill to draft, validate, publish, inspect, activate, or retire an immutable Aegis Loop revision. Route every consequential operation to the shipped typed Aegis Loop service. The model may propose a typed definition and explain returned records; Aegis authenticates the caller, admits authority, validates and digests the definition, persists immutable revisions and provenance, appends lifecycle events, and returns authoritative readback.
@@ -142,15 +149,49 @@ Use `loops implementation FILE` for bounded Go implementation semantics, not `lo
 
 For Doer's selected-file one-task Loop, use `aegis loops doer FILE [--output NEW_FILE]`, not the Go-test-only implementation builder. The JSON supplies exact existing `agent_id`, `loop_id`, `revision`, `idempotency_key`, optional predecessor digest, and a `doer` object with bounded task, absolute operator-approved workspace, relative allowlisted `writable_files`, one matching `verify_file`, optional `expected_text` (absent means regular-file presence; explicit empty string asserts empty trimmed UTF-8 unless raw-byte policy is selected), optional `exact_bytes: true` (requires `expected_text` and checks exact raw UTF-8 bytes without trimming; omitted/false preserves legacy trimmed semantics), and `max_attempts` 1–3. The closed v4 step graph is Laya eligibility → bounded tool-free Hermes edits → Laya report judgment → independent selected-file check → terminal assessment or bounded diagnosis/retry. The builder prints the exact contract digest; publication remains an inactive definition and does not configure local Laya, select a model or authorize host writes. Execution requires separately approved host-write scope: either the existing operator-approved `implementation.authorized_contracts` allowlist or the guided Console's exact signed expiring host-write approval. Trusted `implementation.go_binary`, absolute `implementation.laya_python` and private offline `implementation.laya_home`, plus normal Graph/Queue runtime authority, remain independent prerequisites. Never infer model availability from the skill or edit controller configuration merely to run a task. See `docs/DOER_LOOP.md` for the delivered bounded behavior and limits. It is not the upstream Doer skill's experimental model-family router or a generic multi-node Graph scheduler.
 
-Before reporting v4 as ready to request, check the exact charter's selected tool-free stanza and usable model before its verified provisioning receipt, then current Hermes runtime/version, authorized contract digest, trusted local checker/workspace prerequisites and one bounded typed Laya response. If both the model and receipt are absent, the model/charter successor is the first independent review action; provisioning the unchanged charter cannot cure the model blocker. `loops queue FILE` with explicit activation and direct lifecycle activation recheck those conditions before new lifecycle/Graph/Queue mutation and return a named blocker without a new executable preparation when they are missing. Its `request_id` and exact `required_charter` identify the resumable intent and prerequisite revision; `required_action: plan_preview_exact_charter` directs the operator to the existing exact-charter plan review, not an automatic approval. Keep the unchanged request file/key for a retry after independently approved provisioning of that exact charter. `review_charter_successor_with_usable_model` is a separate model/charter approval gate, not a license to change the current authority: a successor requires a newly reviewed exact Agent/Loop request and new key, not replay of the old request. The Laya verdict grants no authority. Do not queue merely to discover a missing foundational approval, and do not claim that a preflight pass substitutes for fresh worker claim/effect admission or live-provider proof.
+Before reporting v4 as ready to request, check the exact charter's selected
+tool-free stanza and usable model, the applicable provisioning requirement
+(including the narrow zero-authority ephemeral exception below), current Hermes
+runtime/version, exact host/native authorization and trusted checker/workspace
+prerequisites. General stable Hermes `>=0.18.0` eligibility has no arbitrary upper
+cap and grants no authority; existing narrower approved charter constraints still
+apply. Controller-Codex access-only transport separately requires Hermes 0.21.3
+and exact qualified source fingerprints. Use readiness for prerequisite discovery,
+not a Queue mutation merely to discover missing foundational approval.
 
-The distinct `doer-reusable` builder defines a typed v5 template without an embedded task or workspace. Agents can execute the same exact published revision with `loops queue FILE`: supply exact Agent/Loop refs, stable intent key, explicit activation and normalized `inputs` for task, workspace, writable_files, verify_file and optional expected_text. Keep workspace/files/budget in the existing fixed request recipe; task and separately declared assertion vary by intent. All five canonical ports remain; v5 has zero Graph-dataflow outputs and trimmed-text semantics (no exact_bytes port). Each resulting contract requires prior exact host authorization and fresh runtime admission; typed inputs and template defaults grant none. Retrieve the named task and stored verified result with `queue result ITEM` (owned by aegis-evidence-disposition); humans inspect the selected Queue detail, not a new mandatory launch form. Same-key replay returns the existing run; changed payload conflicts. Preserve the already-satisfying preclaim guard and existing output. For the same exact owned successful direct v5 predecessor, the Run service verifies terminal evidence and idle authority, uses the existing session lifecycle to retire it, then prepares fresh authority; no manual session-management handoff is needed. Failed, busy, foreign, drifted or unknown predecessors remain blocked; a failed task cannot reset its pass budget through a new key. See `docs/REUSABLE_DOER.md` and `examples/reusable-doer-queue.json`.
+`local_laya_unavailable` is a closed readiness projection, not proof that a
+package or model is absent: helper/protocol failures and rejected low-confidence
+answers can share it. Preserve the same intent and inspect exact returned
+preparation/attempt facts before remediation. Do not lower confidence policy,
+rotate identities or reword the same failed task merely to obtain a different
+judgment. A separately specified acceptance case has its own truthful result;
+it does not repair or relabel an earlier blocked case. Availability, eligibility,
+runtime execution and verified completion remain separate.
+
+`loops queue FILE` with explicit activation and direct lifecycle activation
+recheck prerequisites before execution mutations. Preserve returned `request_id`,
+`required_charter` and exact blocker. `plan_preview_exact_charter` and
+`review_charter_successor_with_usable_model` are independent authority reviews,
+not automatic approval or permission to rotate an intent key. For a compatible
+retained successor, use `loops task-continue` after exact independent approval:
+`ContinueDoerDraftSuccessorAs` archives the old binding, advances only the exact
+same-owner compatible Agent binding/version, and preserves contract, fixed
+lifetime, original Loop ID/revision/predecessor and publication/Run identities.
+`retainedDoerPublication` verifies exact bytes, validation and historical publisher
+provenance; only authoritative absence permits initial publication. Changed,
+corrupt, foreign or unknown publication, an existing run or frozen execution
+binding denies continuation. Resume `ExecuteDoerTaskAs` through `task-execute`
+with the same retained ID/current version; never manufacture a replacement
+publication or Run. Readiness/Laya grants no authority and does not replace fresh
+claim/effect admission, immutable failed history or cumulative execution budgets.
+
+The distinct `doer-reusable` builder defines a typed v5 template without an embedded task or workspace. Agents can execute the same exact published revision with `loops queue FILE`: supply exact Agent/Loop refs, stable intent key, explicit activation and normalized `inputs` for task, workspace, writable_files, verify_file and optional expected_text. Keep workspace/files/budget in the existing fixed request recipe; task and separately declared assertion vary by intent. All five canonical ports remain; v5 has zero Graph-dataflow outputs and trimmed-text semantics (no exact_bytes port). Each resulting contract requires exact host authorization and fresh runtime admission; typed inputs and template defaults grant none. Retrieve the named task and stored verified result with `queue result ITEM` (owned by aegis-evidence-disposition); humans inspect the selected Queue detail, not a new mandatory launch form. Same-key replay returns the existing run; changed payload conflicts. Preserve the already-satisfying preclaim guard and existing output. For an exact owned idle terminal direct v5 predecessor, the service verifies terminal/session/authority evidence before retirement and fresh admission. A different concrete task can proceed; the same failed task requires the exact budget-linked continuation described below. Busy, foreign, drifted or unknown predecessors deny. No manual session-management handoff or new-key budget reset is permitted. See `docs/REUSABLE_DOER.md` and `examples/reusable-doer-queue.json`.
 
 Each normalized input entry has the exact shape `{"port_id":"task","type":"string","value":"THE TASK"}`. `workspace` and `verify_file` also use `type: "string"`; `writable_files` uses `type: "array"` and a JSON array of approved relative paths. Optional `expected_text` uses `type: "string"` and is a predeclared assertion, not inferred from prompt prose. Resolve Agent/Loop revision objects through authenticated readback, then use the existing `--config OWNER_CONFIG --target CONSOLE_URL loops queue FILE` owning-service route and `queue result RETURNED_QUEUE_ITEM`. Do not invent authority references, modify approved configuration, or add a browser confirmation between already-authorized task requests.
 
 ### Terminal-run continuity
 
-The owner-principal zero-authority ephemeral Run path prepares exact v5 scope under the same narrow policy as v4; registration, a template or readiness grants none. For a new task, the service verifies and retires only an exact idle terminal predecessor. A prior failure must not lock the entire Agent or unrelated Loop. A fresh key cannot reset the same failed concrete contract, even after intervening work. Exact v5 continuation uses the existing typed `reexecution` predecessor Queue/disposition references and derives remaining passes from immutable history, never caller counts. One successor, original failed records, approval expiry and runtime effect admission remain enforced. Completed zero-authority diagnostics and recorded pre-launch refusals are reconciled internally only from exact durable proof; unknown interrupted starts still deny. Do not clear fences, republish to escape failure, or hand the operator session/binding files. Earlier failure-block descriptions apply to unsupported or unproven predecessor shapes, not every failed v5 task. See `docs/REUSABLE_DOER_RUN_CONTINUITY.md`.
+The owner-principal zero-authority ephemeral Run path prepares exact v5 scope under the same narrow policy as v4; registration, a template or readiness grants none. For a new task, the service verifies and retires only an exact idle terminal predecessor. A prior failure must not lock the entire Agent or unrelated Loop. A fresh key cannot reset the same failed concrete contract, even after intervening work. Exact v5 continuation uses the existing typed `reexecution` predecessor Queue/disposition references and derives remaining passes from immutable history, never caller counts. One successor, original failed records, approval expiry and runtime effect admission remain enforced. Completed zero-authority diagnostics and recorded pre-launch refusals are reconciled internally only from exact durable proof; unknown interrupted starts still deny. Do not clear fences, republish to escape failure, or hand the operator session/binding files. See `docs/REUSABLE_DOER_RUN_CONTINUITY.md`.
 
 Publication remains inactive and does not authorize native code. Controller execution separately requires operator approval to configure an absolute trusted `implementation.go_binary` and exact `implementation.authorized_contracts` digest allowlist. Never edit that configuration, restart services or queue execution merely to finish authoring. Native Go tests are trusted host code, not sandboxed. Build source with `go build`, not `go run`. See `docs/VERIFIED_IMPLEMENTATION.md`.
 

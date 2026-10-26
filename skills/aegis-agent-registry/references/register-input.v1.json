@@ -1,0 +1,35 @@
+{
+  "fixture": {
+    "schema_version": "aegis.current-fleet.fixture.v1",
+    "fleet_id": "example-fleet",
+    "agents": [
+      {
+        "source_id": "example-source",
+        "agent_id": "example-agent",
+        "runtime": {
+          "adapter": "hermes",
+          "runtime": "hermes-agent",
+          "target": "aegis-owned-ephemeral"
+        },
+        "ownership": {
+          "owner_id": "example-owner",
+          "accountability_id": "example-accountability"
+        },
+        "lifecycle": "enabled",
+        "charter": {
+          "schema_version": "aegis.reference.revision.v1",
+          "id": "example-agent",
+          "revision": 1,
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "capability_declarations": [],
+        "policy_refs": []
+      }
+    ]
+  },
+  "identity": {
+    "fleet_id": "example-fleet",
+    "kind": "current-fleet",
+    "source_id": "example-source"
+  }
+}

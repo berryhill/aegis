@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:0cbf1e0a91a0c834ce4c5b69101d777da8e065fb17f0753145f407795069529a",
+    "content_digest": "sha256:057a0d85933490847c39dc0179dabf25bb688eba374eda66d32dcdde63f1ee97",
     "source_revision": "repository"
   },
   "operations": [
@@ -105,17 +105,17 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:3f0c40bb8f9335d29e0531476475a64d118fa5e0e650956607eb543b69ec0ff7",
+      "content_digest": "sha256:9e42b060afed2a61bb11179ef80714f200c3be1770d2138d3c8e89e2923cbc50",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:82d0508cc192a0512da42fb2f1b1cf3325e09c99afda8b26e2053d88d0103086",
-          "size": 9775
+          "sha256": "sha256:4c80a549b76f6d5c284398b5745bea1a708bb0f95e142011c4a1efb6f5a030ef",
+          "size": 11947
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:55e66bc6922dee02b4344cfaa7fc4db7d305e569bbfb2b77f6a968e20b546ca1",
-          "size": 32466
+          "sha256": "sha256:7a866adc63218bda2139bb9446564040219ab4804ec968793564e1d198ec488e",
+          "size": 33875
         }
       ]
     },
@@ -255,17 +255,22 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:913e45f09181787100b03eef187431a9101b1f8a1fd96f575f6786cd89ea4b91",
+      "content_digest": "sha256:d75d7079fd6c43c0105ad8e34f13ab3b5ef10d58c754487fdf71bafed5cfa479",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:ee312c5cc47bf963274016a38fcd98131b8ffcb75596a12954b3f16c492c9cdb",
-          "size": 14351
+          "sha256": "sha256:134d7cf6d501c85b2923f79fb45f472bb1c6a760cc4d6a906f80801cc70144dd",
+          "size": 15450
         },
         {
           "path": "references/registry-fixtures.json",
           "sha256": "sha256:a9f8305e77189b8204e28c37bac3e333f1a63e522f8690ccfb4c9a74a45a7133",
           "size": 6320
+        },
+        {
+          "path": "references/register-input.v1.json",
+          "sha256": "sha256:a1679796af339cb6b779ba6216270a6c1140b5a8162525564be3ac7af3ff7fdc",
+          "size": 956
         }
       ]
     },
@@ -288,12 +293,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:55af3653fb199682505f1be5a8fed0afc97ce6938199c5605007d28a8ecf8141",
+      "content_digest": "sha256:d3662a3d92675c7f1db9de21ee16e24b7a4159f8faef716444aa6ec16bafb280",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:6b28b26f52dfb44c30e78d53dc44b051fef4c1f554f633ccbfeb33cb7e68747b",
-          "size": 13121
+          "sha256": "sha256:db66dc6d8d81cbe4030e10091760aa47bee5345dc127b0b152052769dbf2cddc",
+          "size": 13643
         },
         {
           "path": "references/session-fixtures.json",
@@ -320,12 +325,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:f84130361806d2255bf97b8e400a6dac48720298358ddbbc4cd7010a4a4ec1b2",
+      "content_digest": "sha256:7e11933da1ab90f57440c388da1dcabaf3f289ebbc0bdd8b54af13cbfb842259",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:36a4816dd547750022ee02359b9481c9c2330dcb499285807803917e43f2ce62",
-          "size": 50083
+          "sha256": "sha256:7cc2dea1eac400b5198c3a5adbf520c0dc7dcc63fee9290114ff294691778851",
+          "size": 51562
         }
       ]
     },
@@ -386,12 +391,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:c2af3c21a7b640ef21642473df898268bdd5576500072b7c2ce7ea172d6d06bf",
+      "content_digest": "sha256:e8999f3d1d6657eddf8d642361e46e89c1b0ba9ad20f5c35c16e694c89111774",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:5bc2a38ac263dd2f0680668c516e9696f81859d606d21c6c7c53936ea80397cf",
-          "size": 20642
+          "sha256": "sha256:6cfbc110eeb75d4451a2c5130298dd681d6c9a9b97eac6fb9263bd40a8540c35",
+          "size": 23630
         },
         {
           "path": "references/bind-runtime.v1.json",
@@ -474,12 +479,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:53074c4028ee4c76a275c82f33c2bcbe57526b9b529ce63049039081f2c77929",
+      "content_digest": "sha256:b2232f809638943ba67a41d038d447065a856d8b65d1d8d97ea22350b8b4f9b6",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:6cb8b1e82d456663f248a604a05855f31435b74c237313876f38b45664e79bf8",
-          "size": 16334
+          "sha256": "sha256:32748fd49066cb7063c1e444efcabad43098e894738082526f845c170a1134bc",
+          "size": 19284
         },
         {
           "path": "references/evidence-fixtures.json",

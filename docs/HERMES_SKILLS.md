@@ -78,10 +78,20 @@ references are navigation, not claims that the referenced tests passed. The
 archive's exact source revision binds the inventory; the inventory is not a
 portable schema or runtime-capability attestation.
 
-Explicit gaps distinguish missing adapters from unavailable operations: no HTTP
-runtime binding, no transparent daemon-online forwarding of direct-service CLI
-calls, no general conversational platform adapter supplied by credential intake,
-no Graph lifecycle mutation, reviewer reevaluation or deployment projection.
+The protected owning-service adapter explicitly supports charter import/validate/show,
+plan preview/show, approval request/approve/reject/show, provision, session
+preview/start/show/authority/list, Agent register/list/show/history/approve-charter,
+Loop retained task/readiness/setup/queue/publication/lifecycle/availability operations,
+Graph list/show/publish/submit and Queue preparations/list/result/show/process/bind-runtime.
+See the router allowlist and installed help for exact command spellings and inputs.
+`POST /v1/queue/:item/bind-runtime` is implemented and used by the online
+`queue bind-runtime FILE` adapter; it repeats controller-authority admission.
+This is explicit forwarding, not transparent forwarding of every direct-service
+CLI call. Agent lifecycle and Queue cancel/revoke/expired-lease retry online
+adapters are delivered by #350. Ordinary retry and online Queue expire/exhaust
+remain unavailable. Credential intake supplies no general conversational
+platform adapter. Graph lifecycle mutation, general scheduling, reviewer
+reevaluation and deployment projection remain unavailable.
 CLI and API presence must not invite temporary authenticated clients, credential
 extraction or a second writer. Unknown mutation outcomes require authoritative
 readback with the same intent identity before replay.
@@ -100,7 +110,7 @@ A release build runs `go run ./internal/skillbundle/cmd build . DIST VERSION SOU
 
 ## Hermes tap and direct install
 
-Aegis accepts stable Hermes Agent `>=0.18.0` without an arbitrary upper cap. The inspected Hermes skill-discovery contract uses immediate skill directories beneath a configured tap's `skills/` path; a later accepted version still needs exact-version skill/protocol qualification, not an assumption of compatibility. Against the published `berryhill/aegis` repository:
+Aegis accepts stable Hermes Agent `>=0.18.0` without an arbitrary upper cap. Existing narrower approved charter constraints remain unchanged. General eligibility grants no authority and is distinct from controller-Codex access-only transport qualification, which requires Hermes 0.21.3 and the adapter's exact qualified transport-source fingerprints. The inspected Hermes skill-discovery contract uses immediate skill directories beneath a configured tap's `skills/` path; a later accepted version still needs exact-version skill/protocol qualification, not an assumption of compatibility. Against the published `berryhill/aegis` repository:
 
 1. `hermes skills tap add berryhill/aegis` records the tap in the selected `HERMES_HOME`.
 2. `hermes skills search aegis` shows the repository path and provenance.
@@ -152,14 +162,17 @@ These live GitHub commands prove published-repository discovery and are intentio
 ## Queue historical readback
 
 The real-store `TestDQHandoff` regression exercises workspace acceptance,
-controller runtime binding through the application service (no HTTP binding
-route exists), first claim, live-lease denial, expiry-backed HTTP reclaim and
+controller runtime binding through the application service, first claim,
+live-lease denial, expiry-backed HTTP reclaim and
 authoritative failure from an incompatible runtime adapter. Claim eligibility
 reloads the exact immutable binding; completion binds audit to its runtime
 mandate while retaining original workspace submission provenance. Replay keeps
 the original timestamp and digest throughout. This is service/persistence
 evidence with a synthetic session process, not actual-agent or supported-Hermes
-execution success.
+execution success. The current public HTTP binding route is
+`POST /v1/queue/:item/bind-runtime`, with the product-owned online
+`queue bind-runtime FILE` adapter; this historical regression is not evidence
+that no HTTP route exists or that an installed runtime is qualified.
 
 Authenticated Queue `list` and exact `show` include valid workspace submissions in
 `awaiting_runtime` without requiring a terminal disposition. They do not claim a

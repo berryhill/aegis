@@ -4,6 +4,9 @@
 
 ## Acceptance index
 
+Before any candidate listener, read [acceptance port isolation](acceptance-port-isolation.md).
+It governs engineering listener placement, not product authority or acceptance criteria.
+
 ### Contribution acceptance
 
 Read the [canonical contribution happy path](contribution-happy-path-contract.md)

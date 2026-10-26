@@ -34,11 +34,23 @@ and mandatory #375–#379 stage/evidence/owner matrix. This repository-only refe
 is not bundled/installed adoption; #348 owns final matching distribution. Without
 a checkout use installed discovery and report missing capability, never invent
 stages/APIs. Selected-file Doer, native coding and whole-contribution success are
-separate evidence claims. Current v6 intake is not the whole autonomous journey;
-Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+separate evidence claims. Current source includes partial #376 managed-candidate
+prepare/build/freeze/test/repair/review in
+`internal/implementation/contribution.go` and
+`internal/orchestration/contribution_executor.go`. The bounded approved Go path
+has source custody, native checks, separate builder/tester sessions and
+candidate-bound review; `candidate_accepted` is intermediate and
+`ErrContributionCandidatePending` withholds final disposition. Historical profiles
+without `managed` remain intake-only. Reinspect current source rather than repeat
+historical canonical-matrix statuses. This does not complete #377 authority and
+quiescence, #378 delivery or #379 joined verification.
+Queue/model/build/PR/CI alone cannot attest the whole contribution.
+Narrower scope and real gates prevail.
+Without a checkout, read the same canonical contract at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
 
 
-Use this skill to inspect one authority-bound Execution Queue item's immutable lineage, explain whether exact evidence satisfies its pinned Graph and Loop revisions, and route only shipped authenticated lifecycle operations to Aegis. The model may organize returned records and identify missing or conflicting evidence. It cannot verify bytes, mint receipts, authenticate a reviewer, choose authority, or record a disposition itself.
+Use this skill to inspect one authority-bound Execution Queue item's immutable lineage, explain whether exact evidence satisfies its pinned Loop (and Graph where present), and route only shipped authenticated lifecycle operations to Aegis. The model may organize returned records and identify missing or conflicting evidence. It cannot verify bytes, mint receipts, authenticate a reviewer, choose authority, or record a disposition itself.
 
 ## Authority and evidence boundary
 
@@ -53,6 +65,7 @@ Use this skill to inspect one authority-bound Execution Queue item's immutable l
 First run `aegis queue --help`. The compatible CLI exposes:
 
 - `aegis queue list`
+- `aegis queue preparations` (nonexecutable preparation inventory; `GET /v1/preparations`)
 - `aegis queue show ITEM`
 - `aegis queue result ITEM` (this skill owns the exact verified-result read)
 - `aegis queue bind-runtime FILE` (controller-only; protected POST /v1/queue/:item/bind-runtime; routes to `aegis-execution-queue` for the request contract)
@@ -66,6 +79,17 @@ First run `aegis queue --help`. The compatible CLI exposes:
 Protected HTTP read surfaces expose `GET /v1/queue` and `GET /v1/queue/:item`. The current CLI has no separate `evidence`, `receipt`, `disposition`, `accept`, `reject`, `needs-review`, or `reevaluate` command. The shipped store permits one terminal disposition per Graph run; append-only reviewer reevaluation history and a reviewer-authored needs-review disposition are unavailable in this compatibility range. Report those operations as unavailable instead of fabricating a mutation, overwriting the terminal record, or presenting a fixture as live proof.
 
 `aegis queue process FILE` is the shipped controller operation that claims eligible narrow work, invokes the registered runtime adapter, stores content-addressed output, verifies precommitted claims, and records the resulting terminal disposition. It is consequential execution, not a read-only evidence-review command.
+
+With `--config OWNER_CONFIG --target CONSOLE_URL`, the current owning-service
+allowlist supports `queue preparations|list|show|result|bind-runtime|process|cancel|revoke|retry`.
+Lifecycle adapters are delivered by #350; retry is expired-lease reclaim only.
+Online expire/exhaust remain absent; command/API presence and target flags do not provide them.
+Report the exact missing adapter or `online_operation_unsupported`; never use
+direct-store fallback, credential extraction or a temporary authenticated client.
+`bind-runtime` and `process` are low-level controller primitives, not operator
+chores for one high-level authenticated Run through `loops queue`. That Run
+performs admitted foreground execution, not background scheduling. Workspace
+preparation is nonexecutable and grants no claim/runtime authority.
 
 ## Gather one reconstructable execution view
 
@@ -95,6 +119,16 @@ Use returned Aegis evidence to explain the authoritative result; do not independ
 
 Graph revisions currently contribute exact historical Agent/Loop bindings and typed run inputs. Exact executable output claims are declared by the pinned Loop evidence contract. Do not invent Graph-level output-verifier claims that the shipped Graph schema does not contain.
 
+New direct Loop snapshots pin the exact Loop and participant without a published
+Graph. Historical Graph snapshots and synthetic Graph replay remain immutable;
+an internal Graph-run identity is not a requirement to publish a new Graph.
+Inspect Graph revisions only when those exact historical references exist.
+Returned selected-file receipts prove only the selected presence/text/bytes
+policy, not compilation or independent contribution acceptance. Trusted native
+coding uses its own immutable native policy and receipt; neither class proves
+the whole contribution. Candidate readback and structural documentation checks
+are not managed-provider proof, installed adoption or joined final verification.
+
 ## Explain distinct outcomes
 
 Never collapse these classes:
@@ -113,7 +147,7 @@ Never collapse these classes:
 Only an explicitly authorized, authenticated request for the exact input may be routed:
 
 - `aegis queue process FILE` starts one eligible attempt. The strict file binds current authority, exact queue item, worker, Loop execution, claim, Attempt, transition, disposition and artifact identities, plus a bounded lease.
-- `aegis queue retry FILE` supports only expired-lease reclaim (`reclaimed: true`); ordinary retry is unavailable without durable runtime-stop acknowledgment. It appends a bounded reclaim decision for an eligible claimed item. It does not rewrite an Attempt or terminal disposition and cannot exceed the immutable attempt bound.
+- `aegis queue retry FILE` appends a bounded retry decision for an eligible retryable item only through a supported adapter. Ordinary retry (`reclaimed: false`) is unavailable without durable runtime-stop acknowledgment; process absence or prose cannot release a lease. Expired-lease reclaim requires exact fresh admission and `reason_code: "lease_reclaimed"`. It does not rewrite an Attempt or terminal disposition and cannot exceed the immutable attempt bound.
 - `aegis queue cancel FILE` and `revoke FILE` support the owning-service online adapter. `expire FILE` and `exhaust FILE` are separate offline/API primitives without an online CLI adapter; do not bypass the owning service. These route distinct authenticated lifecycle decisions. The command returns the cancellation record. Then use exact authenticated queue and audit readback to preserve the separately persisted transition, disposition, authority, and audit evidence; do not imply those records were returned by the mutation response.
 
 Never invoke a lifecycle mutation merely to make evidence agree with a desired label. If the requested operation is reviewer acceptance, rejection, needs-review persistence, or reevaluation, state that it is unavailable and preserve the existing record.
@@ -123,6 +157,12 @@ Never invoke a lifecycle mutation merely to make evidence agree with a desired l
 After interruption, read the exact queue item before any action. If an exact attempt, transition, artifact, receipt, disposition, retry, or cancellation already exists, report that durable state and do not duplicate it. If the item remains claimed, evidence is incomplete, or stores are unavailable or inconsistent, report needs review without inventing completion. Changed request data under a reused identity or idempotency key is a conflict, not recovery.
 
 A stale artifact or receipt from another attempt, run, authority context, definition revision, action, owner, verifier policy, or media type must be rejected even if its bytes or digest look plausible. Never repair replay by editing causal identifiers.
+
+Same-intent recovery preserves immutable failed history and cumulative budgets.
+Supported linked Requeue binds exact predecessor evidence and carries remaining
+implementation passes. New keys, Queue attempts, candidates or sessions cannot
+reset consumed budgets or reopen terminal history. Unknown effects require
+authoritative readback, not blind resubmission or a replacement publication.
 
 ## Secret and progressive-disclosure handling
 

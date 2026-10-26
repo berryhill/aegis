@@ -415,9 +415,12 @@ through supported skills/owning-service interfaces, separately publish and Run t
 **same exact immutable revision/digest**, real runtime creates predeclared output
 within approved paths/attempts, independently read actual output plus artifact,
 PASSED receipt and SUCCEEDED disposition; preserve subsequent task and cumulative
-failure recovery. Owner amendment on #344/#348/#352 names development 8448; the
-Loop document's historical installed 8446 is a different target, not authorization.
-Reconfirm the authorized target. When a current request prohibits live Loop
+failure recovery. Follow [acceptance port isolation](acceptance-port-isolation.md):
+the owner amendment naming development 8448 now means Matt/Xander clean-main
+integration (actual backend 8098), never candidate activation. Builder acceptance
+dynamically claims 8450–8469 in isolated state; historical installed 8446 remains a
+different target. These location rules do not weaken any product criterion or grant
+authority. Reconfirm the authorized target. When a current request prohibits live Loop
 execution, report that gate as NOT EXERCISED; the parent coordinates existing-owner
 acceptance or obtains explicit owner revision before claiming the gate passed.
 Do not run a Loop, spend another owner's runtime budgets, restart a service or

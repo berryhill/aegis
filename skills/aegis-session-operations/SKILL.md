@@ -34,8 +34,15 @@ and mandatory #375–#379 stage/evidence/owner matrix. This repository-only refe
 is not bundled/installed adoption; #348 owns final matching distribution. Without
 a checkout use installed discovery and report missing capability, never invent
 stages/APIs. Selected-file Doer, native coding and whole-contribution success are
-separate evidence claims. Current v6 intake is not the whole autonomous journey;
-Queue/model/build/PR/CI alone cannot attest it. Narrower scope and real gates prevail.
+separate evidence claims. The managed v6 Go profile includes #376 bounded
+prepare/build/freeze/independent-test/repair/review; candidate acceptance is
+intermediate, not #377 continuity, #378 delivery or #379 joined disposition.
+Legacy profiles without managed execution remain intake-only. Neither a role
+declaration nor Queue/model/build/PR/CI alone attests the whole contribution.
+The single contract is also available without a checkout at
+https://github.com/berryhill/aegis/blob/250b64ba09b776593fe94752b07c7d0b661bb492/.hermes/contribution-happy-path-contract.md .
+Its source-observation matrix is historical, not a permanent capability verdict.
+Narrower scope and real gates prevail.
 
 
 Use this skill to preview, start, list, inspect, explain, revoke, or terminate an Aegis-managed Hermes session. Route every operation to the shipped typed Aegis service. Aegis authenticates the caller, selects exactly one authorized trust stanza, issues and validates mandates, controls Hermes, persists lifecycle state, and emits authoritative audit evidence; the model does none of those things.

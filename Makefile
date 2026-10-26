@@ -65,6 +65,7 @@ verify-repository-stages:
 	python3 -m unittest scripts/console_browser_test_test.py scripts/verification_resources_test.py
 	python3 -m unittest scripts/demo_no_key_test.py
 	python3 -m unittest scripts/operator_acceptance_poc_test.py
+	python3 -m unittest scripts/acceptance_port_test.py scripts/acceptance_context_test.py
 	python3 -m unittest scripts/verify_installed_fleet_vertical_test.py
 	python3 -m unittest scripts/verify_release_archive_test.py
 	./scripts/verify_release_readiness_test.sh
