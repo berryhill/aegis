@@ -83,7 +83,7 @@ First use `aegis queue --help`. The compatible CLI operations are:
 
 Protected HTTP equivalents are `GET /v1/queue`, `GET /v1/queue/:item`, and `POST /v1/queue/:item/process|retry|cancel|expire|exhaust|revoke`. CLI/API presence is not online adapter availability. With `--config OWNER_CONFIG --target CONSOLE_URL`, the owning-service allowlist supports `queue preparations|list|show|result|bind-runtime|process|cancel|revoke|retry`. The lifecycle adapters are delivered by #350; retry is expired-lease reclaim only. Online expire/exhaust adapters remain absent; flags do not supply them. Report `online_operation_unsupported` or the exact missing adapter, never open another writer or invent a client. There is no separate reclaim command: lease-eligible reclaim uses the low-level `retry` primitive with the typed reclaimed decision and exact reason `lease_reclaimed`, only where a supported authenticated adapter exists. If an operation is absent from installed help, report it unavailable instead of inventing a scheduler, worker, command, endpoint, transition, policy result, or receipt.
 
-Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, and general multi-node execution are unavailable. The shipped processor is the registered runtime-routed, bounded single-node path; do not describe it as a general scheduler.
+Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, and general multi-node execution are unavailable. The processor retains registered runtime-routed single-node paths and the exact bounded two-node chain below; neither is a general scheduler.
 
 ## Read the durable execution chain
 
@@ -221,3 +221,27 @@ trusted native coding requires its own immutable native policy and receipts.
 Neither is whole-contribution verification or managed-provider proof.
 
 The durable `queue-session-preparation` denial fence prevents concurrent duplicate authority issuance. An interrupted preparation with no reusable authority remains blocked as `session_preparation_in_progress_or_interrupted`; explicit operator recovery is required. Do not delete the fence or mint substitute authority as automatic crash handling.
+
+## Bounded producer → consumer source candidate (#317)
+
+The source worker additionally supports one exact two-node producer/consumer chain:
+paired raw v2 nodes or paired managed selected-file v7 nodes, one outer Queue
+attempt, and no general scheduler. v7 pins one initially absent selected output
+per separate non-nested workspace, exact UTF-8 verification and 1–2 implementation
+passes per node. The consumer receives independently reloaded producer artifact
+bytes and exact causal lineage, never a workspace path or the expected assertion.
+Fresh runtime, provider, host-write and authority admissions remain mandatory.
+Tool-free proposals and controller writes are not a host filesystem sandbox.
+
+Authenticated `queue show` / existing Queue HTTP readback adds optional typed
+`graph_nodes`: exact admissions, pass caps, input lineage, node dispositions,
+artifacts and receipts, independently of root success or failure. It exposes no
+managed contract, private workspace, source bytes or credential values. Missing
+admission/checkpoint remains missing; corrupt reads fail closed. Root fields keep
+their historical meaning. Generic strict `loops validate FILE` / `loops publish
+FILE` can carry a canonical v7 definition; no new managed builder command or
+browser launch workflow is implied. Confirm installed capabilities separately.
+
+Synthetic protocol and durable regressions do not qualify a real provider,
+installed target, contribution delivery, or general multi-node scheduling.
+See `docs/MANAGED_PRODUCER_CONSUMER_SOURCE.md` for the bounded source contract.

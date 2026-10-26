@@ -11,6 +11,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/graph"
+	"github.com/berryhill/aegis/internal/loop"
 
 	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
@@ -37,6 +38,7 @@ type ExecutionDebugger struct {
 	Notice            string                `json:"notice"`
 	Nodes             []DebuggerLoop        `json:"nodes"`
 	Dependencies      []DebuggerEdge        `json:"dependencies"`
+	GraphNodes        []GraphNodeView       `json:"graph_nodes,omitempty"`
 }
 type DebuggerLoop struct {
 	NodeID      string                `json:"node_id"`
@@ -70,6 +72,25 @@ type DebuggerFact struct {
 	Ordinal  uint32 `json:"ordinal"`
 	Digest   string `json:"digest"`
 	orchestration.DoerObservation
+}
+
+func debuggerPortsMatch(asserted []graph.Port, exact []loop.Port) bool {
+	if len(asserted) != len(exact) {
+		return false
+	}
+	for _, port := range asserted {
+		found := false
+		for _, candidate := range exact {
+			if port.ID == candidate.ID && port.Type == graph.ValueType(candidate.Type) && port.Required == candidate.Required {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // ExecutionDebuggerAs reads only this item's exact references and transition
@@ -117,7 +138,32 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 		out.Source = topology.Nodes[0].Loop
 	}
 	if len(topology.Nodes) > 1 {
-		out.Notice += " Multi-node execution is unsupported by the bounded worker (#317); dependencies are definition context, not verified handoffs."
+		out.GraphNodes, err = readGraphNodes(ctx, s.FleetRepository, item, topology.Nodes)
+		if err != nil {
+			return out, err
+		}
+		definition, loadErr := s.FleetRepository.GetGraphRevision(ctx, snapshot.Graph.ID, snapshot.Graph.Revision)
+		if loadErr != nil {
+			return out, loadErr
+		}
+		_, planErr := graph.ResolveProducerConsumerPlan(snapshot, definition)
+		supported := planErr == nil && item.MaxAttempts == 1
+		var schema string
+		for _, node := range topology.Nodes {
+			revision, loadErr := s.FleetRepository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision)
+			if loadErr != nil || revision.Digest != node.Loop.Digest {
+				return out, fleet.ErrCorrupt
+			}
+			if schema == "" {
+				schema = revision.SchemaVersion
+			}
+			supported = supported && schema == revision.SchemaVersion && (schema == loop.RevisionSchemaVersion || schema == loop.ManagedDoerSchemaVersion) && len(revision.RequiredEvidence) == 1 && debuggerPortsMatch(node.Inputs, revision.Inputs) && debuggerPortsMatch(node.Outputs, revision.Outputs)
+		}
+		if supported {
+			out.Notice += " This exact bounded producer-consumer chain is supported. Only recorded node checkpoints and evidence establish handoffs; absent checkpoints remain unknown."
+		} else {
+			out.Notice += " This multi-node definition is outside the supported bounded producer-consumer shape; dependencies alone are not verified handoffs."
+		}
 	}
 	out.Nodes = []DebuggerLoop{}
 	for _, node := range topology.Nodes {

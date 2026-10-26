@@ -9,6 +9,15 @@ and exact stopped-role inventories under private live custody. No new queue or
 effect store; no host sandbox or #379 completion claim. See
 [continuity implementation](continuity/contribution-continuity.md).
 
+## #317 bounded chain source boundary
+
+The current source adds the exact raw-v2 / managed-v7 two-node chain and optional
+typed Queue node checkpoint readback described in
+[the source contract](MANAGED_PRODUCER_CONSUMER_SOURCE.md).
+Earlier single-node-only descriptions below refer to the historical qualified
+vertical, not a denial of this additive source path. General scheduling,
+real-provider qualification and installed acceptance remain separate and unproven.
+
 Managed contribution tester model input is a content-free frozen identity;
 complete source remains controller-private. Explicitly admitted builder context
 can contain sensitive approved source: narrow filename/key rejection is not a
