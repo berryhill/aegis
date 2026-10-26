@@ -15,7 +15,6 @@ import (
 // not the productive controller's real closed content guard.
 var ErrContributionRemotePrivacyUnavailable = errors.New("contribution_remote_privacy_unavailable")
 var ErrContributionRemoteCustodyUnavailable = errors.New("contribution_remote_cold_custody_unavailable")
-var ErrContributionHistoricalPolicyUnavailable = errors.New("contribution_original_historical_policy_unavailable")
 
 type unavailableContributionRemote struct{}
 
@@ -24,11 +23,6 @@ func (unavailableContributionRemote) Review(context.Context, delivery.Intent, de
 }
 func (unavailableContributionRemote) Use(context.Context, delivery.Intent, func([]byte) error) error {
 	return ErrContributionRemoteCustodyUnavailable
-}
-func (unavailableContributionRemote) ResolveContributionDeliveryPolicyDigest(context.Context, string) (app.ContributionDeliveryPolicy, error) {
-	// Canonical effect history retains the digest, not the complete original policy.
-	// Current startup policy must NEVER be used to retcon that missing history.
-	return app.ContributionDeliveryPolicy{}, ErrContributionHistoricalPolicyUnavailable
 }
 
 // configureContributionDelivery is called after Fleet and credentials composition.
@@ -74,7 +68,11 @@ func configureContributionDelivery(ctx context.Context, s *app.Service, p *confi
 	if _, err = app.NewContributionDeliveryController(s, policy, authority, privacy); err != nil {
 		return err
 	}
-	if _, err = app.InstallContributionDeliveryPublicationOwner(s, remote, github, fresh); err != nil {
+	history, err := app.NewContributionDeliveryPolicyHistory(s)
+	if err != nil {
+		return err
+	}
+	if _, err = app.InstallContributionDeliveryPublicationOwner(s, history, github, fresh); err != nil {
 		return err
 	}
 	_, err = app.InstallContributionDeliveryController(s, policy, authority, privacy)

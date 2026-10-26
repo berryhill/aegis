@@ -212,6 +212,9 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		if e != nil {
 			return e
 		}
+		if e = s.retainContributionDeliveryPolicy(live, p); e != nil {
+			return e
+		}
 		control, e := s.ReadContributionControlAs(live, subject, key)
 		if e != nil || control.Stop {
 			return delivery.ErrDenied

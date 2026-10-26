@@ -159,6 +159,9 @@ func (s *ContributionDeliverySource) WithAccepted(ctx context.Context, ref deliv
 		if x != nil {
 			return delivery.ErrDenied
 		}
+		if x = s.service.retainContributionDeliveryPolicy(cctx, policy); x != nil {
+			return delivery.ErrDenied
+		}
 		if x = action(cctx, p); x != nil {
 			return x
 		}

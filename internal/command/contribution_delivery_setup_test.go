@@ -11,6 +11,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/delivery"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
+	canonicalstore "github.com/berryhill/aegis/internal/store"
 )
 
 func TestContributionDeliveryLocalStartupComposition(t *testing.T) {
@@ -20,7 +21,11 @@ func TestContributionDeliveryLocalStartupComposition(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	s := &app.Service{FleetRepository: store}
+	blobs, err := canonicalstore.Open(filepath.Join(t.TempDir(), "canonical"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &app.Service{FleetRepository: store, Store: blobs}
 	if err = configureContributionDelivery(ctx, s, nil, nil, nil); err != nil || s.ContributionPublicationQuiescer != nil {
 		t.Fatal("absence enabled delivery", err)
 	}
@@ -41,10 +46,17 @@ func TestContributionDeliveryLocalStartupComposition(t *testing.T) {
 		t.Fatal("missing dynamic request read", err, calls)
 	}
 	remote := unavailableContributionRemote{}
+	if !errors.Is(remote.Use(ctx, delivery.Intent{}, func([]byte) error { t.Fatal("cold secret use"); return nil }), ErrContributionRemoteCustodyUnavailable) {
+		t.Fatal("cold custody accepted")
+	}
 	if !errors.Is(remote.Review(ctx, delivery.Intent{}, delivery.Plan{}), ErrContributionRemotePrivacyUnavailable) {
 		t.Fatal("remote privacy accepted")
 	}
-	if _, err = remote.ResolveContributionDeliveryPolicyDigest(ctx, "any"); !errors.Is(err, ErrContributionHistoricalPolicyUnavailable) {
+	history, err := app.NewContributionDeliveryPolicyHistory(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = history.ResolveContributionDeliveryPolicyDigest(ctx, "any"); !errors.Is(err, delivery.ErrDenied) {
 		t.Fatal("historical policy fallback")
 	}
 }
