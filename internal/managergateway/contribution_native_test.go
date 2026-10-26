@@ -108,16 +108,15 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	}
 	s := contributionAppAt(t, filepath.Join(root, "state"), true)
 	expiry := len(disconnected) > 1 && disconnected[1]
-	var clockMu sync.Mutex
-	stageNow := time.Now().UTC()
-	s.Now = func() time.Time { clockMu.Lock(); defer clockMu.Unlock(); return stageNow }
 	lifetime := int64(300)
+	clock := &contributionStageClock{at: time.Now().UTC()}
+	s.Now = clock.Now
 	subject, e := s.Authenticate(ctx)
 	must(e)
 	// Fault only the initial subject; policy and fresh admission remain normal.
 	initialExpiry := subject.ExpiresAt
 	if expiry {
-		subject.ExpiresAt = stageNow.Add(time.Minute)
+		subject.ExpiresAt = clock.Now().Add(time.Minute)
 		initialExpiry = subject.ExpiresAt
 	}
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
@@ -192,9 +191,7 @@ exec sleep 240
 		worker.SetContributionCheckpointObserver(func(_ context.Context, cp implementation.ContributionCheckpoint) error {
 			if cp.Stage == "freeze" && !paused {
 				paused = true
-				clockMu.Lock()
-				stageNow = stageNow.Add(61 * time.Second)
-				clockMu.Unlock()
+				clock.Advance(61 * time.Second)
 				return fmt.Errorf("controlled frozen expiry hold")
 			}
 			return nil
@@ -413,6 +410,9 @@ exec sleep 240
 			}
 		}
 	}
+	// Delivery consumes the accepted candidate while its admitted controller
+	// and source custody remain valid; cancellation must fence later effects.
+	contributionDeliveryNativeBridge(t, s, subject, key, controller.SessionID, candidate)
 	// Actual manager cancellation of the accepted candidate: no second resume or
 	// consent, no authority/counter reset, and Queue terminal only after stop joins.
 	_, rootBefore, err := s.ReadContributionAs(ctx, subject, key)
@@ -470,6 +470,29 @@ exec sleep 240
 			_ = s.RevokeSession(context.Background(), authority.SessionID, "fixture cleanup")
 		}
 	})
+
+	// Expiry is explicit and last: functional native checks retain all 300s TTLs.
+	clock.Advance(301 * time.Second)
+	if _, err := gateway.Execute(ctx, subject, id, token, "/contribute status "+key); err == nil {
+		t.Fatal("expired manager authority accepted")
+	}
+	if _, err := s.AcceptedContributionCandidateAs(ctx, subject, key); err == nil {
+		t.Fatal("expired app authority accepted")
+	}
 	t.Log("authenticated manager -> real app role resolver -> Queue -> native multi-file RED/repair/GREEN -> accepted readback and same-intent replay; deterministic Hermes protocol, NOT real-provider proof")
+}
+
+// One synchronized logical authority clock is installed before any consumer
+// captures s.Now. Native Go tools and context deadlines remain real.
+type contributionStageClock struct {
+	mu sync.Mutex
+	at time.Time
+}
+
+func (c *contributionStageClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.at }
+func (c *contributionStageClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
 }
 func nativeJSON(s string) string { b, _ := json.Marshal(s); return string(b) }

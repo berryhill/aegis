@@ -155,9 +155,24 @@ def main() -> int:
     if console_browser:
         if not console_repo:
             fail("installed console integration omitted its repository root")
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            console_port = probe.getsockname()[1]
+        supplied_port = environment.get("AEGIS_ACCEPTANCE_PORT")
+        if supplied_port is not None:
+            if (len(supplied_port) != 4 or not supplied_port.isascii()
+                    or not supplied_port.isdecimal() or not 8450 <= int(supplied_port) <= 8469):
+                fail("AEGIS_ACCEPTANCE_PORT must be a canonical ASCII integer in 8450–8469")
+            console_port = int(supplied_port)
+        else:
+            # Compatibility for hermetic CI only, not a workstation port claim.
+            console_port = 0
+        # The parent helper retains lifetime lock custody. Never reuse an
+        # occupied socket, select another port, or take over another listener.
+        try:
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", console_port))
+                if supplied_port is None:
+                    console_port = probe.getsockname()[1]
+        except OSError:
+            fail("console port unavailable; no listener was reclaimed")
         socket_dir = Path(environment.get("AEGIS_PROOF_SOCKET_DIR", console_repo)).resolve(strict=True)
         console_socket = str(socket_dir / f".installed-console-{console_port}.sock")
         console_origin = f"http://127.0.0.1:{console_port}"
