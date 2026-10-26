@@ -6,6 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Align packaged fleet skills with direct Loop submission, retained execution,
+  same-intent recovery and the canonical contribution contract. Distinguish
+  owning-service dispatch from help/API presence and selected-file/native checks
+  from complete contribution delivery. Add isolated installed-CLI recipe and
+  dispatch-inventory regressions; no fleet installation or live rollout.
+
 - Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.
 
 - Preserve closed managed proposal-decode failure evidence after successful input
@@ -13,6 +19,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   continuation only with a validated durable rejection before implementation.
   Historical missing classifications, uncertain effects and exhausted budgets
   remain denied; this does not establish live coding acceptance for #385.
+
 
 - Default browser identity and dashboard mutation authentication to independent absolute six-hour windows (`api.console.session_ttl` and `api.console.action_auth_ttl`, each bounded at six hours). Preserve explicit shorter values and the shared fifteen-minute principal TTL. This deliberately increases dashboard stolen-cookie mutation exposure; use an explicit shorter action policy when required. No activity-based renewal or extension of mandates, native consent, runtime authority, review receipts or credential capabilities. See [the policy and launch-impact ledger](docs/implementation/issue-388-dashboard-authentication.md).
 
