@@ -103,13 +103,23 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 		return fail("candidate_invalid")
 	}
 	code := assessRetainedDeliveryHistory(h, p, target)
-	git := &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}
-	spec, objects, projectionErr := projectRetainedPublication(ctx, git, candidate, p)
+	// Reuse the actual owning Source's pure projection. This does not enter its
+	// effect/custody runner and cannot grant source or GitHub authority.
+	projection := &ContributionDeliverySource{service: s, subject: subject, key: key, policyRef: ref, policies: policies}
+	plan, projectionErr := projection.project(ctx, p.Binding.Reference, p, candidate)
 	if projectionErr != nil {
 		return fail("publication_invalid")
 	}
+	git := &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}
+	actualCommit := git.Reconcile(ctx, plan.Commit)
+	if actualCommit.Outcome != delivery.Confirmed || actualCommit.Head != plan.Head || actualCommit.Tree != plan.Commit.Tree {
+		return fail("publication_invalid")
+	}
 	if code == "retained_delivery_verified" {
-		code = assessRetainedPublication(h, p, target, spec, objects)
+		code = assessRetainedPublication(h, p, target, plan.Commit, plan.Objects)
+	}
+	if code == "publication_assessed" {
+		code = assessRetainedIntentPayloads(h, p, plan)
 	}
 	// Store reference-only history identity in the existing private blob owner;
 	// this does not create a mutable aggregate or grant authority.
@@ -143,9 +153,9 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 		return fail("run_stopped")
 	}
 	out.Code = code
-	if code == "publication_assessed" {
-		out.Status = "retained-publication-assessed"
-		out.Code = "intent_payload_unavailable"
+	if code == "intent_payloads_assessed" {
+		out.Status = "retained-delivery-evidence-assessed"
+		out.Code = "continuity_verification_required"
 	}
 	return out, nil
 }

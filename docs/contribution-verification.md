@@ -95,14 +95,21 @@ to that exact head/tree; present optional current effects cannot silently fail o
 omit proof. Upload-commit metadata/message/tree/parent is compared to independently
 reviewed policy, and PR facts require canonical URL/creator/head/base.
 
-Exact Commit/Publish/PR/object intent payload validation remains unavailable until
-#378 exports its pure owning `ValidateIntentForPlan(plan, intent)` equivalent.
-No private producer preimages were copied. Accordingly the product returns
-`retained-publication-assessed` with `intent_payload_unavailable`, never verified
-delivery, even when its implemented joins pass. Actual `ParseReadback` continues
-to validate existing Check/Merge/Issue payloads and reviewed requirements. Full
-remote-proof/merge/later-corruption qualification and final #377/private-custody
-integration remain gaps. This consumer must not be used as issue-close authority.
+The additive `delivery.ValidateIntentForPlan` verifier adapter now delegates exact
+comparison to the unchanged canonical producer `intentFor`. No private payload
+preimages or producer formats are copied. The assessment obtains its expected
+Plan from the actual owning Source's pure projection and selects only actual
+projected objects and the independently resolved owned PR for each operation.
+Altered IDs, payloads, run/contract/candidate, actor/repository/ref/head/policy,
+role/epoch or object bytes are rejected. This comparison does not reserve an
+effect, perform I/O or grant authority. `ParseReadback` still validates retained
+remote observations and their requirements independently of reviewed policy.
+
+When these evidence joins pass, the product returns
+`retained-delivery-evidence-assessed / continuity_verification_required`. This is
+not a completed contribution, a live source-custody proof, issue-close authority
+or terminal disposition. Full remote-proof/merge/later-corruption qualification
+and final #377/private-custody integration remain mandatory gaps.
 
 Independent review found that an optional PR update could select its own PR
 number for validation. The repair resolves that target from the owned creation

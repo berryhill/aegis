@@ -121,8 +121,8 @@ func assessRetainedPublication(h delivery.HistorySnapshot, p ContributionDeliver
 				return "publication_invalid"
 			}
 		case delivery.TransferGraph:
-			// Structural proof alone cannot establish the private graph intent payload.
-			return "intent_payload_unavailable"
+			// Exact graph payload is checked separately by the owning canonical
+			// intent builder, against the independently projected object graph.
 		default:
 			return "operation_invalid"
 		}

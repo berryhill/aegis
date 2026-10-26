@@ -228,7 +228,7 @@ while read rest; do :; done
 	}
 	assessed, e := s.AssessContributionRetainedDeliveryAs(ctx, subject, sealed.Key, pref, policies)
 	must(e)
-	if assessed.Status != "retained-publication-assessed" || assessed.Code != "intent_payload_unavailable" || assessed.NativeRef == "" {
+	if assessed.Status != "retained-delivery-evidence-assessed" || assessed.Code != "continuity_verification_required" || assessed.NativeRef == "" {
 		t.Fatalf("positive actual composition: %+v", assessed)
 	}
 	_, e = s.Store.GetBlob(assessed.NativeRef)
@@ -269,7 +269,7 @@ while read rest; do :; done
 			badref := pref
 			badref.Digest = bad.Digest()
 			got, e := s.AssessContributionRetainedDeliveryAs(ctx, subject, sealed.Key, badref, policies)
-			if e == nil && got.Status == "retained-publication-assessed" {
+			if e == nil && got.Status == "retained-delivery-evidence-assessed" {
 				t.Fatal("substitution accepted")
 			}
 		})
