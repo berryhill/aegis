@@ -92,7 +92,7 @@ func coldAuthorityFixture(t *testing.T) (*Service, *fleetbadger.Store, core.Subj
 }
 
 func TestColdJoinedPublicationOwner(t *testing.T) {
-	for _, mode := range []string{"absence", "unknown", "merge"} {
+	for _, mode := range []string{"absence", "unknown", "merge", "legacy", "publish", "publish-absent", "publish-legacy"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx := context.Background()
 			s, store, sub, ref, reader := coldAuthorityFixture(t)
@@ -163,7 +163,30 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 			}
 			role := state.RoleAuthorities["controller"]
 			p := ContributionDeliveryPolicy{ControllerSession: role.SessionID, Binding: fleetbadger.ContributionDeliveryBinding{QueueItemID: c.QueueItemID, OwnerID: sub.PrincipalID, Key: c.Key, Reference: delivery.Reference{Run: c.RunID, Contract: c.Digest, Candidate: state.CandidateEvidence.Digest}, FenceEpoch: role.Epoch, RoleBinding: role.Ref().Digest, Base: "main"}, Actor: "actor", Branch: "contribution/run", Tree: strings.Repeat("d", 40), BaseHead: c.Base, RequiredChecks: []string{"test"}, PostMergeChecks: []string{"test"}, RequiredReviewers: []string{"reviewer"}, MergeMethod: "squash", PR: 7, PRTitle: "Scoped contribution", PRBody: "Bounded accepted change", ProtectionPolicy: delivery.ColdQualificationProtection()}
+			encrypted, bindings, pin := coldEncryptedAuthority(t)
+			s.CredentialAuthority = encrypted
+			p.CredentialPin = pin
+			if mode == "legacy" {
+				p.CredentialPin = nil
+			}
+			if strings.HasPrefix(mode, "publish") {
+				p.CredentialPin.Operations = []delivery.Operation{delivery.Publish}
+				p.OriginalCommit = &delivery.CommitSpec{Parent: c.Base, Tree: p.Tree, Commit: strings.Repeat("c", 40), Branch: p.Branch, Author: delivery.Identity{Name: "Fixture", Email: "fixture@example.invalid"}, Committer: delivery.Identity{Name: "Fixture", Email: "fixture@example.invalid"}, Timestamp: "2026-10-25T00:00:00Z", Message: "Exact original publication\n", Files: []delivery.File{{Path: "value.go", Mode: "100644", Bytes: []byte("reviewed")}}}
+			}
+			p.Loop = c.Loop
+			if e := s.retainContributionDeliveryPolicy(ctx, p); e != nil {
+				t.Fatal(e)
+			}
 			plan := p.projectPolicy(delivery.Plan{Reference: p.Binding.Reference, FenceEpoch: role.Epoch, RoleBinding: role.Ref().Digest, Intake: c, Actor: p.Actor, Repository: c.Repository, RepositoryID: c.Source.RepositoryID, Base: "main", Branch: p.Branch, Head: strings.Repeat("c", 40), BaseHead: c.Base, Delivery: c.Effect, PR: 7, PRTitle: p.PRTitle, PRBody: p.PRBody, ProtectionPolicy: p.ProtectionPolicy, MergeMethod: p.MergeMethod, Commit: delivery.CommitSpec{Tree: p.Tree}})
+			if p.OriginalCommit != nil {
+				plan.Commit = *p.OriginalCommit
+			}
+			if mode == "publish-legacy" {
+				p.OriginalCommit = nil
+				if e := s.retainContributionDeliveryPolicy(ctx, p); e != nil {
+					t.Fatal(e)
+				}
+			}
 			policies := &coldPolicies{p: p}
 			plan.Policy = p.Digest()
 			github, remote := delivery.ColdQualificationGitHub(t, plan)
@@ -178,7 +201,11 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 
 			var original delivery.Record
 			if mode != "absence" {
-				i, e := delivery.ColdQualificationIntent(plan, delivery.Merge)
+				op := delivery.Merge
+				if strings.HasPrefix(mode, "publish") {
+					op = delivery.Publish
+				}
+				i, e := delivery.ColdQualificationIntent(plan, op)
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -198,6 +225,16 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 					}
 				}
 			}
+			history, _ := NewContributionDeliveryPolicyHistory(s)
+			custody, e := NewContributionDeliveryColdCustody(s, history, encrypted, func(context.Context) (core.Subject, error) { return sub, nil })
+			if e != nil {
+				t.Fatal(e)
+			}
+			delivery.ColdQualificationSetCustody(github, custody)
+			if custody.Use(ctx, original.Intent, func([]byte) error { t.Fatal("direct secret callback"); return nil }) == nil {
+				t.Fatal("direct use admitted")
+			}
+			_ = bindings
 			// Actual service cancellation installs sticky stop. No runtime/native acknowledgement
 			// is invented: this fixture has no joined managed owner, so whole cancel stays pending.
 			leave, err := owner.enter(ctx, sub, c.Key)
@@ -229,7 +266,76 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 				now = c.Deadline.Add(time.Second)
 				sub.AuthenticatedAt = now
 				sub.ExpiresAt = now.Add(time.Minute)
+				if strings.HasPrefix(mode, "publish") {
+					if mode == "publish-legacy" {
+						if _, e := owner.ReconcileAs(ctx, sub, c.Key); e == nil {
+							t.Fatal("missing original metadata admitted")
+						}
+						return
+					}
+					foreign := sub
+					foreign.PrincipalID = "foreign"
+					if _, e := owner.ReconcileAs(ctx, foreign, c.Key); e == nil {
+						t.Fatal("foreign owner admitted")
+					}
+					bindings.r.Binding.BindingRevision++
+					if _, e := owner.ReconcileAs(ctx, sub, c.Key); e == nil {
+						t.Fatal("wrong pin admitted")
+					}
+					bindings.r.Binding.BindingRevision--
+					for _, kind := range []string{"head", "ref", "actor", "repo", "absent"} {
+						remote.PublicationFault(kind)
+						if _, e := owner.ReconcileAs(ctx, sub, c.Key); e == nil {
+							t.Fatal("publication fault admitted", kind)
+						}
+						if remote.Writes() != 0 {
+							t.Fatal("historical mutation")
+						}
+					}
+					if mode == "publish-absent" {
+						return
+					} // Existing contract denies unproven absence, retains UNKNOWN.
+					remote.PublicationFault("")
+					h, e := owner.ReconcileAs(ctx, sub, c.Key)
+					if e != nil {
+						t.Fatal("cold publication", e)
+					}
+					last := h.Histories[0][len(h.Histories[0])-1].Record
+					if last.Outcome != delivery.Confirmed || last.Head != plan.Head || last.Intent != original.Intent || remote.Writes() != 0 {
+						t.Fatal("publication readback mismatch")
+					}
+					if e = owner.QuiesceContributionPublication(ctx, binding); e != nil {
+						t.Fatal("publication not quiescent", e)
+					}
+					return
+				}
+				if mode == "legacy" {
+					if _, e := owner.ReconcileAs(ctx, sub, c.Key); e == nil {
+						t.Fatal("legacy missing pin admitted")
+					}
+					return
+				}
 				if mode == "unknown" {
+					attack := &coldApplyIsolationAttack{custody: custody, github: github, plan: plan, t: t, guard: func(ctx context.Context) error {
+						return (contributionColdAuthority{s, sub, c.Key, original.Intent}).Admit(ctx, original.Intent, false)
+					}}
+					delivery.ColdQualificationSetCustody(github, attack)
+					_, _ = owner.ReconcileAs(ctx, sub, c.Key)
+					if !attack.called || remote.Writes() != 0 {
+						t.Fatal("cold Apply isolation", attack.called, remote.Writes())
+					}
+					history, e := s.ReadContributionDeliveryHistoryAs(ctx, sub, c.Key)
+					if e != nil || len(history.Histories) != 1 || len(history.Histories[0]) != 1 || history.Histories[0][0].Record != original {
+						t.Fatal("attack changed canonical UNKNOWN", e)
+					}
+					done := make(chan error, 1)
+					go func() {
+						done <- custody.Use(attack.retained, original.Intent, func([]byte) error { t.Error("retained callback"); return nil })
+					}()
+					if <-done == nil {
+						t.Fatal("asynchronous retained permit admitted")
+					}
+					delivery.ColdQualificationSetCustody(github, custody)
 					if owner.QuiesceContributionPublication(ctx, binding) == nil {
 						t.Fatal("unknown absence acknowledged")
 					}
@@ -249,6 +355,11 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 						t.Fatal("UNKNOWN not cancel pending", e)
 					}
 				} else {
+					bindings.r.Binding.BindingRevision++
+					if _, e := owner.ReconcileAs(ctx, sub, c.Key); e == nil {
+						t.Fatal("rotated binding admitted")
+					}
+					bindings.r.Binding.BindingRevision--
 					h, e := owner.ReconcileAs(ctx, sub, c.Key)
 					if e != nil {
 						t.Fatal("cold merged postfailure", e)

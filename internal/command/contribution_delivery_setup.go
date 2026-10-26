@@ -2,7 +2,6 @@ package command
 
 import (
 	"context"
-	"errors"
 
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
@@ -10,20 +9,6 @@ import (
 	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 )
-
-// ErrContributionRemotePrivacyUnavailable describes the retained cold fallback,
-// not the productive controller's real closed content guard.
-var ErrContributionRemotePrivacyUnavailable = errors.New("contribution_remote_privacy_unavailable")
-var ErrContributionRemoteCustodyUnavailable = errors.New("contribution_remote_cold_custody_unavailable")
-
-type unavailableContributionRemote struct{}
-
-func (unavailableContributionRemote) Review(context.Context, delivery.Intent, delivery.Plan) error {
-	return ErrContributionRemotePrivacyUnavailable
-}
-func (unavailableContributionRemote) Use(context.Context, delivery.Intent, func([]byte) error) error {
-	return ErrContributionRemoteCustodyUnavailable
-}
 
 // configureContributionDelivery is called after Fleet and credentials composition.
 // fresh must extract the current authenticated request's existing subject; it must
@@ -59,17 +44,20 @@ func configureContributionDelivery(ctx context.Context, s *app.Service, p *confi
 	if authority == nil {
 		authority = &credentials.Authority{}
 	}
-	remote := unavailableContributionRemote{}
+	history, err := app.NewContributionDeliveryPolicyHistory(s)
+	if err != nil {
+		return err
+	}
+	remote, err := app.NewContributionDeliveryColdCustody(s, history, authority, fresh)
+	if err != nil {
+		return err
+	}
 	privacy := delivery.PublicationPrivacy{}
 	github, err := delivery.NewGitHub("https://api.github.com", remote, privacy)
 	if err != nil {
 		return err
 	}
 	if _, err = app.NewContributionDeliveryController(s, policy, authority, privacy); err != nil {
-		return err
-	}
-	history, err := app.NewContributionDeliveryPolicyHistory(s)
-	if err != nil {
 		return err
 	}
 	if _, err = app.InstallContributionDeliveryPublicationOwner(s, history, github, fresh); err != nil {

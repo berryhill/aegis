@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+ "net"
+ "os"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +30,7 @@ func (p coldOverlayPrivacy) Review(context.Context, Intent, Plan) error {
 
 type ColdQualificationRemote struct {
 	sync.Mutex
+	publicationFault string
 	title, body                                       string
 	conflict                                          bool
 	actor, repo, base, head, check, review, mergeTree string
@@ -57,7 +60,7 @@ func coldOverlayGithub(t *testing.T, plans ...Plan) (*GitHub, *ColdQualification
 	p.ProtectionPolicy = digest(coldOverlayProtection())
 	p.PRBody = "Bounded accepted change"
 	f := &ColdQualificationRemote{actor: p.Actor, repo: p.Repository, base: p.BaseHead, head: p.Head, check: "success", review: "APPROVED", mergeTree: p.Commit.Tree, title: p.PRTitle, body: p.PRBody}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.Lock()
 		defer f.Unlock()
 		w.Header().Set("Content-Type", "application/json")
@@ -72,9 +75,9 @@ func coldOverlayGithub(t *testing.T, plans ...Plan) (*GitHub, *ColdQualification
 		}
 		switch r.URL.Path {
 		case "/user":
-			send(map[string]any{"login": f.actor, "id": 42})
+			actor:=f.actor; if f.publicationFault=="actor" {actor="wrong"}; send(map[string]any{"login": actor, "id": 42})
 		case "/repos/owner/repo":
-			send(map[string]any{"id": p.RepositoryID, "full_name": f.repo, "default_branch": "main", "permissions": map[string]bool{"push": true}, "allow_squash_merge": true})
+			repo:=f.repo; if f.publicationFault=="repo" {repo="foreign/repo"}; send(map[string]any{"id": p.RepositoryID, "full_name": repo, "default_branch": "main", "permissions": map[string]bool{"push": true}, "allow_squash_merge": true})
 		case "/repos/owner/repo/rules/branches/main":
 			send([]any{})
 		case "/repos/owner/repo/branches/main/protection":
@@ -84,7 +87,7 @@ func coldOverlayGithub(t *testing.T, plans ...Plan) (*GitHub, *ColdQualification
 		case "/repos/owner/repo/git/ref/heads/main":
 			send(map[string]any{"ref": "refs/heads/main", "object": map[string]string{"sha": f.base}})
 		case "/repos/owner/repo/git/ref/heads/contribution/run":
-			send(map[string]any{"ref": "refs/heads/contribution/run", "object": map[string]string{"sha": f.head}})
+			if f.publicationFault=="absent" {http.Error(w,"absent",404);return}; ref,head:="refs/heads/contribution/run",f.head; if f.publicationFault=="ref" {ref="refs/heads/wrong"};if f.publicationFault=="head" {head=strings.Repeat("a",40)};send(map[string]any{"ref":ref, "object": map[string]string{"sha": head}})
 		case "/repos/owner/repo/pulls":
 			if r.Method == "POST" {
 				f.pr = true
@@ -155,7 +158,12 @@ func coldOverlayGithub(t *testing.T, plans ...Plan) (*GitHub, *ColdQualification
 			}
 		}
 	}))
-	t.Cleanup(srv.Close)
+ if port := os.Getenv("AEGIS_ACCEPTANCE_PORT"); port != "" {
+ listener, err := net.Listen("tcp", "127.0.0.1:"+port); if err != nil {t.Fatal(err)}
+ _ = srv.Listener.Close(); srv.Listener = listener
+ }
+ srv.Start()
+ t.Cleanup(srv.Close)
 	g, e := newGitHub(srv.URL, coldOverlayCustody{}, coldOverlayPrivacy{})
 	if e != nil {
 		t.Fatal(e)
@@ -185,6 +193,7 @@ func ColdQualificationGitHub(t *testing.T, p Plan) (*GitHub, *ColdQualificationR
 	g, f, _ := coldOverlayGithub(t, p)
 	return g, f
 }
+func ColdQualificationSetCustody(g *GitHub, c Custody) { g.custody=c }
 func ColdQualificationProtection() string                          { return digest(coldOverlayProtection()) }
 func ColdQualificationIntent(p Plan, op Operation) (Intent, error) { return intentFor(p, op) }
 func (f *ColdQualificationRemote) Set(lost, postFail bool) {
@@ -194,3 +203,12 @@ func (f *ColdQualificationRemote) Set(lost, postFail bool) {
 	f.postFail = postFail
 }
 func (f *ColdQualificationRemote) Writes() int { f.Lock(); defer f.Unlock(); return f.writes }
+func (f *ColdQualificationRemote) PublicationFault(kind string) { f.Lock(); defer f.Unlock(); f.publicationFault=kind }
+
+// Seed pre-existing remote facts without invoking productive authority or HTTP writes.
+func (f *ColdQualificationRemote) ExistingMerged() { f.Lock(); defer f.Unlock(); f.pr=true; f.merged=true; f.base=strings.Repeat("e",40) }
+func (f *ColdQualificationRemote) Reads() int { f.Lock(); defer f.Unlock(); return f.reads }
+// Mode-only adversarial fixture: does NOT manufacture a historical permit or a write grant.
+func ColdQualificationNestedMode(ctx context.Context, ancestor Intent, read bool, fn func(context.Context)) {
+ nested, mode := enterAdapterMode(ctx,ancestor,read); defer mode.active.Store(false); fn(nested)
+}

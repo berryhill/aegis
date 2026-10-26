@@ -14,7 +14,7 @@ func ReconcileHistorical(ctx context.Context, owner Repository, github *GitHub, 
 		return old, ErrDenied
 	}
 	switch old.Intent.Operation {
-	case PullRequest, UpdatePullRequest, CheckDelivery, Merge, ReconcileIssue:
+	case Publish, PullRequest, UpdatePullRequest, CheckDelivery, Merge, ReconcileIssue:
 	default:
 		return old, ErrDenied // Graph/object/local artifacts are not reconstructed.
 	}

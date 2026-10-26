@@ -131,6 +131,12 @@ func (o *ContributionDeliveryPublicationOwner) reconcileAs(ctx context.Context, 
 			plan.Delivery = proof.Requirements.Delivery
 			plan.Completion = proof.Requirements.Completion
 		}
+		if i.Operation == delivery.Publish {
+			if p.OriginalCommit == nil {
+				return h, delivery.ErrDenied
+			}
+			plan.Commit = *p.OriginalCommit
+		}
 		if delivery.VerifyHistoricalPlan(i, plan) != nil {
 			return h, delivery.ErrDenied
 		}
@@ -139,7 +145,12 @@ func (o *ContributionDeliveryPublicationOwner) reconcileAs(ctx context.Context, 
 		if e != nil {
 			return h, e
 		}
-		if _, e = delivery.ReconcileHistorical(ctx, repo, o.github, old, plan); e != nil {
+		permit := &contributionHistoricalPermit{owner: o, subject: sub, key: key, intent: i}
+		permit.active.Store(true)
+		historical := context.WithValue(ctx, contributionHistoricalPermitKey{}, permit)
+		_, e = delivery.ReconcileHistorical(historical, repo, o.github, old, plan)
+		permit.active.Store(false)
+		if e != nil {
 			return h, e
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/berryhill/aegis/internal/contribution"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/reference"
@@ -33,6 +34,7 @@ func TestContributionDeliveryPolicyHistoryReopen(t *testing.T) {
 	}
 	s := &Service{Store: blobs, FleetRepository: db}
 	p := historyPolicy()
+	p.CredentialPin = &ContributionDeliveryCredentialPin{Key: credentials.CredentialBindingKey{AgentID: "a", StanzaID: "s", DeploymentID: "d", Scope: "g"}, BindingRevision: 1, SecretRecord: "record", Version: 1, Destination: "github", Actor: "actor", RepositoryID: 7, Operations: []delivery.Operation{delivery.Merge}}
 	digest := p.Digest()
 	if e = s.retainContributionDeliveryPolicy(ctx, p); e != nil {
 		t.Fatal(e)
@@ -96,6 +98,31 @@ func TestContributionDeliveryPolicyHistoryReopen(t *testing.T) {
 		t.Fatal("corrupt write accepted")
 	}
 }
+
+func TestContributionDeliveryCredentialPinEncoding(t *testing.T) {
+	p := historyPolicy()
+	legacy, _ := json.Marshal(p)
+	if strings.Contains(string(legacy), "CredentialPin") {
+		t.Fatal("legacy encoding retconned")
+	}
+	original := p.Digest()
+	p.CredentialPin = &ContributionDeliveryCredentialPin{Key: credentials.CredentialBindingKey{AgentID: "a", StanzaID: "s", DeploymentID: "d", Scope: "g"}, BindingRevision: 1, SecretRecord: "record", Version: 1, Destination: "github", Actor: "actor", RepositoryID: 7, Operations: []delivery.Operation{delivery.Merge}}
+	if p.Digest() == original {
+		t.Fatal("pin not bound")
+	}
+	q := p.snapshot()
+	q.CredentialPin.Operations[0] = delivery.PullRequest
+	q.CredentialPin.Version++
+	if p.CredentialPin.Operations[0] != delivery.Merge || p.CredentialPin.Version != 1 {
+		t.Fatal("pin aliased")
+	}
+	wire, _ := json.Marshal(p)
+	got, e := decodeContributionDeliveryPolicy(wire, p.Digest())
+	if e != nil || !reflect.DeepEqual(got, p) {
+		t.Fatal("pin roundtrip", e)
+	}
+}
+
 func TestContributionDeliveryPolicyHistoryStrict(t *testing.T) {
 	p := historyPolicy()
 	wire, _ := json.Marshal(p)

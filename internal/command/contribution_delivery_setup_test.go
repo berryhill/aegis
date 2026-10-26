@@ -9,6 +9,7 @@ import (
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	canonicalstore "github.com/berryhill/aegis/internal/store"
@@ -45,12 +46,16 @@ func TestContributionDeliveryLocalStartupComposition(t *testing.T) {
 	if err = s.ContributionPublicationQuiescer.QuiesceContributionPublication(ctx, app.ContributionPublicationBinding{}); err == nil || calls != 1 {
 		t.Fatal("missing dynamic request read", err, calls)
 	}
-	remote := unavailableContributionRemote{}
-	if !errors.Is(remote.Use(ctx, delivery.Intent{}, func([]byte) error { t.Fatal("cold secret use"); return nil }), ErrContributionRemoteCustodyUnavailable) {
-		t.Fatal("cold custody accepted")
+	historyForCustody, err := app.NewContributionDeliveryPolicyHistory(s)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !errors.Is(remote.Review(ctx, delivery.Intent{}, delivery.Plan{}), ErrContributionRemotePrivacyUnavailable) {
-		t.Fatal("remote privacy accepted")
+	remote, err := app.NewContributionDeliveryColdCustody(s, historyForCustody, &credentials.Authority{}, fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(remote.Use(ctx, delivery.Intent{}, func([]byte) error { t.Fatal("unpermitted secret use"); return nil }), delivery.ErrDenied) {
+		t.Fatal("cold direct use accepted")
 	}
 	history, err := app.NewContributionDeliveryPolicyHistory(s)
 	if err != nil {

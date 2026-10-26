@@ -9,6 +9,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/orchestration"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
@@ -20,7 +21,23 @@ var ErrContributionDeliveryUnavailable = errors.New("contribution delivery nativ
 // ContributionDeliveryPolicy is a reproducible controller projection, not a
 // grant, runtime request or model artifact. Productive callers use the concrete
 // trusted controller, which derives it from canonical state and server policy.
+// ContributionDeliveryCredentialPin is immutable nonsecret approval metadata, not authority.
+type ContributionDeliveryCredentialPin struct {
+	Key             credentials.CredentialBindingKey
+	BindingRevision uint64
+	SecretRecord    string
+	Version         uint64
+	Destination     string
+	Actor           string
+	RepositoryID    uint64
+	Operations      []delivery.Operation
+}
+
 type ContributionDeliveryPolicy struct {
+	// OriginalCommit preserves the exact publication payload, including reviewed files.
+	// Nil retains legacy policy digests and denies historical Publish reconstruction.
+	OriginalCommit *delivery.CommitSpec               `json:",omitempty"`
+	CredentialPin  *ContributionDeliveryCredentialPin `json:",omitempty"`
 	// ControllerSession is an explicit trusted controller-role pin, never inferred from intake.
 	ControllerSession                                                           string
 	Binding                                                                     fleetbadger.ContributionDeliveryBinding
@@ -38,6 +55,19 @@ type ContributionDeliveryPolicy struct {
 // snapshot detaches slices from the trusted immutable resolver store. Callers
 // must not mutate incoming policy storage concurrently with resolution.
 func (p ContributionDeliveryPolicy) snapshot() ContributionDeliveryPolicy {
+	if p.CredentialPin != nil {
+		pin := *p.CredentialPin
+		pin.Operations = slices.Clone(pin.Operations)
+		p.CredentialPin = &pin
+	}
+	if p.OriginalCommit != nil {
+		commit := *p.OriginalCommit
+		commit.Files = slices.Clone(commit.Files)
+		for n := range commit.Files {
+			commit.Files[n].Bytes = slices.Clone(commit.Files[n].Bytes)
+		}
+		p.OriginalCommit = &commit
+	}
 	p.AllowedFiles = slices.Clone(p.AllowedFiles)
 	p.RequiredChecks = slices.Clone(p.RequiredChecks)
 	p.RequiredReviewers = slices.Clone(p.RequiredReviewers)
