@@ -97,6 +97,9 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 		return delivery.ErrDenied
 	}
 	s := a.controller.service
+	if s.validateContributionRequestSubject(ctx, a.subject) != nil {
+		return delivery.ErrDenied
+	}
 	control, err := s.ReadContributionControlAs(ctx, a.subject, a.key)
 	wire, _ := json.Marshal(control)
 	if err != nil || control.Stop || contribution.Digest(wire) != a.control {
@@ -166,6 +169,10 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		return out, delivery.ErrDenied
 	}
 	s := d.service
+	ctx, err = s.bindContributionRequestSubject(ctx, subject)
+	if err != nil {
+		return out, err
+	}
 	installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner)
 	if !ok || installed.service != s {
 		return out, ErrContributionDeliveryUnavailable
@@ -260,7 +267,16 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		// A synchronous single-use source passes the already-held native projection.
 		held := &heldContributionDeliverySource{plan: plan}
 		budget := &contributionDeliveryReadiness{live: live, productive: a, instructions: authority}
-		out, e = delivery.NewConductor(delivery.NewEngine(owner, held, authority, delivery.ClosedAdapter{Git: &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}, GitHub: gh}), nil, nil, delivery.WithReadiness(d.policy.Readiness, budget)).Run(live, ref)
+		var completion delivery.CompletionOwner
+		adapter, completionErr := s.NewContributionCompletionInFrame(live, subject, key, policyRef)
+		if completionErr == nil {
+			completion = adapter
+		} else if !errors.Is(completionErr, ErrContributionFinalizationNotEnabled) {
+			return completionErr
+		}
+		// Legacy profiles remain nonfinal. An enabled final-verification profile
+		// must bind the real completion owner inside this exact live custody frame.
+		out, e = delivery.NewConductor(delivery.NewEngine(owner, held, authority, delivery.ClosedAdapter{Git: &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}, GitHub: gh}), nil, completion, delivery.WithReadiness(d.policy.Readiness, budget)).Run(live, ref)
 		return e
 	})
 	return out, err

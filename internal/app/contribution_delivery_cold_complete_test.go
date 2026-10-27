@@ -9,6 +9,7 @@ import (
 	"github.com/berryhill/aegis/internal/delivery"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/reference"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,14 @@ func TestColdIsolationComplete(t *testing.T) {
 			s, store, sub, ref, reader := coldAuthorityFixture(t)
 			now := s.Now()
 			s.Now = func() time.Time { return now }
+			uid, parseErr := strconv.ParseUint(s.Config.Principal.UID, 10, 32)
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			ctx, sub, parseErr = s.AuthenticateContributionUnixPeerRequest(ctx, uint32(uid))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
 			sub.ExpiresAt = now.Add(30 * time.Second)
 			c, err := s.admitContributionAs(ctx, sub, "original", ref, reader.source.URL.URL, "cold-joined", "verified-protected-base-merge", reader)
 			if err != nil {
@@ -168,8 +177,10 @@ func TestColdIsolationComplete(t *testing.T) {
 					}
 				}
 				now = c.Deadline.Add(time.Second)
-				sub.AuthenticatedAt = now
-				sub.ExpiresAt = now.Add(time.Minute)
+				ctx, sub, err = s.AuthenticateContributionUnixPeerRequest(context.Background(), uint32(uid))
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			guard := func(ctx context.Context) error {
 				return (contributionColdAuthority{s, sub, c.Key, original.Intent}).Admit(ctx, original.Intent, false)
@@ -301,7 +312,10 @@ func (a *coldCompleteAttack) Use(ctx context.Context, i delivery.Intent, fn func
 		// Retain the SAME authentic permit, but no read-mode ancestor. Actual
 		// Apply creates its own write mode; its guard probes nested Reconcile
 		// then ALWAYS denies, never granting synthetic productive admission.
-		permitContext := context.WithValue(context.Background(), contributionHistoricalPermitKey{}, ctx.Value(contributionHistoricalPermitKey{}))
+		// Preserve the genuine request proof while deliberately discarding the
+		// adapter read ancestry; otherwise request denial masks mode isolation.
+		requestOnly := context.WithValue(context.Background(), contributionNativeRequestKey{}, ctx.Value(contributionNativeRequestKey{}))
+		permitContext := context.WithValue(requestOnly, contributionHistoricalPermitKey{}, ctx.Value(contributionHistoricalPermitKey{}))
 		applyGuardCalled := false
 		o = a.github.Apply(permitContext, i, a.plan, func(write context.Context) error {
 			applyGuardCalled = true

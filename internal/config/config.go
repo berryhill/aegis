@@ -168,16 +168,17 @@ type Implementation struct {
 }
 
 type Config struct {
-	Implementation   Implementation `mapstructure:"implementation" json:"implementation"`
-	StateDir         string         `mapstructure:"state_dir" json:"state_dir"`
-	RuntimeDefault   string         `mapstructure:"runtime_default" json:"runtime_default"`
-	HermesExecutable string         `mapstructure:"hermes_executable" json:"hermes_executable"`
-	Principal        Principal      `mapstructure:"principal" json:"principal"`
-	API              API            `mapstructure:"api" json:"api"`
-	Retention        Retention      `mapstructure:"retention" json:"retention"`
-	Audit            Audit          `mapstructure:"audit" json:"audit"`
-	Credentials      Credentials    `mapstructure:"credentials" json:"credentials"`
-	Manager          Manager        `mapstructure:"manager" json:"manager"`
+	ContributionDelivery *ContributionDelivery `mapstructure:"contribution_delivery" json:"contribution_delivery,omitempty"`
+	Implementation       Implementation        `mapstructure:"implementation" json:"implementation"`
+	StateDir             string                `mapstructure:"state_dir" json:"state_dir"`
+	RuntimeDefault       string                `mapstructure:"runtime_default" json:"runtime_default"`
+	HermesExecutable     string                `mapstructure:"hermes_executable" json:"hermes_executable"`
+	Principal            Principal             `mapstructure:"principal" json:"principal"`
+	API                  API                   `mapstructure:"api" json:"api"`
+	Retention            Retention             `mapstructure:"retention" json:"retention"`
+	Audit                Audit                 `mapstructure:"audit" json:"audit"`
+	Credentials          Credentials           `mapstructure:"credentials" json:"credentials"`
+	Manager              Manager               `mapstructure:"manager" json:"manager"`
 }
 
 type Manager struct {
@@ -460,6 +461,9 @@ func (c Config) WithStateDir(state string) Config {
 
 func (c Config) Validate() error {
 	var es []error
+	if err := c.ContributionDelivery.Validate(); err != nil {
+		es = append(es, err)
+	}
 	if c.StateDir == "" {
 		es = append(es, errors.New("state_dir is required"))
 	}

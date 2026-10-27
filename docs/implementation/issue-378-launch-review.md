@@ -1,5 +1,52 @@
 # #378 source-candidate launch review
 
+## Current integration qualification (supersedes historical status below)
+
+The sections below retain earlier version-specific adapter reviews. Their
+helper-only, missing-original-policy and missing-cold-fixture statements are
+historical limitations, not the status of the current integrated source.
+
+Committed candidate `8f1088b3dd43c1d2dd6de4f8da7ebd3e728a648f` independently
+qualified the actual synthetic managed-local native journey and encrypted cold
+reconciliation in controlled fixtures. Original policy retention, exact nonsecret
+binding/commit pins, historical permit lifetime and read-versus-write adapter
+isolation are implemented. This is not live provider/protected GitHub evidence.
+
+Subsequent source adds optional strict startup configuration, normal root service
+composition and a private request-subject reader. The protected Unix middleware
+preserves existing kernel-peer authentication; delivery validates this private
+service-bound proof against the original manager subject without renewing it.
+Password subjects still require the live owning Console registry. Focused normal
+native-provenance and request-auth race regressions pass. The actual production
+factory plus Serve HTTP controlled fixture passed native RED/GREEN, scoped local
+Reserve/Git.Apply and unchanged retained replay readback in
+`.acceptance/production-native.log`. The earlier password/native-stanza failure
+remains preserved in `production-red.log`; no charter expansion, relabelling or
+TTL renewal was applied. The complete HTTP race fixture was interrupted at the
+150-second builder command limit without a verdict, not passed. Fresh independent
+candidate acceptance, restart coverage on this new path and live-provider/remote
+qualification remain separate gates.
+
+All required local launch surfaces were inspected for impact. This change updates
+the dedicated startup description and this ledger. Existing root README,
+SECURITY and quickstart limits separating browser authentication from native
+execution remain binding; they are not promoted to end-to-end success. LICENSE,
+CONTRIBUTING, CODE_OF_CONDUCT, no-key demo/recording and contributor issue proposals
+receive no unrelated edits. Existing launch blockers remain open. Current release
+archives/checksums, live demonstrations, protected remote delivery and installed
+acceptance were not exercised by that read-only impact review. No release or
+external issue creation is requested.
+
+Full `make verify` at the committed candidate passed repository checks,
+installed-MVI verification and normal Go groups, then hit the unchanged one-hour
+budget during race verification. A later race shard returned a requeue HTTP 500;
+the isolated exact race test passed, so that original failure remains unresolved.
+The corrected diagnostic shard subsequently failed fixture disk-reserve checks;
+that storage failure does not establish the cause of the earlier HTTP 500.
+Neither the macro run nor remaining race/vet/vulnerability stages are whole-suite
+green. #379 joined disposition, exact-head publication/CI/merge and full #378
+completion remain unestablished for the follow-up.
+
 ## Scope and outcome
 
 The source-only scope is `internal/delivery/**`, canonical Badger contribution

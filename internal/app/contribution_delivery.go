@@ -142,6 +142,14 @@ func newContributionDeliverySource(s *Service, subject core.Subject, key string,
 	return &ContributionDeliverySource{s, subject, key, ref, policies, run}, nil
 }
 func (s *ContributionDeliverySource) WithAccepted(ctx context.Context, ref delivery.Reference, action func(context.Context, delivery.Plan) error) error {
+	if s == nil || s.service == nil {
+		return delivery.ErrDenied
+	}
+	var bindErr error
+	ctx, bindErr = s.service.bindContributionRequestSubject(ctx, s.subject)
+	if bindErr != nil {
+		return bindErr
+	}
 	if s == nil || s.run == nil {
 		return ErrContributionDeliveryUnavailable
 	}

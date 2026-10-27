@@ -73,6 +73,9 @@ type contributionColdAuthority struct {
 }
 
 func (a contributionColdAuthority) Admit(ctx context.Context, i delivery.Intent, writing bool) error {
+	if a.service.validateContributionRequestSubject(ctx, a.subject) != nil {
+		return delivery.ErrDenied
+	}
 	if writing || i != a.intent {
 		return delivery.ErrDenied
 	}
@@ -95,6 +98,10 @@ func (o *ContributionDeliveryPublicationOwner) ReconcileAs(ctx context.Context, 
 }
 
 func (o *ContributionDeliveryPublicationOwner) reconcileAs(ctx context.Context, sub core.Subject, key string, quiescing bool) (delivery.HistorySnapshot, error) {
+	ctx, bindErr := o.service.bindContributionRequestSubject(ctx, sub)
+	if bindErr != nil {
+		return delivery.HistorySnapshot{}, bindErr
+	}
 	h, err := o.service.ReadContributionDeliveryHistoryAs(ctx, sub, key)
 	if err != nil {
 		return h, err
