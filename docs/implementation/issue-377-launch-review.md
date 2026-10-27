@@ -1,5 +1,38 @@
 # #377 source continuity launch-impact ledger
 
+## CI recovery performance increment
+
+The imported #378 terminal-cleanup delta is retained with its provenance. A fresh
+source review identified that its service-wide mutex could delay bounded cleanup
+behind an unrelated session. The follow-up uses per-session, context-aware
+admission with reference-counted ephemeral lock entries; the stored terminal
+re-read, canonical revoke/expire and exact native-quiescence reconciliation remain
+unchanged. Cancellation during lock admission makes no session/authority change.
+Contention, unrelated-session, cancelled-admission and supervisor-first outcome
+regressions are authored but not executed below the owner-required 8-GiB reserve.
+Earlier v3 acceptance predates this lifecycle delta and does not qualify it.
+
+The replay-prefix cache retains per-transaction contract/event/head byte checks
+and cold canonical validation; it caches no current authority decision. Exact-size
+input reads retain EOF, inode, path, size and mutation checks. Recovery suffix
+comparison still examines every logical byte, with unchanged checksum, transaction,
+evidence-preservation and authentication deadline requirements. Cache cardinality
+is bounded by one contribution and the existing event ceiling, not a fixed RSS cap.
+
+Original CI failures and subsequent unsuccessful candidates remain retained.
+Independent v2 race repair, fresh resume and disconnect passed; its restart
+reserved-before-start case failed during authenticated physical recovery. The
+follow-up bounded-chunk suffix comparison requires fresh restart qualification;
+a later successful diagnostic rerun does not erase that earlier failure.
+
+Current-main documentation was integrated as an additive union, preserving the
+separate two-participant and continuity qualification boundaries. CHANGELOG records
+the performance repair. README, SECURITY, architecture and threat-model claims do
+not expand authority or declare live qualification. License, conduct, contributing,
+quickstart, no-key demo, historical recording, release format/checksums and contributor
+backlog have no changed commands or public contracts from this increment. No new
+release, installed, real-provider or whole-contribution acceptance is claimed.
+
 ## Owner discovery/readback and CI partition increment
 
 | Scope | Source / qualification |

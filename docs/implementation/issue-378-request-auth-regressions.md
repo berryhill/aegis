@@ -93,3 +93,18 @@ Launch-asset impact: the cleanup repair changes internal owning-service terminal
 coordination, not command syntax, authority policy, expiry limits, release binaries,
 license/conduct or remote delivery claims. This focused note describes that bounded
 behavior and the qualification recipe; it does not assert overall acceptance.
+
+## #377 follow-up: bounded per-session cleanup admission
+
+Read-only review of the imported terminal mutex found that unrelated session
+termination could hold the service-wide lock past a waiting cleanup's context.
+The #377-owned follow-up replaces that global operation lock with keyed session
+tokens. Only the short reference-map operations use a mutex; waiting for the same
+session observes context cancellation, and unrelated sessions do not serialize.
+The final holder/waiter removes the entry, so historical sessions do not accumulate
+locks. Terminal-before-revoke checks and read-only exact quiescence joins remain.
+
+New lock/admission regressions are source-authored; compilation, race and actual
+Serve/native qualification remain held below the explicit 8-GiB verification floor.
+Do not promote the earlier scoped tests or source review to this successor's
+executable acceptance.
