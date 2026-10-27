@@ -31,6 +31,7 @@ import (
 )
 
 func TestExactLoopQueueImplementationSuccessReplay(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"auto", "ready", "failed-launch", "interrupted"} {
 		t.Run(mode, func(t *testing.T) { exactLoopQueueImplementationSuccessReplay(t, mode) })
 	}
@@ -285,7 +286,7 @@ while read rest; do :; done
 	if err = worker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{digest}}, svc.Config.StateDir, svc.Hermes); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.ConfigureFleet(store, svc.Fleet, worker); err != nil {
+	if err = configureSyntheticAPIFleet(svc, store, svc.Fleet, worker); err != nil {
 		t.Fatal(err)
 	}
 	var originalBinding queue.RuntimeBinding

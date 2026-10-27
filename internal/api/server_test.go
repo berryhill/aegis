@@ -357,6 +357,15 @@ while IFS= read -r rest; do :; done
 	return svc
 }
 
+func configureSyntheticAPIFleet(svc *app.Service, repo fleet.Repository, fleetService *orchestration.FleetService, worker *orchestration.QueueWorker) error {
+	// Synthetic fixtures must not discover the operator's installed runtime.
+	// ConfigureFleet only stores callbacks; restore the adapter before any use.
+	original := svc.Hermes
+	svc.Hermes = nil
+	defer func() { svc.Hermes = original }()
+	return svc.ConfigureFleet(repo, fleetService, worker)
+}
+
 func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 	t.Helper()
 	fleetStore, err := fleetbadger.Open(context.Background(), filepath.Join(svc.Config.StateDir, "persistence", "fleet-v1"))
@@ -380,7 +389,8 @@ func configureAPIFleet(t *testing.T, svc *app.Service) *fleetbadger.Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.ConfigureFleet(fleetStore, fleetService, worker); err != nil {
+	err = configureSyntheticAPIFleet(svc, fleetStore, fleetService, worker)
+	if err != nil {
 		t.Fatal(err)
 	}
 	return fleetStore

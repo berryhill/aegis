@@ -17,6 +17,7 @@ import (
 // Public observation retains its own deadline even when the real helper can
 // answer successfully just beyond it. No Run marker or execution is used here.
 func TestDoerCandidateSlowPublicProbeRemainsBounded(t *testing.T) {
+	t.Parallel()
 	s, subject, input := candidateReadinessFixture(t, "proof-no-key")
 	ctx := context.Background()
 	r, err := s.ReadDoerCandidateReadinessAs(ctx, subject, input)
