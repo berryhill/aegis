@@ -180,9 +180,10 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	installation := filepath.Join(root, "install")
 	must(os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700))
 	executable := filepath.Join(root, "hermes")
-	// The controlled process stays available across the admitted late fixture
-	// interval; real mandate/session expiry and owned stop/Wait remain enforced.
-	must(os.WriteFile(executable, []byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+installation+"'; exit 0; fi\nexec sleep 600\n"), 0700))
+	// The synthetic role has no independent countdown that can masquerade as
+	// expiry or process reuse. Its lifetime belongs to the real supervisor's
+	// mandate/deadline and explicit owned stop/Wait, plus the test/cgroup alarm.
+	must(os.WriteFile(executable, []byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+installation+"'; exit 0; fi\ntrap 'exit 0' TERM INT HUP\nwhile :; do sleep 1; done\n"), 0700))
 	script := `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
 read tools
@@ -251,7 +252,9 @@ while read rest; do :; done
 	}
 	sealed, e := s.AdmitContributionAs(ctx, subject, "assessment-session", lrRef, issue.URL, intentKey, scope)
 	must(e)
+	nativeStarted := time.Now()
 	result, e := s.ExecuteContributionAs(ctx, subject, sealed.Key)
+	t.Logf("contribution-stage=native-execution elapsed=%s error=%v", time.Since(nativeStarted), e)
 	must(e)
 	if result.Candidate == nil || result.Candidate.State != "candidate_accepted" {
 		t.Fatalf("actual native execution: %+v", result)
@@ -341,9 +344,11 @@ while read rest; do :; done
 		if concurrent {
 			duplicate, err = app.NewContributionCompletionAdapter(verifier, subject, sealed.Key)
 			must(err)
-			completionOwner = concurrentPreclosure{completion, duplicate}
+			completionOwner = concurrentPreclosure{primary: completion, duplicate: duplicate, t: t}
 		}
+		conductorStarted := time.Now()
 		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, admission, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		t.Logf("contribution-stage=delivery-preclosure elapsed=%s held=%s reason=%s error=%v", time.Since(conductorStarted), conducted.Held, conducted.Reason, finalErr)
 		if late {
 			// The owning Source intentionally sanitizes callback errors. Confirm
 			// the exact post-issue held stage instead of relying on private error text.

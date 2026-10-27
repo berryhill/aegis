@@ -20,14 +20,19 @@ import (
 // verifier in the same source frame. Neither adapter fabricates proof.
 type concurrentPreclosure struct {
 	primary, duplicate *app.ContributionCompletionAdapter
+	t                  *testing.T
 }
 
 func (a concurrentPreclosure) VerifyContributionCompletion(ctx context.Context, r delivery.Reference) (string, error) {
+	started := time.Now()
 	first, err := a.primary.VerifyContributionCompletion(ctx, r)
+	a.t.Logf("contribution-stage=primary-preclosure elapsed=%s error=%v", time.Since(started), err)
 	if err != nil {
 		return first, err
 	}
+	started = time.Now()
 	second, err := a.duplicate.VerifyContributionCompletion(ctx, r)
+	a.t.Logf("contribution-stage=duplicate-preclosure elapsed=%s error=%v", time.Since(started), err)
 	if err != nil {
 		return second, err
 	}
@@ -48,11 +53,14 @@ type concurrentCompletionProbe struct {
 	entered, release, observed chan struct{}
 	observedOnce               sync.Once
 	failWriter                 bool
+	t                          *testing.T
+	started                    time.Time
 }
 
 type concurrentWaiterContextKey struct{}
 
 func (p *concurrentCompletionProbe) CompleteContributionQueueItem(ctx context.Context, c fleet.Completion, f fleet.AuditFact, r fleet.EvidenceReader) error {
+	p.t.Logf("contribution-stage=canonical-commit-arrival elapsed=%s", time.Since(p.started))
 	close(p.entered)
 	select {
 	case <-p.release:
@@ -66,13 +74,16 @@ func (p *concurrentCompletionProbe) CompleteContributionQueueItem(ctx context.Co
 }
 func (p *concurrentCompletionProbe) GetDispositionByGraphRun(ctx context.Context, run string) (disposition.Record, error) {
 	if _, bounded := ctx.Deadline(); bounded && ctx.Value(concurrentWaiterContextKey{}) == p {
-		p.observedOnce.Do(func() { close(p.observed) })
+		p.observedOnce.Do(func() {
+			p.t.Logf("contribution-stage=duplicate-reconciliation-arrival elapsed=%s", time.Since(p.started))
+			close(p.observed)
+		})
 	}
 	return p.Store.GetDispositionByGraphRun(ctx, run)
 }
 func exerciseConcurrentFinalizers(t *testing.T, s *app.Service, sub core.Subject, key string, ref delivery.Reference, primary, duplicate *app.ContributionCompletionAdapter, base *continuationCompletionProbe) (error, bool) {
 	t.Helper()
-	p := &concurrentCompletionProbe{continuationCompletionProbe: base, entered: make(chan struct{}), release: make(chan struct{}), observed: make(chan struct{}), failWriter: strings.Contains(t.Name(), "WinnerFailure")}
+	p := &concurrentCompletionProbe{continuationCompletionProbe: base, entered: make(chan struct{}), release: make(chan struct{}), observed: make(chan struct{}), failWriter: strings.Contains(t.Name(), "WinnerFailure"), t: t, started: time.Now()}
 	s.FleetRepository = p
 	defer func() { s.FleetRepository = base }()
 	before, err := s.ReadContributionExecutionAs(context.Background(), sub, key)
