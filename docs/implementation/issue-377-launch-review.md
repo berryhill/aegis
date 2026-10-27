@@ -2,6 +2,16 @@
 
 ## CI recovery performance increment
 
+The imported #378 terminal-cleanup delta is retained with its provenance. A fresh
+source review identified that its service-wide mutex could delay bounded cleanup
+behind an unrelated session. The follow-up uses per-session, context-aware
+admission with reference-counted ephemeral lock entries; the stored terminal
+re-read, canonical revoke/expire and exact native-quiescence reconciliation remain
+unchanged. Cancellation during lock admission makes no session/authority change.
+Contention, unrelated-session, cancelled-admission and supervisor-first outcome
+regressions are authored but not executed below the owner-required 8-GiB reserve.
+Earlier v3 acceptance predates this lifecycle delta and does not qualify it.
+
 The replay-prefix cache retains per-transaction contract/event/head byte checks
 and cold canonical validation; it caches no current authority decision. Exact-size
 input reads retain EOF, inode, path, size and mutation checks. Recovery suffix
