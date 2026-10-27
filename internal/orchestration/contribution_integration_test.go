@@ -296,6 +296,30 @@ while read rest; do :; done
 	if candidate.Digest != record.Passes[1].Candidate.Digest {
 		t.Fatal("handoff drift")
 	}
+	t.Run("independently_reloaded_native_evidence", func(t *testing.T) {
+		readback, err := worker.ReloadContributionCandidateEvidence(ctx, subject, "queue", lr)
+		must(err)
+		if readback.RunID != sealed.RunID || readback.Contract != sealed.Digest || readback.Attempt != record.QueueAttempt || readback.Candidate != candidate.Digest {
+			t.Fatal("native evidence lost sealed causality")
+		}
+		wire, err := blobs.GetBlob(readback.EvidenceRef)
+		must(err)
+		var native implementation.ContributionAcceptanceEvidence
+		must(json.Unmarshal(wire, &native))
+		if native.Schema != implementation.ContributionAcceptanceSchema || len(native.Passes) != 2 || native.Baseline.Outcome != "failed" || native.Passes[0].Check.Outcome != "failed" || native.Passes[1].Check.Outcome != "passed" {
+			t.Fatal("export substituted native RED/repair/GREEN lineage")
+		}
+		foreign := subject
+		foreign.ID = "different-owner"
+		if _, err := worker.ReloadContributionCandidateEvidence(ctx, foreign, "queue", lr); err == nil {
+			t.Fatal("foreign owner read native private evidence")
+		}
+		projection, err := repository.GetQueueProjection(ctx, "queue")
+		must(err)
+		if projection.State != queue.StateClaimed || projection.Attempts != 1 {
+			t.Fatal("native verifier promoted contribution or reset its budget")
+		}
+	})
 
 	// Synthetic controller gate only: not durable process-stop evidence.
 	gate := func(context.Context, ContributionCandidate) error { return nil }

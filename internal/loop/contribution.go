@@ -23,21 +23,25 @@ func NewContributionRevision(id string, revision uint64, previous string, implem
 // profile. It does not grant runtime, host, GitHub write or merge authority.
 // GitHub-effect profiles are deliberately not accepted by this local executor.
 type ContributionProfile struct {
-	Managed         *ContributionExecutionPolicy `json:"managed,omitempty"`
-	Controller      reference.RevisionRef        `json:"controller"`
-	Builder         reference.RevisionRef        `json:"builder"`
-	Tester          reference.RevisionRef        `json:"tester"`
-	Repository      string                       `json:"repository"`
-	RepositoryID    uint64                       `json:"repository_id"`
-	Base            string                       `json:"base"`
-	ReadAction      string                       `json:"read_action"`
-	Effect          string                       `json:"effect"`
-	DeadlineSeconds uint32                       `json:"deadline_seconds"`
-	Invariants      []string                     `json:"invariants"`
-	Exclusions      []string                     `json:"exclusions"`
+	FinalVerification string                       `json:"final_verification,omitempty"`
+	Managed           *ContributionExecutionPolicy `json:"managed,omitempty"`
+	Controller        reference.RevisionRef        `json:"controller"`
+	Builder           reference.RevisionRef        `json:"builder"`
+	Tester            reference.RevisionRef        `json:"tester"`
+	Repository        string                       `json:"repository"`
+	RepositoryID      uint64                       `json:"repository_id"`
+	Base              string                       `json:"base"`
+	ReadAction        string                       `json:"read_action"`
+	Effect            string                       `json:"effect"`
+	DeadlineSeconds   uint32                       `json:"deadline_seconds"`
+	Invariants        []string                     `json:"invariants"`
+	Exclusions        []string                     `json:"exclusions"`
 }
 
 func (p ContributionProfile) Validate() error {
+	if p.FinalVerification != "" && p.FinalVerification != "aegis.contribution.final.v1" {
+		return errors.New("unknown contribution final verification policy")
+	}
 	if p.Managed != nil {
 		if err := p.Managed.Validate(); err != nil {
 			return err

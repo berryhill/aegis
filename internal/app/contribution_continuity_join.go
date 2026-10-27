@@ -4,12 +4,14 @@ import (
 	"context"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/orchestration"
 	"sync/atomic"
 )
 
 type contributionCustodyKey struct{}
 type contributionCustodyProof struct {
+	terminal                     *contributionTerminalSlot
 	service                      *Service
 	contract, candidate, session string
 	live                         atomic.Bool
@@ -63,13 +65,36 @@ func (s *Service) WithContributionContinuityCandidateAs(ctx context.Context, sub
 		}
 		return nil
 	}
-	return s.WithAcceptedContributionCandidateAs(ctx, sub, key, gate, func(ctx context.Context, candidate orchestration.ContributionCandidate) error {
+	sealed, _, err := s.ReadContributionAs(ctx, sub, key)
+	if err != nil {
+		return err
+	}
+	definition, err := s.FleetRepository.GetLoopRevision(ctx, sealed.Loop.ID, sealed.Loop.Revision)
+	if err != nil || definition.Digest != sealed.Loop.Digest {
+		return ErrDenied
+	}
+	var terminal *contributionTerminalSlot
+	if definition.Contribution != nil && definition.Contribution.FinalVerification == evidence.ContributionFinalPolicy {
+		terminal = &contributionTerminalSlot{open: true, valid: true}
+		defer terminal.invalidate()
+	}
+	runAction := func(ctx context.Context, candidate orchestration.ContributionCandidate) error {
 		if err := gate(ctx, candidate); err != nil {
 			return err
 		}
-		proof := &contributionCustodyProof{service: s, contract: candidate.Contract, candidate: candidate.Digest, session: session}
+		proof := &contributionCustodyProof{service: s, contract: candidate.Contract, candidate: candidate.Digest, session: session, terminal: terminal}
 		proof.live.Store(true)
 		defer proof.live.Store(false)
+		if terminal != nil {
+			defer terminal.closeAction()
+		}
 		return action(context.WithValue(ctx, contributionCustodyKey{}, proof), candidate)
-	})
+	}
+	if terminal != nil {
+		if s.QueueWorker == nil {
+			return ErrDenied
+		}
+		return s.QueueWorker.WithFinalizableContributionCandidate(ctx, sub, sealed.QueueItemID, definition, gate, runAction, terminal.consume)
+	}
+	return s.WithAcceptedContributionCandidateAs(ctx, sub, key, gate, runAction)
 }

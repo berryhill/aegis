@@ -191,7 +191,15 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 				return nil, identity, err
 			}
 		}
-		edits, err := (HermesPatchProposer{Adapter: w.implementation.adapter, Request: turnRequest(builder)}).Propose(c, input)
+		turn := turnRequest(builder)
+		if observer != nil && observer.SessionTurn != nil {
+			turn.SessionCapability = func(capCtx context.Context, live execution.Turn) error {
+				return observer.SessionTurn(capCtx, builder.Launch.AuthorityContext.SessionID, live)
+			}
+		} else if runtime.LoopRevision.Contribution.FinalVerification != "" {
+			return nil, identity, ErrWorkerDenied
+		}
+		edits, err := (HermesPatchProposer{Adapter: w.implementation.adapter, Request: turn}).Propose(c, input)
 		return edits, identity, err
 	}
 	engine.Test = func(c context.Context, candidate implementation.ContributionCandidate, execute func(context.Context, implementation.ContributionRoleIdentity) error) (identity implementation.ContributionRoleIdentity, testErr error) {
@@ -221,6 +229,13 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		turn.AttemptID = fmt.Sprintf("%s-tester-%d", sealed.RunID, candidate.Pass)
 		turn.Input = string(input)
 		turn.SessionCapability = func(capCtx context.Context, live execution.Turn) error {
+			if observer != nil && observer.SessionTurn != nil {
+				if err := observer.SessionTurn(capCtx, tester.Launch.AuthorityContext.SessionID, live); err != nil {
+					return err
+				}
+			} else if runtime.LoopRevision.Contribution.FinalVerification != "" {
+				return ErrWorkerDenied
+			}
 			return execute(capCtx, contributionIdentity(*tester, live.RuntimeSessionID, live.ID))
 		}
 		if observer != nil && observer.Turn != nil {

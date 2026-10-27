@@ -24,7 +24,7 @@ class ShardTests(unittest.TestCase):
             packages = self.packages() + [shard.ROOT + f'future-{i:02d}' for i in range(count)]
             grouped = shard.groups(list(reversed(packages)))
             union = [p for group in grouped.values() for p in group]
-            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1, shard.IMPLEMENTATION: 1, shard.ORCHESTRATION: 1, shard.MANAGER: len(shard.MANAGER_TESTS)}))
+            self.assertEqual(Counter(union), Counter(packages) + Counter({shard.API: 1, shard.ORCHESTRATION: 1, shard.IMPLEMENTATION: 1, shard.MANAGER: len(shard.MANAGER_TESTS)}))
             self.assertEqual(grouped, shard.groups(packages))
             self.assertEqual(grouped['api-a'], [shard.API])
             self.assertEqual(grouped['api-b'], [shard.API])
@@ -128,12 +128,11 @@ class ShardTests(unittest.TestCase):
         for race in (False, True):
             for group in shard.GROUPS:
                 api = group.startswith('api-')
-                partition = api or group.startswith(('implementation', 'orchestration', 'manager'))
-                package = shard.API if api else shard.IMPLEMENTATION if group.startswith('implementation') else shard.MANAGER if group.startswith("manager") else shard.ORCHESTRATION
-                group_listing = listing if api else listing.replace(shard.API, package).replace('TestOne\n', shard.CONTRIBUTION_TEST + '\nTestOne\n')
-                if group.startswith('implementation'):
-                    group_listing = group_listing.replace(shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_TEST)
+                partition = api or group in shard.PARTITIONS or group.startswith('manager')
+                package, target = shard.PARTITIONS.get(group, (shard.API, ''))
+                group_listing = listing if api else listing.replace(shard.API, package).replace('TestOne\n', target + '\nTestOne\n')
                 if group.startswith('manager'):
+                    package = shard.MANAGER
                     group_listing = '\n'.join(list(shard.MANAGER_TESTS.values()) + ['TestFuture', 'Example']) + '\nok\t' + package + '\t0.001s\n'
                 results = [mock.Mock(stdout='\n'.join(self.packages()))]
                 if partition:
@@ -153,7 +152,7 @@ class ShardTests(unittest.TestCase):
                         self.assertIn('-list', inventory)
                         pattern = command[command.index('-run') + 1]
                         names = shard.test_inventory(group_listing, package)
-                        selected = names[0 if group == 'api-a' else 1::2] if api else [name for name in names if (name == shard.CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+                        selected = names[0 if group == 'api-a' else 1::2] if api else [name for name in names if (name == target) == group.endswith('-contribution')]
                         if group.startswith('manager'):
                             selected = [shard.MANAGER_TESTS[group]] if group in shard.MANAGER_TESTS else [name for name in names if name not in shard.MANAGER_TESTS.values()]
                         if group.startswith('implementation'):
@@ -163,12 +162,27 @@ class ShardTests(unittest.TestCase):
                             self.assertEqual(bool(re.search(pattern, name)), name in selected)
                             self.assertIsNone(re.search(pattern, name + 'Suffix'))
 
+    def test_implementation_exact_once_and_missing_target(self):
+        target = 'TestManagedContributionRepairAndCustody'
+        for race in (False, True):
+            names = sorted([target, target + 'Future', 'TestFuture', 'Example', 'FuzzSeed'])
+            seen = []
+            for group in ('implementation', 'implementation-contribution'):
+                pattern = shard.test_pattern(names, group)
+                selected = [name for name in names if re.fullmatch(pattern, name)]
+                self.assertEqual(selected, [target] if group.endswith('-contribution') else [n for n in names if n != target])
+                self.assertIsNone(re.search(pattern, target + 'Suffix'))
+                seen.extend(selected)
+                with self.assertRaises(ValueError):
+                    shard.test_pattern(['TestFuture', 'Example'], group)
+            self.assertEqual(Counter(seen), Counter(names))
+
     def all_listing(self, package):
         names = ['TestFuture', 'TestFuturePrefix', 'Example', 'FuzzSeed', 'BenchmarkUnused']
         if package == shard.ORCHESTRATION:
             names.append(shard.CONTRIBUTION_TEST)
         if package == shard.IMPLEMENTATION:
-            names.append(shard.IMPLEMENTATION_TEST)
+            names.append(shard.IMPLEMENTATION_CONTRIBUTION_TEST)
         if package == shard.MANAGER:
             names.extend(shard.MANAGER_TESTS.values())
         return '\n'.join(names) + '\nok\t' + package + '\t0.001s\n'
@@ -187,11 +201,11 @@ class ShardTests(unittest.TestCase):
                 plans = [json.loads(call.args[0]) for call in output.call_args_list]
                 self.assertEqual([plan['group'] for plan in plans], list(shard.GROUPS))
                 inventories = [call.args[0] for call in run.call_args_list if '-list' in call.args[0]]
-                self.assertEqual(Counter(command[-1] for command in inventories), Counter([shard.API, shard.IMPLEMENTATION, shard.ORCHESTRATION, shard.MANAGER]))
+                self.assertEqual(Counter(command[-1] for command in inventories), Counter([shard.API, shard.ORCHESTRATION, shard.IMPLEMENTATION, shard.MANAGER]))
                 executed = [call.args[0] for call in run.call_args_list if call.args[0][:2] == ['go', 'test'] and '-list' not in call.args[0]]
                 self.assertEqual(executed, [] if list_only else [p['command'] for p in plans])
                 seen_packages = []
-                seen_defaults = {package: [] for package in (shard.API, shard.IMPLEMENTATION, shard.ORCHESTRATION, shard.MANAGER)}
+                seen_defaults = {package: [] for package in (shard.API, shard.ORCHESTRATION, shard.IMPLEMENTATION, shard.MANAGER)}
                 for plan in plans:
                     command = plan['command']
                     self.assertEqual('-race' in command, race)
@@ -204,12 +218,12 @@ class ShardTests(unittest.TestCase):
                         pattern = command[command.index('-run') + 1]
                         names = shard.test_inventory(self.all_listing(package), package)
                         seen_defaults[package].extend(name for name in names if re.fullmatch(pattern, name))
-                self.assertEqual(Counter(seen_packages), Counter(self.packages()) + Counter({shard.API: 1, shard.IMPLEMENTATION: 1, shard.ORCHESTRATION: 1, shard.MANAGER: len(shard.MANAGER_TESTS)}))
+                self.assertEqual(Counter(seen_packages), Counter(self.packages()) + Counter({shard.API: 1, shard.ORCHESTRATION: 1, shard.IMPLEMENTATION: 1, shard.MANAGER: len(shard.MANAGER_TESTS)}))
                 for package, names in seen_defaults.items():
                     self.assertEqual(Counter(names), Counter(shard.test_inventory(self.all_listing(package), package)))
 
     def test_all_missing_partition_fails_before_any_execution(self):
-        for missing in (shard.IMPLEMENTATION_TEST, shard.CONTRIBUTION_TEST, *shard.MANAGER_TESTS.values()):
+        for missing in (shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_CONTRIBUTION_TEST, *shard.MANAGER_TESTS.values()):
             def respond(command, **kwargs):
                 if command[:2] == ['go', 'list']:
                     return mock.Mock(stdout='\n'.join(self.packages()))
@@ -243,6 +257,27 @@ class ShardTests(unittest.TestCase):
                 shard.main(['--group', 'unknown'])
             run.assert_not_called()
 
+    def test_implementation_missing_target_never_executes_both_modes(self):
+        for race in (False, True):
+            for group in ('implementation', 'implementation-contribution'):
+                for listing in ('', 'TestFuture\nExample\nok\t' + shard.IMPLEMENTATION + '\t0.001s\n'):
+                    results = [mock.Mock(stdout='\n'.join(self.packages())), mock.Mock(stdout=listing)]
+                    with mock.patch.object(shard.subprocess, 'run', side_effect=results) as run:
+                        with self.assertRaises(ValueError):
+                            shard.main(['--group', group] + (['--race'] if race else []))
+                        self.assertEqual(run.call_count, 2)
+
+    def test_parent_patterns_are_escaped_and_anchored(self):
+        target = 'TestManagedContributionRepairAndCustody'
+        names = [target, 'TestLiteral.Dot', 'TestLiteral+Plus']
+        pattern = shard.test_pattern(names, 'implementation')
+        for name in names[1:]:
+            self.assertIsNotNone(re.fullmatch(pattern, name))
+            self.assertIsNone(re.search(pattern, 'prefix' + name))
+            self.assertIsNone(re.search(pattern, name + 'suffix'))
+        self.assertIsNone(re.search(pattern, 'TestLiteralXDot'))
+        self.assertIsNone(re.search(pattern, 'TestLiterallPlus'))
+
     def test_real_go_fixture_preserves_every_default_leaf_and_testmain(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
@@ -258,7 +293,7 @@ func TestOne(t *testing.T) { ready(t); t.Run("child", func(t *testing.T) { ready
 func TestOnePrefix(t *testing.T) { ready(t) }
 func TestFuture(t *testing.T) { ready(t) }
 func TestContributionQueueNativeRepairIntegration(t *testing.T) { ready(t); t.Run("handoff", func(t *testing.T) { ready(t) }) }
-func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("custody", func(t *testing.T) { ready(t) }) }
+func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("repair", func(t *testing.T) { ready(t) }) }
 func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
 }
 func FuzzSeed(f *testing.F) { if !mainReady { f.Fatal("TestMain did not run") }; f.Add("seed"); f.Fuzz(func(t *testing.T, s string) { ready(t) }) }
@@ -269,13 +304,13 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                 base = ['go', 'test', *(['-race'] if race else []), '-count=1', '-timeout=8m']
                 listing = subprocess.run([*base, '-list', '.', pkg], cwd=root, capture_output=True, text=True, check=True)
                 names = shard.test_inventory(listing.stdout, pkg)
-                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_TEST, 'Example', 'FuzzSeed'])
-                for partitions in (('api-a', 'api-b'), ('implementation', 'implementation-contribution'), ('orchestration', 'orchestration-contribution')):
+                self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_CONTRIBUTION_TEST, 'Example', 'FuzzSeed'])
+                for partitions in (('api-a', 'api-b'), ('orchestration', 'orchestration-contribution'), ('implementation', 'implementation-contribution')):
                     seen = []
                     for group in partitions:
                         result = subprocess.run([*base, '-json', '-run', shard.test_pattern(names, group), pkg], cwd=root, capture_output=True, text=True, check=True)
                         seen += [e['Test'] for line in result.stdout.splitlines() if (e := json.loads(line)).get('Action') == 'run' and 'Test' in e]
-                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_TEST + '/custody']))
+                    self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair']))
 
 
 if __name__ == '__main__':

@@ -127,6 +127,7 @@ func DecodeVerificationReceipt(ref string, content []byte) (VerificationReceipt,
 // intentionally inaccessible outside this package so completion callers cannot
 // mint evidence from projections they control.
 type CompletionProvenance struct {
+	contributionFinal      string
 	digest                 string
 	implementationCheck    func() error
 	implementationContract string
