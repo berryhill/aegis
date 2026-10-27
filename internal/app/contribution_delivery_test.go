@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -71,8 +72,16 @@ func TestContributionDeliverySourceRequiresNativeIntegration(t *testing.T) {
 
 // Fake owning-runner transport is NOT real #377 runtime/private-proof acceptance.
 func TestContributionDeliveryOwningRunnerContext(t *testing.T) {
-	s, _, subject, loop, reader := contributionFixture(t)
-	c, err := s.admitContributionAs(context.Background(), subject, "session", loop, reader.source.URL.URL, "delivery-context", "local-only", reader)
+	s, _, _, loop, reader := contributionFixture(t)
+	uid, err := strconv.ParseUint(s.Config.Principal.UID, 10, 32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestCtx, subject, err := s.AuthenticateContributionUnixPeerRequest(context.Background(), uint32(uid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := s.admitContributionAs(requestCtx, subject, "session", loop, reader.source.URL.URL, "delivery-context", "local-only", reader)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +106,7 @@ func TestContributionDeliveryOwningRunnerContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	invoked := false
-	if err = src.WithAccepted(context.Background(), p.Binding.Reference, func(context.Context, delivery.Plan) error { invoked = true; return nil }); err == nil || invoked || calls != 1 || r.inside < 2 {
+	if err = src.WithAccepted(requestCtx, p.Binding.Reference, func(context.Context, delivery.Plan) error { invoked = true; return nil }); err == nil || invoked || calls != 1 || r.inside < 2 {
 		t.Fatalf("transport calls=%d reads=%d invoked=%v err=%v", calls, r.inside, invoked, err)
 	}
 	before := r.inside

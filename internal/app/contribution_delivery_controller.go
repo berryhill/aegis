@@ -97,6 +97,9 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 		return delivery.ErrDenied
 	}
 	s := a.controller.service
+	if s.validateContributionRequestSubject(ctx, a.subject) != nil {
+		return delivery.ErrDenied
+	}
 	control, err := s.ReadContributionControlAs(ctx, a.subject, a.key)
 	wire, _ := json.Marshal(control)
 	if err != nil || control.Stop || contribution.Digest(wire) != a.control {
@@ -166,6 +169,10 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		return out, delivery.ErrDenied
 	}
 	s := d.service
+	ctx, err = s.bindContributionRequestSubject(ctx, subject)
+	if err != nil {
+		return out, err
+	}
 	installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner)
 	if !ok || installed.service != s {
 		return out, ErrContributionDeliveryUnavailable

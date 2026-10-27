@@ -14,6 +14,7 @@ import (
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,14 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 			s, store, sub, ref, reader := coldAuthorityFixture(t)
 			now := s.Now()
 			s.Now = func() time.Time { return now }
+			uid, parseErr := strconv.ParseUint(s.Config.Principal.UID, 10, 32)
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
+			ctx, sub, parseErr = s.AuthenticateContributionUnixPeerRequest(ctx, uint32(uid))
+			if parseErr != nil {
+				t.Fatal(parseErr)
+			}
 			sub.ExpiresAt = now.Add(30 * time.Second)
 			c, err := s.admitContributionAs(ctx, sub, "original", ref, reader.source.URL.URL, "cold-joined", "verified-protected-base-merge", reader)
 			if err != nil {
@@ -264,8 +273,10 @@ func TestColdJoinedPublicationOwner(t *testing.T) {
 					}
 				}
 				now = c.Deadline.Add(time.Second)
-				sub.AuthenticatedAt = now
-				sub.ExpiresAt = now.Add(time.Minute)
+				ctx, sub, err = s.AuthenticateContributionUnixPeerRequest(context.Background(), uint32(uid))
+				if err != nil {
+					t.Fatal(err)
+				}
 				if strings.HasPrefix(mode, "publish") {
 					if mode == "publish-legacy" {
 						if _, e := owner.ReconcileAs(ctx, sub, c.Key); e == nil {

@@ -92,6 +92,14 @@ func (*rootActionValue) Type() string     { return "bool" }
 func (*rootActionValue) IsBoolFlag() bool { return true }
 
 func NewRoot(deps Dependencies) *cobra.Command {
+	return newRoot(deps, nil)
+}
+
+// rootServiceObserver is package-private test observation of the production
+// composition closure, not a replacement service or policy factory.
+type rootServiceObserver func(func(*cobra.Command) (*app.Service, error), func() error)
+
+func newRoot(deps Dependencies, observe rootServiceObserver) *cobra.Command {
 	if deps.In == nil {
 		deps.In = os.Stdin
 	}
@@ -164,147 +172,9 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		}
 		return err
 	})
-	var openedAuthority *authoritybadger.Store
-	var openedFleet *fleetbadger.Store
-	var openedService *app.Service
-	var openedConfig config.Config
-	var openedCredentialRepo *credentialbolt.Store
-	var openedCredentialCustodian *credentials.FileCustodian
-	closeOpened := func() error {
-		var closeErr error
-		if openedFleet != nil {
-			closeErr = openedFleet.Close()
-			openedFleet = nil
-		}
-		if openedCredentialRepo != nil {
-			closeErr = errors.Join(closeErr, openedCredentialRepo.Close())
-			openedCredentialRepo = nil
-		}
-		if openedCredentialCustodian != nil {
-			openedCredentialCustodian.Close()
-			openedCredentialCustodian = nil
-		}
-		if openedAuthority != nil {
-			closeErr = errors.Join(closeErr, openedAuthority.Close())
-			openedAuthority = nil
-		}
-		openedService = nil
-		return closeErr
-	}
-	build := func(cmd *cobra.Command) (*app.Service, error) {
-		cfg, err := config.Load(o.configFile, nil)
-		if err != nil {
-			return nil, usage(err)
-		}
-		if cmd.Flags().Changed("state-dir") || cmd.InheritedFlags().Changed("state-dir") {
-			cfg = cfg.WithStateDir(o.stateDir)
-		}
-		if err = validateConfiguredPathsProfile(deps.Profile, map[string]string{
-			"state":                 cfg.StateDir,
-			"audit checkpoints":     cfg.Audit.CheckpointDir,
-			"credential database":   cfg.Credentials.Authority.Database,
-			"credential KEK":        cfg.Credentials.Authority.KEKFile,
-			"manager certification": cfg.Manager.Inference.Certification,
-		}); err != nil {
-			return nil, usage(err)
-		}
-		if cmd.Flags().Changed("hermes-executable") || cmd.InheritedFlags().Changed("hermes-executable") {
-			cfg.HermesExecutable = o.hermesExecutable
-		}
-		if o.runtime != "" && o.runtime != "hermes" {
-			return nil, usage(fmt.Errorf("unsupported explicit runtime %q", o.runtime))
-		}
-		if err = cfg.Validate(); err != nil {
-			return nil, usage(err)
-		}
-		if cfg.API.UnixSocket != "" && cmd.Name() != "serve" {
-			if _, socketErr := os.Lstat(cfg.API.UnixSocket); socketErr == nil {
-				return nil, errors.New("control_plane_online: authoritative state is daemon-owned; this command has no direct-store fallback")
-			} else if !errors.Is(socketErr, os.ErrNotExist) {
-				return nil, fmt.Errorf("control_plane_unavailable: inspect protected Unix transport: %w", socketErr)
-			}
-		}
-		if openedService != nil && reflect.DeepEqual(openedConfig, cfg) {
-			return openedService, nil
-		}
-		if err = closeOpened(); err != nil {
-			return nil, err
-		}
-		authorityPath := filepath.Join(cfg.StateDir, "persistence", "authority-v1")
-		authorityInspection := authoritybadger.Inspect(cmd.Context(), authorityPath)
-		if authorityInspection.State == authoritybadger.StateAbsent {
-			return nil, usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal", reasonOperationalAuthorityNotInitialized))
-		}
-		if authorityInspection.State != authoritybadger.StateReady {
-			return nil, usage(fmt.Errorf("existing invalid operational authority at %s requires operator repair and will not be replaced: %w", authorityPath, authorityInspection.Err))
-		}
-		st, err := store.OpenWithCheckpoints(cfg.StateDir, cfg.Audit.CheckpointDir)
-		if err != nil {
-			return nil, err
-		}
-		authority, err := authoritybadger.Open(cmd.Context(), authorityPath)
-		if err != nil {
-			return nil, fmt.Errorf("open operational authority repository: %w", err)
-		}
-		openedAuthority = authority
-		h := hermes.New(cfg.HermesExecutable, deps.Logger)
-		service := app.New(cfg, st, authority, authority, h, deps.Logger)
-		service.ConfigFile = o.configFile
-		// A configured credential authority is part of the serve/manager authority
-		// contract. It may not be silently erased when custody or repository open
-		// fails: doing so would publish process readiness while deterministic
-		// manager authority is unavailable.
-		if commandNeedsCredentials(cmd) && cfg.Credentials.Authority.Custody != "" && cfg.Credentials.Authority.Database != "" && cfg.Credentials.Authority.DeploymentID != "" {
-			custodian, custodianErr := loadConfiguredCustodian(cmd, cfg.Credentials.Authority)
-			if custodianErr != nil {
-				openErr := fmt.Errorf("%s: configured credential authority could not be opened: %w", managerdomain.ReasonAuthorityUnavailable, custodianErr)
-				return nil, errors.Join(openErr, closeOpened())
-			}
-			repo, repoErr := credentialbolt.Open(cmd.Context(), cfg.Credentials.Authority.Database, cfg.Credentials.Authority.DeploymentID, custodian)
-			if repoErr != nil {
-				custodian.Close()
-				openErr := fmt.Errorf("%s: configured credential authority could not be opened: %w", managerdomain.ReasonAuthorityUnavailable, repoErr)
-				return nil, errors.Join(openErr, closeOpened())
-			}
-			service.ConfigureCredentials(repo, custodian)
-			openedCredentialRepo = repo
-			openedCredentialCustodian = custodian
-		}
-		if commandNeedsFleet(cmd) {
-			fleetStore, fleetErr := fleetbadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "fleet-v1"))
-			if fleetErr != nil {
-				return nil, errors.Join(fmt.Errorf("open fleet repository: %w", fleetErr), closeOpened())
-			}
-			openedFleet = fleetStore
-			fleetService, fleetErr := orchestration.NewFleetService(fleetStore, authority, authority, service.AuthorizeFleetAction, nil, service.Now)
-			if fleetErr == nil {
-				var verifier *evidence.BlobVerifier
-				verifier, fleetErr = evidence.NewBlobVerifier(st)
-				if fleetErr == nil {
-					var runtimeAdapter *orchestration.RoutedRuntimeAdapter
-					runtimeAdapter, fleetErr = orchestration.NewRoutedRuntimeAdapter(h, filepath.Join(cfg.StateDir, "runtime", "fleet"))
-					if fleetErr == nil {
-						var worker *orchestration.QueueWorker
-						worker, fleetErr = orchestration.NewQueueWorker(fleetStore, fleetService, st, verifier, runtimeAdapter, service.Now)
-						if fleetErr == nil {
-							fleetErr = worker.ConfigureImplementation(cfg.Implementation, cfg.StateDir, h)
-							if fleetErr == nil {
-								fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
-							}
-						}
-					}
-				}
-			}
-			if fleetErr != nil {
-				return nil, errors.Join(fmt.Errorf("configure fleet control: %w", fleetErr), closeOpened())
-			}
-		}
-		if err = service.RecoverProvisioning(cmd.Context()); err != nil {
-			return nil, errors.Join(err, closeOpened())
-		}
-		openedService = service
-		openedConfig = cfg
-		return service, nil
+	build, closeOpened := newRootServiceFactory(deps, o)
+	if observe != nil {
+		observe(build, closeOpened)
 	}
 	root.PersistentPostRunE = func(*cobra.Command, []string) error {
 		return closeOpened()
@@ -1294,3 +1164,156 @@ func serveCmd(build builder) *cobra.Command {
 
 // imported here to keep transport argument conversion explicit.
 var _ = context.Canceled
+
+// newRootServiceFactory owns the exact production service composition and its
+// store lifecycle. Tests may observe it through newRoot without substituting policy.
+func newRootServiceFactory(deps Dependencies, o *rootOptions) (func(*cobra.Command) (*app.Service, error), func() error) {
+	var openedAuthority *authoritybadger.Store
+	var openedFleet *fleetbadger.Store
+	var openedService *app.Service
+	var openedConfig config.Config
+	var openedCredentialRepo *credentialbolt.Store
+	var openedCredentialCustodian *credentials.FileCustodian
+	closeOpened := func() error {
+		var closeErr error
+		if openedFleet != nil {
+			closeErr = openedFleet.Close()
+			openedFleet = nil
+		}
+		if openedCredentialRepo != nil {
+			closeErr = errors.Join(closeErr, openedCredentialRepo.Close())
+			openedCredentialRepo = nil
+		}
+		if openedCredentialCustodian != nil {
+			openedCredentialCustodian.Close()
+			openedCredentialCustodian = nil
+		}
+		if openedAuthority != nil {
+			closeErr = errors.Join(closeErr, openedAuthority.Close())
+			openedAuthority = nil
+		}
+		openedService = nil
+		return closeErr
+	}
+	build := func(cmd *cobra.Command) (*app.Service, error) {
+		cfg, err := config.Load(o.configFile, nil)
+		if err != nil {
+			return nil, usage(err)
+		}
+		if cmd.Flags().Changed("state-dir") || cmd.InheritedFlags().Changed("state-dir") {
+			cfg = cfg.WithStateDir(o.stateDir)
+		}
+		if err = validateConfiguredPathsProfile(deps.Profile, map[string]string{
+			"state":                 cfg.StateDir,
+			"audit checkpoints":     cfg.Audit.CheckpointDir,
+			"credential database":   cfg.Credentials.Authority.Database,
+			"credential KEK":        cfg.Credentials.Authority.KEKFile,
+			"manager certification": cfg.Manager.Inference.Certification,
+		}); err != nil {
+			return nil, usage(err)
+		}
+		if cmd.Flags().Changed("hermes-executable") || cmd.InheritedFlags().Changed("hermes-executable") {
+			cfg.HermesExecutable = o.hermesExecutable
+		}
+		if o.runtime != "" && o.runtime != "hermes" {
+			return nil, usage(fmt.Errorf("unsupported explicit runtime %q", o.runtime))
+		}
+		if err = cfg.Validate(); err != nil {
+			return nil, usage(err)
+		}
+		if cfg.API.UnixSocket != "" && cmd.Name() != "serve" {
+			if _, socketErr := os.Lstat(cfg.API.UnixSocket); socketErr == nil {
+				return nil, errors.New("control_plane_online: authoritative state is daemon-owned; this command has no direct-store fallback")
+			} else if !errors.Is(socketErr, os.ErrNotExist) {
+				return nil, fmt.Errorf("control_plane_unavailable: inspect protected Unix transport: %w", socketErr)
+			}
+		}
+		if openedService != nil && reflect.DeepEqual(openedConfig, cfg) {
+			return openedService, nil
+		}
+		if err = closeOpened(); err != nil {
+			return nil, err
+		}
+		authorityPath := filepath.Join(cfg.StateDir, "persistence", "authority-v1")
+		authorityInspection := authoritybadger.Inspect(cmd.Context(), authorityPath)
+		if authorityInspection.State == authoritybadger.StateAbsent {
+			return nil, usage(fmt.Errorf("%s: run 'aegis init' in an interactive terminal", reasonOperationalAuthorityNotInitialized))
+		}
+		if authorityInspection.State != authoritybadger.StateReady {
+			return nil, usage(fmt.Errorf("existing invalid operational authority at %s requires operator repair and will not be replaced: %w", authorityPath, authorityInspection.Err))
+		}
+		st, err := store.OpenWithCheckpoints(cfg.StateDir, cfg.Audit.CheckpointDir)
+		if err != nil {
+			return nil, err
+		}
+		authority, err := authoritybadger.Open(cmd.Context(), authorityPath)
+		if err != nil {
+			return nil, fmt.Errorf("open operational authority repository: %w", err)
+		}
+		openedAuthority = authority
+		h := hermes.New(cfg.HermesExecutable, deps.Logger)
+		service := app.New(cfg, st, authority, authority, h, deps.Logger)
+		service.ConfigFile = o.configFile
+		// A configured credential authority is part of the serve/manager authority
+		// contract. It may not be silently erased when custody or repository open
+		// fails: doing so would publish process readiness while deterministic
+		// manager authority is unavailable.
+		if commandNeedsCredentials(cmd) && cfg.Credentials.Authority.Custody != "" && cfg.Credentials.Authority.Database != "" && cfg.Credentials.Authority.DeploymentID != "" {
+			custodian, custodianErr := loadConfiguredCustodian(cmd, cfg.Credentials.Authority)
+			if custodianErr != nil {
+				openErr := fmt.Errorf("%s: configured credential authority could not be opened: %w", managerdomain.ReasonAuthorityUnavailable, custodianErr)
+				return nil, errors.Join(openErr, closeOpened())
+			}
+			repo, repoErr := credentialbolt.Open(cmd.Context(), cfg.Credentials.Authority.Database, cfg.Credentials.Authority.DeploymentID, custodian)
+			if repoErr != nil {
+				custodian.Close()
+				openErr := fmt.Errorf("%s: configured credential authority could not be opened: %w", managerdomain.ReasonAuthorityUnavailable, repoErr)
+				return nil, errors.Join(openErr, closeOpened())
+			}
+			service.ConfigureCredentials(repo, custodian)
+			openedCredentialRepo = repo
+			openedCredentialCustodian = custodian
+		}
+		if commandNeedsFleet(cmd) {
+			fleetStore, fleetErr := fleetbadger.Open(cmd.Context(), filepath.Join(cfg.StateDir, "persistence", "fleet-v1"))
+			if fleetErr != nil {
+				return nil, errors.Join(fmt.Errorf("open fleet repository: %w", fleetErr), closeOpened())
+			}
+			openedFleet = fleetStore
+			fleetService, fleetErr := orchestration.NewFleetService(fleetStore, authority, authority, service.AuthorizeFleetAction, nil, service.Now)
+			if fleetErr == nil {
+				var verifier *evidence.BlobVerifier
+				verifier, fleetErr = evidence.NewBlobVerifier(st)
+				if fleetErr == nil {
+					var runtimeAdapter *orchestration.RoutedRuntimeAdapter
+					runtimeAdapter, fleetErr = orchestration.NewRoutedRuntimeAdapter(h, filepath.Join(cfg.StateDir, "runtime", "fleet"))
+					if fleetErr == nil {
+						var worker *orchestration.QueueWorker
+						worker, fleetErr = orchestration.NewQueueWorker(fleetStore, fleetService, st, verifier, runtimeAdapter, service.Now)
+						if fleetErr == nil {
+							fleetErr = worker.ConfigureImplementation(cfg.Implementation, cfg.StateDir, h)
+							if fleetErr == nil {
+								fleetErr = service.ConfigureFleet(fleetStore, fleetService, worker)
+							}
+						}
+					}
+				}
+			}
+			if fleetErr != nil {
+				return nil, errors.Join(fmt.Errorf("configure fleet control: %w", fleetErr), closeOpened())
+			}
+		}
+		if commandNeedsFleet(cmd) {
+			if err = configureContributionDelivery(cmd.Context(), service, cfg.ContributionDelivery, openedCredentialRepo, service.CurrentContributionDeliverySubject); err != nil {
+				return nil, errors.Join(fmt.Errorf("configure contribution delivery: %w", err), closeOpened())
+			}
+		}
+		if err = service.RecoverProvisioning(cmd.Context()); err != nil {
+			return nil, errors.Join(err, closeOpened())
+		}
+		openedService = service
+		openedConfig = cfg
+		return service, nil
+	}
+	return build, closeOpened
+}
