@@ -42,3 +42,7 @@ func TestCanonicalContributionConcurrentWinnerFailure(t *testing.T) {
 func TestCanonicalContributionConcurrentWaiterCancellation(t *testing.T) {
 	retainedDeliveryNativeComposition(t, true, true)
 }
+
+func TestContributionIssueIntentAdmission(t *testing.T) {
+	retainedDeliveryNativeComposition(t, true)
+}

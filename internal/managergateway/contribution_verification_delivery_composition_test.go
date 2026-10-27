@@ -300,7 +300,13 @@ while read rest; do :; done
 	if finalization {
 		productive, err := app.NewContributionDeliverySource(s, subject, sealed.Key, pref, policies, nil)
 		must(err)
-		owned, err := repository.ContributionDelivery(ctx, p.Binding, assessmentFixtureAuthority{})
+		var admission delivery.Authority = assessmentFixtureAuthority{}
+		var issueProbe *issueIntentFrameCompletion
+		if strings.Contains(t.Name(), "IssueIntentAdmission") {
+			issueProbe = &issueIntentFrameCompletion{managerFrameCompletion: &managerFrameCompletion{s: s, subject: subject, key: sealed.Key, policy: pref}, t: t}
+			admission = issueProbe
+		}
+		owned, err := repository.ContributionDelivery(ctx, p.Binding, admission)
 		must(err)
 		var projected delivery.Plan
 		must(productive.WithAccepted(ctx, p.Binding.Reference, func(_ context.Context, plan delivery.Plan) error { projected = plan; return nil }))
@@ -324,6 +330,9 @@ while read rest; do :; done
 			frameOwner = &managerFrameCompletion{s: s, subject: subject, key: sealed.Key, policy: pref}
 			completionOwner = frameOwner
 		}
+		if issueProbe != nil {
+			completionOwner = issueProbe
+		}
 		if late {
 			completionOwner = pauseFinalContribution{completion}
 		}
@@ -334,7 +343,7 @@ while read rest; do :; done
 			must(err)
 			completionOwner = concurrentPreclosure{completion, duplicate}
 		}
-		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, assessmentFixtureAuthority{}, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, admission, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
 		if late {
 			// The owning Source intentionally sanitizes callback errors. Confirm
 			// the exact post-issue held stage instead of relying on private error text.
