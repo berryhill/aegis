@@ -227,6 +227,21 @@ while read rest; do :; done
 	issue, _ := contribution.ParseIssueURL("https://github.com/fixture/controlled/issues/1")
 	s.ContributionReader = &fixedContributionReader{source: contribution.Source{URL: issue, RepositoryID: 7, IssueID: 9, Author: contribution.Author{ID: 1, Login: "fixture"}, State: "open", CreatedAt: s.Now(), UpdatedAt: s.Now(), ObservedAt: s.Now(), ContentDigest: contribution.Digest([]byte("fixture")), Discussion: []contribution.Comment{}}}
 	if strings.Contains(t.Name(), "ManagerJoined") {
+		// This early-return journey bypasses the shared path's later cleanup.
+		// Revoke actual fixture-owned roles while both repositories are open;
+		// the earlier deferred repository.Close runs only after this defer.
+		defer func() {
+			authorities, err := s.Authority.ListAuthorityContexts(context.Background())
+			if err != nil {
+				t.Error("joined role cleanup discovery", err)
+				return
+			}
+			for _, authority := range authorities {
+				if err := s.RevokeSession(context.Background(), authority.SessionID, "joined fixture cleanup"); err != nil {
+					t.Error("joined role cleanup", err)
+				}
+			}
+		}()
 		managerJoinedHeld(t, ctx, s, subject, lrRef, issue)
 		return
 	}

@@ -50,6 +50,8 @@ type concurrentCompletionProbe struct {
 	failWriter                 bool
 }
 
+type concurrentWaiterContextKey struct{}
+
 func (p *concurrentCompletionProbe) CompleteContributionQueueItem(ctx context.Context, c fleet.Completion, f fleet.AuditFact, r fleet.EvidenceReader) error {
 	close(p.entered)
 	select {
@@ -63,7 +65,7 @@ func (p *concurrentCompletionProbe) CompleteContributionQueueItem(ctx context.Co
 	return p.continuationCompletionProbe.CompleteContributionQueueItem(ctx, c, f, r)
 }
 func (p *concurrentCompletionProbe) GetDispositionByGraphRun(ctx context.Context, run string) (disposition.Record, error) {
-	if _, bounded := ctx.Deadline(); bounded {
+	if _, bounded := ctx.Deadline(); bounded && ctx.Value(concurrentWaiterContextKey{}) == p {
 		p.observedOnce.Do(func() { close(p.observed) })
 	}
 	return p.Store.GetDispositionByGraphRun(ctx, run)
@@ -96,7 +98,7 @@ func exerciseConcurrentFinalizers(t *testing.T, s *app.Service, sub core.Subject
 		cancelled := <-winner
 		t.Fatalf("writer did not reach canonical commit: %v", cancelled)
 	}
-	loserCtx, cancel := context.WithCancel(context.Background())
+	loserCtx, cancel := context.WithCancel(context.WithValue(context.Background(), concurrentWaiterContextKey{}, p))
 	defer cancel()
 	go func() { loser <- duplicate.FinalizeContributionCompletionAs(loserCtx, sub, ref) }()
 	select {
