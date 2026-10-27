@@ -111,7 +111,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	s.Now = clock.Now
 	expiry := len(disconnected) > 1 && disconnected[1]
 	lifetime := int64(300)
-	subject, e := s.Authenticate(ctx)
+	ctx, subject, e := s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 	must(e)
 	// Fault only the initial subject; policy and fresh admission remain normal.
 	_ = subject.ExpiresAt
@@ -124,7 +124,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	defer repository.Close()
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
-		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{subject.Issuer}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
 		cc, err := core.Canonicalize(charter)
 		must(err)
 		must(s.Store.SaveCharter(cc))
@@ -246,7 +246,7 @@ exec sleep 240
 	server := &app.ContributionDeliveryServerPolicy{Convention: "contribution-publication.v1", Actor: "fixture", Author: delivery.Identity{Name: "Test Author", Email: "author@example.invalid"}, Committer: delivery.Identity{Name: "Test Controller", Email: "controller@example.invalid"}, ProtectionPolicy: contribution.Digest([]byte("trusted synthetic protection")), RequiredChecks: []string{"native"}, RequiredReviewers: []string{"independent"}, PostMergeChecks: []string{"postmerge"}, MergeMethod: "squash"}
 	var controller *app.ContributionDeliveryController
 	if journey {
-		_, err = app.InstallContributionDeliveryPublicationOwner(s, deny, gh, func(context.Context) (core.Subject, error) { return subject, nil })
+		_, err = app.InstallContributionDeliveryPublicationOwner(s, deny, gh, s.CurrentContributionDeliverySubject)
 		must(err)
 		controller, err = app.InstallContributionDeliveryController(s, server, &credentials.Authority{}, deny)
 		must(err)
@@ -286,7 +286,7 @@ exec sleep 240
 		}
 	}
 	if !journey {
-		_, err = app.InstallContributionDeliveryPublicationOwner(s, deny, gh, func(context.Context) (core.Subject, error) { return subject, nil })
+		_, err = app.InstallContributionDeliveryPublicationOwner(s, deny, gh, s.CurrentContributionDeliverySubject)
 		must(err)
 		controller, err = app.NewContributionDeliveryController(s, server, &credentials.Authority{}, deny)
 		must(err)
