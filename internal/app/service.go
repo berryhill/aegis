@@ -66,6 +66,7 @@ type Service struct {
 	Fleet                  *orchestration.FleetService
 	QueueWorker            *orchestration.QueueWorker
 	contributionDecisionMu sync.Mutex // serializes owning-service delivery before durable reservation
+	sessionTerminalMu      sync.Mutex // serializes owning-service cleanup with its session supervisor
 	nativeConnectionMu     sync.Mutex
 	nativeReviews          map[string]nativeConnectionReview
 	loopRunMu              sync.Mutex                         // guards Run admission/preparation and foreground worker ownership
@@ -1558,6 +1559,18 @@ func (s *Service) InspectSession(id string) (core.Session, bool, error) {
 	return x, processMatches(x.RuntimePID, x.ProcessStart), nil
 }
 func (s *Service) endSession(ctx context.Context, id, status, reason string, revoke bool) error {
+	// The owning service's role cleanup and supervisor can observe the same
+	// process exit. Re-read the terminal session before reserving another revoke;
+	// a stale supervisor observation cannot replace the first canonical outcome.
+	s.sessionTerminalMu.Lock()
+	defer s.sessionTerminalMu.Unlock()
+	current, err := s.GetSession(id)
+	if err != nil {
+		return err
+	}
+	if current.Status != "running" {
+		return fmt.Errorf("%w: session is %s", ErrConflict, current.Status)
+	}
 	authority, err := s.authorityContextForSession(ctx, id)
 	if err != nil {
 		return err
