@@ -48,11 +48,13 @@ func sameContributionPrivacy(a, b delivery.Privacy) bool {
 
 // ContributionJourneyResult is transient readback, never #379 disposition.
 type ContributionJourneyResult struct {
-	Execution  ContributionExecutionResult `json:"execution"`
-	Delivery   *delivery.DeliveryResult    `json:"delivery,omitempty"`
-	HeldStage  string                      `json:"held_stage,omitempty"`
-	HeldReason string                      `json:"held_reason,omitempty"`
-	Completed  bool                        `json:"completed"`
+	Execution         ContributionExecutionResult `json:"execution"`
+	Delivery          *delivery.DeliveryResult    `json:"delivery,omitempty"`
+	HeldStage         string                      `json:"held_stage,omitempty"`
+	HeldReason        string                      `json:"held_reason,omitempty"`
+	Completed         bool                        `json:"completed"`
+	BoundaryCompleted bool                        `json:"boundary_completed"`
+	Result            *ContributionResult         `json:"result,omitempty"`
 }
 
 // ExecuteContributionJourneyAs retains native execution ownership in the actual
@@ -60,6 +62,11 @@ type ContributionJourneyResult struct {
 // another builder, role admission, task or identity. RunAs owns the publication
 // enter/sticky-stop fence across the post-build cancellation gap.
 func (s *Service) ExecuteContributionJourneyAs(ctx context.Context, subject core.Subject, key string) (out ContributionJourneyResult, err error) {
+	// A retained terminal result is read-only navigation, never a new native or
+	// remote effect. Only canonical not-found may fall through to execution.
+	if found, readErr := s.readContributionJourneyResult(ctx, subject, key, &out); found || readErr != nil {
+		return out, readErr
+	}
 	out.Execution, err = s.ExecuteContributionAs(ctx, subject, key)
 	if err != nil {
 		return out, err
@@ -95,6 +102,9 @@ func (s *Service) ExecuteContributionJourneyAs(ctx context.Context, subject core
 	}
 	result, e := controller.RunAs(ctx, subject, key, role.SessionID)
 	out.Delivery = &result
+	if found, readErr := s.readContributionJourneyResult(ctx, subject, key, &out); found || readErr != nil {
+		return out, readErr
+	}
 	out.HeldReason = result.Reason
 	if result.Held != "" {
 		out.HeldStage = string(result.Held)
@@ -111,6 +121,25 @@ func (s *Service) ExecuteContributionJourneyAs(ctx context.Context, subject core
 	} else if result.Held == "" {
 		out.HeldStage, out.HeldReason = "disposition", "completion_owner_unavailable_issue_open"
 	}
-	// No completion owner is installed. Merged/local delivery is not whole success.
+	// Legacy non-final profiles remain held. Delivery alone is not disposition.
 	return out, nil
+}
+
+func (s *Service) readContributionJourneyResult(ctx context.Context, subject core.Subject, key string, out *ContributionJourneyResult) (bool, error) {
+	terminal, err := s.GetFinalContributionResultAs(ctx, subject, key)
+	if IsContributionResultNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	out.Result = &terminal
+	out.Completed = terminal.Report.Outcome == "succeeded"
+	out.BoundaryCompleted = out.Completed || terminal.Report.Outcome == "narrower-target-completed"
+	out.HeldReason = terminal.Report.Reason
+	out.HeldStage = "disposition"
+	if out.BoundaryCompleted {
+		out.HeldStage, out.HeldReason = "", ""
+	}
+	return true, nil
 }

@@ -89,6 +89,7 @@ type productiveContributionAuthority struct {
 	key, session, control string
 	request               contribution.EffectAdmissionRequest
 	plan                  delivery.Plan
+	completion            *ContributionCompletionAdapter
 	live                  atomic.Bool
 }
 
@@ -132,8 +133,16 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 	}
 	p := a.plan
 	if i.Operation == delivery.ReconcileIssue {
-		return delivery.ErrDenied
-	} // #379 owner not installed; issue remains open.
+		// Credential possession and the task's delivery target grant neither this
+		// operation nor its repository resource. The exact capabilities must be
+		// present in the same freshly admitted canonical session authority.
+		if !contributionIssueScopeAllowed(ac, p, i) || a.completion == nil {
+			return delivery.ErrDenied
+		}
+		// This concrete adapter was constructed inside this invocation's private
+		// custody frame. It alone validates its opaque preclosure and exact intent.
+		return a.completion.VerifyContributionIssueIntent(ctx, i)
+	}
 	if i.Operation == delivery.UpdatePullRequest || i.Operation == delivery.CheckDelivery || i.Operation == delivery.Merge {
 		h, e := s.ReadContributionDeliveryHistoryAs(ctx, a.subject, a.key)
 		if e != nil {
@@ -212,13 +221,23 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 	}
 	ref := delivery.Reference{Run: c.RunID, Contract: c.Digest, Candidate: state.CandidateEvidence.Digest}
 	err = s.WithContributionContinuityCandidateAs(ctx, subject, session, key, func(live context.Context, v orchestration.ContributionCandidate) error {
+		remoteOperations := []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge}
 		p := ContributionDeliveryPolicy{ControllerSession: session, Binding: fleetbadger.ContributionDeliveryBinding{QueueItemID: c.QueueItemID, OwnerID: c.OwnerID, Key: key, Reference: ref, FenceEpoch: role.Epoch, RoleBinding: role.Ref().Digest, Base: revision.Contribution.Managed.BaseBranch}, Loop: c.Loop, Workspace: c.Worktree, Source: v.Source.Digest, Tree: v.CandidateTree, BaseHead: c.Base, CandidatePolicy: v.Policy, Toolchain: v.Toolchain, QueueAttempt: v.QueueAttempt, Actor: d.policy.Actor, Branch: "contribution/v1/" + strings.TrimPrefix(c.Digest, "sha256:"), Timestamp: c.AdmittedAt.UTC().Format(time.RFC3339), Message: fmt.Sprintf("Contribution for issue %d\n", c.Source.URL.Number), Author: d.policy.Author, Committer: d.policy.Committer, AllowedFiles: files, ProtectionPolicy: d.policy.ProtectionPolicy, RequiredChecks: d.policy.RequiredChecks, RequiredReviewers: d.policy.RequiredReviewers, PostMergeChecks: d.policy.PostMergeChecks, MergeMethod: d.policy.MergeMethod, PRTitle: fmt.Sprintf("Contribution for issue %d", c.Source.URL.Number), PRBody: "Controller-owned contribution (contribution-publication.v1)."}
 		if c.Effect != "local-only" && c.Effect != "no-publish" {
 			b := d.policy.Binding
 			if !validContributionDeliveryRemoteBinding(b) {
 				return delivery.ErrDenied
 			}
-			p.CredentialPin = &ContributionDeliveryCredentialPin{Key: b.Key, BindingRevision: b.BindingRevision, SecretRecord: b.SecretRecord, Version: b.PinnedVersion, Destination: b.Destinations[0], Actor: d.policy.Actor, RepositoryID: c.Source.RepositoryID, Operations: []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge}}
+			currentAuthority, authorityErr := s.authorityContextForSession(live, session)
+			if authorityErr != nil || currentAuthority.ID != role.Authority.ID || currentAuthority.Digest != role.Authority.Digest {
+				return delivery.ErrDenied
+			}
+			if hasContributionIssueCapabilities(currentAuthority, c.Repository, c.Source.RepositoryID) {
+				remoteOperations = append(remoteOperations, delivery.ReconcileIssue)
+			}
+			// Existing authorities without the explicit issue grant retain their
+			// original operation pin. This does not rewrite historical policies.
+			p.CredentialPin = &ContributionDeliveryCredentialPin{Key: b.Key, BindingRevision: b.BindingRevision, SecretRecord: b.SecretRecord, Version: b.PinnedVersion, Destination: b.Destinations[0], Actor: d.policy.Actor, RepositoryID: c.Source.RepositoryID, Operations: remoteOperations}
 		}
 		policyRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "contribution-publication-v1", Digest: p.Digest()}
 		source := &ContributionDeliverySource{service: s, subject: subject, key: key, policyRef: policyRef, policies: fixedContributionDeliveryPolicy{p}}
@@ -255,7 +274,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 			if !validContributionDeliveryRemoteBinding(b) {
 				return ErrContributionDeliveryUnavailable
 			}
-			custody, e := delivery.NewCredentialCustody(d.credentials, b.Key, b.Destinations[0], b.SecretRecord, b.PinnedVersion, b.BindingRevision, c.Repository, d.policy.Actor, c.Source.RepositoryID, []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge})
+			custody, e := delivery.NewCredentialCustody(d.credentials, b.Key, b.Destinations[0], b.SecretRecord, b.PinnedVersion, b.BindingRevision, c.Repository, d.policy.Actor, c.Source.RepositoryID, remoteOperations)
 			if e != nil {
 				return e
 			}
@@ -271,6 +290,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		adapter, completionErr := s.NewContributionCompletionInFrame(live, subject, key, policyRef)
 		if completionErr == nil {
 			completion = adapter
+			a.completion = adapter
 		} else if !errors.Is(completionErr, ErrContributionFinalizationNotEnabled) {
 			return completionErr
 		}
