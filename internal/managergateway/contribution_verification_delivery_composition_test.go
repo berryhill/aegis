@@ -126,12 +126,19 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	s.Now = clock.Now
 	subject, e := s.Authenticate(ctx)
 	must(e)
+	if strings.Contains(t.Name(), "ManagerJoined") {
+		ctx, subject, e = s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
+		must(e)
+	}
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
 	must(e)
 	defer repository.Close()
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: 300}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		if strings.Contains(t.Name(), "ManagerJoined") {
+			charter.Stanzas[0].Authentication.Selectors[0].Issuers = []string{subject.Issuer}
+		}
 		cc, e := core.Canonicalize(charter)
 		must(e)
 		must(s.Store.SaveCharter(cc))
@@ -173,7 +180,9 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	installation := filepath.Join(root, "install")
 	must(os.MkdirAll(filepath.Join(installation, "venv", "bin"), 0700))
 	executable := filepath.Join(root, "hermes")
-	must(os.WriteFile(executable, []byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+installation+"'; exit 0; fi\nexec sleep 240\n"), 0700))
+	// The controlled process stays available across the admitted late fixture
+	// interval; real mandate/session expiry and owned stop/Wait remain enforced.
+	must(os.WriteFile(executable, []byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: "+installation+"'; exit 0; fi\nexec sleep 600\n"), 0700))
 	script := `#!/bin/sh
 printf '%s\n' '{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}'
 read tools
@@ -218,7 +227,7 @@ while read rest; do :; done
 	issue, _ := contribution.ParseIssueURL("https://github.com/fixture/controlled/issues/1")
 	s.ContributionReader = &fixedContributionReader{source: contribution.Source{URL: issue, RepositoryID: 7, IssueID: 9, Author: contribution.Author{ID: 1, Login: "fixture"}, State: "open", CreatedAt: s.Now(), UpdatedAt: s.Now(), ObservedAt: s.Now(), ContentDigest: contribution.Digest([]byte("fixture")), Discussion: []contribution.Comment{}}}
 	if strings.Contains(t.Name(), "ManagerJoined") {
-		managerJoinedHeld(t, s, subject, lrRef, issue)
+		managerJoinedHeld(t, ctx, s, subject, lrRef, issue)
 		return
 	}
 	intentKey := "assessment-native"

@@ -22,14 +22,15 @@ func (managerJourneyDenyRemoteCustody) Use(context.Context, delivery.Intent, fun
 func (*managerJourneyDenyRemotePrivacy) Review(context.Context, delivery.Intent, delivery.Plan) error {
 	return delivery.ErrDenied
 }
-func TestManagerJoinedContributionHeld(t *testing.T) { retainedDeliveryNativeComposition(t, true) }
+func TestManagerJoinedContributionCompletion(t *testing.T) {
+	retainedDeliveryNativeComposition(t, true)
+}
 
-// Controlled manager/native hold fixture, not the production current-request
-// authentication bridge or a complete contribution journey. Its cold-subject
-// lookup denies rather than silently authenticating or renewing authority.
-func managerJoinedHeld(t *testing.T, s *app.Service, sub core.Subject, loop reference.RevisionRef, issue contribution.IssueURL) {
+// Controlled in-process manager/native fixture using #378's request boundary
+// and installed controller. Actual HTTP transport and provider proof remain
+// separate; no callback authenticates, renews or fabricates a terminal result.
+func managerJoinedHeld(t *testing.T, ctx context.Context, s *app.Service, sub core.Subject, loop reference.RevisionRef, issue contribution.IssueURL) {
 	t.Helper()
-	ctx := context.Background()
 	policy := &app.ContributionDeliveryServerPolicy{Convention: "contribution-publication.v1", Actor: "fixture", Author: delivery.Identity{Name: "Fixture", Email: "fixture@example.invalid"}, Committer: delivery.Identity{Name: "Fixture", Email: "fixture@example.invalid"}, ProtectionPolicy: "reviewed-fixture", RequiredChecks: []string{"test"}, RequiredReviewers: []string{"reviewer"}, PostMergeChecks: []string{"test"}, MergeMethod: "squash"}
 	history, err := app.NewContributionDeliveryPolicyHistory(s)
 	if err != nil {
@@ -39,7 +40,7 @@ func managerJoinedHeld(t *testing.T, s *app.Service, sub core.Subject, loop refe
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = app.InstallContributionDeliveryPublicationOwner(s, history, remote, func(context.Context) (core.Subject, error) { return core.Subject{}, app.ErrDenied }); err != nil {
+	if _, err = app.InstallContributionDeliveryPublicationOwner(s, history, remote, s.CurrentContributionDeliverySubject); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.InstallContributionDeliveryController(s, policy, &credentials.Authority{}, &managerJourneyDenyRemotePrivacy{}); err != nil {
@@ -56,8 +57,8 @@ func managerJoinedHeld(t *testing.T, s *app.Service, sub core.Subject, loop refe
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.Data["completed"] != false || first.Data["held_stage"] != "disposition" || first.Data["held_reason"] != "completion_owner_unavailable_issue_open" || first.Data["delivery"] == nil {
-		t.Fatalf("actual controller hold mislabeled: %+v", first)
+	if first.Data["completed"] != true || first.Data["terminal"] != true || first.Data["whole_contribution_succeeded"] != false || first.Data["outcome"] != "narrower-target-completed" {
+		t.Fatalf("actual controller final readback missing: %+v", first)
 	}
 	key := app.ContributionIntentKey(loop, issue.URL, "local-only")
 	before, err := s.ReadContributionExecutionAs(ctx, sub, key)
@@ -72,8 +73,8 @@ func managerJoinedHeld(t *testing.T, s *app.Service, sub core.Subject, loop refe
 		t.Fatal("duplicate run repeated native execution", err)
 	}
 	status, err := gateway.Execute(ctx, sub, id, token, "/contribute status "+key)
-	if err != nil || status.Data["completed"] != false {
-		t.Fatal("held status became final success", err)
+	if err != nil || status.Data["completed"] != true || status.Data["whole_contribution_succeeded"] != false {
+		t.Fatal("narrower terminal status lost", err)
 	}
 	foreign := sub
 	foreign.PrincipalID = "foreign"

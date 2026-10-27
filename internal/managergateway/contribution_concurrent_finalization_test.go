@@ -78,12 +78,20 @@ func exerciseConcurrentFinalizers(t *testing.T, s *app.Service, sub core.Subject
 		t.Fatal(err)
 	}
 	winner, loser := make(chan error, 1), make(chan error, 1)
-	go func() { winner <- primary.FinalizeContributionCompletionAs(context.Background(), sub, ref) }()
+	// Observe the real commit boundary within the existing package alarm, not
+	// an unrelated 30-second timer that includes race-instrumented verification.
+	deadline, ok := t.Deadline()
+	if !ok {
+		t.Fatal("bounded test deadline required")
+	}
+	writerCtx, cancelWriter := context.WithDeadline(context.Background(), deadline.Add(-10*time.Second))
+	defer cancelWriter()
+	go func() { winner <- primary.FinalizeContributionCompletionAs(writerCtx, sub, ref) }()
 	select {
 	case <-p.entered:
 	case early := <-winner:
 		t.Fatalf("writer ended before canonical commit: %v", early)
-	case <-time.After(30 * time.Second):
+	case <-writerCtx.Done():
 		close(p.release)
 		cancelled := <-winner
 		t.Fatalf("writer did not reach canonical commit: %v", cancelled)
