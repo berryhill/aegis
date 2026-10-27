@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
@@ -26,7 +28,61 @@ func contributionSafetyEvent(kind string) bool {
 
 var _ fleet.ContributionContinuityRepository = (*Store)(nil)
 
-func loadContributionContinuity(txn *badgerdb.Txn, id string) (state contribution.Continuity, events []contribution.ContinuityEvent, err error) {
+// contributionReplayCache is an optimization, never an authoritative projection.
+// Every retained event byte, the contract and the head are re-read in the current
+// transaction. Only an identical validated prefix can avoid repeated reduction.
+// Typed deep copies prevent returned maps/slices/pointers from aliasing the cache.
+// One entry bounds retention independently of the number of contributions.
+type contributionReplayCache struct {
+	id       string
+	contract []byte
+	wire     [][]byte
+	state    contribution.Continuity
+	events   []contribution.ContinuityEvent
+}
+
+func copyReplayPointer[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func copyReplayState(s contribution.Continuity) contribution.Continuity {
+	s.Continuation = copyReplayPointer(s.Continuation)
+	s.Reservations = maps.Clone(s.Reservations)
+	s.NativeBoundaries = maps.Clone(s.NativeBoundaries)
+	for k, b := range s.NativeBoundaries {
+		b.Bindings = slices.Clone(b.Bindings)
+		s.NativeBoundaries[k] = b
+	}
+	s.NativeEffects = maps.Clone(s.NativeEffects)
+	s.RoleEpochs = maps.Clone(s.RoleEpochs)
+	s.RoleStops = maps.Clone(s.RoleStops)
+	s.Observations = maps.Clone(s.Observations)
+	s.RoleAuthorities = maps.Clone(s.RoleAuthorities)
+	s.Decisions = maps.Clone(s.Decisions)
+	return s
+}
+
+func copyReplayEvents(events []contribution.ContinuityEvent) []contribution.ContinuityEvent {
+	out := slices.Clone(events)
+	for i := range out {
+		e := &out[i]
+		e.Continuation = copyReplayPointer(e.Continuation)
+		e.NativeBoundary = copyReplayPointer(e.NativeBoundary)
+		if e.NativeBoundary != nil {
+			e.NativeBoundary.Bindings = slices.Clone(e.NativeBoundary.Bindings)
+		}
+		e.NativeEffect = copyReplayPointer(e.NativeEffect)
+		e.RoleStop = copyReplayPointer(e.RoleStop)
+		e.RoleAuthority = copyReplayPointer(e.RoleAuthority)
+	}
+	return out
+}
+
+func loadContributionContinuity(txn *badgerdb.Txn, id string, caches ...*contributionReplayCache) (state contribution.Continuity, events []contribution.ContinuityEvent, err error) {
 	c, err := loadContribution(txn, id)
 	if err != nil {
 		return state, nil, err
@@ -55,11 +111,41 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string) (state contributio
 	if count == 0 || count > contributionContinuityMax {
 		return state, nil, fleet.ErrCorrupt
 	}
+	wire := make([][]byte, count)
 	for seq := uint64(1); seq <= count; seq++ {
 		b, e := get(txn, key(familyContributionContinuity, id, fmt.Sprint(seq)))
 		if e != nil {
 			return state, nil, fleet.ErrCorrupt
 		}
+		wire[seq-1] = b
+	}
+	if !bytes.Equal(head, wire[len(wire)-1]) {
+		return state, nil, fleet.ErrCorrupt
+	}
+	contract, e := contribution.Marshal(c)
+	if e != nil {
+		return state, nil, fleet.ErrCorrupt
+	}
+	var cache *contributionReplayCache
+	if len(caches) != 0 {
+		cache = caches[0]
+	}
+	start := 0
+	if cache != nil && cache.id == id && bytes.Equal(cache.contract, contract) && len(cache.wire) <= len(wire) {
+		match := true
+		for i, b := range cache.wire {
+			if !bytes.Equal(b, wire[i]) {
+				match = false
+				break
+			}
+		}
+		if match {
+			state = copyReplayState(cache.state)
+			events = copyReplayEvents(cache.events)
+			start = len(cache.wire)
+		}
+	}
+	for _, b := range wire[start:] {
 		event, e := contribution.UnmarshalContinuityEvent(b)
 		if e != nil {
 			return state, nil, fleet.ErrCorrupt
@@ -70,9 +156,8 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string) (state contributio
 		}
 		events = append(events, event)
 	}
-	expected, _ := json.Marshal(events[len(events)-1])
-	if !bytes.Equal(head, expected) {
-		return state, nil, fleet.ErrCorrupt
+	if cache != nil && start != len(wire) {
+		*cache = contributionReplayCache{id: id, contract: contract, wire: wire, state: copyReplayState(state), events: copyReplayEvents(events)}
 	}
 	return state, events, nil
 }
@@ -80,7 +165,7 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string) (state contributio
 func (s *Store) GetContributionContinuity(ctx context.Context, id string) (state contribution.Continuity, events []contribution.ContinuityEvent, err error) {
 	err = s.view(ctx, func(txn *badgerdb.Txn) error {
 		var e error
-		state, events, e = loadContributionContinuity(txn, id)
+		state, events, e = loadContributionContinuity(txn, id, &s.contributionReplay)
 		return e
 	})
 	return
@@ -92,7 +177,7 @@ func (s *Store) AppendContributionContinuity(ctx context.Context, event contribu
 		if e != nil {
 			return e
 		}
-		prior, _, e := loadContributionContinuity(txn, event.QueueItemID)
+		prior, _, e := loadContributionContinuity(txn, event.QueueItemID, &s.contributionReplay)
 		if e != nil {
 			return e
 		}

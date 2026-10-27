@@ -28,6 +28,8 @@ type Store struct {
 	root     string
 	mu       sync.Mutex
 	closed   bool
+	// One bounded, byte-checked replay prefix; accessed only under mu.
+	contributionReplay contributionReplayCache
 }
 
 // Open opens exactly one fleet-v1 root. A previous unclean open is denied;
