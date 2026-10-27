@@ -1,12 +1,35 @@
 # #377 source continuity launch-impact ledger
 
+## CI recovery performance increment
+
+The replay-prefix cache retains per-transaction contract/event/head byte checks
+and cold canonical validation; it caches no current authority decision. Exact-size
+input reads retain EOF, inode, path, size and mutation checks. Recovery suffix
+comparison still examines every logical byte, with unchanged checksum, transaction,
+evidence-preservation and authentication deadline requirements. Cache cardinality
+is bounded by one contribution and the existing event ceiling, not a fixed RSS cap.
+
+Original CI failures and subsequent unsuccessful candidates remain retained.
+Independent v2 race repair, fresh resume and disconnect passed; its restart
+reserved-before-start case failed during authenticated physical recovery. The
+follow-up bounded-chunk suffix comparison requires fresh restart qualification;
+a later successful diagnostic rerun does not erase that earlier failure.
+
+Current-main documentation was integrated as an additive union, preserving the
+separate two-participant and continuity qualification boundaries. CHANGELOG records
+the performance repair. README, SECURITY, architecture and threat-model claims do
+not expand authority or declare live qualification. License, conduct, contributing,
+quickstart, no-key demo, historical recording, release format/checksums and contributor
+backlog have no changed commands or public contracts from this increment. No new
+release, installed, real-provider or whole-contribution acceptance is claimed.
+
 ## Owner discovery/readback and CI partition increment
 
 | Scope | Source / qualification |
 | --- | --- |
 | Fresh owner retained-run discovery | `internal/app/contribution_discovery.go`; existing Queue inventory, exact canonical issue URL, ambiguity conflict, no runtime side effect |
 | Sanitized checkpoint/gates | `internal/app/contribution_readback.go`, `internal/managergateway/contribution.go`; typed allowlist, no raw process continuity |
-| Mandatory manager integrations | `scripts/verify-go-shard.py`, `.github/workflows/ci.yml`, `scripts/verify-ci-evidence.py`; three isolated heavy groups plus dynamic remainder, both modes |
+| Mandatory manager integrations | `scripts/verify-go-shard.py`, `.github/workflows/ci.yml`, `scripts/verify-ci-evidence.py`; four isolated heavy groups plus dynamic remainder, both modes |
 | Initial expiry injection | `internal/managergateway/contribution_native_test.go`; only initial subject narrowed to 60s, unchanged 300s charter/5m policy and 60s native command limit |
 
 README/SECURITY/architecture/threat model existing continuity boundaries remain;
