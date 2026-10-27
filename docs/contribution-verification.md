@@ -121,7 +121,7 @@ not a remote mutation or a whole-contribution disposition.
 
 ## Mandatory production join still pending
 
-### Current final-verifier core (not yet terminal integration)
+### Current final-verifier and terminal integration
 
 `NewContributionFinalVerifier` binds the actual Service and trusted reviewed policy
 resolver. `VerifyPreClosureAs` takes only an authenticated retained key. It uses
@@ -137,27 +137,28 @@ opaque private-field `ContributionPreClosureAuthorization`. Narrower scopes do
 not mint issue-close authority. `RevalidatePreClosureAs` repeats that owning join
 and rejects forged/stale/service-substituted authorization.
 
-The core compiles and negative normal/race tests cover forged authorization,
-missing native joins and corrupt/absent immutable history. A complete positive
-core mint using actual full merge-scope retained proof has NOT yet been qualified.
-There is no installed finalizer, terminal-report producer, completion adapter or
-manager hook from this core yet. Those are unfinished implementation, not PASS.
+The source now includes a contribution-only canonical terminal transaction,
+terminal-last custody slot, completion adapter and terminal-first manager
+run/status/resume navigation. Generic late completion remains denied; neither
+the original Claim nor RuntimeBinding is renewed. Controlled native/Badger
+qualification exercises concurrent winner reconciliation, writer failure and
+waiter cancellation, plus same-owner, foreign, stale and corrupt-result reads.
+These tests do not establish production authentication, live-provider execution,
+real protected GitHub delivery or installed adoption.
 
-The actual canonical `CompleteQueueItem` transaction still explicitly permits
-only evidence-free EXPIRED completion after the original claim expires. A #377
-Continuation does not change that check. Its contribution-only final-completion
-contract must be agreed with the owning store: revalidate the exact original
-claim/attempt and continuation head, current independently admitted controller,
-private custody and opaque verifier provenance atomically without renewing the
-original Claim/RuntimeBinding or weakening generic late-success denial. Until
-that supported branch exists, do not emulate late completion with a caller flag,
-overwrite claim expiry or create an unindexed terminal-result blob. Final issue
-readback, canonical DispositionByRun/result retrieval and the manager-to-finalizer
-hook remain explicit unfinished integrations.
+`NewContributionCompletionInFrame` is the concrete controller insertion port. It
+requires the existing live private source frame, exact current controller and
+retained policy; callers cannot manufacture the frame. Production startup and
+request-authentication composition remain owned by #378 and must be integrated
+and independently tested before whole-contribution acceptance.
 
-The above work does NOT implement the complete final contribution verifier or
-register whole-contribution success. No accepting callbacks or temporary fake
-producer integrations are installed.
+Result retrieval reloads the terminal report and receipt, then the retained
+native-acceptance and delivery-history blobs and optional preclosure binding.
+Corrupt joined bytes deny retrieval instead of presenting success or falling
+back to execution. Retrieval does not reacquire source custody, renew authority
+or repeat GitHub effects. Independent testing first reproduced missing joined
+blob validation; permanent manager status/resume/run regressions now cover that
+failure. Fresh frozen-candidate acceptance remains required after every repair.
 
 - #377 owns actual independently admitted role/continuation bindings, fenced
   epochs, native Wait/stop/quiescence, current controls and cumulative counters.
@@ -172,9 +173,9 @@ producer integrations are installed.
   over complete accepted behavior and merge proof. Final disposition follows
   actual scope-correct issue readback, avoiding a circular dependency in which
   issue closure would require its own already-final receipt.
-- Final atomic disposition, authoritative retained-session result/retrieval,
-  real manager-to-delivery-to-verifier assembly and revision-matched skill
-  discoverability still require those real interfaces. No new queue, daemon,
+- Production manager-to-delivery-to-verifier assembly, live acceptance and
+  revision-matched skill discoverability still require the integrated producer
+  interfaces and independent qualification. No new queue, daemon,
   watcher, scheduler or management page is introduced.
 
 ## Qualification tiers and remaining acceptance

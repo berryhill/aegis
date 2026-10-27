@@ -146,6 +146,9 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	scope, finalPolicy := "local-only", ""
 	if finalization {
 		scope, finalPolicy = "verified-protected-base-merge", evidence.ContributionFinalPolicy
+		if strings.Contains(t.Name(), "ManagerJoined") || strings.Contains(t.Name(), "ManagerTerminal") {
+			scope = "local-only"
+		}
 		if strings.Contains(t.Name(), "LocalTarget") {
 			scope = "local-only"
 		}
@@ -214,7 +217,15 @@ while read rest; do :; done
 	must(e)
 	issue, _ := contribution.ParseIssueURL("https://github.com/fixture/controlled/issues/1")
 	s.ContributionReader = &fixedContributionReader{source: contribution.Source{URL: issue, RepositoryID: 7, IssueID: 9, Author: contribution.Author{ID: 1, Login: "fixture"}, State: "open", CreatedAt: s.Now(), UpdatedAt: s.Now(), ObservedAt: s.Now(), ContentDigest: contribution.Digest([]byte("fixture")), Discussion: []contribution.Comment{}}}
-	sealed, e := s.AdmitContributionAs(ctx, subject, "assessment-session", lrRef, issue.URL, "assessment-native", scope)
+	if strings.Contains(t.Name(), "ManagerJoined") {
+		managerJoinedHeld(t, s, subject, lrRef, issue)
+		return
+	}
+	intentKey := "assessment-native"
+	if strings.Contains(t.Name(), "ManagerTerminal") {
+		intentKey = app.ContributionIntentKey(lrRef, issue.URL, scope)
+	}
+	sealed, e := s.AdmitContributionAs(ctx, subject, "assessment-session", lrRef, issue.URL, intentKey, scope)
 	must(e)
 	result, e := s.ExecuteContributionAs(ctx, subject, sealed.Key)
 	must(e)
@@ -245,12 +256,15 @@ while read rest; do :; done
 		p.ControllerSession, p.Binding.FenceEpoch, p.Binding.RoleBinding = controller.SessionID, controller.Epoch, controller.Ref().Digest
 		lastNative := result.Candidate.Passes[len(result.Candidate.Passes)-1]
 		t.Logf("runtime-domain identity: builder_supervisor_equals_turn=%t tester_supervisor_equals_turn=%t", state.RoleAuthorities["builder"].RuntimeSessionID == lastNative.Candidate.Builder.RuntimeSessionID, state.RoleAuthorities["tester"].RuntimeSessionID == lastNative.Tester.RuntimeSessionID)
-		if finalQualificationProtection == nil {
+		if finalQualificationProtection == nil && scope != "local-only" && scope != "no-publish" {
 			t.Fatal("run scripts/test-contribution-finalization.py for test-only HTTP overlay")
 		}
 		p.RequiredChecks, p.RequiredReviewers, p.PostMergeChecks = []string{"test"}, []string{"reviewer"}, []string{"test"}
 		p.MergeMethod, p.PRTitle, p.PRBody = "squash", "Controlled accepted repair", "Controlled fixture without issue-closing keywords"
-		p.ProtectionPolicy = finalQualificationProtection()
+		p.ProtectionPolicy = contribution.Digest([]byte("local-only fixture without remote rights"))
+		if finalQualificationProtection != nil {
+			p.ProtectionPolicy = finalQualificationProtection()
+		}
 	}
 	policies.policy = p
 	t.Cleanup(func() {
@@ -266,10 +280,14 @@ while read rest; do :; done
 		must(err)
 		var projected delivery.Plan
 		must(productive.WithAccepted(ctx, p.Binding.Reference, func(_ context.Context, plan delivery.Plan) error { projected = plan; return nil }))
-		if finalQualificationFactory == nil {
+		if finalQualificationFactory == nil && scope != "local-only" && scope != "no-publish" {
 			t.Fatal("missing test-only HTTP factory")
 		}
-		remote, countCalls := finalQualificationFactory(t, projected)
+		var remote delivery.Adapter
+		countCalls := func() int { return 0 }
+		if scope != "local-only" && scope != "no-publish" {
+			remote, countCalls = finalQualificationFactory(t, projected)
+		}
 		pipeline := finalQualificationPipeline{local: &delivery.Git{Binary: git, Directory: sealed.Worktree}, remote: remote}
 		verifier, err := app.NewContributionFinalVerifier(s, pref, policies)
 		must(err)
@@ -277,8 +295,20 @@ while read rest; do :; done
 		must(err)
 		var completionProbe *continuationCompletionProbe
 		var completionOwner delivery.CompletionOwner = completion
+		var frameOwner *managerFrameCompletion
+		if strings.Contains(t.Name(), "ManagerTerminal") {
+			frameOwner = &managerFrameCompletion{s: s, subject: subject, key: sealed.Key, policy: pref}
+			completionOwner = frameOwner
+		}
 		if late {
 			completionOwner = pauseFinalContribution{completion}
+		}
+		concurrent := strings.Contains(t.Name(), "Concurrent")
+		var duplicate *app.ContributionCompletionAdapter
+		if concurrent {
+			duplicate, err = app.NewContributionCompletionAdapter(verifier, subject, sealed.Key)
+			must(err)
+			completionOwner = concurrentPreclosure{completion, duplicate}
 		}
 		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, assessmentFixtureAuthority{}, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
 		if late {
@@ -322,7 +352,15 @@ while read rest; do :; done
 			t.Cleanup(func() { _ = s.RevokeSession(context.Background(), resumedSession, "continued fixture cleanup") })
 			completionProbe = &continuationCompletionProbe{Store: repository, t: t}
 			s.FleetRepository = completionProbe
-			finalErr = completion.FinalizeContributionCompletionAs(ctx, fresh, p.Binding.Reference)
+			if concurrent {
+				var failedWriter bool
+				finalErr, failedWriter = exerciseConcurrentFinalizers(t, s, fresh, sealed.Key, p.Binding.Reference, completion, duplicate, completionProbe)
+				if failedWriter {
+					return
+				}
+			} else {
+				finalErr = completion.FinalizeContributionCompletionAs(ctx, fresh, p.Binding.Reference)
+			}
 			subject = fresh
 			unchangedClaim, e := repository.GetClaim(ctx, oldClaim.ClaimID)
 			must(e)
@@ -390,6 +428,15 @@ while read rest; do :; done
 			t.Fatal("result retrieval repeated remote effects")
 		}
 		t.Logf("canonical result disposition=%s artifact=%s receipt=%s", terminal.Disposition.DispositionID, terminal.Artifact.ID, terminal.Receipts[0].ID)
+		if strings.Contains(t.Name(), "ManagerTerminal") {
+			if frameOwner.actual == nil {
+				t.Fatal("actual in-frame composition helper not called")
+			}
+			if frameOwner.actual.FinalizeContributionBoundary(ctx, p.Binding.Reference) == nil {
+				t.Fatal("in-frame helper authority escaped source lifetime")
+			}
+			managerTerminalReadback(t, s, subject, sealed, clock)
+		}
 		return
 	}
 	source, e := app.NewQualificationContributionDeliverySource(s, subject, sealed.Key, pref, policies, func(context.Context, orchestration.ContributionCandidate) error { return nil })

@@ -42,14 +42,29 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		if err == nil {
 			s.mu.Lock()
 			current, ok := s.sessions[entry.id]
-			if ok && current.token == entry.token {
+			if ok && current.token == entry.token && s.now().Before(current.expires) {
 				current.contributionKey = c.Key
 				s.sessions[entry.id] = current
+			} else {
+				err = app.ErrExpired
 			}
 			s.mu.Unlock()
+			if err != nil {
+				return result, err
+			}
+			if found, e := s.contributionTerminal(ctx, entry, c, &result); e != nil {
+				return result, e
+			} else if found {
+				break
+			}
 			journey, executeErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, c.Key)
 			execution := journey.Execution
 			err = executeErr
+			if found, e := s.contributionTerminal(ctx, entry, c, &result); e != nil {
+				return result, e
+			} else if found {
+				break
+			}
 			result.State, result.Reason = "accepted", execution.Reason
 			if journey.HeldReason != "" {
 				result.State, result.Reason = "unavailable", journey.HeldReason
@@ -64,15 +79,14 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		if len(args) == 2 {
 			ref = args[1]
 		}
-		contract, resolveErr := s.app.ResolveContributionAs(ctx, entry.subject, ref)
+		if ref == "" && entry.contributionKey != "" {
+			ref = entry.contributionKey
+		}
+		contract, resolveErr := s.app.ResolveContributionNavigationAs(ctx, entry.subject, ref)
 		if resolveErr != nil {
 			return result, resolveErr
 		}
 		key := contract.Key
-		continuity, readErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
-		if readErr != nil {
-			return result, readErr
-		}
 		s.mu.Lock()
 		current, ok := s.sessions[entry.id]
 		if ok && current.token == entry.token && s.now().Before(current.expires) {
@@ -85,6 +99,15 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		s.mu.Unlock()
 		if err != nil {
 			return result, err
+		}
+		if found, e := s.contributionTerminal(ctx, entry, contract, &result); e != nil {
+			return result, e
+		} else if found {
+			break
+		}
+		continuity, readErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
+		if readErr != nil {
+			return result, readErr
 		}
 		if args[0] == "status" {
 			continuity, continuityErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
@@ -112,9 +135,19 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		execution, e := s.app.ResumeContributionAs(ctx, entry.subject, key)
 		err = e
 		if err == nil {
+			journey, journeyErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, key)
+			if journeyErr != nil {
+				return result, journeyErr
+			}
+			execution = journey.Execution
 			contract, _, readErr := s.app.ReadContributionAs(ctx, entry.subject, key)
 			if readErr != nil {
 				return result, readErr
+			}
+			if found, e := s.contributionTerminal(ctx, entry, contract, &result); e != nil {
+				return result, e
+			} else if found {
+				break
 			}
 			s.mu.Lock()
 			current, ok := s.sessions[entry.id]
@@ -129,7 +162,7 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			if readErr != nil {
 				return result, readErr
 			}
-			result.Data = map[string]any{"execution": execution, "continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
+			result.Data = map[string]any{"execution": execution, "continuity": continuity, "delivery": journey.Delivery, "held_stage": journey.HeldStage, "held_reason": journey.HeldReason, "completed": false}
 		}
 	case "stop", "narrow":
 		key := entry.contributionKey

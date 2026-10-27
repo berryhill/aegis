@@ -30,3 +30,15 @@ func TestCanonicalContributionFailedChecksFinalization(t *testing.T) {
 func TestCanonicalContributionContinuationFinalization(t *testing.T) {
 	retainedDeliveryNativeComposition(t, true, true)
 }
+
+// Controlled native/real canonical store + loopback GitHub protocol, not live
+// provider or actual protected remote qualification.
+func TestCanonicalContributionConcurrentFinalization(t *testing.T) {
+	retainedDeliveryNativeComposition(t, true, true)
+}
+func TestCanonicalContributionConcurrentWinnerFailure(t *testing.T) {
+	retainedDeliveryNativeComposition(t, true, true)
+}
+func TestCanonicalContributionConcurrentWaiterCancellation(t *testing.T) {
+	retainedDeliveryNativeComposition(t, true, true)
+}

@@ -18,7 +18,7 @@ func contributionWinnerMatches(result ContributionResult, auth *ContributionPreC
 		return false
 	}
 	r := result.Report
-	return r.Owner == auth.owner && r.Key == auth.key && r.Run == ref.Run && r.Contract == auth.contract && r.Candidate == auth.candidate && r.Policy == auth.policy && r.Native == auth.native && r.Claim == auth.claim && r.Attempt == auth.attempt && r.Scope == auth.scope && r.Outcome == auth.outcome && r.Cause == auth.cause && r.PreClosure == preclosure
+	return ref.Run == auth.run && ref.Contract == auth.contract && ref.Candidate == auth.candidate && r.Owner == auth.owner && r.Key == auth.key && r.Run == ref.Run && r.Contract == auth.contract && r.Candidate == auth.candidate && r.Policy == auth.policy && r.Native == auth.native && r.Claim == auth.claim && r.Attempt == auth.attempt && r.Scope == auth.scope && r.Outcome == auth.outcome && r.Cause == auth.cause && r.PreClosure == preclosure
 }
 
 // Called ONLY after typed custody contention from real finalizer admission.

@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -74,7 +76,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 		}
 		return map[string]any{"html_url": fmt.Sprintf("https://github.com/%s/pull/7", p.Repository), "user": map[string]string{"login": p.Actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": sha, "mergeable": true, "mergeable_state": "clean", "title": p.PRTitle, "body": p.PRBody, "head": map[string]any{"sha": p.Head, "ref": p.Branch, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}, "base": map[string]any{"sha": p.BaseHead, "ref": p.Base, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}}
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.Lock()
 		defer f.Unlock()
 		f.Calls++
@@ -280,6 +282,17 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 			http.Error(w, "unsupported fixture", 404)
 		}
 	}))
+	// The engineering helper retains the shared lifetime lock. Never silently
+	// bind an ephemeral/out-of-pool port when it was not used.
+	_ = srv.Listener.Close()
+	port, portErr := strconv.Atoi(os.Getenv("AEGIS_ACCEPTANCE_PORT"))
+	if portErr != nil || port < 8450 || port > 8469 {
+		t.Fatal("final qualification requires shared acceptance_port.py lifetime custody")
+	}
+	listener, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if listenErr != nil { t.Fatal(listenErr) }
+	srv.Listener = listener
+	srv.Start()
 	t.Cleanup(srv.Close)
 	remote, e := newGitHub(srv.URL, finalQualificationCustody{}, finalQualificationPrivacy{})
 	if e != nil {

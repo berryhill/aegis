@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/delivery"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 )
 
 func effectiveContributionScope(c contribution.Contract, control contribution.Control) (string, error) {
@@ -20,8 +22,11 @@ func classifyContributionHeldHistory(h delivery.HistorySnapshot, candidate strin
 // FinalizeContributionBoundary is a key-owned actual producer join, not a
 // caller-supplied outcome. It cannot supply issue-close authorization.
 func (a *ContributionCompletionAdapter) FinalizeContributionBoundary(ctx context.Context, ref delivery.Reference) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	if err := a.validateCompletionFrame(ctx, a.subject); err != nil {
+		return err
+	}
+	// Boundary verification does not mutate the adapter's preclosure handles.
+	// Keep custody/winner waiting context-aware even for a shared adapter.
 	s := a.verifier.service
 	c, _, err := s.ReadContributionAs(ctx, a.subject, a.key)
 	if err != nil {
@@ -63,6 +68,10 @@ func (v *ContributionFinalVerifier) FinalizeRetainedContributionOutcomeAs(ctx co
 	s := v.service
 	if existing, e := s.GetContributionResultAs(ctx, sub, key); e == nil {
 		return existing, nil
+	} else if !errors.Is(e, fleet.ErrNotFound) {
+		// An unreadable indexed result is not permission to verify or write
+		// again. Preserve the original denial/corruption/cancellation error.
+		return ContributionResult{}, e
 	}
 	auth, _, err := v.verifyContributionAuthorization(ctx, sub, key, "held")
 	if err != nil {

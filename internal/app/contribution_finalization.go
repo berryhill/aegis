@@ -29,8 +29,7 @@ type ContributionResult struct {
 
 // Retrieval uses retained owner/key and canonical terminal indexes only. No
 // runtime, source custody, old lease or delivery/reconciliation call is involved.
-func (s *Service) GetContributionResultAs(ctx context.Context, sub core.Subject, key string) (ContributionResult, error) {
-	var out ContributionResult
+func (s *Service) GetContributionResultAs(ctx context.Context, sub core.Subject, key string) (out ContributionResult, err error) {
 	c, _, _, err := s.ObserveContributionContinuityAs(ctx, sub, key)
 	if err != nil {
 		return out, err
@@ -39,6 +38,14 @@ func (s *Service) GetContributionResultAs(ctx context.Context, sub core.Subject,
 	if err != nil {
 		return out, err
 	}
+	// Once the canonical terminal index exists, any missing referenced record
+	// is incomplete/corrupt evidence. Never expose it as "no result yet": the
+	// manager and concurrent finalizers must not fall back to new effects.
+	defer func() {
+		if errors.Is(err, fleet.ErrNotFound) {
+			out, err = ContributionResult{}, ErrDenied
+		}
+	}()
 	if d.GraphRunID != c.RunID || d.QueueItem.ID != c.QueueItemID || len(d.ArtifactIDs) != 1 || len(d.ReceiptIDs) != 1 {
 		return out, ErrDenied
 	}
@@ -103,12 +110,16 @@ func (s *Service) GetContributionResultAs(ctx context.Context, sub core.Subject,
 	if err != nil || loaded != receipt || !contributionResultReceiptMatches(d, a, receipt) {
 		return out, ErrDenied
 	}
+	if err = s.reloadContributionResultEvidence(ctx, c, r); err != nil {
+		return out, err
+	}
 	return ContributionResult{d, a, []evidence.VerificationReceipt{receipt}, r}, nil
 }
 
 // ContributionCompletionAdapter is a trusted controller-owned conductor adapter.
 // Only actual VerifyPreClosureAs can populate its opaque authorization.
 type ContributionCompletionAdapter struct {
+	frame         *contributionCompletionFrame
 	verifier      *ContributionFinalVerifier
 	subject       core.Subject
 	key           string
@@ -124,13 +135,16 @@ func NewContributionCompletionAdapter(v *ContributionFinalVerifier, sub core.Sub
 	return &ContributionCompletionAdapter{verifier: v, subject: sub, key: key}, nil
 }
 func (a *ContributionCompletionAdapter) VerifyContributionCompletion(ctx context.Context, ref delivery.Reference) (string, error) {
+	if err := a.validateCompletionFrame(ctx, a.subject); err != nil {
+		return "", err
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	proof, _, err := a.verifier.VerifyPreClosureAs(ctx, a.subject, a.key)
 	if err != nil {
 		return "", err
 	}
-	if proof.contract != ref.Contract || proof.candidate != ref.Candidate {
+	if proof.run != ref.Run || proof.contract != ref.Contract || proof.candidate != ref.Candidate {
 		return "", ErrDenied
 	}
 	wire, _ := json.Marshal(struct{ Schema, Owner, Key, Contract, Candidate, Native, History, Continuity, Policy, Claim, Attempt string }{"aegis.contribution.preclosure.v1", proof.owner, proof.key, proof.contract, proof.candidate, proof.native, proof.history, proof.continuity, proof.policy, proof.claim, proof.attempt})
@@ -150,6 +164,9 @@ func (a *ContributionCompletionAdapter) FinalizeContributionCompletion(ctx conte
 // A fresh same-owner subject is observation only until the real current role,
 // compatible mandate, continuation and private source gates admit finalization.
 func (a *ContributionCompletionAdapter) FinalizeContributionCompletionAs(ctx context.Context, subject core.Subject, ref delivery.Reference) error {
+	if err := a.validateCompletionFrame(ctx, subject); err != nil {
+		return err
+	}
 	a.mu.Lock()
 	authorization, preclosure := a.authorization, a.reference
 	a.mu.Unlock()
@@ -169,7 +186,7 @@ type contributionTerminalOwner interface {
 
 func (v *ContributionFinalVerifier) finalizeContributionAs(ctx context.Context, sub core.Subject, key string, auth *ContributionPreClosureAuthorization, preclosure string, ref delivery.Reference) (ContributionResult, error) {
 	var out ContributionResult
-	if auth == nil || auth.service != v.service || auth.owner != sub.PrincipalID || auth.key != key || auth.contract != ref.Contract || auth.candidate != ref.Candidate {
+	if auth == nil || auth.service != v.service || auth.owner != sub.PrincipalID || auth.key != key || auth.run != ref.Run || auth.contract != ref.Contract || auth.candidate != ref.Candidate {
 		return out, ErrDenied
 	}
 	s := v.service

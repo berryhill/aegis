@@ -16,9 +16,9 @@ import (
 // a CompletionOwner receipt, Queue disposition or permission to reuse authority.
 // Consumption repeats the real source/role/native/delivery join, never a bool.
 type ContributionPreClosureAuthorization struct {
-	service                                                                              *Service
-	key, owner, contract, candidate, native, history, continuity, policy, claim, attempt string
-	scope, outcome, cause                                                                string
+	service                                                                                   *Service
+	key, owner, run, contract, candidate, native, history, continuity, policy, claim, attempt string
+	scope, outcome, cause                                                                     string
 }
 
 // ContributionFinalVerifier is installed only by trusted controller composition.
@@ -180,7 +180,7 @@ func (v *ContributionFinalVerifier) verifyContributionAuthorization(ctx context.
 				return ErrDenied
 			}
 		}
-		authorization = &ContributionPreClosureAuthorization{service: s, key: key, owner: sub.PrincipalID, contract: c.Digest, candidate: candidate.Digest, native: assessment.NativeRef, history: assessment.HistoryRef, continuity: state.Digest, policy: v.policy.Digest, claim: claim.ClaimID, attempt: claim.AttemptID, scope: scope, outcome: outcome, cause: cause}
+		authorization = &ContributionPreClosureAuthorization{service: s, key: key, owner: sub.PrincipalID, run: c.RunID, contract: c.Digest, candidate: candidate.Digest, native: assessment.NativeRef, history: assessment.HistoryRef, continuity: state.Digest, policy: v.policy.Digest, claim: claim.ClaimID, attempt: claim.AttemptID, scope: scope, outcome: outcome, cause: cause}
 		return nil
 	}
 	if proof, ok := ctx.Value(contributionCustodyKey{}).(*contributionCustodyProof); ok {
