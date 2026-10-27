@@ -93,20 +93,20 @@ func registerDoerProtectedSetupRoutes(e *echo.Echo, svc *app.Service, manager *c
 			}
 			review.Proposal = &proposal
 		case "host":
-			if _, err := svc.ValidateDoerDraftPublicationAs(c.Request().Context(), sub, d.ID, d.Version); err != nil {
-				return err
-			}
-			candidate, _, err := app.NewDoerLoopRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+			host, agent, err := svc.PrepareDoerHostReviewAs(c.Request().Context(), sub, d.ID, d.Version)
 			if err != nil {
 				return err
 			}
-			digest, err := d.Contract.Digest()
-			if err != nil {
-				return err
+			review.Host, review.Agent = &host, &agent
+			if agent.Ownership.OwnerID != sub.PrincipalID {
+				ch, err := svc.GetCharter(agent.Charter.ID, agent.Charter.Revision)
+				if err != nil || ch.Digest != agent.Charter.Digest {
+					return app.ErrDenied
+				}
+				review.Charter = &ch
 			}
-			review.Host = &app.DoerHostApprovalInput{DraftID: d.ID, DraftVersion: d.Version, ExpectedCandidateDigest: candidate.Digest, ExpectedContractDigest: digest, Decision: "approve-host-write"}
 		case "provision":
-			if _, err := svc.ValidateDoerDraftPublicationAs(c.Request().Context(), sub, d.ID, d.Version); err != nil {
+			if _, err := svc.ValidateDoerDraftHostReviewAs(c.Request().Context(), sub, d.ID, d.Version); err != nil {
 				return err
 			}
 			agent, err := svc.GetFleetAgentAs(c.Request().Context(), sub, d.Agent.ID, d.Agent.Revision)
@@ -121,7 +121,7 @@ func registerDoerProtectedSetupRoutes(e *echo.Echo, svc *app.Service, manager *c
 			if err != nil || charter.Digest != preview.CharterDigest {
 				return app.ErrConflict
 			}
-			review.Plan, review.Charter, review.ProvisionReview = &preview.Plan, &charter, &preview
+			review.Plan, review.Charter, review.ProvisionReview, review.Agent = &preview.Plan, &charter, &preview, &agent.Revision
 		default:
 			return echo.NewHTTPError(400, "unsupported protected setup action")
 		}
@@ -192,7 +192,7 @@ func registerDoerProtectedSetupRoutes(e *echo.Echo, svc *app.Service, manager *c
 			if review.Plan == nil || review.Charter == nil {
 				return app.ErrDenied
 			}
-			if _, err = svc.ValidateDoerDraftPublicationAs(c.Request().Context(), sub, d.ID, d.Version); err != nil {
+			if _, err = svc.ValidateDoerDraftHostReviewAs(c.Request().Context(), sub, d.ID, d.Version); err != nil {
 				return err
 			}
 			plan, e := svc.GetPlan(review.Plan.ID)

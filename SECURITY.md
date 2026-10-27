@@ -1,11 +1,23 @@
 # Security Policy
 
+
 Retained contribution provisioning uses the owning API's inode-pinned protected
 companion and exact canonical plan/consumed approval/verified receipt readback.
 Companion status and six-hour dashboard authentication cannot grant role or native
 authority. Unknown outcomes remain non-replayable; write admission requires live
 private source custody and acknowledged native quiescence. See
 [continuity boundaries](docs/continuity/contribution-continuity.md).
+
+The two-participant source candidate separates recorded Registry ownership from
+the authenticated controller principal. A differently owned participant requires
+its exact provisioning and independently reviewed signed host scope, including
+Agent/Loop/contract/Run-input bindings; it never inherits the owner's Run shortcut.
+Definition mutation remains stable-owner-gated. Completed-result inspection uses
+fresh reader authentication and verified historical facts, not renewed execution
+authority. Canonical review facts retain their exact bytes/digests; the native
+wire keeps its strict null/duplicate/unknown-field policy. No new auth platform,
+credential distribution, authority union or TTL widening is introduced.
+
 
 ## #317 bounded chain source boundary
 
@@ -15,6 +27,7 @@ typed Queue node checkpoint readback described in
 Earlier single-node-only descriptions below refer to the historical qualified
 vertical, not a denial of this additive source path. General scheduling,
 real-provider qualification and installed acceptance remain separate and unproven.
+
 
 Managed contribution source inventories stay in private controller custody;
 tester model evidence includes schema/digest only, never complete source bytes

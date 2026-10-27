@@ -5,6 +5,29 @@ launch form. Publish one `doer-reusable` v5 revision, retain its exact Agent and
 Loop references, and call `loops queue FILE` for each distinct explicit task.
 No reusable one-node Graph publication or new Loop revision is needed.
 
+## Source-candidate exact protected setup
+
+With the matching candidate service, a requested v5 Run blocked on exact
+provisioning or host consent returns `setup_review_task`, retaining the original
+normalized `host_run`, Agent/Loop refs, task contract and stable request key.
+Identical replay returns the same retained task; observation alone creates none.
+This is non-authorizing review data, not executable Queue work or a new consent.
+Use the existing `loops setup-protected` action with the returned ID/version and
+`action: "provision"` or `action: "host"` as required. The human independently
+authenticates and reviews the complete exact scope; the agent never supplies a
+password or decision. No desktop means unavailable, not an approval fallback.
+Read back the same retained task, then resume the original `loops queue` payload
+and key. Do not substitute a v4 publication, binding files or a separate worker.
+
+A differently recorded owner must have both exact provisioning and independently
+reviewed signed host scope. The host fact binds its recorded owner, controller
+principal/approver, deployment, Agent, immutable v5 candidate, contract and complete
+normalized Run-input digest. Neither Run consent nor the workspace alone can
+mint or refresh this different-owner authority. Definition mutation remains
+stable-owner-gated; this is not independently authenticated profile delegation.
+Older services without this returned review contract remain unavailable at the
+actual named adapter; new advisory skills cannot supply backend capability.
+
 ## Fixed configuration recipe
 
 Use the existing `QueueLoopInput.inputs` array of `{port_id,type,value}` entries.
@@ -54,8 +77,12 @@ independent gate; never broaden the configured allowlist from an agent request.
 ## Exact result readback and human inspection
 
 `queue result ITEM` and `GET /v1/queue/:item/result` authenticate metadata access
-and additionally require the pinned Agent's stable owner to match the
-principal. Workspace metadata sharing is not arbitrary content-read authority.
+and additionally require the pinned Agent's stable owner or the source-candidate
+exact reviewed controller context. Workspace metadata sharing is not arbitrary
+content-read authority. The controller path reconstructs original workspace,
+runtime and signed host/evidence bindings at the recorded completion time under
+fresh reader authentication. Later ordinary expiry/revocation or Agent lifecycle
+changes do not rewrite intact historical results or renew execution authority.
 The reader reconstructs the exact bound contract and rechecks successful
 Queue disposition, run/Loop/Agent/attempt/claim/authority, passed receipt,
 content-addressed proof and selected-file blob hashes. It never reads the current

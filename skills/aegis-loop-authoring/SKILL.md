@@ -109,7 +109,28 @@ Present that URL to the human without operating their controls. After independen
 
 Exact published v5 readiness accepts `agent`, exact `loop`, normalized `inputs`, optional `idempotency_key`, `activate`, and `probe`. Never mix this with v4 `candidate` or partial refs. Null, duplicate and unknown fields deny; zero omitted typed structs remain compatible. Observation never reserves intent: the optional key checks retained payload identity and returns the same `request_id` and `contract_digest` used by Run.
 
-Host absent/invalid/expired causes require `review_exact_host_write_contract` for v4; v5 returns `exact_v5_host_review_adapter_unavailable`, not a URL or grant. Unsafe workspace requires `review_exact_workspace_scope`; Go/Laya/home integrity failures require `review_controller_dependency_integrity`. Cancellation and closed unknown errors require `controller_diagnostic_adapter_unavailable`. Downstream checks stay `not_checked`; helper qualification is protocol-only. Existing exact preauthorization may support Run; this is not real-provider or protected-v5 review/resume proof.
+Host absent/invalid/expired causes retain `review_exact_host_write_contract` for
+v4. A matching source-candidate service reports v5
+`review_exact_reusable_run_host_write`; an actual Run blocked on exact
+provisioning/host consent can return `setup_review_task`. Retain that returned
+ID/version, original normalized `host_run`, immutable Agent/Loop refs, contract
+and key. Request existing `loops setup-protected` with action `provision` or
+`host` as required. The human authenticates and decides independently; never
+supply their password/decision or operate their controls. Read back exact facts,
+then resume the unchanged original `loops queue` payload/key. Review retention
+is not consent or executable Queue work. Public readiness creates none.
+
+A differently recorded owner requires its exact provisioning and independently
+reviewed signed host scope binding owner/controller/approver/deployment, Agent,
+candidate, contract and complete Run-input digest; it never inherits the
+owner-principal shortcut or definition-mutation rights. Canonical Agent/charter
+review data preserves exact bytes/digests through strict native decoding. No GUI
+means unavailable, not a model-operated terminal or typed approval fallback.
+An older service returning `exact_v5_host_review_adapter_unavailable` is still
+unavailable; advisory skill installation cannot add that backend capability.
+Unsafe workspace and dependency integrity/cancellation causes retain their exact
+named remedies, with downstream `not_checked`. Helper qualification remains
+protocol-only; source/synthetic review proof is not live-provider acceptance.
 
 Before execution-intended publication, use `aegis loops readiness FILE` with strict JSON `{ "agent": EXACT_REVISION_REF, "candidate": CANONICAL_V4_REVISION }`. `can_author` and `can_execute` are separate: deliberate registry-only inactive publication is allowed when authoring is ready even if execution is blocked. Readiness grants no authority and writes no Loop, Graph, Queue item, approval or receipt. Ordinary inspection does not invoke the helper. `--probe` explicitly requests the bounded (10-second maximum) local protocol check, not task eligibility or provider acceptance.
 

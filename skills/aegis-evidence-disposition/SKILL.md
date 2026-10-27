@@ -93,7 +93,20 @@ preparation is nonexecutable and grants no claim/runtime authority.
 
 ## Gather one reconstructable execution view
 
-For a direct reusable v5 Run, use `--config OWNER_CONFIG --target CONSOLE_URL queue result ITEM` (or protected `GET /v1/queue/:item/result`) after exact Queue readback. The application authenticates the caller, checks the pinned participant's stable owner, reconstructs the task contract, and independently reloads the successful disposition, causal artifact/receipt bindings and content-addressed proof/file bytes. Metadata visibility alone is not content-read authority. No arbitrary blob reference, path or mutable latest selector is accepted.
+For direct reusable v5, use `queue result ITEM` with the exact owning config/target
+(or protected `GET /v1/queue/:item/result`) after exact Queue readback. The
+application authenticates the reader and requires the pinned stable owner or the
+matching source-candidate exact reviewed controller context. That controller path
+checks original workspace/runtime/Agent/charter/Run provenance, complete input
+digest and signed host fact, reconstructing verified history at recorded evidence
+time. Normal later expiry/revocation/lifecycle change does not renew execution or
+erase intact completed results. Current effect checks remain live. No terminal
+fact means metadata only, with no unapproved task/content disclosure.
+The normal reader still reconstructs the contract and reloads successful
+disposition, causal artifact/receipts and content-addressed proof/file bytes.
+Metadata sharing alone is not content authority; no arbitrary blob/path/latest
+selector or read-any-owner predicate is supplied. Source/synthetic proof is not a
+real-provider pilot, and an older backend cannot gain this path from skills alone.
 
 The response includes the exact task, status, verification and source; only verified success includes named `result`, its artifact/receipt/contract/file references, encoding, media type, size and content. UTF-8 or explicit base64 preserves the verified bytes; do not treat v5's JSON proof envelope as the selected file. Results are read from immutable storage, not today's workspace. Pending/failed work has no verified result; corrupt/substituted evidence denies. Elapsed time explicitly includes Queue waiting; usage is unavailable when unmeasured, never fabricated zero. This requested owner-authorized work product is distinct from raw runtime logs, private prompts or credential material, which must not be exposed.
 

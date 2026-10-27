@@ -6,6 +6,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+
 - Wire missing-role provisioning preflight to the owning API pinned protected
   companion, reserve the stable intent before launch and reload canonical approval
   and provisioning receipts. Preserve non-replayable unknown outcomes. Restore
@@ -13,12 +14,20 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   frozen candidate identity in accepted-source custody joins. Source-only; no
   live-provider, installed or whole-contribution completion claim.
 
+- Source candidate #351: retain exact reusable Run setup for independent protected
+  provisioning/host review of differently recorded owners, bind signed consent to
+  complete Run inputs, and preserve historical result inspection without renewing
+  execution authority. Add canonical native-review wire and denial/replay/history
+  regressions. Real-provider two-participant pilot acceptance remains pending.
+
+
 - Add the exact bounded raw-v2 / managed selected-file-v7 producer-consumer
   source path and authenticated node-checkpoint readback, including debugger
   distinction between supported chains and other multi-node definitions. Preserve
   legacy Doer failure-continuation/requeue reasons and output behavior. Synthetic
   execution and restart readback do not establish live-provider acceptance,
   installed-target qualification, general scheduling or release readiness.
+
 
 - Add repository engineering acceptance-port custody: reserve workstation main
   8448/8098, dynamically claim 8450–8469 with foreground lifetime supervision,
