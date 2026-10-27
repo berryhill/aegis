@@ -51,15 +51,16 @@ func proveLog(ctx context.Context, path string) (int64, error) {
 		peek, _ := r.Peek(5)
 		if len(peek) == 5 && bytes.Equal(peek, make([]byte, 5)) {
 			buf := make([]byte, 64<<10)
+			zero := make([]byte, len(buf))
 			for {
 				if e = ctx.Err(); e != nil {
 					return 0, e
 				}
 				n, re := r.Read(buf)
-				for _, b := range buf[:n] {
-					if b != 0 {
-						return 0, errors.New("nonzero WAL suffix")
-					}
+				// Compare every suffix byte in bounded chunks, including partial
+				// reads; per-byte race instrumentation is prohibitive on sparse logs.
+				if !bytes.Equal(buf[:n], zero[:n]) {
+					return 0, errors.New("nonzero WAL suffix")
 				}
 				if re == io.EOF {
 					break
