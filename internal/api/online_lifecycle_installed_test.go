@@ -36,6 +36,7 @@ import (
 // application -> isolated Badger. apiService supplies a synthetic runtime; this
 // is lifecycle qualification, NOT managed-provider or workstation acceptance.
 func TestInstalledOnlineLifecycle(t *testing.T) {
+	t.Parallel()
 	svc := apiService(t)
 	clock := newRequeueStageClock(time.Now().UTC())
 	svc.Now = clock.Now

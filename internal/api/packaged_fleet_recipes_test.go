@@ -14,6 +14,7 @@ import (
 // Runtime/provider and authority preparation are synthetic isolated fixtures.
 // This test does not claim an agent followed prose or qualify a live target.
 func TestPackagedFleetRecipes(t *testing.T) {
+	t.Parallel()
 	archive := os.Getenv("AEGIS_TEST_SKILL_ARCHIVE")
 	revision := os.Getenv("AEGIS_TEST_SKILL_REVISION")
 	digest := os.Getenv("AEGIS_TEST_SKILL_DIGEST")
