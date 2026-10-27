@@ -31,14 +31,15 @@ type QueueLoopInput struct {
 	Inputs         []graph.NormalizedInput `json:"inputs,omitempty"`
 }
 type QueueLoopResult struct {
-	Readiness   *DoerCandidateReadiness `json:"readiness,omitempty"`
-	Reexecution *LoopReexecutionFact    `json:"reexecution,omitempty"`
-	Preparation *sessionPreparationFact `json:"preparation,omitempty"`
-	Rejection   *queue.Rejection        `json:"rejection,omitempty"`
-	Graph       reference.RevisionRef   `json:"graph"`
-	QueueItemID string                  `json:"queue_item_id"`
-	Reason      string                  `json:"reason"`
-	Execution   *QueueExecutionView     `json:"execution,omitempty"`
+	SetupReviewTask *DoerDraft              `json:"setup_review_task,omitempty"`
+	Readiness       *DoerCandidateReadiness `json:"readiness,omitempty"`
+	Reexecution     *LoopReexecutionFact    `json:"reexecution,omitempty"`
+	Preparation     *sessionPreparationFact `json:"preparation,omitempty"`
+	Rejection       *queue.Rejection        `json:"rejection,omitempty"`
+	Graph           reference.RevisionRef   `json:"graph"`
+	QueueItemID     string                  `json:"queue_item_id"`
+	Reason          string                  `json:"reason"`
+	Execution       *QueueExecutionView     `json:"execution,omitempty"`
 	// RequestID is the stable, principal-scoped intent slot. A prerequisite
 	// denial can be retried with the same payload and idempotency key after an
 	// independently approved change; it is not a Queue item or an approval.
@@ -67,7 +68,7 @@ func (r *QueueLoopResult) blockedDoer(reason string, schema ...string) {
 	case "doer_host_approval_required", "doer_host_approval_absent", "doer_host_approval_invalid", "doer_host_approval_expired":
 		r.RequiredAction = "review_exact_host_write_contract"
 		if len(schema) > 0 && schema[0] == loop.DoerReusableSchemaVersion {
-			r.RequiredAction = "exact_v5_host_review_adapter_unavailable"
+			r.RequiredAction = "review_exact_reusable_run_host_write"
 		}
 	case "doer_unsafe_workspace":
 		r.RequiredAction = "review_exact_workspace_scope"
@@ -119,6 +120,9 @@ func (s *Service) QueueLoopAs(ctx context.Context, subject core.Subject, input Q
 	var work *orchestration.WorkRequest
 	s.loopRunMu.Lock()
 	result, err := s.admitQueueLoop(ctx, subject, input, &work)
+	if err == nil && work == nil {
+		err = s.retainQueueLoopSetupReview(ctx, subject, input, &result)
+	}
 	if err == nil && work != nil {
 		if s.loopRunWorkers == nil {
 			s.loopRunWorkers = make(map[string]bool)

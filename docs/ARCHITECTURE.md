@@ -9,6 +9,15 @@ and exact stopped-role inventories under private live custody. No new queue or
 effect store; no host sandbox or #379 completion claim. See
 [continuity implementation](continuity/contribution-continuity.md).
 
+The two-participant source path is authenticated exact Run → retained setup review
+when necessary → independent existing native provisioning/host decision → fresh
+runtime binding/admission → bounded worker → independently reloaded evidence.
+The retained setup task preserves the original v5 publication and Run identity;
+it does not publish a replacement Graph/Loop, approve itself or become executable
+Queue work. Historical result reads reconstruct exact immutable provenance and
+recorded-time authority/host facts, separately from current execution admission.
+Stable-owner definition mutation and zero/multiple-stanza denial remain unchanged.
+
 ## #317 bounded chain source boundary
 
 The current source adds the exact raw-v2 / managed-v7 two-node chain and optional
@@ -17,6 +26,7 @@ typed Queue node checkpoint readback described in
 Earlier single-node-only descriptions below refer to the historical qualified
 vertical, not a denial of this additive source path. General scheduling,
 real-provider qualification and installed acceptance remain separate and unproven.
+
 
 Managed contribution source path (intermediate candidate only): exact admitted
 Queue attempt → private linked-worktree custody → bounded builder proposal →

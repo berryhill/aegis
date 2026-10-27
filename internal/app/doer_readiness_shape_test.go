@@ -15,7 +15,7 @@ func TestDoerReadinessSchemaActions(t *testing.T) {
 		for _, schema := range []string{"", loop.DoerRevisionSchemaVersion, loop.DoerReusableSchemaVersion} {
 			want := "review_exact_host_write_contract"
 			if schema == loop.DoerReusableSchemaVersion {
-				want = "exact_v5_host_review_adapter_unavailable"
+				want = "review_exact_reusable_run_host_write"
 			}
 			r := newDoerReadiness()
 			r.definitionSchema = schema

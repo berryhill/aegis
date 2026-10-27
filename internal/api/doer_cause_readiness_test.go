@@ -83,7 +83,9 @@ func TestDoerReadinessActualCauseChainBothSchemas(t *testing.T) {
 				observed, err := s.ReadDoerReadinessAs(ctx, subject, input)
 				wantAction := "review_exact_host_write_contract"
 				if schema == loop.DoerReusableSchemaVersion {
-					wantAction = "exact_v5_host_review_adapter_unavailable"
+					// The supported v5 review binds the exact Run payload;
+					// missing, invalid or expired consent still denies execution.
+					wantAction = "review_exact_reusable_run_host_write"
 				}
 				if tc.name == "secret" {
 					wantAction = "controller_diagnostic_adapter_unavailable"

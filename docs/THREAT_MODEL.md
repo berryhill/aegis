@@ -9,6 +9,16 @@ and exact stopped-role inventories under private live custody. No new queue or
 effect store; no host sandbox or #379 completion claim. See
 [continuity implementation](continuity/contribution-continuity.md).
 
+Two-participant controller-mediated source candidate: workspace ownership alone
+cannot authorize runtime effects or content reads. Independent protected review
+binds the exact recorded owner, authenticated principal, canonical Agent/charter,
+deployment, Loop, contract and complete normalized Run input digest. Current
+runtime/effect admission remains live; historical completed-result authorization
+replays the fully verified canonical history at the recorded evidence time and
+reloads exact signed host facts and content evidence. It issues no grant and does
+not resurrect expired/revoked authority. Canonical Agent/charter JSON is explicit
+validated review data on the native wire, not a caller-provided approval.
+
 ## #317 bounded chain source boundary
 
 The current source adds the exact raw-v2 / managed-v7 two-node chain and optional
@@ -17,6 +27,7 @@ typed Queue node checkpoint readback described in
 Earlier single-node-only descriptions below refer to the historical qualified
 vertical, not a denial of this additive source path. General scheduling,
 real-provider qualification and installed acceptance remain separate and unproven.
+
 
 Managed contribution tester model input is a content-free frozen identity;
 complete source remains controller-private. Explicitly admitted builder context

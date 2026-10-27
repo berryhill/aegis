@@ -37,6 +37,8 @@ var (
 // otherwise ExpectedVersion is a compare-and-swap guard. PublicationKey, owner,
 // authority, mandate, approval and Run fields are deliberately not accepted.
 type DoerDraftInput struct {
+	// HostRun retains a proposed exact v5 host-review scope, never Run consent.
+	HostRun         *QueueLoopInput       `json:"host_run,omitempty"`
 	CreationKey     string                `json:"creation_key,omitempty"`
 	ID              string                `json:"id,omitempty"`
 	ExpectedVersion uint64                `json:"expected_version"`
@@ -72,6 +74,7 @@ func (input *DoerDraftInput) UnmarshalJSON(data []byte) error {
 // at creation and is not extended by edits. Exact Agent identity is retained
 // even if later Registry changes make publication inadmissible.
 type DoerDraft struct {
+	HostRun         *QueueLoopInput       `json:"host_run,omitempty"`
 	ExecutionDigest string                `json:"execution_digest,omitempty"`
 	CreationKey     string                `json:"creation_key,omitempty"`
 	CreationDigest  string                `json:"creation_digest,omitempty"`
@@ -103,6 +106,11 @@ func doerDraftSlot(principal string) string {
 }
 
 func validateDoerDraftInput(input DoerDraftInput) error {
+	if input.HostRun != nil {
+		if validateDoerHostRunInput(input) != nil {
+			return ErrDoerDraftInvalid
+		}
+	}
 	if len(input.CreationKey) > 128 || strings.TrimSpace(input.CreationKey) != input.CreationKey || (input.ID != "" && input.CreationKey != "") {
 		return ErrDoerDraftInvalid
 	}
@@ -139,7 +147,7 @@ func decodeDoerDraftSet(raw []byte, principal string) (doerDraftSet, error) {
 		return set, ErrDoerDraftInvalid
 	}
 	seen, keys, creationKeys := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	for _, draft := range set.Drafts {
+	for index, draft := range set.Drafts {
 		if draft.PrincipalID != principal {
 			return set, ErrDenied
 		}
@@ -157,8 +165,16 @@ func decodeDoerDraftSet(raw []byte, principal string) (doerDraftSet, error) {
 		} else if draft.CreationDigest != "" {
 			return set, ErrDoerDraftInvalid
 		}
-		if err := validateDoerDraftInput(DoerDraftInput{ID: draft.ID, ExpectedVersion: draft.Version, Agent: draft.Agent, LoopID: draft.LoopID, Revision: draft.Revision, PreviousDigest: draft.PreviousDigest, Contract: draft.Contract}); err != nil {
+		if err := validateDoerDraftInput(DoerDraftInput{HostRun: draft.HostRun, ID: draft.ID, ExpectedVersion: draft.Version, Agent: draft.Agent, LoopID: draft.LoopID, Revision: draft.Revision, PreviousDigest: draft.PreviousDigest, Contract: draft.Contract}); err != nil {
 			return set, err
+		}
+		if draft.HostRun != nil {
+			run, _, err := normalizeLoopRunIdentity(*draft.HostRun)
+			if err != nil {
+				return set, ErrDoerDraftInvalid
+			}
+			draft.HostRun = &run
+			set.Drafts[index] = draft
 		}
 		seen[draft.ID], keys[draft.PublicationKey] = true, true
 	}
@@ -188,6 +204,15 @@ func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, inp
 	}
 	if err := validateDoerDraftInput(input); err != nil {
 		return DoerDraft{}, err
+	}
+	if input.HostRun != nil {
+		// Preserve one normalized identity across pretty storage and compact
+		// protected-review JSON without changing the scope or execution key.
+		run, _, err := normalizeLoopRunIdentity(*input.HostRun)
+		if err != nil {
+			return DoerDraft{}, ErrDoerDraftInvalid
+		}
+		input.HostRun = &run
 	}
 	// Detach caller-owned pointers/slices before persistence and returned readback.
 	wire, _ := json.Marshal(input)
@@ -259,7 +284,7 @@ func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, inp
 			}
 			// Returning from an independent approval to an unchanged draft must
 			// retain its reviewed version and keys, not invalidate continuation.
-			if input.LoopID == result.LoopID && input.Revision == result.Revision && input.PreviousDigest == result.PreviousDigest && reflect.DeepEqual(input.Contract, result.Contract) {
+			if input.LoopID == result.LoopID && input.Revision == result.Revision && input.PreviousDigest == result.PreviousDigest && reflect.DeepEqual(input.Contract, result.Contract) && reflect.DeepEqual(input.HostRun, result.HostRun) {
 				return set, nil
 			}
 		}
@@ -267,6 +292,7 @@ func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, inp
 			return nil, ErrConflict
 		}
 		result.Version++
+		result.HostRun = input.HostRun
 		result.UpdatedAt = now
 		result.Agent, result.LoopID, result.Revision, result.PreviousDigest, result.Contract = input.Agent, input.LoopID, input.Revision, input.PreviousDigest, input.Contract
 		if index < 0 {
@@ -335,6 +361,9 @@ func (s *Service) ValidateDoerDraftPublicationAs(ctx context.Context, subject co
 	}
 	if draft.Version != version {
 		return DoerDraft{}, ErrConflict
+	}
+	if draft.HostRun != nil {
+		return DoerDraft{}, ErrDenied
 	}
 	if s.FleetRepository == nil {
 		return DoerDraft{}, ErrFleetUnavailable

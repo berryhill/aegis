@@ -87,6 +87,14 @@ Automated polling, retry, reclaim, expiry, revocation, dependency scheduling, an
 
 ## Read the durable execution chain
 
+In the matching controller-mediated source candidate, an exact reusable Run
+blocked on provisioning/host consent returns `setup_review_task`, not executable
+Queue. The Loop skill owns independent protected setup and same-key resumption.
+A different recorded owner needs exact reviewed provisioning/host/runtime
+bindings; workspace authority or Run consent cannot supply or renew them.
+Definition mutation remains separately stable-owner-gated. Current effect
+admission is unchanged; historical result inspection cannot issue fresh authority.
+
 Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` for exact historical readback. Keep these records distinct:
 
 - The immutable Queue item binds one accepted submission, snapshot, run identity, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. New direct Loop snapshots pin the exact Loop and participant without a published Graph; historical Graph snapshots retain their exact Graph/Agent/Loop pins and replay path. Internal Graph-run identity does not imply a published Graph is required. Workspace-originated authority is control-plane ownership, not runtime authority: read `preparation-pending` and its later immutable runtime binding separately, and never infer one from the other. Workspace preparation is nonexecutable, not claimable `queued` work. The item is not rewritten by lifecycle changes.
