@@ -34,7 +34,28 @@ real module/Git root, built with `scripts/build-source.sh` and task-root
 Evidence stays private under `.acceptance/request-auth-repair/`; earlier failures
 remain immutable. The earlier independent freeze is invalidated by these repairs.
 
-Launch-asset impact: test-only fixture and evidence documentation repairs do not
-change command syntax, production policy, shipped authority, package provenance,
-license/conduct, release binaries or remote delivery claims. This focused note
-supplies the qualification recipe; it does not assert overall acceptance.
+## Owning-service terminal cleanup repair
+
+The actual Serve journey exposed concurrent role cleanup and supervisor terminal
+transitions. `TestSessionTerminalConcurrentCleanup` reproduced the canonical
+authority-command precondition failure. The owning service now serializes terminal
+transitions and checks the stored session before issuing another revoke. A later
+transition returns the existing state conflict without replacing the first outcome.
+
+Contribution cleanup reconciles that conflict only when independently reloaded
+continuity proves the exact role's completed native effects, closed boundary and
+acknowledged stop, and the original session/process/mandate and exact terminal
+authority projection agree. It never changes terminal history or grants authority.
+`TestContributionRoleCloseJoined` covers controlled positive readback and missing,
+mismatched, active, cancelled and unknown-evidence denials. Controlled continuity
+readback in that test is not actual native Wait proof.
+
+Focused terminal-concurrency race and reconciliation tests pass. The full native
+HTTP journey must be rerun against a rebuilt, refrozen candidate when the retained
+verification reserve is available; this repair is not yet production-route
+acceptance, protected remote delivery or whole-contribution completion.
+
+Launch-asset impact: the cleanup repair changes internal owning-service terminal
+coordination, not command syntax, authority policy, expiry limits, release binaries,
+license/conduct or remote delivery claims. This focused note describes that bounded
+behavior and the qualification recipe; it does not assert overall acceptance.

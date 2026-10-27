@@ -240,7 +240,11 @@ func (s *Service) resolveContributionRole(ctx context.Context, subject core.Subj
 		return orchestration.ContributionRole{}, err
 	}
 	closeRole := func(stop context.Context) error {
-		return s.endSession(stop, session.ID, "stopped", "contribution_role_finished", true)
+		closeErr := s.endSession(stop, session.ID, "stopped", "contribution_role_finished", true)
+		if errors.Is(closeErr, ErrConflict) && s.contributionRoleCloseJoined(stop, c, session, []string{"controller", "builder", "tester"}[index]) {
+			return nil
+		}
+		return closeErr
 	}
 	authority, err := s.authorityContextForSession(ctx, session.ID)
 	if err != nil {
