@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
@@ -31,7 +32,9 @@ import (
 )
 
 // Deterministic protocol qualification, not real-provider proof.
-func TestContributionManagerApprovedNativeRepair(t *testing.T) { contributionManagerNativeRepair(t) }
+func TestContributionManagerApprovedNativeRepair(t *testing.T) {
+	contributionManagerNativeRepair(t, false, false, true)
+}
 func TestContributionManagerDisconnectKeepsValidAuthorityExecution(t *testing.T) {
 	contributionManagerNativeRepair(t, true)
 }
@@ -186,6 +189,24 @@ exec sleep 240
 	worker, err := orchestration.NewQueueWorker(repository, fs, s.Store, verifier, routed, s.Now)
 	must(err)
 	must(s.ConfigureFleet(repository, fs, worker))
+	if len(disconnected) > 2 && disconnected[2] {
+		// Exercise the real service supervisor concurrently with resolver-produced
+		// builder/tester Close and exact native Wait/stop acknowledgement.
+		supervise, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- s.Supervise(supervise) }()
+		defer func() {
+			stop()
+			select {
+			case err := <-done:
+				if err != nil && !errors.Is(err, context.Canceled) {
+					t.Errorf("actual supervisor: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("actual supervisor cleanup did not stop")
+			}
+		}()
+	}
 	if expiry {
 		paused := false
 		worker.SetContributionCheckpointObserver(func(_ context.Context, cp implementation.ContributionCheckpoint) error {
