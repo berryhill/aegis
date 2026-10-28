@@ -49,10 +49,19 @@ func TestSessionTerminalCancelledWaitDoesNotMutate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unlock()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err = s.endSession(ctx, original.ID, "stopped", "cancelled_cleanup", true); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("cancelled waiter did not preserve its deadline: %v", err)
+	result := make(chan error, 1)
+	go func() { result <- s.endSession(ctx, original.ID, "stopped", "cancelled_cleanup", true) }()
+	waitTerminalContenders(t, s, original.ID, 2)
+	cancel()
+	select {
+	case err = <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled waiter lost cancellation: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled session cleanup remained blocked")
 	}
 	after, err := s.GetSession(original.ID)
 	if err != nil {

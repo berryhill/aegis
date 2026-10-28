@@ -32,13 +32,16 @@ import (
 )
 
 // Deterministic protocol qualification, not real-provider proof.
-func TestContributionManagerApprovedNativeRepair(t *testing.T) { contributionManagerNativeRepair(t) }
+func TestContributionManagerApprovedNativeRepair(t *testing.T) {
+	contributionManagerNativeRepair(t, false, false, false, false, true)
+}
 func TestContributionDeliveryJointNative(t *testing.T) {
 	contributionManagerNativeRepair(t, false, false, true)
 }
 func TestContributionDeliveryJointNativeNonlocalCancellation(t *testing.T) {
 	contributionManagerNativeRepair(t, false, false, false, true)
 }
+
 func TestContributionManagerDisconnectKeepsValidAuthorityExecution(t *testing.T) {
 	contributionManagerNativeRepair(t, true)
 }
@@ -220,6 +223,25 @@ exec sleep 240
 		}
 		return nil
 	})
+	if len(disconnected) > 4 && disconnected[4] {
+		// Exercise the real service supervisor concurrently with resolver-produced
+		// builder/tester Close and exact native Wait/stop acknowledgement.
+		supervise, stop := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- s.Supervise(supervise) }()
+		defer func() {
+			stop()
+			select {
+			case err := <-done:
+				if err != nil && !errors.Is(err, context.Canceled) {
+					t.Errorf("actual supervisor: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("actual supervisor cleanup did not stop")
+			}
+		}()
+	}
+
 	goBin, _ := exec.LookPath("go")
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}

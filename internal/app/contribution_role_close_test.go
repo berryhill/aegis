@@ -94,6 +94,21 @@ func TestContributionRoleCloseJoined(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := s.closeContributionRole(ctx, c, original, "builder"); err != nil {
+		t.Fatal("exact already-terminal cleanup did not reconcile", err)
+	}
+	denied, cancelClose := context.WithCancel(ctx)
+	cancelClose()
+	if err := s.closeContributionRole(denied, c, original, "builder"); !errors.Is(err, context.Canceled) {
+		t.Fatal("non-conflict cleanup error suppressed", err)
+	}
+	missing := original
+	missing.ID = "missing-role-session"
+	expected := s.endSession(ctx, missing.ID, "stopped", "contribution_role_finished", true)
+	actual := s.closeContributionRole(ctx, c, missing, "builder")
+	if expected == nil || actual == nil || actual.Error() != expected.Error() || errors.Is(actual, ErrConflict) {
+		t.Fatal("arbitrary storage lookup failure was not propagated", actual)
+	}
 	cases := []struct {
 		name   string
 		change func(*contribution.Continuity, *core.Session)
