@@ -1,5 +1,28 @@
 # Request-auth regression qualification
 
+## Same-service accepted-candidate reattachment
+
+The final-policy Unix HTTP journey also exercises real client cancellation during
+native execution followed by authenticated same-intent Resume. Native work reaches
+its accepted boundary under the original bounded service-owned context; Resume
+then completes ordinary source-custodied delivery/finalization and canonical
+readback without a new native pass, authority context, role epoch or budget reset.
+
+An accepted candidate with fully joined builder/tester native evidence may reuse
+its exact still-live controller only after fresh canonical role admission. The
+readback helper verifies the exact contract/run/candidate/check, completed native
+effects, child quiescence and current controller binding. It returns status only;
+later delivery repeats its normal private source-custody and effect gates. Missing,
+expired, revoked, stopped or unverifiable controller evidence does not take this
+path and retains the existing fail-closed recovery/admission procedure.
+
+The fixture paces authenticated metadata observations at five seconds to avoid
+competing with its own native runner under the existing two-CPU race budget. Its
+120-second wait now also bounds each metadata request. The 180-second focused
+test alarm, HTTP limits, contract deadline, authentication TTLs and output/budget
+assertions are unchanged. The earlier timeout and unavailable-stop failures remain
+retained rather than being relabelled as passes.
+
 
 ## Production-route controlled qualification
 

@@ -1,5 +1,24 @@
 # Release verification resource and termination contract
 
+## Contribution CLI cumulative race alarm (#378)
+
+Local acceptance observed the original three-package CLI race command hit its
+unchanged eight-minute package alarm late in Gateway intake PTY/multiline tests
+(86s/29s), after native root journeys had consumed cumulative time; no data race
+was reported. This is not proof of a hosted timing bound.
+
+Both modes now retain `cli` for cmd/aegis and console, use `cli-command` for the
+dynamic command remainder, and isolate the exact root, final, disconnect/resume
+and declared-operation-approval journeys in `cli-contribution-root`,
+`cli-contribution-final`, `cli-contribution-disconnect`, and
+`cli-contribution-approval`; the separately measured installed-upgrade parent is
+isolated as `cli-installed-upgrade`. Only those exact parents are excluded from
+the remainder. Future tests, runnable examples and default fuzz seeds stay covered;
+TestMain runs in every process. Missing targets deny before any execution.
+Package alarms remain eight minutes (API race twelve), and job/cgroup limits
+are unchanged. Fresh complete local/hosted shard timing remains acceptance work.
+
+
 ## Manager contribution inventory partitions
 
 Both normal and race require `manager`, `manager-contribution-repair`,
@@ -70,9 +89,9 @@ while `TestInstalledUpgradeFullCommand` had run for only 11s (its `healthy`
 subtest for 9s). The adjacent command binary and console packages passed. This is
 cumulative package cost, not an eight-minute installed-upgrade hang or a reported
 data race. The existing dynamic inventory now gives the exact production-root
-legacy and final contribution journeys their own `cli-contribution-legacy` and
-`cli-contribution-final` groups. `cli` retains every other command test, example
-and default fuzz seed, including similarly named future tests; `cli-shell`
+legacy and final contribution journeys their own `cli-contribution-root` and
+`cli-contribution-final` groups. `cli-command` retains every other command test, example
+and default fuzz seed, including similarly named future tests; `cli`
 retains the complete command-binary and console packages. Both modes require all
 corresponding contexts. Workflow, required evidence and missing-target denial change
 together; package/job/cgroup/authority limits and race coverage do not widen.
@@ -92,8 +111,9 @@ Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
 `manager-contribution-repair`, `manager-contribution-disconnect`,
 `manager-contribution-resume`, `manager-contribution-restart`,
 `manager-contribution-joint`, `manager-contribution-cancel`,
-`manager-contribution-final`, `manager-contribution-readback`, `cli`, `cli-shell`,
-`cli-contribution-legacy`, `cli-contribution-final`, `cli-installed-upgrade`,
+`manager-contribution-final`, `manager-contribution-readback`, `cli`, `cli-command`,
+`cli-contribution-root`, `cli-contribution-final`, `cli-contribution-disconnect`,
+`cli-contribution-approval`, `cli-installed-upgrade`,
 `persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
 `execution` shard was replaced by separate implementation/orchestration packages.
 Within orchestration, the contribution integration alone measured 373.40s and the

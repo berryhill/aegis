@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
@@ -51,9 +52,17 @@ func TestPublicRootAuthenticatedContributionFinalJourney(t *testing.T) {
 	publicRootAuthenticatedContributionJourney(t, true)
 }
 
-func publicRootAuthenticatedContributionJourney(t *testing.T, final bool) {
+func TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, true, true)
+}
+
+func TestPublicRootContributionDeclaredOperationApprovalHeld(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, false, false, false, false, false, true)
+}
+
+func publicRootAuthenticatedContributionJourney(t *testing.T, final bool, disconnected ...bool) {
+	approvalHeld := len(disconnected) > 4 && disconnected[4]
 	started := time.Now()
-	disconnected := []bool{}
 	journey := true
 	ctx := context.Background()
 	root := t.TempDir()
@@ -171,6 +180,9 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: cfg.Principal.ID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{nativeSubject.ID}, PrincipalIDs: []string{cfg.Principal.ID}, Issuers: []string{nativeSubject.Issuer}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		if approvalHeld && id == "controller" {
+			charter.Stanzas[0].Approval.RequiredOperations = []string{string(delivery.Commit)}
+		}
 		cc, err := core.Canonicalize(charter)
 		must(err)
 		must(s.Store.SaveCharter(cc))
@@ -304,6 +316,69 @@ exec sleep 240
 	})
 	defer diagnostic.Stop()
 	response, err := gateway.Execute(runCtx, subject, id, token, "/contribute run "+issue.URL)
+	if len(disconnected) != 0 && disconnected[0] {
+		if !errors.Is(err, context.Canceled) || runCtx.Err() != context.Canceled {
+			t.Fatalf("aborted Unix HTTP transport: want context.Canceled, got %v", err)
+		}
+		key := app.ContributionIntentKey(lrRef, issue.URL, "")
+		// Real metadata requests are paced below the unchanged production limiter.
+		// Neither observation nor client disconnect may mint another intent/attempt.
+		waitCtx, stopWait := context.WithTimeout(ctx, 120*time.Second)
+		defer stopWait()
+		// Real status calls authenticate and verify canonical history. Keep
+		// observation from monopolizing the native runner's 2-CPU race budget.
+		tick := time.NewTicker(5 * time.Second)
+		defer tick.Stop()
+		for ready := false; !ready; {
+			select {
+			case <-waitCtx.Done():
+				t.Fatal("same-intent native execution did not reach accepted/quiescent boundary after HTTP disconnect")
+			case <-tick.C:
+				status, e := gateway.Execute(waitCtx, subject, id, token, "/contribute status "+key)
+				must(e)
+				wire, e := json.Marshal(status.Data["execution"])
+				must(e)
+				var execution app.ContributionExecutionResult
+				must(json.Unmarshal(wire, &execution))
+				if execution.Candidate == nil || execution.Candidate.State != "candidate_accepted" {
+					continue
+				}
+				_, continuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+				must(e)
+				ready = contribution.NativeRoleQuiescent(continuity, "builder") && contribution.NativeRoleQuiescent(continuity, "tester")
+				if ready {
+					t.Logf("HTTP disconnect retained SAME key=%s accepted candidate=%s counters=%+v; native builder/tester quiescent", key, execution.Candidate.Passes[0].Candidate.Digest, continuity.Used)
+				}
+			}
+		}
+		beforeResume, e := s.ReadContributionExecutionAs(ctx, subject, key)
+		must(e)
+		beforeControl, e := s.ReadContributionControlAs(ctx, subject, key)
+		must(e)
+		_, beforeContinuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		beforeAuthorities, e := s.Authority.ListAuthorityContexts(ctx)
+		must(e)
+		// Fresh HTTP request, original authenticated manager session and key/TTL.
+		response, err = gateway.Execute(ctx, subject, id, token, "/contribute resume "+key)
+		if err != nil {
+			t.Fatalf("same-intent authenticated Unix HTTP resume after accepted/quiescent disconnect: %v state=%s reason=%s", err, response.State, response.Reason)
+		}
+		afterResume, e := s.ReadContributionExecutionAs(ctx, subject, key)
+		must(e)
+		afterControl, e := s.ReadContributionControlAs(ctx, subject, key)
+		must(e)
+		_, afterContinuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		afterAuthorities, e := s.Authority.ListAuthorityContexts(ctx)
+		must(e)
+		if !reflect.DeepEqual(beforeResume, afterResume) || !reflect.DeepEqual(beforeControl, afterControl) {
+			t.Fatal("resume repeated native implementation/Queue attempt or changed control")
+		}
+		if !reflect.DeepEqual(beforeAuthorities, afterAuthorities) || !reflect.DeepEqual(beforeContinuity.RoleAuthorities, afterContinuity.RoleAuthorities) || !reflect.DeepEqual(beforeContinuity.RoleEpochs, afterContinuity.RoleEpochs) || beforeContinuity.Used != afterContinuity.Used {
+			t.Fatal("same-service delivery reattachment minted authority or reset role epochs/budgets")
+		}
+	}
 	if err != nil {
 		if sessions, readErr := s.ListSessions(); readErr == nil {
 			for _, session := range sessions {
@@ -362,6 +437,34 @@ exec sleep 240
 	}
 	if gitOwned("rev-parse", "HEAD") != preHead || gitOwned("write-tree") != preIndex {
 		t.Fatal("first automatic delivery changed owned worktree original HEAD/index")
+	}
+	if approvalHeld {
+		if response.State != "unavailable" || response.Reason != "delivery_approval_unavailable" || data["completed"] == true {
+			t.Fatalf("declared operation not held: %+v", response)
+		}
+		// Empty publication has no HistorySnapshot root. Use the canonical
+		// all-family absence oracle after a real authenticated sticky stop.
+		_, e := gateway.Execute(ctx, subject, id, token, "/contribute stop "+key)
+		must(e)
+		absence := s.FleetRepository.(interface {
+			ContributionDeliveryAuthoritativeAbsence(context.Context, string, string) (bool, error)
+		})
+		absent, e := absence.ContributionDeliveryAuthoritativeAbsence(ctx, subject.PrincipalID, key)
+		must(e)
+		if !absent {
+			t.Fatal("approval denial retained publication intent/effect")
+		}
+		if gitOwned("for-each-ref", "--format=%(refname)", "refs/heads/contribution/") != "" {
+			t.Fatal("approval denial authored local ref")
+		}
+		if _, e := s.GetFinalContributionResultAs(ctx, subject, key); e == nil {
+			t.Fatal("approval denial minted final success")
+		}
+		if state.Used.Candidates > 2 {
+			t.Fatal("approval denial reset/exceeded budget")
+		}
+		t.Log("actual HTTP native RED/GREEN retained; declared Commit approval unavailable before reservation/effect; private source preserved")
+		return
 	}
 	head := gitOwned("rev-parse", "HEAD")
 	index := gitOwned("write-tree")

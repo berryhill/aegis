@@ -44,6 +44,9 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 	if err != nil || claim.AttemptID != record.QueueAttempt {
 		return result, ErrDenied
 	}
+	if s.acceptedContributionControllerLive(ctx, sub, c, state, record) {
+		return s.ContributionExecutionStatusAs(ctx, sub, key)
+	}
 	needsRecovery := false
 	for role := range state.RoleAuthorities {
 		if !contribution.NativeRoleQuiescent(state, role) {

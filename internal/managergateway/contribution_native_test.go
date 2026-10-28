@@ -208,6 +208,8 @@ exec sleep 240
 	finishSupervision := func() {}
 	if len(disconnected) > 4 && disconnected[4] {
 		// Preserve #378's joint-delivery and cancellation flags at indexes 2/3.
+		// Exercise the real service supervisor concurrently with resolver-produced
+		// builder/tester Close and exact native Wait/stop acknowledgement.
 		supervise, stop := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		go func() { done <- s.Supervise(supervise) }()
