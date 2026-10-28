@@ -1,5 +1,28 @@
 # Request-auth regression qualification
 
+## Production-route controlled qualification
+
+The preserved legacy journey and a separate final-policy-enabled production
+`newRoot`/`api.Serve`/Unix HTTP journey pass in normal mode. The latter independently
+reads the real canonical narrower-target report, artifact, PASSED receipt and
+disposition, verifies that whole-contribution success remains false, and checks
+same-intent replay and same-store cold restart without new native or delivery
+effects. The expected application output comes from the controlled protocol
+runtime; the tester does not write the result.
+
+Independent race qualification of the original frozen candidate hit its unchanged
+180-second alarm while repeatedly decoding continuity history. After integration
+of the #377 immutable byte-checked replay-prefix and exact-sized input-reader
+repair, the same final-enabled race case passes in 125.40 seconds under that same
+alarm. No HTTP/authentication TTL, assertion, race coverage or candidate budget was
+changed. Earlier failed evidence remains retained. The original freeze is
+superseded; fresh independent identity-matched acceptance is required.
+
+These are controlled runtime/local delivery proofs, not real-provider,
+protected-GitHub merge, installed-workstation or full-scope contribution success.
+The explicit operation/resource capability and opaque preclosure gates remain
+independent prerequisites for productive issue mutation.
+
 `TestPublicRootHTTPAuthenticationDenials` and
 `TestPublicRootAuthenticatedContributionJourney` use actual `newRoot` factory
 composition and `api.Serve`, without an injected authentication extractor.
