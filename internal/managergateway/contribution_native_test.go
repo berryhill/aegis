@@ -123,12 +123,10 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	s.Now = clock.Now
 	ctx, subject, e := s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 	must(e)
-	// Fault only the initial subject; policy and fresh admission remain normal.
+	// Keep the ordinary issued 5m subject lifetime. The expiry journey ages this
+	// already-issued authentication before intake, leaving distinct immutable
+	// authority and contribution deadlines without racing cold native Go work.
 	initialExpiry := subject.ExpiresAt
-	if expiry {
-		subject.ExpiresAt = clock.Now().Add(time.Minute)
-		initialExpiry = subject.ExpiresAt
-	}
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
 	must(e)
 	defer repository.Close()
@@ -207,22 +205,27 @@ exec sleep 240
 	worker, err := orchestration.NewQueueWorker(repository, fs, s.Store, verifier, routed, s.Now)
 	must(err)
 	must(s.ConfigureFleet(repository, fs, worker))
+	finishSupervision := func() {}
 	if len(disconnected) > 4 && disconnected[4] {
 		// Preserve #378's joint-delivery and cancellation flags at indexes 2/3.
 		supervise, stop := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		go func() { done <- s.Supervise(supervise) }()
-		defer func() {
-			stop()
-			select {
-			case err := <-done:
-				if err != nil && !errors.Is(err, context.Canceled) {
-					t.Errorf("actual supervisor: %v", err)
+		var once sync.Once
+		finishSupervision = func() {
+			once.Do(func() {
+				stop()
+				select {
+				case err := <-done:
+					if err != nil && !errors.Is(err, context.Canceled) {
+						t.Errorf("actual supervisor: %v", err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Error("actual supervisor cleanup did not stop")
 				}
-			case <-time.After(5 * time.Second):
-				t.Error("actual supervisor cleanup did not stop")
-			}
-		}()
+			})
+		}
+		defer finishSupervision()
 	}
 	paused := false
 	var observedMu sync.Mutex
@@ -235,7 +238,16 @@ exec sleep 240
 		t.Logf("G1 checkpoint stage=%s run=%s attempt=%s subject_live=%t", cp.Stage, cp.RunID, cp.AttemptID, s.Now().Before(subject.ExpiresAt))
 		if expiry && cp.Stage == "freeze" && !paused {
 			paused = true
-			clock.Advance(61 * time.Second)
+			key := app.ContributionIntentKey(lrRef, "https://github.com/fixture/controlled/issues/1", "")
+			sealed, _, err := s.ReadContributionAs(checkpointCtx, subject, key)
+			must(err)
+			if !initialExpiry.Before(sealed.Deadline) {
+				t.Fatal("authority expiry must precede original contribution deadline")
+			}
+			clock.Advance(initialExpiry.Sub(clock.Now()) + time.Second)
+			if !clock.Now().Before(sealed.Deadline) {
+				t.Fatal("expiry fault exhausted contribution deadline")
+			}
 			return fmt.Errorf("controlled frozen expiry hold")
 		}
 		return nil
@@ -265,6 +277,14 @@ exec sleep 240
 	gateway.sessions[id] = session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: s.Now(), expires: subject.ExpiresAt, mode: "degraded"}
 	_, err = gateway.Execute(ctx, subject, id, token, "/contribute select "+lrRef.ID)
 	must(err)
+	if expiry {
+		// Phase separation BEFORE admission: never edit an issued subject, role,
+		// claim or sealed deadline. Strict 60s capping has its own fast regression.
+		if initialExpiry.Sub(subject.AuthenticatedAt) != 5*time.Minute {
+			t.Fatal("ordinary subject lifetime changed")
+		}
+		clock.Advance(30 * time.Second)
+	}
 	runCtx, disconnect := context.WithCancel(ctx)
 	defer disconnect()
 	if len(disconnected) != 0 && disconnected[0] {
@@ -306,7 +326,7 @@ exec sleep 240
 		if !freshMandate.ExpiresAt.Equal(s.Now().Add(300 * time.Second)) {
 			t.Fatal("fresh mandate inherited initial fault")
 		}
-		_, held, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		heldContract, held, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
 		must(e)
 		retained, e := s.ReadContributionExecutionAs(ctx, subject, key)
 		must(e)
@@ -329,6 +349,9 @@ exec sleep 240
 		must(e)
 		if !oldClaim.ExpiresAt.Equal(initialExpiry) {
 			t.Fatal("original claim not capped by initial subject")
+		}
+		if !oldClaim.ExpiresAt.Before(heldContract.Deadline) || !s.Now().Before(heldContract.Deadline) {
+			t.Fatal("expired-claim resume must retain the original unexpired contribution deadline")
 		}
 		for _, role := range held.RoleAuthorities {
 			mandate, readErr := s.Authority.GetMandate(ctx, role.MandateID)
@@ -560,6 +583,10 @@ exec sleep 240
 	})
 
 	// Expiry is explicit and last: functional native checks retain all 300s TTLs.
+	// Finish the actual concurrent supervisor/native-close journey at its current
+	// stage before advancing the fixture-only clock for separate denial assertions.
+	// Shutdown errors remain checked; no expired control command is fabricated.
+	finishSupervision()
 	clock.Advance(301 * time.Second)
 	if _, err := gateway.Execute(ctx, subject, id, token, "/contribute status "+key); err == nil {
 		t.Fatal("expired manager authority accepted")
