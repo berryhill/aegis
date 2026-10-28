@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Resume delivery for an accepted contribution using its exact still-live
+  controller after fresh canonical admission, rather than attempting crash
+  recovery of an owned process. Preserve native evidence, epochs and budgets.
+
 - Upgrade `golang.org/x/net` to v0.62.0 and its minimum required Go module
   dependencies to address GO-2026-6860 in the upgrade Console HTML parser.
   Preserve response bounds, authentication policy and the Go 1.26.10 toolchain.

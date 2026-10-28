@@ -315,16 +315,18 @@ exec sleep 240
 		key := app.ContributionIntentKey(lrRef, issue.URL, "")
 		// Real metadata requests are paced below the unchanged production limiter.
 		// Neither observation nor client disconnect may mint another intent/attempt.
-		deadline := time.NewTimer(120 * time.Second)
-		defer deadline.Stop()
-		tick := time.NewTicker(time.Second)
+		waitCtx, stopWait := context.WithTimeout(ctx, 120*time.Second)
+		defer stopWait()
+		// Real status calls authenticate and verify canonical history. Keep
+		// observation from monopolizing the native runner's 2-CPU race budget.
+		tick := time.NewTicker(5 * time.Second)
 		defer tick.Stop()
 		for ready := false; !ready; {
 			select {
-			case <-deadline.C:
+			case <-waitCtx.Done():
 				t.Fatal("same-intent native execution did not reach accepted/quiescent boundary after HTTP disconnect")
 			case <-tick.C:
-				status, e := gateway.Execute(ctx, subject, id, token, "/contribute status "+key)
+				status, e := gateway.Execute(waitCtx, subject, id, token, "/contribute status "+key)
 				must(e)
 				wire, e := json.Marshal(status.Data["execution"])
 				must(e)
@@ -345,6 +347,10 @@ exec sleep 240
 		must(e)
 		beforeControl, e := s.ReadContributionControlAs(ctx, subject, key)
 		must(e)
+		_, beforeContinuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		beforeAuthorities, e := s.Authority.ListAuthorityContexts(ctx)
+		must(e)
 		// Fresh HTTP request, original authenticated manager session and key/TTL.
 		response, err = gateway.Execute(ctx, subject, id, token, "/contribute resume "+key)
 		if err != nil {
@@ -354,8 +360,15 @@ exec sleep 240
 		must(e)
 		afterControl, e := s.ReadContributionControlAs(ctx, subject, key)
 		must(e)
+		_, afterContinuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		afterAuthorities, e := s.Authority.ListAuthorityContexts(ctx)
+		must(e)
 		if !reflect.DeepEqual(beforeResume, afterResume) || !reflect.DeepEqual(beforeControl, afterControl) {
 			t.Fatal("resume repeated native implementation/Queue attempt or changed control")
+		}
+		if !reflect.DeepEqual(beforeAuthorities, afterAuthorities) || !reflect.DeepEqual(beforeContinuity.RoleAuthorities, afterContinuity.RoleAuthorities) || !reflect.DeepEqual(beforeContinuity.RoleEpochs, afterContinuity.RoleEpochs) || beforeContinuity.Used != afterContinuity.Used {
+			t.Fatal("same-service delivery reattachment minted authority or reset role epochs/budgets")
 		}
 	}
 	if err != nil {
