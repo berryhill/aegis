@@ -1,5 +1,30 @@
 # #377 source continuity launch-impact ledger
 
+## Hosted fixture-stage corrections
+
+Run 40772958699 at 865a5b2 passed the other source gates but exposed two normal-mode
+fixture failures. Approved native repair completed its behavior/custody/cancellation
+assertions before deferred supervision tried to issue a control command after the
+fixture-only final clock jump. Supervision is now explicitly stopped and joined
+with checked errors before that separate expiry-denial phase; deferred fallback
+cleanup remains. Canonical command acceptance is not relaxed.
+
+The frozen-resume fixture's artificial 60s subject expired during valid cold Go
+work before freeze. A fast actual-service regression retains strict 60s issued
+mandate/session/authority capping and proves fresh login cannot revive the expired
+authority. The cold native journey retains its original normal 5m subject and
+300s charter/contract bounds and 60s native-command limit. It ages authentication
+30s BEFORE intake seals the contribution, then advances to just after the original
+subject/claim expiry AT freeze, explicitly remaining before the unchanged sealed
+contribution deadline. Issued records are never edited or renewed. All frozen
+identity, original claim/attempt, role epochs, counters and no-replay assertions
+remain. Final post-functional expired manager/app denials remain.
+
+Original hosted failures are retained. Parent normal repair passed in 124.065s;
+normal frozen-resume passed in 134.243s; strict short-subject capping passed ordinary
+and race. Fresh frozen independent affected normal/race acceptance and new exact-head
+CI are required; earlier v4/v5 results are not relabeled as this successor's proof.
+
 ## Post-reserve lifecycle qualification increment
 
 Capacity restoration released the historical 8-GiB hold described below. Focused
@@ -60,7 +85,7 @@ release, installed, real-provider or whole-contribution acceptance is claimed.
 | Fresh owner retained-run discovery | `internal/app/contribution_discovery.go`; existing Queue inventory, exact canonical issue URL, ambiguity conflict, no runtime side effect |
 | Sanitized checkpoint/gates | `internal/app/contribution_readback.go`, `internal/managergateway/contribution.go`; typed allowlist, no raw process continuity |
 | Mandatory manager integrations | `scripts/verify-go-shard.py`, `.github/workflows/ci.yml`, `scripts/verify-ci-evidence.py`; four isolated heavy groups plus dynamic remainder, both modes |
-| Initial expiry injection | `internal/managergateway/contribution_native_test.go`; only initial subject narrowed to 60s, unchanged 300s charter/5m policy and 60s native command limit |
+| Initial expiry injection | Strict 60s issued-record cap in `internal/app/contribution_subject_cap_test.go`; cold native freeze/expired-claim continuation uses unchanged 300s charter/contract and 5m principal policy with pre-intake phase aging; native command limit remains 60s |
 
 README/SECURITY/architecture/threat model existing continuity boundaries remain;
 focused guide, queue skill and resource contract add exact discovery/readback rows.
