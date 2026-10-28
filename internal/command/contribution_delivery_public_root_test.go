@@ -9,6 +9,7 @@ import (
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/delivery"
+	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
@@ -43,6 +44,14 @@ func (r *publicRootContributionReader) Read(_ context.Context, _ contribution.Is
 	return r.source, nil
 }
 func TestPublicRootAuthenticatedContributionJourney(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, false)
+}
+
+func TestPublicRootAuthenticatedContributionFinalJourney(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, true)
+}
+
+func publicRootAuthenticatedContributionJourney(t *testing.T, final bool) {
 	started := time.Now()
 	disconnected := []bool{}
 	journey := true
@@ -180,7 +189,11 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	if nonlocalCancellation {
 		effect = "verified-protected-base-merge"
 	}
-	lr, lv, e := loop.NewContributionRevision("managed", 1, "", c, loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "fixture/controlled", RepositoryID: 7, Base: base, ReadAction: contribution.ReadIssueAction, Effect: effect, DeadlineSeconds: 300, Invariants: []string{"preserve trusted tests"}, Exclusions: []string{"no GitHub effects"}, Managed: &policy})
+	finalPolicy := ""
+	if final {
+		finalPolicy = evidence.ContributionFinalPolicy
+	}
+	lr, lv, e := loop.NewContributionRevision("managed", 1, "", c, loop.ContributionProfile{FinalVerification: finalPolicy, Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "fixture/controlled", RepositoryID: 7, Base: base, ReadAction: contribution.ReadIssueAction, Effect: effect, DeadlineSeconds: 300, Invariants: []string{"preserve trusted tests"}, Exclusions: []string{"no GitHub effects"}, Managed: &policy})
 	if e != nil {
 		t.Fatalf("revision: %v %+v", e, lv.Issues)
 	}
@@ -302,7 +315,7 @@ exec sleep 240
 	diagnostic.Stop()
 	t.Logf("native execution complete elapsed=%s", time.Since(started))
 	data := response.Data
-	if data["completed"] != false {
+	if data["completed"] != final {
 		t.Fatal("candidate falsely completed")
 	}
 	if !journey && (response.State != "unavailable" || response.Reason != "delivery_controller_unavailable") {
@@ -311,12 +324,20 @@ exec sleep 240
 	key := app.ContributionIntentKey(lrRef, issue.URL, "")
 	sealed, state, _, err := s.ObserveContributionContinuityAs(ctx, subject, key)
 	must(err)
-	candidate, err := s.AcceptedContributionCandidateAs(ctx, subject, key)
-	must(err)
+	// Finalization closes the Queue claim. Read the retained accepted pass;
+	// do not request a fresh effect/handoff admission after terminal closure.
 	record, err := s.ReadContributionExecutionAs(ctx, subject, key)
 	must(err)
 	if record.State != "candidate_accepted" || record.Consumed != 1 || len(record.Passes) != 1 || record.Baseline.Outcome != "failed" || record.Passes[0].Check.Outcome != "passed" {
 		t.Fatal("real native RED/GREEN missing")
+	}
+	candidate := record.Passes[0].Candidate
+	if !final {
+		admitted, e := s.AcceptedContributionCandidateAs(ctx, subject, key)
+		must(e)
+		if !reflect.DeepEqual(candidate, admitted) {
+			t.Fatal("accepted candidate differs from retained pass")
+		}
 	}
 	for _, role := range []string{"builder", "tester"} {
 		if !contribution.NativeRoleQuiescent(state, role) {
@@ -345,17 +366,55 @@ exec sleep 240
 	head := gitOwned("rev-parse", "HEAD")
 	index := gitOwned("write-tree")
 	status := gitOwned("status", "--porcelain=v1", "--untracked-files=all")
+	var terminal app.ContributionResult
+	assertTerminal := func(data map[string]any, expected app.ContributionResult) {
+		t.Helper()
+		if data["completed"] != true || data["terminal"] != true || data["boundary_completed"] != true || data["whole_contribution_succeeded"] != false || data["outcome"] != "narrower-target-completed" {
+			t.Fatalf("local terminal truth: %+v", data)
+		}
+		for name, want := range map[string]any{"result": expected, "disposition": expected.Disposition, "report": expected.Report, "artifact": expected.Artifact, "receipts": expected.Receipts} {
+			wire, e := json.Marshal(data[name])
+			must(e)
+			decoded := reflect.New(reflect.TypeOf(want))
+			must(json.Unmarshal(wire, decoded.Interface()))
+			if !reflect.DeepEqual(decoded.Elem().Interface(), want) {
+				t.Fatalf("terminal %s differs from canonical owner readback", name)
+			}
+		}
+	}
 	var result delivery.DeliveryResult
-	if journey {
+	if final {
+		terminal, err = s.GetFinalContributionResultAs(ctx, subject, key)
+		must(err)
+		assertTerminal(data, terminal)
+		if terminal.Report.Validate() != nil || terminal.Report.Key != key || terminal.Report.Run != sealed.RunID || terminal.Report.Contract != sealed.Digest || terminal.Report.Scope != "local-only" || terminal.Report.Candidate != candidate.Digest || len(terminal.Receipts) != 1 || terminal.Receipts[0].Outcome != evidence.Passed || terminal.Receipts[0].ArtifactID != terminal.Artifact.ID || terminal.Receipts[0].ObservedDigest != terminal.Artifact.Digest || len(terminal.Disposition.ArtifactIDs) != 1 || terminal.Disposition.ArtifactIDs[0] != terminal.Artifact.ID || len(terminal.Disposition.ReceiptIDs) != 1 || terminal.Disposition.ReceiptIDs[0] != terminal.Receipts[0].ID {
+			t.Fatalf("canonical terminal joins: %+v", terminal)
+		}
+	} else if journey {
 		result = *data["delivery"].(*delivery.DeliveryResult)
 	} else {
 		t.Fatal("unexpected nonjourney")
 		must(err)
 	}
-	if len(result.Completed) != 1 || result.Completed[0] != delivery.Commit || len(result.Effects) != 1 || result.Effects[0].Outcome != delivery.Confirmed {
+	canonicalHistory, err := s.ReadContributionDeliveryHistoryAs(ctx, subject, key)
+	must(err)
+	if final {
+		if len(canonicalHistory.Histories) != 1 || len(canonicalHistory.Histories[0]) != 2 {
+			t.Fatalf("final scoped Commit history: %+v", canonicalHistory)
+		}
+	}
+	if !final && (len(result.Completed) != 1 || result.Completed[0] != delivery.Commit || len(result.Effects) != 1 || result.Effects[0].Outcome != delivery.Confirmed) {
 		t.Fatalf("typed local result: %+v", result)
 	}
-	localEffect := result.Effects[0]
+	var localEffect delivery.Record
+	if final {
+		localEffect = canonicalHistory.Histories[0][1].Record
+	} else {
+		localEffect = result.Effects[0]
+	}
+	if localEffect.Outcome != delivery.Confirmed || localEffect.Intent.Operation != delivery.Commit {
+		t.Fatalf("canonical local Commit not confirmed: %+v", localEffect)
+	}
 	if gitOwned("rev-parse", "refs/heads/"+localEffect.Intent.Branch) != localEffect.Head || gitOwned("rev-parse", localEffect.Head+"^{tree}") != candidate.CandidateTree {
 		t.Fatal("authored ref/tree mismatch")
 	}
@@ -379,8 +438,16 @@ exec sleep 240
 		must(e)
 		afterHistory, e := s.ReadContributionDeliveryHistoryAs(ctx, subject, key)
 		must(e)
-		if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(beforeState, afterState) || !reflect.DeepEqual(history, afterHistory) || replay.Data["completed"] != false {
+		if !reflect.DeepEqual(before, after) || !reflect.DeepEqual(beforeState, afterState) || !reflect.DeepEqual(history, afterHistory) || replay.Data["completed"] != final {
 			t.Fatal("journey replay rotated canonical identity/counters/history")
+		}
+		if final {
+			assertTerminal(replay.Data, terminal)
+			afterTerminal, e := s.GetFinalContributionResultAs(ctx, subject, key)
+			must(e)
+			if !reflect.DeepEqual(terminal, afterTerminal) {
+				t.Fatal("replay changed canonical terminal")
+			}
 		}
 	}
 	gateway.stop()
@@ -403,6 +470,24 @@ exec sleep 240
 	must(err)
 	if !reflect.DeepEqual(record, afterRestart) || !reflect.DeepEqual(history, afterRestartHistory) {
 		t.Fatal("restart changed durable execution/history")
+	}
+	if final {
+		cold, e := s.GetFinalContributionResultAs(freshCtx, fresh, key)
+		must(e)
+		if !reflect.DeepEqual(terminal, cold) {
+			t.Fatal("cold owner read changed terminal")
+		}
+		status, e := gateway.Execute(freshCtx, fresh, opened.ID, opened.Token, "/contribute status "+key)
+		must(e)
+		assertTerminal(status.Data, terminal)
+		afterCold, e := s.ReadContributionExecutionAs(freshCtx, fresh, key)
+		must(e)
+		afterColdHistory, e := s.ReadContributionDeliveryHistoryAs(freshCtx, fresh, key)
+		must(e)
+		if !reflect.DeepEqual(record, afterCold) || !reflect.DeepEqual(history, afterColdHistory) {
+			t.Fatal("cold terminal navigation repeated execution/effects")
+		}
+		t.Logf("FINAL local boundary=%s whole=false disposition=%s artifact=%s receipt=%s; replay/restart identical", terminal.Report.Outcome, terminal.Disposition.GraphRunID, terminal.Artifact.ID, terminal.Receipts[0].ID)
 	}
 	t.Logf("PUBLIC ROOT actual native baseline=%s passes=%d consumed=%d GREEN=%s; Reserve/Git.Apply confirmed; post-replay identity/counters/history unchanged; instruction reads=%d", record.Baseline.Outcome, len(record.Passes), record.Consumed, record.Passes[0].Check.Outcome, reader.calls)
 }
