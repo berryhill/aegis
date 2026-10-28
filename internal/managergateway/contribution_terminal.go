@@ -2,11 +2,33 @@ package managergateway
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/berryhill/aegis/internal/app"
 
 	"github.com/berryhill/aegis/internal/slash"
 )
+
+// A completed service-owned native run may outlive its transport request.
+// Only its metadata notification gets a short read context; admission and all
+// effect paths retain their existing contexts and original authority expiry.
+func (s *Service) contributionTerminalAfterOwnedRun(ctx context.Context, entry session, c app.ContributionNavigationContract, execution app.ContributionExecutionResult, result *slash.Result) (bool, error) {
+	if !errors.Is(ctx.Err(), context.Canceled) || execution.Candidate == nil || execution.Candidate.State != "candidate_accepted" {
+		return s.contributionTerminal(ctx, entry, c, result)
+	}
+	deadline := c.Deadline
+	for _, bound := range []time.Time{entry.expires, entry.subject.ExpiresAt} {
+		if bound.Before(deadline) {
+			deadline = bound
+		}
+	}
+	read, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	read, cancelBound := context.WithDeadline(read, deadline)
+	defer cancelBound()
+	return s.contributionTerminal(read, entry, c, result)
+}
 
 // Terminal navigation is metadata-only and never continues native/delivery.
 // Every non-not-found error is returned, including corrupt or foreign evidence.

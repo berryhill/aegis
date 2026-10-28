@@ -60,7 +60,7 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			journey, executeErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, c.Key)
 			execution := journey.Execution
 			err = executeErr
-			if found, e := s.contributionTerminal(ctx, entry, c, &result); e != nil {
+			if found, e := s.contributionTerminalAfterOwnedRun(ctx, entry, c, execution, &result); e != nil {
 				return result, e
 			} else if found {
 				break
@@ -144,7 +144,7 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			if readErr != nil {
 				return result, readErr
 			}
-			if found, e := s.contributionTerminal(ctx, entry, contract, &result); e != nil {
+			if found, e := s.contributionTerminalAfterOwnedRun(ctx, entry, contract, execution, &result); e != nil {
 				return result, e
 			} else if found {
 				break
