@@ -1,5 +1,25 @@
 # #377 source continuity launch-impact ledger
 
+## Post-reserve lifecycle qualification increment
+
+Capacity restoration released the historical 8-GiB hold described below. Focused
+ordinary and race lifecycle checks now pass, including successful same-session
+handoff, entry cleanup, an observed contended cancellation with canonical
+nonmutation, first-terminal preservation and non-conflict cleanup-error propagation.
+The original approved-native-repair race fixture now runs actual `Service.Supervise`
+concurrently with resolver-produced builder/tester Close and native Wait/stop joins;
+that supervised journey passed in 240.401 seconds without changing its limits.
+These are controlled runtime fixtures, not real-provider or installed acceptance.
+Fresh frozen-candidate independent qualification remains required after these edits.
+
+Main run 40576353342 at 7c4ec83 exhausted the unchanged implementation-package
+8-minute alarm with `TestManagedInputContinuationReload` only 9 seconds old. No
+data-race warning or assertion identified that test as the root cause. This branch's
+existing actual-inventory contribution/remainder split preserves all coverage and
+mandatory evidence names; the remainder race passed locally in 386.048 seconds.
+The isolated contribution group and fresh hosted timing remain separate checks.
+No alarm, authority TTL, assertion, candidate budget or race coverage was relaxed.
+
 ## CI recovery performance increment
 
 The imported #378 terminal-cleanup delta is retained with its provenance. A fresh
