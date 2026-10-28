@@ -7,6 +7,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 ## Unreleased
 
 
+- Reduce repeated contribution history decoding with a transaction-byte-checked
+  replay prefix; preserve fresh authority admission and cold validation. Read
+  toolchain inputs without repeated buffer growth, and verify every recovery-log
+  suffix byte in bounded chunks without changing authentication deadlines.
+
+
 - Wire missing-role provisioning preflight to the owning API pinned protected
   companion, reserve the stable intent before launch and reload canonical approval
   and provisioning receipts. Preserve non-replayable unknown outcomes. Restore

@@ -66,7 +66,8 @@ type Service struct {
 	Fleet                  *orchestration.FleetService
 	QueueWorker            *orchestration.QueueWorker
 	contributionDecisionMu sync.Mutex // serializes owning-service delivery before durable reservation
-	sessionTerminalMu      sync.Mutex // serializes owning-service cleanup with its session supervisor
+	sessionTerminalMu      sync.Mutex // guards only the ephemeral per-session terminal lock map
+	sessionTerminalLocks   map[string]*sessionTerminalLock
 	nativeConnectionMu     sync.Mutex
 	nativeReviews          map[string]nativeConnectionReview
 	loopRunMu              sync.Mutex                         // guards Run admission/preparation and foreground worker ownership
@@ -1568,8 +1569,11 @@ func (s *Service) endSession(ctx context.Context, id, status, reason string, rev
 	// The owning service's role cleanup and supervisor can observe the same
 	// process exit. Re-read the terminal session before reserving another revoke;
 	// a stale supervisor observation cannot replace the first canonical outcome.
-	s.sessionTerminalMu.Lock()
-	defer s.sessionTerminalMu.Unlock()
+	unlock, err := s.lockSessionTerminal(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	current, err := s.GetSession(id)
 	if err != nil {
 		return err

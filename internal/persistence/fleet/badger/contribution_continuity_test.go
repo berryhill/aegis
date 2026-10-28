@@ -99,7 +99,7 @@ func TestContributionContinuityConcurrentCAS(t *testing.T) {
 	}
 }
 func TestContributionContinuityHistoryCorruption(t *testing.T) {
-	for _, fault := range []string{"missing-head", "rollback-head", "missing-event", "tampered-event", "unknown-key"} {
+	for _, fault := range []string{"missing-head", "rollback-head", "missing-event", "tampered-event", "tampered-prefix", "unknown-key"} {
 		t.Run(fault, func(t *testing.T) {
 			s, c := continuityStore(t)
 			ctx := context.Background()
@@ -112,6 +112,11 @@ func TestContributionContinuityHistoryCorruption(t *testing.T) {
 			if _, err = s.AppendContributionContinuity(ctx, second); err != nil {
 				t.Fatal(err)
 			}
+			// Warm the complete validated prefix before each disk fault. A cache
+			// must not hide corruption in any old event, not merely the head.
+			if _, _, err = s.GetContributionContinuity(ctx, c.QueueItemID); err != nil {
+				t.Fatal(err)
+			}
 			err = s.update(ctx, func(txn *badgerdb.Txn) error {
 				switch fault {
 				case "missing-head":
@@ -121,6 +126,10 @@ func TestContributionContinuityHistoryCorruption(t *testing.T) {
 					return txn.Set(key(familyContributionContinuity, c.QueueItemID, "head"), b)
 				case "missing-event":
 					return txn.Delete(key(familyContributionContinuity, c.QueueItemID, "1"))
+				case "tampered-prefix":
+					first.OwnerID = "substituted"
+					b, _ := json.Marshal(first)
+					return txn.Set(key(familyContributionContinuity, c.QueueItemID, "1"), b)
 				case "tampered-event":
 					second.Counter = "candidate"
 					b, _ := json.Marshal(second)
