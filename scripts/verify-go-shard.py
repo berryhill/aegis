@@ -31,6 +31,7 @@ COMMAND = ROOT + 'internal/command'
 CLI_TESTS = {
     'cli-contribution-legacy': 'TestPublicRootAuthenticatedContributionJourney',
     'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney',
+    'cli-installed-upgrade': 'TestInstalledUpgradeFullCommand',
 }
 MANAGER_TESTS = {
     'manager-contribution-repair': 'TestContributionManagerApprovedNativeRepair',
@@ -117,7 +118,7 @@ def test_pattern(names, group):
         selected = [name for name in names if (name == target) == group.endswith('-contribution')]
     elif group == 'cli' or group in CLI_TESTS:
         if not set(CLI_TESTS.values()) <= set(names):
-            raise ValueError('missing command contribution integration test')
+            raise ValueError('missing command integration test')
         selected = ([CLI_TESTS[group]] if group in CLI_TESTS else
                     [name for name in names if name not in CLI_TESTS.values()])
     elif group == 'manager' or group in MANAGER_TESTS:

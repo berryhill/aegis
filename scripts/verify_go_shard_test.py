@@ -152,6 +152,7 @@ class ShardTests(unittest.TestCase):
                         self.assertEqual(run.call_count, 2)
         self.assertEqual(Counter(seen), Counter(names))
         self.assertEqual(shard.GROUPS['cli-shell'], ('cmd/aegis', 'internal/console'))
+        self.assertEqual(shard.CLI_TESTS['cli-installed-upgrade'], 'TestInstalledUpgradeFullCommand')
 
     def test_inventory_failure_never_executes_partition(self):
         for failure in (subprocess.CalledProcessError(1, ['go']), mock.Mock(stdout='')):

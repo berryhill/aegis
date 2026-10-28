@@ -54,7 +54,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_each_rebalanced_shard_is_required_in_both_modes(self):
         for mode in ('normal', 'race'):
-            for group in ('api-a', 'api-b', 'implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager', 'manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-restart', 'manager-contribution-joint', 'manager-contribution-cancel', 'manager-contribution-final', 'manager-contribution-readback', 'cli', 'cli-shell', 'cli-contribution-legacy', 'cli-contribution-final', 'update', 'remainder-a', 'remainder-b'):
+            for group in ('api-a', 'api-b', 'implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager', 'manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-restart', 'manager-contribution-joint', 'manager-contribution-cancel', 'manager-contribution-final', 'manager-contribution-readback', 'cli', 'cli-shell', 'cli-contribution-legacy', 'cli-contribution-final', 'cli-installed-upgrade', 'update', 'remainder-a', 'remainder-b'):
                 name = f'Go {mode} / {group}'
                 with self.subTest(name=name):
                     self.assertIn(name, MODULE.REQUIRED_JOBS)
@@ -65,7 +65,7 @@ class EvidenceTests(unittest.TestCase):
 
     def test_cancelled_execution_successors_deny_even_with_green_aggregates(self):
         for mode in ('normal', 'race'):
-            for group in ('implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager', 'manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-restart', 'manager-contribution-joint', 'manager-contribution-cancel', 'manager-contribution-final', 'manager-contribution-readback', 'cli', 'cli-shell', 'cli-contribution-legacy', 'cli-contribution-final'):
+            for group in ('implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager', 'manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-restart', 'manager-contribution-joint', 'manager-contribution-cancel', 'manager-contribution-final', 'manager-contribution-readback', 'cli', 'cli-shell', 'cli-contribution-legacy', 'cli-contribution-final', 'cli-installed-upgrade'):
                 name = f'Go {mode} / {group}'
                 for status in ('cancelled', 'skipped', 'failure'):
                     with self.subTest(name=name, status=status):

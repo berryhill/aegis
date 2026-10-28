@@ -74,10 +74,16 @@ legacy and final contribution journeys their own `cli-contribution-legacy` and
 `cli-contribution-final` groups. `cli` retains every other command test, example
 and default fuzz seed, including similarly named future tests; `cli-shell`
 retains the complete command-binary and console packages. Both modes require all
-four contexts. Workflow, required evidence and missing-target denial change
+corresponding contexts. Workflow, required evidence and missing-target denial change
 together; package/job/cgroup/authority limits and race coverage do not widen.
 Local contract tests and planned inventories are not actual shard or hosted
 acceptance; the failed aggregate invocation remains retained.
+
+The first partitioned remainder also reached 480.188s, this time with the full
+installed-upgrade parent active for 2m42s and its current subcase for only 7s.
+Isolate that measured parent as `cli-installed-upgrade`, still with its complete
+children and unchanged alarm. The remainder retains every other default case;
+missing/skipped/cancelled upgrade evidence denies readiness in both modes.
 
 ## Launch-asset impact review
 
@@ -87,7 +93,7 @@ Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
 `manager-contribution-resume`, `manager-contribution-restart`,
 `manager-contribution-joint`, `manager-contribution-cancel`,
 `manager-contribution-final`, `manager-contribution-readback`, `cli`, `cli-shell`,
-`cli-contribution-legacy`, `cli-contribution-final`,
+`cli-contribution-legacy`, `cli-contribution-final`, `cli-installed-upgrade`,
 `persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
 `execution` shard was replaced by separate implementation/orchestration packages.
 Within orchestration, the contribution integration alone measured 373.40s and the
