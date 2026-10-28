@@ -15,7 +15,7 @@ REQUIRED_JOBS = frozenset({"Exact-head release readiness", "Race tests", "Reposi
                            "Authority denial matrix", "Vulnerability scan",
                            "Release package and installed proof"}
                           | {f"Go {mode} / {group}" for mode in ("normal", "race")
-                             for group in ("api-a", "api-b", "implementation", "implementation-contribution", "orchestration", "orchestration-contribution", "manager", "manager-contribution-repair", "manager-contribution-disconnect", "manager-contribution-resume", "manager-contribution-restart", "manager-contribution-joint", "manager-contribution-cancel", "manager-contribution-final", "manager-contribution-readback", "cli", "persistence", "update", "remainder-a", "remainder-b")})
+                             for group in ("api-a", "api-b", "implementation", "implementation-contribution", "orchestration", "orchestration-contribution", "manager", "manager-contribution-repair", "manager-contribution-disconnect", "manager-contribution-resume", "manager-contribution-restart", "manager-contribution-joint", "manager-contribution-cancel", "manager-contribution-final", "manager-contribution-readback", "cli", "cli-command", "cli-contribution-root", "cli-contribution-final", "cli-contribution-disconnect", "cli-contribution-approval", "persistence", "update", "remainder-a", "remainder-b")})
 
 
 def validate_sha(value):

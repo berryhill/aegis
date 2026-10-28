@@ -56,7 +56,12 @@ func TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney(t *test
 	publicRootAuthenticatedContributionJourney(t, true, true)
 }
 
+func TestPublicRootContributionDeclaredOperationApprovalHeld(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, false, false, false, false, false, true)
+}
+
 func publicRootAuthenticatedContributionJourney(t *testing.T, final bool, disconnected ...bool) {
+	approvalHeld := len(disconnected) > 4 && disconnected[4]
 	started := time.Now()
 	journey := true
 	ctx := context.Background()
@@ -175,6 +180,9 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: cfg.Principal.ID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{nativeSubject.ID}, PrincipalIDs: []string{cfg.Principal.ID}, Issuers: []string{nativeSubject.Issuer}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		if approvalHeld && id == "controller" {
+			charter.Stanzas[0].Approval.RequiredOperations = []string{string(delivery.Commit)}
+		}
 		cc, err := core.Canonicalize(charter)
 		must(err)
 		must(s.Store.SaveCharter(cc))
@@ -429,6 +437,34 @@ exec sleep 240
 	}
 	if gitOwned("rev-parse", "HEAD") != preHead || gitOwned("write-tree") != preIndex {
 		t.Fatal("first automatic delivery changed owned worktree original HEAD/index")
+	}
+	if approvalHeld {
+		if response.State != "unavailable" || response.Reason != "delivery_approval_unavailable" || data["completed"] == true {
+			t.Fatalf("declared operation not held: %+v", response)
+		}
+		// Empty publication has no HistorySnapshot root. Use the canonical
+		// all-family absence oracle after a real authenticated sticky stop.
+		_, e := gateway.Execute(ctx, subject, id, token, "/contribute stop "+key)
+		must(e)
+		absence := s.FleetRepository.(interface {
+			ContributionDeliveryAuthoritativeAbsence(context.Context, string, string) (bool, error)
+		})
+		absent, e := absence.ContributionDeliveryAuthoritativeAbsence(ctx, subject.PrincipalID, key)
+		must(e)
+		if !absent {
+			t.Fatal("approval denial retained publication intent/effect")
+		}
+		if gitOwned("for-each-ref", "--format=%(refname)", "refs/heads/contribution/") != "" {
+			t.Fatal("approval denial authored local ref")
+		}
+		if _, e := s.GetFinalContributionResultAs(ctx, subject, key); e == nil {
+			t.Fatal("approval denial minted final success")
+		}
+		if state.Used.Candidates > 2 {
+			t.Fatal("approval denial reset/exceeded budget")
+		}
+		t.Log("actual HTTP native RED/GREEN retained; declared Commit approval unavailable before reservation/effect; private source preserved")
+		return
 	}
 	head := gitOwned("rev-parse", "HEAD")
 	index := gitOwned("write-tree")

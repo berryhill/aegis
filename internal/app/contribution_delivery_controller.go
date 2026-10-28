@@ -118,8 +118,12 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 	}
 	// RequiredOperations are exact operation identifiers, not a global veto.
 	// No approval consumer is installed here: only the applicable operation holds.
-	if slices.Contains(ac.Authority.Approval.RequiredOperations, string(i.Operation)) {
-		return ErrContributionDeliveryApprovalUnavailable
+	charter, err := s.GetCharter(ac.AgentID, ac.CharterRevision)
+	if err != nil {
+		return delivery.ErrDenied
+	}
+	if err := contributionDeliveryOperationApproval(ac, charter, i.Operation); err != nil {
+		return err
 	}
 	if i.Operation != delivery.Commit {
 		b := a.controller.policy.Binding
@@ -264,6 +268,19 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		owner, e := store.ContributionDelivery(live, p.Binding, authority)
 		if e != nil {
 			return e
+		}
+		ac, authorityErr := s.authorityContextForSession(live, session)
+		if authorityErr != nil {
+			return delivery.ErrDenied
+		}
+		charter, charterErr := s.GetCharter(ac.AgentID, ac.CharterRevision)
+		if charterErr != nil {
+			return delivery.ErrDenied
+		}
+		// Commit is the first productive operation; preserve its typed hold before
+		// the engine's deliberately closed generic admission error projection.
+		if approvalErr := contributionDeliveryOperationApproval(ac, charter, delivery.Commit); approvalErr != nil {
+			return approvalErr
 		}
 		if inspect != nil {
 			return inspect(live, plan, authority, owner, p)

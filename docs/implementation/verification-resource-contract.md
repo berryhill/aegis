@@ -1,5 +1,23 @@
 # Release verification resource and termination contract
 
+## Contribution CLI cumulative race alarm (#378)
+
+Local acceptance observed the original three-package CLI race command hit its
+unchanged eight-minute package alarm late in Gateway intake PTY/multiline tests
+(86s/29s), after native root journeys had consumed cumulative time; no data race
+was reported. This is not proof of a hosted timing bound.
+
+Both modes now retain `cli` for cmd/aegis and console, use `cli-command` for the
+dynamic command remainder, and isolate the exact root, final, disconnect/resume
+and declared-operation-approval journeys in `cli-contribution-root`,
+`cli-contribution-final`, `cli-contribution-disconnect`, and
+`cli-contribution-approval`. Only those four exact parents are excluded from the
+remainder. Future tests, runnable examples and default fuzz seeds stay covered;
+TestMain runs in every process. Missing targets deny before any execution.
+Package alarms remain eight minutes (API race twelve), and job/cgroup limits
+are unchanged. Fresh complete local/hosted shard timing remains acceptance work.
+
+
 ## Manager contribution inventory partitions
 
 Both normal and race require `manager`, `manager-contribution-repair`,

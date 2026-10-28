@@ -37,6 +37,8 @@ MANAGER_TESTS = {
     'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
     'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
 }
+COMMAND = ROOT + 'internal/command'
+CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld'}
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
@@ -47,7 +49,9 @@ GROUPS = {
     'orchestration-contribution': ('internal/orchestration',),
     'manager': ('internal/managergateway',),
     **{group: ('internal/managergateway',) for group in MANAGER_TESTS},
-    'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
+    'cli': ('cmd/aegis', 'internal/console'),
+    'cli-command': ('internal/command',),
+    **{group: ('internal/command',) for group in CLI_CONTRIBUTION_TESTS},
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
     'update': ('internal/update',),
     'remainder-a': (),
@@ -71,14 +75,14 @@ def groups(packages):
     selected = {name: [ROOT + path for path in paths] for name, paths in GROUPS.items()}
     assigned = [package for names in selected.values() for package in names]
     expected = Counter({p: 1 for p in set(assigned)})
-    expected.update({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1, MANAGER: len(MANAGER_TESTS)})
+    expected.update({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1, MANAGER: len(MANAGER_TESTS), COMMAND: len(CLI_CONTRIBUTION_TESTS)})
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1, MANAGER: len(MANAGER_TESTS)}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1, MANAGER: len(MANAGER_TESTS), COMMAND: len(CLI_CONTRIBUTION_TESTS)}):
         raise ValueError('package coverage mismatch')
     return selected
 
@@ -108,6 +112,11 @@ def test_pattern(names, group):
         if target not in names:
             raise ValueError('missing contribution integration test')
         selected = [name for name in names if (name == target) == group.endswith('-contribution')]
+    elif group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
+        if not set(CLI_CONTRIBUTION_TESTS.values()) <= set(names):
+            raise ValueError('missing CLI contribution integration test')
+        selected = ([CLI_CONTRIBUTION_TESTS[group]] if group in CLI_CONTRIBUTION_TESTS else
+                    [name for name in names if name not in CLI_CONTRIBUTION_TESTS.values()])
     elif group == 'manager' or group in MANAGER_TESTS:
         if not set(MANAGER_TESTS.values()) <= set(names):
             raise ValueError('missing manager contribution integration test')
@@ -140,8 +149,8 @@ def main(argv=None):
         api = group in ('api-a', 'api-b')
         timeout = '12m' if args.race and api else '8m'
         command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-        if api or group in PARTITIONS or group == 'manager' or group in MANAGER_TESTS:
-            package = API if api else MANAGER if group == 'manager' or group in MANAGER_TESTS else PARTITIONS[group][0]
+        if api or group in PARTITIONS or group == 'manager' or group in MANAGER_TESTS or group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
+            package = COMMAND if group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS else API if api else MANAGER if group == 'manager' or group in MANAGER_TESTS else PARTITIONS[group][0]
             if package not in inventories:
                 listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
                 inventories[package] = test_inventory(listing.stdout, package)
