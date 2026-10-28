@@ -124,21 +124,17 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	s := contributionApp(t)
 	clock := &contributionStageClock{at: time.Now().UTC()}
 	s.Now = clock.Now
-	subject, e := s.Authenticate(ctx)
+	// Every productive delivery path uses #378's actual request boundary. The
+	// configured UID is an explicit in-process fixture input, not HTTP proof.
+	ctx, subject, e := s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 	must(e)
-	if strings.Contains(t.Name(), "ManagerJoined") {
-		ctx, subject, e = s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
-		must(e)
-	}
 	repository, e := fleetbadger.Open(ctx, filepath.Join(s.Config.StateDir, "persistence", "fleet-v1"))
 	must(e)
 	defer repository.Close()
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: 300}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
-		if strings.Contains(t.Name(), "ManagerJoined") {
-			charter.Stanzas[0].Authentication.Selectors[0].Issuers = []string{subject.Issuer}
-		}
+		charter.Stanzas[0].Authentication.Selectors[0].Issuers = []string{subject.Issuer}
 		cc, e := core.Canonicalize(charter)
 		must(e)
 		must(s.Store.SaveCharter(cc))
@@ -372,8 +368,9 @@ while read rest; do :; done
 			if !clock.Now().Before(sealed.Deadline) {
 				t.Fatal("fixture contract has no continuation interval")
 			}
-			fresh, e := s.Authenticate(ctx)
+			requestCtx, fresh, e := s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 			must(e)
+			ctx = requestCtx
 			if e = completion.FinalizeContributionCompletionAs(ctx, fresh, p.Binding.Reference); e == nil {
 				t.Fatal("fresh observer without current role/continuation finalized")
 			}
