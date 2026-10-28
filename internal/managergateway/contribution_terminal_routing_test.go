@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
@@ -12,6 +13,7 @@ import (
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/reference"
+	"github.com/berryhill/aegis/internal/slash"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,6 +113,22 @@ func managerTerminalReadback(t *testing.T, s *app.Service, subject core.Subject,
 	}
 	token, id := "terminal-fixture-token", "terminal-fixture-manager"
 	gateway.sessions[id] = session{id: id, token: sha256.Sum256([]byte(token)), subject: subject, issuedAt: s.Now(), expires: subject.ExpiresAt, mode: "degraded", contributionLoop: c.Loop}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	accepted := app.ContributionExecutionResult{Candidate: &before}
+	for _, route := range []string{"run", "resume"} {
+		entry := gateway.sessions[id]
+		recovered := slash.Result{}
+		found, err := gateway.contributionTerminalAfterJourney(cancelled, entry, c, accepted, errors.New("controlled late "+route+" journey error"), &recovered)
+		if err != nil || !found {
+			t.Fatal("canonical terminal did not reconcile late journey error", route, found, err)
+		}
+		wire, _ := json.Marshal(recovered.Data["result"])
+		want, _ := json.Marshal(expected)
+		if string(wire) != string(want) {
+			t.Fatal("recovery changed canonical result", route)
+		}
+	}
 	for label, ref := range map[string]string{"native": expected.Report.Native, "history": expected.Report.History} {
 		t.Run("retained-joined-corruption-"+label, func(t *testing.T) {
 			path := filepath.Join(s.Store.Root(), "blobs", "sha256", strings.TrimPrefix(ref, "sha256:"))
@@ -131,6 +149,11 @@ func managerTerminalReadback(t *testing.T, s *app.Service, subject core.Subject,
 			}
 			if _, e := s.GetContributionResultAs(ctx, subject, c.Key); e == nil || app.IsContributionResultNotFound(e) {
 				t.Fatal("corrupt joined result permits success or replay", e)
+			}
+			entry := gateway.sessions[id]
+			recovered := slash.Result{}
+			if found, e := gateway.contributionTerminalAfterJourney(cancelled, entry, c, accepted, context.Canceled, &recovered); found || e == nil {
+				t.Fatal("late journey error hid corrupt canonical evidence", found, e)
 			}
 			for _, command := range []string{"/contribute status " + c.Key, "/contribute resume " + c.Key, "/contribute run " + c.Source.URL.URL + " local-only"} {
 				if _, e := gateway.Execute(ctx, subject, id, token, command); e == nil {
