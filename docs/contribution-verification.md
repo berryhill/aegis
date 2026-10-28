@@ -119,7 +119,7 @@ URL to that same PR. The original counterexample failed before the repair;
 focused normal/race regressions now pass. These remain controlled semantic tests,
 not a remote mutation or a whole-contribution disposition.
 
-## Mandatory production join still pending
+## Production composition and remaining qualification
 
 ### Current final-verifier and terminal integration
 
@@ -146,11 +146,22 @@ waiter cancellation, plus same-owner, foreign, stale and corrupt-result reads.
 These tests do not establish production authentication, live-provider execution,
 real protected GitHub delivery or installed adoption.
 
-`NewContributionCompletionInFrame` is the concrete controller insertion port. It
-requires the existing live private source frame, exact current controller and
-retained policy; callers cannot manufacture the frame. Production startup and
-request-authentication composition remain owned by #378 and must be integrated
-and independently tested before whole-contribution acceptance.
+`NewContributionCompletionInFrame` is installed by the productive controller
+inside its existing live private source frame. It requires the exact current
+controller and retained policy; callers cannot manufacture the frame. #378's
+request-authentication composition carries native kernel-peer provenance or the
+live owning Console registry without relabelling a password subject or renewing
+an original manager session. Terminal-first navigation reads the canonical result
+before any new native or remote effect.
+
+Productive issue disposition additionally requires the exact operation and
+repository-qualified capability in the same current authority, the pinned
+credential/resource/deployment gates, and this exact adapter's opaque preclosure.
+`VerifyContributionIssueIntent` reloads the native, continuity, policy and delivery
+joins and validates the canonical intent before/after its own UNKNOWN reservation.
+An absent capability or approval remains denied; installing this code issues no
+grant. A retained result distinguishes narrower-target completion from whole
+contribution success.
 
 Result retrieval reloads the terminal report and receipt, then the retained
 native-acceptance and delivery-history blobs and optional preclosure binding.
@@ -173,9 +184,9 @@ failure. Fresh frozen-candidate acceptance remains required after every repair.
   over complete accepted behavior and merge proof. Final disposition follows
   actual scope-correct issue readback, avoiding a circular dependency in which
   issue closure would require its own already-final receipt.
-- Production manager-to-delivery-to-verifier assembly, live acceptance and
-  revision-matched skill discoverability still require the integrated producer
-  interfaces and independent qualification. No new queue, daemon,
+- Real-provider/protected-remote acceptance, revision-matched installed skill
+  discoverability and installed-target qualification remain separate from the
+  controlled source journeys below. No new queue, daemon,
   watcher, scheduler or management page is introduced.
 
 ## Qualification tiers and remaining acceptance
