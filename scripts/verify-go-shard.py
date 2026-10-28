@@ -2,7 +2,7 @@
 """Exact-once dynamic Go package/default-test groups, planned before execution.
 
 API alternates default inventory. Implementation/orchestration isolate measured
-contribution tests. Manager isolates four contribution journeys. All children,
+contribution tests. Manager isolates the bounded native contribution journeys. All children,
 examples and default fuzz seeds remain covered; TestMain runs in each process.
 """
 import argparse
@@ -32,6 +32,10 @@ MANAGER_TESTS = {
     'manager-contribution-disconnect': 'TestContributionManagerDisconnectKeepsValidAuthorityExecution',
     'manager-contribution-resume': 'TestContributionManagerExpiredFrozenCandidateExplicitFreshResume',
     'manager-contribution-restart': 'TestContributionManagerHardRestartFrozenCandidateResume',
+    'manager-contribution-joint': 'TestContributionDeliveryJointNative',
+    'manager-contribution-cancel': 'TestContributionDeliveryJointNativeNonlocalCancellation',
+    'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
+    'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
 }
 GROUPS = {
     'api-a': ('internal/api',),

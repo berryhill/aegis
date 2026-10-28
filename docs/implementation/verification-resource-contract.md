@@ -3,8 +3,10 @@
 ## Manager contribution inventory partitions
 
 Both normal and race require `manager`, `manager-contribution-repair`,
-`manager-contribution-disconnect`, `manager-contribution-resume`, and
-`manager-contribution-restart`. The four top-level integrations are isolated by actual-mode complete inventory;
+`manager-contribution-disconnect`, `manager-contribution-resume`,
+`manager-contribution-restart`, `manager-contribution-joint`,
+`manager-contribution-cancel`, `manager-contribution-final`, and
+`manager-contribution-readback`. These top-level integrations are isolated by actual-mode complete inventory;
 all other current/future tests, examples and fuzz seeds remain in `manager`.
 Missing targets deny before execution. `TestMain`, uncached coverage, 8-minute
 package, 10-minute manager job and existing cgroup limits are unchanged.
@@ -14,6 +16,17 @@ or skipped groups deny readiness. Local measurement sources are
 `managed-resume-first.log` (disconnect 139.00s PASS), and
 `managed-resume-third.log` (expired-resume 136.14s FAIL). These explain partitioning,
 not hosted/race qualification or successful expiry acceptance.
+
+The expanded manager remainder reached its unchanged race alarm at 480.259s
+while `TestContributionDeliveryJointNativeNonlocalCancellation` had run for only
+18s. This demonstrates cumulative fixture cost, not an eight-minute hang in that
+case or a reported data race. Isolate the exact joint-native, nonlocal-cancel,
+joined-finalization and terminal-readback parents through the existing partition
+map. Their children stay included; similarly named future tests stay in the
+remainder. Workflow and required exact-head evidence names move together in both
+modes; missing/cancelled/skipped successors deny even with green aggregates.
+Package/job/cgroup/authority deadlines are unchanged. Local partition-contract
+tests are not hosted timing or whole-suite acceptance.
 
 
 Objective: retain every release gate while bounding verification CPU, memory, process count, output and elapsed time; always clean up owned children and close authority storage after failure.
@@ -53,9 +66,11 @@ ceiling or a replacement for cgroup enforcement.
 ## Launch-asset impact review
 
 Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
-`implementation`, `orchestration`, `orchestration-contribution`, `manager`,
+`implementation`, `implementation-contribution`, `orchestration`, `orchestration-contribution`, `manager`,
 `manager-contribution-repair`, `manager-contribution-disconnect`,
-`manager-contribution-resume`, `manager-contribution-restart`, `cli`,
+`manager-contribution-resume`, `manager-contribution-restart`,
+`manager-contribution-joint`, `manager-contribution-cancel`,
+`manager-contribution-final`, `manager-contribution-readback`, `cli`,
 `persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
 `execution` shard was replaced by separate implementation/orchestration packages.
 Within orchestration, the contribution integration alone measured 373.40s and the

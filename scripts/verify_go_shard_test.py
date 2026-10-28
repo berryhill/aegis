@@ -81,6 +81,22 @@ class ShardTests(unittest.TestCase):
                         shard.test_pattern([name for name in names if name != missing], group)
             self.assertEqual(Counter(seen), Counter(names))
 
+    def test_joined_manager_journeys_isolate_only_the_exact_measured_parent(self):
+        required = {
+            'manager-contribution-joint': 'TestContributionDeliveryJointNative',
+            'manager-contribution-cancel': 'TestContributionDeliveryJointNativeNonlocalCancellation',
+            'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
+            'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
+        }
+        names = sorted(list(shard.MANAGER_TESTS.values()) + [name + 'Future' for name in required.values()] + ['Example', 'FuzzFuture'])
+        remainder = shard.test_pattern(names, 'manager')
+        for group, target in required.items():
+            self.assertEqual(shard.MANAGER_TESTS[group], target)
+            pattern = shard.test_pattern(names, group)
+            self.assertEqual([name for name in names if re.fullmatch(pattern, name)], [target])
+            self.assertIsNone(re.fullmatch(remainder, target))
+            self.assertIsNotNone(re.fullmatch(remainder, target + 'Future'))
+
     def test_implementation_exact_once_current_future_defaults_and_missing_target(self):
         for count in (0, 1, 47, 48):
             names = sorted([shard.IMPLEMENTATION_TEST, shard.IMPLEMENTATION_TEST + 'Future',
