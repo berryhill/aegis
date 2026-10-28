@@ -430,6 +430,24 @@ exec sleep 240
 		before, e := s.ReadContributionExecutionAs(ctx, subject, key)
 		must(e)
 		beforeState := state
+		if final {
+			// Direct Journey readback distinguishes the completed local boundary
+			// from whole-contribution success without executing another stage.
+			direct, e := s.ExecuteContributionJourneyAs(ctx, subject, key)
+			must(e)
+			if direct.Result == nil || !reflect.DeepEqual(*direct.Result, terminal) || !direct.BoundaryCompleted || direct.Completed {
+				t.Fatalf("direct local Journey canonical boundary readback: %+v", direct)
+			}
+			directExecution, e := s.ReadContributionExecutionAs(ctx, subject, key)
+			must(e)
+			_, directState, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+			must(e)
+			directHistory, e := s.ReadContributionDeliveryHistoryAs(ctx, subject, key)
+			must(e)
+			if !reflect.DeepEqual(before, directExecution) || !reflect.DeepEqual(beforeState, directState) || !reflect.DeepEqual(history, directHistory) {
+				t.Fatal("direct Journey readback changed native execution/effects/counters/history")
+			}
+		}
 		replay, e := gateway.Execute(ctx, subject, id, token, "/contribute run "+issue.URL)
 		must(e)
 		after, e := s.ReadContributionExecutionAs(ctx, subject, key)

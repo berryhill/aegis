@@ -41,20 +41,20 @@ func (d *jointCancelDeny) Admit(context.Context, delivery.Intent, bool) error {
 }
 
 type jointCancelHold struct {
-	entered, release chan struct{}
-	calls            atomic.Int32
+	entered chan context.Context
+	release chan struct{}
+	calls   atomic.Int32
 }
 
-func (h *jointCancelHold) ResolveContributionDeliveryPolicy(context.Context, reference.DigestRef) (app.ContributionDeliveryPolicy, error) {
+func (h *jointCancelHold) ResolveContributionDeliveryPolicy(ctx context.Context, _ reference.DigestRef) (app.ContributionDeliveryPolicy, error) {
 	h.calls.Add(1)
-	close(h.entered)
+	h.entered <- ctx
 	<-h.release
 	return app.ContributionDeliveryPolicy{}, delivery.ErrDenied
 }
 
-func contributionDeliveryJointNativeCancellation(t *testing.T, s *app.Service, sub core.Subject, key, session string, v orchestration.ContributionCandidate) {
+func contributionDeliveryJointNativeCancellation(t *testing.T, ctx context.Context, s *app.Service, sub core.Subject, key, session string, v orchestration.ContributionCandidate) {
 	t.Helper()
-	ctx := context.Background()
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
@@ -83,7 +83,7 @@ func contributionDeliveryJointNativeCancellation(t *testing.T, s *app.Service, s
 	deny := &jointCancelDeny{}
 	github, err := delivery.NewGitHub("https://api.github.com", deny, deny)
 	must(err)
-	owner, err := app.InstallContributionDeliveryPublicationOwner(s, deny, github, func(context.Context) (core.Subject, error) { return sub, nil })
+	owner, err := app.InstallContributionDeliveryPublicationOwner(s, deny, github, s.CurrentContributionDeliverySubject)
 	must(err)
 	role := before.RoleAuthorities["controller"]
 	binding := app.ContributionPublicationBinding{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.QueueItemID, Digest: c.Digest}, RunID: c.RunID, QueueItemID: c.QueueItemID, Candidate: before.CandidateEvidence, Controller: role.Ref(), Epoch: role.Epoch}
@@ -92,7 +92,7 @@ func contributionDeliveryJointNativeCancellation(t *testing.T, s *app.Service, s
 	if owner.QuiesceContributionPublication(ctx, bad) == nil {
 		t.Fatal("invalid epoch accepted")
 	}
-	hold := &jointCancelHold{entered: make(chan struct{}), release: make(chan struct{})}
+	hold := &jointCancelHold{entered: make(chan context.Context, 1), release: make(chan struct{})}
 	released := false
 	defer func() {
 		if !released {
@@ -106,13 +106,16 @@ func contributionDeliveryJointNativeCancellation(t *testing.T, s *app.Service, s
 		_, e := s.RunContributionDeliveryAs(ctx, sub, key, ref, policyRef, hold, deny, github, nil, nil)
 		result <- e
 	}()
+	var stopCtx context.Context
 	select {
-	case <-hold.entered:
+	case stopCtx = <-hold.entered:
 	case <-time.After(5 * time.Second):
 		t.Fatal("actual tracked entry not reached")
 	}
+	// Preserve the live request binding supplied by the real Run entry; the
+	// publication owner must not use a fixed-subject authentication callback.
 	stopped := make(chan error, 1)
-	go func() { stopped <- s.StopContributionInSessionAs(ctx, sub, session, key) }()
+	go func() { stopped <- s.StopContributionInSessionAs(stopCtx, sub, session, key) }()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	for {
@@ -150,7 +153,7 @@ func contributionDeliveryJointNativeCancellation(t *testing.T, s *app.Service, s
 		case "queue":
 			wrong.QueueItemID = "foreign-queue"
 		}
-		if owner.QuiesceContributionPublication(ctx, wrong) == nil {
+		if owner.QuiesceContributionPublication(stopCtx, wrong) == nil {
 			t.Fatal("invalid binding accepted", kind)
 		}
 	}

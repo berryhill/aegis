@@ -25,6 +25,18 @@ The explicit operation/resource capability and opaque preclosure gates remain
 independent prerequisites for productive issue mutation.
 
 
+The typed delivery entry points bind the genuine request subject before policy
+resolution or active-call tracking. This also lets the installed publication owner
+drain a concurrent cancellation using the same admitted request context, without a
+fixed-principal callback. The focused request-entry regression rejects an unbound
+or foreign supplied subject before the policy resolver; a pre-fix source overlay
+reproduces the missing early-admission boundary. Older controlled manager fixtures
+now carry their original kernel-proof context explicitly through helper calls and
+refresh that proof only through native authentication after an expiry stage.
+The nonlocal cancellation fixture retains exact active-call drain, durable absence,
+unchanged authority/counter and no-credential/effect assertions.
+
+
 `TestPublicRootHTTPAuthenticationDenials` and
 `TestPublicRootAuthenticatedContributionJourney` use actual `newRoot` factory
 composition and `api.Serve`, without an injected authentication extractor.

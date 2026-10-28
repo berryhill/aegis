@@ -265,6 +265,10 @@ func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.R
 // canonical Badger custody and actual native Source integration. It is not an
 // automatic manager hook; unavailable #377 composition remains unavailable.
 func (s *Service) RunContributionDeliveryAs(ctx context.Context, subject core.Subject, key string, ref delivery.Reference, policyRef reference.DigestRef, policies ContributionDeliveryPolicyResolver, authority delivery.Authority, adapter delivery.Adapter, repair delivery.RepairOwner, completion delivery.CompletionOwner, readiness ...delivery.ReadinessOption) (delivery.DeliveryResult, error) {
+	ctx, bindErr := s.bindContributionRequestSubject(ctx, subject)
+	if bindErr != nil {
+		return delivery.DeliveryResult{}, bindErr
+	}
 	if installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner); ok {
 		if installed.service != s {
 			return delivery.DeliveryResult{}, delivery.ErrDenied
@@ -309,6 +313,10 @@ func (s *Service) RunContributionDeliveryAs(ctx context.Context, subject core.Su
 // The trusted caller supplies per-effect authority; the actual #377 owner
 // supplies custody. Missing integrations deny. No manager continuation or transport is silently installed.
 func (s *Service) ExecuteContributionDeliveryAs(ctx context.Context, subject core.Subject, key string, ref delivery.Reference, policyRef reference.DigestRef, policies ContributionDeliveryPolicyResolver, gate orchestration.ContributionQuiescenceGate, authority delivery.Authority, adapter delivery.Adapter, op delivery.Operation) (delivery.Record, error) {
+	ctx, bindErr := s.bindContributionRequestSubject(ctx, subject)
+	if bindErr != nil {
+		return delivery.Record{}, bindErr
+	}
 	if installed, ok := s.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner); ok {
 		if installed.service != s {
 			return delivery.Record{}, delivery.ErrDenied

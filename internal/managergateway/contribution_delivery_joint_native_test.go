@@ -16,9 +16,8 @@ import (
 // Uses the actual managed Queue/native Wait fixture; protocol transport remains
 // synthetic. Reached tier: local Commit authorization and canonical reservation,
 // not remote publication, provider proof, or cancellation publication quiescence.
-func contributionDeliveryJointNative(t *testing.T, s *app.Service, subject core.Subject, key, controllerSession string, v orchestration.ContributionCandidate) {
+func contributionDeliveryJointNative(t *testing.T, ctx context.Context, s *app.Service, subject core.Subject, key, controllerSession string, v orchestration.ContributionCandidate) {
 	t.Helper()
-	ctx := context.Background()
 	c, _, err := s.ReadContributionAs(ctx, subject, key)
 	if err != nil {
 		t.Fatal(err)

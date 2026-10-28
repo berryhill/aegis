@@ -121,7 +121,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	lifetime := int64(300)
 	clock := &contributionStageClock{at: time.Now().UTC()}
 	s.Now = clock.Now
-	subject, e := s.Authenticate(ctx)
+	ctx, subject, e := s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 	must(e)
 	// Fault only the initial subject; policy and fresh admission remain normal.
 	initialExpiry := subject.ExpiresAt
@@ -134,7 +134,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	defer repository.Close()
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
-		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{subject.Issuer}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
 		cc, err := core.Canonicalize(charter)
 		must(err)
 		must(s.Store.SaveCharter(cc))
@@ -296,7 +296,7 @@ exec sleep 240
 		if _, e := s.ResumeContributionAs(ctx, subject, key); e == nil {
 			t.Fatal("expired subject resumed")
 		}
-		subject, e = s.Authenticate(ctx)
+		ctx, subject, e = s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 		must(e)
 		if s.Config.Principal.AuthTTL != 5*time.Minute || lifetime != 300 || !subject.ExpiresAt.Equal(s.Now().Add(5*time.Minute)) {
 			t.Fatal("fresh authentication changed baseline policy")
@@ -488,7 +488,7 @@ exec sleep 240
 	// Delivery consumes the accepted candidate while its admitted controller
 	// and source custody remain valid; cancellation must fence later effects.
 	if nonlocalCancellation {
-		contributionDeliveryJointNativeCancellation(t, s, subject, key, controller.SessionID, candidate)
+		contributionDeliveryJointNativeCancellation(t, ctx, s, subject, key, controller.SessionID, candidate)
 		return
 	}
 	if len(disconnected) > 2 && disconnected[2] {
@@ -497,10 +497,10 @@ exec sleep 240
 				_ = s.RevokeSession(context.Background(), a.SessionID, "joint fixture cleanup")
 			}
 		})
-		contributionDeliveryJointNative(t, s, subject, key, controller.SessionID, candidate)
+		contributionDeliveryJointNative(t, ctx, s, subject, key, controller.SessionID, candidate)
 		return // Canonical reservation exists; nil publication quiescer remains blocked.
 	}
-	contributionDeliveryNativeBridge(t, s, subject, key, controller.SessionID, candidate)
+	contributionDeliveryNativeBridge(t, ctx, s, subject, key, controller.SessionID, candidate)
 	// Actual manager cancellation of the accepted candidate: no second resume or
 	// consent, no authority/counter reset, and Queue terminal only after stop joins.
 	_, rootBefore, err := s.ReadContributionAs(ctx, subject, key)
