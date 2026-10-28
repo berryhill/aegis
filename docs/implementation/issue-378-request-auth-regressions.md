@@ -35,7 +35,41 @@ real module/Git root, built with `scripts/build-source.sh` and task-root
 Evidence stays private under `.acceptance/request-auth-repair/`; earlier failures
 remain immutable. The earlier independent freeze is invalidated by these repairs.
 
-## Owning-service terminal cleanup repair
+## Explicit issue-disposition composition (source candidate)
+
+Productive issue disposition additionally requires both exact capabilities in one
+already approved charter/mandate/session authority:
+
+```text
+github.issue_disposition.v1
+github.issue_disposition.v1:repository:<owner>/<repo>:<decimal-repository-ID>
+```
+
+This is an additive operation-qualified resource-capability convention carried by
+the existing capability field, not an issued grant or an inferred repository
+permission. Repository spelling and immutable numeric ID must match the trusted
+projected plan exactly. No prefix, case folding, wildcard, cross-stanza union,
+token pushability, delivery target or credential scope substitutes for either
+capability. Existing authorities without both remain denied and retain the
+operation list that excludes issue disposition. No live charter, mandate,
+credential or configuration is changed by this implementation.
+
+Existing request/control/role, deployment, exact credential binding/version and
+operation-specific approval checks still precede the real #379 adapter's
+`VerifyContributionIssueIntent`. The exact adapter constructed in the productive
+private frame must validate its opaque preclosure and the canonical issue intent;
+a capability string or a policy receipt alone cannot authorize closure. Only
+explicitly qualified authorities project the issue operation into the immutable
+credential pin and custody allowlist. Historical policies are never rewritten.
+
+Journey readback consults the canonical final-result getter before new effects
+and after delivery. Only exact not-found falls through; corrupt or denied evidence
+is not treated as absent. A narrower completed target is separately represented
+by `boundary_completed`, while `completed` denotes whole-contribution success.
+These source additions and their new scope regression require compiled and real
+production-route qualification after the unchanged verification reserve recovers.
+
+## Terminal-cleanup evidence
 
 The actual Serve journey exposed concurrent role cleanup and supervisor terminal
 transitions. `TestSessionTerminalConcurrentCleanup` reproduced the canonical
@@ -61,7 +95,6 @@ coordination, not command syntax, authority policy, expiry limits, release binar
 license/conduct or remote delivery claims. This focused note describes that bounded
 behavior and the qualification recipe; it does not assert overall acceptance.
 
-
 ## #377 follow-up: bounded per-session cleanup admission
 
 Read-only review of the imported terminal mutex found that unrelated session
@@ -76,4 +109,3 @@ New lock/admission regressions are source-authored; compilation, race and actual
 Serve/native qualification remain held below the explicit 8-GiB verification floor.
 Do not promote the earlier scoped tests or source review to this successor's
 executable acceptance.
-
