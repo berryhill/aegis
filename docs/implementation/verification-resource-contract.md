@@ -63,6 +63,22 @@ The soft Go target is inherited by Make, the supervisor and nested testprocess
 builds; explicit overrides remain supported. It is not a hard per-process RSS
 ceiling or a replacement for cgroup enforcement.
 
+## Command contribution inventory partitions
+
+The expanded command package reached its unchanged race alarm at 480.222s
+while `TestInstalledUpgradeFullCommand` had run for only 11s (its `healthy`
+subtest for 9s). The adjacent command binary and console packages passed. This is
+cumulative package cost, not an eight-minute installed-upgrade hang or a reported
+data race. The existing dynamic inventory now gives the exact production-root
+legacy and final contribution journeys their own `cli-contribution-legacy` and
+`cli-contribution-final` groups. `cli` retains every other command test, example
+and default fuzz seed, including similarly named future tests; `cli-shell`
+retains the complete command-binary and console packages. Both modes require all
+four contexts. Workflow, required evidence and missing-target denial change
+together; package/job/cgroup/authority limits and race coverage do not widen.
+Local contract tests and planned inventories are not actual shard or hosted
+acceptance; the failed aggregate invocation remains retained.
+
 ## Launch-asset impact review
 
 Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
@@ -70,7 +86,8 @@ Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
 `manager-contribution-repair`, `manager-contribution-disconnect`,
 `manager-contribution-resume`, `manager-contribution-restart`,
 `manager-contribution-joint`, `manager-contribution-cancel`,
-`manager-contribution-final`, `manager-contribution-readback`, `cli`,
+`manager-contribution-final`, `manager-contribution-readback`, `cli`, `cli-shell`,
+`cli-contribution-legacy`, `cli-contribution-final`,
 `persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
 `execution` shard was replaced by separate implementation/orchestration packages.
 Within orchestration, the contribution integration alone measured 373.40s and the
