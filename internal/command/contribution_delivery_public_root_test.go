@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
@@ -51,9 +52,12 @@ func TestPublicRootAuthenticatedContributionFinalJourney(t *testing.T) {
 	publicRootAuthenticatedContributionJourney(t, true)
 }
 
-func publicRootAuthenticatedContributionJourney(t *testing.T, final bool) {
+func TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, true, true)
+}
+
+func publicRootAuthenticatedContributionJourney(t *testing.T, final bool, disconnected ...bool) {
 	started := time.Now()
-	disconnected := []bool{}
 	journey := true
 	ctx := context.Background()
 	root := t.TempDir()
@@ -304,6 +308,56 @@ exec sleep 240
 	})
 	defer diagnostic.Stop()
 	response, err := gateway.Execute(runCtx, subject, id, token, "/contribute run "+issue.URL)
+	if len(disconnected) != 0 && disconnected[0] {
+		if !errors.Is(err, context.Canceled) || runCtx.Err() != context.Canceled {
+			t.Fatalf("aborted Unix HTTP transport: want context.Canceled, got %v", err)
+		}
+		key := app.ContributionIntentKey(lrRef, issue.URL, "")
+		// Real metadata requests are paced below the unchanged production limiter.
+		// Neither observation nor client disconnect may mint another intent/attempt.
+		deadline := time.NewTimer(120 * time.Second)
+		defer deadline.Stop()
+		tick := time.NewTicker(time.Second)
+		defer tick.Stop()
+		for ready := false; !ready; {
+			select {
+			case <-deadline.C:
+				t.Fatal("same-intent native execution did not reach accepted/quiescent boundary after HTTP disconnect")
+			case <-tick.C:
+				status, e := gateway.Execute(ctx, subject, id, token, "/contribute status "+key)
+				must(e)
+				wire, e := json.Marshal(status.Data["execution"])
+				must(e)
+				var execution app.ContributionExecutionResult
+				must(json.Unmarshal(wire, &execution))
+				if execution.Candidate == nil || execution.Candidate.State != "candidate_accepted" {
+					continue
+				}
+				_, continuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+				must(e)
+				ready = contribution.NativeRoleQuiescent(continuity, "builder") && contribution.NativeRoleQuiescent(continuity, "tester")
+				if ready {
+					t.Logf("HTTP disconnect retained SAME key=%s accepted candidate=%s counters=%+v; native builder/tester quiescent", key, execution.Candidate.Passes[0].Candidate.Digest, continuity.Used)
+				}
+			}
+		}
+		beforeResume, e := s.ReadContributionExecutionAs(ctx, subject, key)
+		must(e)
+		beforeControl, e := s.ReadContributionControlAs(ctx, subject, key)
+		must(e)
+		// Fresh HTTP request, original authenticated manager session and key/TTL.
+		response, err = gateway.Execute(ctx, subject, id, token, "/contribute resume "+key)
+		if err != nil {
+			t.Fatalf("same-intent authenticated Unix HTTP resume after accepted/quiescent disconnect: %v state=%s reason=%s", err, response.State, response.Reason)
+		}
+		afterResume, e := s.ReadContributionExecutionAs(ctx, subject, key)
+		must(e)
+		afterControl, e := s.ReadContributionControlAs(ctx, subject, key)
+		must(e)
+		if !reflect.DeepEqual(beforeResume, afterResume) || !reflect.DeepEqual(beforeControl, afterControl) {
+			t.Fatal("resume repeated native implementation/Queue attempt or changed control")
+		}
+	}
 	if err != nil {
 		if sessions, readErr := s.ListSessions(); readErr == nil {
 			for _, session := range sessions {
