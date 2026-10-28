@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Upgrade `golang.org/x/net` to v0.62.0 and its minimum required Go module
+  dependencies to address GO-2026-6860 in the upgrade Console HTML parser.
+  Preserve response bounds, authentication policy and the Go 1.26.10 toolchain.
+
 - Reduce repeated contribution history decoding with a transaction-byte-checked
   replay prefix; preserve fresh authority admission and cold validation. Read
   toolchain inputs without repeated buffer growth, and verify every recovery-log
