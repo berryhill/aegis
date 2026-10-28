@@ -59,10 +59,10 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			}
 			journey, executeErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, c.Key)
 			execution := journey.Execution
-			err = executeErr
-			if found, e := s.contributionTerminalAfterOwnedRun(ctx, entry, c, execution, &result); e != nil {
+			if found, e := s.contributionTerminalAfterJourney(ctx, entry, c, execution, executeErr, &result); e != nil {
 				return result, e
 			} else if found {
+				err = nil
 				break
 			}
 			result.State, result.Reason = "accepted", execution.Reason
@@ -136,17 +136,18 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		err = e
 		if err == nil {
 			journey, journeyErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, key)
-			if journeyErr != nil {
-				return result, journeyErr
+			// Preserve the actual accepted Resume result if the subsequent
+			// journey fails before it can return its own execution projection.
+			if journeyErr == nil || journey.Execution.Candidate != nil {
+				execution = journey.Execution
 			}
-			execution = journey.Execution
-			contract, _, readErr := s.app.ReadContributionAs(ctx, entry.subject, key)
-			if readErr != nil {
-				return result, readErr
-			}
-			if found, e := s.contributionTerminalAfterOwnedRun(ctx, entry, contract, execution, &result); e != nil {
+			// contract is the immutable exact key resolved before Resume. The
+			// terminal getter independently reloads it; no caller-context read or
+			// journey-error return may bypass bounded metadata reconciliation.
+			if found, e := s.contributionTerminalAfterJourney(ctx, entry, contract, execution, journeyErr, &result); e != nil {
 				return result, e
 			} else if found {
+				err = nil
 				break
 			}
 			s.mu.Lock()

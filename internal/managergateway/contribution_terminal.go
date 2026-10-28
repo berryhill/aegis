@@ -30,6 +30,19 @@ func (s *Service) contributionTerminalAfterOwnedRun(ctx context.Context, entry s
 	return s.contributionTerminal(read, entry, c, result)
 }
 
+// A verified canonical result, not a journey's return value, resolves an unknown
+// late outcome. Missing/corrupt/unauthorized evidence never suppresses an error.
+func (s *Service) contributionTerminalAfterJourney(ctx context.Context, entry session, c app.ContributionNavigationContract, execution app.ContributionExecutionResult, journeyErr error, result *slash.Result) (bool, error) {
+	found, readErr := s.contributionTerminalAfterOwnedRun(ctx, entry, c, execution, result)
+	if readErr != nil {
+		return false, errors.Join(journeyErr, readErr)
+	}
+	if found {
+		return true, nil
+	}
+	return false, journeyErr
+}
+
 // Terminal navigation is metadata-only and never continues native/delivery.
 // Every non-not-found error is returned, including corrupt or foreign evidence.
 func (s *Service) contributionTerminal(ctx context.Context, entry session, c app.ContributionNavigationContract, result *slash.Result) (bool, error) {
