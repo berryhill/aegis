@@ -6,6 +6,7 @@ import (
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
+	"github.com/berryhill/aegis/internal/queue"
 )
 
 // ResolveContributionNavigationAs includes canonical terminal work for retained
@@ -52,7 +53,8 @@ func (s *Service) ResolveContributionNavigationAs(ctx context.Context, sub core.
 		if submission.OwnerID != sub.PrincipalID {
 			return c, ErrDenied
 		}
-		if _, err = s.FleetRepository.GetQueueProjection(ctx, c.QueueItemID); err != nil {
+		projection, err := s.FleetRepository.GetQueueProjection(ctx, c.QueueItemID)
+		if err != nil {
 			return c, err
 		}
 		revision, err := s.FleetRepository.GetLoopRevision(ctx, c.Loop.ID, c.Loop.Revision)
@@ -61,6 +63,12 @@ func (s *Service) ResolveContributionNavigationAs(ctx context.Context, sub core.
 		}
 		if revision.Digest != c.Loop.Digest {
 			return c, ErrDenied
+		}
+		// Only final-policy definitions extend navigation to terminal work.
+		// Legacy stop/exhaustion retains its existing non-rediscovery contract;
+		// it must not become a new execution or a synthetic final result.
+		if (revision.Contribution == nil || revision.Contribution.FinalVerification == "") && projection.State != queue.StateQueued && projection.State != queue.StateClaimed && projection.State != queue.StatePreparationPending {
+			continue
 		}
 		if selected.Key != "" {
 			return c, fleet.ErrConflict

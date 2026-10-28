@@ -234,6 +234,18 @@ while read rest; do :; done
 				return
 			}
 			for _, authority := range authorities {
+				current, err := s.GetSession(authority.SessionID)
+				if err != nil {
+					t.Error("joined role cleanup readback", err)
+					continue
+				}
+				if current.Status != "running" {
+					projection, err := s.AuthorityCommands.CurrentAuthorityProjection(context.Background(), authority.ID)
+					if err != nil || current.EndedAt == nil || (projection.State != core.AuthorityStateRevoked && projection.State != core.AuthorityStateExpired) {
+						t.Error("joined terminal role cleanup is not canonical", err)
+					}
+					continue
+				}
 				if err := s.RevokeSession(context.Background(), authority.SessionID, "joined fixture cleanup"); err != nil {
 					t.Error("joined role cleanup", err)
 				}
