@@ -374,7 +374,7 @@ func restartResume(t *testing.T, root string) {
 	restartMust(t, e)
 	restartMust(t, s.ConfigureFleet(repo, fs, worker))
 	restartMust(t, worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
-	sub, e := s.Authenticate(ctx)
+	ctx, sub, e := s.AuthenticateContributionUnixPeerRequest(ctx, contributionDeliveryConfiguredUID(t, s))
 	restartMust(t, e)
 	c, state, _, e := s.ObserveContributionContinuityAs(ctx, sub, old.Key)
 	restartMust(t, e)
