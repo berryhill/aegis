@@ -1,6 +1,7 @@
 """Exact package/default-test coverage, including a real normal/race Go binary."""
 import importlib.util
 import json
+import os
 from collections import Counter
 from pathlib import Path
 import re
@@ -312,6 +313,85 @@ class ShardTests(unittest.TestCase):
         self.assertIsNone(re.search(pattern, 'TestLiteralXDot'))
         self.assertIsNone(re.search(pattern, 'TestLiterallPlus'))
 
+    def test_compact_lanes_cover_every_existing_partition_once_per_mode(self):
+        for mode, lanes in shard.BUNDLES.items():
+            seen = [group for lane in lanes for group in shard.bundle_groups(lane, mode == 'race')]
+            self.assertEqual(Counter(seen), Counter(shard.GROUPS.keys()))
+            for lane in lanes:
+                self.assertTrue(shard.bundle_groups(lane, mode == 'race'))
+        self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
+                         {'normal': 7, 'race': 13})
+        self.assertEqual(sum(len(lanes) for lanes in shard.BUNDLES.values()) + 7, 27)
+        # Actual 40888280401 deadline repair: preserve the existing lane names,
+        # exact-once groups and caps while moving only these measured workloads.
+        expected = {
+            'normal': {
+                'implementation': ('implementation', 'implementation-contribution'),
+                'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
+                'api-b': ('api-b', 'cli', 'persistence'),
+            },
+            'race': {
+                'orchestration': ('orchestration', 'orchestration-contribution'),
+                'api-b': ('api-b', 'cli'),
+                'manager-b': ('manager-contribution-restart',),
+                'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+            },
+        }
+        for mode, lanes in expected.items():
+            for lane, groups in lanes.items():
+                self.assertEqual(shard.BUNDLES[mode][lane], groups)
+        self.assertEqual(len(shard.GROUPS), 25)
+        self.assertEqual(shard.BUNDLES['race']['cli-command'], ('cli-command',))
+        self.assertNotIn('support', shard.BUNDLES['normal'])
+        for race in (False, True):
+            with self.assertRaises(ValueError):
+                shard.bundle_groups('unknown', race)
+        with mock.patch.dict(shard.BUNDLES['normal'], {'extra': ('api-a',)}), self.assertRaises(ValueError):
+            shard.bundle_groups('extra', False)
+
+    def test_compact_commands_link_list_once_and_preserve_cwd_caps_and_failure(self):
+        for mode, lanes in shard.BUNDLES.items():
+            race = mode == 'race'
+            for lane, expected in lanes.items():
+                def respond(command, **kwargs):
+                    if command[:2] == ['go', 'list']:
+                        return mock.Mock(stdout='\n'.join(self.packages()))
+                    if '-c' in command:
+                        return mock.Mock()
+                    if '-test.list=.' in command:
+                        package = shard.ROOT + str(kwargs['cwd'])
+                        return mock.Mock(stdout=self.all_listing(package).split('\nok\t')[0] + '\n')
+                    return mock.Mock()
+                with mock.patch.object(shard.subprocess, 'run', side_effect=respond) as run, mock.patch('builtins.print') as output:
+                    self.assertEqual(shard.main(['--bundle', lane] + (['--race'] if race else [])), 0)
+                plans = [json.loads(call.args[0]) for call in output.call_args_list]
+                self.assertEqual([p['group'] for p in plans], list(expected))
+                compiled = [call.args[0] for call in run.call_args_list if '-c' in call.args[0]]
+                partitions = {shard.partition_package(group) for group in expected} - {None}
+                self.assertEqual(Counter(c[-1] for c in compiled), Counter(partitions))
+                self.assertTrue(all(('-race' in c) == race for c in compiled))
+                listings = [call.args[0] for call in run.call_args_list if '-test.list=.' in call.args[0]]
+                self.assertEqual(len(listings), len(partitions))
+                self.assertTrue(all('-test.paniconexit0' in c for c in listings))
+                for p in plans:
+                    timeout = '12m' if race and p['group'].startswith('api-') else '8m'
+                    native = shard.partition_package(p['group']) is not None
+                    self.assertIn(('-test.timeout=' if native else '-timeout=') + timeout, p['command'])
+                    self.assertIn('-test.count=1' if native else '-count=1', p['command'])
+                    if native:
+                        self.assertIn('-test.paniconexit0', p['command'])
+                        call = next(c for c in run.call_args_list if c.args[0] == p['command'])
+                        self.assertEqual(call.kwargs['cwd'], Path(shard.partition_package(p['group'])[len(shard.ROOT):]))
+                # Complete inventory failure must precede every actual test.
+                def fail_inventory(command, **kwargs):
+                    if '-test.list=.' in command:
+                        return mock.Mock(stdout='')
+                    self.assertTrue(command[:2] == ['go', 'list'] or '-c' in command)
+                    return respond(command, **kwargs)
+                if partitions:
+                    with mock.patch.object(shard.subprocess, 'run', side_effect=fail_inventory), self.assertRaises(ValueError):
+                        shard.main(['--bundle', lane] + (['--race'] if race else []))
+
     def test_real_go_fixture_preserves_every_default_leaf_and_testmain(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)
@@ -325,7 +405,7 @@ func TestMain(m *testing.M) { mainReady = true; os.Exit(m.Run()) }
 func ready(t *testing.T) { if !mainReady { t.Fatal("TestMain did not run") } }
 func TestOne(t *testing.T) { ready(t); t.Run("child", func(t *testing.T) { ready(t) }) }
 func TestOnePrefix(t *testing.T) { ready(t) }
-func TestFuture(t *testing.T) { ready(t) }
+func TestFuture(t *testing.T) { ready(t); if os.Getenv("AEGIS_FIXTURE_EXIT_ZERO") == "1" { os.Exit(0) } }
 func TestContributionQueueNativeRepairIntegration(t *testing.T) { ready(t); t.Run("handoff", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("repair", func(t *testing.T) { ready(t) }) }
 func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
@@ -338,13 +418,43 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                 base = ['go', 'test', *(['-race'] if race else []), '-count=1', '-timeout=8m']
                 listing = subprocess.run([*base, '-list', '.', pkg], cwd=root, capture_output=True, text=True, check=True)
                 names = shard.test_inventory(listing.stdout, pkg)
+                binary = root / ('race.test' if race else 'normal.test')
+                subprocess.run(['go', 'test', *(['-race'] if race else []), '-c', '-o', str(binary), pkg], cwd=root, check=True)
+                native_listing = subprocess.run([str(binary), '-test.list=.', '-test.timeout=8m'], cwd=package, capture_output=True, text=True, check=True)
+                self.assertEqual(shard.default_inventory(native_listing.stdout.splitlines()), names)
                 self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_CONTRIBUTION_TEST, 'Example', 'FuzzSeed'])
                 for partitions in (('api-a', 'api-b'), ('orchestration', 'orchestration-contribution'), ('implementation', 'implementation-contribution')):
                     seen = []
                     for group in partitions:
                         result = subprocess.run([*base, '-json', '-run', shard.test_pattern(names, group), pkg], cwd=root, capture_output=True, text=True, check=True)
                         seen += [e['Test'] for line in result.stdout.splitlines() if (e := json.loads(line)).get('Action') == 'run' and 'Test' in e]
+                    native_seen = []
+                    for group in partitions:
+                        result = subprocess.run([str(binary), '-test.v', '-test.count=1', '-test.timeout=8m', '-test.run=' + shard.test_pattern(names, group)], cwd=package, capture_output=True, text=True, check=True)
+                        native_seen.extend(re.findall(r'^=== RUN\s+(\S+)', result.stdout, re.M))
+                    self.assertEqual(Counter(native_seen), Counter(seen))
                     self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair']))
+                # Exercise the actual compact command planner, not a separately
+                # hand-written binary invocation. TestMain's os.Exit(m.Run())
+                # above must pass, but an unexpected test-body os.Exit(0) must not.
+                real_run = subprocess.run
+                def run_fixture(command, **kwargs):
+                    if command[:2] == ['go', 'list']:
+                        return subprocess.CompletedProcess(command, 0, stdout=pkg + '\n')
+                    kwargs.update(cwd=package if kwargs.get('cwd') else root,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    return real_run(command, **kwargs)
+                with mock.patch.object(shard, 'groups', return_value={'api-a': [pkg], 'api-b': [pkg]}), \
+                     mock.patch.object(shard, 'partition_package', return_value=pkg), \
+                     mock.patch.object(shard, 'bundle_groups', return_value=('api-a', 'api-b')), \
+                     mock.patch.object(shard.subprocess, 'run', side_effect=run_fixture), \
+                     mock.patch('builtins.print'):
+                    self.assertEqual(shard.run_bundle('api-a', race, False), 0)
+                    with mock.patch.dict(os.environ, {'AEGIS_FIXTURE_EXIT_ZERO': '1'}):
+                        with self.assertRaises(subprocess.CalledProcessError) as failure:
+                            shard.run_bundle('api-a', race, False)
+                        self.assertIn('panic: unexpected call to os.Exit(0) during test',
+                                      failure.exception.stdout + failure.exception.stderr)
 
 
 if __name__ == '__main__':

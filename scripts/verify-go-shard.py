@@ -11,6 +11,9 @@ import re
 from collections import Counter
 import subprocess
 import sys
+import tempfile
+import time
+from pathlib import Path
 
 ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
@@ -59,6 +62,49 @@ GROUPS = {
 }
 
 
+# Stable execution lanes, NOT new test partitions: 7 normal + 13 race.
+# Hosted run 40888280401 hit unchanged 600s job deadlines in normal
+# implementation, race orchestration and race manager-b. Repack measured
+# phases into existing lanes/caps; fresh hosted deadline evidence is required.
+# Future defaults still go through the dynamic remainder partitions above.
+BUNDLES = {
+    'normal': {
+        'api-a': ('api-a', 'remainder-b'),
+        'api-b': ('api-b', 'cli', 'persistence'),
+        'implementation': ('implementation', 'implementation-contribution'),
+        'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
+        'manager-a': ('manager', 'manager-contribution-restart', 'manager-contribution-final', 'manager-contribution-readback'),
+        'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel'),
+        'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
+    },
+    'race': {
+        'api-a': ('api-a',),
+        'api-b': ('api-b', 'cli'),
+        'implementation': ('implementation', 'implementation-contribution'),
+        'orchestration': ('orchestration', 'orchestration-contribution'),
+        'manager-a': ('manager', 'manager-contribution-cancel'),
+        'manager-b': ('manager-contribution-restart',),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
+        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
+        'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+        'cli-command': ('cli-command',),
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect'),
+        'support-a': ('persistence', 'remainder-a'),
+        'support-b': ('update', 'remainder-b'),
+    },
+}
+
+
+def bundle_groups(name, race):
+    mode = 'race' if race else 'normal'
+    lanes = BUNDLES[mode]
+    if Counter(g for lane in lanes.values() for g in lane) != Counter(GROUPS.keys()):
+        raise ValueError('compact lane coverage mismatch')
+    if name not in lanes:
+        raise ValueError('unknown compact lane for mode')
+    return lanes[name]
+
+
 def inventory(text):
     packages = text.splitlines()
     if not packages or len(packages) != len(set(packages)):
@@ -91,7 +137,10 @@ def test_inventory(text, package=API):
     lines = text.splitlines()
     if not lines or not re.fullmatch(r'ok\s+' + re.escape(package) + r'\s+\d+(?:\.\d+)?s', lines[-1]):
         raise ValueError('missing Go test inventory completion')
-    names = lines[:-1]
+    return default_inventory(lines[:-1])
+
+
+def default_inventory(names):
     if not names or len(names) != len(set(names)):
         raise ValueError('empty or duplicate Go test inventory')
     if any(not re.fullmatch(r'(?:Test|Example|Fuzz|Benchmark)\w*', name) for name in names):
@@ -129,14 +178,84 @@ def test_pattern(names, group):
     return '^(?:' + '|'.join(re.escape(name) for name in selected) + ')$'
 
 
+def partition_package(group):
+    if group in ('api-a', 'api-b'):
+        return API
+    if group in PARTITIONS:
+        return PARTITIONS[group][0]
+    if group == 'manager' or group in MANAGER_TESTS:
+        return MANAGER
+    if group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
+        return COMMAND
+    return None
+
+
+def timed_run(phase, command, **kwargs):
+    start = time.monotonic()
+    try:
+        return subprocess.run(command, **kwargs)
+    finally:
+        # Separate compiler/inventory cost from uncached test execution in hosted
+        # logs. These observations are not success evidence or timeout changes.
+        sys.stderr.write(json.dumps({'go_lane_phase': phase,
+                                     'seconds': round(time.monotonic() - start, 3)}) + '\n')
+
+
+def run_bundle(name, race, list_only):
+    selected_groups = bundle_groups(name, race)
+    listing = subprocess.run(['go', 'list', './...'], text=True, stdout=subprocess.PIPE, check=True)
+    packages = inventory(listing.stdout)
+    grouped = groups(packages)
+    mode = ['-race'] if race else []
+    # Native Go test binaries preserve TestMain/default seeds and individual
+    # process alarms. Link/list once per package/mode in this job, never launch
+    # parallel children or combine partition alarms into a larger timeout.
+    with tempfile.TemporaryDirectory(prefix='aegis-go-lane-') as directory:
+        binaries, inventories, commands = {}, {}, []
+        for group in selected_groups:
+            selected = grouped[group]
+            if not selected:
+                raise ValueError('selected group has no packages')
+            timeout = '12m' if race and group in ('api-a', 'api-b') else '8m'
+            package = partition_package(group)
+            cwd = None
+            if package:
+                if package not in binaries:
+                    binary = str(Path(directory) / (str(len(binaries)) + '.test'))
+                    timed_run('compile:' + package, ['go', 'test', *mode, '-c', '-o', binary, package], check=True)
+                    result = timed_run('inventory:' + package, [binary, '-test.paniconexit0', '-test.list=.', '-test.timeout=' + timeout],
+                                            cwd=Path(package[len(ROOT):]), text=True, stdout=subprocess.PIPE, check=True)
+                    inventories[package] = default_inventory(result.stdout.splitlines())
+                    binaries[package] = binary
+                # Match go test's unexpected os.Exit(0) guard without rejecting
+                # the normal TestMain os.Exit(m.Run()) after testing completes.
+                command = [binaries[package], '-test.paniconexit0', '-test.count=1', '-test.timeout=' + timeout,
+                           '-test.run=' + test_pattern(inventories[package], group)]
+                cwd = Path(package[len(ROOT):])
+            else:
+                command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout, *selected]
+            commands.append((group, selected, command, cwd))
+        # Validate every inventory/pattern before executing any test partition.
+        for group, selected, command, cwd in commands:
+            print(json.dumps({'bundle': name, 'group': group, 'race': race,
+                              'total_packages': len(packages), 'selected_packages': len(selected),
+                              'command': command}), flush=True)
+            if not list_only:
+                timed_run('execute:' + group, command, cwd=cwd, check=True)
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument('--group', choices=GROUPS)
     selection.add_argument('--all', action='store_true', help='run every existing group sequentially')
+    selection.add_argument('--bundle', help='run one compact mode-specific lane of existing partitions')
     parser.add_argument('--race', action='store_true')
     parser.add_argument('--list-only', action='store_true')
     args = parser.parse_args(argv)
+    if args.bundle is not None:
+        return run_bundle(args.bundle, args.race, args.list_only)
     result = subprocess.run(['go', 'list', './...'], text=True, stdout=subprocess.PIPE, check=True)
     packages = inventory(result.stdout)
     grouped = groups(packages)

@@ -6,6 +6,18 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Compact ordinary source CI to 27 expanded jobs using mode-specific sequential
+  Go lanes and one native test compilation per split package/lane. Preserve all
+  normal/race partitions, uncached tests, per-process alarms, resource budgets,
+  installed proof and exact-head security/aggregate gates. Emit phase timings;
+  hosted runner-minute and latency qualification remains pending. Rebalance the
+  same 20 Go lanes from source-f603 hosted timings (old/new mappings in
+  `docs/RELEASE_PIPELINE.md`); do not infer deadline fit from execution sums.
+  Keep synthetic manager session leaders alive through their actual service
+  lifecycle using private FIFO waits, not an unrelated 240-second sleep. Preserve
+  300-second authority, 60-second native checks, exact denial callbacks, real
+  process identity gates and acknowledged cleanup/revocation.
+
 - Resume delivery for an accepted contribution using its exact still-live
   controller after fresh canonical admission, rather than attempting crash
   recovery of an owned process. Preserve native evidence, epochs and budgets.
