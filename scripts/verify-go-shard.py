@@ -63,30 +63,30 @@ GROUPS = {
 
 
 # Stable execution lanes, NOT new test partitions: 7 normal + 13 race.
-# Hosted run 40884797403 cancelled four race packs at the unchanged 600s
-# deadline. Repack measured passing phases, including package-local compile
-# costs; fresh complete hosted setup/deadline evidence remains required.
+# Hosted run 40888280401 hit unchanged 600s job deadlines in normal
+# implementation, race orchestration and race manager-b. Repack measured
+# phases into existing lanes/caps; fresh hosted deadline evidence is required.
 # Future defaults still go through the dynamic remainder partitions above.
 BUNDLES = {
     'normal': {
         'api-a': ('api-a', 'remainder-b'),
-        'api-b': ('api-b', 'cli'),
-        'implementation': ('implementation', 'implementation-contribution', 'remainder-a'),
-        'orchestration': ('orchestration', 'orchestration-contribution', 'persistence'),
+        'api-b': ('api-b', 'cli', 'persistence'),
+        'implementation': ('implementation', 'implementation-contribution'),
+        'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
         'manager-a': ('manager', 'manager-contribution-restart', 'manager-contribution-final', 'manager-contribution-readback'),
         'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel'),
         'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {
         'api-a': ('api-a',),
-        'api-b': ('api-b',),
+        'api-b': ('api-b', 'cli'),
         'implementation': ('implementation', 'implementation-contribution'),
-        'orchestration': ('orchestration', 'orchestration-contribution', 'cli'),
+        'orchestration': ('orchestration', 'orchestration-contribution'),
         'manager-a': ('manager', 'manager-contribution-cancel'),
-        'manager-b': ('manager-contribution-restart', 'manager-contribution-final'),
+        'manager-b': ('manager-contribution-restart',),
         'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
         'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
-        'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval'),
+        'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         'cli-command': ('cli-command',),
         'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect'),
         'support-a': ('persistence', 'remainder-a'),

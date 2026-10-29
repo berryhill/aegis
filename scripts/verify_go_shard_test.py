@@ -322,8 +322,25 @@ class ShardTests(unittest.TestCase):
         self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
                          {'normal': 7, 'race': 13})
         self.assertEqual(sum(len(lanes) for lanes in shard.BUNDLES.values()) + 7, 27)
-        self.assertEqual(shard.BUNDLES['race']['manager-e'],
-                         ('manager-contribution-disconnect', 'cli-contribution-approval'))
+        # Actual 40888280401 deadline repair: preserve the existing lane names,
+        # exact-once groups and caps while moving only these measured workloads.
+        expected = {
+            'normal': {
+                'implementation': ('implementation', 'implementation-contribution'),
+                'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
+                'api-b': ('api-b', 'cli', 'persistence'),
+            },
+            'race': {
+                'orchestration': ('orchestration', 'orchestration-contribution'),
+                'api-b': ('api-b', 'cli'),
+                'manager-b': ('manager-contribution-restart',),
+                'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+            },
+        }
+        for mode, lanes in expected.items():
+            for lane, groups in lanes.items():
+                self.assertEqual(shard.BUNDLES[mode][lane], groups)
+        self.assertEqual(len(shard.GROUPS), 25)
         self.assertEqual(shard.BUNDLES['race']['cli-command'], ('cli-command',))
         self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):

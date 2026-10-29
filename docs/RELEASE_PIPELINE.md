@@ -38,50 +38,51 @@ continues to cover the complete module. The existing setup-go compiler/module
 cache remains enabled; no cached test result substitutes for execution. This is
 within-job executable/compiler reuse, not a promise of a complete cross-job cache.
 
-Packing uses actual hosted run **40884797403** (first compact candidate),
-which cancelled race cli-command and manager-a/c/d at the unchanged 600-second
-job deadline. Completed phases showed command compile ~109s plus base ~364s
-before final was unfinished; manager compile ~85s plus base ~405s before final
-was unfinished; resume ~285s before repair was unfinished; and disconnect ~252s
-plus joint ~148s before readback was unfinished. These cancellations supersede
-older execution-only packing estimates, not the successful baseline run
-**40882148345** (57 PASS, 209.13 runner-minutes, 999s peak).
+Packing now addresses actual hosted run **40888280401** at source **505c4ea**:
+22 jobs succeeded, three hit annotated **10m0s job deadlines**, and two aggregate
+cancellations were consequences, not independent test failures. The three deadline
+lanes were normal implementation, race orchestration and race manager-b. Completed
+Go assertions passed; unfinished groups are not passing evidence. Retained logs
+and `metrics-40888280401.json` are in the parent's `issue404-evidence` directory.
+This supersedes the earlier 40884797403 packing estimates; the fixture-only
+baseline **40882148345** remains 57 PASS, 209.13 runner-minutes and 999s peak.
 
-The mapping below is from that first compact candidate to this revision. Names
-omit `manager-contribution-` and `cli-contribution-` in their respective rows;
-`cli-group` means cmd/aegis + internal/console, not command partitions.
+The mapping below is specifically **40888280401 -> this revision**. All other
+lanes/groups are unchanged. `cli` means `cmd/aegis` + `internal/console`, not the
+separate command/default or contribution partitions.
 
-| Mode / lane | Old groups | New groups |
+| Mode / lane | 40888280401 groups | Revised groups |
 | --- | --- | --- |
-| normal api-a | api-a | api-a, remainder-b |
-| normal api-b | api-b | api-b, cli-group |
-| normal implementation | implementation, implementation-contribution | same, remainder-a |
-| normal orchestration | orchestration, orchestration-contribution, remainder-b | orchestration, orchestration-contribution, persistence |
-| normal manager-a/b | existing manager packs | unchanged |
-| normal cli | cli-group, command, root, final, disconnect, approval | command, root, final, disconnect, approval, update |
-| normal support | persistence, update, remainder-a | removed; redistributed above |
-| race orchestration | orchestration, orchestration-contribution | same, cli-group |
-| race manager-a | manager, final | manager, cancel |
-| race manager-b | restart, cancel | restart, final |
-| race manager-c | resume, repair | resume, readback |
-| race manager-d | disconnect, joint, readback | repair, joint |
-| race manager-e | absent | disconnect, approval |
-| race cli-command | command, final | command |
-| race cli | cli-group, root, disconnect, approval | root, final, disconnect |
-| race support-a/b | persistence + remainder-a / update + remainder-b | unchanged |
+| normal implementation | implementation, implementation-contribution, remainder-a | implementation, implementation-contribution |
+| normal orchestration | orchestration, orchestration-contribution, persistence | orchestration, orchestration-contribution, remainder-a |
+| normal api-b | api-b, cli | api-b, cli, persistence |
+| race orchestration | orchestration, orchestration-contribution, cli | orchestration, orchestration-contribution |
+| race api-b | api-b | api-b, cli |
+| race manager-b | manager-contribution-restart, manager-contribution-final | manager-contribution-restart |
+| race manager-e | manager-contribution-disconnect, cli-contribution-approval | manager-contribution-disconnect, cli-contribution-approval, manager-contribution-final |
 
-Race api-a/b and implementation are unchanged. Rounded planning sums including
-package compile are manager-a ~562s, b ~533s, c ~500s, d ~508s,
-e ~523s (both manager and command compile), cli-command ~473s and cli ~480s.
-These are estimates, NOT successful hosted deadline evidence: setup and listing
-must also fit the unchanged 600s. The whole CLI group moves without an extra
-split-package compile. Successful implementation and support packs are retained.
-Link/list reuse remains once per split package per lane, including mixed
-manager-e; no new partitions or reduced coverage are introduced.
-Compiler, inventory and partition elapsed times remain separate `go_lane_phase`
-observations. Job alarms remain ten minutes except sixteen for race API.
-Fresh complete successful exact-head hosted runs, including queue/setup and all
-jobs, must establish deadline fit, runner-minute reduction and comparable speed.
+Observed normal implementation phases were compile 16.3s + default 349.98s +
+contribution 101.68s before remainder-a was unfinished. Normal orchestration
+completed compile 12.5s + default 141.19s + contribution 148.32s + persistence
+41.2s. Moving remainder-a (~191s) there projects ~492s; moving persistence to
+normal api-b (~343s including cli) projects ~384s.
+
+Race orchestration consumed compile ~74s + default 189.86s + contribution 257.41s
+before cli was unfinished. Race api-b consumed ~505s including compile/list;
+adding cli (~93s) projects ~598s within its **existing sixteen-minute job cap**.
+Its API process retains twelve minutes; cli retains eight minutes. Race manager-b
+consumed compile ~85s + restart 392.73s + final 111.75s, leaving no setup margin.
+Moving final to manager-e projects ~550s (existing ~438.9s + final), while manager-b
+projects ~478s. These are planning sums, **not fresh hosted success**.
+
+All 25 groups remain exact-once in each mode, with the same seven normal and
+thirteen race lane names plus seven fixed jobs: 27 jobs total. No matrix, job,
+partition, timeout, resource budget or native unexpected-zero-exit guard changes.
+Compile/list reuse remains once per split package per lane. Compiler, inventory
+and partition elapsed times remain separate `go_lane_phase` observations. Job
+alarms remain ten minutes except sixteen for race API; package alarms remain
+eight minutes except twelve for race API. Fresh complete exact-head hosted runs,
+including queue/setup and all jobs, must establish deadline fit and performance.
 
 The manager native fixture's session leader now waits on a private per-runtime-home
 FIFO until normal service termination/revocation instead of independently exiting

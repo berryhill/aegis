@@ -13,15 +13,19 @@ No resource, authentication, crypto, product authority or release policy changes
 
 ## Measurements and outstanding qualification
 
-Packing is revised from actual first-compact hosted run **40884797403**: four
-race lanes hit the unchanged 600s deadline (cli-command, manager-a/c/d).
-`docs/RELEASE_PIPELINE.md` retains the old/new mapping and observed phase basis.
-Seven normal + thirteen race lanes retain exactly 27 jobs; a new stable race
-manager-e is offset by removing normal support. Normal manager-a/b and successful
-race implementation/support packs remain unchanged. Mixed manager-e compiles each
-split package once; the whole CLI group moves to race orchestration.
-Planning sums are not hosted success: fresh complete timing including setup is
-required. Parent owns publication, metrics, PR/merge and frozen-candidate acceptance.
+Packing now addresses actual hosted run **40888280401** (505c4ea): normal
+implementation, race orchestration and race manager-b hit annotated unchanged
+10m0s job deadlines. Its 22 successes and two consequential aggregate cancellations
+do not qualify the unfinished groups. `docs/RELEASE_PIPELINE.md` gives the exact
+run-to-revision mapping and measured phase basis, replacing earlier packing estimates.
+Normal remainder-a moves from implementation to orchestration, and persistence
+moves from orchestration to api-b. Race cli (cmd/aegis + console) moves from
+orchestration to api-b within that lane's existing sixteen-minute job cap; race
+manager-contribution-final moves from manager-b to manager-e. All other assignments,
+all 25 groups exact-once per mode, seven normal/thirteen race lane names and seven
+fixed jobs remain unchanged (27 total). No matrix, cap, Go source or native exit
+guard changes. Planning sums are not hosted success: fresh complete timing including
+setup is required. Parent owns publication, metrics, PR/merge and frozen-candidate acceptance.
 
 ## Process-lifetime diagnosis and bounded fixture repair
 
