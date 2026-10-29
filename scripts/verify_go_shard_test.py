@@ -373,6 +373,16 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
+    def test_race_persistence_uses_existing_api_a_lane_budget(self):
+        # Two hosted attempts exhausted support-a with both complete groups.
+        # Reuse api-a's existing job budget; package alarms stay unchanged.
+        self.assertEqual(shard.bundle_groups('support-a', True), ('remainder-a',))
+        self.assertEqual(shard.bundle_groups('api-a', True), ('api-a', 'persistence'))
+        self.assertEqual(len(shard.BUNDLES['race']), 13)
+        self.assertEqual(sum(group == 'persistence'
+                             for groups in shard.BUNDLES['race'].values()
+                             for group in groups), 1)
+
     def test_compact_commands_link_list_once_and_preserve_cwd_caps_and_failure(self):
         for mode, lanes in shard.BUNDLES.items():
             race = mode == 'race'

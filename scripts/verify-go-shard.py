@@ -78,7 +78,10 @@ BUNDLES = {
         'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {
-        'api-a': ('api-a',),
+        # Hosted 40952580487 twice exhausted support-a: persistence 268s +
+        # remainder-a 323s. Reuse api-a's existing 16m job (observed 479s),
+        # without changing its 12m API or persistence's 8m process alarms.
+        'api-a': ('api-a', 'persistence'),
         'api-b': ('api-b', 'cli'),
         'implementation': ('implementation', 'implementation-contribution'),
         'orchestration': ('orchestration', 'orchestration-contribution'),
@@ -94,7 +97,7 @@ BUNDLES = {
         # Hosted 40948579082: update 442s + remainder-b 146s exhausted
         # support-b; cli finished in 361s under the same unchanged 600s cap.
         'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect', 'remainder-b'),
-        'support-a': ('persistence', 'remainder-a'),
+        'support-a': ('remainder-a',),
         'support-b': ('update',),
     },
 }
