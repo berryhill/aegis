@@ -180,11 +180,32 @@ while read rest; do :; done
 	executable := filepath.Join(root, "hermes")
 	must(os.WriteFile(executable, []byte(`#!/bin/sh
 if [ "$1" = "--version" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install directory: `+installation+`'; exit 0; fi
-exec sleep 240
+`+nativeSessionLifetimeScript+`
 `), 0700))
 	must(os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(script), 0700))
 	adapter := hermes.NewWithClock(executable, slog.New(slog.NewTextHandler(io.Discard, nil)), s.Now)
 	s.Hermes = adapter
+	defer func() {
+		sessions, err := s.ListSessions()
+		if err != nil {
+			t.Errorf("list fixture cleanup: %v", err)
+			return
+		}
+		for _, session := range sessions {
+			if session.Status == "running" {
+				if !s.Now().Before(session.Mandate.ExpiresAt) {
+					if err := adapter.Terminate(context.Background(), session.RuntimeSessionID, true); err != nil {
+						t.Errorf("expired fixture stop: %v", err)
+					}
+				} else if err := s.RevokeSession(context.Background(), session.ID, "fixture lifetime cleanup"); err != nil {
+					t.Errorf("fixture revoke: %v", err)
+				}
+				if _, alive, err := s.InspectSession(session.ID); err != nil || alive {
+					t.Errorf("fixture process survived cleanup: alive=%t err=%v", alive, err)
+				}
+			}
+		}
+	}()
 	s.Config.HermesExecutable = executable
 	routed, err := orchestration.NewRoutedRuntimeAdapter(adapter, s.Config.StateDir)
 	must(err)
