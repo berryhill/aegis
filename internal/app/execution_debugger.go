@@ -169,10 +169,16 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 		}
 	}
 	out.Nodes = []DebuggerLoop{}
+	nativeCoding := false
 	for _, node := range topology.Nodes {
 		rev, err := s.FleetRepository.GetLoopRevision(ctx, node.Loop.ID, node.Loop.Revision)
 		if err != nil || rev.Digest != node.Loop.Digest {
 			return out, fleet.ErrCorrupt
+		}
+		// Classify from the exact pinned contract, never from missing history.
+		// Legacy implementation_verified dispositions retain their original meaning.
+		if out.Direct && rev.Doer != nil && rev.Doer.Coding != nil {
+			nativeCoding = true
 		}
 		n := DebuggerLoop{NodeID: node.ID, Loop: node.Loop, Participant: node.Participant, Steps: []DebuggerStep{}, Edges: []DebuggerEdge{}, Attempts: []DebuggerAttempt{}}
 		for _, step := range rev.Steps {
@@ -288,7 +294,7 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 		return out, err
 	}
 	out.Version += uint64(len(transitions)) * 8192
-	if out.Direct && out.State == "succeeded" && out.DispositionReason == "implementation_verified" {
+	if out.Direct && nativeCoding && out.State == "succeeded" && out.DispositionReason == "implementation_verified" {
 		if err := s.nativeDebuggerEvidence(ctx, out); err != nil {
 			return ExecutionDebugger{}, err
 		}

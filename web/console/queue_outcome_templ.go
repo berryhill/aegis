@@ -38,7 +38,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(queueOutcomeState(queueCurrentOutcomeState(q)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 8, Col: 83}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 8, Col: 83}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
@@ -61,7 +61,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(queueOutcomeMessage(queueCurrentOutcomeState(q)))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 12, Col: 55}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 12, Col: 55}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
@@ -74,7 +74,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(SafeQueueOutcomeReason(q.DispositionReason))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 13, Col: 85}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 13, Col: 85}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -102,7 +102,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(q.NativeOutcome.FailureCode)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 19, Col: 101}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 19, Col: 101}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -120,7 +120,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(q.NativeOutcome.AttemptID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 21, Col: 44}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 21, Col: 44}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -133,7 +133,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(q.NativeOutcome.ExecutionID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 21, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 21, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 			if templ_7745c5c3_Err != nil {
@@ -146,7 +146,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(q.NativeOutcome.PassID)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 21, Col: 135}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 21, Col: 135}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 			if templ_7745c5c3_Err != nil {
@@ -159,7 +159,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(q.NativeOutcome.Consumed))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 22, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 22, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 			if templ_7745c5c3_Err != nil {
@@ -172,7 +172,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var10 string
 			templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(q.NativeOutcome.Remaining))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 22, Col: 139}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 22, Col: 139}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 			if templ_7745c5c3_Err != nil {
@@ -212,7 +212,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(queueOptionalField(q.DispositionID))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 35, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 35, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 		if templ_7745c5c3_Err != nil {
@@ -230,7 +230,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(q.NativeOutcome.HistoryDigest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 37, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 37, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -243,7 +243,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.JoinStringErrs(q.NativeOutcome.ContractDigest)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 37, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 37, Col: 106}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var13))
 			if templ_7745c5c3_Err != nil {
@@ -261,7 +261,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 39, Col: 24}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 39, Col: 24}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -280,7 +280,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(id)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/queue_outcome.templ`, Line: 42, Col: 36}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `queue_outcome.templ`, Line: 42, Col: 36}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -292,7 +292,7 @@ func QueueOutcome(q *QueueDetailModel) templ.Component {
 				}
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p>Verified selected-result references, when authorized, are listed below. Evidence references do not grant arbitrary blob, source or workspace-content access.</p></details></section>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<p>Verified selected-result references, when authorized, are listed below; evidence references do not grant arbitrary blob, source or workspace-content access.</p></details></section>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
