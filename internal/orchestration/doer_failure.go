@@ -39,6 +39,16 @@ func isDoerFailureCode(code string) bool {
 	}
 	return false
 }
+
+// ReviewedDoerFailureCode exposes the existing closed controller vocabulary to
+// presentation adapters. Unknown/backend prose is never a public diagnostic.
+func ReviewedDoerFailureCode(code string) string {
+	if isDoerFailureCode(code) {
+		return code
+	}
+	return ""
+}
+
 func closedDoerFailure(code string, cause error) error {
 	if !isDoerFailureCode(code) {
 		code = "step_error"

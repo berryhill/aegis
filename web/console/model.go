@@ -336,12 +336,22 @@ type QueueDetailModel struct {
 	ArtifactState     string
 	ReceiptState      string
 	DispositionState  string
-	DispositionID     string // Authoritative disposition record identity (visible evidence chain anchor).
-	DispositionReason string // Authoritative disposition reason code (e.g. evidence_satisfied).
-	ArtifactID        string // Authoritative runtime artifact identity (visible evidence chain anchor).
+	DispositionID     string                   // Authoritative disposition record identity (visible evidence chain anchor).
+	DispositionReason string                   // Authoritative disposition reason code (e.g. evidence_satisfied).
+	NativeOutcome     *QueueNativeOutcomeModel // Exact disposition-attempt custody; not selected content.
+	ArtifactID        string                   // Authoritative runtime artifact identity (visible evidence chain anchor).
 	TerminalOutcome   string
 	FailureLocation   string // Graph node ID where the authoritative failure lives.
 	CycleWarning      string // Bounded-cycle summary if any node is part of a cycle.
+}
+
+type QueueNativeOutcomeModel struct {
+	Accepted                       bool
+	FailureCode                    string
+	AttemptID, ExecutionID, PassID string
+	HistoryDigest, ContractDigest  string
+	Consumed, Remaining            uint16
+	ArtifactIDs, ReceiptIDs        []string
 }
 
 // QueueControlNodeModel projects one exact pinned Graph node onto authoritative

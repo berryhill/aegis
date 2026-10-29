@@ -10,6 +10,7 @@ import (
 )
 
 func applyQueueDebugger(detail *consoleweb.QueueDetailModel, d app.ExecutionDebugger) {
+	detail.NativeOutcome = consoleQueueNativeOutcome(d)
 	wire, _ := json.Marshal(debuggerPresentation(d))
 	detail.DebuggerJSON = string(wire)
 	detail.Nodes = nil
@@ -73,6 +74,7 @@ func applyQueueDebugger(detail *consoleweb.QueueDetailModel, d app.ExecutionDebu
 // exact selected-item owner/evidence reader, never from debugger observations.
 func consoleQueueCurrentOutcome(ctx context.Context, svc *app.Service, subject core.Subject, d app.ExecutionDebugger) (string, error) {
 	q := &consoleweb.QueueDetailModel{CurrentState: d.State, DispositionID: d.DispositionID, DispositionReason: d.DispositionReason, RunResult: consoleQueueRunResult(ctx, svc, subject, d.QueueID, d)}
+	q.NativeOutcome = consoleQueueNativeOutcome(d)
 	if d.Terminal {
 		q.TerminalOutcome = d.State
 	}
