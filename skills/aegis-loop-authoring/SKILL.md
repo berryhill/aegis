@@ -83,6 +83,16 @@ The alias `aegis loop` exists, but prefer the canonical plural command in durabl
 
 ## Author one typed revision
 
+A matching source service accepts optional immutable `name` on a Loop revision
+and retained Doer create/save input. Use a concise human label, not task prose or
+a step ID: at most 128 UTF-8 bytes, no leading/trailing whitespace, CR, LF or NUL.
+Omit it for legacy unnamed definitions. Name changes require a new revision (or
+an unfrozen retained-draft CAS update) and change the exact candidate digest;
+repeat exact host review after such an edit. Never patch published history or
+substitute a latest name for an execution's pinned revision. Execution lists show
+an explicit unavailable-name fallback when the exact definition/name is absent.
+Installed schema/help must confirm support; this guidance adds no authority.
+
 1. Start from the installed schema and command help. A compatible Loop revision uses schema `aegis.loop.revision.v2` and includes a stable `loop_id`, positive exact `revision`, typed input and output ports, one `entry_step_id`, bounded steps and transitions, required evidence, validator `aegis.loop.validator` version `1`, and its canonical digest.
 2. Keep step kinds explicit: `action`, `gate`, `join`, or `terminal`. Define retry bounds, exact port mappings, terminal outcomes, and evidence claims rather than hiding behavior in prose or executable expressions.
 3. Gate conditions are opaque policy labels, not model-authored executable expressions. Evidence claims must pin the media type, expected content digest, verifier ID, and policy version before runtime output exists.

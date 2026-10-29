@@ -24,7 +24,10 @@ func decodeDoerComposerForm(request *http.Request) (loopComposerForm, error) {
 	}
 	values, err := url.ParseQuery(string(body))
 	keys := []string{"csrf", "publisher_id", "publication_key", "loop_id", "revision", "previous_digest", "task", "workspace", "writable_files", "verify_file", "assert_text", "expected_text", "max_attempts"}
-	if len(values) == len(keys)+2 {
+	if _, present := values["name"]; present {
+		keys = append(keys, "name")
+	}
+	if _, present := values["draft_id"]; present {
 		keys = append(keys, "draft_id", "draft_version")
 	}
 	if err != nil || len(values) != len(keys) {
@@ -64,8 +67,14 @@ func decodeDoerComposerForm(request *http.Request) (loopComposerForm, error) {
 	if err != nil || validation.Outcome != app.LoopValidationValid {
 		return form, errors.New("invalid Doer operator inputs")
 	}
+	if candidate.Name = values.Get("name"); candidate.Name != "" {
+		candidate, validation, err = app.NewLoopRevision(candidate)
+		if err != nil || validation.Outcome != app.LoopValidationValid {
+			return form, errors.New("invalid Doer Loop name")
+		}
+	}
 	form = loopComposerForm{CSRF: values.Get("csrf"), PublisherID: values.Get("publisher_id"), PublicationKey: values.Get("publication_key"), Revision: candidate}
-	if len(keys) == 15 {
+	if _, present := values["draft_id"]; present {
 		form.RetainDraft = true
 		form.DraftID = values.Get("draft_id")
 		form.DraftVersion, err = strconv.ParseUint(values.Get("draft_version"), 10, 64)

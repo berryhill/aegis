@@ -57,12 +57,26 @@ func TestDoerDraftAdapterSaveReadCASAndSuccessor(t *testing.T) {
 		return d
 	}
 	input := app.DoerDraftInput{Agent: candidate.Agent, LoopID: candidate.Candidate.LoopID, Revision: 1, Contract: *candidate.Candidate.Doer}
-	original := decodeDraft(call(http.MethodPost, "/v1/loops/doer/drafts", input))
+	namedInput := map[string]any{}
+	wire, _ := json.Marshal(input)
+	if err := json.Unmarshal(wire, &namedInput); err != nil {
+		t.Fatal(err)
+	}
+	namedInput["name"] = "Review the retained change"
+	original := decodeDraft(call(http.MethodPost, "/v1/loops/doer/drafts", namedInput))
+	wire, _ = json.Marshal(original)
+	if !strings.Contains(string(wire), `"name":"Review the retained change"`) {
+		t.Fatal("draft lost Loop name")
+	}
 	path := "/v1/loops/doer/drafts/" + original.ID
 	if got := decodeDraft(call(http.MethodGet, path, nil)); !reflect.DeepEqual(got, original) {
 		t.Fatal("read differs from saved draft")
 	}
 	input.ID, input.ExpectedVersion = original.ID, original.Version
+	input.Name = original.Name
+	if got := consoleDoerDraft(original); got.Name != original.Name {
+		t.Fatal("composer lost retained Loop name")
+	}
 	input.Contract.Task = "Retained updated task"
 	updated := decodeDraft(call(http.MethodPost, "/v1/loops/doer/drafts", input))
 	if updated.Version != original.Version+1 || updated.PublicationKey != original.PublicationKey {
@@ -106,7 +120,7 @@ func TestDoerDraftAdapterSaveReadCASAndSuccessor(t *testing.T) {
 	}
 	continuation.ID = original.ID
 	rebound := decodeDraft(call(http.MethodPost, path+"/continue", continuation))
-	if rebound.Version != updated.Version+1 || rebound.Agent.Digest != next.Digest || rebound.PublicationKey != updated.PublicationKey || rebound.LoopID != updated.LoopID || rebound.Revision != updated.Revision || rebound.PreviousDigest != updated.PreviousDigest || !reflect.DeepEqual(rebound.Contract, updated.Contract) {
+	if rebound.Name != original.Name || rebound.Version != updated.Version+1 || rebound.Agent.Digest != next.Digest || rebound.PublicationKey != updated.PublicationKey || rebound.LoopID != updated.LoopID || rebound.Revision != updated.Revision || rebound.PreviousDigest != updated.PreviousDigest || !reflect.DeepEqual(rebound.Contract, updated.Contract) {
 		t.Fatal("successor failed to retain contract and renew binding")
 	}
 	if rr := call(http.MethodPost, path+"/continue", continuation); rr.Code < 400 {

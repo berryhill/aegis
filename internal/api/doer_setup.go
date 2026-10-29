@@ -150,7 +150,7 @@ func registerDoerSetupRoutes(e *echo.Echo, svc *app.Service, manager *console.Ma
 			if _, err := svc.ValidateDoerDraftPublicationAs(req.Context(), sub, d.ID, d.Version); err != nil {
 				return fail(err)
 			}
-			candidate, _, err := app.NewDoerLoopRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+			candidate, _, err := d.Candidate()
 			if err != nil {
 				return fail(err)
 			}

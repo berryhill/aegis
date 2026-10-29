@@ -212,7 +212,7 @@ func runDoerCompanion(ctx context.Context, o companionOptions, configIdentity st
 			return "response_drift"
 		}
 	} else {
-		candidate, _, e := loop.NewDoerRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+		candidate, _, e := draft.Candidate()
 		if review.Published != nil || review.Requeue != nil || i.RequeueBinding != "" || e != nil || draft.ID != i.DraftID || draft.Version != i.DraftVersion || draft.Agent != i.Agent || draft.PublicationKey != i.PublicationKey || candidate.Digest != i.CandidateDigest || i.Loop.ID != candidate.LoopID || i.Loop.Revision != candidate.Revision || i.Loop.Digest != candidate.Digest || i.Run.Agent != i.Agent || i.Run.Loop != i.Loop || i.Run.IdempotencyKey == "" || i.Charter.Validate() != nil {
 			return "response_drift"
 		}

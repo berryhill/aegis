@@ -48,6 +48,7 @@ type LoopComposerModel struct {
 }
 
 type DoerDraftModel struct {
+	Name                                                                             string
 	ID, Version, PublisherID, LoopID, Revision, PreviousDigest, PublicationKey       string
 	Task, Workspace, WritableFiles, VerifyFile, Assertion, ExpectedText, MaxAttempts string
 }

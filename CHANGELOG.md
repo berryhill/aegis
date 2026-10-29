@@ -6,6 +6,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Fixed
+
+- Execution lists show the human Loop name from the exact pinned revision, including archived definitions; legacy missing names remain explicit. Loop authoring accepts digest-bound names without changing unnamed historical revisions.
+
 - Add typed historical native recovery assessment and closed missing/invalid
   evidence denials through authenticated Queue readback and online CLI. Preserve
   legacy terminal history, exact lineage and cumulative budgets; no reconciliation

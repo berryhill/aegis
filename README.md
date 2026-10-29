@@ -390,3 +390,5 @@ For a stopped foreign user-service unit, see [bounded service recovery](docs/SER
 ### Explicit contribution intake
 
 Authenticated manager sessions support `/contribute select <published-loop>`, then `/contribute run <issue-url> [narrower-scope]`, with `status`, `stop`, and `narrow` controls. This is bounded intake, not automated contribution delivery. See [contribution intake](docs/contribution-intake.md) for limits.
+
+Execution lists use the optional digest-bound Loop revision `name`, not task or step prose. The Console Loop and Doer composers collect this name; historical unnamed definitions show an explicit unavailable fallback. Renaming requires a new immutable revision and does not relabel old executions.

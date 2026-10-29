@@ -36,6 +36,7 @@ type loopPublishCommandInput struct {
 // Only template parameters enter browser intent. Fixed controller step
 // bindings are derived after browser authority fields have been rejected.
 type doerTemplatePublishInput struct {
+	Name              string           `json:"name,omitempty"`
 	PublisherID       string           `json:"publisher_id"`
 	PublisherRevision uint64           `json:"publisher_revision"`
 	PublisherDigest   string           `json:"publisher_digest"`
@@ -240,7 +241,7 @@ func loopCommandDefinitions(svc *app.Service) []console.CommandDefinition {
 		if err := console.DecodeCommandRequest(raw, &input); err != nil || input.PublisherID == "" || input.PublisherRevision == 0 || input.PublisherDigest == "" || input.PublicationKey == "" {
 			return nil, console.ErrInvalidInput
 		}
-		revision, validation, err := app.NewDoerLoopRevision(input.LoopID, input.Revision, input.PreviousDigest, input.Doer)
+		revision, validation, err := (app.DoerDraft{Name: input.Name, LoopID: input.LoopID, Revision: input.Revision, PreviousDigest: input.PreviousDigest, Contract: input.Doer}).Candidate()
 		if err != nil || validation.Outcome != app.LoopValidationValid {
 			return nil, console.ErrInvalidInput
 		}

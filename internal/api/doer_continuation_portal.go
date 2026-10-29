@@ -52,7 +52,7 @@ func (p *DoerContinuationPortal) retain(ctx context.Context, subject core.Subjec
 	if err != nil {
 		return doerPending{}, err
 	}
-	candidate, _, err := app.NewDoerLoopRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+	candidate, _, err := draft.Candidate()
 	if err != nil {
 		return doerPending{}, err
 	}
@@ -141,7 +141,7 @@ func (p *DoerContinuationPortal) reload(ctx context.Context, id string) (doerPen
 	if !reflect.DeepEqual(draft, value.Review.Draft) || value.Review.Digest != value.Review.ContentDigest() {
 		return value, app.ErrConflict
 	}
-	candidate, _, err := app.NewDoerLoopRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+	candidate, _, err := draft.Candidate()
 	if err != nil || candidate.Digest != i.Loop.Digest {
 		return value, app.ErrConflict
 	}
@@ -338,7 +338,7 @@ func (p *DoerContinuationPortal) RegisterBrowser(e *echo.Echo) {
 			if readErr != nil {
 				return readErr
 			}
-			candidate, _, readErr := app.NewDoerLoopRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+			candidate, _, readErr := d.Candidate()
 			if readErr != nil {
 				return readErr
 			}

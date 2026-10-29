@@ -16,7 +16,7 @@ import (
 // Only authoritative absence allows initial publication. All other read failures
 // (including an incomplete/unknown publication) fail closed.
 func (s *Service) retainedDoerPublication(ctx context.Context, sub core.Subject, d DoerDraft) (*PublishedLoop, error) {
-	candidate, _, err := NewDoerLoopRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+	candidate, _, err := d.Candidate()
 	if err != nil {
 		return nil, err
 	}

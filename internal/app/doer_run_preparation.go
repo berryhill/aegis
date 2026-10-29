@@ -193,7 +193,7 @@ func (s *Service) prepareDoerRunHostScope(ctx context.Context, subject core.Subj
 	if err != nil {
 		return err
 	}
-	record := hostapproval.Record{Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: agentRevisionRef(agent), Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: candidate.PreviousDigest, Contract: contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires, RunRequestID: intent.requestID}
+	record := hostapproval.Record{CandidateName: candidate.Name, Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: agentRevisionRef(agent), Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: candidate.PreviousDigest, Contract: contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires, RunRequestID: intent.requestID}
 	if candidate.SchemaVersion == loop.DoerReusableSchemaVersion {
 		record.DoerReusable = candidate.DoerReusable
 	}

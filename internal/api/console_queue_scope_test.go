@@ -310,7 +310,10 @@ func TestConsoleQueueScopeAuthenticatedRoutes(t *testing.T) {
 						// redundant full renders exhaust the race-shard budget.
 						if state == "succeeded" && page == "2" {
 							detail := queueScopeGet(t, client, base, link, http.StatusOK)
-							if !strings.Contains(detail, "data-queue-workspace") || !strings.Contains(detail, `<h2 id="inspector-title">`+bands[key].IDs[i]+`</h2>`) {
+							// The inspector heading is the pinned Loop's display name,
+							// not the queue ID. Assert exact record selection using the
+							// separate authoritative queue identity in its detail header.
+							if !strings.Contains(detail, "data-queue-workspace") || !strings.Contains(detail, bands[key].IDs[i]+" · pinned snapshot") {
 								t.Fatalf("band detail did not resolve exact identity %s", link)
 							}
 						}
