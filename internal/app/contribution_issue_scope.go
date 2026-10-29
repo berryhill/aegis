@@ -1,9 +1,6 @@
 package app
 
 import (
-	"fmt"
-	"slices"
-
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/delivery"
 )
@@ -14,7 +11,7 @@ import (
 // and github.issue_disposition.v1 must already exist in ONE admitted authority.
 // Repository spelling and immutable numeric ID are retained without normalization.
 func ContributionIssueResourceCapability(repository string, repositoryID uint64) string {
-	return fmt.Sprintf("%s:repository:%s:%d", delivery.ReconcileIssue, repository, repositoryID)
+	return ContributionDeliveryResourceCapability(delivery.ReconcileIssue, repository, repositoryID)
 }
 
 func contributionIssueScopeAllowed(authority core.AuthorityContext, plan delivery.Plan, intent delivery.Intent) bool {
@@ -24,6 +21,5 @@ func contributionIssueScopeAllowed(authority core.AuthorityContext, plan deliver
 }
 
 func hasContributionIssueCapabilities(authority core.AuthorityContext, repository string, repositoryID uint64) bool {
-	return repository != "" && repositoryID != 0 && slices.Contains(authority.Authority.Capabilities, string(delivery.ReconcileIssue)) &&
-		slices.Contains(authority.Authority.Capabilities, ContributionIssueResourceCapability(repository, repositoryID))
+	return hasContributionRemoteCapabilities(authority, delivery.ReconcileIssue, repository, repositoryID)
 }

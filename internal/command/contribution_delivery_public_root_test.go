@@ -444,6 +444,7 @@ exec sleep 240
 		}
 		// Empty publication has no HistorySnapshot root. Use the canonical
 		// all-family absence oracle after a real authenticated sticky stop.
+		beforeStopBudget := state.Used
 		_, e := gateway.Execute(ctx, subject, id, token, "/contribute stop "+key)
 		must(e)
 		absence := s.FleetRepository.(interface {
@@ -457,11 +458,13 @@ exec sleep 240
 		if gitOwned("for-each-ref", "--format=%(refname)", "refs/heads/contribution/") != "" {
 			t.Fatal("approval denial authored local ref")
 		}
-		if _, e := s.GetFinalContributionResultAs(ctx, subject, key); e == nil {
-			t.Fatal("approval denial minted final success")
+		if _, e := s.GetFinalContributionResultAs(ctx, subject, key); !app.IsContributionResultNotFound(e) {
+			t.Fatal("approval denial did not retain exact final-result absence", e)
 		}
-		if state.Used.Candidates > 2 {
-			t.Fatal("approval denial reset/exceeded budget")
+		_, stoppedState, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+		must(e)
+		if beforeStopBudget.Candidates != 1 || beforeStopBudget.QueueAttempts != 1 || stoppedState.Used != beforeStopBudget {
+			t.Fatal("approval denial reset or changed consumed budget")
 		}
 		t.Log("actual HTTP native RED/GREEN retained; declared Commit approval unavailable before reservation/effect; private source preserved")
 		return
