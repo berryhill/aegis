@@ -348,7 +348,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 		if err := validateExecutionProfile(deps.Profile, profileLayout, o, cmd.Name() == "reset"); err != nil {
 			return usage(err)
 		}
-		if (cmd.Name() == "doer-approval-companion" || cmd.Name() == "doer-setup-companion") && cmd.Parent() == root {
+		if (cmd.Name() == "doer-approval-companion" || cmd.Name() == "doer-setup-companion" || cmd.Name() == "contribution-decision-companion") && cmd.Parent() == root {
 			// Narrow internal IPC adapter: no lifecycle/store constructor. Profile
 			// validation above and the adapter's exact config/transport gates remain.
 			if o.target != "" || updateAlias {
@@ -540,6 +540,7 @@ func NewRoot(deps Dependencies) *cobra.Command {
 	addGatewayRecovery(root, deps, o)
 	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
 	root.AddCommand(NewDoerSetupCompanionCommand(func() string { return o.configFile }))
+	root.AddCommand(NewContributionDecisionCompanionCommand(func() string { return o.configFile }))
 	var wrapAuthorityCleanup func(*cobra.Command)
 	wrapAuthorityCleanup = func(command *cobra.Command) {
 		if run := command.RunE; run != nil {

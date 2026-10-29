@@ -134,7 +134,10 @@ func RecoverInterruptedAs(ctx context.Context, root, principal string) (result I
 		return result, err
 	}
 	evidence, err := recoveryDirectory(ctx, filepath.Join(result.EvidencePath, "store"), "")
-	if err != nil || original != evidence {
+	if err != nil {
+		return result, err
+	}
+	if original != evidence {
 		return result, errors.New("original changed after snapshot")
 	}
 	receipt := recoveryReceipt{OperationID: filepath.Base(result.EvidencePath), Principal: principal, Operation: "recover-interrupted", Generation: generation, Evidence: result.EvidencePath, EvidenceDigest: evidence, CandidateDigest: candidate, Phase: "verified", Outcome: "pending", Records: result.Records}

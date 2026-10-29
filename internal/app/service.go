@@ -39,6 +39,10 @@ var (
 )
 
 type Service struct {
+	// ContributionDecisionDelivery is installed by trusted owning-server composition only.
+	ContributionDecisionDelivery func(context.Context, core.Subject, string, string) (string, error)
+	// Trusted #378 owning-controller composition only; nil keeps nonlocal stop pending.
+	ContributionPublicationQuiescer ContributionPublicationQuiescer
 	// DashboardActionAuthentication is installed once by the owning console
 	// before serving. Only explicitly dashboard-capable operations consult it.
 	DashboardActionAuthentication func(core.Subject) error
@@ -57,18 +61,22 @@ type Service struct {
 
 	CredentialAuthority *credentials.Authority
 	// ContributionReader is an owning-controller dependency, never request authority.
-	ContributionReader ContributionSourceReader
-	FleetRepository    fleet.Repository
-	Fleet              *orchestration.FleetService
-	QueueWorker        *orchestration.QueueWorker
-	nativeConnectionMu sync.Mutex
-	nativeReviews      map[string]nativeConnectionReview
-	loopRunMu          sync.Mutex      // guards Run admission/preparation and foreground worker ownership
-	loopRunWorkers     map[string]bool // guarded by loopRunMu; durable claims remain the execution fence
-	doerTaskMu         sync.Mutex      // foreground retained-task continuation in this owning service
-	capMu              sync.RWMutex
-	capabilities       map[[32]byte]broker.Capability
-	brokerRequests     map[[32]byte]map[[32]byte]struct{}
+	ContributionReader     ContributionSourceReader
+	FleetRepository        fleet.Repository
+	Fleet                  *orchestration.FleetService
+	QueueWorker            *orchestration.QueueWorker
+	contributionDecisionMu sync.Mutex // serializes owning-service delivery before durable reservation
+	sessionTerminalMu      sync.Mutex // guards only the ephemeral per-session terminal lock map
+	sessionTerminalLocks   map[string]*sessionTerminalLock
+	nativeConnectionMu     sync.Mutex
+	nativeReviews          map[string]nativeConnectionReview
+	loopRunMu              sync.Mutex                         // guards Run admission/preparation and foreground worker ownership
+	contributionRuns       map[string]*contributionRunControl // guarded by loopRunMu
+	loopRunWorkers         map[string]bool                    // guarded by loopRunMu; durable claims remain the execution fence
+	doerTaskMu             sync.Mutex                         // foreground retained-task continuation in this owning service
+	capMu                  sync.RWMutex
+	capabilities           map[[32]byte]broker.Capability
+	brokerRequests         map[[32]byte]map[[32]byte]struct{}
 }
 
 // AuditAuthority is the narrow append and verification boundary that hardened
@@ -1558,6 +1566,21 @@ func (s *Service) InspectSession(id string) (core.Session, bool, error) {
 	return x, processMatches(x.RuntimePID, x.ProcessStart), nil
 }
 func (s *Service) endSession(ctx context.Context, id, status, reason string, revoke bool) error {
+	// The owning service's role cleanup and supervisor can observe the same
+	// process exit. Re-read the terminal session before reserving another revoke;
+	// a stale supervisor observation cannot replace the first canonical outcome.
+	unlock, err := s.lockSessionTerminal(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	current, err := s.GetSession(id)
+	if err != nil {
+		return err
+	}
+	if current.Status != "running" {
+		return fmt.Errorf("%w: session is %s", ErrConflict, current.Status)
+	}
 	authority, err := s.authorityContextForSession(ctx, id)
 	if err != nil {
 		return err

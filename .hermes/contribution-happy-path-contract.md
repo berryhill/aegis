@@ -233,6 +233,21 @@ independently joins the complete chain.
 ```
 <!-- /contribution-matrix-v1 -->
 
+## #377 executable continuity source mapping
+
+The retained continuity seam is implemented in `internal/app/contribution_resume.go`,
+`internal/app/contribution_execution_observer_linux.go`,
+`internal/app/contribution_continuity_join.go` and
+`internal/app/contribution_effect_admission.go`; manager routing is in
+`internal/managergateway/contribution.go` (`/contribute resume [reference]`).
+Protected role-provision delivery composition is
+`internal/app/contribution_decision_delivery.go` ->
+`internal/api/contribution_decision_delivery.go` -> pinned companion launcher ->
+canonical decision/plan/consumed approval/verified receipt readback.
+See [current implementation guide](../docs/continuity/contribution-continuity.md).
+This maps source and executable seams only: it does not promote the matrix to
+#379 completion, real-provider qualification or installed/live acceptance.
+
 ## Sequence, authority and recovery policy
 
 Normal path follows matrix order. `repair` is an evaluated checkpoint: when no

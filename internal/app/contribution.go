@@ -80,18 +80,7 @@ func (s *Service) StopContributionAs(ctx context.Context, subject core.Subject, 
 	return ErrDenied // Manager controls require current authenticated session provenance.
 }
 func (s *Service) StopContributionInSessionAs(ctx context.Context, subject core.Subject, session, key string) error {
-	c, _, err := s.ReadContributionAs(ctx, subject, key)
-	if err != nil {
-		return err
-	}
-	if err = s.ControlContributionAs(ctx, subject, session, key, true, ""); err != nil {
-		return err
-	}
-	if s.QueueWorker == nil {
-		return errors.New("Queue lifecycle unavailable")
-	}
-	_, err = s.CancelQueueItemAs(ctx, subject, TerminalQueueItemInput{QueueItemID: c.QueueItemID, CancellationID: c.QueueItemID + "-owner-stop", TransitionID: c.QueueItemID + "-owner-stop-transition", WorkspaceAgentID: c.Controller.ID})
-	return err
+	return s.cancelContributionInSession(ctx, subject, session, key)
 }
 
 // AdmitContributionAs is called only with the authenticated gateway's held

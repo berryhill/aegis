@@ -6,6 +6,22 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Upgrade `golang.org/x/net` to v0.62.0 and its minimum required Go module
+  dependencies to address GO-2026-6860 in the upgrade Console HTML parser.
+  Preserve response bounds, authentication policy and the Go 1.26.10 toolchain.
+
+- Reduce repeated contribution history decoding with a transaction-byte-checked
+  replay prefix; preserve fresh authority admission and cold validation. Read
+  toolchain inputs without repeated buffer growth, and verify every recovery-log
+  suffix byte in bounded chunks without changing authentication deadlines.
+
+- Wire missing-role provisioning preflight to the owning API pinned protected
+  companion, reserve the stable intent before launch and reload canonical approval
+  and provisioning receipts. Preserve non-replayable unknown outcomes. Restore
+  exact Loop selection on retained Resume; distinguish native pass lineage from
+  frozen candidate identity in accepted-source custody joins. Source-only; no
+  live-provider, installed or whole-contribution completion claim.
+
 - Source candidate #351: retain exact reusable Run setup for independent protected
   provisioning/host review of differently recorded owners, bind signed consent to
   complete Run inputs, and preserve historical result inspection without renewing
@@ -30,6 +46,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   owning-service dispatch from help/API presence and selected-file/native checks
   from complete contribution delivery. Add isolated installed-CLI recipe and
   dispatch-inventory regressions; no fleet installation or live rollout.
+
 
 
 - Source candidate #350: owning-service online Agent lifecycle and Queue cancel/revoke/expired-lease reclaim adapters; strict fail-closed authority/budget/transport handling. Ordinary retry and online expire/exhaust remain unavailable.

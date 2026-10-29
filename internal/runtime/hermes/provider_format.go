@@ -71,8 +71,8 @@ func closedProviderFormatDiagnostic(payload map[string]any) ProviderFormatDiagno
 	return out
 }
 
-func finishRuntimeFailure(turn execution.Turn, payload map[string]any, probe bool) (AttemptTurnResult, error) {
-	result, err := finishAttempt(turn, execution.StateFailed, runtimeFailureReason(payload), errors.New("Hermes turn failed"))
+func (a *Adapter) finishRuntimeFailure(turn execution.Turn, payload map[string]any, probe bool) (AttemptTurnResult, error) {
+	result, err := a.finishAttempt(turn, execution.StateFailed, runtimeFailureReason(payload), errors.New("Hermes turn failed"))
 	if probe {
 		result.Diagnostic = closedProviderFormatDiagnostic(payload)
 	}

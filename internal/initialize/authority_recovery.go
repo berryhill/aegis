@@ -10,6 +10,7 @@ import (
 
 	"github.com/berryhill/aegis/internal/config"
 	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
+	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/principalauth"
 )
 
@@ -18,6 +19,16 @@ import (
 // Authentication uses the configured OS principal AND enrolled principal
 // password, never a caller-supplied subject or confirmation flag.
 func RecoverInterruptedAuthority(ctx context.Context, cfg config.Config, password []byte) (authoritybadger.InterruptedRecovery, error) {
+	return recoverInterrupted(ctx, cfg, password, false)
+}
+
+// RecoverInterruptedInstance performs explicit offline physical recovery of the
+// existing authority and fleet stores under ONE password proof and deadline.
+// Domain resume and fresh role admission remain separate operations.
+func RecoverInterruptedInstance(ctx context.Context, cfg config.Config, password []byte) (authoritybadger.InterruptedRecovery, error) {
+	return recoverInterrupted(ctx, cfg, password, true)
+}
+func recoverInterrupted(ctx context.Context, cfg config.Config, password []byte, fleet bool) (authoritybadger.InterruptedRecovery, error) {
 	var empty authoritybadger.InterruptedRecovery
 	defer clear(password)
 	if err := cfg.Validate(); err != nil {
@@ -50,5 +61,10 @@ func RecoverInterruptedAuthority(ctx context.Context, cfg config.Config, passwor
 	}
 	bounded, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
-	return authoritybadger.RecoverInterruptedAs(bounded, filepath.Join(cfg.StateDir, "persistence", "authority-v1"), cfg.Principal.ID)
+	result, err := authoritybadger.RecoverInterruptedAs(bounded, filepath.Join(cfg.StateDir, "persistence", "authority-v1"), cfg.Principal.ID)
+	if err != nil || !fleet {
+		return result, err
+	}
+	_, err = fleetbadger.RecoverInterruptedAs(bounded, filepath.Join(cfg.StateDir, "persistence", "fleet-v1"), cfg.Principal.ID)
+	return result, err
 }

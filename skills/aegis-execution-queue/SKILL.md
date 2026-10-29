@@ -13,6 +13,22 @@ metadata:
 
 # Aegis Execution Queue lifecycle
 
+## Retained contribution continuity
+
+Use `/contribute status [issue-url]` to find retained same-owner nonterminal work
+without internal IDs; no reference requires exactly one match, otherwise conflict.
+Status exposes sanitized stage/lineage/frozen digest, counters, role epochs and
+stop/decision/native-intent gates, never process credentials or completion proof.
+Use `/contribute resume [reference]` for a retained invocation under fresh
+same-owner authentication. Read the [implementation guide](../../docs/continuity/contribution-continuity.md)
+for exact canonical readback, protected role-provision review, immutable original
+Queue/claim/attempt, cumulative counters, unknown-outcome custody and native
+quiescence requirements. Login alone is neither approval nor task consent.
+Frozen candidate digests differ from pre-freeze pass lineage; write admission
+requires the private synchronous accepted-source custody join. Doer same-session
+controls and existing synthetic/live/installed qualification tiers are unchanged.
+No whole-contribution completion follows from a candidate or primitive receipt.
+
 ## Contribution acceptance boundary (#386)
 
 For contribution implementation/testing, read the repository's

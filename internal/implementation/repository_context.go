@@ -128,8 +128,19 @@ func readRepositoryContextFile(root *os.Root, name string, expected int64) ([]by
 	if err != nil || !actual.Mode().IsRegular() || !singleLink(actual) || !os.SameFile(info, actual) || actual.Size() != expected {
 		return nil, reject
 	}
-	b, err := io.ReadAll(io.LimitReader(f, expected+1))
-	if err != nil {
+	// The descriptor's bounded size is already known. Read into one exact-sized
+	// allocation rather than repeatedly growing/copying ReadAll's buffer (the
+	// full native distribution is read at every integrity boundary). Still read
+	// every byte, and probe EOF so growth cannot be hidden by the allocation.
+	if expected < 0 || uint64(expected) > uint64(^uint(0)>>1) {
+		return nil, reject
+	}
+	b := make([]byte, int(expected))
+	if _, err = io.ReadFull(f, b); err != nil {
+		return nil, reject
+	}
+	var extra [1]byte
+	if n, err := f.Read(extra[:]); n != 0 || err != io.EOF {
 		return nil, reject
 	}
 	after, err := f.Stat()

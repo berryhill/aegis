@@ -1,5 +1,21 @@
 # Release verification resource and termination contract
 
+## Manager contribution inventory partitions
+
+Both normal and race require `manager`, `manager-contribution-repair`,
+`manager-contribution-disconnect`, `manager-contribution-resume`, and
+`manager-contribution-restart`. The four top-level integrations are isolated by actual-mode complete inventory;
+all other current/future tests, examples and fuzz seeds remain in `manager`.
+Missing targets deny before execution. `TestMain`, uncached coverage, 8-minute
+package, 10-minute manager job and existing cgroup limits are unchanged.
+Workflow names and exact-head evidence gates change together; omitted, cancelled
+or skipped groups deny readiness. Local measurement sources are
+`377-evidence/managed-integration-first.log` (132.55s PASS),
+`managed-resume-first.log` (disconnect 139.00s PASS), and
+`managed-resume-third.log` (expired-resume 136.14s FAIL). These explain partitioning,
+not hosted/race qualification or successful expiry acceptance.
+
+
 Objective: retain every release gate while bounding verification CPU, memory, process count, output and elapsed time; always clean up owned children and close authority storage after failure.
 
 Acceptance: inherited conservative Go defaults with valid explicit overrides preserved; Linux cgroup-supervised verification with fail-closed unavailable supervision; bounded CDP framing/events/deadlines; process-tree timeout cleanup; bounded test helpers and PTY buffers; Sync-failure close regression with no CLEAN marker; exact-head CI and verified main merge.
@@ -37,7 +53,9 @@ ceiling or a replacement for cgroup enforcement.
 ## Launch-asset impact review
 
 Current CI groups in each of `normal` and `race` are `api-a`, `api-b`,
-`implementation`, `orchestration`, `orchestration-contribution`, `cli`,
+`implementation`, `orchestration`, `orchestration-contribution`, `manager`,
+`manager-contribution-repair`, `manager-contribution-disconnect`,
+`manager-contribution-resume`, `manager-contribution-restart`, `cli`,
 `persistence`, `update`, `remainder-a` and `remainder-b`. The measured cumulative
 `execution` shard was replaced by separate implementation/orchestration packages.
 Within orchestration, the contribution integration alone measured 373.40s and the

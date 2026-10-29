@@ -59,6 +59,7 @@ type ContributionPass struct {
 	Check     ContributionCheck        `json:"check"`
 }
 type ContributionRecord struct {
+	Frozen          *ContributionCandidate           `json:"frozen,omitempty"`
 	FrozenToolchain string                           `json:"frozen_toolchain"`
 	RunID           string                           `json:"run_id"`
 	Contract        string                           `json:"contract"`
@@ -81,15 +82,21 @@ type ContributionRecord struct {
 // Interrupted effects retain their reservation; only explicit quiescent phase
 // boundaries permit exact same-attempt continuation. No authority renewal.
 type ManagedContribution struct {
+	// Checkpoint is a trusted controller port, never runtime-supplied narration.
+	// It runs before the named effect; errors retain the last durable boundary.
+	Checkpoint        func(context.Context, ContributionCheckpoint) error
+	ContinueBuilder   func(context.Context, ContributionRoleIdentity, ContributionRoleIdentity) error
 	toolchainDigest   string
 	DB                Store
 	GoBinary          string
 	StateRoot         string
 	Repository        string
 	CurrentExecutable string // controller-only check input, never model-selected
-	Admit             Admit
-	Build             func(context.Context, Request) ([]Edit, ContributionRoleIdentity, error)
-	Test              func(context.Context, ContributionCandidate, func(context.Context, ContributionRoleIdentity) error) (ContributionRoleIdentity, error)
+	// Native owns Start/Wait and durable quiescence for every qualified command.
+	Native func(context.Context, *exec.Cmd) error
+	Admit  Admit
+	Build  func(context.Context, Request) ([]Edit, ContributionRoleIdentity, error)
+	Test   func(context.Context, ContributionCandidate, func(context.Context, ContributionRoleIdentity) error) (ContributionRoleIdentity, error)
 	// Fetch is an optional trusted transport seam; origin/base validation is never skipped.
 	Fetch func(context.Context, loop.ContributionExecutionPolicy) error
 }
@@ -310,77 +317,102 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 	if len(record.Passes) > 0 {
 		builder = record.Passes[len(record.Passes)-1].Candidate.Builder
 	}
-	for record.Consumed < c.MaxPasses {
+	for record.Frozen != nil || record.Consumed < c.MaxPasses {
 		if err = ctx.Err(); err != nil {
 			return record, err
 		}
-		record.State = "running"
-		record.Consumed++ // Persist consumption before runtime or file effects.
-		if err = e.save(record); err != nil {
-			return record, err
+		var candidate ContributionCandidate
+		var frozen SourceInventory
+		if record.Frozen != nil {
+			candidate = *record.Frozen
+			frozen = candidate.Source
+			builder = candidate.Builder
+		} else {
+			if err = e.checkpoint(ctx, "build", record, ""); err != nil {
+				return record, err
+			}
+			record.State = "running"
+			record.Consumed++ // Persist consumption before runtime or file effects.
+			if err = e.save(record); err != nil {
+				return record, err
+			}
+			if err = e.admit(ctx, "builder"); err != nil {
+				return record, err
+			}
+			before, err := Inventory(ctx, c.Workspace)
+			if err != nil {
+				return record, err
+			}
+			edits, identity, err := e.Build(ctx, Request{Contract: c, RepositoryContext: cloneContext(expected), PassID: fmt.Sprintf("%s-builder-%d", run, record.Consumed), PreviousCheck: previous})
+			if err != nil {
+				return record, err
+			}
+			changed := builder.AuthorityID != "" && (identity.AgentDigest != builder.AgentDigest || identity.AuthorityID != builder.AuthorityID || identity.SessionID != builder.SessionID || identity.MandateID != builder.MandateID)
+			if !validContributionRole(identity) || (changed && (e.ContinueBuilder == nil || e.ContinueBuilder(ctx, builder, identity) != nil)) {
+				return record, errors.New("same independently admitted builder required")
+			}
+			builder = identity
+			after, err := Inventory(ctx, c.Workspace)
+			if err != nil || after.Digest != before.Digest {
+				return record, errors.New("source changed during builder proposal")
+			}
+			if err = kernel.apply(ctx, c, edits, expected); err != nil {
+				return record, err
+			}
+			frozen, err = Inventory(ctx, c.Workspace)
+			if err != nil {
+				return record, err
+			}
+			if err = onlyEdits(before, frozen, edits); err != nil {
+				return record, err
+			}
+			if err = stdlibModule(frozen); err != nil {
+				return record, err
+			}
+			e.CurrentExecutable = ""
+			executable, err := e.build(ctx, c, p, frozen)
+			if err != nil {
+				return record, err
+			}
+			if _, err = e.verifyToolchain(ctx); err != nil {
+				return record, err
+			}
+			commit, err := e.git(ctx, p, c.Workspace, "rev-parse", "HEAD")
+			if err != nil {
+				return record, err
+			}
+			tree, err := e.git(ctx, p, c.Workspace, "rev-parse", "HEAD^{tree}")
+			if err != nil {
+				return record, err
+			}
+			index, err := e.git(ctx, p, c.Workspace, "ls-files", "--stage", "-z")
+			if err != nil {
+				return record, err
+			}
+			candidateCommit, candidateTree, err := e.freezeGit(ctx, p, c.Workspace, base, frozen)
+			if err != nil {
+				return record, err
+			}
+			candidate = ContributionCandidate{CandidateCommit: candidateCommit, CandidateTree: candidateTree, Contract: contract, QueueAttempt: attempt, Pass: record.Consumed, Base: base, HeadCommit: strings.TrimSpace(string(commit)), HeadTree: strings.TrimSpace(string(tree)), Index: digest(index), Source: frozen, Executable: executable, Toolchain: e.toolchainDigest, Policy: contributionPolicyDigest(p), Builder: builder}
+			wire, _ := json.Marshal(candidate)
+			candidate.Digest = digest(wire)
+			// Persist complete frozen identity before a fresh tester can start.
+			wire, _ = json.Marshal(candidate)
+			if err = e.DB.Create([]byte("contribution/candidate/"+candidate.Digest), wire); err != nil {
+				return record, err
+			}
+			record.Frozen = &candidate
+			// apply advanced this trusted context to the exact edited preimages.
+			// Retain it with the freeze so resume cannot revert to base preimages.
+			record.Expected = cloneContext(expected)
+			record.BoundaryIndex = candidate.Index
+			record.BoundarySource = frozen.Digest
+			record.State = "phase_boundary"
+			if err = e.save(record); err != nil {
+				return record, err
+			}
 		}
-		if err = e.admit(ctx, "builder"); err != nil {
-			return record, err
-		}
-		before, err := Inventory(ctx, c.Workspace)
-		if err != nil {
-			return record, err
-		}
-		edits, identity, err := e.Build(ctx, Request{Contract: c, RepositoryContext: cloneContext(expected), PassID: fmt.Sprintf("%s-builder-%d", run, record.Consumed), PreviousCheck: previous})
-		if err != nil {
-			return record, err
-		}
-		if !validContributionRole(identity) || (builder.AuthorityID != "" && (identity.AgentDigest != builder.AgentDigest || identity.AuthorityID != builder.AuthorityID || identity.SessionID != builder.SessionID || identity.MandateID != builder.MandateID)) {
-			return record, errors.New("same independently admitted builder required")
-		}
-		builder = identity
-		after, err := Inventory(ctx, c.Workspace)
-		if err != nil || after.Digest != before.Digest {
-			return record, errors.New("source changed during builder proposal")
-		}
-		if err = kernel.apply(ctx, c, edits, expected); err != nil {
-			return record, err
-		}
-		frozen, err := Inventory(ctx, c.Workspace)
-		if err != nil {
-			return record, err
-		}
-		if err = onlyEdits(before, frozen, edits); err != nil {
-			return record, err
-		}
-		if err = stdlibModule(frozen); err != nil {
-			return record, err
-		}
-		e.CurrentExecutable = ""
-		executable, err := e.build(ctx, c, p, frozen)
-		if err != nil {
-			return record, err
-		}
-		if _, err = e.verifyToolchain(ctx); err != nil {
-			return record, err
-		}
-		commit, err := e.git(ctx, p, c.Workspace, "rev-parse", "HEAD")
-		if err != nil {
-			return record, err
-		}
-		tree, err := e.git(ctx, p, c.Workspace, "rev-parse", "HEAD^{tree}")
-		if err != nil {
-			return record, err
-		}
-		index, err := e.git(ctx, p, c.Workspace, "ls-files", "--stage", "-z")
-		if err != nil {
-			return record, err
-		}
-		candidateCommit, candidateTree, err := e.freezeGit(ctx, p, c.Workspace, base, frozen)
-		if err != nil {
-			return record, err
-		}
-		candidate := ContributionCandidate{CandidateCommit: candidateCommit, CandidateTree: candidateTree, Contract: contract, QueueAttempt: attempt, Pass: record.Consumed, Base: base, HeadCommit: strings.TrimSpace(string(commit)), HeadTree: strings.TrimSpace(string(tree)), Index: digest(index), Source: frozen, Executable: executable, Toolchain: e.toolchainDigest, Policy: contributionPolicyDigest(p), Builder: builder}
-		wire, _ := json.Marshal(candidate)
-		candidate.Digest = digest(wire)
-		// Persist complete frozen identity before a fresh tester can start.
-		wire, _ = json.Marshal(candidate)
-		if err = e.DB.Create([]byte("contribution/candidate/"+candidate.Digest), wire); err != nil {
+		if err = e.checkpoint(ctx, "freeze", record, candidate.Digest); err != nil {
 			return record, err
 		}
 		if err = e.admit(ctx, "tester"); err != nil {
@@ -393,6 +425,13 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 		var output []byte
 		var observed ContributionRoleIdentity
 		called := false
+		if err = e.checkpoint(ctx, "test", record, candidate.Digest); err != nil {
+			return record, err
+		}
+		record.State = "running"
+		if err = e.save(record); err != nil {
+			return record, err
+		}
 		tester, err := e.Test(ctx, candidate, func(checkCtx context.Context, role ContributionRoleIdentity) error {
 			if called || !independentContributionRole(builder, role) {
 				return errors.New("independent one-shot tester capability required")
@@ -431,6 +470,9 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			return record, err
 		}
 		if check.Outcome == "passed" {
+			if err = e.checkpoint(ctx, "review", record, candidate.Digest); err != nil {
+				return record, err
+			}
 			check.Review, err = e.persistReview(candidate, p)
 			if err != nil {
 				return record, err
@@ -442,6 +484,7 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			return record, err
 		}
 		record.Passes = append(record.Passes, pass)
+		record.Frozen = nil
 		if check.Outcome == "passed" {
 			record.State = "candidate_accepted"
 			return record, e.save(record)
@@ -497,7 +540,7 @@ func (e *ManagedContribution) git(ctx context.Context, p loop.ContributionExecut
 	}
 	cmd := exec.CommandContext(ctx, p.GitBinary, append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null"}, args...)...)
 	cmd.Env = []string{"PATH=" + filepath.Dir(p.GitBinary), "HOME=" + e.StateRoot, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0"}
-	return cmd.Output()
+	return e.commandOutput(ctx, cmd)
 }
 func (e *ManagedContribution) prepare(ctx context.Context, p loop.ContributionExecutionPolicy, workspace, run, base string) error {
 	origin, err := e.git(ctx, p, p.RepositoryPath, "remote", "get-url", "origin")
@@ -557,15 +600,21 @@ func (e *ManagedContribution) native(ctx context.Context, c loop.VerifiedImpleme
 		}
 		cmd.Env = append(cmd.Env, "AEGIS_CONTRIBUTION_CANDIDATE="+executable)
 	}
-	if err = configureProcess(cmd); err != nil {
-		return nil, err
+	if e.Native == nil {
+		if err = configureProcess(cmd); err != nil {
+			return nil, err
+		}
+		defer killProcessGroup(cmd)
 	}
-	defer killProcessGroup(cmd)
 	cmd.WaitDelay = time.Second
 	var output boundedOutput
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	err = cmd.Run()
+	if e.Native != nil {
+		err = e.Native(ctx, cmd)
+	} else {
+		err = cmd.Run()
+	}
 	if _, toolErr := e.verifyToolchain(ctx); toolErr != nil {
 		return nil, toolErr
 	}

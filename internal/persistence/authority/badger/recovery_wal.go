@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	physical "github.com/berryhill/aegis/internal/persistence/recoveryphysical"
 	"hash/crc32"
 	"io"
 	"os"
@@ -22,7 +23,7 @@ func proveLog(ctx context.Context, path string) (int64, error) {
 		return 0, err
 	}
 	defer f.Close()
-	r := bufio.NewReaderSize(f, 64<<10)
+	r := bufio.NewReaderSize(physical.LogicalReader(f), 64<<10)
 	header := make([]byte, 20)
 	if _, err = io.ReadFull(r, header); err != nil {
 		return 0, err
@@ -50,15 +51,16 @@ func proveLog(ctx context.Context, path string) (int64, error) {
 		peek, _ := r.Peek(5)
 		if len(peek) == 5 && bytes.Equal(peek, make([]byte, 5)) {
 			buf := make([]byte, 64<<10)
+			zero := make([]byte, len(buf))
 			for {
 				if e = ctx.Err(); e != nil {
 					return 0, e
 				}
 				n, re := r.Read(buf)
-				for _, b := range buf[:n] {
-					if b != 0 {
-						return 0, errors.New("nonzero WAL suffix")
-					}
+				// Compare every suffix byte in bounded chunks, including partial
+				// reads; per-byte race instrumentation is prohibitive on sparse logs.
+				if !bytes.Equal(buf[:n], zero[:n]) {
+					return 0, errors.New("nonzero WAL suffix")
 				}
 				if re == io.EOF {
 					break
@@ -158,10 +160,13 @@ func proveAndTrimLogs(ctx context.Context, path string) error {
 		if err != nil {
 			return err
 		}
-		if strings.HasSuffix(name, ".mem") {
-			if err = os.Truncate(filepath.Join(path, name), end); err != nil {
-				return err
-			}
+		// Both Badger WALs and value logs are preallocated. proveLog has
+		// authenticated every record and checked EVERY byte of the zero suffix.
+		// Trim only this independently preserved working copy; retaining the
+		// multi-GiB sparse value-log suffix makes every later custody digest scan
+		// it again and can exhaust fresh authentication before publication.
+		if err = os.Truncate(filepath.Join(path, name), end); err != nil {
+			return err
 		}
 	}
 	return nil

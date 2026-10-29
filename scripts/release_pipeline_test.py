@@ -36,6 +36,7 @@ class PipelineTests(unittest.TestCase):
             self.assertIn(heavy, groups)
             self.assertEqual(shard.GROUPS[heavy], ('internal/' + heavy,))
         self.assertEqual(shard.GROUPS['orchestration-contribution'], ('internal/orchestration',))
+        self.assertEqual(shard.GROUPS['implementation-contribution'], ('internal/implementation',))
         self.assertIn("mode: [normal, race]", matrix)
         self.assertIn("fail-fast: false", matrix)
         names = {re.search(r"^    name: (.+)$", block, re.M)[1] for key, block in self.jobs.items() if key != "go-shards"}
@@ -80,7 +81,7 @@ class PipelineTests(unittest.TestCase):
         for name in ("verify_ci_evidence_test.py", "verify_release_publication_test.py", "fast_release_test.py", "verify_go_shard_test.py", "release_pipeline_test.py"):
             self.assertIn(name, stages)
         full = make.split("verify-stages:\n", 1)[1].split("\nverify-repository:", 1)[0]
-        for command in ("verify-repository-stages", "verify-installed-mvi.sh", "go test -timeout=10m ./...", "go test -race -timeout=15m ./...", "go vet ./...", "$(GOVULNCHECK)"):
+        for command in ("verify-repository-stages", "verify-installed-mvi.sh", "python3 scripts/verify-go-shard.py --all", "python3 scripts/verify-go-shard.py --all --race", "go vet ./...", "$(GOVULNCHECK)"):
             self.assertIn(command, full)
 
     def test_no_duplicate_source_workflow_and_no_privileged_pr_execution(self):

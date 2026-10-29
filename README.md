@@ -1,5 +1,9 @@
 # Aegis
 
+Source-only [retained contribution continuity](docs/continuity/contribution-continuity.md)
+uses `/contribute resume [reference]`, exact protected provisioning readback and
+closed native custody joins. It is not whole-contribution or live qualification.
+
 Source candidate: the [two-participant pilot](docs/TWO_PARTICIPANT_PILOT.md)
 uses exact controller-mediated workspace, protected setup and evidence bindings.
 Different recorded ownership is not independent profile authentication. Retained

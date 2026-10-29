@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Bounded Go groups with dynamically complete, exact-once default tests.
 
-API alternates the actual mode's sorted default inventory; orchestration isolates
-the measured contribution integration and assigns every other current/future
-test, runnable example and fuzz target to its remainder. All children/seeds run.
+API alternates the actual mode's sorted default inventory; implementation and
+orchestration isolate their measured contribution integrations and assign every other current/future
+test, runnable example and fuzz target to its remainder. Manager isolates its
+four contribution integrations with the same inventory mechanism.
+All children/seeds run.
 Benchmarks are inventoried but not run by default. TestMain runs in each process.
 All other packages remain exact-once, including future packages.
 """
@@ -16,15 +18,27 @@ import sys
 
 ROOT = 'github.com/berryhill/aegis/'
 API = ROOT + 'internal/api'
+IMPLEMENTATION = ROOT + 'internal/implementation'
+IMPLEMENTATION_TEST = 'TestManagedContributionRepairAndCustody'
 ORCHESTRATION = ROOT + 'internal/orchestration'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
+MANAGER = ROOT + 'internal/managergateway'
+MANAGER_TESTS = {
+    'manager-contribution-repair': 'TestContributionManagerApprovedNativeRepair',
+    'manager-contribution-disconnect': 'TestContributionManagerDisconnectKeepsValidAuthorityExecution',
+    'manager-contribution-resume': 'TestContributionManagerExpiredFrozenCandidateExplicitFreshResume',
+    'manager-contribution-restart': 'TestContributionManagerHardRestartFrozenCandidateResume',
+}
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
-    # Measured package deadline: isolate the dominant contribution integration.
+    # Contribution repair/custody measured 54.43s normal; preserve the 8m cap.
     'implementation': ('internal/implementation',),
+    'implementation-contribution': ('internal/implementation',),
     'orchestration': ('internal/orchestration',),
     'orchestration-contribution': ('internal/orchestration',),
+    'manager': ('internal/managergateway',),
+    **{group: ('internal/managergateway',) for group in MANAGER_TESTS},
     'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
     # CI race timing: update alone takes 368-373s; never pair it with the remainder.
@@ -51,14 +65,16 @@ def groups(packages):
     assigned = [package for names in selected.values() for package in names]
     expected = Counter({p: 1 for p in set(assigned)})
     expected[API] = 2
+    expected[IMPLEMENTATION] = 2
     expected[ORCHESTRATION] = 2
+    expected[MANAGER] = 1 + len(MANAGER_TESTS)
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, IMPLEMENTATION: 1, ORCHESTRATION: 1, MANAGER: len(MANAGER_TESTS)}):
         raise ValueError('package coverage mismatch')
     return selected
 
@@ -84,10 +100,19 @@ def test_pattern(names, group):
         raise ValueError('empty or duplicate default test inventory')
     if group in ('api-a', 'api-b'):
         selected = names[0 if group == 'api-a' else 1::2]
+    elif group in ('implementation', 'implementation-contribution'):
+        if IMPLEMENTATION_TEST not in names:
+            raise ValueError('missing implementation contribution integration test')
+        selected = [name for name in names if (name == IMPLEMENTATION_TEST) == (group == 'implementation-contribution')]
     elif group in ('orchestration', 'orchestration-contribution'):
         if CONTRIBUTION_TEST not in names:
             raise ValueError('missing contribution integration test')
         selected = [name for name in names if (name == CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+    elif group == 'manager' or group in MANAGER_TESTS:
+        if not set(MANAGER_TESTS.values()) <= set(names):
+            raise ValueError('missing manager contribution integration test')
+        selected = ([MANAGER_TESTS[group]] if group in MANAGER_TESTS else
+                    [name for name in names if name not in MANAGER_TESTS.values()])
     else:
         raise ValueError('unknown test partition')
     if not selected:
@@ -98,28 +123,40 @@ def test_pattern(names, group):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--group', choices=GROUPS, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument('--group', choices=GROUPS)
+    selection.add_argument('--all', action='store_true', help='run every existing group sequentially')
     parser.add_argument('--race', action='store_true')
     parser.add_argument('--list-only', action='store_true')
     args = parser.parse_args(argv)
     result = subprocess.run(['go', 'list', './...'], text=True, stdout=subprocess.PIPE, check=True)
     packages = inventory(result.stdout)
-    selected = groups(packages)[args.group]
-    if not selected:
-        raise ValueError('selected group has no packages')
+    grouped = groups(packages)
     mode = ['-race'] if args.race else []
-    api = args.group in ('api-a', 'api-b')
-    timeout = '12m' if args.race and api else '8m'
-    command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-    if api or args.group in ('orchestration', 'orchestration-contribution'):
-        package = API if api else ORCHESTRATION
-        listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
-        names = test_inventory(listing.stdout, package)
-        command += ['-run', test_pattern(names, args.group)]
-    command += selected
-    print(json.dumps({'group': args.group, 'race': args.race, 'total_packages': len(packages), 'selected_packages': len(selected), 'command': command}), flush=True)
-    if not args.list_only:
-        subprocess.run(command, check=True)
+    commands = []
+    inventories = {}
+    # Validate the complete requested plan before executing any tests. Reuse one
+    # actual-mode inventory per split package so all partitions share a snapshot.
+    for group in GROUPS if args.all else (args.group,):
+        selected = grouped[group]
+        if not selected:
+            raise ValueError('selected group has no packages')
+        api = group in ('api-a', 'api-b')
+        timeout = '12m' if args.race and api else '8m'
+        command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
+        if api or group in ('implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager') or group in MANAGER_TESTS:
+            package = (API if api else IMPLEMENTATION if group.startswith('implementation') else
+                       MANAGER if group == 'manager' or group in MANAGER_TESTS else ORCHESTRATION)
+            if package not in inventories:
+                listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
+                inventories[package] = test_inventory(listing.stdout, package)
+            command += ['-run', test_pattern(inventories[package], group)]
+        command += selected
+        commands.append((group, selected, command))
+    for group, selected, command in commands:
+        print(json.dumps({'group': group, 'race': args.race, 'total_packages': len(packages), 'selected_packages': len(selected), 'command': command}), flush=True)
+        if not args.list_only:
+            subprocess.run(command, check=True)
     return 0
 
 

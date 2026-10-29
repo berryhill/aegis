@@ -1,5 +1,14 @@
 # Aegis MVP Architecture
 
+Retained contribution preflight → stable decision/budget reservation → owning API
+inode-pinned native companion → fresh password/exact review → canonical decision,
+plan, consumed approval and verified receipt readback → normal fresh role admission.
+Transport status is not authority; replay does not relaunch unknown intents.
+Accepted-source writes separately join frozen digest to bounded native pass lineage
+and exact stopped-role inventories under private live custody. No new queue or
+effect store; no host sandbox or #379 completion claim. See
+[continuity implementation](continuity/contribution-continuity.md).
+
 The two-participant source path is authenticated exact Run → retained setup review
 when necessary → independent existing native provisioning/host decision → fresh
 runtime binding/admission → bounded worker → independently reloaded evidence.

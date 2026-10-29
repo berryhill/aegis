@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/berryhill/aegis/internal/contribution"
+	"github.com/berryhill/aegis/internal/implementation"
 	"time"
 
 	"github.com/berryhill/aegis/internal/core"
@@ -88,19 +90,23 @@ func (NoKeyAdapter) Execute(ctx context.Context, request RuntimeRequest) (Runtim
 }
 
 type QueueWorker struct {
-	repository         fleet.Repository
-	service            *FleetService
-	blobs              BlobStore
-	verifier           EvidenceVerifier
-	adapter            RuntimeAdapter
-	now                func() time.Time
-	implementation     *ImplementationController
-	doerHostApproval   func(context.Context, loop.DoerContract, registry.AgentRevision) error
-	doerPassCap        func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)
-	codingContinuation func(context.Context, loop.DoerContract, registry.AgentRevision) (*CodingContinuation, error)
-	contributionRoles  ContributionRoleResolver
-	contributionFetch  func(context.Context, loop.ContributionExecutionPolicy) error
-	doerProtectedPaths []string
+	repository             fleet.Repository
+	service                *FleetService
+	blobs                  BlobStore
+	verifier               EvidenceVerifier
+	adapter                RuntimeAdapter
+	now                    func() time.Time
+	implementation         *ImplementationController
+	doerHostApproval       func(context.Context, loop.DoerContract, registry.AgentRevision) error
+	doerPassCap            func(context.Context, loop.DoerContract, registry.AgentRevision) (uint16, error)
+	codingContinuation     func(context.Context, loop.DoerContract, registry.AgentRevision) (*CodingContinuation, error)
+	contributionRoles      ContributionRoleResolver
+	contributionContinuity ContributionContinuityFactory
+	contributionCurrent    ContributionCurrentAdmission
+	contributionCheckpoint func(context.Context, implementation.ContributionCheckpoint) error
+	contributionPreclaim   func(context.Context, core.Subject, contribution.Contract, string) error
+	contributionFetch      func(context.Context, loop.ContributionExecutionPolicy) error
+	doerProtectedPaths     []string
 }
 
 func NewQueueWorker(repository fleet.Repository, service *FleetService, blobs BlobStore, verifier EvidenceVerifier, adapter RuntimeAdapter, now func() time.Time) (*QueueWorker, error) {
@@ -274,7 +280,17 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 			return WorkResult{}, err
 		}
 	}
-	claim, err := queue.NewClaim(queue.Claim{ClaimID: request.ClaimID, QueueItem: digestRef(item.ItemID, item.Digest), AttemptID: request.AttemptID, WorkerID: request.WorkerID, Authority: request.Authority, ClaimedAt: now, ExpiresAt: now.Add(request.LeaseDuration)})
+	leaseEnd := now.Add(request.LeaseDuration)
+	if loopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion {
+		_, mandate, readiness := worker.service.resolveAuthority(ctx, request.Subject, request.Authority)
+		if readiness.State != ReadinessReady {
+			return WorkResult{}, ErrWorkerDenied
+		}
+		if mandate.ExpiresAt.Before(leaseEnd) {
+			leaseEnd = mandate.ExpiresAt
+		}
+	}
+	claim, err := queue.NewClaim(queue.Claim{ClaimID: request.ClaimID, QueueItem: digestRef(item.ItemID, item.Digest), AttemptID: request.AttemptID, WorkerID: request.WorkerID, Authority: request.Authority, ClaimedAt: now, ExpiresAt: leaseEnd})
 	if err != nil {
 		return WorkResult{}, err
 	}
@@ -289,6 +305,15 @@ func (worker *QueueWorker) Process(ctx context.Context, request WorkRequest) (Wo
 	if loopRevision.SchemaVersion == loop.DoerRevisionSchemaVersion || loopRevision.SchemaVersion == loop.DoerReusableSchemaVersion {
 		if err = worker.authorizeDoer(ctx, doerContract, participant); err != nil {
 			return WorkResult{}, err
+		}
+	}
+	if loopRevision.SchemaVersion == loop.ContributionRevisionSchemaVersion && worker.contributionPreclaim != nil {
+		_, sealed, e := worker.contributionContract(ctx, item.ItemID, loopRevision)
+		if e != nil {
+			return WorkResult{}, e
+		}
+		if e = worker.contributionPreclaim(ctx, request.Subject, sealed, attempt.AttemptID); e != nil {
+			return WorkResult{}, e
 		}
 	}
 	if err = worker.repository.ClaimQueueItem(ctx, claim, attempt, claimTransition, worker.service.auditFact("fleet.queue.claimed", request.Subject, "worker lease acquired", node.Participant.ID, "", "")); err != nil {

@@ -44,6 +44,8 @@ type processState struct {
 	cancel context.CancelFunc
 }
 type Adapter struct {
+	// authorityNow is fixed at construction, never selected by runtime input.
+	authorityNow func() time.Time
 	// Synthetic process-test seam, not a configurable production bypass.
 	providerTransportQualifier func(core.RuntimeDescriptor) error
 	providerAuthentication     ProviderAuthenticationResolver
@@ -146,7 +148,24 @@ func ValidateCapabilities(capabilities []string) error {
 }
 
 func New(executable string, log *slog.Logger) *Adapter {
-	return &Adapter{executable: executable, log: log.With("component", "runtime.hermes"), processes: map[string]*processState{}}
+	return NewWithClock(executable, log, time.Now)
+}
+
+// NewWithClock binds the trusted controller's authority clock before any process
+// starts. It is not runtime/model configuration. Wall-time process budgets and
+// native watchdogs remain real timers even when authority time is staged.
+func NewWithClock(executable string, log *slog.Logger, now func() time.Time) *Adapter {
+	if now == nil {
+		now = time.Now
+	}
+	return &Adapter{authorityNow: now, executable: executable, log: log.With("component", "runtime.hermes"), processes: map[string]*processState{}}
+}
+
+func (a *Adapter) now() time.Time {
+	if a.authorityNow == nil {
+		return time.Now().UTC()
+	}
+	return a.authorityNow().UTC()
 }
 func (a *Adapter) Discover(ctx context.Context) (core.RuntimeDescriptor, error) {
 	p, err := exec.LookPath(a.executable)

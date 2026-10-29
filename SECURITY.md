@@ -1,5 +1,12 @@
 # Security Policy
 
+Retained contribution provisioning uses the owning API's inode-pinned protected
+companion and exact canonical plan/consumed approval/verified receipt readback.
+Companion status and six-hour dashboard authentication cannot grant role or native
+authority. Unknown outcomes remain non-replayable; write admission requires live
+private source custody and acknowledged native quiescence. See
+[continuity boundaries](docs/continuity/contribution-continuity.md).
+
 The two-participant source candidate separates recorded Registry ownership from
 the authenticated controller principal. A differently owned participant requires
 its exact provisioning and independently reviewed signed host scope, including

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	physical "github.com/berryhill/aegis/internal/persistence/recoveryphysical"
 	"golang.org/x/sys/unix"
 	"io"
 	"os"
@@ -49,6 +50,7 @@ func recoveryCopy(ctx context.Context, source, destination string) (string, erro
 	buf := make([]byte, 1<<20)
 	zero := make([]byte, len(buf))
 	remaining := info.Size()
+	reader := physical.LogicalReader(in)
 	for remaining > 0 {
 		if err = ctx.Err(); err != nil {
 			return "", err
@@ -57,7 +59,7 @@ func recoveryCopy(ctx context.Context, source, destination string) (string, erro
 		if remaining < n {
 			n = remaining
 		}
-		if _, err = io.ReadFull(in, buf[:n]); err != nil {
+		if _, err = io.ReadFull(reader, buf[:n]); err != nil {
 			return "", err
 		}
 		h.Write(buf[:n])
@@ -74,11 +76,11 @@ func recoveryCopy(ctx context.Context, source, destination string) (string, erro
 		remaining -= n
 	}
 	var extra [1]byte
-	if n, e := in.Read(extra[:]); n != 0 || e != io.EOF {
+	if n, e := reader.Read(extra[:]); n != 0 || e != io.EOF {
 		return "", errors.New("recovery source grew")
 	}
 	after, err := in.Stat()
-	if err != nil || after.Size() != info.Size() || after.ModTime() != info.ModTime() {
+	if err != nil || after.Size() != info.Size() || after.ModTime() != info.ModTime() || after.Mode() != info.Mode() || !physical.SameChangeTime(info, after) {
 		return "", errors.New("recovery source changed")
 	}
 	if out != nil {

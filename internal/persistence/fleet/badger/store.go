@@ -28,6 +28,8 @@ type Store struct {
 	root     string
 	mu       sync.Mutex
 	closed   bool
+	// One bounded, byte-checked replay prefix; accessed only under mu.
+	contributionReplay contributionReplayCache
 }
 
 // Open opens exactly one fleet-v1 root. A previous unclean open is denied;
@@ -70,6 +72,9 @@ func Open(ctx context.Context, root string) (*Store, error) {
 		return nil, cause
 	}
 
+	if err = requireFleetRecoveryComplete(clean); err != nil {
+		return fail(err)
+	}
 	dbPath := filepath.Join(clean, "store.badger")
 	_, dbErr := os.Lstat(dbPath)
 	_, cleanErr := os.Lstat(filepath.Join(clean, "CLEAN"))
