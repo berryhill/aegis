@@ -1,5 +1,7 @@
 package consoleweb
 
+import "fmt"
+
 templ QueueOutcome(q *QueueDetailModel) {
  <section class="reconstruction-warning" aria-label="Current execution outcome" role="status" aria-live="polite" data-queue-outcome>
   <p data-outcome-freshness>Current authoritative observation — independent of history replay.</p>
@@ -9,17 +11,38 @@ templ QueueOutcome(q *QueueDetailModel) {
   }
   <p>{ queueOutcomeMessage(queueCurrentOutcomeState(q)) }</p>
   <p>Recorded execution reason · <code>{ SafeQueueOutcomeReason(q.DispositionReason) }</code></p>
-  if q.TerminalOutcome == "failed" {
+  if q.NativeOutcome != nil {
+   <p>Native coding · trusted offline go-test.v1; historical file presence is not software acceptance.</p>
+   if q.NativeOutcome.Accepted {
+    <p>Native acceptance · the authoritative disposition records trusted-check success with validated native check history. Selected-file content is unsupported for this result type.</p>
+   } else if q.NativeOutcome.FailureCode != "" {
+    <p>Managed implementation failed before trusted acceptance · <code>{ q.NativeOutcome.FailureCode }</code>. This is the recorded controller classification, not raw runtime output.</p>
+   }
+   <p>Attempt · { q.NativeOutcome.AttemptID } · Loop execution · { q.NativeOutcome.ExecutionID } · Pass · { q.NativeOutcome.PassID }</p>
+   <p>Cumulative consumed passes · { fmt.Sprint(q.NativeOutcome.Consumed) } · Remaining budget · { fmt.Sprint(q.NativeOutcome.Remaining) }</p>
+  }
+  if q.TerminalOutcome == "failed" && (q.NativeOutcome == nil || q.NativeOutcome.FailureCode == "") {
    <p>A more detailed cause was not recorded or is unavailable on this surface. Interpreter progress, Requeue eligibility and topology are not an execution cause or verified result.</p>
   }
   if q.RunResult != nil && q.RunResult.Verified {
    <p>Verification · verified selected-file evidence, independently reloaded.</p>
+  } else if q.NativeOutcome != nil && q.NativeOutcome.Accepted {
+   <p>Verification · native trusted-check history, artifact and receipt independently reloaded and bound to this exact attempt; not a selected-file result.</p>
   } else {
    <p>Verification · not independently established on this surface. Consult the canonical disposition and evidence reader.</p>
   }
   <details><summary>Inspect authoritative disposition and evidence</summary>
    <p>Disposition · { queueOptionalField(q.DispositionID) }</p>
-   <p>Verified selected-result references, when authorized, are listed below. Other result types require their canonical evidence reader; no native checker details are inferred here.</p>
+   if q.NativeOutcome != nil {
+    <p>Native history · { q.NativeOutcome.HistoryDigest } · Contract · { q.NativeOutcome.ContractDigest }</p>
+    for _, id := range q.NativeOutcome.ArtifactIDs {
+     <p>Artifact · { id }</p>
+    }
+    for _, id := range q.NativeOutcome.ReceiptIDs {
+     <p>Verification receipt · { id }</p>
+    }
+   }
+   <p>Verified selected-result references, when authorized, are listed below; evidence references do not grant arbitrary blob, source or workspace-content access.</p>
   </details>
  </section>
 }
@@ -53,7 +76,7 @@ func queueOutcomeMessage(state string) string {
 // Closed public vocabulary: backend strings must never become a generic error banner.
 func SafeQueueOutcomeReason(reason string) string {
  switch reason {
- case "implementation_failed", "verification_failed", "evidence_satisfied", "evidence_failed", "cancelled", "expired", "revoked", "denied": return reason
+ case "implementation_failed", "implementation_verified", "verification_failed", "evidence_satisfied", "evidence_failed", "evidence_policy_missing", "evidence_verification_failed", "retry_exhausted", "cancelled", "expired", "revoked", "denied": return reason
  default: return "unavailable"
  }
 }

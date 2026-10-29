@@ -214,6 +214,7 @@ while IFS= read -r rest; do :; done
 		t.Fatalf("failure evidence: %+v", old)
 	}
 	history := old.CodingHistory[old.Attempts[0].AttemptID]
+	assertNativeOutcomeRead(t, s, sub, old, false)
 	if history.ReservedPasses != 1 || history.RemainingBudget != 1 || len(history.Passes) != 1 || history.Passes[0].Passed {
 		t.Fatalf("failed native pass: %+v", history)
 	}
@@ -332,6 +333,7 @@ while IFS= read -r rest; do :; done
 		t.Fatalf("native disposition: %+v", corrected)
 	}
 	h := corrected.CodingHistory[corrected.Attempts[0].AttemptID]
+	assertNativeOutcomeRead(t, s, sub, corrected, true)
 	if h.ConsumedBefore != 1 || h.ReservedPasses != 1 || h.CumulativeConsumed != 2 || h.RemainingBudget != 0 || h.PredecessorHistory != history.Digest || h.PredecessorRun != old.Item.ItemID {
 		t.Fatalf("cumulative history: %+v", h)
 	}

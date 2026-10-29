@@ -407,6 +407,10 @@ while read rest; do :; done
 	if err != nil || got.Execution == nil || got.Execution.Projection.State != queue.StateSucceeded || got.Execution.Disposition == nil || got.Execution.Artifact == nil {
 		t.Fatalf("success: %+v %v", got, err)
 	}
+	debugger, err := svc.ExecutionDebuggerAs(ctx, subject, got.QueueItemID, "")
+	if err != nil || debugger.NativeEvidenceVerified || debugger.State != "succeeded" || debugger.DispositionReason != "implementation_verified" {
+		t.Fatalf("legacy implementation must not require native coding evidence: %+v %v", debugger, err)
+	}
 	if ready {
 		bound, e := store.GetQueueRuntimeBinding(ctx, got.QueueItemID)
 		if e != nil || bound.Digest != originalBinding.Digest || bound.BindingID != originalBinding.BindingID {
