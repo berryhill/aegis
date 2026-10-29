@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Bounded Go groups with dynamically complete, exact-once default tests.
+"""Exact-once dynamic Go package/default-test groups, planned before execution.
 
-API alternates the actual mode's sorted default inventory; implementation and
-orchestration isolate their measured contribution integrations and assign every other current/future
-test, runnable example and fuzz target to its remainder. Manager isolates its
-four contribution integrations with the same inventory mechanism.
-All children/seeds run.
-Benchmarks are inventoried but not run by default. TestMain runs in each process.
-All other packages remain exact-once, including future packages.
+API alternates default inventory. Implementation/orchestration isolate measured
+contribution tests. Manager isolates the bounded native contribution journeys. All children,
+examples and default fuzz seeds remain covered; TestMain runs in each process.
 """
 import argparse
 import json
@@ -21,14 +17,28 @@ API = ROOT + 'internal/api'
 IMPLEMENTATION = ROOT + 'internal/implementation'
 IMPLEMENTATION_TEST = 'TestManagedContributionRepairAndCustody'
 ORCHESTRATION = ROOT + 'internal/orchestration'
+IMPLEMENTATION = ROOT + 'internal/implementation'
 CONTRIBUTION_TEST = 'TestContributionQueueNativeRepairIntegration'
+IMPLEMENTATION_CONTRIBUTION_TEST = 'TestManagedContributionRepairAndCustody'
+PARTITIONS = {
+    'orchestration': (ORCHESTRATION, CONTRIBUTION_TEST),
+    'orchestration-contribution': (ORCHESTRATION, CONTRIBUTION_TEST),
+    'implementation': (IMPLEMENTATION, IMPLEMENTATION_CONTRIBUTION_TEST),
+    'implementation-contribution': (IMPLEMENTATION, IMPLEMENTATION_CONTRIBUTION_TEST),
+}
 MANAGER = ROOT + 'internal/managergateway'
 MANAGER_TESTS = {
     'manager-contribution-repair': 'TestContributionManagerApprovedNativeRepair',
     'manager-contribution-disconnect': 'TestContributionManagerDisconnectKeepsValidAuthorityExecution',
     'manager-contribution-resume': 'TestContributionManagerExpiredFrozenCandidateExplicitFreshResume',
     'manager-contribution-restart': 'TestContributionManagerHardRestartFrozenCandidateResume',
+    'manager-contribution-joint': 'TestContributionDeliveryJointNative',
+    'manager-contribution-cancel': 'TestContributionDeliveryJointNativeNonlocalCancellation',
+    'manager-contribution-final': 'TestManagerJoinedContributionCompletion',
+    'manager-contribution-readback': 'TestManagerTerminalContributionReadback',
 }
+COMMAND = ROOT + 'internal/command'
+CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld'}
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
@@ -39,9 +49,10 @@ GROUPS = {
     'orchestration-contribution': ('internal/orchestration',),
     'manager': ('internal/managergateway',),
     **{group: ('internal/managergateway',) for group in MANAGER_TESTS},
-    'cli': ('cmd/aegis', 'internal/command', 'internal/console'),
+    'cli': ('cmd/aegis', 'internal/console'),
+    'cli-command': ('internal/command',),
+    **{group: ('internal/command',) for group in CLI_CONTRIBUTION_TESTS},
     'persistence': ('internal/persistence/fleet/badger', 'internal/skillbundle', 'internal/skillbundle/cmd'),
-    # CI race timing: update alone takes 368-373s; never pair it with the remainder.
     'update': ('internal/update',),
     'remainder-a': (),
     'remainder-b': (),
@@ -64,23 +75,19 @@ def groups(packages):
     selected = {name: [ROOT + path for path in paths] for name, paths in GROUPS.items()}
     assigned = [package for names in selected.values() for package in names]
     expected = Counter({p: 1 for p in set(assigned)})
-    expected[API] = 2
-    expected[IMPLEMENTATION] = 2
-    expected[ORCHESTRATION] = 2
-    expected[MANAGER] = 1 + len(MANAGER_TESTS)
+    expected.update({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1, MANAGER: len(MANAGER_TESTS), COMMAND: len(CLI_CONTRIBUTION_TESTS)})
     if Counter(assigned) != expected or not set(assigned) <= set(packages):
         raise ValueError('configured package missing or assigned more than once')
     remainder = sorted(set(packages) - set(assigned))
     selected['remainder-a'] = remainder[::2]
     selected['remainder-b'] = remainder[1::2]
     union = [package for names in selected.values() for package in names]
-    if Counter(union) != Counter(packages) + Counter({API: 1, IMPLEMENTATION: 1, ORCHESTRATION: 1, MANAGER: len(MANAGER_TESTS)}):
+    if Counter(union) != Counter(packages) + Counter({API: 1, ORCHESTRATION: 1, IMPLEMENTATION: 1, MANAGER: len(MANAGER_TESTS), COMMAND: len(CLI_CONTRIBUTION_TESTS)}):
         raise ValueError('package coverage mismatch')
     return selected
 
 
 def test_inventory(text, package=API):
-    """Fail closed on missing footer, empty/duplicate names or unknown output."""
     lines = text.splitlines()
     if not lines or not re.fullmatch(r'ok\s+' + re.escape(package) + r'\s+\d+(?:\.\d+)?s', lines[-1]):
         raise ValueError('missing Go test inventory completion')
@@ -100,14 +107,16 @@ def test_pattern(names, group):
         raise ValueError('empty or duplicate default test inventory')
     if group in ('api-a', 'api-b'):
         selected = names[0 if group == 'api-a' else 1::2]
-    elif group in ('implementation', 'implementation-contribution'):
-        if IMPLEMENTATION_TEST not in names:
-            raise ValueError('missing implementation contribution integration test')
-        selected = [name for name in names if (name == IMPLEMENTATION_TEST) == (group == 'implementation-contribution')]
-    elif group in ('orchestration', 'orchestration-contribution'):
-        if CONTRIBUTION_TEST not in names:
+    elif group in PARTITIONS:
+        _, target = PARTITIONS[group]
+        if target not in names:
             raise ValueError('missing contribution integration test')
-        selected = [name for name in names if (name == CONTRIBUTION_TEST) == (group == 'orchestration-contribution')]
+        selected = [name for name in names if (name == target) == group.endswith('-contribution')]
+    elif group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
+        if not set(CLI_CONTRIBUTION_TESTS.values()) <= set(names):
+            raise ValueError('missing CLI contribution integration test')
+        selected = ([CLI_CONTRIBUTION_TESTS[group]] if group in CLI_CONTRIBUTION_TESTS else
+                    [name for name in names if name not in CLI_CONTRIBUTION_TESTS.values()])
     elif group == 'manager' or group in MANAGER_TESTS:
         if not set(MANAGER_TESTS.values()) <= set(names):
             raise ValueError('missing manager contribution integration test')
@@ -117,7 +126,6 @@ def test_pattern(names, group):
         raise ValueError('unknown test partition')
     if not selected:
         raise ValueError('empty Go test partition')
-    # No slash: matching a parent deliberately executes all subtests/fuzz seeds.
     return '^(?:' + '|'.join(re.escape(name) for name in selected) + ')$'
 
 
@@ -133,10 +141,7 @@ def main(argv=None):
     packages = inventory(result.stdout)
     grouped = groups(packages)
     mode = ['-race'] if args.race else []
-    commands = []
-    inventories = {}
-    # Validate the complete requested plan before executing any tests. Reuse one
-    # actual-mode inventory per split package so all partitions share a snapshot.
+    commands, inventories = [], {}
     for group in GROUPS if args.all else (args.group,):
         selected = grouped[group]
         if not selected:
@@ -144,9 +149,8 @@ def main(argv=None):
         api = group in ('api-a', 'api-b')
         timeout = '12m' if args.race and api else '8m'
         command = ['go', 'test', *mode, '-count=1', '-timeout=' + timeout]
-        if api or group in ('implementation', 'implementation-contribution', 'orchestration', 'orchestration-contribution', 'manager') or group in MANAGER_TESTS:
-            package = (API if api else IMPLEMENTATION if group.startswith('implementation') else
-                       MANAGER if group == 'manager' or group in MANAGER_TESTS else ORCHESTRATION)
+        if api or group in PARTITIONS or group == 'manager' or group in MANAGER_TESTS or group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS:
+            package = COMMAND if group == 'cli-command' or group in CLI_CONTRIBUTION_TESTS else API if api else MANAGER if group == 'manager' or group in MANAGER_TESTS else PARTITIONS[group][0]
             if package not in inventories:
                 listing = subprocess.run([*command, '-list', '.', package], text=True, stdout=subprocess.PIPE, check=True)
                 inventories[package] = test_inventory(listing.stdout, package)

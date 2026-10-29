@@ -25,6 +25,16 @@ type CompletionOwner interface {
 	VerifyContributionCompletion(context.Context, Reference) (string, error)
 }
 
+// FinalCompletionOwner is called only after canonical issue reconciliation.
+// Preclosure verification alone never terminalizes the contribution.
+type FinalCompletionOwner interface {
+	FinalizeContributionCompletion(context.Context, Reference) error
+}
+
+type BoundaryCompletionOwner interface {
+	FinalizeContributionBoundary(context.Context, Reference) error
+}
+
 type Conductor struct {
 	engine     *Engine
 	repair     RepairOwner
@@ -63,6 +73,12 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 		// Ignore all caller/policy PR and completion receipts. Only our own canonical
 		// PR result and the trusted full-scope owner can supply these references.
 		p.PR, p.Completion = 0, ""
+		finishBoundary := func() error {
+			if owner, ok := c.completion.(BoundaryCompletionOwner); ok {
+				return owner.FinalizeContributionBoundary(ctx, ref)
+			}
+			return nil
+		}
 		used := uint8(0)
 		run := func(op Operation) (bool, error) {
 			out.Held = op
@@ -149,16 +165,25 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 			return true, nil
 		}
 		if ok, x := run(Commit); !ok || x != nil {
+			if x == nil {
+				return finishBoundary()
+			}
 			return x
 		}
 		if p.Delivery == "local-only" || p.Delivery == "no-publish" {
 			out.Reason = "local_target_completed"
-			return nil
+			return finishBoundary()
 		}
 		if ok, x := run(Publish); !ok || x != nil {
+			if x == nil {
+				return finishBoundary()
+			}
 			return x
 		}
 		if ok, x := run(PullRequest); !ok || x != nil {
+			if x == nil {
+				return finishBoundary()
+			}
 			return x
 		}
 		if out.PR == 0 {
@@ -167,13 +192,19 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 		}
 		p.PR = out.PR
 		if ok, x := run(CheckDelivery); !ok || x != nil {
+			if x == nil {
+				return finishBoundary()
+			}
 			return x
 		}
 		if p.Delivery == "no-merge" {
 			out.Reason = "published_checked_target_completed"
-			return nil
+			return finishBoundary()
 		}
 		if ok, x := run(Merge); !ok || x != nil {
+			if x == nil {
+				return finishBoundary()
+			}
 			return x
 		}
 		out.Held, out.Reason = ReconcileIssue, "completion_owner_unavailable_issue_open"
@@ -187,7 +218,16 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 		}
 		p.Completion, out.Completion = completion, completion
 		if ok, x := run(ReconcileIssue); !ok || x != nil {
+			if x == nil {
+				return finishBoundary()
+			}
 			return x
+		}
+		if finalizer, ok := c.completion.(FinalCompletionOwner); ok {
+			if x := finalizer.FinalizeContributionCompletion(ctx, ref); x != nil {
+				out.Reason = "final_disposition_unavailable"
+				return x
+			}
 		}
 		out.Reason = "verified_completion_issue_reconciled"
 		return nil

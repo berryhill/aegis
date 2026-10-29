@@ -1,5 +1,6 @@
 # Security Policy
 
+
 Retained contribution provisioning uses the owning API's inode-pinned protected
 companion and exact canonical plan/consumed approval/verified receipt readback.
 Companion status and six-hour dashboard authentication cannot grant role or native
@@ -16,6 +17,7 @@ fresh reader authentication and verified historical facts, not renewed execution
 authority. Canonical review facts retain their exact bytes/digests; the native
 wire keeps its strict null/duplicate/unknown-field policy. No new auth platform,
 credential distribution, authority union or TTL widening is introduced.
+
 
 ## #317 bounded chain source boundary
 

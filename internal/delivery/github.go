@@ -68,6 +68,9 @@ var errMergeConflict = errors.New("merge conflict")
 type requestIntentKey struct{}
 
 func (g *GitHub) request(ctx context.Context, secret []byte, method, path string, payload, out any) error {
+	if checkAdapterHTTP(ctx, method) != nil {
+		return ErrDenied
+	}
 	if secret == nil {
 		i, ok := ctx.Value(requestIntentKey{}).(Intent)
 		if !ok {
@@ -239,9 +242,19 @@ func (g *GitHub) review(ctx context.Context, i Intent, p Plan) error {
 	return nil
 }
 func (g *GitHub) Apply(ctx context.Context, i Intent, p Plan, guard Guard) Observation {
+	ctx, mode := enterAdapterMode(ctx, i, false)
+	defer mode.active.Store(false)
+	// Replace inherited mode, but never escape an enclosing historical read.
+	for parent := mode.parent; parent != nil; parent = parent.parent {
+		if parent.read || !parent.active.Load() {
+			return Observation{Outcome: Denied, Code: "adapter_mode_denied"}
+		}
+	}
 	return g.perform(ctx, i, p, guard, true)
 }
 func (g *GitHub) Reconcile(ctx context.Context, i Intent, p Plan, guard Guard) Observation {
+	ctx, mode := enterAdapterMode(ctx, i, true)
+	defer mode.active.Store(false)
 	return g.perform(ctx, i, p, guard, false)
 }
 func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, write bool) (o Observation) {
@@ -336,7 +349,9 @@ func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, wri
 		prefix := "/repos/" + i.Repository
 		switch i.Operation {
 		case Publish:
-			if g.graphPresent(ctx, s, i, p) != nil {
+			// Historical publication proves only the exact reserved ref/head. It never
+			// reconstructs or transfers objects; productive publication still checks the graph.
+			if write && g.graphPresent(ctx, s, i, p) != nil {
 				return ErrDenied
 			}
 			head, e := g.ref(ctx, s, i, i.Branch)

@@ -1,0 +1,302 @@
+//go:build finalqualification
+
+package delivery
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net"
+	"net/http/httptest"
+	"os"
+	"reflect"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+)
+
+type finalQualificationCustody struct{}
+
+func (finalQualificationCustody) Use(ctx context.Context, i Intent, fn func([]byte) error) error {
+	return fn([]byte("synthetic-fixture-only"))
+}
+
+type finalQualificationPrivacy struct{}
+
+func (finalQualificationPrivacy) Review(context.Context, Intent, Plan) error { return nil }
+
+type FinalQualificationRemote struct {
+	sync.Mutex
+	Calls                         int
+	Writes                        int
+	present                       map[string]bool
+	published, pr, merged, closed bool
+}
+
+func (f *FinalQualificationRemote) Count() int { f.Lock(); defer f.Unlock(); return f.Calls }
+func finalProtection() map[string]any {
+	return map[string]any{
+		"enforce_admins":         map[string]bool{"enabled": true},
+		"required_status_checks": map[string]any{"strict": true, "contexts": []string{"test"}, "checks": []any{}},
+		"required_pull_request_reviews": map[string]any{
+			"required_approving_review_count": 1, "dismiss_stale_reviews": true, "require_last_push_approval": true,
+			"bypass_pull_request_allowances": map[string]any{"users": []any{}, "teams": []any{}, "apps": []any{}},
+		},
+	}
+}
+func FinalQualificationProtection() string { return digest(finalProtection()) }
+
+// Only compiled by the source-owned finalqualification overlay. Never changes
+// the production constructor, origin, credential policy or transport.
+func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificationRemote) {
+	t.Helper()
+	f := &FinalQualificationRemote{present: map[string]bool{}}
+	objects := map[string]GitObject{}
+	for _, o := range p.Objects {
+		objects[o.OID] = o
+	}
+	mergeSpec := p.Commit
+	mergeSpec.Message = "Controlled squash result\n"
+	mergeObject, e := authoredObject(mergeSpec)
+	if e != nil {
+		t.Fatal(e)
+	}
+	merge := mergeObject.OID
+	prefix := "/repos/" + p.Repository
+	person := func(i Identity) map[string]string {
+		return map[string]string{"name": i.Name, "email": i.Email, "date": p.Commit.Timestamp}
+	}
+	pull := func() map[string]any {
+		state, sha := "open", ""
+		if f.merged {
+			state, sha = "closed", merge
+		}
+		return map[string]any{"html_url": fmt.Sprintf("https://github.com/%s/pull/7", p.Repository), "user": map[string]string{"login": p.Actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": sha, "mergeable": true, "mergeable_state": "clean", "title": p.PRTitle, "body": p.PRBody, "head": map[string]any{"sha": p.Head, "ref": p.Branch, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}, "base": map[string]any{"sha": p.BaseHead, "ref": p.Base, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}}
+	}
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.Lock()
+		defer f.Unlock()
+		f.Calls++
+		if r.Method != "GET" {
+			f.Writes++
+		}
+		w.Header().Set("Content-Type", "application/json")
+		send := func(v any) { _ = json.NewEncoder(w).Encode(v) }
+		if r.Header.Get("Authorization") != "Bearer synthetic-fixture-only" {
+			http.Error(w, "fixture credential missing", 401)
+			return
+		}
+		path := r.URL.Path
+		switch {
+		case path == "/user":
+			send(map[string]any{"id": 42, "login": p.Actor})
+		case path == prefix:
+			send(map[string]any{"id": p.RepositoryID, "full_name": p.Repository, "default_branch": p.Base, "permissions": map[string]bool{"push": true}, "allow_squash_merge": true})
+		case path == prefix+"/rules/branches/"+p.Base:
+			send([]any{})
+		case path == prefix+"/branches/"+p.Base+"/protection":
+			send(finalProtection())
+		case path == prefix+"/collaborators/"+p.Actor+"/permission":
+			send(map[string]string{"permission": "write", "role_name": "write"})
+		case path == prefix+"/git/ref/heads/"+p.Base:
+			head := p.BaseHead
+			if f.merged {
+				head = merge
+			}
+			send(map[string]any{"ref": "refs/heads/" + p.Base, "object": map[string]string{"sha": head}})
+		case path == prefix+"/git/ref/heads/"+p.Branch:
+			if !f.published {
+				http.Error(w, "absent", 404)
+				return
+			}
+			send(map[string]any{"ref": "refs/heads/" + p.Branch, "object": map[string]string{"sha": p.Head}})
+		case path == prefix+"/git/refs":
+			var req struct{ Ref, SHA string }
+			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Ref != "refs/heads/"+p.Branch || req.SHA != p.Head {
+				http.Error(w, "wrong ref", 422)
+				return
+			}
+			f.published = true
+			send(map[string]any{"ref": req.Ref, "object": map[string]string{"sha": p.Head}})
+		case path == prefix+"/pulls":
+			if r.Method == "POST" {
+				var req struct {
+					Head, Base, Title, Body string
+					Draft                   bool
+				}
+				if json.NewDecoder(r.Body).Decode(&req) != nil || req.Head != p.Branch || req.Base != p.Base || req.Draft || req.Title != p.PRTitle || req.Body != p.PRBody {
+					http.Error(w, "wrong PR", 422)
+					return
+				}
+				f.pr = true
+				send(pull())
+				return
+			}
+			if f.pr {
+				send([]any{pull()})
+			} else {
+				send([]any{})
+			}
+		case path == prefix+"/pulls/7":
+			send(pull())
+		case path == prefix+"/pulls/7/reviews":
+			send([]any{map[string]any{"id": 1, "user": map[string]string{"login": "reviewer"}, "state": "APPROVED", "commit_id": p.Head, "submitted_at": "2026-01-01T00:00:00Z"}})
+		case path == prefix+"/pulls/7/merge":
+			var req struct {
+				SHA         string `json:"sha"`
+				MergeMethod string `json:"merge_method"`
+			}
+			if json.NewDecoder(r.Body).Decode(&req) != nil || req.SHA != p.Head || req.MergeMethod != p.MergeMethod {
+				http.Error(w, "wrong reviewed merge", 422)
+				return
+			}
+			f.merged = true
+			send(map[string]any{"merged": true, "sha": merge})
+		case strings.HasSuffix(path, "/check-runs"):
+			parts := strings.Split(path, "/")
+			head := parts[len(parts)-2]
+			conclusion := "success"
+			if strings.Contains(t.Name(), "FailedChecks") {
+				conclusion = "failure"
+			}
+			send(map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"id": 123, "app": map[string]any{"id": 55, "slug": "ci"}, "name": "test", "head_sha": head, "status": "completed", "conclusion": conclusion}}})
+		case strings.HasSuffix(path, "/status"):
+			send(map[string]any{"total_count": 0, "statuses": []any{}})
+		case strings.HasPrefix(path, prefix+"/compare/"):
+			send(map[string]any{"status": "identical", "behind_by": 0})
+		case path == prefix+"/issues/"+strconv.FormatUint(p.Intake.Source.URL.Number, 10):
+			if r.Method == "PATCH" {
+				var req struct {
+					State       string
+					StateReason string `json:"state_reason"`
+				}
+				if json.NewDecoder(r.Body).Decode(&req) != nil || req.State != "closed" || req.StateReason != "completed" {
+					http.Error(w, "wrong issue", 422)
+					return
+				}
+				f.closed = true
+			}
+			state, reason := "open", ""
+			if f.closed {
+				state, reason = "closed", "completed"
+			}
+			send(map[string]any{"id": p.Intake.Source.IssueID, "number": p.Intake.Source.URL.Number, "state": state, "state_reason": reason})
+		case strings.HasPrefix(path, prefix+"/git/"):
+			tail := strings.TrimPrefix(path, prefix+"/git/")
+			parts := strings.Split(tail, "/")
+			kind := strings.TrimSuffix(parts[0], "s")
+			if len(parts) == 1 && r.Method == "POST" {
+				var found GitObject
+				switch kind {
+				case "blob":
+					var req struct{ Content, Encoding string }
+					if json.NewDecoder(r.Body).Decode(&req) != nil || req.Encoding != "base64" {
+						http.Error(w, "bad blob", 422)
+						return
+					}
+					b, err := base64.StdEncoding.DecodeString(req.Content)
+					if err != nil {
+						http.Error(w, "bad base64", 422)
+						return
+					}
+					found = GitObject{Kind: "blob", OID: objectOID("blob", b), Raw: b}
+				case "tree":
+					var req struct{ Tree []treeEntry }
+					if json.NewDecoder(r.Body).Decode(&req) != nil {
+						http.Error(w, "bad tree", 422)
+						return
+					}
+					for _, o := range p.Objects {
+						if o.Kind == "tree" {
+							entries, e := treeEntries(o.Raw)
+							if e == nil && reflect.DeepEqual(entries, req.Tree) {
+								found = o
+							}
+						}
+					}
+				case "commit":
+					var req gitCommitPayload
+					if json.NewDecoder(r.Body).Decode(&req) != nil {
+						http.Error(w, "bad commit", 422)
+						return
+					}
+					for _, o := range p.Objects {
+						if o.Kind == "commit" {
+							expected, e := commitPayload(o)
+							if e == nil && reflect.DeepEqual(expected, req) {
+								found = o
+							}
+						}
+					}
+				}
+				expected, ok := objects[found.OID]
+				if !ok || !reflect.DeepEqual(expected, found) {
+					http.Error(w, "unapproved object", 422)
+					return
+				}
+				f.present[found.OID] = true
+				send(map[string]string{"sha": found.OID})
+				return
+			}
+			if len(parts) != 2 {
+				http.Error(w, "bad object path", 404)
+				return
+			}
+			id := parts[1]
+			if kind == "commit" && id == p.BaseHead {
+				send(map[string]string{"sha": id})
+				return
+			}
+			if kind == "commit" && id == merge {
+				send(map[string]any{"sha": id, "message": mergeSpec.Message, "tree": map[string]string{"sha": p.Commit.Tree}, "parents": []any{map[string]string{"sha": p.BaseHead}}, "author": person(p.Commit.Author), "committer": person(p.Commit.Committer)})
+				return
+			}
+			o, ok := objects[id]
+			if !ok || !f.present[id] {
+				http.Error(w, "absent", 404)
+				return
+			}
+			switch kind {
+			case "blob":
+				send(map[string]string{"sha": id, "encoding": "base64", "content": base64.StdEncoding.EncodeToString(o.Raw)})
+			case "tree":
+				entries, e := treeEntries(o.Raw)
+				if e != nil {
+					t.Error(e)
+				}
+				send(map[string]any{"sha": id, "truncated": false, "tree": entries})
+			case "commit":
+				payload, e := commitPayload(o)
+				if e != nil {
+					t.Error(e)
+				}
+				send(map[string]any{"sha": id, "message": payload.Message, "tree": map[string]string{"sha": payload.Tree}, "parents": []any{map[string]string{"sha": payload.Parents[0]}}, "author": payload.Author, "committer": payload.Committer})
+			default:
+				http.Error(w, "unsupported kind", 404)
+			}
+		default:
+			t.Errorf("unhandled fixture endpoint %s %s", r.Method, path)
+			http.Error(w, "unsupported fixture", 404)
+		}
+	}))
+	// The engineering helper retains the shared lifetime lock. Never silently
+	// bind an ephemeral/out-of-pool port when it was not used.
+	_ = srv.Listener.Close()
+	port, portErr := strconv.Atoi(os.Getenv("AEGIS_ACCEPTANCE_PORT"))
+	if portErr != nil || port < 8450 || port > 8469 {
+		t.Fatal("final qualification requires shared acceptance_port.py lifetime custody")
+	}
+	listener, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if listenErr != nil { t.Fatal(listenErr) }
+	srv.Listener = listener
+	srv.Start()
+	t.Cleanup(srv.Close)
+	remote, e := newGitHub(srv.URL, finalQualificationCustody{}, finalQualificationPrivacy{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	return remote, f
+}

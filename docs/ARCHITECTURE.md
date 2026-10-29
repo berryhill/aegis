@@ -1,5 +1,6 @@
 # Aegis MVP Architecture
 
+
 Retained contribution preflight → stable decision/budget reservation → owning API
 inode-pinned native companion → fresh password/exact review → canonical decision,
 plan, consumed approval and verified receipt readback → normal fresh role admission.
@@ -17,6 +18,7 @@ it does not publish a replacement Graph/Loop, approve itself or become executabl
 Queue work. Historical result reads reconstruct exact immutable provenance and
 recorded-time authority/host facts, separately from current execution admission.
 Stable-owner definition mutation and zero/multiple-stanza denial remain unchanged.
+
 
 ## #317 bounded chain source boundary
 

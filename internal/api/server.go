@@ -417,10 +417,11 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			if err != nil {
 				return err
 			}
-			subject, err := svc.AuthenticateUnixPeer(c.Request().Context(), uid)
+			requestCtx, subject, err := svc.AuthenticateContributionUnixPeerRequest(c.Request().Context(), uid)
 			if err != nil {
 				return err
 			}
+			c.SetRequest(c.Request().WithContext(requestCtx))
 			if !postAuthLimit.allow(subject.ID) {
 				return echo.NewHTTPError(http.StatusTooManyRequests, "rate limit exceeded")
 			}

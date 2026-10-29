@@ -42,33 +42,51 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		if err == nil {
 			s.mu.Lock()
 			current, ok := s.sessions[entry.id]
-			if ok && current.token == entry.token {
+			if ok && current.token == entry.token && s.now().Before(current.expires) {
 				current.contributionKey = c.Key
 				s.sessions[entry.id] = current
+			} else {
+				err = app.ErrExpired
 			}
 			s.mu.Unlock()
-			execution, executeErr := s.app.ExecuteContributionAs(ctx, entry.subject, c.Key)
-			err = executeErr
+			if err != nil {
+				return result, err
+			}
+			if found, e := s.contributionTerminal(ctx, entry, c, &result); e != nil {
+				return result, e
+			} else if found {
+				break
+			}
+			journey, executeErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, c.Key)
+			execution := journey.Execution
+			if found, e := s.contributionTerminalAfterJourney(ctx, entry, c, execution, executeErr, &result); e != nil {
+				return result, e
+			} else if found {
+				err = nil
+				break
+			}
 			result.State, result.Reason = "accepted", execution.Reason
+			if journey.HeldReason != "" {
+				result.State, result.Reason = "unavailable", journey.HeldReason
+			}
 			if execution.Available && execution.Candidate == nil && (execution.Execution == nil || len(execution.Execution.Attempts) == 0) {
 				result.State = "blocked"
 			}
-			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution": execution, "execution_started": execution.Execution != nil && len(execution.Execution.Attempts) > 0, "completed": false}
+			result.Data = map[string]any{"contract_digest": c.Digest, "queue_item_id": c.QueueItemID, "run_id": c.RunID, "loop": c.Loop, "effect": c.Effect, "deadline": c.Deadline, "execution": execution, "delivery": journey.Delivery, "held_stage": journey.HeldStage, "held_reason": journey.HeldReason, "execution_started": execution.Execution != nil && len(execution.Execution.Attempts) > 0, "completed": false}
 		}
 	case "status", "resume":
 		ref := ""
 		if len(args) == 2 {
 			ref = args[1]
 		}
-		contract, resolveErr := s.app.ResolveContributionAs(ctx, entry.subject, ref)
+		if ref == "" && entry.contributionKey != "" {
+			ref = entry.contributionKey
+		}
+		contract, resolveErr := s.app.ResolveContributionNavigationAs(ctx, entry.subject, ref)
 		if resolveErr != nil {
 			return result, resolveErr
 		}
 		key := contract.Key
-		continuity, readErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
-		if readErr != nil {
-			return result, readErr
-		}
 		s.mu.Lock()
 		current, ok := s.sessions[entry.id]
 		if ok && current.token == entry.token && s.now().Before(current.expires) {
@@ -81,6 +99,15 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		s.mu.Unlock()
 		if err != nil {
 			return result, err
+		}
+		if found, e := s.contributionTerminal(ctx, entry, contract, &result); e != nil {
+			return result, e
+		} else if found {
+			break
+		}
+		continuity, readErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
+		if readErr != nil {
+			return result, readErr
 		}
 		if args[0] == "status" {
 			continuity, continuityErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
@@ -108,9 +135,20 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		execution, e := s.app.ResumeContributionAs(ctx, entry.subject, key)
 		err = e
 		if err == nil {
-			contract, _, readErr := s.app.ReadContributionAs(ctx, entry.subject, key)
-			if readErr != nil {
-				return result, readErr
+			journey, journeyErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, key)
+			// Preserve the actual accepted Resume result if the subsequent
+			// journey fails before it can return its own execution projection.
+			if journeyErr == nil || journey.Execution.Candidate != nil {
+				execution = journey.Execution
+			}
+			// contract is the immutable exact key resolved before Resume. The
+			// terminal getter independently reloads it; no caller-context read or
+			// journey-error return may bypass bounded metadata reconciliation.
+			if found, e := s.contributionTerminalAfterJourney(ctx, entry, contract, execution, journeyErr, &result); e != nil {
+				return result, e
+			} else if found {
+				err = nil
+				break
 			}
 			s.mu.Lock()
 			current, ok := s.sessions[entry.id]
@@ -125,7 +163,7 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			if readErr != nil {
 				return result, readErr
 			}
-			result.Data = map[string]any{"execution": execution, "continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
+			result.Data = map[string]any{"execution": execution, "continuity": continuity, "delivery": journey.Delivery, "held_stage": journey.HeldStage, "held_reason": journey.HeldReason, "completed": false}
 		}
 	case "stop", "narrow":
 		key := entry.contributionKey

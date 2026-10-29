@@ -377,5 +377,5 @@ func exactGraphAggregate(txn *badgerdb.Txn, c fleet.Completion, reader fleet.Evi
 	return c.Disposition.AttemptID == consumer.Admission.Attempt.AttemptID && c.Disposition.LoopExecutionID == consumer.Admission.Execution.LoopExecutionID && reflect.DeepEqual(c.Artifact, consumer.Completion.Artifact) && reflect.DeepEqual(c.Receipts, consumer.Completion.Receipts) && !c.Disposition.OccurredAt.Before(consumer.Completion.Disposition.OccurredAt)
 }
 func (s *Store) CompleteGraph(ctx context.Context, c fleet.Completion, fact fleet.AuditFact, reader fleet.EvidenceReader) error {
-	return s.completeQueueItem(ctx, c, fact, reader, true)
+	return s.completeQueueItem(ctx, c, fact, reader, nil, true)
 }

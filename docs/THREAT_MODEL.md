@@ -1,5 +1,6 @@
 # Aegis MVP Threat Model
 
+
 Retained contribution preflight → stable decision/budget reservation → owning API
 inode-pinned native companion → fresh password/exact review → canonical decision,
 plan, consumed approval and verified receipt readback → normal fresh role admission.
@@ -18,6 +19,7 @@ replays the fully verified canonical history at the recorded evidence time and
 reloads exact signed host facts and content evidence. It issues no grant and does
 not resurrect expired/revoked authority. Canonical Agent/charter JSON is explicit
 validated review data on the native wire, not a caller-provided approval.
+
 
 ## #317 bounded chain source boundary
 

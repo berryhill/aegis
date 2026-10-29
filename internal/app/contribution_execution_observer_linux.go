@@ -152,7 +152,17 @@ func (s *Service) contributionExecutionObserver(ctx context.Context, sub core.Su
 		}
 		return e
 	}
-	return &orchestration.ContributionExecutionObserver{ContinueBuilder: func(ctx context.Context, old, fresh orchestration.ContributionRoleIdentity) error {
+	return &orchestration.ContributionExecutionObserver{SessionTurn: func(ctx context.Context, session string, turn execution.Turn) error {
+		st, e := head(ctx)
+		if e != nil {
+			return e
+		}
+		name, ok := sessions[session]
+		if !ok {
+			return ErrDenied
+		}
+		return s.recordContributionTurn(ctx, sub, c, base.Claim.ClaimID, base.Attempt.AttemptID, st, name, session, turn)
+	}, ContinueBuilder: func(ctx context.Context, old, fresh orchestration.ContributionRoleIdentity) error {
 		st, err := head(ctx)
 		if err != nil {
 			return err

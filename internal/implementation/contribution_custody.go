@@ -22,6 +22,21 @@ type ContributionQuiescenceGate func(context.Context, ContributionCandidate) err
 // must not retain work beyond return; this grants no source edits, Git commits,
 // publication, authority renewal or replacement-writer admission.
 func (e *ManagedContribution) WithAcceptedCandidate(ctx context.Context, run, contract string, policy loop.ContributionExecutionPolicy, gate ContributionQuiescenceGate, action func(context.Context, ContributionCandidate) error) error {
+	return e.withAcceptedCandidate(ctx, run, contract, policy, gate, action, nil)
+}
+
+// WithAcceptedCandidateFinalization preserves every ordinary pre/post check,
+// then performs the owning verifier's terminal metadata commit LAST under the
+// same workspace lock. This IO hook grants no runtime/publication authority and
+// cannot accept evidence. Only the opted-in controller composition selects it.
+func (e *ManagedContribution) WithAcceptedCandidateFinalization(ctx context.Context, run, contract string, policy loop.ContributionExecutionPolicy, gate ContributionQuiescenceGate, action, terminal func(context.Context, ContributionCandidate) error) error {
+	if terminal == nil {
+		return ErrContributionHandoffDenied
+	}
+	return e.withAcceptedCandidate(ctx, run, contract, policy, gate, action, terminal)
+}
+
+func (e *ManagedContribution) withAcceptedCandidate(ctx context.Context, run, contract string, policy loop.ContributionExecutionPolicy, gate ContributionQuiescenceGate, action, terminal func(context.Context, ContributionCandidate) error) error {
 	if gate == nil {
 		return ErrContributionQuiescenceUnavailable
 	}
@@ -81,5 +96,14 @@ func (e *ManagedContribution) WithAcceptedCandidate(ctx context.Context, run, co
 	// Even a failed action cannot suppress drift or authority revocation. Join
 	// preserves errors.Is/As for the original callback error.
 	gateErr := gate(ctx, clone())
-	return errors.Join(callbackErr, gateErr, check())
+	if err = errors.Join(callbackErr, gateErr, check()); err != nil {
+		return err
+	}
+	if terminal != nil {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		return terminal(ctx, clone())
+	}
+	return nil
 }

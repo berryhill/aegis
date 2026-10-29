@@ -30,9 +30,8 @@ func (r *nativeDeliveryPolicies) ResolveContributionDeliveryPolicy(context.Conte
 
 // Reuses the actual authenticated manager/Queue/#376 accepted journey, rather
 // than constructing another candidate or invoking the kernel directly.
-func contributionDeliveryNativeBridge(t *testing.T, s *app.Service, subject core.Subject, key, controllerSession string, v orchestration.ContributionCandidate) {
+func contributionDeliveryNativeBridge(t *testing.T, ctx context.Context, s *app.Service, subject core.Subject, key, controllerSession string, v orchestration.ContributionCandidate) {
 	t.Helper()
-	ctx := context.Background()
 	c, _, err := s.ReadContributionAs(ctx, subject, key)
 	if err != nil {
 		t.Fatal(err)

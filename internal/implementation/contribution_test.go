@@ -2,6 +2,7 @@ package implementation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -132,6 +133,109 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		t.Fatal("restart reset budget")
 	}
 	v := r.Passes[1].Candidate
+	t.Run("independent-missing-baseline-rejected", func(t *testing.T) {
+		key := contributionKey("run")
+		original, err := e.DB.Get(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer e.DB.Put(key, original)
+		copy := r
+		copy.Baseline = ContributionCheck{Outcome: "failed"}
+		wire, _ := json.Marshal(copy)
+		if err := e.DB.Put(key, wire); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy); err == nil {
+			t.Fatal("native export accepted missing immutable RED baseline")
+		}
+	})
+	// The contribution verifier reloads the actual producer records and native
+	for _, mutation := range []string{"immutable-missing", "output-missing", "wrong-tests", "fake-red", "baseline-criteria", "baseline-outcome", "pass-outcome"} {
+		t.Run("baseline-proof-"+mutation, func(t *testing.T) {
+			key := contributionKey("run")
+			original, _ := e.DB.Get(key)
+			baselineKey := []byte("contribution/baseline/" + digest([]byte("run")))
+			immutable, _ := e.DB.Get(baselineKey)
+			defer e.DB.Put(key, original)
+			defer e.DB.Put(baselineKey, immutable)
+			var copy ContributionRecord
+			if err := json.Unmarshal(original, &copy); err != nil {
+				t.Fatal(err)
+			}
+			switch mutation {
+			case "immutable-missing":
+				if err := e.DB.Put(baselineKey, nil); err != nil {
+					t.Fatal(err)
+				}
+			case "output-missing":
+				copy.Baseline.OutputDigest = digest([]byte("absent"))
+			case "wrong-tests":
+				copy.Baseline.RequiredTests = copy.Baseline.RequiredTests[:1]
+			case "fake-red":
+				copy.Baseline.OutputDigest = copy.Passes[1].Check.OutputDigest
+			case "baseline-criteria":
+				copy.Baseline.Criteria = copy.Passes[1].Check.Criteria
+			case "baseline-outcome":
+				copy.Baseline.Outcome = "passed"
+			case "pass-outcome":
+				copy.Passes[0].Check.Outcome = "unknown"
+				passKey := []byte(fmt.Sprintf("contribution/acceptance/%s/1", digest([]byte("run"))))
+				old, _ := e.DB.Get(passKey)
+				defer e.DB.Put(passKey, old)
+				wire, _ := json.Marshal(copy.Passes[0])
+				e.DB.Put(passKey, wire)
+			}
+			if mutation != "immutable-missing" {
+				wire, _ := json.Marshal(copy.Baseline)
+				e.DB.Put(baselineKey, wire)
+			}
+			wire, _ := json.Marshal(copy)
+			e.DB.Put(key, wire)
+			if _, err := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy); err == nil {
+				t.Fatal("invalid baseline/pass proof accepted")
+			}
+		})
+	}
+	// observations, not a caller's PASS report or a copied candidate digest.
+	exported, exportErr := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", v.Digest, policy)
+	if exportErr != nil || len(exported) == 0 {
+		t.Fatalf("native verifier export: %v", exportErr)
+	}
+	for _, mismatch := range []string{"run", "contract", "attempt", "candidate", "policy", "cancelled", "producer-json"} {
+		t.Run("verification-"+mismatch, func(t *testing.T) {
+			run, contract, attempt, candidate, p := "run", "contract", "attempt", v.Digest, policy
+			verifyCtx := ctx
+			switch mismatch {
+			case "run":
+				run = "other-run"
+			case "contract":
+				contract = "other-contract"
+			case "attempt":
+				attempt = "other-attempt"
+			case "candidate":
+				candidate = r.Passes[0].Candidate.Digest
+			case "policy":
+				p.BuildPackage = "./other"
+			case "cancelled":
+				var cancel context.CancelFunc
+				verifyCtx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "producer-json":
+				key := contributionKey("run")
+				original, _ := e.DB.Get(key)
+				// Read's decoder accepts whitespace; the verifier requires exact
+				// canonical producer bytes, not merely equivalent parsed values.
+				if err := e.DB.Put(key, append([]byte(" "), original...)); err != nil {
+					t.Fatal(err)
+				}
+				defer e.DB.Put(key, original)
+			}
+			if _, err := e.ReloadAcceptedEvidence(verifyCtx, run, contract, attempt, candidate, p); err == nil {
+				t.Fatal("mismatched native verification accepted")
+			}
+		})
+	}
 	if v.CandidateCommit == base || v.CandidateTree == v.HeadTree {
 		t.Fatal("candidate Git identity represents base, not repaired bytes")
 	}
@@ -166,6 +270,66 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		t.Fatal("typed failure packet missing")
 	}
 	t.Logf("candidate source=%s executable=%s head-anchor=%s", v.Source.Digest, v.Executable, v.HeadCommit)
+	for _, mode := range []string{"terminal-last", "failed-action", "failed-post-gate", "source-drift", "generic-unchanged"} {
+		t.Run("terminal-lifecycle-"+mode, func(t *testing.T) {
+			originalAdmit := e.Admit
+			defer func() { e.Admit = originalAdmit }()
+			terminalCalled, actionCalled, gates := false, false, 0
+			e.Admit = func(ctx context.Context, effect string) error {
+				if terminalCalled {
+					t.Error("admission/effect after terminal commit")
+					return errors.New("after terminal")
+				}
+				return originalAdmit(ctx, effect)
+			}
+			path := filepath.Join(c.Workspace, "value.go")
+			original, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			defer os.WriteFile(path, original, 0600)
+			gate := func(context.Context, ContributionCandidate) error {
+				gates++
+				if mode == "failed-post-gate" && gates == 2 {
+					return errors.New("post gate denied")
+				}
+				return nil
+			}
+			action := func(context.Context, ContributionCandidate) error {
+				actionCalled = true
+				if mode == "failed-action" {
+					return errors.New("action failed")
+				}
+				if mode == "source-drift" {
+					return os.WriteFile(path, []byte("changed after acceptance"), 0600)
+				}
+				return nil
+			}
+			commit := func(context.Context, ContributionCandidate) error {
+				if !actionCalled || gates != 2 {
+					t.Fatal("commit before action/post gate")
+				}
+				unlock, err := lockWorkspace(c.Workspace)
+				if err == nil {
+					unlock()
+					t.Fatal("workspace lock released before terminal commit")
+				}
+				terminalCalled = true
+				return nil
+			}
+			var terminalErr error
+			if mode == "generic-unchanged" {
+				terminalErr = e.WithAcceptedCandidate(ctx, "run", "contract", policy, gate, action)
+			} else {
+				terminalErr = e.WithAcceptedCandidateFinalization(ctx, "run", "contract", policy, gate, action, commit)
+			}
+			wantCommit := mode == "terminal-last"
+			wantError := mode == "failed-action" || mode == "failed-post-gate" || mode == "source-drift"
+			if terminalCalled != wantCommit || (terminalErr != nil) != wantError || gates != 2 {
+				t.Fatalf("mode=%s commit=%t gates=%d err=%v", mode, terminalCalled, gates, terminalErr)
+			}
+		})
+	}
 	for _, kind := range []string{"source", "new", "ignored", "mode", "index", "toolchain", "executable", "README.md", "generated.txt", "review-ledger"} {
 		t.Run(kind, func(t *testing.T) {
 			p := filepath.Join(c.Workspace, "value.go")

@@ -60,7 +60,7 @@ func TestObjectPositiveProfile(t *testing.T) {
 			t.Fatal(name)
 		}
 	}
-	for _, text := range []string{"ghp_secret", "-----BEGIN PRIVATE KEY-----", "password=secret"} {
+	for _, text := range []string{"ghp_" + strings.Repeat("A", 36), "-----BEGIN PRIVATE KEY-----", "password=synthetic-secret"} {
 		if !secretBytes([]byte(text)) {
 			t.Fatal(text)
 		}

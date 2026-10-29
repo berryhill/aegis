@@ -1,11 +1,64 @@
 # Request-auth regression qualification
 
-Retained #378 producer notes from `a22862b4313c09402b8b95cfb7c2612d2d980bd7`
-(parent `787425a4d434c0141ad6e4f4262399d891471e4e`). The #377 branch
-consumes only that commit's terminal-cleanup delta, not the entire request-auth
-producer lineage. The request-auth tests, scripts and candidate recipe below
-describe the #378 worktree and are not claims of availability or qualification
-in this #377 checkout. Full producer integration and acceptance remain separate.
+## Same-service accepted-candidate reattachment
+
+The final-policy Unix HTTP journey also exercises real client cancellation during
+native execution followed by authenticated same-intent Resume. Native work reaches
+its accepted boundary under the original bounded service-owned context; Resume
+then completes ordinary source-custodied delivery/finalization and canonical
+readback without a new native pass, authority context, role epoch or budget reset.
+
+An accepted candidate with fully joined builder/tester native evidence may reuse
+its exact still-live controller only after fresh canonical role admission. The
+readback helper verifies the exact contract/run/candidate/check, completed native
+effects, child quiescence and current controller binding. It returns status only;
+later delivery repeats its normal private source-custody and effect gates. Missing,
+expired, revoked, stopped or unverifiable controller evidence does not take this
+path and retains the existing fail-closed recovery/admission procedure.
+
+The fixture paces authenticated metadata observations at five seconds to avoid
+competing with its own native runner under the existing two-CPU race budget. Its
+120-second wait now also bounds each metadata request. The 180-second focused
+test alarm, HTTP limits, contract deadline, authentication TTLs and output/budget
+assertions are unchanged. The earlier timeout and unavailable-stop failures remain
+retained rather than being relabelled as passes.
+
+
+## Production-route controlled qualification
+
+The preserved legacy journey and a separate final-policy-enabled production
+`newRoot`/`api.Serve`/Unix HTTP journey pass in normal mode. The latter independently
+reads the real canonical narrower-target report, artifact, PASSED receipt and
+disposition, verifies that whole-contribution success remains false, and checks
+same-intent replay and same-store cold restart without new native or delivery
+effects. The expected application output comes from the controlled protocol
+runtime; the tester does not write the result.
+
+Independent race qualification of the original frozen candidate hit its unchanged
+180-second alarm while repeatedly decoding continuity history. After integration
+of the #377 immutable byte-checked replay-prefix and exact-sized input-reader
+repair, the same final-enabled race case passes in 125.40 seconds under that same
+alarm. No HTTP/authentication TTL, assertion, race coverage or candidate budget was
+changed. Earlier failed evidence remains retained. The original freeze is
+superseded; fresh independent identity-matched acceptance is required.
+
+These are controlled runtime/local delivery proofs, not real-provider,
+protected-GitHub merge, installed-workstation or full-scope contribution success.
+The explicit operation/resource capability and opaque preclosure gates remain
+independent prerequisites for productive issue mutation.
+
+
+The typed delivery entry points bind the genuine request subject before policy
+resolution or active-call tracking. This also lets the installed publication owner
+drain a concurrent cancellation using the same admitted request context, without a
+fixed-principal callback. The focused request-entry regression rejects an unbound
+or foreign supplied subject before the policy resolver; a pre-fix source overlay
+reproduces the missing early-admission boundary. Older controlled manager fixtures
+now carry their original kernel-proof context explicitly through helper calls and
+refresh that proof only through native authentication after an expiry stage.
+The nonlocal cancellation fixture retains exact active-call drain, durable absence,
+unchanged authority/counter and no-credential/effect assertions.
+
 
 `TestPublicRootHTTPAuthenticationDenials` and
 `TestPublicRootAuthenticatedContributionJourney` use actual `newRoot` factory
@@ -41,7 +94,58 @@ real module/Git root, built with `scripts/build-source.sh` and task-root
 Evidence stays private under `.acceptance/request-auth-repair/`; earlier failures
 remain immutable. The earlier independent freeze is invalidated by these repairs.
 
-## Owning-service terminal cleanup repair
+## Explicit issue-disposition composition (source candidate)
+
+Every credential-bearing productive remote operation requires both exact
+capabilities in one already approved charter/mandate/session authority. For issue
+disposition the unchanged spelling is:
+
+```text
+github.issue_disposition.v1
+github.issue_disposition.v1:repository:<owner>/<repo>:<decimal-repository-ID>
+```
+
+The general spelling is `<exact-operation>:repository:<owner>/<repo>:<decimal-ID>`
+alongside the separate `<exact-operation>` capability. This applies to object
+uploads, feature publication, pull requests, check readback, merge and issue
+disposition. A read credential reference or usable token never supplies these
+operation rights. Only actually approved operations enter the current immutable
+credential pin and custody allowlist; no current rights means productive denial.
+
+This is an additive operation-qualified resource-capability convention carried by
+the existing capability field, not an issued grant or an inferred repository
+permission. Repository spelling and immutable numeric ID must match the trusted
+projected plan exactly. No prefix, case folding, wildcard, cross-stanza union,
+token pushability, delivery target or credential scope substitutes for either
+capability. Historical policy pins remain independently retained for read-only
+reconciliation; they are not rewritten or promoted into current write grants.
+No live charter, mandate,
+credential or configuration is changed by this implementation.
+
+Existing request/control/role, deployment, exact credential binding/version and
+operation-specific approval checks still precede the real #379 adapter's
+`VerifyContributionIssueIntent`. The exact adapter constructed in the productive
+private frame must validate its opaque preclosure and the canonical issue intent;
+a capability string or a policy receipt alone cannot authorize closure. Only
+explicitly qualified authorities project the issue operation into the immutable
+credential pin and custody allowlist. Historical policies are never rewritten.
+
+Operation approval requirements are reloaded from the exact session-bound charter
+revision/digest and selected enabled stanza. Missing, changed or unknown policy
+denies; another stanza's policy is never unioned. In the absence of a protected
+operation-approval consumer, a declared required operation returns typed approval
+unavailable before reservation/effect. The real Unix HTTP negative case retains
+native RED/GREEN and consumed budget, but proves canonical publication absence,
+no authored delivery ref and exact final-result absence.
+
+Journey readback consults the canonical final-result getter before new effects
+and after delivery. Only exact not-found falls through; corrupt or denied evidence
+is not treated as absent. A narrower completed target is separately represented
+by `boundary_completed`, while `completed` denotes whole-contribution success.
+These source additions and their new scope regression require compiled and real
+production-route qualification after the unchanged verification reserve recovers.
+
+## Terminal-cleanup evidence
 
 The actual Serve journey exposed concurrent role cleanup and supervisor terminal
 transitions. `TestSessionTerminalConcurrentCleanup` reproduced the canonical

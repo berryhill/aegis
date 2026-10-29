@@ -6,14 +6,20 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Resume delivery for an accepted contribution using its exact still-live
+  controller after fresh canonical admission, rather than attempting crash
+  recovery of an owned process. Preserve native evidence, epochs and budgets.
+
 - Upgrade `golang.org/x/net` to v0.62.0 and its minimum required Go module
   dependencies to address GO-2026-6860 in the upgrade Console HTML parser.
   Preserve response bounds, authentication policy and the Go 1.26.10 toolchain.
+
 
 - Reduce repeated contribution history decoding with a transaction-byte-checked
   replay prefix; preserve fresh authority admission and cold validation. Read
   toolchain inputs without repeated buffer growth, and verify every recovery-log
   suffix byte in bounded chunks without changing authentication deadlines.
+
 
 - Wire missing-role provisioning preflight to the owning API pinned protected
   companion, reserve the stable intent before launch and reload canonical approval
@@ -27,6 +33,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   complete Run inputs, and preserve historical result inspection without renewing
   execution authority. Add canonical native-review wire and denial/replay/history
   regressions. Real-provider two-participant pilot acceptance remains pending.
+
 
 - Add the exact bounded raw-v2 / managed selected-file-v7 producer-consumer
   source path and authenticated node-checkpoint readback, including debugger
