@@ -349,6 +349,18 @@ class ShardTests(unittest.TestCase):
         with mock.patch.dict(shard.BUNDLES['normal'], {'extra': ('api-a',)}), self.assertRaises(ValueError):
             shard.bundle_groups('extra', False)
 
+    def test_race_manager_deadline_work_is_balanced_without_new_lanes(self):
+        # The manager remainder plus cancellation exhausted the hosted 600s
+        # job. Resume/readback has measured headroom for the existing target.
+        self.assertEqual(shard.bundle_groups('manager-a', True), ('manager',))
+        self.assertEqual(shard.bundle_groups('manager-c', True),
+                         ('manager-contribution-resume', 'manager-contribution-readback',
+                          'manager-contribution-cancel'))
+        self.assertEqual(len(shard.BUNDLES['race']), 13)
+        self.assertEqual(sum(group == 'manager-contribution-cancel'
+                             for groups in shard.BUNDLES['race'].values()
+                             for group in groups), 1)
+
     def test_compact_commands_link_list_once_and_preserve_cwd_caps_and_failure(self):
         for mode, lanes in shard.BUNDLES.items():
             race = mode == 'race'

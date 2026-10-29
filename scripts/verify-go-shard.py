@@ -82,9 +82,12 @@ BUNDLES = {
         'api-b': ('api-b', 'cli'),
         'implementation': ('implementation', 'implementation-contribution'),
         'orchestration': ('orchestration', 'orchestration-contribution'),
-        'manager-a': ('manager', 'manager-contribution-cancel'),
+        # Hosted 40936752306: compile + manager + cancel exceeded 600s;
+        # manager-c completed in 422s, leaving room for the 88s cancel target.
+        # Reuse the same package binary, partitions, alarms and 13 race lanes.
+        'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
-        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'manager-contribution-cancel'),
         'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         'cli-command': ('cli-command',),
