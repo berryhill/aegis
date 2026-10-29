@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:a8f5da8bb220684658cf878afd61f1fb399a311bdf684a3713e317d86e3d7eb4",
+    "content_digest": "sha256:d40212051990cd31fb1508f0ea1d47ce5417f656950b73540afb23ff0fce0426",
     "source_revision": "repository"
   },
   "operations": [
@@ -293,12 +293,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:d3662a3d92675c7f1db9de21ee16e24b7a4159f8faef716444aa6ec16bafb280",
+      "content_digest": "sha256:08f23a322301830f38f67307062eda8547a909c917688fc1802ca9ca58874b03",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:db66dc6d8d81cbe4030e10091760aa47bee5345dc127b0b152052769dbf2cddc",
-          "size": 13643
+          "sha256": "sha256:84c3e479ed1e957301e11dbfb44f721d4f4bb8a19a4396985d0f4acbe1642951",
+          "size": 14241
         },
         {
           "path": "references/session-fixtures.json",
@@ -325,12 +325,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:f095e27932ee4679a00ca34afbe4a6f87598a3d6f4cffcacb80a15cc4ab96523",
+      "content_digest": "sha256:370782ee858a454bdbc7502f595f018fe5bf9d4f45ab2b7c689fd19e7150437d",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:2eaf2b39f929e9c32b1f14d58eb41b4baecff93859c724150c6d28b15766d3e7",
-          "size": 54160
+          "sha256": "sha256:a56ee5f34c93f1488c00e92e39b65c56acfc1fba673121970b2366d3ab4db25c",
+          "size": 54758
         }
       ]
     },

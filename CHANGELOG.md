@@ -101,7 +101,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   remains a distinct evidence tier; see
   [qualification and remaining gaps](docs/managed-contribution-candidate.md).
 
-- Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls; downstream contribution delivery remains unavailable.
+- Add explicit authenticated contribution intake, exact immutable role/source contracts, and append-only narrowing/sticky-stop controls. Fresh authenticated status now returns the original sealed contract and current owner-control provenance, including terminal contributions; identity-only navigation remains metadata-only. Current source conditionally composes managed execution and delivery through their approved dependencies; legacy intake-only profiles, installed adoption and live managed-role qualification remain separate.
 
 ### Fixed
 

@@ -170,6 +170,12 @@ func managerTerminalReadback(t *testing.T, s *app.Service, subject core.Subject,
 		if result.Data["terminal"] != true || result.Data["completed"] != true || result.Data["whole_contribution_succeeded"] != false || result.Data["outcome"] != "narrower-target-completed" {
 			t.Fatalf("terminal route wrong: %+v", result)
 		}
+		if command == "/contribute status "+c.Key {
+			sealed, ok := result.Data["contract"].(app.ContributionNavigationContract)
+			if !ok || sealed.Digest != c.Digest || sealed.Source.ContentDigest != c.Source.ContentDigest || result.Data["control_sequence"] == nil || result.Data["control"] == nil {
+				t.Fatal("terminal status lost sealed contract or current controls")
+			}
+		}
 	}
 	after, err := s.ReadContributionExecutionAs(ctx, subject, c.Key)
 	if err != nil || before.Consumed != after.Consumed {
