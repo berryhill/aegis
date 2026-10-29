@@ -1,6 +1,7 @@
 package implementation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,22 +13,30 @@ import (
 // History is a content-free native custody projection, not a completion receipt.
 // ReservedPasses includes proposals which failed before producing check evidence.
 type History struct {
-	Recovery           Recovery `json:"recovery"`
-	Stages             []Stage  `json:"stages,omitempty"`
-	ConsumedBefore     uint16   `json:"consumed_before"`
-	CumulativeConsumed uint16   `json:"cumulative_consumed"`
-	RemainingBudget    uint16   `json:"remaining_budget"`
-	PredecessorRun     string   `json:"predecessor_run,omitempty"`
-	PredecessorHistory string   `json:"predecessor_history,omitempty"`
-	RunID              string   `json:"run_id"`
-	ContractDigest     string   `json:"contract_digest"`
-	TaskDigest         string   `json:"task_digest"`
-	ContextDigest      string   `json:"context_digest,omitempty"`
-	State              string   `json:"state"`
-	ReservedPasses     uint16   `json:"reserved_passes"`
-	Passes             []Pass   `json:"passes"`
-	Digest             string   `json:"digest"`
-	AcceptanceGate     string   `json:"acceptance_gate"`
+	Recovery           Recovery        `json:"recovery"`
+	Checks             []RecordedCheck `json:"checks,omitempty"`
+	Stages             []Stage         `json:"stages,omitempty"`
+	ConsumedBefore     uint16          `json:"consumed_before"`
+	CumulativeConsumed uint16          `json:"cumulative_consumed"`
+	RemainingBudget    uint16          `json:"remaining_budget"`
+	PredecessorRun     string          `json:"predecessor_run,omitempty"`
+	PredecessorHistory string          `json:"predecessor_history,omitempty"`
+	RunID              string          `json:"run_id"`
+	ContractDigest     string          `json:"contract_digest"`
+	TaskDigest         string          `json:"task_digest"`
+	ContextDigest      string          `json:"context_digest,omitempty"`
+	State              string          `json:"state"`
+	ReservedPasses     uint16          `json:"reserved_passes"`
+	Passes             []Pass          `json:"passes"`
+	Digest             string          `json:"digest"`
+	AcceptanceGate     string          `json:"acceptance_gate"`
+}
+
+type RecordedCheck struct {
+	PassID       string `json:"pass_id"`
+	Digest       string `json:"digest"`
+	OutputDigest string `json:"output_digest"`
+	Outcome      string `json:"outcome"`
 }
 
 // History never rereads host files: historical evidence remains readable after
@@ -151,6 +160,7 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (out Histor
 			return out, reject
 		}
 	}
+	var checks []RecordedCheck
 	seenStages := map[string]bool{}
 	for _, s := range r.Stages {
 		switch s.Name {
@@ -182,6 +192,34 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (out Histor
 		if x != nil {
 			return out, reject
 		}
+		if s.Name == "check" {
+			var stage struct {
+				OutputDigest string `json:"output_digest"`
+				Passed       bool   `json:"passed"`
+			}
+			// Canonical closed payload rejects unknown, duplicate, missing, null and secret fields.
+			if json.Unmarshal(b, &stage) != nil {
+				return out, reject
+			}
+			canonical, _ := json.Marshal(stage)
+			if !bytes.Equal(b, canonical) {
+				return out, reject
+			}
+			for _, p := range r.Passes {
+				if p.ID != s.PassID {
+					continue
+				}
+				output, err := e.loadBlob(stage.OutputDigest)
+				if err != nil || p.OutputDigest == "" || stage.OutputDigest != p.OutputDigest || (stage.Passed && !requiredTestsPassed(output, c.Policy.RequiredTests)) || (p.Passed && !stage.Passed) {
+					return out, reject
+				}
+				outcome := "failed"
+				if stage.Passed {
+					outcome = "passed"
+				}
+				checks = append(checks, RecordedCheck{PassID: p.ID, Digest: s.Digest, OutputDigest: stage.OutputDigest, Outcome: outcome})
+			}
+		}
 		if s.Name == "proposal_rejected" {
 			var f ManagedFailure
 			if json.Unmarshal(b, &f) != nil || !IsProposalRejection(f) {
@@ -206,6 +244,7 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (out Histor
 	}
 	out = History{RunID: id, ContractDigest: cd, TaskDigest: digest([]byte(c.Task)), ContextDigest: r.ContextDigest, State: r.State, ReservedPasses: uint16(len(r.Passes)), Passes: append([]Pass(nil), r.Passes...), Digest: digest(b), AcceptanceGate: "trusted offline go-test.v1; historical presence is not software acceptance"}
 	out.Stages = append([]Stage(nil), r.Stages...)
+	out.Checks = checks
 	out.ConsumedBefore = r.ConsumedBefore
 	out.CumulativeConsumed = r.ConsumedBefore + out.ReservedPasses
 	out.RemainingBudget = uint16(c.MaxPasses) - out.CumulativeConsumed

@@ -18,6 +18,12 @@ templ QueueOutcome(q *QueueDetailModel) {
    } else if q.NativeOutcome.FailureCode != "" {
     <p>Managed implementation failed before trusted acceptance · <code>{ q.NativeOutcome.FailureCode }</code>. This is the recorded controller classification, not raw runtime output.</p>
    }
+   if q.NativeOutcome.CheckOutcome == "passed" || q.NativeOutcome.CheckOutcome == "failed" {
+    <p>Recorded last-pass check · { q.NativeOutcome.CheckOutcome } · trusted offline go-test.v1; not a terminal cause or independent acceptance.</p>
+    <p>Check stage · { q.NativeOutcome.CheckDigest } · Output evidence · { q.NativeOutcome.CheckOutputDigest }</p>
+   } else {
+    <p>Recorded last-pass check · unavailable. No historical diagnostics are inferred.</p>
+   }
    <p>Attempt · { q.NativeOutcome.AttemptID } · Loop execution · { q.NativeOutcome.ExecutionID } · Pass · { q.NativeOutcome.PassID }</p>
    <p>Cumulative consumed passes · { fmt.Sprint(q.NativeOutcome.Consumed) } · Remaining budget · { fmt.Sprint(q.NativeOutcome.Remaining) }</p>
   }
@@ -33,6 +39,12 @@ templ QueueOutcome(q *QueueDetailModel) {
   }
   <details><summary>Inspect authoritative disposition and evidence</summary>
    <p>Disposition · { queueOptionalField(q.DispositionID) }</p>
+   for _, id := range q.ArtifactIDs {
+    <p>Artifact · { id }</p>
+   }
+   for _, id := range q.ReceiptIDs {
+    <p>Verification receipt · { id }</p>
+   }
    if q.NativeOutcome != nil {
     <p>Native history · { q.NativeOutcome.HistoryDigest } · Contract · { q.NativeOutcome.ContractDigest }</p>
     for _, id := range q.NativeOutcome.ArtifactIDs {

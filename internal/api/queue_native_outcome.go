@@ -38,6 +38,11 @@ func consoleQueueNativeOutcome(d app.ExecutionDebugger) *consoleweb.QueueNativeO
 		return nil
 	}
 	out := &consoleweb.QueueNativeOutcomeModel{AttemptID: selected.ID, ExecutionID: n.ExecutionID, PassID: p.ID, HistoryDigest: h.Digest, ContractDigest: h.ContractDigest, Consumed: h.CumulativeConsumed, Remaining: h.RemainingBudget}
+	for _, s := range h.Stages {
+		if s.Name == "check" && s.PassID == p.ID && s.Digest != "" && s.OutputDigest != "" && s.OutputDigest == p.OutputDigest && (s.CheckOutcome == "passed" || s.CheckOutcome == "failed") {
+			out.CheckOutcome, out.CheckDigest, out.CheckOutputDigest = s.CheckOutcome, s.Digest, s.OutputDigest
+		}
+	}
 	switch {
 	case d.NativeEvidenceVerified && d.State == "succeeded" && d.DispositionReason == "implementation_verified" && h.State == "succeeded" && p.Passed && len(d.ArtifactIDs) == 1 && len(d.ReceiptIDs) == 1:
 		out.Accepted = true

@@ -63,12 +63,16 @@ with sync_playwright() as p:
     failed = dict(fact, sequence=2, digest='checkpoint2', kind='step_finish', outcome='failed', failure_code='doer_proposal_json_invalid')
     state['nodes'][0]['attempts'][0]['facts'].append(failed)
     state['version'] = 2
+    state['outcome_html'] = '<section data-queue-outcome><p data-outcome-freshness></p>Artifact · exact-graph-artifact · Verification receipt · exact-graph-receipt · Recorded last-pass check · failed; not a terminal cause</section>'
     page.reload()
     page.wait_for_function("document.querySelector('[data-debugger-status]').textContent.includes('fresh observations')")
     assert page.locator('[data-debugger-scope]').input_value() == 'child'
     assert page.locator('[data-debugger-replay]').input_value() == '0'
     assert 'Historical replay' in page.locator('[data-debugger-status]').inner_text()
     assert page.locator('[data-debugger-history]').inner_text() == paused
+    outcome = page.locator('[data-queue-current-outcome]').inner_text()
+    assert 'exact-graph-artifact' in outcome and 'exact-graph-receipt' in outcome
+    assert 'Recorded last-pass check · failed' in outcome and 'not a terminal cause' in outcome
     assert page.locator('[data-queue-node-panel]:visible').count() == 1
     assert page.locator('[data-queue-node][aria-pressed=true]').count() == 1
     assert page.locator('.queue-node.current').count() == 0
