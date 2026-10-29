@@ -361,6 +361,18 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
+    def test_race_support_deadline_work_uses_existing_cli_headroom(self):
+        # Hosted update + remainder-b passed but exhausted support-b's 600s
+        # job. Keep both complete groups and the existing 10m lane limits.
+        self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
+        self.assertEqual(shard.bundle_groups('cli', True),
+                         ('cli-contribution-root', 'cli-contribution-final',
+                          'cli-contribution-disconnect', 'remainder-b'))
+        self.assertEqual(len(shard.BUNDLES['race']), 13)
+        self.assertEqual(sum(group == 'remainder-b'
+                             for groups in shard.BUNDLES['race'].values()
+                             for group in groups), 1)
+
     def test_compact_commands_link_list_once_and_preserve_cwd_caps_and_failure(self):
         for mode, lanes in shard.BUNDLES.items():
             race = mode == 'race'

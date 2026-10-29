@@ -91,9 +91,11 @@ BUNDLES = {
         'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         'cli-command': ('cli-command',),
-        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect'),
+        # Hosted 40948579082: update 442s + remainder-b 146s exhausted
+        # support-b; cli finished in 361s under the same unchanged 600s cap.
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect', 'remainder-b'),
         'support-a': ('persistence', 'remainder-a'),
-        'support-b': ('update', 'remainder-b'),
+        'support-b': ('update',),
     },
 }
 
