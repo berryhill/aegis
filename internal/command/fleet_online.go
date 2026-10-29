@@ -421,7 +421,7 @@ func runFleetOnlineWithTimeouts(cmd *cobra.Command, args []string, options *root
 			// Only fixed public diagnostic codes may cross this boundary. Never echo
 			// arbitrary remote error text or trusted-input metadata.
 			switch denial.Code {
-			case "doer_reexecution_budget_exhausted":
+			case "doer_reexecution_budget_exhausted", "native_recovery_effect_evidence_missing", "native_recovery_evidence_invalid":
 				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Code)
 			case "doer_provider_auth_absent", "doer_provider_auth_invalid", "doer_provider_auth_expired", "doer_provider_auth_unauthorized", "doer_provider_auth_runtime_unqualified":
 				return fmt.Errorf("owning_service_denied: %s %s returned HTTP %d (%s)", method, path, response.StatusCode, denial.Code)

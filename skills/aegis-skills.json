@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:d40212051990cd31fb1508f0ea1d47ce5417f656950b73540afb23ff0fce0426",
+    "content_digest": "sha256:dc1b26efd8c6caeb94aaabd57cb3c3fbb5b41413fc06c6210ff85a97590dadca",
     "source_revision": "repository"
   },
   "operations": [
@@ -391,12 +391,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:4a51a459aeb61e663ae23d5aee1070d5c89dd67e6d7db7df78852b7f7c548a50",
+      "content_digest": "sha256:0a331d3de9d9ef8ef36814f4310100820192cf7c64845e9e589a761a86d5aace",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:c6e4e349d122791c703e52ada5f2b28f08b9c4157b0f9916e039be0a92277498",
-          "size": 25760
+          "sha256": "sha256:0abea4b772286880a9295847249b87c82231bf302b432646796f91c407a3faef",
+          "size": 27990
         },
         {
           "path": "references/bind-runtime.v1.json",

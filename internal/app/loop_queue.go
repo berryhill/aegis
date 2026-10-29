@@ -190,6 +190,9 @@ func (s *Service) admitQueueLoop(ctx context.Context, subject core.Subject, inpu
 	}
 
 	if input.Reexecution != nil {
+		if prior, found, replayErr := s.reconcileLoopReexecution(ctx, subject, input); found || replayErr != nil {
+			return prior, replayErr
+		}
 		result.Reexecution, e = s.sealLoopReexecution(ctx, subject, input, key, identity, lv.Revision)
 		if e != nil {
 			return result, e

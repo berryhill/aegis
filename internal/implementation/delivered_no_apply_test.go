@@ -44,6 +44,9 @@ func TestManagedDeliveredNoApplyContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if h.Recovery.Effect != "no_apply_proven" || h.Recovery.Decision != "linked_requeue_requires_fresh_checks" {
+		t.Fatal(h.Recovery)
+	}
 	for _, mode := range []string{"unknown", "missing_failure", "implement", "missing_delivery", "corrupt_stage"} {
 		t.Run(mode, func(t *testing.T) {
 			b, _ := json.Marshal(first)

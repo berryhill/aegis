@@ -25,6 +25,9 @@ func TestNativeContinuation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if history.Recovery.Effect != "apply_observed" || history.Recovery.Decision != "linked_requeue_requires_fresh_checks" {
+				t.Fatal(history.Recovery)
+			}
 			for _, bad := range []struct {
 				head, id string
 				cap      uint16
