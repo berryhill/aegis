@@ -55,7 +55,7 @@ func (s *Service) ExecuteDoerTaskAs(ctx context.Context, subject core.Subject, i
 	if err != nil {
 		return out, err
 	}
-	candidate, _, err := NewDoerLoopRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+	candidate, _, err := d.Candidate()
 	if err != nil {
 		return out, err
 	}

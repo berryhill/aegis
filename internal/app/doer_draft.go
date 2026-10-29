@@ -37,6 +37,7 @@ var (
 // otherwise ExpectedVersion is a compare-and-swap guard. PublicationKey, owner,
 // authority, mandate, approval and Run fields are deliberately not accepted.
 type DoerDraftInput struct {
+	Name string `json:"name,omitempty"`
 	// HostRun retains a proposed exact v5 host-review scope, never Run consent.
 	HostRun         *QueueLoopInput       `json:"host_run,omitempty"`
 	CreationKey     string                `json:"creation_key,omitempty"`
@@ -74,6 +75,7 @@ func (input *DoerDraftInput) UnmarshalJSON(data []byte) error {
 // at creation and is not extended by edits. Exact Agent identity is retained
 // even if later Registry changes make publication inadmissible.
 type DoerDraft struct {
+	Name            string                `json:"name,omitempty"`
 	HostRun         *QueueLoopInput       `json:"host_run,omitempty"`
 	ExecutionDigest string                `json:"execution_digest,omitempty"`
 	CreationKey     string                `json:"creation_key,omitempty"`
@@ -105,6 +107,17 @@ func doerDraftSlot(principal string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// Candidate reconstructs the exact retained definition, including its display
+// name. Empty names retain the legacy canonical bytes and digest.
+func (d DoerDraft) Candidate() (loop.LoopRevision, loop.LoopValidationResult, error) {
+	candidate, validation, err := loop.NewDoerRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+	if err != nil || d.Name == "" {
+		return candidate, validation, err
+	}
+	candidate.Name = d.Name
+	return loop.NewRevision(candidate)
+}
+
 func validateDoerDraftInput(input DoerDraftInput) error {
 	if input.HostRun != nil {
 		if validateDoerHostRunInput(input) != nil {
@@ -121,7 +134,7 @@ func validateDoerDraftInput(input DoerDraftInput) error {
 	if err != nil || len(wire) > DoerDraftMaxBytes {
 		return ErrDoerDraftInvalid
 	}
-	if _, _, err := loop.NewDoerRevision(input.LoopID, input.Revision, input.PreviousDigest, input.Contract); err != nil {
+	if _, _, err := (DoerDraft{Name: input.Name, LoopID: input.LoopID, Revision: input.Revision, PreviousDigest: input.PreviousDigest, Contract: input.Contract}).Candidate(); err != nil {
 		return ErrDoerDraftInvalid
 	}
 	return nil
@@ -284,13 +297,14 @@ func (s *Service) SaveDoerDraftAs(ctx context.Context, subject core.Subject, inp
 			}
 			// Returning from an independent approval to an unchanged draft must
 			// retain its reviewed version and keys, not invalidate continuation.
-			if input.LoopID == result.LoopID && input.Revision == result.Revision && input.PreviousDigest == result.PreviousDigest && reflect.DeepEqual(input.Contract, result.Contract) && reflect.DeepEqual(input.HostRun, result.HostRun) {
+			if input.Name == result.Name && input.LoopID == result.LoopID && input.Revision == result.Revision && input.PreviousDigest == result.PreviousDigest && reflect.DeepEqual(input.Contract, result.Contract) && reflect.DeepEqual(input.HostRun, result.HostRun) {
 				return set, nil
 			}
 		}
 		if result.ExecutionDigest != "" {
 			return nil, ErrConflict
 		}
+		result.Name = input.Name
 		result.Version++
 		result.HostRun = input.HostRun
 		result.UpdatedAt = now

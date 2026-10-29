@@ -462,7 +462,7 @@ func consoleSurfaceModel(surface app.FleetSurface, domain consoleDomain) (consol
 			if !ok {
 				return consoleweb.SurfaceModel{}, errors.New("invalid Execution Queue record")
 			}
-			record = consoleQueueRecord(queueView, surface.Graphs)
+			record = consoleQueueRecordWithLoops(queueView, surface.Loops, surface.Graphs)
 		} else if domain == consoleCredentials {
 			cred, ok := value.(app.CredentialView)
 			if !ok {
@@ -929,6 +929,10 @@ func consoleGraphRecord(view app.GraphView, history app.SubmissionHistory, raw s
 }
 
 func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
+	return consoleQueueRecordWithLoops(view, nil, graphSets...)
+}
+
+func consoleQueueRecordWithLoops(view app.QueueExecutionView, loops []app.LoopView, graphSets ...[]app.GraphView) consoleweb.RecordModel {
 	state := queuePhase(view)
 	// 1. Resolve the exact pinned Graph revision from the queue snapshot binding.
 	// We never substitute the current catalogue topology in place of the pinned
@@ -1135,7 +1139,28 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	}
 	// 9. Records JSON (raw marshalled view) for the textual equivalent.
 	raw, _ := json.MarshalIndent(view, "", "  ")
-	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Source: fallback(view.Submission.OwnerAgentID, "Unavailable"), Revision: view.Item.Snapshot.ID, JSON: string(raw), Queue: detail}
+	label := "Execution " + view.Item.ItemID + " · Loop name unavailable"
+	refs := []app.ExactRevisionReference{}
+	if view.IsDirectLoop() {
+		refs = append(refs, view.Source)
+	} else if pinnedGraph != nil {
+		for _, node := range pinnedGraph.Revision.Nodes {
+			refs = append(refs, node.Loop)
+		}
+	}
+	if len(refs) > 1 {
+		label = fmt.Sprintf("Graph execution · %d Loops", len(refs))
+	} else if len(refs) == 1 {
+		label = "Loop name unavailable · " + refs[0].ID
+		for _, candidate := range loops {
+			rev := candidate.Revision
+			if rev.LoopID == refs[0].ID && rev.Revision == refs[0].Revision && rev.Digest == refs[0].Digest && rev.Name != "" {
+				label = rev.Name
+				break
+			}
+		}
+	}
+	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: label, Summary: view.Item.ItemID + " · " + view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Source: fallback(view.Submission.OwnerAgentID, "Unavailable"), Revision: view.Item.Snapshot.ID, JSON: string(raw), Queue: detail}
 }
 
 // resolvePinnedGraphRevision locates the exact Graph revision referenced by
@@ -1163,7 +1188,7 @@ func resolvePinnedGraphRevision(view app.QueueExecutionView, graphSets ...[]app.
 				if run.Snapshot.SnapshotID != view.Item.Snapshot.ID || run.Snapshot.Digest != view.Item.Snapshot.Digest {
 					continue
 				}
-				if run.Snapshot.Graph.ID != "" {
+				if run.Snapshot.Graph.ID == candidate.Revision.GraphID && run.Snapshot.Graph.Revision == candidate.Revision.Revision && run.Snapshot.Graph.Digest == candidate.Revision.Digest {
 					return &candidate
 				}
 			}

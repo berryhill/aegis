@@ -29,7 +29,7 @@ func (p *DoerContinuationPortal) ApprovedDraftReadiness(ctx context.Context, req
 		if err != nil {
 			continue
 		}
-		candidate, _, err := app.NewDoerLoopRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+		candidate, _, err := draft.Candidate()
 		if err != nil {
 			continue
 		}

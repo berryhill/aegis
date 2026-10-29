@@ -141,6 +141,7 @@ type LoopRevision struct {
 	Doer             *DoerContract         `json:"doer,omitempty"`
 	DoerReusable     *DoerReusableContract `json:"doer_reusable,omitempty"`
 	LoopID           string                `json:"loop_id"`
+	Name             string                `json:"name,omitempty"`
 	Revision         uint64                `json:"revision"`
 	PreviousDigest   string                `json:"previous_digest,omitempty"`
 	Inputs           []Port                `json:"inputs"`

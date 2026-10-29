@@ -7,7 +7,6 @@ import (
 	"errors"
 	"github.com/berryhill/aegis/internal/continuation"
 	"github.com/berryhill/aegis/internal/core"
-	"github.com/berryhill/aegis/internal/loop"
 	"github.com/berryhill/aegis/internal/reference"
 	"github.com/berryhill/aegis/internal/registry"
 	"github.com/berryhill/aegis/internal/store"
@@ -270,7 +269,7 @@ func (s *Service) validateDoerContinuationIntent(ctx context.Context, requester 
 	if draft.Version != intent.DraftVersion || draft.Agent != intent.Agent || draft.PublicationKey != intent.PublicationKey || draft.LoopID != intent.Loop.ID || draft.Revision != intent.Loop.Revision {
 		return ErrConflict
 	}
-	candidate, _, err := loop.NewDoerRevision(draft.LoopID, draft.Revision, draft.PreviousDigest, draft.Contract)
+	candidate, _, err := draft.Candidate()
 	if err != nil || candidate.Digest != intent.CandidateDigest || candidate.Digest != intent.Loop.Digest {
 		return ErrConflict
 	}

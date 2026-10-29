@@ -54,11 +54,12 @@ func fixtureWorkspaceProvenance(t *testing.T, p loop.PublicationProvenance, a re
 func TestRetainedDoerPublicationExactReuseAndDenials(t *testing.T) {
 	s, sub, in := draftFixture(t)
 	ctx := context.Background()
+	in.Name = "Review the retained change"
 	d, err := s.SaveDoerDraftAs(ctx, sub, in)
 	if err != nil {
 		t.Fatal(err)
 	}
-	revision, validation, err := NewDoerLoopRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+	revision, validation, err := d.Candidate()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestRetainedDoerPublicationExactReuseAndDenials(t *testing.T) {
 	if err != nil || got == nil || !got.Decision.Idempotent || got.Revision.Digest != revision.Digest {
 		t.Fatalf("reuse=%+v %v", got, err)
 	}
-	for _, name := range []string{"unknown", "changed", "corrupt", "foreign-owner", "foreign-agent", "missing-validation", "wrong-validation", "substituted-participant"} {
+	for _, name := range []string{"unknown", "changed", "renamed", "corrupt", "foreign-owner", "foreign-agent", "missing-validation", "wrong-validation", "substituted-participant"} {
 		t.Run(name, func(t *testing.T) {
 			r := base
 			task := d
@@ -84,6 +85,8 @@ func TestRetainedDoerPublicationExactReuseAndDenials(t *testing.T) {
 				r.readErr = errors.New("unknown publication outcome")
 			case "changed":
 				task.Contract.Task = "another task"
+			case "renamed":
+				task.Name = "A different approved name"
 			case "corrupt":
 				r.revision.Digest = in.Agent.Digest
 			case "foreign-owner":

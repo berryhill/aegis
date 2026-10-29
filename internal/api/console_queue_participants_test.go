@@ -94,8 +94,14 @@ func TestConsoleQueueParticipantsEscapingAndTargets(t *testing.T) {
 	canary := `<script id="participant-canary">alert(346)</script>`
 	view := app.QueueExecutionView{Item: queue.Item{ItemID: "queue-346", Digest: "queue-digest", Snapshot: reference.DigestRef{ID: "snapshot-346"}}, Submission: queue.Submission{OwnerAgentID: canary}, Projection: queue.Projection{State: queue.StateQueued}, Runtime: registry.RuntimeBinding{Runtime: "hermes-agent"}, LoopExecutions: []execution.LoopExecution{{GraphNodeID: canary, Participant: participant346Ref("executor-c", 2), Loop: participant346Ref("loop-c", 4)}}}
 	record := consoleQueueRecord(view)
-	if record.Key != "queue-346" || record.Label != "queue-346" || record.Revision != "snapshot-346" || record.Runtime != "hermes-agent" || record.Lifecycle != "claimable" {
+	if record.Key != "queue-346" || record.Revision != "snapshot-346" || record.Runtime != "hermes-agent" || record.Lifecycle != "claimable" {
 		t.Fatalf("identity/runtime/state changed: %+v", record)
+	}
+	if record.Label != "Execution queue-346 · Loop name unavailable" {
+		t.Fatalf("legacy Loop-name fallback changed: %q", record.Label)
+	}
+	if !strings.Contains(record.Summary, "queue-346") {
+		t.Fatalf("execution identity missing from summary: %q", record.Summary)
 	}
 	if record.Queue.Links[0].URL != "/console/agents?record_key=executor-c&revision=2#/agents/executor-c" {
 		t.Fatal("participant target changed", record.Queue.Links)

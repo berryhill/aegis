@@ -46,3 +46,34 @@ func TestSignedHostApprovalExactBindings(t *testing.T) {
 		t.Fatal("changed budget authorized")
 	}
 }
+
+func TestSignedHostApprovalNamedCandidate(t *testing.T) {
+	now := time.Now().UTC()
+	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+	contract := loop.DoerContract{Task: "Write result", Workspace: "/project", WritableFiles: []string{"out"}, VerifyFile: "out", MaxAttempts: 1}
+	candidate, _, err := loop.NewDoerRevision("named", 1, "", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate.Name = "Review selected output"
+	candidate, _, err = loop.NewRevision(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: "agent", Revision: 1, Digest: "sha256:" + strings.Repeat("a", 64)}
+	digest, _ := contract.Digest()
+	r, err := Sign(Record{CandidateName: candidate.Name, Purpose: Purpose, DeploymentID: "deployment", PrincipalID: "owner", OwnerID: "owner", Agent: agent, Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: 1, Digest: candidate.Digest}, Contract: contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: now.Add(time.Hour)}, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if Verify(r, pub, "deployment", "owner", agent, contract, now) != nil {
+		t.Fatal("exact named candidate denied")
+	}
+	for _, name := range []string{"", "renamed"} {
+		bad := r
+		bad.CandidateName = name
+		if Verify(bad, pub, "deployment", "owner", agent, contract, now) == nil {
+			t.Fatal("changed name admitted")
+		}
+	}
+}

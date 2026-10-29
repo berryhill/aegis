@@ -136,8 +136,8 @@ def main():
                     time.sleep(1)
                     driver.navigate(browser, origin + link)
                     driver.wait_for(browser, "!!document.querySelector('[data-queue-workspace]')", "exact summary-band detail")
-                    actual_id = browser.evaluate("document.querySelector('#inspector-title').textContent.trim()")
-                    driver.require(actual_id == expected_id, "wrong exact summary-band detail identity")
+                    actual_id = browser.evaluate("document.querySelector('[data-queue-workspace]').textContent.includes(" + json.dumps(expected_id + " · pinned snapshot") + ")")
+                    driver.require(actual_id is True, "wrong exact summary-band detail identity")
                     details.append({"expected": expected_id, "actual": actual_id})
                 driver.require(bool(requests) and all(method == "GET" for method in requests), "filter controls issued a mutation request")
                 violations = [e for e in browser.events if e.get("method") == "Audits.issueAdded" and e.get("params", {}).get("issue", {}).get("code") == "ContentSecurityPolicyIssue"]

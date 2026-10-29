@@ -103,7 +103,7 @@ func (s *Service) ApproveDoerHostWriteAs(ctx context.Context, subject core.Subje
 	now := s.Now().UTC()
 	expires := now.Add(24 * time.Hour)
 	// Host consent is bounded independently of authentication continuation.
-	r := hostapproval.Record{Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: draft.Agent, Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: draft.PreviousDigest, Contract: draft.Contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires}
+	r := hostapproval.Record{CandidateName: candidate.Name, Purpose: hostapproval.Purpose, DeploymentID: s.Config.Credentials.Authority.DeploymentID, PrincipalID: subject.PrincipalID, OwnerID: agent.Ownership.OwnerID, Agent: draft.Agent, Candidate: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: candidate.LoopID, Revision: candidate.Revision, Digest: candidate.Digest}, PreviousDigest: draft.PreviousDigest, Contract: draft.Contract, ContractDigest: digest, ApprovedAt: now, ExpiresAt: expires}
 	if agent.Ownership.OwnerID != subject.PrincipalID {
 		r.ControllerSubjectID = subject.ID
 	}

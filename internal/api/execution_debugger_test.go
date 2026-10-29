@@ -78,6 +78,10 @@ func debuggerFixture(t *testing.T) (*app.Service, core.Subject, loop.LoopRevisio
 }
 
 func debuggerFixtureKind(t *testing.T, publishedGraph bool) (*app.Service, core.Subject, loop.LoopRevision, *debuggerExecutorFixture, <-chan error) {
+	return debuggerFixtureNamed(t, publishedGraph, "")
+}
+
+func debuggerFixtureNamed(t *testing.T, publishedGraph bool, name string) (*app.Service, core.Subject, loop.LoopRevision, *debuggerExecutorFixture, <-chan error) {
 	var svc *app.Service
 	if root := os.Getenv("AEGIS_DEBUGGER_SEED_ROOT"); root != "" {
 		svc = apiServiceAt(t, root)
@@ -100,6 +104,13 @@ func debuggerFixtureKind(t *testing.T, publishedGraph bool) (*app.Service, core.
 	rev, _, err := loop.NewDoerRevision("debug-loop", 1, "", loop.DoerContract{Task: "secret-canary-task-325", Workspace: t.TempDir(), WritableFiles: []string{"result.txt"}, VerifyFile: "result.txt", ExpectedText: &text, ExactBytes: true, MaxAttempts: 2})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if name != "" {
+		rev.Name = name
+		rev, _, err = loop.NewRevision(rev)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	_, err = svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: agent.AgentID, Revision: rev, IdempotencyKey: "debug-publish"})
 	if err != nil {
@@ -170,6 +181,13 @@ func debuggerFixtureKind(t *testing.T, publishedGraph bool) (*app.Service, core.
 	newer, _, err := loop.NewDoerRevision(rev.LoopID, 2, rev.Digest, loop.DoerContract{Task: "newer secret task", Workspace: t.TempDir(), WritableFiles: []string{"other.txt"}, VerifyFile: "other.txt", ExpectedText: &text, ExactBytes: true, MaxAttempts: 1})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if name != "" {
+		newer.Name = "New renamed Loop"
+		newer, _, err = loop.NewRevision(newer)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err = svc.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: agent.AgentID, Revision: newer, ExpectedPreviousDigest: rev.Digest, IdempotencyKey: "debug-newer"}); err != nil {
 		t.Fatal(err)

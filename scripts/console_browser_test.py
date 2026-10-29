@@ -953,7 +953,7 @@ def main() -> int:
         wait_for(devtools, "document.querySelector('[data-queue-node-panel=\"0\"]')?.checkVisibility() && document.querySelector('[data-queue-node=\"0\"]')?.getAttribute('aria-pressed') === 'true'", "Queue node opened its visible inspector")
         click(devtools, '[data-queue-node-panel="0"] [data-queue-definition]')
         wait_for(devtools, "document.querySelector('[data-queue-definition]')?.getAttribute('aria-expanded') === 'true' && document.querySelector('#queue-context')?.checkVisibility() && document.querySelector('[data-queue-definition-panel]')?.checkVisibility() && document.activeElement?.id === 'queue-context-title'", "Definition details opened visible Queue evidence inspector")
-        wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted' && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
+        wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#queue-detail')?.dataset.composition === 'queue-replacement' && !document.querySelector('#surface-list') && document.querySelector('#inspector-title')?.textContent.trim() === 'Loop name unavailable · proof-loop' && document.querySelector('.queue-record-head p')?.textContent.includes('queue-accepted · pinned snapshot') && document.body.innerText.includes('artifact-accepted') && document.body.innerText.includes('disposition-accepted') && document.body.innerText.includes('evidence_satisfied')", "Graph to replacement-page Queue evidence, receipt, and disposition chain")
         desktop_detail_png = base64.b64decode(devtools.command("Page.captureScreenshot", {"format": "png", "fromSurface": True})["data"])
         require(desktop_detail_png.startswith(b"\x89PNG\r\n\x1a\n") and len(desktop_detail_png) > 1024, "desktop detail screenshot was not a bounded PNG")
         devtools.command("Emulation.setEmulatedMedia", {"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
@@ -970,7 +970,7 @@ def main() -> int:
         wait_for(devtools, "location.pathname === '/console/graphs' && document.querySelector('#inspector-title')?.textContent.trim() === 'proof-graph'", "browser Back restored exact Graph")
         time.sleep(0.5)
         devtools.evaluate("history.forward()")
-        wait_for(devtools, "location.pathname === '/console/queue' && document.querySelector('#inspector-title')?.textContent.trim() === 'queue-accepted'", "browser Forward restored exact Queue record")
+        wait_for(devtools, "location.pathname === '/console/queue' && location.hash === '#/queue/queue-accepted' && document.querySelector('#inspector-title')?.textContent.trim() === 'Loop name unavailable · proof-loop' && document.querySelector('.queue-record-head p')?.textContent.includes('queue-accepted · pinned snapshot')", "browser Forward restored exact Queue record")
         time.sleep(0.5)
 
         devtools.command("Page.navigate", {"url": origin + "/console/loops?q=loop&lifecycle=draft&limit=1#/loops"})

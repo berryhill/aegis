@@ -78,6 +78,9 @@ func decodeLoopComposerForm(request *http.Request) (loopComposerForm, error) {
 	}
 	values, err := url.ParseQuery(string(body))
 	allowed := []string{"csrf", "publisher_id", "publication_key", "loop_id", "revision", "previous_digest", "entry_step_id", "inputs", "outputs", "steps", "step_ports", "terminal_mappings", "evidence_claims", "transitions", "transition_mappings", "required_evidence"}
+	if _, present := values["name"]; present {
+		allowed = append(allowed, "name")
+	}
 	if err != nil || len(values) != len(allowed) {
 		return loopComposerForm{}, errors.New("invalid Loop composer form")
 	}
@@ -127,7 +130,7 @@ func decodeLoopComposerForm(request *http.Request) (loopComposerForm, error) {
 		return loopComposerForm{}, fmt.Errorf("required evidence: %w", err)
 	}
 	form := loopComposerForm{CSRF: values.Get("csrf"), PublisherID: values.Get("publisher_id"), PublicationKey: values.Get("publication_key")}
-	form.Revision = app.LoopCandidate{LoopID: values.Get("loop_id"), Revision: revisionNumber, PreviousDigest: values.Get("previous_digest"), Inputs: inputs, Outputs: outputs, EntryStepID: values.Get("entry_step_id"), Steps: steps, Transitions: transitions, RequiredEvidence: required}
+	form.Revision = app.LoopCandidate{LoopID: values.Get("loop_id"), Name: values.Get("name"), Revision: revisionNumber, PreviousDigest: values.Get("previous_digest"), Inputs: inputs, Outputs: outputs, EntryStepID: values.Get("entry_step_id"), Steps: steps, Transitions: transitions, RequiredEvidence: required}
 	if form.CSRF == "" || form.PublisherID == "" || form.PublicationKey == "" {
 		return loopComposerForm{}, errors.New("CSRF, publisher, and publication key are required")
 	}

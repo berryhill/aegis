@@ -58,7 +58,7 @@ func (s *Service) doerControllerCharterAllowed(ctx context.Context, sub core.Sub
 // v4 revision synthesized from the draft. No new Loop/Graph/Queue is published.
 func (s *Service) doerHostReviewCandidate(ctx context.Context, sub core.Subject, d DoerDraft) (loop.LoopRevision, error) {
 	if d.HostRun == nil {
-		c, _, err := loop.NewDoerRevision(d.LoopID, d.Revision, d.PreviousDigest, d.Contract)
+		c, _, err := d.Candidate()
 		return c, err
 	}
 	if validateDoerDraftInput(DoerDraftInput{HostRun: d.HostRun, ID: d.ID, ExpectedVersion: d.Version, Agent: d.Agent, LoopID: d.LoopID, Revision: d.Revision, PreviousDigest: d.PreviousDigest, Contract: d.Contract}) != nil {

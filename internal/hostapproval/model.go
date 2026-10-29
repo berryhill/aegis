@@ -50,6 +50,7 @@ var ErrAbsent = errors.Join(ErrDenied, errors.New("doer_host_approval_absent"))
 var ErrExpired = errors.Join(ErrDenied, errors.New("doer_host_approval_expired"))
 
 type Record struct {
+	CandidateName string `json:"candidate_name,omitempty"`
 	// Nonempty only after an independent protected controller decision for a
 	// differently owned participant. Omitted on historical owner-principal facts.
 	ControllerSubjectID string                `json:"controller_subject_id,omitempty"`
@@ -111,6 +112,10 @@ func (r Record) canonical() ([]byte, error) {
 		candidate, _, ce = loop.NewDoerReusableRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, *r.DoerReusable)
 	} else {
 		candidate, _, ce = loop.NewDoerRevision(r.Candidate.ID, r.Candidate.Revision, r.PreviousDigest, r.Contract)
+	}
+	if ce == nil && r.CandidateName != "" {
+		candidate.Name = r.CandidateName
+		candidate, _, ce = loop.NewRevision(candidate)
 	}
 	if ce != nil || candidate.Digest != r.Candidate.Digest {
 		return nil, ErrDenied

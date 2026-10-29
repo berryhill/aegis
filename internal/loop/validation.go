@@ -43,6 +43,9 @@ func validateRevision(revision LoopRevision, verifyDigest bool) []ValidationIssu
 	if !validID(revision.LoopID) {
 		add("loop_id.invalid", "loop_id", "Loop ID is required and must be a bounded identifier")
 	}
+	if revision.Name != "" && (len(revision.Name) > 128 || strings.TrimSpace(revision.Name) != revision.Name || strings.ContainsAny(revision.Name, "\r\n\x00")) {
+		add("name.invalid", "name", "Loop name must be a bounded single-line display name")
+	}
 	if revision.Revision == 0 {
 		add("revision.invalid", "revision", "revision must be positive")
 	}

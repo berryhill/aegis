@@ -495,7 +495,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			return consoleweb.PageModel{Authenticated: true, Surface: consoleweb.SurfaceModel{Domain: string(domain), Title: "Fleet control", State: "unavailable", Status: "Fleet control unavailable. No collection was treated as empty."}}, nil
 		}
 		var selectedAgent *app.FleetAgent
-		if domain == consoleLoops {
+		if domain == consoleLoops || domain == consoleQueue {
 			surface.Loops, err = svc.ListLoopInventoryAs(c.Request().Context(), subject)
 			if err != nil {
 				return consoleweb.PageModel{}, err
@@ -1450,7 +1450,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 				if form.DraftID == "" {
 					creationKey = form.PublicationKey
 				}
-				draft, err := svc.SaveDoerDraftAs(c.Request().Context(), subject, app.DoerDraftInput{CreationKey: creationKey, ID: form.DraftID, ExpectedVersion: form.DraftVersion, Agent: workspace.Agent, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Contract: *form.Revision.Doer})
+				draft, err := svc.SaveDoerDraftAs(c.Request().Context(), subject, app.DoerDraftInput{Name: form.Revision.Name, CreationKey: creationKey, ID: form.DraftID, ExpectedVersion: form.DraftVersion, Agent: workspace.Agent, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Contract: *form.Revision.Doer})
 				if err != nil {
 					return err
 				}
@@ -1483,7 +1483,7 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		}
 		var input []byte
 		if commandID == loopDoerWorkspaceCommandID {
-			input, err = json.Marshal(doerTemplatePublishInput{PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Doer: *form.Revision.Doer, PublicationKey: form.PublicationKey})
+			input, err = json.Marshal(doerTemplatePublishInput{Name: form.Revision.Name, PublisherID: form.PublisherID, PublisherRevision: publisherRevision, PublisherDigest: publisherDigest, LoopID: form.Revision.LoopID, Revision: form.Revision.Revision, PreviousDigest: form.Revision.PreviousDigest, Doer: *form.Revision.Doer, PublicationKey: form.PublicationKey})
 		} else {
 			input, err = json.Marshal(loopPublishCommandInput{PublisherID: form.PublisherID, Revision: form.Revision, ExpectedPreviousDigest: form.Revision.PreviousDigest, PublicationKey: form.PublicationKey})
 		}
