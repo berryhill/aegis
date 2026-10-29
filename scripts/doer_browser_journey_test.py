@@ -16,7 +16,7 @@ from urllib.parse import urlencode
 
 BLOCKER = "session_selection_zero_authorized_matches"
 OWNED = ("draft_id", "draft_version", "loop_id", "revision", "previous_digest", "publication_key")
-INPUTS = ("publisher_id", "task", "workspace", "writable_files", "verify_file", "assert_text", "expected_text", "max_attempts")
+INPUTS = ("publisher_id", "name", "task", "workspace", "writable_files", "verify_file", "assert_text", "expected_text", "max_attempts")
 
 
 def values(browser, selector, names):
@@ -119,10 +119,10 @@ def run_journey(browser, origin, workspace, driver):
         require(values(browser, form, ("publisher_id",))["publisher_id"] == "proof-agent", "native Agent selection failed")
         disposable = workspace / "doer-workspace"
         require(disposable.is_dir() and not (disposable / "result.txt").exists(), "expected empty existing disposable workspace")
-        expected_inputs = {"publisher_id": "proof-agent", "task": "Create result.txt containing exactly hello (five raw UTF-8 bytes, no newline).",
+        expected_inputs = {"publisher_id": "proof-agent", "name": "Browser proof Doer Loop", "task": "Create result.txt containing exactly hello (five raw UTF-8 bytes, no newline).",
                            "workspace": str(disposable), "writable_files": "result.txt", "verify_file": "result.txt",
                            "assert_text": "bytes", "expected_text": "hello", "max_attempts": "2"}
-        for name in ("task", "workspace", "writable_files", "verify_file", "expected_text", "max_attempts"):
+        for name in ("name", "task", "workspace", "writable_files", "verify_file", "expected_text", "max_attempts"):
             driver.replace_text(browser, '[name="' + name + '"]', expected_inputs[name])
         require(values(browser, form, INPUTS) == expected_inputs, "Doer operator inputs differ")
         require(values(browser, form, OWNED) == initial, "authoring changed server-owned refs/keys")
