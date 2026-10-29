@@ -6,6 +6,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Partial #346 source correction: Queue list/detail distinguish all exact pinned
+  node participants from the submission owner and runtime product, including
+  preclaim readback and historical Agent revisions. Missing or conflicting exact
+  facts remain unavailable. Runtime-session capture is not implemented here;
+  #346 remains open. See [scope and launch review](docs/implementation/issue-346-participant-provenance.md).
+
 - Compact ordinary source CI to 27 expanded jobs using mode-specific sequential
   Go lanes and one native test compilation per split package/lane. Preserve all
   normal/race partitions, uncached tests, per-process alarms, resource budgets,

@@ -468,7 +468,7 @@ templ QueueBand(surface SurfaceModel, id, title, description string, records []R
 templ QueueRecordPanel(surface SurfaceModel, records []RecordModel) {
 	<div class="panel"><div class="panel-body compact"><ul class="queue-records" aria-label="Execution records">
 		for _, record := range records {
-			<li><a id={ "record-" + record.Key } class="op-row" data-state={ record.Lifecycle } href={ detailRoute(surface, record.Key) }><span><strong>{ record.Label }</strong><small>{ record.Summary }</small></span><span>{ record.Revision }</span><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>{ record.Runtime }</span></a>@QueuePresentationActions(surface, record)</li>
+			<li><a id={ "record-" + record.Key } class="op-row" data-state={ record.Lifecycle } href={ detailRoute(surface, record.Key) }><span><strong>{ record.Label }</strong><small>{ record.Summary }</small></span><span>{ record.Revision }</span><span class={ "lifecycle " + record.Lifecycle }>{ stateHeading(record.Lifecycle) }</span><span>Runtime · { record.Runtime }@QueueParticipantSummary(record)</span></a>@QueuePresentationActions(surface, record)</li>
 		}
 	</ul></div></div>
 }

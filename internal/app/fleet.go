@@ -302,6 +302,7 @@ type QueueExecutionView struct {
 	Cancellations           []queue.Cancellation                       `json:"cancellations"`
 	Runtime                 registry.RuntimeBinding                    `json:"runtime"`
 	NodeRuntimes            map[string]registry.RuntimeBinding         `json:"node_runtimes,omitempty"`
+	NodeParticipants        map[string]reference.RevisionRef           `json:"node_participants,omitempty"` // Exact snapshot participants, populated alongside NodeRuntimes before claim; projection only.
 	Artifact                *evidence.RuntimeArtifact                  `json:"artifact,omitempty"`
 	Receipts                []evidence.VerificationReceipt             `json:"receipts"`
 	DoerSteps               map[string][]orchestration.DoerStepView    `json:"doer_steps,omitempty"`
@@ -1217,6 +1218,7 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 		// Historical visibility is not processing admission. Validate every
 		// participant even when this Graph is unsupported by the bounded worker.
 		view.NodeRuntimes = make(map[string]registry.RuntimeBinding, len(topology.Nodes))
+		view.NodeParticipants = make(map[string]reference.RevisionRef, len(topology.Nodes))
 		for _, node := range topology.Nodes {
 			participantRef := node.Participant
 			participant, loadErr := s.FleetRepository.GetAgentRevision(ctx, participantRef.ID, participantRef.Revision)
@@ -1224,6 +1226,7 @@ func (s *Service) ListQueueAs(ctx context.Context, subject core.Subject) ([]Queu
 				return nil, fleet.ErrCorrupt
 			}
 			view.NodeRuntimes[node.ID] = participant.Runtime
+			view.NodeParticipants[node.ID] = participantRef
 		}
 		// Preserve the single-node response without claiming one runtime is
 		// representative of an entire multi-node Graph.

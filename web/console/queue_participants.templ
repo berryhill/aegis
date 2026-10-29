@@ -1,0 +1,14 @@
+package consoleweb
+
+// QueueParticipantSummary keeps exact participants and submission ownership
+// separate from the underlying runtime product in the collection row.
+templ QueueParticipantSummary(record RecordModel) {
+ <small>Participants ·
+  if record.Queue != nil {
+   { queueOptionalField(record.Queue.Participant) }
+  } else {
+   Unavailable
+  }
+ </small>
+ <small>Submission owner agent · { queueOptionalField(record.Source) }</small>
+}
