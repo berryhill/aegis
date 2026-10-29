@@ -6,6 +6,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- #382: refreshed Queue outcomes include exact authoritative artifact/receipt
+  references for general and Graph results, independently of history replay.
+  Native outcomes project the recorded last-pass check only from closed,
+  exact-pass output-bound history; this observation is not a terminal cause,
+  historical diagnostic or independent acceptance. Missing details stay unavailable.
+  See [scope and launch impact](docs/implementation/issue-382-outcome-projection.md).
+
 - Partial #346 source correction: Queue list/detail distinguish all exact pinned
   node participants from the submission owner and runtime product, including
   preclaim readback and historical Agent revisions. Missing or conflicting exact

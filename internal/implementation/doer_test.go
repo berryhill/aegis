@@ -111,6 +111,10 @@ func TestDoerThreePassesDiagnosisAndStageReadback(t *testing.T) {
 			t.Fatalf("stage %s: %v", s.Name, err)
 		}
 	}
+	h, historyErr := e.History("three", c)
+	if historyErr != nil || len(h.Checks) != 3 || h.Checks[0].Outcome != "failed" || h.Checks[1].Outcome != "failed" || h.Checks[2].Outcome != "passed" || h.Checks[2].OutputDigest != r.Passes[2].OutputDigest {
+		t.Fatalf("recorded checks %+v: %v", h.Checks, historyErr)
+	}
 	if err = e.Revalidate("three", c); err != nil {
 		t.Fatal(err)
 	}

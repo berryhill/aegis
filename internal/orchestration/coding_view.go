@@ -9,9 +9,11 @@ type CodingContinuation struct{ native *implementation.Continuation }
 // CodingHistoryView contains content-free, verified custody references only.
 // These service DTOs deliberately do not expose native kernel/state types.
 type CodingStageView struct {
-	PassID string `json:"pass_id,omitempty"`
-	Name   string `json:"name"`
-	Digest string `json:"digest"`
+	CheckOutcome string `json:"check_outcome,omitempty"`
+	OutputDigest string `json:"output_digest,omitempty"`
+	PassID       string `json:"pass_id,omitempty"`
+	Name         string `json:"name"`
+	Digest       string `json:"digest"`
 }
 type CodingHistoryView struct {
 	Stages             []CodingStageView `json:"stages,omitempty"`
@@ -62,6 +64,14 @@ func codingHistoryView(h implementation.History) CodingHistoryView {
 	v := CodingHistoryView{ConsumedBefore: h.ConsumedBefore, CumulativeConsumed: h.CumulativeConsumed, RemainingBudget: h.RemainingBudget, PredecessorRun: h.PredecessorRun, PredecessorHistory: h.PredecessorHistory, RunID: h.RunID, ContractDigest: h.ContractDigest, TaskDigest: h.TaskDigest, ContextDigest: h.ContextDigest, State: h.State, ReservedPasses: h.ReservedPasses, Digest: h.Digest, AcceptanceGate: h.AcceptanceGate}
 	for _, s := range h.Stages {
 		v.Stages = append(v.Stages, CodingStageView{PassID: s.PassID, Name: s.Name, Digest: s.Digest})
+	}
+	for i := range v.Stages {
+		for _, check := range h.Checks {
+			s := &v.Stages[i]
+			if s.Name == "check" && s.PassID == check.PassID && s.Digest == check.Digest {
+				s.CheckOutcome, s.OutputDigest = check.Outcome, check.OutputDigest
+			}
+		}
 	}
 	if h.Passes != nil {
 		v.Passes = make([]CodingPassView, len(h.Passes))
