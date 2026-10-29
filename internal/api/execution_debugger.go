@@ -11,6 +11,7 @@ import (
 
 func applyQueueDebugger(detail *consoleweb.QueueDetailModel, d app.ExecutionDebugger) {
 	detail.NativeOutcome = consoleQueueNativeOutcome(d)
+	applyQueueOutcomeReferences(detail, d)
 	wire, _ := json.Marshal(debuggerPresentation(d))
 	detail.DebuggerJSON = string(wire)
 	detail.Nodes = nil
@@ -75,6 +76,7 @@ func applyQueueDebugger(detail *consoleweb.QueueDetailModel, d app.ExecutionDebu
 func consoleQueueCurrentOutcome(ctx context.Context, svc *app.Service, subject core.Subject, d app.ExecutionDebugger) (string, error) {
 	q := &consoleweb.QueueDetailModel{CurrentState: d.State, DispositionID: d.DispositionID, DispositionReason: d.DispositionReason, RunResult: consoleQueueRunResult(ctx, svc, subject, d.QueueID, d)}
 	q.NativeOutcome = consoleQueueNativeOutcome(d)
+	applyQueueOutcomeReferences(q, d)
 	if d.Terminal {
 		q.TerminalOutcome = d.State
 	}
@@ -83,6 +85,14 @@ func consoleQueueCurrentOutcome(ctx context.Context, svc *app.Service, subject c
 		return "", err
 	}
 	return b.String(), nil
+}
+
+func applyQueueOutcomeReferences(q *consoleweb.QueueDetailModel, d app.ExecutionDebugger) {
+	q.ArtifactIDs, q.ReceiptIDs = nil, nil
+	if d.Terminal && d.DispositionID != "" {
+		q.ArtifactIDs = append([]string(nil), d.ArtifactIDs...)
+		q.ReceiptIDs = append([]string(nil), d.ReceiptIDs...)
+	}
 }
 
 // Geometry is computed once by the canonical Console adapter for initial and

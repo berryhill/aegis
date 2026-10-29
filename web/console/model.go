@@ -331,27 +331,29 @@ type QueueDetailModel struct {
 	Snapshot  []FieldModel
 
 	// Tab references (related records) and durable state facts.
-	Links             []LinkModel
-	GraphRunDigest    string
-	ArtifactState     string
-	ReceiptState      string
-	DispositionState  string
-	DispositionID     string                   // Authoritative disposition record identity (visible evidence chain anchor).
-	DispositionReason string                   // Authoritative disposition reason code (e.g. evidence_satisfied).
-	NativeOutcome     *QueueNativeOutcomeModel // Exact disposition-attempt custody; not selected content.
-	ArtifactID        string                   // Authoritative runtime artifact identity (visible evidence chain anchor).
-	TerminalOutcome   string
-	FailureLocation   string // Graph node ID where the authoritative failure lives.
-	CycleWarning      string // Bounded-cycle summary if any node is part of a cycle.
+	Links                   []LinkModel
+	GraphRunDigest          string
+	ArtifactState           string
+	ReceiptState            string
+	DispositionState        string
+	DispositionID           string // Authoritative disposition record identity (visible evidence chain anchor).
+	DispositionReason       string // Authoritative disposition reason code (e.g. evidence_satisfied).
+	ArtifactIDs, ReceiptIDs []string
+	NativeOutcome           *QueueNativeOutcomeModel // Exact disposition-attempt custody; not selected content.
+	ArtifactID              string                   // Authoritative runtime artifact identity (visible evidence chain anchor).
+	TerminalOutcome         string
+	FailureLocation         string // Graph node ID where the authoritative failure lives.
+	CycleWarning            string // Bounded-cycle summary if any node is part of a cycle.
 }
 
 type QueueNativeOutcomeModel struct {
-	Accepted                       bool
-	FailureCode                    string
-	AttemptID, ExecutionID, PassID string
-	HistoryDigest, ContractDigest  string
-	Consumed, Remaining            uint16
-	ArtifactIDs, ReceiptIDs        []string
+	CheckOutcome, CheckDigest, CheckOutputDigest string
+	Accepted                                     bool
+	FailureCode                                  string
+	AttemptID, ExecutionID, PassID               string
+	HistoryDigest, ContractDigest                string
+	Consumed, Remaining                          uint16
+	ArtifactIDs, ReceiptIDs                      []string
 }
 
 // QueueControlNodeModel projects one exact pinned Graph node onto authoritative
