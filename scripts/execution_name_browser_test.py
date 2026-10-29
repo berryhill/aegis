@@ -14,6 +14,33 @@ import time
 import console_browser_test as driver
 
 
+def navigate_ready(browser, url):
+    """Reject the previous same-URL document before waiting for layout."""
+    previous = browser.evaluate('performance.timeOrigin')
+    driver.navigate(browser, url)
+    driver.wait_for(browser,
+                    'performance.timeOrigin !== ' + json.dumps(previous) +
+                    ' && location.href === ' + json.dumps(url) +
+                    ' && document.readyState === "complete"',
+                    'new complete execution-name document')
+    result = browser.command('Runtime.evaluate', {
+        'expression': '(async () => {await document.fonts.ready; '
+                      'await new Promise(requestAnimationFrame); '
+                      'await new Promise(requestAnimationFrame); return true;})()',
+        'awaitPromise': True, 'returnByValue': True,
+    })
+    driver.require(not result.get('exceptionDetails') and
+                   result.get('result', {}).get('value') is True,
+                   'execution-name render readiness failed')
+
+
+def record_geometry(root, results, value):
+    # Persist the offending operands before any assertion can abort the proof.
+    results.append(value)
+    (root / 'browser-results.json').write_text(json.dumps(results, indent=2) + '\n')
+    print('execution-name geometry: ' + json.dumps(value, sort_keys=True), flush=True)
+
+
 def main():
     binary = Path(os.environ['AEGIS_EXECUTION_NAME_CANDIDATE']).resolve()
     root = Path(os.environ['AEGIS_EXECUTION_NAME_ROOT']).resolve()
@@ -38,7 +65,7 @@ def main():
                 browser = driver.DevTools(driver.page_websocket(port,time.monotonic()+8,chrome))
                 for domain in ('Page','Runtime','Network','Audits','Accessibility'):
                     browser.command(domain+'.enable')
-                driver.navigate(browser,origin+'/console/queue')
+                navigate_ready(browser,origin+'/console/queue')
                 driver.wait_for(browser,"!!document.querySelector('#password')",'login')
                 driver.insert_text(browser,'#password',os.environ['AEGIS_CONSOLE_PASSWORD'])
                 driver.click(browser,'#session-form button[type=submit]')
@@ -47,15 +74,15 @@ def main():
                 for width in (1280,390):
                     time.sleep(1)
                     browser.command('Emulation.setDeviceMetricsOverride',{'width':width,'height':900,'deviceScaleFactor':1,'mobile':False})
-                    driver.navigate(browser,origin+'/console/queue?visibility=all&limit=1')
+                    navigate_ready(browser,origin+'/console/queue?visibility=all&limit=1')
                     driver.wait_for(browser,"!!document.querySelector('#record-debug-queue')",'pinned list')
                     value=browser.evaluate('''(() => {const a=document.querySelector('#record-debug-queue'); const b=a.getBoundingClientRect();return {name:a.querySelector('strong').textContent,href:a.getAttribute('href'),width:innerWidth,left:b.left,right:b.right,injection:a.querySelector('changes')!==null};})()''')
+                    record_geometry(root, results, value)
                     driver.require(value['name']=='Review <changes> & "ship"','wrong pinned archived name')
                     driver.require('record_key=debug-queue' in value['href'],'changed detail identity')
                     driver.require(not value['injection'] and value['left']>=0 and value['right']<=width+1,'escaping or narrow viewport failure')
                     ax=browser.command('Accessibility.getFullAXTree')['nodes']
                     driver.require(any(n.get('role',{}).get('value')=='link' and 'Review <changes>' in n.get('name',{}).get('value','') for n in ax),'name absent from accessible link')
-                    results.append(value)
                 driver.require(not [e for e in browser.events if e.get('method')=='Audits.issueAdded' and e.get('params',{}).get('issue',{}).get('code')=='ContentSecurityPolicyIssue'],'CSP violation')
                 (root/'browser-results.json').write_text(json.dumps(results,indent=2)+'\n')
                 print('PASS: frozen candidate authenticated pinned archived name; 1280/390px, escaping, accessible link and identity')
