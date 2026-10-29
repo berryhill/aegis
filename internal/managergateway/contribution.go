@@ -103,6 +103,11 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 		if found, e := s.contributionTerminal(ctx, entry, contract, &result); e != nil {
 			return result, e
 		} else if found {
+			if args[0] == "status" {
+				if e = s.contributionContractStatus(ctx, entry, contract, &result); e != nil {
+					return result, e
+				}
+			}
 			break
 		}
 		continuity, readErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
@@ -129,6 +134,9 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 				continuity.HeldReason = execution.Reason
 			}
 			result.Data = map[string]any{"contract_digest": contract.Digest, "queue_item_id": contract.QueueItemID, "run_id": contract.RunID, "loop": contract.Loop, "execution_available": execution.Available, "execution": execution, "continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
+			if e := s.contributionContractStatus(ctx, entry, contract, &result); e != nil {
+				return result, e
+			}
 			break
 		}
 		result.Data = map[string]any{"continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
