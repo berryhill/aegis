@@ -1061,7 +1061,7 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 		consoleweb.FieldModel{Label: "Adapter", Value: fallback(view.Runtime.Adapter, "Unavailable")},
 		consoleweb.FieldModel{Label: "Target", Value: fallback(view.Runtime.Target, "Unavailable")},
 		consoleweb.FieldModel{Label: "Authority kind", Value: fallback(view.Submission.AuthorityKind, "Unavailable")},
-		consoleweb.FieldModel{Label: "Owner agent", Value: fallback(view.Submission.OwnerAgentID, "Unavailable")},
+		consoleweb.FieldModel{Label: "Submission owner agent", Value: fallback(view.Submission.OwnerAgentID, "Unavailable")},
 	)
 	if view.Runtime.Adapter == "" && view.Runtime.Runtime == "" && view.Runtime.Target == "" {
 		// already handled via fallback labels
@@ -1135,7 +1135,7 @@ func consoleQueueRecord(view app.QueueExecutionView, graphSets ...[]app.GraphVie
 	}
 	// 9. Records JSON (raw marshalled view) for the textual equivalent.
 	raw, _ := json.MarshalIndent(view, "", "  ")
-	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Revision: view.Item.Snapshot.ID, JSON: string(raw), Queue: detail}
+	return consoleweb.RecordModel{Key: view.Item.ItemID, Label: view.Item.ItemID, Summary: view.GraphRun.GraphRunID + " · " + state, Lifecycle: state, Runtime: fallback(view.Runtime.Runtime, "Unavailable"), Source: fallback(view.Submission.OwnerAgentID, "Unavailable"), Revision: view.Item.Snapshot.ID, JSON: string(raw), Queue: detail}
 }
 
 // resolvePinnedGraphRevision locates the exact Graph revision referenced by
@@ -1319,19 +1319,6 @@ func queueEndedAt(view app.QueueExecutionView) string {
 		return "Unavailable"
 	}
 	return consoleTime(view.Disposition.OccurredAt)
-}
-
-// queueParticipantLabel returns a stable participant label or "Unavailable".
-func queueParticipantLabel(view app.QueueExecutionView) string {
-	if view.Submission.OwnerAgentID != "" {
-		return view.Submission.OwnerAgentID
-	}
-	for _, child := range view.LoopExecutions {
-		if child.Participant.ID != "" {
-			return exactRevisionLabel(child.Participant.ID, child.Participant.Revision, child.Participant.Digest)
-		}
-	}
-	return "Unavailable"
 }
 
 // queueCycleWarning summarises the bounded-cycle band when any node is part
