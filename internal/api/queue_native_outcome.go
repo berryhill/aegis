@@ -2,7 +2,6 @@ package api
 
 import (
 	"github.com/berryhill/aegis/internal/app"
-	"github.com/berryhill/aegis/internal/orchestration"
 	consoleweb "github.com/berryhill/aegis/web/console"
 )
 
@@ -46,9 +45,9 @@ func consoleQueueNativeOutcome(d app.ExecutionDebugger) *consoleweb.QueueNativeO
 		out.ReceiptIDs = append([]string(nil), d.ReceiptIDs...)
 	case d.State == "failed" && d.DispositionReason == "implementation_failed" && h.State == "failed" && !p.Passed:
 		if p.Failure != nil {
-			out.FailureCode = orchestration.ReviewedDoerFailureCode(p.Failure.Code)
+			out.FailureCode = app.ReviewedCodingFailureCode(p.Failure.Code)
 			if out.FailureCode == "" {
-				out.FailureCode = orchestration.ReviewedDoerFailureCode(p.Failure.Reason)
+				out.FailureCode = app.ReviewedCodingFailureCode(p.Failure.Reason)
 			}
 		}
 

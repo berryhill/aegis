@@ -4,8 +4,15 @@ import (
 	"context"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/loop"
+	"github.com/berryhill/aegis/internal/orchestration"
 	"github.com/berryhill/aegis/internal/persistence/fleet"
 )
+
+// ReviewedCodingFailureCode projects the controller's closed diagnostic vocabulary
+// through the application boundary without exposing orchestration to transports.
+func ReviewedCodingFailureCode(code string) string {
+	return orchestration.ReviewedDoerFailureCode(code)
+}
 
 // nativeDebuggerEvidence reloads immutable artifact and receipt custody. History
 // alone never establishes acceptance. This does not reread today's host files.
