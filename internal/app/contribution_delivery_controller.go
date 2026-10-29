@@ -136,6 +136,9 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 		}
 	}
 	p := a.plan
+	if i.Operation != delivery.Commit && i.Operation != delivery.TransferGraph && !contributionRemoteScopeAllowed(ac, p, i) {
+		return delivery.ErrDenied
+	}
 	if i.Operation == delivery.ReconcileIssue {
 		// Credential possession and the task's delivery target grant neither this
 		// operation nor its repository resource. The exact capabilities must be
@@ -225,7 +228,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 	}
 	ref := delivery.Reference{Run: c.RunID, Contract: c.Digest, Candidate: state.CandidateEvidence.Digest}
 	err = s.WithContributionContinuityCandidateAs(ctx, subject, session, key, func(live context.Context, v orchestration.ContributionCandidate) error {
-		remoteOperations := []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge}
+		var remoteOperations []delivery.Operation
 		p := ContributionDeliveryPolicy{ControllerSession: session, Binding: fleetbadger.ContributionDeliveryBinding{QueueItemID: c.QueueItemID, OwnerID: c.OwnerID, Key: key, Reference: ref, FenceEpoch: role.Epoch, RoleBinding: role.Ref().Digest, Base: revision.Contribution.Managed.BaseBranch}, Loop: c.Loop, Workspace: c.Worktree, Source: v.Source.Digest, Tree: v.CandidateTree, BaseHead: c.Base, CandidatePolicy: v.Policy, Toolchain: v.Toolchain, QueueAttempt: v.QueueAttempt, Actor: d.policy.Actor, Branch: "contribution/v1/" + strings.TrimPrefix(c.Digest, "sha256:"), Timestamp: c.AdmittedAt.UTC().Format(time.RFC3339), Message: fmt.Sprintf("Contribution for issue %d\n", c.Source.URL.Number), Author: d.policy.Author, Committer: d.policy.Committer, AllowedFiles: files, ProtectionPolicy: d.policy.ProtectionPolicy, RequiredChecks: d.policy.RequiredChecks, RequiredReviewers: d.policy.RequiredReviewers, PostMergeChecks: d.policy.PostMergeChecks, MergeMethod: d.policy.MergeMethod, PRTitle: fmt.Sprintf("Contribution for issue %d", c.Source.URL.Number), PRBody: "Controller-owned contribution (contribution-publication.v1)."}
 		if c.Effect != "local-only" && c.Effect != "no-publish" {
 			b := d.policy.Binding
@@ -236,11 +239,13 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 			if authorityErr != nil || currentAuthority.ID != role.Authority.ID || currentAuthority.Digest != role.Authority.Digest {
 				return delivery.ErrDenied
 			}
-			if hasContributionIssueCapabilities(currentAuthority, c.Repository, c.Source.RepositoryID) {
-				remoteOperations = append(remoteOperations, delivery.ReconcileIssue)
+			remoteOperations = contributionApprovedRemoteOperations(currentAuthority, c.Repository, c.Source.RepositoryID)
+			if len(remoteOperations) == 0 {
+				return delivery.ErrDenied
 			}
-			// Existing authorities without the explicit issue grant retain their
-			// original operation pin. This does not rewrite historical policies.
+			// Keep operation rights separate from a usable credential reference.
+			// Historical policies remain retained independently; a current caller
+			// cannot reinterpret an old read grant as a new write grant.
 			p.CredentialPin = &ContributionDeliveryCredentialPin{Key: b.Key, BindingRevision: b.BindingRevision, SecretRecord: b.SecretRecord, Version: b.PinnedVersion, Destination: b.Destinations[0], Actor: d.policy.Actor, RepositoryID: c.Source.RepositoryID, Operations: remoteOperations}
 		}
 		policyRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "contribution-publication-v1", Digest: p.Digest()}

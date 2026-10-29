@@ -96,21 +96,30 @@ remain immutable. The earlier independent freeze is invalidated by these repairs
 
 ## Explicit issue-disposition composition (source candidate)
 
-Productive issue disposition additionally requires both exact capabilities in one
-already approved charter/mandate/session authority:
+Every credential-bearing productive remote operation requires both exact
+capabilities in one already approved charter/mandate/session authority. For issue
+disposition the unchanged spelling is:
 
 ```text
 github.issue_disposition.v1
 github.issue_disposition.v1:repository:<owner>/<repo>:<decimal-repository-ID>
 ```
 
+The general spelling is `<exact-operation>:repository:<owner>/<repo>:<decimal-ID>`
+alongside the separate `<exact-operation>` capability. This applies to object
+uploads, feature publication, pull requests, check readback, merge and issue
+disposition. A read credential reference or usable token never supplies these
+operation rights. Only actually approved operations enter the current immutable
+credential pin and custody allowlist; no current rights means productive denial.
+
 This is an additive operation-qualified resource-capability convention carried by
 the existing capability field, not an issued grant or an inferred repository
 permission. Repository spelling and immutable numeric ID must match the trusted
 projected plan exactly. No prefix, case folding, wildcard, cross-stanza union,
 token pushability, delivery target or credential scope substitutes for either
-capability. Existing authorities without both remain denied and retain the
-operation list that excludes issue disposition. No live charter, mandate,
+capability. Historical policy pins remain independently retained for read-only
+reconciliation; they are not rewritten or promoted into current write grants.
+No live charter, mandate,
 credential or configuration is changed by this implementation.
 
 Existing request/control/role, deployment, exact credential binding/version and
@@ -120,6 +129,14 @@ private frame must validate its opaque preclosure and the canonical issue intent
 a capability string or a policy receipt alone cannot authorize closure. Only
 explicitly qualified authorities project the issue operation into the immutable
 credential pin and custody allowlist. Historical policies are never rewritten.
+
+Operation approval requirements are reloaded from the exact session-bound charter
+revision/digest and selected enabled stanza. Missing, changed or unknown policy
+denies; another stanza's policy is never unioned. In the absence of a protected
+operation-approval consumer, a declared required operation returns typed approval
+unavailable before reservation/effect. The real Unix HTTP negative case retains
+native RED/GREEN and consumed budget, but proves canonical publication absence,
+no authored delivery ref and exact final-result absence.
 
 Journey readback consults the canonical final-result getter before new effects
 and after delivery. Only exact not-found falls through; corrupt or denied evidence
