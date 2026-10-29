@@ -108,6 +108,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   parser and owning-transport acceptance remain separately required.
 
 - Show the authenticated Execution Queue's current outcome above its topology,
+  including native `implementation_verified` and reviewed native failure codes.
+  Independently reload exact native artifact/receipt custody before acceptance;
+  reject corrupt/foreign evidence and do not infer check failure from digests.
   including authoritative disposition reasons, honest missing-cause fallback,
   separate verification/result availability, and exact-owner verified stored
   content where supported. Refresh terminal outcomes on the same page without

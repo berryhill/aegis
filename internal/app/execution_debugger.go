@@ -21,24 +21,27 @@ import (
 // ExecutionDebugger is a bounded content-free exact-run read model. Definition
 // context and interpreter observations confer neither authority nor completion.
 type ExecutionDebugger struct {
-	QueueID           string                `json:"queue_id"`
-	GraphRunID        string                `json:"graph_run_id"`
-	SnapshotDigest    string                `json:"snapshot_digest"`
-	Source            reference.RevisionRef `json:"source"`
-	Direct            bool                  `json:"direct"`
-	State             string                `json:"state"`
-	Terminal          bool                  `json:"terminal"`
-	DispositionReason string                `json:"disposition_reason"`
-	DispositionID     string                `json:"disposition_id,omitempty"`
-	ArtifactIDs       []string              `json:"artifact_ids,omitempty"`
-	ReceiptIDs        []string              `json:"receipt_ids,omitempty"`
-	Watermark         string                `json:"watermark"`
-	Version           uint64                `json:"version"`
-	ObservedAt        time.Time             `json:"observed_at"`
-	Notice            string                `json:"notice"`
-	Nodes             []DebuggerLoop        `json:"nodes"`
-	Dependencies      []DebuggerEdge        `json:"dependencies"`
-	GraphNodes        []GraphNodeView       `json:"graph_nodes,omitempty"`
+	NativeEvidenceVerified bool                  `json:"native_evidence_verified"`
+	QueueID                string                `json:"queue_id"`
+	GraphRunID             string                `json:"graph_run_id"`
+	SnapshotDigest         string                `json:"snapshot_digest"`
+	Source                 reference.RevisionRef `json:"source"`
+	Direct                 bool                  `json:"direct"`
+	State                  string                `json:"state"`
+	Terminal               bool                  `json:"terminal"`
+	DispositionReason      string                `json:"disposition_reason"`
+	DispositionID          string                `json:"disposition_id,omitempty"`
+	DispositionAttemptID   string                `json:"disposition_attempt_id,omitempty"`
+	DispositionExecutionID string                `json:"disposition_execution_id,omitempty"`
+	ArtifactIDs            []string              `json:"artifact_ids,omitempty"`
+	ReceiptIDs             []string              `json:"receipt_ids,omitempty"`
+	Watermark              string                `json:"watermark"`
+	Version                uint64                `json:"version"`
+	ObservedAt             time.Time             `json:"observed_at"`
+	Notice                 string                `json:"notice"`
+	Nodes                  []DebuggerLoop        `json:"nodes"`
+	Dependencies           []DebuggerEdge        `json:"dependencies"`
+	GraphNodes             []GraphNodeView       `json:"graph_nodes,omitempty"`
 }
 type DebuggerLoop struct {
 	NodeID      string                `json:"node_id"`
@@ -275,6 +278,8 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 		}
 		out.DispositionReason = disposition.ReasonCode
 		out.DispositionID = disposition.DispositionID
+		out.DispositionAttemptID = disposition.AttemptID
+		out.DispositionExecutionID = disposition.LoopExecutionID
 		out.State = string(disposition.State)
 		out.Terminal = true
 		out.ArtifactIDs = append([]string(nil), disposition.ArtifactIDs...)
@@ -283,6 +288,12 @@ func (s *Service) ExecutionDebuggerAs(ctx context.Context, subject core.Subject,
 		return out, err
 	}
 	out.Version += uint64(len(transitions)) * 8192
+	if out.Direct && out.State == "succeeded" && out.DispositionReason == "implementation_verified" {
+		if err := s.nativeDebuggerEvidence(ctx, out); err != nil {
+			return ExecutionDebugger{}, err
+		}
+		out.NativeEvidenceVerified = true
+	}
 	// The fingerprint excludes read time; polling an unchanged run is stable.
 	out.Watermark = ""
 	out.ObservedAt = time.Time{}

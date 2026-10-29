@@ -41,6 +41,7 @@ func TestQueueOutcomeSafeDisposition(t *testing.T) {
 		{"failed", "implementation_failed", "A more detailed cause was not recorded"},
 		{"failed", "secret stderr <script>", "unavailable"},
 		{"succeeded", "evidence_satisfied", "records success"},
+		{"succeeded", "implementation_verified", "implementation_verified"},
 		{"cancelled", "", "cancelled"},
 		{"denied", "", "denied"},
 		{"expired", "", "expired"},

@@ -41,7 +41,11 @@ Above the topology, the current-outcome summary separates actual Queue state,
 authoritative disposition and its closed public reason, verification status and
 selected-result availability. Queued and claimed/running observations are not a
 terminal result; a projection alone cannot establish success. A recorded success
-is displayed as disposition success, not as independently reverified acceptance.
+is displayed as disposition success. Direct native coding acceptance additionally
+requires independently reloaded native custody, exact artifact/receipt bindings,
+and intact content-addressed evidence; missing, corrupt or foreign evidence denies
+the read rather than establishing acceptance. This historical check does not
+rerun host tests or claim today's workspace still matches the recorded result.
 Only the existing selected-file evidence reader can label selected content verified.
 Native and Graph result types remain unsupported for selected-file content; this
 is an availability limitation, not an execution cause or a verification failure.
@@ -53,7 +57,8 @@ initial observation data and topology and stops protected polling.
 
 For legacy `implementation_failed` records without a finer authoritative cause,
 the summary explicitly says that detail was not recorded or is unavailable. It
-does not reconstruct raw stderr, private checker/model text, or infer a cause from
+shows only reviewed recorded native failure codes when present. It does not
+infer trusted-check failure from digest presence, reconstruct raw stderr, private checker/model text, or infer a cause from
 Requeue eligibility or topology. Historical execution is never rerun for diagnosis.
 
 ## Controlled regression evidence
