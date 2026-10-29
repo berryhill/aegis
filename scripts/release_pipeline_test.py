@@ -29,20 +29,22 @@ class PipelineTests(unittest.TestCase):
         shard = load("shards", "verify-go-shard.py")
         evidence = load("evidence", "verify-ci-evidence.py")
         matrix = self.jobs["go-shards"]
-        groups = matrix.split("group: [", 1)[1].split("]", 1)[0].split(", ")
-        self.assertEqual(groups, list(shard.GROUPS))
-        self.assertNotIn('execution', groups)
-        for heavy in ('implementation', 'orchestration'):
-            self.assertIn(heavy, groups)
-            self.assertEqual(shard.GROUPS[heavy], ('internal/' + heavy,))
-        self.assertEqual(shard.GROUPS['orchestration-contribution'], ('internal/orchestration',))
-        self.assertEqual(shard.GROUPS['implementation-contribution'], ('internal/implementation',))
-        self.assertIn("mode: [normal, race]", matrix)
-        self.assertIn("fail-fast: false", matrix)
-        names = {re.search(r"^    name: (.+)$", block, re.M)[1] for key, block in self.jobs.items() if key != "go-shards"}
-        names.update(f"Go {mode} / {group}" for mode in ("normal", "race") for group in shard.GROUPS)
+        rows = re.findall(r'^          - \{mode: (normal|race), group: ([a-z-]+)\}$', matrix, re.M)
+        expected = [(mode, group) for mode, lanes in shard.BUNDLES.items() for group in lanes]
+        self.assertEqual(rows, expected)
+        self.assertEqual(matrix.count('          - '), len(rows))
+        # No Cartesian axes, dynamic include/exclude or generated child matrix.
+        matrix_body = matrix.split('      matrix:\n', 1)[1].split('    runs-on:', 1)[0]
+        self.assertEqual([line for line in matrix_body.splitlines() if line.strip() and not line.lstrip().startswith('#')],
+                         ['        include:'] + [f'          - {{mode: {mode}, group: {group}}}' for mode, group in rows])
+        self.assertIn('fail-fast: false', matrix)
+        self.assertIn('--bundle "$SHARD_GROUP"', matrix)
+        names = {re.search(r'^    name: (.+)$', block, re.M)[1] for key, block in self.jobs.items() if key != 'go-shards'}
+        names.update(f'Go {mode} / {group}' for mode, group in rows)
         self.assertEqual(names, evidence.REQUIRED_JOBS)
-        self.assertIn("-count=1", (ROOT / "scripts/verify-go-shard.py").read_text())
+        self.assertEqual(len(names), len(self.jobs) - 1 + len(rows))
+        self.assertLessEqual(len(names), 27, 'expanded ordinary CI job ceiling')
+        self.assertIn('-count=1', (ROOT / 'scripts/verify-go-shard.py').read_text())
 
     def test_aggregate_rejects_every_nonsuccess_and_missing_gate(self):
         gate = self.jobs["release-readiness"]
@@ -95,11 +97,37 @@ class PipelineTests(unittest.TestCase):
             if name == "go-shards":
                 # Measured slow race groups include setup plus the complete
                 # package run. Every other matrix/job allowance remains ten.
-                self.assertIn("timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b' || matrix.group == 'remainder-a') && 16 || 10 }}", block)
+                self.assertIn("timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b') && 16 || 10 }}", block)
             else:
                 self.assertIn("timeout-minutes: 10", block)
         self.assertNotIn("MemoryMax=", self.ci)
         self.assertNotIn("CPUQuota=", self.ci)
+
+    def test_all_workflows_triggers_and_children_are_closed(self):
+        workflows = {p.name: p.read_text() for p in (ROOT / '.github/workflows').iterdir()
+                     if p.suffix in ('.yml', '.yaml')}
+        self.assertEqual(set(workflows), {'ci.yml', 'release.yml'},
+                         'new workflows require ordinary-event volume/trigger review')
+        self.assertEqual(self.ci.split('on:\n', 1)[1].split('\npermissions:', 1)[0].strip(),
+                         'push:\n    branches: [main]\n  pull_request:')
+        self.assertEqual(self.release.split('on:\n', 1)[1].split('\npermissions:', 1)[0].strip(),
+                         'push:\n    tags: ["v*"]')
+        for name, text in workflows.items():
+            # There are no reusable jobs or composite/local/remote child actions.
+            # Reject unknown topology instead of undercounting hidden fan-out.
+            uses = re.findall(r'^\s+(?:- )?uses: (.+)$', text, re.M)
+            self.assertTrue(uses, name)
+            self.assertLessEqual(set(uses), {'actions/checkout@v4', 'actions/setup-go@v6'})
+            self.assertNotRegex(text, r'^    uses:', name)
+            for child in ('workflow_call', 'workflow_run', 'workflow_dispatch', 'repository_dispatch',
+                          'gh workflow', '/dispatches', 'actions/github-script', 'strategy:'):
+                if child == 'strategy:' and name == 'ci.yml':
+                    self.assertEqual(text.count(child), 1)
+                else:
+                    self.assertNotIn(child, text, name)
+        self.assertEqual(set(self.jobs), {'repository-checks', 'go-shards', 'installed-proof',
+                                        'vet', 'authority-denial-matrix', 'vulnerability-scan',
+                                        'race', 'release-readiness'})
 
     def test_tag_publisher_consumes_parent_and_tests_final_bytes_once(self):
         self.assertIn("scripts/release-readiness-mode.py . prepared", self.release)

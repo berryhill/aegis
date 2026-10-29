@@ -14,8 +14,10 @@ WORKFLOW = ".github/workflows/ci.yml"
 REQUIRED_JOBS = frozenset({"Exact-head release readiness", "Race tests", "Repository checks", "Go vet",
                            "Authority denial matrix", "Vulnerability scan",
                            "Release package and installed proof"}
-                          | {f"Go {mode} / {group}" for mode in ("normal", "race")
-                             for group in ("api-a", "api-b", "implementation", "implementation-contribution", "orchestration", "orchestration-contribution", "manager", "manager-contribution-repair", "manager-contribution-disconnect", "manager-contribution-resume", "manager-contribution-restart", "manager-contribution-joint", "manager-contribution-cancel", "manager-contribution-final", "manager-contribution-readback", "cli", "cli-command", "cli-contribution-root", "cli-contribution-final", "cli-contribution-disconnect", "cli-contribution-approval", "persistence", "update", "remainder-a", "remainder-b")})
+                          | {f"Go {mode} / {group}" for mode, groups in {
+                                 "normal": ("api-a", "api-b", "implementation", "orchestration", "manager-a", "manager-b", "cli", "support"),
+                                 "race": ("api-a", "api-b", "implementation", "orchestration", "manager-a", "manager-b", "manager-c", "manager-d", "cli-command", "cli", "support-a", "support-b"),
+                             }.items() for group in groups})
 
 
 def validate_sha(value):

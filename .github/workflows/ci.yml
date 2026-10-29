@@ -48,12 +48,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [normal, race]
-        group: [api-a, api-b, implementation, implementation-contribution, orchestration, orchestration-contribution, manager, manager-contribution-repair, manager-contribution-disconnect, manager-contribution-resume, manager-contribution-restart, manager-contribution-joint, manager-contribution-cancel, manager-contribution-final, manager-contribution-readback, cli, cli-command, cli-contribution-root, cli-contribution-final, cli-contribution-disconnect, cli-contribution-approval, persistence, update, remainder-a, remainder-b]
+        # Mode-specific packing: 8 normal + 12 race lanes, not 25 x 2 jobs.
+        # Existing subprocess partitions/alarms remain independently enforced.
+        include:
+          - {mode: normal, group: api-a}
+          - {mode: normal, group: api-b}
+          - {mode: normal, group: implementation}
+          - {mode: normal, group: orchestration}
+          - {mode: normal, group: manager-a}
+          - {mode: normal, group: manager-b}
+          - {mode: normal, group: cli}
+          - {mode: normal, group: support}
+          - {mode: race, group: api-a}
+          - {mode: race, group: api-b}
+          - {mode: race, group: implementation}
+          - {mode: race, group: orchestration}
+          - {mode: race, group: manager-a}
+          - {mode: race, group: manager-b}
+          - {mode: race, group: manager-c}
+          - {mode: race, group: manager-d}
+          - {mode: race, group: cli-command}
+          - {mode: race, group: cli}
+          - {mode: race, group: support-a}
+          - {mode: race, group: support-b}
     runs-on: ubuntu-latest
     # Include toolchain setup/compilation outside the Go test-process budget.
     # All other jobs retain their existing bound; coverage is never skipped.
-    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b' || matrix.group == 'remainder-a') && 16 || 10 }}
+    timeout-minutes: ${{ matrix.mode == 'race' && (matrix.group == 'api-a' || matrix.group == 'api-b') && 16 || 10 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,9 +97,9 @@ jobs:
         run: |
           set -eu
           if [ "$TEST_MODE" = race ]; then
-            python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP" --race
+            python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --bundle "$SHARD_GROUP" --race
           else
-            python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --group "$SHARD_GROUP"
+            python3 scripts/verify-budget.py python3 scripts/verify-go-shard.py --bundle "$SHARD_GROUP"
           fi
       - name: Source metadata unchanged
         run: |
