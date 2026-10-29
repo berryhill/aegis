@@ -26,6 +26,8 @@ func TestAPIHTTPErrorHandlerPreservesErrorMapping(t *testing.T) {
 	}{
 		{"denied", fmt.Errorf("%w: private detail", app.ErrDenied), http.StatusForbidden, "denied"},
 		{"unauthenticated", app.ErrUnauthenticated, http.StatusUnauthorized, "unauthenticated"},
+		{"invalid_recovery", fmt.Errorf("%w: private detail", app.ErrNativeRecoveryEvidenceInvalid), http.StatusConflict, "native_recovery_evidence_invalid"},
+		{"missing_recovery", app.ErrNativeRecoveryEffectEvidenceMissing, http.StatusConflict, "native_recovery_effect_evidence_missing"},
 		{"unexpected", errors.New("private detail"), http.StatusInternalServerError, "internal_error"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

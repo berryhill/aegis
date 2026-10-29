@@ -13,6 +13,7 @@ import (
 // History is a content-free native custody projection, not a completion receipt.
 // ReservedPasses includes proposals which failed before producing check evidence.
 type History struct {
+	Recovery           Recovery        `json:"recovery"`
 	Checks             []RecordedCheck `json:"checks,omitempty"`
 	Stages             []Stage         `json:"stages,omitempty"`
 	ConsumedBefore     uint16          `json:"consumed_before"`
@@ -40,10 +41,17 @@ type RecordedCheck struct {
 
 // History never rereads host files: historical evidence remains readable after
 // later authorized corrections. It verifies every referenced custody blob.
-func (e *Executor) History(id string, c loop.VerifiedImplementation) (History, error) {
-	var out History
+func (e *Executor) History(id string, c loop.VerifiedImplementation) (out History, err error) {
+	missingRecord := false
+	defer func() {
+		if err != nil && !missingRecord {
+			out = History{}
+			err = fmt.Errorf("%w: %v", ErrRecoveryEvidenceInvalid, err)
+		}
+	}()
 	r, err := e.Read(id)
 	if err != nil {
+		missingRecord = errors.Is(err, ErrNotFound)
 		return out, err
 	}
 	cd, err := c.Digest()
@@ -241,6 +249,7 @@ func (e *Executor) History(id string, c loop.VerifiedImplementation) (History, e
 	out.CumulativeConsumed = r.ConsumedBefore + out.ReservedPasses
 	out.RemainingBudget = uint16(c.MaxPasses) - out.CumulativeConsumed
 	out.PredecessorRun, out.PredecessorHistory = r.PredecessorRun, r.PredecessorHistory
+	out.Recovery = e.recovery(r, c)
 	return out, nil
 }
 
@@ -251,7 +260,7 @@ func (e *Executor) CheckRecoveryState(id string, c loop.VerifiedImplementation) 
 	if err != nil {
 		return h, err
 	}
-	if h.State != "failed" || h.ReservedPasses == 0 || c.RepositoryContext == nil {
+	if h.State != "failed" || h.ReservedPasses == 0 || h.RemainingBudget == 0 || c.RepositoryContext == nil {
 		return h, errors.New("native coding recovery requires known failure and remaining budget")
 	}
 	last := h.Passes[len(h.Passes)-1]

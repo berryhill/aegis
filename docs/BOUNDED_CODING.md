@@ -196,7 +196,12 @@ controller's recorded current writable preimage while keeping the original
 read-only context. Fresh authority still applies. Success, exhaustion, unknown or
 partial effects, missing/corrupt evidence, source drift, swapped references and
 conflicting successors deny. Do not republish, rotate uncertain intent or create
-a successor merely to evade failure. A pre-apply continuation must reverify the
+a successor merely to evade failure. An authenticated exact stable-key Requeue
+reconciles its already admitted immutable successor before fresh-continuation
+preimage checks, including after successful effects changed the source. This
+read-only reconciliation neither resumes runtime work nor reserves new authority.
+Changed intent conflicts and a different key cannot acquire another successor.
+A pre-apply continuation must reverify the
 recorded preimage, retain its consumed pass and prepared/not-delivered distinction,
 and cannot infer a stop acknowledgment or a historical failure cause. A successfully
 returned managed turn rejected by strict proposal decoding additionally requires
@@ -208,6 +213,37 @@ not make an earlier failure recoverable. Missing
 witnesses, unknown/interrupted outcomes and partial applies still deny. Distinct
 tasks can retire only exactly owned, idle, terminal zero-authority coding runtimes;
 they do not reset the failed task's budget. First reconcile authoritative history.
+
+## Historical native recovery assessment (#410 source candidate)
+
+Authenticated `queue show ITEM` and `GET /v1/queue/:item` expose
+`coding_history[attempt].recovery` with content-free `effect`, `decision`,
+`reason` and `next_action`. `no_apply_proven` requires validated durable
+prepared-input custody and, after delivery, the matching closed
+`proposal_rejected` witness. `apply_observed` means a verified completed
+candidate/check boundary, not software acceptance or permission to replay.
+`unknown` never means no effects, even if workspace bytes are unchanged.
+Invalid or substituted custody fails closed with
+`native_recovery_evidence_invalid`; it is not an empty successful history.
+
+The legacy `gate` / `input_prepared` / `input_delivered` history without a
+rejection or completed candidate witness returns `policy_decision_required`,
+`native_recovery_effect_evidence_missing`, and
+`preserve_history_no_supported_reconciliation`. This is an actionable stop:
+retain the terminal Queue and evidence, report the missing historical fact,
+and request policy-owner review. **No supported reconciliation/approval action
+currently supplies that fact.** Review does not authorize a replay; do not
+edit custody, infer a witness from narration/absence/unchanged bytes, reopen a
+terminal Queue, republish, rotate keys or reset the budget.
+
+Only existing proven histories can request the already-supported authenticated
+linked Requeue under existing policy, exact lineage and fresh checks. Its
+assessment is not authority: source/context, lifecycle, identity, idempotency,
+successor uniqueness and cumulative budget are rechecked before any effect.
+Exhausted, cancelled, expired and revoked histories remain unavailable. A
+transport loss preserves the same intent; reconcile exact owning-service
+readback before retrying. No new recovery command or human approval grant is
+introduced. Confirm installed help: source additions are not installed adoption.
 
 ## Qualification tiers
 

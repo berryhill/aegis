@@ -1,10 +1,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -41,12 +45,23 @@ func TestAuthenticatedCodingMalformedProposalCorrectionRequeue(t *testing.T) {
 	authenticatedCodingCorrectionRequeue(t, false, true)
 }
 
+func TestAuthenticatedCodingLegacyRecoveryDenial(t *testing.T) {
+	authenticatedCodingCorrectionRequeue(t, false, true, true)
+}
+
 func authenticatedCodingCorrectionRequeue(t *testing.T, noApply bool, malformedProposal ...bool) {
-	malformed := len(malformedProposal) == 1 && malformedProposal[0]
+	malformed := len(malformedProposal) >= 1 && malformedProposal[0]
+	legacy := len(malformedProposal) > 1 && malformedProposal[1]
 	s := apiService(t)
+	if port := os.Getenv("AEGIS_ACCEPTANCE_PORT"); port != "" {
+		s.Config.API.Console.Origin = "http://127.0.0.1:" + port
+	}
+	if port := os.Getenv("AEGIS_ACCEPTANCE_PORT"); port != "" {
+		s.Config.API.Listen = "127.0.0.1:" + port
+	}
 	clock := newRequeueStageClock(s.Now())
 	s.Now = clock.Now
-	configureAPIFleet(t, s)
+	closeFleet := configureRecoveryAPIFleet(t, s)
 	s.Config.Credentials.Authority.DeploymentID = "coding-requeue-fixture"
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -136,7 +151,8 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.QueueWorker.ConfigureImplementation(config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{outer}, LayaPython: laya, LayaHome: home}, s.Config.StateDir, s.Hermes); err != nil {
+	s.Config.Implementation = config.Implementation{GoBinary: goBinary, AuthorizedContracts: []string{outer}, LayaPython: laya, LayaHome: home}
+	if err = s.QueueWorker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, s.Hermes); err != nil {
 		t.Fatal(err)
 	}
 	install := filepath.Join(root, "install")
@@ -187,9 +203,13 @@ else
 fi
 while IFS= read -r rest; do :; done
 `, root, patchEvent("result.txt", "hello"), patchEvent("result.txt", "world"), root, root, root, firstEvent, root, root, root, event("42")))
+	stopped := false
 	done := make(chan error, 1)
 	go func() { done <- Serve(ctx, s) }()
 	defer func() {
+		if stopped {
+			return
+		}
 		cancel()
 		if err := <-done; err != nil {
 			t.Error(err)
@@ -283,6 +303,103 @@ while IFS= read -r rest; do :; done
 		assertInput(old, "prompt-first")
 	}
 	selector := app.RequeueQueueItemInput{QueueItem: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: old.Item.ItemID, Digest: old.Item.Digest}, IdempotencyKey: "coding-correction"}
+	if legacy {
+		// Isolated durable migration fixture only: recreate the historical writer's
+		// exact delivered-only shape. Never infer or write a replacement witness.
+		custody := s.FleetRepository.(interface{ ImplementationStore() implementation.Store }).ImplementationStore()
+		kernel := implementation.Executor{DB: custody}
+		record, x := kernel.Read(old.Item.ItemID)
+		if x != nil {
+			t.Fatal(x)
+		}
+		record.Passes[0].Failure = nil
+		stages := record.Stages[:0]
+		for _, stage := range record.Stages {
+			if stage.Name != "proposal_rejected" {
+				stages = append(stages, stage)
+			}
+		}
+		record.Stages = stages
+		retained, _ := json.Marshal(record)
+		if x = custody.Put([]byte("implementation/run/"+hash([]byte(record.RunID))), retained); x != nil {
+			t.Fatal(x)
+		}
+		var before app.QueueExecutionView
+		apiRequest(t, client, http.MethodGet, "/v1/queue/"+old.Item.ItemID, nil, &before, http.StatusOK)
+		recovery := before.CodingHistory[old.Attempts[0].AttemptID].Recovery
+		if recovery.Effect != "unknown" || recovery.Decision != "policy_decision_required" || recovery.Reason != "native_recovery_effect_evidence_missing" {
+			t.Fatal(recovery)
+		}
+		cliSvc := app.Service{Config: s.Config}
+		cliSvc.Config.Credentials.Authority = config.CredentialAuthority{}
+		cli := newInstalledLoopQueueClient(t, &cliSvc)
+		var cliView app.QueueExecutionView
+		if x := cli.run(&cliView, "queue", "show", old.Item.ItemID); x != nil {
+			t.Fatal("actual frozen CLI", x)
+		}
+		if !reflect.DeepEqual(cliView.CodingHistory, before.CodingHistory) {
+			t.Fatal("CLI projection mismatch")
+		}
+		t.Log("ACTUAL_FROZEN_CLI authenticated queue show recovered exact legacy unknown assessment")
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				sel := selector
+				sel.IdempotencyKey = fmt.Sprintf("concurrent-%d", i%2)
+				var denial struct {
+					Code string `json:"code"`
+				}
+				apiRequest(t, client, http.MethodPost, "/v1/queue/"+old.Item.ItemID+"/requeue", sel, &denial, http.StatusConflict)
+				if denial.Code != "native_recovery_effect_evidence_missing" {
+					t.Error(denial)
+				}
+			}(i)
+		}
+		wg.Wait()
+		t.Log("CONCURRENT_DENIAL eight same/different-key authenticated requests all fixed 409")
+		prompt, _ := os.ReadFile(filepath.Join(root, "prompt-latest"))
+		// Same identity after a lost denial response and a different key both deny;
+		// neither obtains a successor or another runtime turn.
+		for _, key := range []string{"legacy-recovery", "legacy-recovery", "different-key"} {
+			selector.IdempotencyKey = key
+			var denial struct {
+				Code string `json:"code"`
+			}
+			apiRequest(t, client, http.MethodPost, "/v1/queue/"+old.Item.ItemID+"/requeue", selector, &denial, http.StatusConflict)
+			if denial.Code != "native_recovery_effect_evidence_missing" {
+				t.Fatal(denial)
+			}
+		}
+		var after app.QueueExecutionView
+		apiRequest(t, client, http.MethodGet, "/v1/queue/"+old.Item.ItemID, nil, &after, http.StatusOK)
+		a, _ := json.Marshal(before)
+		b, _ := json.Marshal(after)
+		if string(a) != string(b) {
+			t.Fatal("legacy historical readback changed")
+		}
+		got, _ := os.ReadFile(filepath.Join(root, "prompt-latest"))
+		if string(got) != string(prompt) {
+			t.Fatal("denial invoked runtime")
+		}
+		for path, text := range files {
+			got, x := os.ReadFile(filepath.Join(workspace, path))
+			if x != nil || string(got) != text {
+				t.Fatal("denial changed workspace", path, x)
+			}
+		}
+		if _, x = custody.Get([]byte("implementation/successor/" + hash([]byte(record.RunID)))); !errors.Is(x, implementation.ErrNotFound) {
+			t.Fatal("denial reserved successor", x)
+		}
+		cancel()
+		if x := <-done; x != nil {
+			t.Fatal(x)
+		}
+		stopped = true
+		recoveryServiceRestart(t, s, closeFleet, selector, before, false)
+		return
+	}
 	for _, tc := range []struct {
 		name, path string
 		ref        reference.DigestRef
@@ -316,8 +433,87 @@ while IFS= read -r rest; do :; done
 			t.Fatalf("same contract reset admitted: %+v", denied)
 		}
 	}
+	if malformed {
+		// Commit the operation but discard its success body: only the original
+		// authenticated predecessor selector and stable key survive at client.
+		wire, _ := json.Marshal(selector)
+		var wg sync.WaitGroup
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				req, _ := http.NewRequest(http.MethodPost, "http://unix/v1/queue/"+old.Item.ItemID+"/requeue", bytes.NewReader(wire))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer "+s.Config.API.Token)
+				resp, x := client.Do(req)
+				if x != nil {
+					t.Error(x)
+					return
+				}
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					t.Errorf("same-key concurrent recovery: %d", resp.StatusCode)
+				}
+			}()
+		}
+		// Competing keys race the admitted recovery, but may not consume a
+		// second slot. Wait only for the canonical winner reservation, not its
+		// runtime completion, so this is an admissible concurrency journey.
+		for i := 0; i < 4; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				deadline := time.Now().Add(10 * time.Second)
+				var fact app.LoopReexecutionFact
+				for s.Store.Load("queue-loop-reexecution-successor", old.Item.ItemID, &fact) != nil {
+					if time.Now().After(deadline) {
+						t.Error("winner reservation missing")
+						return
+					}
+					time.Sleep(time.Millisecond)
+				}
+				other := selector
+				other.IdempotencyKey = fmt.Sprintf("competing-recovery-%d", i)
+				b, _ := json.Marshal(other)
+				req, _ := http.NewRequest(http.MethodPost, "http://unix/v1/queue/"+old.Item.ItemID+"/requeue", bytes.NewReader(b))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("Authorization", "Bearer "+s.Config.API.Token)
+				resp, x := client.Do(req)
+				if x != nil {
+					t.Error(x)
+					return
+				}
+				defer resp.Body.Close()
+				var denial struct {
+					Code string `json:"code"`
+				}
+				json.NewDecoder(resp.Body).Decode(&denial)
+				if !(resp.StatusCode == http.StatusConflict && denial.Code == "conflict") && !(resp.StatusCode == http.StatusForbidden && denial.Code == "denied") {
+					t.Errorf("different-key recovery admitted: %d %s", resp.StatusCode, denial.Code)
+				}
+			}(i)
+		}
+		wg.Wait()
+	}
 	var next app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/queue/"+old.Item.ItemID+"/requeue", selector, &next, http.StatusOK)
+	if malformed {
+		prompt, _ := os.ReadFile(filepath.Join(root, "prompt-latest"))
+		var again app.QueueLoopResult
+		apiRequest(t, client, http.MethodPost, "/v1/queue/"+old.Item.ItemID+"/requeue", selector, &again, http.StatusOK)
+		got, _ := os.ReadFile(filepath.Join(root, "prompt-latest"))
+		if again.QueueItemID != next.QueueItemID || again.Execution == nil || len(again.Execution.Attempts) != 1 || string(got) != string(prompt) {
+			t.Fatal("reconciliation executed effects or changed successor")
+		}
+		changed := input
+		changed.Activate = false
+		changed.IdempotencyKey = selector.IdempotencyKey
+		changed.Reexecution = &app.LoopReexecution{PreviousQueue: selector.QueueItem, PreviousDisposition: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: old.Disposition.DispositionID, Digest: old.Disposition.Digest}}
+		changed.Inputs = []graph.NormalizedInput{{PortID: "changed", Type: graph.TypeString, Value: json.RawMessage(`"changed"`)}}
+		apiRequest(t, client, http.MethodPost, "/v1/loops/queue", changed, nil, http.StatusConflict)
+	}
+
 	if next.Execution == nil || next.Execution.Projection.State != queue.StateSucceeded {
 		t.Fatalf("correction not successful: %+v", next)
 	}
@@ -378,6 +574,15 @@ while IFS= read -r rest; do :; done
 	apiRequest(t, client, http.MethodGet, "/v1/queue/"+corrected.Item.ItemID, nil, &successful, http.StatusOK)
 	if successful.CodingHistory[corrected.Attempts[0].AttemptID].Digest != h.Digest {
 		t.Fatal("public successor history drift")
+	}
+	if malformed {
+		selector.IdempotencyKey = "coding-correction"
+		cancel()
+		if x := <-done; x != nil {
+			t.Fatal(x)
+		}
+		stopped = true
+		recoveryServiceRestart(t, s, closeFleet, selector, corrected, true)
 	}
 	t.Logf("authenticated Run failed after 1 native pass; authenticated requeue succeeded with 1 remaining pass; cumulative=2; predecessor history=%s successor history=%s", history.Digest, h.Digest)
 }

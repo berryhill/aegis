@@ -25,6 +25,10 @@ type LoopReexecution = continuation.Reexecution
 
 var ErrDoerReexecutionBudgetExhausted = errors.New("doer_reexecution_budget_exhausted")
 
+// No supported reconciliation can manufacture missing historical effect facts.
+var ErrNativeRecoveryEffectEvidenceMissing = errors.New("native_recovery_effect_evidence_missing")
+var ErrNativeRecoveryEvidenceInvalid = orchestration.ErrNativeRecoveryEvidenceInvalid
+
 // LoopReexecutionFact is an append-only operation intent, not a new definition
 // or runtime authority. The previous Queue can have exactly one successor.
 type LoopReexecutionFact struct {
@@ -116,6 +120,9 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 	var codingHistory orchestration.CodingHistoryView
 	if contract.Coding != nil {
 		h, x := s.QueueWorker.CodingHistory(ctx, in.Reexecution.PreviousQueue, attempt.AttemptID, revision)
+		if errors.Is(x, ErrNativeRecoveryEvidenceInvalid) {
+			return f, ErrNativeRecoveryEvidenceInvalid
+		}
 		if x != nil || h.State != "failed" || h.ReservedPasses == 0 {
 			return f, ErrDenied
 		}
@@ -148,6 +155,9 @@ func (s *Service) deriveLoopReexecution(ctx context.Context, sub core.Subject, i
 	if contract.Coding != nil {
 		if codingHistory.ConsumedBefore != contract.MaxAttempts-cap || codingHistory.RemainingBudget != cap-consumed {
 			return f, ErrDenied
+		}
+		if codingHistory.Recovery.Decision == "policy_decision_required" {
+			return f, ErrNativeRecoveryEffectEvidenceMissing
 		}
 		if _, x := s.QueueWorker.PrepareCodingContinuation(ctx, in.Reexecution.PreviousQueue, attempt.AttemptID, revision, head, requestID+"-queue", cap-consumed); x != nil {
 			return f, ErrDenied

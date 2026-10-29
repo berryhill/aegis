@@ -76,7 +76,7 @@ func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (st
 	if last.ContextStateDigest != "" && last.WorkspaceDigest != "" && last.OutputDigest != "" {
 		return last.ContextStateDigest, "completed-check.v1", nil
 	}
-	if !r.ManagedInput || c.DecisionMode != "doer.v1" || c.RepositoryContext == nil || r.ContextDigest == "" || last.Input == nil || (last.Input.Delivered && (last.Failure == nil || !IsProposalRejection(*last.Failure))) || last.WorkspaceDigest != "" || last.OutputDigest != "" || last.ContextStateDigest != "" || last.ContextIdentity != "" || last.Passed || r.ConsumedBefore+uint16(len(r.Passes)) >= uint16(c.MaxPasses) {
+	if !r.ManagedInput || c.DecisionMode != "doer.v1" || c.RepositoryContext == nil || r.ContextDigest == "" || last.Input == nil || (last.Input.Delivered && (last.Failure == nil || !IsProposalRejection(*last.Failure))) || last.WorkspaceDigest != "" || last.OutputDigest != "" || last.ContextStateDigest != "" || last.ContextIdentity != "" || last.Passed {
 		return "", "", reject
 	}
 	if e.revalidateInputs(c, r, false) != nil {

@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add typed historical native recovery assessment and closed missing/invalid
+  evidence denials through authenticated Queue readback and online CLI. Preserve
+  legacy terminal history, exact lineage and cumulative budgets; no reconciliation
+  grant or terminal reopen is added. See [native recovery](docs/BOUNDED_CODING.md).
+
 - #382: refreshed Queue outcomes include exact authoritative artifact/receipt
   references for general and Graph results, independently of history replay.
   Native outcomes project the recorded last-pass check only from closed,
