@@ -129,6 +129,10 @@ func classifyError(err error) (int, string, string) {
 		return http.StatusConflict, app.ProviderAuthenticationFailureCode(err), "exact native source connection denied"
 	case errors.Is(err, app.ErrUnauthenticated):
 		return http.StatusUnauthorized, "unauthenticated", "authentication failed"
+	case errors.Is(err, app.ErrNativeRecoveryEvidenceInvalid):
+		return http.StatusConflict, "native_recovery_evidence_invalid", "historical native effect evidence is invalid; retain history and do not replay"
+	case errors.Is(err, app.ErrNativeRecoveryEffectEvidenceMissing):
+		return http.StatusConflict, "native_recovery_effect_evidence_missing", "historical native effects are unproven; preserve history and budget; recovery requires an explicit policy decision, not a new Run key"
 	case errors.Is(err, app.ErrDoerReexecutionBudgetExhausted):
 		return http.StatusConflict, "doer_reexecution_budget_exhausted", "the immutable implementation-attempt budget is exhausted"
 	case errors.Is(err, app.ErrDenied):

@@ -2,6 +2,9 @@ package orchestration
 
 import "github.com/berryhill/aegis/internal/implementation"
 
+// ErrNativeRecoveryEvidenceInvalid preserves the closed native custody denial.
+var ErrNativeRecoveryEvidenceInvalid = implementation.ErrRecoveryEvidenceInvalid
+
 // CodingContinuation is an opaque controller capability. Only native custody
 // validation can produce its kernel state; application callers cannot forge it.
 type CodingContinuation struct{ native *implementation.Continuation }
@@ -13,22 +16,30 @@ type CodingStageView struct {
 	Name   string `json:"name"`
 	Digest string `json:"digest"`
 }
+type CodingRecoveryView struct {
+	Effect     string `json:"effect"`
+	Decision   string `json:"decision"`
+	Reason     string `json:"reason"`
+	NextAction string `json:"next_action"`
+}
+
 type CodingHistoryView struct {
-	Stages             []CodingStageView `json:"stages,omitempty"`
-	ConsumedBefore     uint16            `json:"consumed_before"`
-	CumulativeConsumed uint16            `json:"cumulative_consumed"`
-	RemainingBudget    uint16            `json:"remaining_budget"`
-	PredecessorRun     string            `json:"predecessor_run,omitempty"`
-	PredecessorHistory string            `json:"predecessor_history,omitempty"`
-	RunID              string            `json:"run_id"`
-	ContractDigest     string            `json:"contract_digest"`
-	TaskDigest         string            `json:"task_digest"`
-	ContextDigest      string            `json:"context_digest,omitempty"`
-	State              string            `json:"state"`
-	ReservedPasses     uint16            `json:"reserved_passes"`
-	Passes             []CodingPassView  `json:"passes"`
-	Digest             string            `json:"digest"`
-	AcceptanceGate     string            `json:"acceptance_gate"`
+	Recovery           CodingRecoveryView `json:"recovery"`
+	Stages             []CodingStageView  `json:"stages,omitempty"`
+	ConsumedBefore     uint16             `json:"consumed_before"`
+	CumulativeConsumed uint16             `json:"cumulative_consumed"`
+	RemainingBudget    uint16             `json:"remaining_budget"`
+	PredecessorRun     string             `json:"predecessor_run,omitempty"`
+	PredecessorHistory string             `json:"predecessor_history,omitempty"`
+	RunID              string             `json:"run_id"`
+	ContractDigest     string             `json:"contract_digest"`
+	TaskDigest         string             `json:"task_digest"`
+	ContextDigest      string             `json:"context_digest,omitempty"`
+	State              string             `json:"state"`
+	ReservedPasses     uint16             `json:"reserved_passes"`
+	Passes             []CodingPassView   `json:"passes"`
+	Digest             string             `json:"digest"`
+	AcceptanceGate     string             `json:"acceptance_gate"`
 }
 type CodingPassView struct {
 	Failure            *CodingFailureView `json:"failure,omitempty"`
@@ -59,7 +70,7 @@ type CodingInputView struct {
 }
 
 func codingHistoryView(h implementation.History) CodingHistoryView {
-	v := CodingHistoryView{ConsumedBefore: h.ConsumedBefore, CumulativeConsumed: h.CumulativeConsumed, RemainingBudget: h.RemainingBudget, PredecessorRun: h.PredecessorRun, PredecessorHistory: h.PredecessorHistory, RunID: h.RunID, ContractDigest: h.ContractDigest, TaskDigest: h.TaskDigest, ContextDigest: h.ContextDigest, State: h.State, ReservedPasses: h.ReservedPasses, Digest: h.Digest, AcceptanceGate: h.AcceptanceGate}
+	v := CodingHistoryView{Recovery: CodingRecoveryView{Effect: h.Recovery.Effect, Decision: h.Recovery.Decision, Reason: h.Recovery.Reason, NextAction: h.Recovery.NextAction}, ConsumedBefore: h.ConsumedBefore, CumulativeConsumed: h.CumulativeConsumed, RemainingBudget: h.RemainingBudget, PredecessorRun: h.PredecessorRun, PredecessorHistory: h.PredecessorHistory, RunID: h.RunID, ContractDigest: h.ContractDigest, TaskDigest: h.TaskDigest, ContextDigest: h.ContextDigest, State: h.State, ReservedPasses: h.ReservedPasses, Digest: h.Digest, AcceptanceGate: h.AcceptanceGate}
 	for _, s := range h.Stages {
 		v.Stages = append(v.Stages, CodingStageView{PassID: s.PassID, Name: s.Name, Digest: s.Digest})
 	}

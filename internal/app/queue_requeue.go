@@ -92,11 +92,19 @@ func (s *Service) queueRequeue(ctx context.Context, sub core.Subject, in Requeue
 	if err := s.requireFleetPrincipal(sub); err != nil {
 		return QueueLoopResult{Reason: "requeue_fresh_authority_required"}, err
 	}
-	input, _, err := s.PrepareQueueRequeueAs(ctx, sub, in)
+	input, _, err := s.prepareQueueRequeueAs(ctx, sub, in, !execute)
+	if err == nil && execute {
+		if result, found, replayErr := s.reconcileLoopReexecution(ctx, sub, input); found || replayErr != nil {
+			return result, replayErr
+		}
+		input, _, err = s.PrepareQueueRequeueAs(ctx, sub, in)
+	}
 	if err != nil {
 		reason := "requeue_retained_bindings_or_kind_unsupported"
 		if errors.Is(err, ErrDoerReexecutionBudgetExhausted) {
 			reason = "doer_reexecution_budget_exhausted"
+		} else if errors.Is(err, ErrNativeRecoveryEffectEvidenceMissing) {
+			reason = "native_recovery_effect_evidence_missing"
 		}
 		return QueueLoopResult{Reason: reason}, err
 	}
@@ -139,6 +147,10 @@ type QueueRequeueBinding struct {
 }
 
 func (s *Service) PrepareQueueRequeueAs(ctx context.Context, sub core.Subject, in RequeueQueueItemInput) (QueueLoopInput, QueueRequeueBinding, error) {
+	return s.prepareQueueRequeueAs(ctx, sub, in, true)
+}
+
+func (s *Service) prepareQueueRequeueAs(ctx context.Context, sub core.Subject, in RequeueQueueItemInput, eligibility bool) (QueueLoopInput, QueueRequeueBinding, error) {
 	if err := s.requireFleetPrincipal(sub); err != nil {
 		return QueueLoopInput{}, QueueRequeueBinding{}, err
 	}
@@ -171,6 +183,9 @@ func (s *Service) PrepareQueueRequeueAs(ctx context.Context, sub core.Subject, i
 	}
 	if view.Revision.Digest != input.Loop.Digest {
 		return QueueLoopInput{}, QueueRequeueBinding{}, ErrDenied
+	}
+	if !eligibility {
+		return input, QueueRequeueBinding{}, nil
 	}
 	// Read-only eligibility check before reserving a successor. The QueueLoop
 	// admission repeats this check under its own serialization boundary.

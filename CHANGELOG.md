@@ -6,6 +6,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+- Add typed historical native recovery assessment and closed missing/invalid
+  evidence denials through authenticated Queue readback and online CLI. Preserve
+  legacy terminal history, exact lineage and cumulative budgets; no reconciliation
+  grant or terminal reopen is added. See [native recovery](docs/BOUNDED_CODING.md).
+
 - Partial #346 source correction: Queue list/detail distinguish all exact pinned
   node participants from the submission owner and runtime product, including
   preclaim readback and historical Agent revisions. Missing or conflicting exact
