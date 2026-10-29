@@ -85,8 +85,7 @@ func TestRecoveryOwningServiceRestartChild(t *testing.T) {
 	if err = s.QueueWorker.ConfigureImplementation(f.Config.Implementation, s.Config.StateDir, s.Hermes); err != nil {
 		t.Fatal(err)
 	}
-	cliSvc := *s
-	cliSvc.Config = s.Config
+	cliSvc := app.Service{Config: s.Config}
 	cliSvc.Config.Credentials.Authority = config.CredentialAuthority{}
 	done := make(chan error, 1)
 	go func() { done <- Serve(ctx, s) }()

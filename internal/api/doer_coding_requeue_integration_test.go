@@ -330,8 +330,7 @@ while IFS= read -r rest; do :; done
 		if recovery.Effect != "unknown" || recovery.Decision != "policy_decision_required" || recovery.Reason != "native_recovery_effect_evidence_missing" {
 			t.Fatal(recovery)
 		}
-		cliSvc := *s
-		cliSvc.Config = s.Config
+		cliSvc := app.Service{Config: s.Config}
 		cliSvc.Config.Credentials.Authority = config.CredentialAuthority{}
 		cli := newInstalledLoopQueueClient(t, &cliSvc)
 		var cliView app.QueueExecutionView
