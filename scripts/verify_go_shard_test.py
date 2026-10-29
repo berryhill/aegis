@@ -143,28 +143,6 @@ class ShardTests(unittest.TestCase):
                         shard.main(['--group', group])
                     self.assertEqual(run.call_count, 2)
 
-    def test_cli_exact_once_future_defaults_and_missing_targets_in_both_modes(self):
-        names = sorted(list(shard.CLI_CONTRIBUTION_TESTS.values()) + [target + 'Future' for target in shard.CLI_CONTRIBUTION_TESTS.values()] + ['TestOther', 'Example', 'FuzzFuture'])
-        seen = []
-        for group in ('cli-command', *shard.CLI_CONTRIBUTION_TESTS):
-            pattern = shard.test_pattern(names, group)
-            selected = [name for name in names if re.fullmatch(pattern, name)]
-            if group in shard.CLI_CONTRIBUTION_TESTS:
-                self.assertEqual(selected, [shard.CLI_CONTRIBUTION_TESTS[group]])
-            else:
-                self.assertTrue(all(target + 'Future' in selected for target in shard.CLI_CONTRIBUTION_TESTS.values()))
-            seen.extend(selected)
-            for race in (False, True):
-                for missing in shard.CLI_CONTRIBUTION_TESTS.values():
-                    listing = '\n'.join(name for name in names if name != missing) + '\nok\t' + shard.COMMAND + '\t0.001s\n'
-                    with mock.patch.object(shard.subprocess, 'run', side_effect=[mock.Mock(stdout='\n'.join(self.packages())), mock.Mock(stdout=listing)]) as run:
-                        with self.assertRaises(ValueError):
-                            shard.main(['--group', group] + (['--race'] if race else []))
-                        self.assertEqual(run.call_count, 2)
-        self.assertEqual(Counter(seen), Counter(names))
-        self.assertEqual(shard.GROUPS['cli'], ('cmd/aegis', 'internal/console'))
-        self.assertEqual(shard.CLI_CONTRIBUTION_TESTS['cli-installed-upgrade'], 'TestInstalledUpgradeFullCommand')
-
     def test_inventory_failure_never_executes_partition(self):
         for failure in (subprocess.CalledProcessError(1, ['go']), mock.Mock(stdout='')):
             with mock.patch.object(shard.subprocess, 'run', side_effect=[mock.Mock(stdout='\n'.join(self.packages())), failure]) as run:

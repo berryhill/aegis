@@ -27,7 +27,6 @@ PARTITIONS = {
     'implementation-contribution': (IMPLEMENTATION, IMPLEMENTATION_CONTRIBUTION_TEST),
 }
 MANAGER = ROOT + 'internal/managergateway'
-
 MANAGER_TESTS = {
     'manager-contribution-repair': 'TestContributionManagerApprovedNativeRepair',
     'manager-contribution-disconnect': 'TestContributionManagerDisconnectKeepsValidAuthorityExecution',
@@ -40,7 +39,6 @@ MANAGER_TESTS = {
 }
 COMMAND = ROOT + 'internal/command'
 CLI_CONTRIBUTION_TESTS = {'cli-contribution-root': 'TestPublicRootAuthenticatedContributionJourney', 'cli-contribution-final': 'TestPublicRootAuthenticatedContributionFinalJourney', 'cli-contribution-disconnect': 'TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney', 'cli-contribution-approval': 'TestPublicRootContributionDeclaredOperationApprovalHeld'}
-CLI_CONTRIBUTION_TESTS['cli-installed-upgrade'] = 'TestInstalledUpgradeFullCommand'
 GROUPS = {
     'api-a': ('internal/api',),
     'api-b': ('internal/api',),
