@@ -72,6 +72,24 @@ Under the existing Go 1.26.10 supervisor and 2-CPU/6-GiB limits:
   here is represented as complete acceptance.
 - Fresh independent and complete hosted tests remain separate parent-owned gates.
 
+## Native binary exit semantics and repository-check repair
+
+Compact native execution and inventory now pass `-test.paniconexit0`, matching
+`go test`'s unexpected-zero-exit guard. The existing real Go fixture exercises the
+actual compact planner in normal and race modes: ordinary TestMain
+`os.Exit(m.Run())` succeeds, but a test-body `os.Exit(0)` must raise a nonzero
+subprocess failure with Go's panic diagnostic. Mocked complete-lane checks also
+require the guard on every native inventory and execution command. Partition,
+resource and alarm assertions are unchanged.
+
+The hosted toolchain-preparation regression now checks the explicit include
+matrix against every `(mode, lane)` in `BUNDLES`, including exact multiplicity and
+both normal/race modes, instead of requiring the obsolete Cartesian matrix text.
+All existing preparation, mandatory-result and no-ignored-failure checks remain.
+This changes only source-CI tooling; the launch assets listed below retain their
+existing product/security/release contracts. Fresh hosted and independent
+acceptance remain parent-owned.
+
 ## Launch-asset impact review
 
 - Updated: `CHANGELOG.md`, `docs/RELEASE_PIPELINE.md`, this review.

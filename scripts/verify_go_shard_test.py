@@ -1,6 +1,7 @@
 """Exact package/default-test coverage, including a real normal/race Go binary."""
 import importlib.util
 import json
+import os
 from collections import Counter
 from pathlib import Path
 import re
@@ -346,13 +347,16 @@ class ShardTests(unittest.TestCase):
                 partitions = {shard.partition_package(group) for group in expected} - {None}
                 self.assertEqual(Counter(c[-1] for c in compiled), Counter(partitions))
                 self.assertTrue(all(('-race' in c) == race for c in compiled))
-                self.assertEqual(sum('-test.list=.' in call.args[0] for call in run.call_args_list), len(partitions))
+                listings = [call.args[0] for call in run.call_args_list if '-test.list=.' in call.args[0]]
+                self.assertEqual(len(listings), len(partitions))
+                self.assertTrue(all('-test.paniconexit0' in c for c in listings))
                 for p in plans:
                     timeout = '12m' if race and p['group'].startswith('api-') else '8m'
                     native = shard.partition_package(p['group']) is not None
                     self.assertIn(('-test.timeout=' if native else '-timeout=') + timeout, p['command'])
                     self.assertIn('-test.count=1' if native else '-count=1', p['command'])
                     if native:
+                        self.assertIn('-test.paniconexit0', p['command'])
                         call = next(c for c in run.call_args_list if c.args[0] == p['command'])
                         self.assertEqual(call.kwargs['cwd'], Path(shard.partition_package(p['group'])[len(shard.ROOT):]))
                 # Complete inventory failure must precede every actual test.
@@ -378,7 +382,7 @@ func TestMain(m *testing.M) { mainReady = true; os.Exit(m.Run()) }
 func ready(t *testing.T) { if !mainReady { t.Fatal("TestMain did not run") } }
 func TestOne(t *testing.T) { ready(t); t.Run("child", func(t *testing.T) { ready(t) }) }
 func TestOnePrefix(t *testing.T) { ready(t) }
-func TestFuture(t *testing.T) { ready(t) }
+func TestFuture(t *testing.T) { ready(t); if os.Getenv("AEGIS_FIXTURE_EXIT_ZERO") == "1" { os.Exit(0) } }
 func TestContributionQueueNativeRepairIntegration(t *testing.T) { ready(t); t.Run("handoff", func(t *testing.T) { ready(t) }) }
 func TestManagedContributionRepairAndCustody(t *testing.T) { ready(t); t.Run("repair", func(t *testing.T) { ready(t) }) }
 func Example() { if !mainReady { panic("TestMain did not run") }; fmt.Println("example"); // Output: example
@@ -407,6 +411,27 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                         native_seen.extend(re.findall(r'^=== RUN\s+(\S+)', result.stdout, re.M))
                     self.assertEqual(Counter(native_seen), Counter(seen))
                     self.assertEqual(Counter(seen), Counter(names + ['TestOne/child', 'FuzzSeed/seed#0', shard.CONTRIBUTION_TEST + '/handoff', shard.IMPLEMENTATION_CONTRIBUTION_TEST + '/repair']))
+                # Exercise the actual compact command planner, not a separately
+                # hand-written binary invocation. TestMain's os.Exit(m.Run())
+                # above must pass, but an unexpected test-body os.Exit(0) must not.
+                real_run = subprocess.run
+                def run_fixture(command, **kwargs):
+                    if command[:2] == ['go', 'list']:
+                        return subprocess.CompletedProcess(command, 0, stdout=pkg + '\n')
+                    kwargs.update(cwd=package if kwargs.get('cwd') else root,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                    return real_run(command, **kwargs)
+                with mock.patch.object(shard, 'groups', return_value={'api-a': [pkg], 'api-b': [pkg]}), \
+                     mock.patch.object(shard, 'partition_package', return_value=pkg), \
+                     mock.patch.object(shard, 'bundle_groups', return_value=('api-a', 'api-b')), \
+                     mock.patch.object(shard.subprocess, 'run', side_effect=run_fixture), \
+                     mock.patch('builtins.print'):
+                    self.assertEqual(shard.run_bundle('api-a', race, False), 0)
+                    with mock.patch.dict(os.environ, {'AEGIS_FIXTURE_EXIT_ZERO': '1'}):
+                        with self.assertRaises(subprocess.CalledProcessError) as failure:
+                            shard.run_bundle('api-a', race, False)
+                        self.assertIn('panic: unexpected call to os.Exit(0) during test',
+                                      failure.exception.stdout + failure.exception.stderr)
 
 
 if __name__ == '__main__':

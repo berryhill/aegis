@@ -225,11 +225,13 @@ def run_bundle(name, race, list_only):
                 if package not in binaries:
                     binary = str(Path(directory) / (str(len(binaries)) + '.test'))
                     timed_run('compile:' + package, ['go', 'test', *mode, '-c', '-o', binary, package], check=True)
-                    result = timed_run('inventory:' + package, [binary, '-test.list=.', '-test.timeout=' + timeout],
+                    result = timed_run('inventory:' + package, [binary, '-test.paniconexit0', '-test.list=.', '-test.timeout=' + timeout],
                                             cwd=Path(package[len(ROOT):]), text=True, stdout=subprocess.PIPE, check=True)
                     inventories[package] = default_inventory(result.stdout.splitlines())
                     binaries[package] = binary
-                command = [binaries[package], '-test.count=1', '-test.timeout=' + timeout,
+                # Match go test's unexpected os.Exit(0) guard without rejecting
+                # the normal TestMain os.Exit(m.Run()) after testing completes.
+                command = [binaries[package], '-test.paniconexit0', '-test.count=1', '-test.timeout=' + timeout,
                            '-test.run=' + test_pattern(inventories[package], group)]
                 cwd = Path(package[len(ROOT):])
             else:
