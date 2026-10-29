@@ -134,6 +134,12 @@ func TestContributionRecoveredPIDFDDenials(t *testing.T) {
 			case "absent-process":
 				_ = p.cmd.Process.Kill()
 				<-p.done
+				// This is also the live contribution admission gate used by
+				// app.checkContributionRole. Process exit denies independently
+				// of the unchanged logical authority clock/TTL.
+				if _, _, err := a.ContributionProcessIdentity(b.RuntimeSessionID, b.PID, b.ProcessStart); err == nil {
+					t.Fatal("exited owned session retained live contribution admission")
+				}
 			}
 			proof, err := fresh.RecoverContributionRole(context.Background(), b, boot, uid)
 			if err == nil || proof.RoleProcessAcknowledged() {

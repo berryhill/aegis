@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import re
 from pathlib import Path
 import stat
 import subprocess
@@ -68,7 +69,14 @@ class PrepareToolchainTest(unittest.TestCase):
 
     def test_workflow_retains_mandatory_normal_race_and_preparation(self):
         workflow = (SCRIPT.parent.parent / ".github/workflows/ci.yml").read_text()
-        self.assertIn("mode: [normal, race]", workflow)
+        shard_spec = importlib.util.spec_from_file_location('shard', SCRIPT.with_name('verify-go-shard.py'))
+        assert shard_spec is not None and shard_spec.loader is not None
+        shard = importlib.util.module_from_spec(shard_spec)
+        shard_spec.loader.exec_module(shard)
+        matrix = workflow.split('  go-shards:', 1)[1].split('    runs-on:', 1)[0]
+        rows = re.findall(r'^\s+- \{mode: (\w+), group: ([\w-]+)\}$', matrix, re.M)
+        self.assertEqual(set(mode for mode, _ in rows), {'normal', 'race'})
+        self.assertCountEqual(rows, [(mode, lane) for mode, lanes in shard.BUNDLES.items() for lane in lanes])
         self.assertIn('test "$SHARDS_RESULT" = success', workflow)
         self.assertEqual(workflow.count("python3 scripts/prepare-ci-go-toolchain.py"), workflow.count("uses: actions/setup-go@v6"))
         self.assertNotIn("chmod go-w", workflow)
