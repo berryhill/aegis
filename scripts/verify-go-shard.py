@@ -78,19 +78,27 @@ BUNDLES = {
         'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {
-        'api-a': ('api-a',),
+        # Hosted 40952580487 twice exhausted support-a: persistence 268s +
+        # remainder-a 323s. Reuse api-a's existing 16m job (observed 479s),
+        # without changing its 12m API or persistence's 8m process alarms.
+        'api-a': ('api-a', 'persistence'),
         'api-b': ('api-b', 'cli'),
         'implementation': ('implementation', 'implementation-contribution'),
         'orchestration': ('orchestration', 'orchestration-contribution'),
-        'manager-a': ('manager', 'manager-contribution-cancel'),
+        # Hosted 40936752306: compile + manager + cancel exceeded 600s;
+        # manager-c completed in 422s, leaving room for the 88s cancel target.
+        # Reuse the same package binary, partitions, alarms and 13 race lanes.
+        'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
-        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'manager-contribution-cancel'),
         'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         'cli-command': ('cli-command',),
-        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect'),
-        'support-a': ('persistence', 'remainder-a'),
-        'support-b': ('update', 'remainder-b'),
+        # Hosted 40948579082: update 442s + remainder-b 146s exhausted
+        # support-b; cli finished in 361s under the same unchanged 600s cap.
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect', 'remainder-b'),
+        'support-a': ('remainder-a',),
+        'support-b': ('update',),
     },
 }
 
