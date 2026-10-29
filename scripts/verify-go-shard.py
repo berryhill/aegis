@@ -62,35 +62,33 @@ GROUPS = {
 }
 
 
-# Stable execution lanes, NOT new test partitions. Hosted run 40872151401
-# supersedes older packing estimates: race manager/restart were 394/388s,
-# command partitions totaled 701s and persistence+update 580s. Keep the same
-# 20 lanes, split those packs and reuse each package's link/list within a lane.
-# Repair's 242.858s is a FAILED elapsed observation, not a passing cost.
-# Fresh hosted setup/compile and passing repair timings remain required.
+# Stable execution lanes, NOT new test partitions: 7 normal + 13 race.
+# Hosted run 40884797403 cancelled four race packs at the unchanged 600s
+# deadline. Repack measured passing phases, including package-local compile
+# costs; fresh complete hosted setup/deadline evidence remains required.
 # Future defaults still go through the dynamic remainder partitions above.
 BUNDLES = {
     'normal': {
-        'api-a': ('api-a',),
-        'api-b': ('api-b',),
-        'implementation': ('implementation', 'implementation-contribution'),
-        'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-b'),
+        'api-a': ('api-a', 'remainder-b'),
+        'api-b': ('api-b', 'cli'),
+        'implementation': ('implementation', 'implementation-contribution', 'remainder-a'),
+        'orchestration': ('orchestration', 'orchestration-contribution', 'persistence'),
         'manager-a': ('manager', 'manager-contribution-restart', 'manager-contribution-final', 'manager-contribution-readback'),
         'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel'),
-        'cli': ('cli', 'cli-command', *CLI_CONTRIBUTION_TESTS),
-        'support': ('persistence', 'update', 'remainder-a'),
+        'cli': ('cli-command', *CLI_CONTRIBUTION_TESTS, 'update'),
     },
     'race': {
         'api-a': ('api-a',),
         'api-b': ('api-b',),
         'implementation': ('implementation', 'implementation-contribution'),
-        'orchestration': ('orchestration', 'orchestration-contribution'),
-        'manager-a': ('manager', 'manager-contribution-final'),
-        'manager-b': ('manager-contribution-restart', 'manager-contribution-cancel'),
-        'manager-c': ('manager-contribution-resume', 'manager-contribution-repair'),
-        'manager-d': ('manager-contribution-disconnect', 'manager-contribution-joint', 'manager-contribution-readback'),
-        'cli-command': ('cli-command', 'cli-contribution-final'),
-        'cli': ('cli', 'cli-contribution-root', 'cli-contribution-disconnect', 'cli-contribution-approval'),
+        'orchestration': ('orchestration', 'orchestration-contribution', 'cli'),
+        'manager-a': ('manager', 'manager-contribution-cancel'),
+        'manager-b': ('manager-contribution-restart', 'manager-contribution-final'),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
+        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
+        'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval'),
+        'cli-command': ('cli-command',),
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect'),
         'support-a': ('persistence', 'remainder-a'),
         'support-b': ('update', 'remainder-b'),
     },

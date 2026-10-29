@@ -3,7 +3,7 @@
 ## Scope and preserved boundaries
 
 The candidate retains all existing package/default-test partitions, with dynamic
-actual-mode inventories and complete normal/race coverage, in 8 normal + 12 race
+actual-mode inventories and complete normal/race coverage, in 7 normal + 13 race
 sequential lanes. Seven other required jobs yield 27 expanded ordinary-event jobs.
 No child/reusable workflow is introduced. Split packages are compiled/listed once
 per lane and executed from the original package cwd; TestMain, runnable examples,
@@ -13,15 +13,15 @@ No resource, authentication, crypto, product authority or release policy changes
 
 ## Measurements and outstanding qualification
 
-Packing is revised from actual source-f603 hosted run 40872151401; the complete
-old/new lane mapping and measured execution sums are in `docs/RELEASE_PIPELINE.md`.
-The same 8 normal + 12 race lanes remain. Race manager packs now have historical
-execution sums 505.162, 473.598, 491.935 and 491.791 seconds; the third includes
-FAILED repair elapsed time, not passing-cost evidence. CLI is balanced across its
-two existing lanes and support persistence/update no longer share a lane. Missing
-implementation/api-a timing is not imputed. Compile/list reuse remains package-local.
-Fresh complete hosted timing including setup is required; parent owns publication,
-metrics, PR/merge and independent frozen-candidate acceptance.
+Packing is revised from actual first-compact hosted run **40884797403**: four
+race lanes hit the unchanged 600s deadline (cli-command, manager-a/c/d).
+`docs/RELEASE_PIPELINE.md` retains the old/new mapping and observed phase basis.
+Seven normal + thirteen race lanes retain exactly 27 jobs; a new stable race
+manager-e is offset by removing normal support. Normal manager-a/b and successful
+race implementation/support packs remain unchanged. Mixed manager-e compiles each
+split package once; the whole CLI group moves to race orchestration.
+Planning sums are not hosted success: fresh complete timing including setup is
+required. Parent owns publication, metrics, PR/merge and frozen-candidate acceptance.
 
 ## Process-lifetime diagnosis and bounded fixture repair
 

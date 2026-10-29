@@ -319,7 +319,13 @@ class ShardTests(unittest.TestCase):
             self.assertEqual(Counter(seen), Counter(shard.GROUPS.keys()))
             for lane in lanes:
                 self.assertTrue(shard.bundle_groups(lane, mode == 'race'))
-        self.assertLessEqual(sum(len(lanes) for lanes in shard.BUNDLES.values()) + 7, 27)
+        self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
+                         {'normal': 7, 'race': 13})
+        self.assertEqual(sum(len(lanes) for lanes in shard.BUNDLES.values()) + 7, 27)
+        self.assertEqual(shard.BUNDLES['race']['manager-e'],
+                         ('manager-contribution-disconnect', 'cli-contribution-approval'))
+        self.assertEqual(shard.BUNDLES['race']['cli-command'], ('cli-command',))
+        self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):
             with self.assertRaises(ValueError):
                 shard.bundle_groups('unknown', race)

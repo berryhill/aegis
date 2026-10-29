@@ -25,7 +25,7 @@ source suite. Package compilation caches are an optimization, not green-test evi
 Normal and race candidate tests use fresh execution rather than relying on cached
 results.
 
-Ordinary source CI has **27 expanded jobs**: eight normal and twelve race Go
+Ordinary source CI has **27 expanded jobs**: seven normal and thirteen race Go
 lanes plus seven repository, packaging, security and aggregate jobs. There are no
 reusable/child workflows on those events. `scripts/verify-go-shard.py --bundle`
 packs the existing exact-once partitions into mode-specific sequential lanes;
@@ -38,36 +38,50 @@ continues to cover the complete module. The existing setup-go compiler/module
 cache remains enabled; no cached test result substitutes for execution. This is
 within-job executable/compiler reuse, not a promise of a complete cross-job cache.
 
-Packing now uses retained source-f603 hosted run **40872151401**, which invalidated
-older run 40871817726 estimates. Job names/counts stay unchanged. The following
-mapping supersedes the first compact candidate (names omit `manager-contribution-`
-and `cli-contribution-` within their respective rows):
+Packing uses actual hosted run **40884797403** (first compact candidate),
+which cancelled race cli-command and manager-a/c/d at the unchanged 600-second
+job deadline. Completed phases showed command compile ~109s plus base ~364s
+before final was unfinished; manager compile ~85s plus base ~405s before final
+was unfinished; resume ~285s before repair was unfinished; and disconnect ~252s
+plus joint ~148s before readback was unfinished. These cancellations supersede
+older execution-only packing estimates, not the successful baseline run
+**40882148345** (57 PASS, 209.13 runner-minutes, 999s peak).
 
-| Mode / lane | Old groups | New groups | New execution sum (s) |
-| --- | --- | --- | ---: |
-| normal manager-a | manager, repair, resume, joint | manager, restart, final, readback | 469.098 |
-| normal manager-b | disconnect, restart, cancel, final, readback | repair, disconnect, resume, joint, cancel | 509.365 |
-| race manager-a | manager, repair, disconnect | manager, final | 505.162 |
-| race manager-b | resume, restart | restart, cancel | 473.598 |
-| race manager-c | joint, cancel | resume, repair | 491.935* |
-| race manager-d | final, readback | disconnect, joint, readback | 491.791 |
-| race cli-command | command, root, final, disconnect, approval | command, final | 403.915 |
-| race cli | cli | cli, root, disconnect, approval | 390.665 |
-| race support-a | remainder-a, remainder-b | persistence, remainder-a | 475.562 |
-| race support-b | persistence, update | update, remainder-b | 453.215 |
+The mapping below is from that first compact candidate to this revision. Names
+omit `manager-contribution-` and `cli-contribution-` in their respective rows;
+`cli-group` means cmd/aegis + internal/console, not command partitions.
 
-All other lanes retain their mapping. *Repair contributes a **failed** 242.858s
-observation, NOT a passing cost. The metrics packet lacks complete implementation
-and race api-a measurements; no missing timing is imputed. Old race manager-a,
-manager-b and cli-command sums exceeded 600s; old support-b was 580.054s. These
-are package execution sums, not measured compact runtimes: setup, cold compilation
-and listing still count against the unchanged deadlines. Link/list reuse applies
-only within the same package/lane; the support lanes retain stable package packs.
-Compiler, inventory and partition elapsed times are emitted separately as
-`go_lane_phase` observations. Job alarms remain ten minutes except sixteen for
-race API. No hosted runner-minute reduction, deadline fit or no-latency-regression
-claim follows from this topology or local tests alone; compare complete successful
-exact-head hosted runs, including queue/setup and all jobs.
+| Mode / lane | Old groups | New groups |
+| --- | --- | --- |
+| normal api-a | api-a | api-a, remainder-b |
+| normal api-b | api-b | api-b, cli-group |
+| normal implementation | implementation, implementation-contribution | same, remainder-a |
+| normal orchestration | orchestration, orchestration-contribution, remainder-b | orchestration, orchestration-contribution, persistence |
+| normal manager-a/b | existing manager packs | unchanged |
+| normal cli | cli-group, command, root, final, disconnect, approval | command, root, final, disconnect, approval, update |
+| normal support | persistence, update, remainder-a | removed; redistributed above |
+| race orchestration | orchestration, orchestration-contribution | same, cli-group |
+| race manager-a | manager, final | manager, cancel |
+| race manager-b | restart, cancel | restart, final |
+| race manager-c | resume, repair | resume, readback |
+| race manager-d | disconnect, joint, readback | repair, joint |
+| race manager-e | absent | disconnect, approval |
+| race cli-command | command, final | command |
+| race cli | cli-group, root, disconnect, approval | root, final, disconnect |
+| race support-a/b | persistence + remainder-a / update + remainder-b | unchanged |
+
+Race api-a/b and implementation are unchanged. Rounded planning sums including
+package compile are manager-a ~562s, b ~533s, c ~500s, d ~508s,
+e ~523s (both manager and command compile), cli-command ~473s and cli ~480s.
+These are estimates, NOT successful hosted deadline evidence: setup and listing
+must also fit the unchanged 600s. The whole CLI group moves without an extra
+split-package compile. Successful implementation and support packs are retained.
+Link/list reuse remains once per split package per lane, including mixed
+manager-e; no new partitions or reduced coverage are introduced.
+Compiler, inventory and partition elapsed times remain separate `go_lane_phase`
+observations. Job alarms remain ten minutes except sixteen for race API.
+Fresh complete successful exact-head hosted runs, including queue/setup and all
+jobs, must establish deadline fit, runner-minute reduction and comparable speed.
 
 The manager native fixture's session leader now waits on a private per-runtime-home
 FIFO until normal service termination/revocation instead of independently exiting
