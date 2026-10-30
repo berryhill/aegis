@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -207,6 +208,37 @@ type upgradeFixtureArchive struct {
 	checksum     [sha256.Size]byte
 }
 
+type upgradeFixtureArchiveCache struct {
+	sync.Mutex
+	values   map[[sha256.Size]byte]upgradeFixtureArchive
+	retained int
+}
+
+var upgradeFixtureArchives upgradeFixtureArchiveCache
+
+// Bound retained public executable inputs, never authority or preparation
+// results. Inputs beyond four entries or 64MiB are packed normally, not retained.
+func (c *upgradeFixtureArchiveCache) pack(binary []byte) (upgradeFixtureArchive, bool, error) {
+	key := sha256.Sum256(binary)
+	c.Lock()
+	defer c.Unlock()
+	if archive, ok := c.values[key]; ok {
+		return archive, true, nil
+	}
+	archive, err := packUpgradeFixtureArchive(binary)
+	if err != nil {
+		return upgradeFixtureArchive{}, false, err
+	}
+	if len(c.values) < 4 && len(archive.data) <= (64<<20)-c.retained {
+		if c.values == nil {
+			c.values = make(map[[sha256.Size]byte]upgradeFixtureArchive)
+		}
+		c.values[key] = archive
+		c.retained += len(archive.data)
+	}
+	return archive, false, nil
+}
+
 func packUpgradeFixtureArchive(binary []byte) (upgradeFixtureArchive, error) {
 	var archive bytes.Buffer
 	gz, err := gzip.NewWriterLevel(&archive, gzip.BestSpeed)
@@ -260,7 +292,7 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 		archive = prepared[0]
 		archiveErr = archive.validate(binary)
 	} else {
-		archive, archiveErr = packUpgradeFixtureArchive(binary)
+		archive, _, archiveErr = upgradeFixtureArchives.pack(binary)
 	}
 	if archiveErr != nil {
 		t.Fatal(archiveErr)

@@ -230,7 +230,10 @@ def run_bundle(name, race, list_only):
             if package:
                 if package not in binaries:
                     binary = str(Path(directory) / (str(len(binaries)) + '.test'))
-                    timed_run('compile:' + package, ['go', 'test', *mode, '-c', '-o', binary, package], check=True)
+                    # Ordinary `go test` links with -s -w, including race mode.
+                    # Preserve that artifact shape when compiling once: these
+                    # fixtures repeatedly inspect/hash their executing image.
+                    timed_run('compile:' + package, ['go', 'test', *mode, '-c', '-ldflags=-s -w', '-o', binary, package], check=True)
                     result = timed_run('inventory:' + package, [binary, '-test.paniconexit0', '-test.list=.', '-test.timeout=' + timeout],
                                             cwd=Path(package[len(ROOT):]), text=True, stdout=subprocess.PIPE, check=True)
                     inventories[package] = default_inventory(result.stdout.splitlines())
