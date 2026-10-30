@@ -28,6 +28,9 @@ func (p *recoveryPasswordFixture) Acquire(_ context.Context, r AuthorityPassphra
 }
 
 func TestAuthorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.T) {
+	if isolateCommandFixture(t) {
+		return
+	}
 	for _, cancelled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "success", true: "cancelled"}[cancelled], func(t *testing.T) {
 			configPath, state := validConfigWithoutOperationalAuthority(t)

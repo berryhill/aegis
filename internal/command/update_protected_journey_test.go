@@ -23,6 +23,9 @@ import (
 // Exercise the production retained-journey authentication and recovery methods,
 // not a callback that assumes authentication. No terminal emulation is used.
 func TestInstalledJourneyProtectedRecovery(t *testing.T) {
+	if isolateCommandFixture(t) {
+		return
+	}
 	for _, scenario := range []string{"healthy", "stopped-orphan", "missing-parent", "interrupted", "mismatched-clean", "socket", "cancelled", "verifier-drift", "config-drift", "expired", "recovery-deadline"} {
 		t.Run(scenario, func(t *testing.T) {
 			path, state := validConfigWithoutOperationalAuthority(t)

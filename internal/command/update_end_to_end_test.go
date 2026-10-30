@@ -304,6 +304,9 @@ func (f *upgradeCommandFixture) run(t *testing.T, ctx context.Context, provider 
 }
 
 func TestInstalledUpgradeFullCommand(t *testing.T) {
+	if isolateCommandFixture(t) {
+		return
+	}
 	builds := t.TempDir()
 	old := upgradeReleaseBuild(t, builds, "0.2.28")
 	candidate := upgradeReleaseBuild(t, builds, "0.2.29")

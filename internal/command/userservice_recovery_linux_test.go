@@ -29,6 +29,9 @@ func (r *recoveryCLIRunner) Output(_ context.Context, a ...string) ([]byte, erro
 	return nil, nil
 }
 func TestRecoveryCLIApprovalRejections(t *testing.T) {
+	if isolateCommandFixture(t) {
+		return
+	}
 	// Build release metadata locally; approval rejection coverage needs no
 	// downloaded historical release or operator-owned proof artifacts.
 	old := mustCommandRead(t, upgradeReleaseBuild(t, t.TempDir(), "0.2.29"))
