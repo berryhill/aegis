@@ -204,3 +204,118 @@ func TestIsolatedFixtureRemainingDeadline(t *testing.T) {
 		t.Fatal("missing deadline admitted")
 	}
 }
+
+// A serial sibling cannot finish until real child work and private cleanup have
+// completed while its parallel sibling remains paused at testing's barrier.
+func TestIsolatedFixtureStartsBeforeSerialBarrier(t *testing.T) {
+	base := t.TempDir()
+	slots := make(chan struct{}, 2)
+	deadline := time.Now().Add(isolatedFixtureCleanupReserve + 5*time.Second)
+	var done <-chan isolatedFixtureOutcome
+	var home string
+	t.Run("parallel", func(t *testing.T) {
+		done = isolatedFixtureStart(slots, deadline, base, func(dir string, budget time.Duration) isolatedFixtureOutcome {
+			home = dir
+			cmd := exec.Command("/bin/sh", "-c", "printf child-progress")
+			cmd.Env = []string{"HOME=" + dir, "PATH=/bin"}
+			output, err := testprocess.CombinedOutput(cmd, budget)
+			if string(output) != "child-progress" && err == nil {
+				err = errors.New("child made no progress")
+			}
+			return isolatedFixtureOutcome{err: err}
+		})
+		t.Parallel()
+	})
+	t.Run("serial", func(t *testing.T) {
+		select {
+		case result := <-done:
+			if result.err != nil {
+				t.Fatal(result.err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("child waited for serial-test barrier")
+		}
+		if _, err := os.Stat(home); !os.IsNotExist(err) {
+			t.Fatal("private HOME survived result")
+		}
+		if len(slots) != 0 {
+			t.Fatal("slot held until parallel resume")
+		}
+	})
+}
+
+func TestIsolatedFixtureWorkerFailureTimeoutCleanup(t *testing.T) {
+	for _, mode := range []string{"failure", "timeout", "expired", "directory-failure"} {
+		t.Run(mode, func(t *testing.T) {
+			base := t.TempDir()
+			slots := make(chan struct{}, 2)
+			deadline := time.Now().Add(isolatedFixtureCleanupReserve + time.Second)
+			if mode == "expired" {
+				deadline = time.Now()
+			}
+			if mode == "directory-failure" {
+				base = filepath.Join(base, "missing", "parent")
+			}
+			var home string
+			done := isolatedFixtureStart(slots, deadline, base, func(dir string, budget time.Duration) isolatedFixtureOutcome {
+				home = dir
+				cmd := exec.Command("/bin/sh", "-c", "exit 7")
+				if mode == "timeout" {
+					cmd = exec.Command("/bin/sh", "-c", "sleep 30 & wait")
+					budget = 20 * time.Millisecond
+				}
+				cmd.Env = []string{"HOME=" + dir, "PATH=/bin"}
+				_, err := testprocess.CombinedOutput(cmd, budget)
+				return isolatedFixtureOutcome{err: err}
+			})
+			result := <-done
+			if result.err == nil {
+				t.Fatal("failure accepted")
+			}
+			if home != "" {
+				if _, err := os.Stat(home); !os.IsNotExist(err) {
+					t.Fatal("failed worker leaked HOME")
+				}
+			}
+			if len(slots) != 0 {
+				t.Fatal("failed worker leaked slot")
+			}
+		})
+	}
+}
+
+func TestIsolatedFixtureWorkerTwoSlotsBeforeResultConsumption(t *testing.T) {
+	base := t.TempDir()
+	slots := make(chan struct{}, 2)
+	entered := make(chan string, 3)
+	release := make(chan struct{})
+	deadline := time.Now().Add(isolatedFixtureCleanupReserve + 5*time.Second)
+	run := func(home string, _ time.Duration) isolatedFixtureOutcome {
+		entered <- home
+		<-release
+		return isolatedFixtureOutcome{}
+	}
+	done1 := isolatedFixtureStart(slots, deadline, base, run)
+	done2 := isolatedFixtureStart(slots, deadline, base, run)
+	home1, home2 := <-entered, <-entered
+	third := isolatedFixtureStart(slots, time.Now().Add(isolatedFixtureCleanupReserve+20*time.Millisecond), base, func(string, time.Duration) isolatedFixtureOutcome {
+		return isolatedFixtureOutcome{status: "unexpected admission"}
+	})
+	if result := <-third; result.err == nil {
+		t.Error("third child admitted")
+	}
+	close(release)
+	for _, done := range []<-chan isolatedFixtureOutcome{done1, done2} {
+		if result := <-done; result.err != nil {
+			t.Error(result.err)
+		}
+	}
+	for _, home := range []string{home1, home2} {
+		if _, err := os.Stat(home); !os.IsNotExist(err) {
+			t.Error("HOME survived result")
+		}
+	}
+	if len(slots) != 0 {
+		t.Fatal("slots held awaiting parent result consumption")
+	}
+}

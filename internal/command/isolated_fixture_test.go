@@ -148,16 +148,12 @@ func isolateCommandFixture(t *testing.T) bool {
 	if !isolatedFixtureMayFork(flag.Lookup("test.run").Value.String(), flag.Lookup("test.skip").Value.String(), flag.Lookup("test.cpu").Value.String(), testing.Short(), testing.CoverMode()) {
 		return false
 	}
-	t.Parallel()
 	deadline, ok := t.Deadline()
 	if !ok {
 		t.Fatal("isolated fixture requires a parent deadline")
 	}
-	if err := isolatedFixtureAcquire(isolatedFixtureSlots, deadline, t.Cleanup); err != nil {
-		t.Fatal(err)
-	}
-	// Registered first: LIFO cleanup holds the slot through child Wait and HOME removal.
-	home := t.TempDir()
+	// Snapshot ambient inputs before t.Parallel lets serial Setenv tests resume.
+	parentEnv, tempBase := os.Environ(), os.TempDir()
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +164,9 @@ func isolateCommandFixture(t *testing.T) bool {
 			isolatedFixtureCaches.err = e
 			return
 		}
-		output, e := testprocess.CombinedOutput(exec.Command("go", "env", "GOCACHE", "GOMODCACHE"), budget)
+		cmd := exec.Command("go", "env", "GOCACHE", "GOMODCACHE")
+		cmd.Env = parentEnv
+		output, e := testprocess.CombinedOutput(cmd, budget)
 		if e != nil {
 			isolatedFixtureCaches.err = e
 			return
@@ -183,26 +181,65 @@ func isolateCommandFixture(t *testing.T) bool {
 	if isolatedFixtureCaches.err != nil {
 		t.Fatal(isolatedFixtureCaches.err)
 	}
-	env, err := isolatedFixtureEnvironment(os.Environ(), home, isolatedFixtureCaches.build, isolatedFixtureCaches.modules, t.Name())
-	if err != nil {
-		t.Fatal(err)
+	root := t.Name()
+	done := isolatedFixtureStart(isolatedFixtureSlots, deadline, tempBase, func(home string, remaining time.Duration) isolatedFixtureOutcome {
+		env, err := isolatedFixtureEnvironment(parentEnv, home, isolatedFixtureCaches.build, isolatedFixtureCaches.modules, root)
+		if err != nil {
+			return isolatedFixtureOutcome{err: err}
+		}
+		remaining, err = isolatedFixtureRemaining(deadline)
+		if err != nil {
+			return isolatedFixtureOutcome{err: err}
+		}
+		// Resolve no executable or environment from the mutable parent here.
+		cmd := exec.Command(executable, "-test.run=^"+regexp.QuoteMeta(root)+"$", "-test.count=1", "-test.v", "-test.timeout="+remaining.String())
+		cmd.Env = env
+		output, runErr := testprocess.CombinedOutput(cmd, remaining)
+		status, err := isolatedFixtureResult(root, output, runErr)
+		return isolatedFixtureOutcome{status: status, bytes: len(output), err: err}
+	})
+	// Admission and cleanup never depend on Go resuming parallel tests.
+	t.Parallel()
+	result := <-done
+	if result.err != nil {
+		t.Fatalf("%v (captured %d bytes; private output withheld)", result.err, result.bytes)
 	}
-	remaining, err := isolatedFixtureRemaining(deadline)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Every budget calculation, including slot waiting and cache discovery,
-	// already reserves the bounded helper WaitDelay and cleanup headroom.
-	cmd := exec.Command(executable, "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.count=1", "-test.v", "-test.timeout="+remaining.String())
-	cmd.Env = env
-	output, runErr := testprocess.CombinedOutput(cmd, remaining)
-	status, err := isolatedFixtureResult(t.Name(), output, runErr)
-	if err != nil {
-		// Do not echo child output: even fixture failure logs may contain secret inputs.
-		t.Fatalf("%v (captured %d bytes; private output withheld)", err, len(output))
-	}
-	if status == "SKIP" {
+	if result.status == "SKIP" {
 		t.Skip("isolated fixture child skipped")
 	}
 	return true
+}
+
+type isolatedFixtureOutcome struct {
+	status string
+	bytes  int
+	err    error
+}
+
+// The worker exclusively owns its private directory and slot. It never calls T
+// methods. Publish only after CombinedOutput has cancelled/joined its process
+// tree and directory cleanup has completed, before releasing the admission slot.
+func isolatedFixtureStart(slots chan struct{}, deadline time.Time, tempBase string, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
+	done := make(chan isolatedFixtureOutcome, 1)
+	go func() {
+		result := func() (result isolatedFixtureOutcome) {
+			var release func()
+			if err := isolatedFixtureAcquire(slots, deadline, func(f func()) { release = f }); err != nil {
+				return isolatedFixtureOutcome{err: err}
+			}
+			defer release()
+			home, err := os.MkdirTemp(tempBase, "aegis-command-fixture-")
+			if err != nil {
+				return isolatedFixtureOutcome{err: err}
+			}
+			defer func() { result.err = errors.Join(result.err, os.RemoveAll(home)) }()
+			remaining, err := isolatedFixtureRemaining(deadline)
+			if err != nil {
+				return isolatedFixtureOutcome{err: err}
+			}
+			return run(home, remaining)
+		}()
+		done <- result
+	}()
+	return done
 }
