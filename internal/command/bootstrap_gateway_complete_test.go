@@ -136,9 +136,12 @@ func TestBootstrapGatewayCompleteApprovedResume(t *testing.T) {
 				}
 				var proposal any
 				if test.ExpectedOperation != "" {
-					args := map[string]string{}
+					args := map[string]any{}
 					for k, v := range test.ExpectedArguments {
 						args[k] = v
+					}
+					if len(test.ExpectedInput) != 0 {
+						args["input"] = test.ExpectedInput
 					}
 					proposal = map[string]any{"operation": test.ExpectedOperation, "arguments": args}
 				}
@@ -216,8 +219,11 @@ for line in sys.stdin:
 			if got := strings.Count(out.String(), "  conformance: "); got != len(managerdomain.ConformanceCorpus()) {
 				t.Fatalf("one approval did not run the complete corpus: cases=%d output=%s", got, out.String())
 			}
-			if got := strings.Count(out.String(), "checkpointed; reauthenticating"); got != 3 {
-				t.Fatalf("expected three bounded intermediate checkpoints, got %d: %s", got, out.String())
+			// The production path keeps four cases per independently authenticated
+			// segment; a larger corpus needs more checkpoints, not a larger budget.
+			checkpoints := (len(managerdomain.ConformanceCorpus()) - 1) / 4
+			if got := strings.Count(out.String(), "checkpointed; reauthenticating"); got != checkpoints {
+				t.Fatalf("expected %d bounded intermediate checkpoints, got %d: %s", checkpoints, got, out.String())
 			}
 			if got := strings.Count(out.String(), "DECISION / Run end-to-end certification"); got != 1 {
 				t.Fatalf("unexpected certification approval count=%d: %s", got, out.String())
@@ -241,8 +247,8 @@ for line in sys.stdin:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := bytes.Count(audit, []byte(`"reason":"certification_segment_validated"`)); got != 3 {
-				t.Fatalf("intermediate segment audit count=%d want 3", got)
+			if got := bytes.Count(audit, []byte(`"reason":"certification_segment_validated"`)); got != checkpoints {
+				t.Fatalf("intermediate segment audit count=%d want %d", got, checkpoints)
 			}
 			if got := bytes.Count(audit, []byte(`"reason":"certification_conformance_passed"`)); got != 1 {
 				t.Fatalf("final conformance audit count=%d want 1", got)

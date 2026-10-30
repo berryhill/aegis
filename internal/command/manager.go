@@ -855,8 +855,8 @@ func (r *managerReadiness) applyStartupReason(reason string) {
 }
 
 func (r managerReadiness) nextStep(configuredModel string) string {
-	if r.authority != "ready" {
-		return "follow docs/CREDENTIAL_AUTHORITY_SETUP.md, then run aegis secret initialize"
+	if r.hermes == "unsupported" || r.hermes == "supported; gateway unavailable" || r.hermes == "configured context unsupported" {
+		return "aegis runtime; review /status for the exact Hermes runtime or gateway prerequisite"
 	}
 	if r.model == "absent" {
 		return "aegis manager model candidates; then inspect an explicit loopback route with: aegis manager model discover --endpoint http://127.0.0.1:11434"
