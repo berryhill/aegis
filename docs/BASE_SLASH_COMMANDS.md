@@ -41,6 +41,23 @@ The first command verifies the configured principal/process account and opens on
 
 Registration fixtures default only omitted lifecycle to `enabled` before preview and exact-digest approval. Explicit disabled/retired values remain supported; malformed values deny. Enabled is Registry eligibility, not runtime readiness, activation, workspace delegation, or execution/credential authority. Existing imports and lifecycle decisions remain unchanged.
 
+## Contribution extension readiness (source candidate)
+
+`/contribute select LOOP` returns the exact immutable selection plus readiness.
+`/contribute readiness [scope]` observes the selection (or reports its absence),
+role Agent/charter/runtime references, native host policy, repository/base/effect,
+missing independent setup and actual owning executable/source identity. It
+creates no role sessions, grants, worktrees or Queue invocation. `configured`
+provider/remote status means fresh ordinary credential/actor admission is still
+required, not successful authentication or remote permission proof.
+
+The root client supplies its own expected image on contribution commands; a
+mismatching Run denies before intake. Status preserves original run provenance,
+not a qualification claim for the observer. After independently completed setup,
+`/contribute resume KEY` continues the same retained zero-attempt intent; existing
+attempts use the established bounded continuity path. See
+[scope and evidence](implementation/issue-411-launch-review.md).
+
 ## Truthful unavailable boundary
 
 `/watch` is recognized, authorized, audited, rendered, documented, and completed locally as `watch_source_manager_unavailable`. Aegis does not currently have a production leased event-source manager, so it creates no watch ID, lease, timer, buffer, event, or monitoring claim. No endpoint sensor was installed or contacted by this implementation.

@@ -10,6 +10,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/loop"
@@ -122,6 +123,10 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	s := contributionAppAt(t, filepath.Join(root, "state"), true)
+	nonlocalCancellation := len(disconnected) > 3 && disconnected[3]
+	if nonlocalCancellation {
+		configureJointCancellationDelivery(t, ctx, s)
+	}
 	expiry := len(disconnected) > 1 && disconnected[1]
 	lifetime := int64(300)
 	clock := &contributionStageClock{at: time.Now().UTC()}
@@ -138,6 +143,13 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	refs := []reference.RevisionRef{}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{subject.Issuer}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: lifetime}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
+		if nonlocalCancellation && id == "controller" {
+			// Declare only this fixture's sealed repository/effect scope. These
+			// declarations do not authorize the deliberately denied publication.
+			for _, op := range []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge, delivery.ReconcileIssue} {
+				charter.Stanzas[0].Grant.Capabilities = append(charter.Stanzas[0].Grant.Capabilities, string(op), app.ContributionDeliveryResourceCapability(op, "fixture/controlled", 7))
+			}
+		}
 		cc, err := core.Canonicalize(charter)
 		must(err)
 		must(s.Store.SaveCharter(cc))
@@ -150,7 +162,6 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		_, err = repository.RegisterAgent(ctx, registry.AgentRegistration{SchemaVersion: registry.AgentRegistrationSchemaVersion, AgentID: id, Source: agent.Source, InitialRevision: ref}, agent, fleet.AuditFact{Event: core.AuditEvent{Type: "fixture.created", SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Outcome: "succeeded", Reason: "isolated fixture"}})
 		must(err)
 	}
-	nonlocalCancellation := len(disconnected) > 3 && disconnected[3]
 	effect := "local-only"
 	if nonlocalCancellation {
 		effect = "verified-protected-base-merge"

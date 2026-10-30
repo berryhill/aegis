@@ -1716,12 +1716,14 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			return err
 		}
 		var input struct {
-			Input string `json:"input"`
+			Input           string                           `json:"input"`
+			ExpectedService *app.ContributionServiceIdentity `json:"expected_service,omitempty"`
 		}
 		if err = decode(c, &input); err != nil {
 			return err
 		}
-		result, err := managerGateway.Execute(c.Request().Context(), subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
+		commandCtx := app.WithContributionExpectedService(c.Request().Context(), input.ExpectedService)
+		result, err := managerGateway.Execute(commandCtx, subject, c.Param("session"), c.Request().Header.Get(managergateway.SessionHeader), input.Input)
 		if err != nil {
 			return mapManagerCommandError(err)
 		}
