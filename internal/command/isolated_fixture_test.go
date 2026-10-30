@@ -217,8 +217,8 @@ type isolatedFixtureOutcome struct {
 }
 
 // The worker exclusively owns its private directory and slot. It never calls T
-// methods. Publish only after CombinedOutput has cancelled/joined its process
-// tree and directory cleanup has completed, before releasing the admission slot.
+// methods. After CombinedOutput cancels/joins its process tree, remove the
+// private directory, release the admission slot, and only then publish the result.
 func isolatedFixtureStart(slots chan struct{}, deadline time.Time, tempBase string, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
 	done := make(chan isolatedFixtureOutcome, 1)
 	go func() {
