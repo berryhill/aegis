@@ -173,7 +173,7 @@ func assertPreparationHTTP(t *testing.T, client *http.Client, origin, id, state 
 			t.Fatalf("authenticated Queue overview retained %q", forbidden)
 		}
 	}
-	if !strings.Contains(string(body), `href="/console/graphs/run"`) {
+	if !strings.Contains(string(body), `class="primary" href="/console/graphs"`) {
 		t.Fatal("queue entry point missing")
 	}
 }

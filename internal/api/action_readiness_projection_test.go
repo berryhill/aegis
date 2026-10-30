@@ -42,6 +42,36 @@ func TestConsoleReadinessCredentialCollectionProjection(t *testing.T) {
 	}
 }
 
+func TestConsoleReadinessCredentialCustodyDoesNotGateFleetCollections(t *testing.T) {
+	for _, custody := range []string{"unconfigured", "locked"} {
+		for _, domain := range []consoleDomain{consoleAgents, consoleLoops, consoleGraphs, consoleQueue} {
+			t.Run(custody+"/"+string(domain), func(t *testing.T) {
+				surface := app.FleetSurface{Readiness: map[string]app.SurfaceReadiness{
+					"registry":    {State: "empty", Authoritative: true, ReasonCode: "collection_read_succeeded_empty"},
+					"loops":       {State: "empty", Authoritative: true, ReasonCode: "collection_read_succeeded_empty"},
+					"graphs":      {State: "empty", Authoritative: true, ReasonCode: "collection_read_succeeded_empty"},
+					"queue":       {State: "empty", Authoritative: true, ReasonCode: "collection_read_succeeded_empty"},
+					"credentials": {State: custody, ReasonCode: "credentials_" + custody},
+				}}
+				model, err := consoleSurfaceModel(surface, domain)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !model.Authoritative || model.State != "empty" {
+					t.Fatalf("custody gated fleet collection: %+v", model)
+				}
+				var out bytes.Buffer
+				if err := consoleweb.Workspace(model).Render(context.Background(), &out); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(out.String(), "The authoritative collection is empty.") || strings.Contains(out.String(), "credentials_"+custody) {
+					t.Fatal("credential state leaked into fleet readiness")
+				}
+			})
+		}
+	}
+}
+
 func TestConsoleReadinessKeepsCanonicalAdmissionUnchanged(t *testing.T) {
 	original := orchestration.Readiness{Action: orchestration.FleetActionLoopPublish, State: orchestration.ReadinessDenied, ReasonCode: "authority_context_required", RepairActions: []orchestration.RepairAction{orchestration.RepairSelectAuthority}}
 	surface := app.FleetSurface{Actions: map[string]orchestration.Readiness{"loop_publish": original}}

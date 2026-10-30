@@ -14,7 +14,7 @@ func TestActionReadinessProjectionAndDestinations(t *testing.T) {
 	}{
 		{name: "no Loop context", state: "denied", reason: "authority_context_required", key: "loop_publish", heading: "Not evaluated for an exact action", url: "/console/loops/compose", message: "does not mean initial setup is incomplete"},
 		{name: "no Graph context", state: "denied", reason: "authority_context_required", key: "graph_publish", heading: "Not evaluated for an exact action", url: "/console/graphs/compose"},
-		{name: "no submission context", state: "denied", reason: "authority_context_required", key: "submission", url: "/console/graphs/run"},
+		{name: "no submission context", state: "denied", reason: "authority_context_required", key: "submission", url: "/console/graphs", message: "exact revision and digest"},
 		{name: "unsupported context", state: "denied", reason: "authority_context_required", key: "runtime_effect", message: "No Console preparation destination"},
 		{name: "ready", state: "ready", reason: "ready", heading: "Ready for the evaluated context", message: "confirmation repeats fresh"},
 		{name: "denied", state: "denied", reason: "subject_not_authorized", heading: "Denied", message: "does not establish missing credentials"},

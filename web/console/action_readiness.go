@@ -21,7 +21,8 @@ func explainAction(action ActionModel) actionExplanation {
 		case "graph_publish":
 			result.URL, result.LinkLabel = "/console/graphs/compose", "Prepare a Graph revision"
 		case "submission":
-			result.URL, result.LinkLabel = "/console/graphs/run", "Prepare an execution request"
+			result.URL, result.LinkLabel = "/console/graphs", "Select an exact Graph revision"
+			result.Message += " Select a Graph record first; its Run destination includes the exact revision and digest."
 		default:
 			result.Message += " No Console preparation destination is supported for this operation."
 		}

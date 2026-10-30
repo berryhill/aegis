@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -814,6 +815,30 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				t.Fatalf("route %s did not contain exactly the bounded same-origin navigation enhancement: %s", route.domain, body)
 			}
 		})
+	}
+	// Preparation is read-only: a context-free overview denial must not block
+	// its existing form. Publication itself still resolves fresh exact authority.
+	beforeCompose := continuationState(t, svc)
+	composeResponse, err := client.Get("http://" + address + "/console/loops/compose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	composeBody, _ := io.ReadAll(composeResponse.Body)
+	_ = composeResponse.Body.Close()
+	if composeResponse.StatusCode != http.StatusOK || !bytes.Contains(composeBody, []byte(`action="/console/loops/preview"`)) {
+		t.Fatalf("read-only Loop preparation status=%d", composeResponse.StatusCode)
+	}
+	if !maps.Equal(beforeCompose, continuationState(t, svc)) {
+		t.Fatal("read-only preparation changed canonical definitions, authority or execution state")
+	}
+	unauthCompose, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + address + "/console/loops/compose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthComposeBody, _ := io.ReadAll(unauthCompose.Body)
+	_ = unauthCompose.Body.Close()
+	if bytes.Contains(unauthComposeBody, []byte(`action="/console/loops/preview"`)) {
+		t.Fatal("unauthenticated preparation exposed protected composer")
 	}
 	doerResponse, err := client.Get("http://" + address + "/console/loops/doer")
 	if err != nil {

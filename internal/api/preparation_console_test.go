@@ -24,7 +24,7 @@ func TestQueueOverviewOmitsGenericPrerequisitesAndPreparation(t *testing.T) {
 			t.Fatalf("Queue overview retained %q", forbidden)
 		}
 	}
-	if !strings.Contains(out.String(), `href="/console/graphs/run"`) || !strings.Contains(out.String(), "Prepare execution request") {
+	if !strings.Contains(out.String(), `class="primary" href="/console/graphs"`) || !strings.Contains(out.String(), "Prepare execution request") {
 		t.Fatal("existing entry point removed")
 	}
 }
