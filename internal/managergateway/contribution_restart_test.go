@@ -40,6 +40,7 @@ import (
 // process, with deterministic Hermes protocol only. Not an installed daemon or
 // live-provider qualification. No HTTP listener, ambient credentials or grants.
 func TestContributionManagerHardRestartFrozenCandidateResume(t *testing.T) {
+	scheduleContributionNativeJourney(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("PIDFD recovery requires Linux")
 	}

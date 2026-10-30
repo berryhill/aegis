@@ -41,6 +41,7 @@ func TestContributionDeliveryLocalNarrowJourney(t *testing.T) {
 }
 
 func testContributionDeliveryControllerNativeLocal(t *testing.T, journey bool) {
+	scheduleContributionNativeJourney(t)
 	disconnected := []bool{}
 	ctx := context.Background()
 	root := t.TempDir()
