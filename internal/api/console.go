@@ -2195,8 +2195,12 @@ func consoleActions(surface app.FleetSurface, domain consoleDomain) []consoleweb
 		readiness, ok := surface.Actions[spec.key]
 		if !ok && domain == consoleCredentials {
 			credentialReadiness, available := surface.Readiness["credentials"]
-			if available && credentialReadiness.Authoritative && credentialReadiness.State == "ready" {
+			if available && credentialReadiness.Authoritative && (credentialReadiness.State == "ready" || credentialReadiness.State == "empty") {
 				actions = append(actions, consoleweb.ActionModel{Key: spec.key, Label: spec.label, State: "ready", ReasonCode: "credential_authority_ready", Primary: spec.primary})
+				continue
+			}
+			if available {
+				actions = append(actions, consoleweb.ActionModel{Key: spec.key, Label: spec.label, State: string(credentialReadiness.State), ReasonCode: credentialReadiness.ReasonCode, Primary: spec.primary})
 				continue
 			}
 		}

@@ -652,7 +652,7 @@ func TestCanonicalDetailRoutesCarryOnlyPresentationLookupAndFragmentIdentity(t *
 	}
 }
 
-func TestQueueReadyPrimaryActionLinksToTypedSubmission(t *testing.T) {
+func TestQueueReadyPrimaryActionLinksToExactGraphSelection(t *testing.T) {
 	var output bytes.Buffer
 	model := PageModel{Authenticated: true, Surface: SurfaceModel{
 		Domain: DomainQueue, Title: "Execution Queue", State: "ready", Authoritative: true,
@@ -662,7 +662,7 @@ func TestQueueReadyPrimaryActionLinksToTypedSubmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := output.String()
-	if !strings.Contains(html, `href="/console/graphs/run"`) || strings.Contains(html, `disabled title="">Prepare execution request</button>`) {
+	if !strings.Contains(html, `class="primary" href="/console/graphs"`) || strings.Contains(html, `href="/console/graphs/run"`) || strings.Contains(html, `disabled title="">Prepare execution request</button>`) {
 		t.Fatalf("ready Queue submission action is not wired: %s", html)
 	}
 }

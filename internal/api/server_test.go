@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -778,7 +779,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				t.Fatalf("route %s confused operation prerequisites with initial setup", route.domain)
 			}
 			if route.domain == "loops" || route.domain == "graphs" {
-				for _, want := range []string{"Action prerequisites", "authority_context_required", "does not mean initial setup is incomplete"} {
+				for _, want := range []string{"Action readiness", "authority_context_required", "does not mean initial setup is incomplete", `data-state="context_required"`, `data-admission-state="denied"`} {
 					if !bytes.Contains(body, []byte(want)) {
 						t.Fatalf("route %s missing operation-specific readiness explanation %q", route.domain, want)
 					}
@@ -795,11 +796,8 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				if !bytes.Contains(body, []byte(route.actionLabel)) {
 					t.Fatalf("route %s missing action label %s", route.domain, route.actionLabel)
 				}
-				if route.domain != "queue" && !bytes.Contains(body, []byte(`data-state="ready"`)) && !bytes.Contains(body, []byte(`data-state="denied"`)) && !bytes.Contains(body, []byte(`title="ready: ready"`)) {
-					t.Fatalf("route %s missing wired contextual action state: %s", route.domain, body)
-				}
-				if !bytes.Contains(body, []byte("disabled")) && !bytes.Contains(body, []byte("data-state=\"ready\"")) {
-					t.Fatalf("route %s missing disabled primary action when readiness is not ready: %s", route.domain, body)
+				if route.domain != "queue" && !bytes.Contains(body, []byte(`data-admission-state=`)) {
+					t.Fatalf("route %s missing original service admission diagnostic: %s", route.domain, body)
 				}
 			}
 			if route.domain == "credentials" {
@@ -817,6 +815,30 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				t.Fatalf("route %s did not contain exactly the bounded same-origin navigation enhancement: %s", route.domain, body)
 			}
 		})
+	}
+	// Preparation is read-only: a context-free overview denial must not block
+	// its existing form. Publication itself still resolves fresh exact authority.
+	beforeCompose := continuationState(t, svc)
+	composeResponse, err := client.Get("http://" + address + "/console/loops/compose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	composeBody, _ := io.ReadAll(composeResponse.Body)
+	_ = composeResponse.Body.Close()
+	if composeResponse.StatusCode != http.StatusOK || !bytes.Contains(composeBody, []byte(`action="/console/loops/preview"`)) {
+		t.Fatalf("read-only Loop preparation status=%d", composeResponse.StatusCode)
+	}
+	if !maps.Equal(beforeCompose, continuationState(t, svc)) {
+		t.Fatal("read-only preparation changed canonical definitions, authority or execution state")
+	}
+	unauthCompose, err := (&http.Client{Timeout: 5 * time.Second}).Get("http://" + address + "/console/loops/compose")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthComposeBody, _ := io.ReadAll(unauthCompose.Body)
+	_ = unauthCompose.Body.Close()
+	if bytes.Contains(unauthComposeBody, []byte(`action="/console/loops/preview"`)) {
+		t.Fatal("unauthenticated preparation exposed protected composer")
 	}
 	doerResponse, err := client.Get("http://" + address + "/console/loops/doer")
 	if err != nil {
