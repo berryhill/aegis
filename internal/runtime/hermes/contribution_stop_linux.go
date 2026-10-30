@@ -4,6 +4,7 @@ package hermes
 
 import (
 	"context"
+	"errors"
 	"golang.org/x/sys/unix"
 	"os"
 	"strconv"
@@ -12,24 +13,51 @@ import (
 )
 
 func contributionProcessIdentity(pid int) (start string, group int, err error) {
-	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
+	return contributionProcessIdentityFrom(pid, os.ReadFile)
+}
+
+func contributionProcessIdentityFrom(pid int, readFile func(string) ([]byte, error)) (start string, group int, err error) {
+	start, group, _, err = contributionProcessStatFrom(pid, readFile)
+	return start, group, err
+}
+
+// Read identity, membership and state from one snapshot. In particular, recovery
+// must not combine a group's membership with a reused PID's later zombie state.
+func contributionProcessStatFrom(pid int, readFile func(string) ([]byte, error)) (start string, group int, state string, err error) {
+	raw, err := readFile("/proc/" + strconv.Itoa(pid) + "/stat")
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	end := strings.LastIndexByte(string(raw), ')')
 	if end < 0 {
-		return "", 0, ErrContributionStopUnavailable
+		return "", 0, "", ErrContributionStopUnavailable
 	}
 	fields := strings.Fields(string(raw[end+1:]))
 	if len(fields) <= 19 {
-		return "", 0, ErrContributionStopUnavailable
+		return "", 0, "", ErrContributionStopUnavailable
 	}
 	group, err = strconv.Atoi(fields[2])
-	return fields[19], group, err
+	if err != nil || group < 0 || len(fields[0]) != 1 || !strings.Contains("RSDZTtXxKWPI", fields[0]) {
+		return "", 0, "", ErrContributionStopUnavailable
+	}
+	if _, err := strconv.ParseUint(fields[19], 10, 64); err != nil {
+		return "", 0, "", ErrContributionStopUnavailable
+	}
+	return fields[19], group, fields[0], nil
+}
+
+// Only an already enumerated /proc PID may disappear benignly. Never use this
+// to admit missing owned identity, failed /proc enumeration or other I/O errors.
+func contributionProcDisappeared(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH)
 }
 
 func contributionGroupEmpty(group int) (bool, error) {
-	entries, err := os.ReadDir("/proc")
+	return contributionGroupEmptyFrom(group, os.ReadDir, os.ReadFile)
+}
+
+func contributionGroupEmptyFrom(group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error)) (bool, error) {
+	entries, err := readDir("/proc")
 	if err != nil {
 		return false, err
 	}
@@ -38,8 +66,8 @@ func contributionGroupEmpty(group int) (bool, error) {
 		if err != nil {
 			continue
 		}
-		_, pg, err := contributionProcessIdentity(pid)
-		if os.IsNotExist(err) {
+		_, pg, err := contributionProcessIdentityFrom(pid, readFile)
+		if contributionProcDisappeared(err) {
 			continue
 		}
 		if err != nil {

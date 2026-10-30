@@ -8,6 +8,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Linux contribution process-group observation tolerates wrapped ENOENT/ESRCH
+  only for disappearing enumerated PIDs. Recovery reads membership and state from
+  one stat snapshot; owned identity, native Wait and quiescence gates remain required.
+
 - #411: expose candidate-bound contribution readiness and retained run image
   provenance; deny mismatched CLI/service execution before intake, preserve
   independent provisioning, and continue zero-attempt retained setup without

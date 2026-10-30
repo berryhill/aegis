@@ -112,7 +112,11 @@ func (a *Adapter) RecoverContributionRole(ctx context.Context, b ContributionSto
 }
 
 func contributionGroupQuiescent(group int) (bool, error) {
-	entries, err := os.ReadDir("/proc")
+	return contributionGroupQuiescentFrom(group, os.ReadDir, os.ReadFile)
+}
+
+func contributionGroupQuiescentFrom(group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error)) (bool, error) {
+	entries, err := readDir("/proc")
 	if err != nil {
 		return false, err
 	}
@@ -121,8 +125,8 @@ func contributionGroupQuiescent(group int) (bool, error) {
 		if err != nil {
 			continue
 		}
-		_, pg, err := contributionProcessIdentity(pid)
-		if os.IsNotExist(err) {
+		_, pg, state, err := contributionProcessStatFrom(pid, readFile)
+		if contributionProcDisappeared(err) {
 			continue
 		}
 		if err != nil {
@@ -131,17 +135,8 @@ func contributionGroupQuiescent(group int) (bool, error) {
 		if pg != group {
 			continue
 		}
-		raw, err := os.ReadFile("/proc/" + entry.Name() + "/stat")
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return false, err
-		}
-		end := strings.LastIndexByte(string(raw), ')')
-		fields := strings.Fields(string(raw[end+1:]))
 		// A zombie cannot execute; recovered proof does not claim parent reaping.
-		if len(fields) == 0 || fields[0] != "Z" {
+		if state != "Z" {
 			return false, nil
 		}
 	}
