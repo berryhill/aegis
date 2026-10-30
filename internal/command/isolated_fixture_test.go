@@ -76,6 +76,14 @@ func isolatedFixtureBudget(deadline, now time.Time) (time.Duration, error) {
 // Preserve Go's own subtest, skip, CPU, short and coverage semantics by keeping
 // those explicitly selected runs inline. Only ordinary whole-root runs fork.
 func isolatedFixtureMayFork(run, skip, cpu string, short bool, coverage string) bool {
+	// Go matches top-level alternatives independently. A whole-expression
+	// regexp could carry an inline flag into another alternative and invent a
+	// selected native root. Preserve Go's own matching for these explicit modes.
+	for _, prefix := range []string{"(?i", "(?m", "(?s", "(?U", "(?-"} {
+		if strings.Contains(run, prefix) {
+			return false
+		}
+	}
 	return !strings.Contains(run, "/") && skip == "" && cpu == "" && !short && coverage == ""
 }
 

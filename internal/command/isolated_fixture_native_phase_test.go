@@ -23,6 +23,23 @@ func TestIsolatedFixtureRepeatedRunsStayInline(t *testing.T) {
 	}
 }
 
+func TestIsolatedFixtureInlineFlagAlternativesStayInline(t *testing.T) {
+	for _, pattern := range []string{
+		`(?i)^testinstalledjourneyprotectedrecovery$|^testpublicrootcontributionmissingremotepreflight$`,
+		`(?m)^TestInstalledJourneyProtectedRecovery$`,
+		`(?s:TestInstalledJourneyProtectedRecovery)`,
+		`(?U)^TestInstalledJourneyProtectedRecovery$`,
+		`(?-i)^TestInstalledJourneyProtectedRecovery$`,
+	} {
+		if isolatedFixtureMayFork(pattern, "", "", false, "") {
+			t.Fatalf("inline flag selection %q bypassed Go's own matcher", pattern)
+		}
+	}
+	if !isolatedFixtureMayFork(`^(?:TestInstalledJourneyProtectedRecovery|TestPublicRootContributionMissingRemotePreflight)$`, "", "", false, "") {
+		t.Fatal("ordinary CI noncapturing alternatives lost bounded scheduling")
+	}
+}
+
 func TestIsolatedFixtureNativePhaseSelection(t *testing.T) {
 	for _, tc := range []struct {
 		run  string
