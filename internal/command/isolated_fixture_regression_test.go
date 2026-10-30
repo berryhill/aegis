@@ -27,6 +27,7 @@ func TestIsolatedFixtureRootRegistrationPrecedesSerialTests(t *testing.T) {
 	if runtime.GOOS == "linux" {
 		want = append([]string{"TestInstalledUpgradeFullCommand", "TestRecoveryCLIApprovalRejections"}, want...)
 	}
+	want = append(want, isolatedFixtureNativeRoots...)
 	if len(names) < len(want) {
 		t.Fatal("missing isolated fixture roots")
 	}

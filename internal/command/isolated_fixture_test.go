@@ -108,6 +108,23 @@ type isolatedFixtureNativePhase struct {
 	mu      sync.Mutex
 	pending map[string]bool
 	done    chan struct{}
+	tail    chan struct{}
+}
+
+// Reserve synchronously in compiled root invocation order, not in the order
+// goroutines happen to wake when native cleanup opens the phase. In particular,
+// the first (long upgrade) root cannot lose both slots to later short roots.
+// A turn ends at admission, never at parallel-result consumption.
+func (p *isolatedFixtureNativePhase) admissionTurn() (chan struct{}, func()) {
+	if p == nil {
+		return nil, func() {}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	previous := p.tail
+	current := make(chan struct{})
+	p.tail = current
+	return previous, func() { close(current) }
 }
 
 func newIsolatedFixtureNativePhase(run string) *isolatedFixtureNativePhase {
@@ -320,15 +337,25 @@ func isolatedFixtureStart(slots chan struct{}, deadline time.Time, tempBase stri
 
 func isolatedFixtureStartAfter(phase *isolatedFixtureNativePhase, slots chan struct{}, deadline time.Time, tempBase string, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
 	done := make(chan isolatedFixtureOutcome, 1)
+	previous, finish := phase.admissionTurn()
 	go func() {
 		result := func() (result isolatedFixtureOutcome) {
+			var turn sync.Once
+			finishTurn := func() { turn.Do(finish) }
+			defer finishTurn() // Failed/expired admission must not strand successors.
 			if err := phase.wait(deadline); err != nil {
 				return isolatedFixtureOutcome{err: err}
+			}
+			if previous != nil {
+				if err := (&isolatedFixtureNativePhase{done: previous}).wait(deadline); err != nil {
+					return isolatedFixtureOutcome{err: err}
+				}
 			}
 			var release func()
 			if err := isolatedFixtureAcquire(slots, deadline, func(f func()) { release = f }); err != nil {
 				return isolatedFixtureOutcome{err: err}
 			}
+			finishTurn()
 			defer release()
 			home, err := os.MkdirTemp(tempBase, "aegis-command-fixture-")
 			if err != nil {
