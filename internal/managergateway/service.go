@@ -452,17 +452,23 @@ func (s *Service) TurnWithProtectedIntake(ctx context.Context, subject core.Subj
 		return result, nil
 	}
 	if entry.mode != "conversational" || entry.runtime == nil {
+		if result, ok := RegistrationFallback(input); ok {
+			return result, nil
+		}
 		return TurnResult{}, turnFailureForReason(entry.reason)
 	}
 	turnCtx, cancel := managerTurnContext(ctx, s.app.Config.Manager.Hermes.TurnTimeout)
 	defer cancel()
-	message, err := entry.runtime.Turn(turnCtx, input)
+	message, authoritative, err := entry.runtime.turnWithOrigin(turnCtx, input)
 	if err != nil {
 		if !s.now().Before(entry.expires) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return TurnResult{}, app.ErrExpired
 		}
 		s.degradeRuntime(entry)
 		return TurnResult{}, normalizeTurnFailure(err)
+	}
+	if authoritative {
+		return TurnResult{Kind: "platform_operation", Origin: TurnOriginAuthoritative, Message: message}, nil
 	}
 	return TurnResult{Kind: "message", Origin: TurnOriginModel, Message: message}, nil
 }

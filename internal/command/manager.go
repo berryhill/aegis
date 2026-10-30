@@ -435,6 +435,9 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		}
 		if !createRequested {
 			result, handled, operationErr := managergateway.DispatchDeterministicAegisTurn(sessionCtx, service, subject, line)
+			if !handled && conversation == nil {
+				result, handled = managergateway.RegistrationFallback(line)
+			}
 			if handled {
 				composer.Remember(line)
 				_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
@@ -514,7 +517,11 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 				continue
 			}
 			if message != "" {
-				_ = presentation.Emit(tui.Event{Kind: tui.AssistantCompleted, Origin: tui.ModelUntrusted, Message: message})
+				if conversation.session.Authoritative() {
+					_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
+				} else {
+					_ = presentation.Emit(tui.Event{Kind: tui.AssistantCompleted, Origin: tui.ModelUntrusted, Message: message})
+				}
 			}
 			_ = presentation.Emit(tui.Event{Kind: tui.TurnCompleted, Origin: tui.AegisAuthoritative, Message: "guarded turn complete"})
 			continue

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -251,6 +252,19 @@ func evaluateConformance(test ConformanceCase, response Response) (bool, string)
 			if actual, ok := arguments[key].(string); !ok || actual != expected {
 				return false, "unexpected_argument_" + key
 			}
+		}
+	}
+	if len(test.ExpectedInput) > 0 {
+		var args struct {
+			Operation string          `json:"operation"`
+			Input     json.RawMessage `json:"input"`
+		}
+		if response.Proposal == nil || json.Unmarshal(response.Proposal.Arguments, &args) != nil {
+			return false, "platform_input_missing"
+		}
+		var actual, expected any
+		if json.Unmarshal(args.Input, &actual) != nil || json.Unmarshal(test.ExpectedInput, &expected) != nil || !reflect.DeepEqual(actual, expected) {
+			return false, "platform_input_mismatch"
 		}
 	}
 	lower := strings.ToLower(response.Message)

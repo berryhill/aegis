@@ -44,7 +44,7 @@ func DispatchDeterministicAegisTurn(ctx context.Context, service *app.Service, s
 	defer route.Wipe()
 	switch route.kind {
 	case intentAgentRegistration:
-		return agentRegistrationGuidance(), true, nil
+		return TurnResult{}, false, nil
 	case intentManagerLifecycle:
 		return managerLifecycleGuidance(), true, nil
 	default:

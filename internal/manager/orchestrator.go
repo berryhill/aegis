@@ -53,6 +53,7 @@ type SessionConfig struct {
 	GatewaySessionID     string
 	Guard                *Guard
 	Operations           Operations
+	Platform             Platform
 	Confirm              Confirm
 	Intake               Intake
 	Receipt              ReceiptSink
@@ -61,14 +62,18 @@ type SessionConfig struct {
 }
 
 type Session struct {
-	config    SessionConfig
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.Mutex
-	closing   bool
-	closed    bool
-	finalized bool
-	receipt   SessionReceipt
+	config          SessionConfig
+	ctx             context.Context
+	cancel          context.CancelFunc
+	mu              sync.Mutex
+	turnMu          sync.Mutex
+	closing         bool
+	closed          bool
+	finalized       bool
+	receipt         SessionReceipt
+	platformPending *pendingPlatform
+	platformContext string
+	authoritative   bool
 }
 
 func NewSession(parent context.Context, config SessionConfig) (*Session, error) {
@@ -185,11 +190,19 @@ func (s *Session) HandleCreateIntentWithValue(ctx context.Context, text string, 
 // envelope. Proposal envelopes and non-canonical responses remain completely
 // buffered. The returned bool reports whether any assistant text was released.
 func (s *Session) HandleStream(ctx context.Context, text string, emit func(string) error) (string, bool, error) {
+	s.turnMu.Lock()
+	defer s.turnMu.Unlock()
 	activeCtx, err := s.activeContext(ctx)
 	if err != nil {
 		return "", false, err
 	}
 	ctx = activeCtx
+	s.mu.Lock()
+	s.authoritative = false
+	s.mu.Unlock()
+	if message, handled, err := s.platformControl(ctx, text); handled {
+		return message, false, err
+	}
 	finding := s.config.Guard.Inspect(ctx, ContentEnvelope{Source: SourceUser, SubjectID: s.config.SubjectID, SessionID: s.config.SessionID, ManagerID: LogicalAgentID, SecurityContext: SecurityContext, ContentType: "text/plain", ProvenanceID: "terminal-turn", RouteClass: "local", Content: []byte(text)})
 	if err := ctx.Err(); err != nil {
 		return "", false, err
@@ -198,6 +211,10 @@ func (s *Session) HandleStream(ctx context.Context, text string, emit func(strin
 		return "", false, errors.New(finding.Reason)
 	}
 	preview := newMessagePreview(s.config.MaximumResponseBytes)
+	text, err = s.platformModelInput(ctx, text)
+	if err != nil {
+		return "", false, err
+	}
 	var responseBytes []byte
 	if gateway, ok := s.config.Gateway.(streamingGateway); ok && emit != nil {
 		responseBytes, err = gateway.TurnStream(ctx, s.config.GatewaySessionID, text, s.config.MaximumResponseBytes, func(chunk []byte) error {
@@ -252,6 +269,8 @@ func (s *Session) activeContext(ctx context.Context) (context.Context, error) {
 
 func (s *Session) execute(ctx context.Context, proposal Proposal, arguments any, message string) (string, error) {
 	switch proposal.Operation {
+	case PlatformCall, PlatformDiscover:
+		return s.executePlatform(ctx, proposal.Operation, arguments)
 	case StatusShow:
 		result, err := s.config.Operations.Status(ctx)
 		return operationResult(proposal.Operation, result, err)

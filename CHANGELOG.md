@@ -6,6 +6,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ## Unreleased
 
+### Added
+
+- #248 source: general typed manager capability discovery and dispatch across
+  existing services; immutable digest confirmation, authoritative result origin,
+  stable Graph submission identities and durable readback. Protected runtime and
+  foundational decisions remain separate. See [operation matrix](docs/CONVERSATIONAL_OPERATIONS.md);
+  live-model recertification and installed acceptance are not claimed.
+
 ### Fixed
 
 - Linux contribution process-group observation tolerates wrapped ENOENT/ESRCH
