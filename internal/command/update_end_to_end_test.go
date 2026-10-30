@@ -198,6 +198,44 @@ func upgradeReleaseBuild(t *testing.T, dir, version string) string {
 	}
 	return path
 }
+
+// Only immutable candidate/archive bytes are reusable. Every scenario still
+// constructs its own target, state, authority, transport and real service.
+type upgradeFixtureArchive struct {
+	binaryDigest [sha256.Size]byte
+	data         string
+	checksum     [sha256.Size]byte
+}
+
+func packUpgradeFixtureArchive(binary []byte) (upgradeFixtureArchive, error) {
+	var archive bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&archive, gzip.BestSpeed)
+	if err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "aegis", Mode: 0755, Size: int64(len(binary))}); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	if _, err := tw.Write(binary); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	if err := tw.Close(); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	if err := gz.Close(); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	return upgradeFixtureArchive{binaryDigest: sha256.Sum256(binary), data: archive.String(), checksum: sha256.Sum256(archive.Bytes())}, nil
+}
+
+func (a upgradeFixtureArchive) validate(binary []byte) error {
+	if sha256.Sum256(binary) != a.binaryDigest || sha256.Sum256([]byte(a.data)) != a.checksum {
+		return errors.New("prepared fixture archive identity changed")
+	}
+	return nil
+}
+
 func upgradeWrite(t *testing.T, path string, b []byte, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -207,11 +245,26 @@ func upgradeWrite(t *testing.T, path string, b []byte, mode os.FileMode) {
 		t.Fatal(err)
 	}
 }
-func newUpgradeCommandFixture(t *testing.T, old, candidate string) *upgradeCommandFixture {
-	return newVersionedUpgradeCommandFixture(t, old, candidate, "0.2.29")
+func newUpgradeCommandFixture(t *testing.T, old, candidate string, archive ...upgradeFixtureArchive) *upgradeCommandFixture {
+	return newVersionedUpgradeCommandFixture(t, old, candidate, "0.2.29", archive...)
 }
-func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVersion string) *upgradeCommandFixture {
+func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVersion string, prepared ...upgradeFixtureArchive) *upgradeCommandFixture {
 	t.Helper()
+	if len(prepared) > 1 {
+		t.Fatal("ambiguous prepared fixture archive")
+	}
+	binary := mustCommandRead(t, candidate)
+	var archive upgradeFixtureArchive
+	var archiveErr error
+	if len(prepared) == 1 {
+		archive = prepared[0]
+		archiveErr = archive.validate(binary)
+	} else {
+		archive, archiveErr = packUpgradeFixtureArchive(binary)
+	}
+	if archiveErr != nil {
+		t.Fatal(archiveErr)
+	}
 	path, state := validConfigWithoutOperationalAuthority(t)
 	home := filepath.Dir(path)
 	t.Setenv("HOME", home)
@@ -265,27 +318,8 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 		t.Fatal(err)
 	}
 	runner.calls = nil
-	var archive bytes.Buffer
-	gz, err := gzip.NewWriterLevel(&archive, gzip.BestSpeed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tw := tar.NewWriter(gz)
-	binary := mustCommandRead(t, candidate)
-	if err = tw.WriteHeader(&tar.Header{Name: "aegis", Mode: 0755, Size: int64(len(binary))}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = tw.Write(binary); err != nil {
-		t.Fatal(err)
-	}
-	if err = tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err = gz.Close(); err != nil {
-		t.Fatal(err)
-	}
 	asset := fmt.Sprintf("aegis_v%s_%s_%s.tar.gz", releaseVersion, runtime.GOOS, runtime.GOARCH)
-	sum := sha256.Sum256(archive.Bytes())
+	sum := archive.checksum
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -294,7 +328,7 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 		case "/download/v" + releaseVersion + "/SHA256SUMS":
 			fmt.Fprintf(w, "%x  %s\n", sum, asset)
 		case "/download/v" + releaseVersion + "/" + asset:
-			_, _ = w.Write(archive.Bytes())
+			_, _ = io.WriteString(w, archive.data)
 		default:
 			http.NotFound(w, r)
 		}
@@ -333,13 +367,17 @@ func TestInstalledUpgradeFullCommand(t *testing.T) {
 	builds := t.TempDir()
 	old := upgradeReleaseBuild(t, builds, "0.2.28")
 	candidate := upgradeReleaseBuild(t, builds, "0.2.29")
+	archive, err := packUpgradeFixtureArchive(mustCommandRead(t, candidate))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, scenario := range []string{"healthy", "current-cli-stopped", "already-stopped", "interrupted-authority", "legacy-unit", "migration-failure-resume", "cancelled-auth", "unavailable-auth", "startup-failure-resume", "socket-denial", "open-writer-denial", "stale-image", "journal-tamper", "journal-link", "journal-identity"} {
 		t.Run(scenario, func(t *testing.T) {
 			installed := old
 			if scenario == "current-cli-stopped" {
 				installed = candidate
 			}
-			f := newUpgradeCommandFixture(t, installed, candidate)
+			f := newUpgradeCommandFixture(t, installed, candidate, archive)
 			if scenario == "current-cli-stopped" {
 				f.updater.CurrentVersion = "0.2.29"
 			}

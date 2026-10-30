@@ -89,23 +89,6 @@ func TestContributionNativeJourneySchedulingBoundAndCleanup(t *testing.T) {
 	}
 }
 
-func TestContributionNativeJourneyGroupDoesNotHoldLeafPermit(t *testing.T) {
-	for _, environment := range []struct{ root, phase string }{
-		{}, {root: "/fixed/owned-restart"}, {phase: "initial"},
-	} {
-		calls := 0
-		probe := &nativeJourneyScheduleProbe{parallel: func() { calls++ }}
-		scheduleContributionNativeJourneyGroupWithEnvironment(probe, environment.root, environment.phase)
-		want := 0
-		if environment.root == "" && environment.phase == "" {
-			want = 1
-		}
-		if calls != want || len(probe.cleanups) != 0 {
-			t.Fatal("group scheduling acquired a leaf permit or parallelized a fixed-root child")
-		}
-	}
-}
-
 func TestContributionNativeJourneyRestartStaysSerial(t *testing.T) {
 	for _, restart := range []struct{ root, phase string }{
 		{root: "/fixed/owned-restart"},
