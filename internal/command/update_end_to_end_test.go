@@ -214,7 +214,7 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 	if _, err = authoritybadger.Initialize(context.Background(), filepath.Join(state, "persistence", "authority-v1")); err != nil {
 		t.Fatal(err)
 	}
-	verifier, err := principalauth.Enroll("principal", []byte("synthetic-recovery-password"))
+	verifier, err := recoveryPrincipalEnrollment()
 	if err != nil {
 		t.Fatal(err)
 	}

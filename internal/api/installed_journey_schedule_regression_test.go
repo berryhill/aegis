@@ -25,6 +25,23 @@ func (p *installedAPIJourneyProbe) cleanup() {
 	}
 }
 
+func TestInstalledAPIJourneyGroupDoesNotAcquireLeafPermit(t *testing.T) {
+	for _, browser := range []string{"", "1"} {
+		t.Run("browser="+browser, func(t *testing.T) {
+			t.Setenv("AEGIS_QUEUE_RESULT_BROWSER_TEST", browser)
+			parallel := false
+			probe := &installedAPIJourneyProbe{parallel: func() { parallel = true }}
+			scheduleInstalledAPIJourneyGroup(probe)
+			if parallel != (browser != "1") {
+				t.Fatal("group parallel/browser scheduling drift")
+			}
+			if len(probe.cleanups) != 0 {
+				t.Fatal("group must not hold a leaf permit")
+			}
+		})
+	}
+}
+
 func TestInstalledAPIJourneySchedulingBoundAndCleanup(t *testing.T) {
 	if cap(installedAPIJourneySlots) != 2 {
 		t.Fatal("installed whole-journey concurrency must remain two")

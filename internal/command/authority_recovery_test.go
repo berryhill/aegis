@@ -39,7 +39,7 @@ func TestAuthorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *test
 			if err = os.Rename(filepath.Join(path, "CLEAN"), filepath.Join(path, "DIRTY")); err != nil {
 				t.Fatal(err)
 			}
-			verifier, err := principalauth.Enroll("principal", []byte("synthetic-recovery-password"))
+			verifier, err := recoveryPrincipalEnrollment()
 			if err != nil {
 				t.Fatal(err)
 			}

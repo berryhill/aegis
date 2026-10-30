@@ -919,10 +919,13 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 }
 
 func TestConsoleAgentRegistrationAndLifecycleUseReviewedAuthoritativeState(t *testing.T) {
+	scheduleInstalledAPIJourneyGroup(t)
 	t.Run("denied-operator-stanza", func(t *testing.T) {
+		scheduleInstalledAPIJourney(t)
 		testConsoleAgentRegistrationAndLifecycle(t, false)
 	})
 	t.Run("principal-selector-does-not-override-authentication-method", func(t *testing.T) {
+		scheduleInstalledAPIJourney(t)
 		testConsoleAgentRegistrationAndLifecycle(t, true)
 	})
 }

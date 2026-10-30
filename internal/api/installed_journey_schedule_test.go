@@ -18,6 +18,14 @@ func scheduleInstalledAPIJourney(t installedAPIJourneyTest) {
 		os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") == "1")
 }
 
+// Grouping parents release the serial barrier without holding a leaf permit.
+func scheduleInstalledAPIJourneyGroup(t installedAPIJourneyTest) {
+	t.Helper()
+	if os.Getenv("AEGIS_QUEUE_RESULT_BROWSER_TEST") != "1" {
+		t.Parallel()
+	}
+}
+
 func scheduleInstalledAPIJourneyWithSlots(t installedAPIJourneyTest, slots chan struct{}, browser bool) {
 	t.Helper()
 	if browser {

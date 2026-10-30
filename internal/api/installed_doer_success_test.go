@@ -48,6 +48,7 @@ func TestIssue351InstalledControllerParticipantRunResult(t *testing.T) {
 }
 
 func TestIssue351InstalledControllerHistoricalResults(t *testing.T) {
+	scheduleInstalledAPIJourneyGroup(t)
 	// Each leaf owns its fixture and permit; the grouping parent must not
 	// acquire a permit (nor may mutable denial subtests become parallel).
 	for _, mode := range []string{"authority-expiry", "host-expiry", "revoked", "disabled", "retired"} {

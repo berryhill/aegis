@@ -77,7 +77,7 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			verifier, err := principalauth.Enroll("principal", []byte("synthetic-recovery-password"))
+			verifier, err := recoveryPrincipalEnrollment()
 			if err != nil {
 				t.Fatal(err)
 			}

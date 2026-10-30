@@ -55,7 +55,7 @@ func TestRecoveryCLIApprovalRejections(t *testing.T) {
 			foreign := []byte("foreign recovery CLI fixture")
 			upgradeWrite(t, plan.UnitPath, foreign, 0600)
 			if scenario != "missing-auth" {
-				v, e := principalauth.Enroll("principal", []byte("synthetic-recovery-password"))
+				v, e := recoveryPrincipalEnrollment()
 				if e != nil {
 					t.Fatal(e)
 				}

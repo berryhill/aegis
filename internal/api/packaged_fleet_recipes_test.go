@@ -14,7 +14,7 @@ import (
 // Runtime/provider and authority preparation are synthetic isolated fixtures.
 // This test does not claim an agent followed prose or qualify a live target.
 func TestPackagedFleetRecipes(t *testing.T) {
-	scheduleInstalledAPIJourney(t)
+	scheduleInstalledAPIJourneyGroup(t)
 	archive := os.Getenv("AEGIS_TEST_SKILL_ARCHIVE")
 	revision := os.Getenv("AEGIS_TEST_SKILL_REVISION")
 	digest := os.Getenv("AEGIS_TEST_SKILL_DIGEST")
@@ -48,11 +48,27 @@ func TestPackagedFleetRecipes(t *testing.T) {
 	}
 	// Exercise the advertised commands, not just their help/JSON declarations.
 	// Each isolated owning service retains its store lease throughout the case.
-	t.Run("separate-publication-and-exact-run", func(t *testing.T) { installedOnlineDoerExactBytesSuccess(t, true, "reusable") })
-	t.Run("retained-create-and-execute", func(t *testing.T) { installedOnlineDoerExactBytesSuccess(t, true, "retained") })
-	t.Run("same-intent-preparation-recovery", func(t *testing.T) { installedOnlineDoerExactBytesSuccess(t, true, "failed-launch") })
-	t.Run("failure-continuity-distinct-task-and-budget", func(t *testing.T) { installedOnlineDoerExactBytesSuccess(t, true, "reusable-continuity") })
-	if _, err := skillbundle.InspectInstalled(home); err != nil {
-		t.Fatal(err)
-	}
+	// Run the final inspection after every leaf, before TempDir removes home.
+	// No journey receives or mutates this independently installed recipe home.
+	t.Cleanup(func() {
+		if _, err := skillbundle.InspectInstalled(home); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("separate-publication-and-exact-run", func(t *testing.T) {
+		scheduleInstalledAPIJourney(t)
+		installedOnlineDoerExactBytesSuccess(t, true, "reusable")
+	})
+	t.Run("retained-create-and-execute", func(t *testing.T) {
+		scheduleInstalledAPIJourney(t)
+		installedOnlineDoerExactBytesSuccess(t, true, "retained")
+	})
+	t.Run("same-intent-preparation-recovery", func(t *testing.T) {
+		scheduleInstalledAPIJourney(t)
+		installedOnlineDoerExactBytesSuccess(t, true, "failed-launch")
+	})
+	t.Run("failure-continuity-distinct-task-and-budget", func(t *testing.T) {
+		scheduleInstalledAPIJourney(t)
+		installedOnlineDoerExactBytesSuccess(t, true, "reusable-continuity")
+	})
 }
