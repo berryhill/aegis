@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -162,13 +163,35 @@ func installLegacyUpgradeFixture(t *testing.T, f *upgradeCommandFixture) {
 	upgradeWrite(t, f.runner.plan.UnitPath, []byte(unit), 0600)
 }
 
+func upgradeReleaseBuildArgs(path, version string) []string {
+	flags := "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=" + version + " -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=" + strings.Repeat("a", 40)
+	args := []string{"build"}
+	// Reuse the parent test's instrumented dependency cache rather than compiling
+	// a second, non-race dependency graph inside the package's fixed deadline.
+	if fixtureCLIRace {
+		args = append(args, "-race")
+	}
+	return append(args, "-buildvcs=false", "-ldflags", flags, "-o", path, "./cmd/aegis")
+}
+
+func TestUpgradeReleaseBuildArgs(t *testing.T) {
+	const path = "/private fixture/aegis-0.2.29"
+	want := []string{"build", "-buildvcs=false", "-ldflags", "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=0.2.29 -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "-o", path, "./cmd/aegis"}
+	if fixtureCLIRace {
+		want = append([]string{"build", "-race"}, want[1:]...)
+	}
+	got := upgradeReleaseBuildArgs(path, "0.2.29")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("release fixture args = %q, want %q", got, want)
+	}
+}
+
 func upgradeReleaseBuild(t *testing.T, dir, version string) string {
 	t.Helper()
 	path := filepath.Join(dir, "aegis-"+version)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	flags := "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=" + version + " -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=" + strings.Repeat("a", 40)
-	cmd := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-ldflags", flags, "-o", path, "./cmd/aegis")
+	cmd := exec.CommandContext(ctx, "go", upgradeReleaseBuildArgs(path, version)...)
 	cmd.Dir = filepath.Join("..", "..")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build release fixture: %v\n%s", err, out)
