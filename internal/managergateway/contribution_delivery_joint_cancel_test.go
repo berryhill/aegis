@@ -3,20 +3,50 @@ package managergateway
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/berryhill/aegis/internal/app"
+	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
+	credentialbolt "github.com/berryhill/aegis/internal/credentials/bbolt"
 	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/orchestration"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/queue"
 	"github.com/berryhill/aegis/internal/reference"
 )
+
+// configureJointCancellationDelivery supplies real, empty, isolated custody.
+// It configures prerequisites only: no credential, grant, controller execution or
+// remote permission is fabricated; the tracked policy below still holds/denies.
+func configureJointCancellationDelivery(t *testing.T, ctx context.Context, s *app.Service) {
+	t.Helper()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := t.TempDir()
+	must(os.Chmod(root, 0700))
+	key := filepath.Join(root, "key")
+	must(credentials.CreateHostKey(key, "joint-cancellation"))
+	custody, err := credentials.LoadFileCustodian(key)
+	must(err)
+	t.Cleanup(custody.Close)
+	repository, err := credentialbolt.Open(ctx, filepath.Join(root, "credentials.db"), "joint-cancellation", custody)
+	must(err)
+	t.Cleanup(func() { must(repository.Close()) })
+	s.CredentialAuthority = credentials.NewAuthority(repository, custody)
+	s.Config.ContributionDelivery = &config.ContributionDelivery{Convention: "contribution-publication.v1", Actor: "fixture", Author: config.ContributionGitIdentity{Name: "Author", Email: "author@example.invalid"}, Committer: config.ContributionGitIdentity{Name: "Controller", Email: "controller@example.invalid"}, ProtectionPolicy: "exact-protection", RequiredChecks: []string{"native"}, RequiredReviewers: []string{"independent"}, PostMergeChecks: []string{"postmerge"}, MergeMethod: "squash"}
+}
 
 // No write authority is manufactured: the actual tracked typed entry is held
 // before policy admission, then explicitly denied. Historical policies, custody,

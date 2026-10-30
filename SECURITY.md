@@ -1,5 +1,15 @@
 # Security Policy
 
+Contribution readiness observes exact profile/role/native/repository scope and
+running image without granting authority. Candidate mismatch denies Run before
+intake; admitted preparation retains immutable image provenance for historical
+readback. Failed prerequisite observation does not pin an execution image.
+Protected role provisioning still uses the existing independent decision owner;
+missing native/controller setup is not auto-repaired. Configured credentials and
+remote policy do not prove fresh actor permission. See
+[the #411 source boundary](docs/implementation/issue-411-launch-review.md).
+
+
 
 Retained contribution provisioning uses the owning API's inode-pinned protected
 companion and exact canonical plan/consumed approval/verified receipt readback.

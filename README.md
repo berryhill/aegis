@@ -1,5 +1,11 @@
 # Aegis
 
+Source candidate: `/contribute readiness [scope]` reports exact published profile,
+role/native/repository prerequisites and owning-image provenance before Run.
+[Candidate-bound contribution setup](docs/implementation/issue-411-launch-review.md)
+retains the same intent through independent setup; readiness is not authority or
+live-provider qualification.
+
 
 Source-only [retained contribution continuity](docs/continuity/contribution-continuity.md)
 uses `/contribute resume [reference]`, exact protected provisioning readback and

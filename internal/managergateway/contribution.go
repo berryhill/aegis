@@ -13,6 +13,18 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 	args := request.Arguments
 	var err error
 	switch args[0] {
+	case "readiness":
+		scope := ""
+		if len(args) == 2 {
+			scope = args[1]
+		}
+		readiness, e := s.app.ReadContributionReadinessAs(ctx, entry.subject, app.ContributionReadinessInput{Loop: entry.contributionLoop, Scope: scope, ExpectedService: app.ContributionExpectedService(ctx)})
+		err = e
+		if err == nil {
+			result.State, result.Reason = "observed", readiness.Reason
+			result.Data = map[string]any{"readiness": readiness, "execution_started": false, "completed": false}
+		}
+
 	case "select":
 		selected, e := s.app.SelectContributionLoopAs(ctx, entry.subject, args[1])
 		err = e
@@ -28,10 +40,19 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			s.mu.Unlock()
 			if err == nil {
 				result.State, result.Reason = "selected", "exact_published_contribution_loop"
-				result.Data = map[string]any{"loop": selected, "execution_started": false}
+				readiness, e := s.app.ReadContributionReadinessAs(ctx, entry.subject, app.ContributionReadinessInput{Loop: selected, ExpectedService: app.ContributionExpectedService(ctx)})
+				if e != nil {
+					return result, e
+				}
+				result.Data = map[string]any{"loop": selected, "readiness": readiness, "execution_started": false}
 			}
 		}
 	case "run":
+		if expected := app.ContributionExpectedService(ctx); expected != nil && *expected != app.CurrentContributionServiceIdentity() {
+			result.State, result.Reason = "blocked", "candidate_service_mismatch"
+			result.Data = map[string]any{"observing_service": app.CurrentContributionServiceIdentity(), "execution_started": false, "completed": false}
+			break
+		}
 		scope := ""
 		if len(args) == 3 {
 			scope = args[2]
@@ -140,7 +161,10 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			break
 		}
 		result.Data = map[string]any{"continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
-		execution, e := s.app.ResumeContributionAs(ctx, entry.subject, key)
+		execution, e := s.app.ContributionExecutionStatusAs(ctx, entry.subject, key)
+		if e == nil && execution.Execution != nil && len(execution.Execution.Attempts) > 0 {
+			execution, e = s.app.ResumeContributionAs(ctx, entry.subject, key)
+		}
 		err = e
 		if err == nil {
 			journey, journeyErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, key)
@@ -214,6 +238,9 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 	}
 	result.FinishedAt = s.now()
 	auditOutcome := result.State
+	if auditOutcome == "blocked" {
+		auditOutcome = "denied"
+	}
 	if auditOutcome == "selected" || auditOutcome == "observed" {
 		auditOutcome = "completed"
 	}
