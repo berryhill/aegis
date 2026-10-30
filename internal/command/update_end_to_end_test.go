@@ -392,7 +392,7 @@ func (f *upgradeCommandFixture) run(t *testing.T, ctx context.Context, provider 
 	return result, err
 }
 
-func TestInstalledUpgradeFullCommand(t *testing.T) {
+func installedUpgradeFullCommand(t *testing.T) {
 	if isolateCommandFixture(t) {
 		return
 	}

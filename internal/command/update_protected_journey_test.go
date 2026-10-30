@@ -22,7 +22,7 @@ import (
 
 // Exercise the production retained-journey authentication and recovery methods,
 // not a callback that assumes authentication. No terminal emulation is used.
-func TestInstalledJourneyProtectedRecovery(t *testing.T) {
+func installedJourneyProtectedRecovery(t *testing.T) {
 	if isolateCommandFixture(t) {
 		return
 	}

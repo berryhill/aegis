@@ -27,7 +27,7 @@ func (p *recoveryPasswordFixture) Acquire(_ context.Context, r AuthorityPassphra
 	return []byte("synthetic-recovery-password"), nil
 }
 
-func TestAuthorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.T) {
+func authorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.T) {
 	if isolateCommandFixture(t) {
 		return
 	}

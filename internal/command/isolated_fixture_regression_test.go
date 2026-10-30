@@ -5,12 +5,46 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/berryhill/aegis/internal/testprocess"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestIsolatedFixtureRootRegistrationPrecedesSerialTests(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := testprocess.CombinedOutput(exec.Command(executable, "-test.list=."), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := strings.Fields(string(output))
+	want := []string{"TestAuthorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline", "TestInstalledJourneyProtectedRecovery"}
+	if runtime.GOOS == "linux" {
+		want = append([]string{"TestInstalledUpgradeFullCommand", "TestRecoveryCLIApprovalRejections"}, want...)
+	}
+	if len(names) < len(want) {
+		t.Fatal("missing isolated fixture roots")
+	}
+	for i, name := range want {
+		if names[i] != name {
+			t.Fatalf("fixture root %s must precede serial tests; position %d contains %s", name, i, names[i])
+		}
+		count := 0
+		for _, actual := range names {
+			if actual == name {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Fatalf("fixture %s registered %d times", name, count)
+		}
+	}
+}
 
 func TestIsolatedFixtureForeignChildFailsWithoutRecursion(t *testing.T) {
 	executable, err := os.Executable()
