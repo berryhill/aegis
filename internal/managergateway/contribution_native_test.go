@@ -68,7 +68,7 @@ func contributionManagerNativeRepair(t *testing.T, disconnected ...bool) {
 		}
 	}
 	must(os.Mkdir(repoPath, 0700))
-	files := map[string]string{"go.mod": "module synthetic\n\ngo 1.24\n", "main.go": "package main\nimport (\"fmt\";\"os\")\nfunc main(){if len(os.Args)>1{os.Exit(2)};fmt.Print(Value())}\n", "value.go": "package main\nfunc Value() int{return 0}\n", "offset.go": "package main\nfunc Offset() int{return 0}\n", "main_test.go": `package main
+	files := map[string]string{"go.mod": "module synthetic\n\ngo 1.24\n", "main.go": "package main\nimport (\"os\";\"strconv\")\nfunc main(){if len(os.Args)>1{os.Exit(2)};os.Stdout.WriteString(strconv.Itoa(Value()))}\n", "value.go": "package main\nfunc Value() int{return 0}\n", "offset.go": "package main\nfunc Offset() int{return 0}\n", "main_test.go": `package main
 import("testing";"os";"os/exec")
 func TestBehavior(t *testing.T){if Value()+Offset()!=42{t.Fatal("multi-file defect")}}
 func TestSecurity(t *testing.T){if Offset()<0{t.Fatal("negative")}}

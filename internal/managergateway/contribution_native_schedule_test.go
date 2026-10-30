@@ -18,6 +18,21 @@ func scheduleContributionNativeJourney(t contributionNativeJourneyTest) {
 		os.Getenv("AEGIS_RESTART_ROOT"), os.Getenv("AEGIS_RESTART_PHASE"))
 }
 
+// A grouping parent owns no runtime or state and must not hold a leaf permit.
+// Each restart leaf creates its own root and retains its slot across both child
+// generations and all exact-identity cleanup. Fixed-root children stay serial.
+func scheduleContributionNativeJourneyGroup(t contributionNativeJourneyTest) {
+	scheduleContributionNativeJourneyGroupWithEnvironment(t,
+		os.Getenv("AEGIS_RESTART_ROOT"), os.Getenv("AEGIS_RESTART_PHASE"))
+}
+
+func scheduleContributionNativeJourneyGroupWithEnvironment(t contributionNativeJourneyTest, root, phase string) {
+	t.Helper()
+	if root == "" && phase == "" {
+		t.Parallel()
+	}
+}
+
 func scheduleContributionNativeJourneyWithSlots(t contributionNativeJourneyTest, slots chan struct{}, restartRoot, restartPhase string) {
 	t.Helper()
 	// Restart children deliberately reopen a fixed root; never make them parallel.

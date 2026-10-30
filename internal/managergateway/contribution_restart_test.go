@@ -40,16 +40,19 @@ import (
 // process, with deterministic Hermes protocol only. Not an installed daemon or
 // live-provider qualification. No HTTP listener, ambient credentials or grants.
 func TestContributionManagerHardRestartFrozenCandidateResume(t *testing.T) {
-	scheduleContributionNativeJourney(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("PIDFD recovery requires Linux")
 	}
+	scheduleContributionNativeJourneyGroup(t)
 	for _, negative := range []bool{false, true} {
 		name := "durable-frozen"
 		if negative {
 			name = "reserved-before-start-holds"
 		}
-		t.Run(name, func(t *testing.T) { contributionHardRestart(t, negative) })
+		t.Run(name, func(t *testing.T) {
+			scheduleContributionNativeJourney(t)
+			contributionHardRestart(t, negative)
+		})
 	}
 }
 
