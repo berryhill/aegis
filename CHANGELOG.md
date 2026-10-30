@@ -12,6 +12,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   only for disappearing enumerated PIDs. Recovery reads membership and state from
   one stat snapshot; owned identity, native Wait and quiescence gates remain required.
 
+- #411: expose candidate-bound contribution readiness and retained run image
+  provenance; deny mismatched CLI/service execution before intake, preserve
+  independent provisioning, and continue zero-attempt retained setup without
+  replacement publication or budget reset. Live-provider/installed qualification
+  remains separate.
+
 - Execution lists show the human Loop name from the exact pinned revision, including archived definitions; legacy missing names remain explicit. Loop authoring accepts digest-bound names without changing unnamed historical revisions.
 
 - Add typed historical native recovery assessment and closed missing/invalid

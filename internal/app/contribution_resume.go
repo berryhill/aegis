@@ -18,8 +18,21 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 	if err := s.requireFleetPrincipal(sub); err != nil {
 		return result, err
 	}
+	c, view, err := s.ReadContributionAs(ctx, sub, key)
+	if err != nil {
+		return result, err
+	}
+	if len(view.Attempts) == 0 && (view.Projection.State.IsPreparation() || view.Projection.State == queue.StateQueued) {
+		return s.ExecuteContributionAs(ctx, sub, key)
+	}
 	c, state, _, err := s.ObserveContributionContinuityAs(ctx, sub, key)
 	if err != nil {
+		return result, err
+	}
+	if expected := ContributionExpectedService(ctx); expected != nil && *expected != CurrentContributionServiceIdentity() {
+		return result, ErrConflict
+	}
+	if err = s.retainContributionRunProvenance(c); err != nil {
 		return result, err
 	}
 	runCtx, finish, err := s.beginContributionRun(ctx, c)

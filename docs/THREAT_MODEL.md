@@ -1,5 +1,15 @@
 # Aegis MVP Threat Model
 
+Contribution readiness observes exact profile/role/native/repository scope and
+running image without granting authority. Candidate mismatch denies Run before
+intake; admitted preparation retains immutable image provenance for historical
+readback. Failed prerequisite observation does not pin an execution image.
+Protected role provisioning still uses the existing independent decision owner;
+missing native/controller setup is not auto-repaired. Configured credentials and
+remote policy do not prove fresh actor permission. See
+[the #411 source boundary](implementation/issue-411-launch-review.md).
+
+
 
 Retained contribution preflight → stable decision/budget reservation → owning API
 inode-pinned native companion → fresh password/exact review → canonical decision,

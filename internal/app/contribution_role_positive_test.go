@@ -18,7 +18,7 @@ import (
 	"github.com/berryhill/aegis/internal/registry"
 )
 
-func contributionAuthorityFixture(t *testing.T) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
+func contributionAuthorityFixture(t *testing.T, alter ...func(*core.Charter)) (*Service, *fleetbadger.Store, core.Subject, reference.RevisionRef, *fixedContributionReader) {
 	t.Helper()
 	ctx := context.Background()
 	s := testService(t)
@@ -34,6 +34,9 @@ func contributionAuthorityFixture(t *testing.T) (*Service, *fleetbadger.Store, c
 		charter := testCharter(s.Now())
 		charter.AgentID = id
 		charter.Stanzas[0].Authentication.Selectors[0].Issuers = []string{subject.Issuer}
+		for _, change := range alter {
+			change(&charter)
+		}
 		canonical, e := core.Canonicalize(charter)
 		if e != nil {
 			t.Fatal(e)

@@ -28,6 +28,12 @@ func (s *Service) contributionContractStatus(ctx context.Context, entry session,
 	if control.Sequence > 0 {
 		target = control.Delivery
 	}
+	image, err := s.app.ReadContributionRunProvenanceAs(ctx, entry.subject, c.Key)
+	if err != nil {
+		return err
+	}
+	result.Data["provenance"] = image
+	result.Data["observing_service"] = app.CurrentContributionServiceIdentity()
 	result.Data["contract"] = c
 	result.Data["roles"] = c.Roles
 	result.Data["effect"] = target

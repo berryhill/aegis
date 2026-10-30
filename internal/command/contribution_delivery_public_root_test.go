@@ -60,12 +60,30 @@ func TestPublicRootContributionDeclaredOperationApprovalHeld(t *testing.T) {
 	publicRootAuthenticatedContributionJourney(t, false, false, false, false, false, true)
 }
 
+func TestPublicRootContributionMissingHostPreflight(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, true, false, false, false, false, false, true)
+}
+
+func TestPublicRootContributionMissingRemotePreflight(t *testing.T) {
+	publicRootAuthenticatedContributionJourney(t, false, false, false, false, false, false, false, true)
+}
+
 func publicRootAuthenticatedContributionJourney(t *testing.T, final bool, disconnected ...bool) {
+	missingRemote := len(disconnected) > 6 && disconnected[6]
 	approvalHeld := len(disconnected) > 4 && disconnected[4]
+	missingHost := len(disconnected) > 5 && disconnected[5]
 	started := time.Now()
 	journey := true
 	ctx := context.Background()
 	root := t.TempDir()
+	if parent := os.Getenv("AEGIS_CONTRIBUTION_TEST_ROOT"); parent != "" {
+		var err error
+		root, err = os.MkdirTemp(parent, "c-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(root) })
+	}
 	repoPath := filepath.Join(root, "source")
 	must := func(e error) {
 		t.Helper()
@@ -198,7 +216,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	subject = nativeSubject
 	nonlocalCancellation := len(disconnected) > 3 && disconnected[3]
 	effect := "local-only"
-	if nonlocalCancellation {
+	if nonlocalCancellation || missingRemote {
 		effect = "verified-protected-base-merge"
 	}
 	finalPolicy := ""
@@ -253,7 +271,9 @@ exec sleep 240
 	goBin, _ := exec.LookPath("go")
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}
-	must(worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
+	if !missingHost {
+		must(worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
+	}
 	worker.SetContributionFetch(func(context.Context, loop.ContributionExecutionPolicy) error {
 		runGit("fetch", "--no-tags", repoPath, "main")
 		return nil
@@ -277,8 +297,36 @@ exec sleep 240
 	opened, err := gateway.Open(ctx, subject)
 	must(err)
 	id, token := opened.ID, opened.Token
+	if missingHost {
+		assertContributionCandidatePreflight(t, ctx, gateway, s, id, token, lrRef, issue.URL)
+	}
 	_, err = gateway.Execute(ctx, subject, id, token, "/contribute select "+lrRef.ID)
 	must(err)
+	if missingHost {
+		assertContributionHostDenial(t, ctx, gateway, s, id, token, lrRef, issue.URL, c.Workspace)
+		// Isolated fixture supplies the independent host configuration. This is
+		// not Run consent, a production grant or replacement publication.
+		must(worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
+	}
+	if missingRemote {
+		response, err := gateway.Execute(ctx, subject, id, token, "/contribute run "+issue.URL)
+		must(err)
+		if response.Reason != "exact_repository_remote_scope_required" || response.Data["execution_started"] != false {
+			t.Fatalf("remote denial: %+v", response)
+		}
+		key := app.ContributionIntentKey(lrRef, issue.URL, "")
+		provenance, err := s.ReadContributionRunProvenanceAs(ctx, subject, key)
+		must(err)
+		authorities, err := s.Authority.ListAuthorityContexts(ctx)
+		must(err)
+		if provenance != nil || len(authorities) != 0 {
+			t.Fatal("remote denial pinned image or created role authority")
+		}
+		if _, err = os.Lstat(c.Workspace); !os.IsNotExist(err) {
+			t.Fatal("remote denial created worktree", err)
+		}
+		return
+	}
 	runCtx, disconnect := context.WithCancel(ctx)
 	defer disconnect()
 	if len(disconnected) != 0 && disconnected[0] {
@@ -315,7 +363,11 @@ exec sleep 240
 		t.Logf("native execution still active after 90s; elapsed=%s\n%s", time.Since(started), stack[:n])
 	})
 	defer diagnostic.Stop()
-	response, err := gateway.Execute(runCtx, subject, id, token, "/contribute run "+issue.URL)
+	command := "/contribute run " + issue.URL
+	if missingHost {
+		command = "/contribute resume " + app.ContributionIntentKey(lrRef, issue.URL, "")
+	}
+	response, err := gateway.Execute(runCtx, subject, id, token, command)
 	if len(disconnected) != 0 && disconnected[0] {
 		if !errors.Is(err, context.Canceled) || runCtx.Err() != context.Canceled {
 			t.Fatalf("aborted Unix HTTP transport: want context.Canceled, got %v", err)
@@ -399,6 +451,11 @@ exec sleep 240
 	key := app.ContributionIntentKey(lrRef, issue.URL, "")
 	sealed, state, _, err := s.ObserveContributionContinuityAs(ctx, subject, key)
 	must(err)
+	provenance, e := s.ReadContributionRunProvenanceAs(ctx, subject, key)
+	must(e)
+	if provenance == nil || provenance.Service != app.CurrentContributionServiceIdentity() || provenance.ContractDigest != sealed.Digest || provenance.RunID != sealed.RunID {
+		t.Fatal("productive execution lost actual image provenance")
+	}
 	// Finalization closes the Queue claim. Read the retained accepted pass;
 	// do not request a fresh effect/handoff admission after terminal closure.
 	record, err := s.ReadContributionExecutionAs(ctx, subject, key)
