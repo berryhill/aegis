@@ -94,13 +94,58 @@ manager selection hit its deliberately short 150s package alarm while joined
 completion had run only 37s; isolated `TestManagerJoinedContributionCompletion`
 then passed (53.67s). This is not aggregate manager or race acceptance.
 
-Plain `go build -buildvcs=true` succeeds and the repo-root `aegis version` reports
-`dev`. Verified `build-source.sh` is BLOCKED: Go 1.26.10 omits all VCS settings in
-this linked-worktree environment despite the required per-command core.worktree
-binding, so the helper correctly refuses publication (`vcs expected git, got
-missing`). No build stamp was fabricated or guard weakened. Parent must resolve
-this provenance/build-environment gate before treating the candidate as an
-exact-source frozen build. The plain executable remains source-unqualified.
+The historical linked-worktree build failure is resolved for the frozen candidate:
+Go's VCS `FromDir` discovery ignores linked-worktree `.git` files in this environment.
+The parent used the existing `build-source.sh` in a repo-local standalone clone,
+`.aegis-e2e/frozen-source`, without fabricating stamps or weakening its guard.
+Independent readback verified native `vcs=git`, exact clean revision
+`02d01f0c6e232f19795a64efc7392104441191e8` (`vcs.modified=false`) and executable
+SHA-256 `93135206049c27c7cf6f9b8c48a46e01c1658c036a19b96adfba614c5f5104cf`.
+The standalone executable was inspected through version/help/build metadata and
+hash only; productive journeys used production root/service composition in Go
+test executables, not that standalone executable. Independent scoped acceptance
+passed four public-root journeys and 29 app/API/root top-level tests, with complete
+source inventory and standalone executable unchanged. Evidence is retained at
+`.aegis-e2e/frozen-source/.aegis-e2e/independent-411/ACCEPTANCE.md`. This describes
+the prior clean candidate, not the subsequently repaired dirty fixture inventory;
+rebuild/refreeze and fresh independent retest remain parent-owned.
+
+## CI fixture repair and added denial coverage
+
+CI run `40977104775`, normal manager-b job `123807742970` and race manager-c job
+`123807743284`, exposed the same stale nonlocal cancellation fixture: it declared
+no remote role scope or controller custody setup, so the new preflight correctly
+held before native execution (zero counters). Only tests changed for this repair.
+The controller now declares the required operation plus exact `fixture/controlled`
+repository-ID-7 capabilities before canonical charter publication. Real host-key,
+file-custodian, bbolt store and credential Authority constructors supply empty,
+private test-only custody and declared server configuration. No credential,
+remote actor permission, approval, auth-registry substitute or successful remote
+effect is invented. The original held/denied publication policy and all native
+quiescence, tracker/drain, stop-join, canonical absence, credential/privacy/HTTP
+unreachability assertions remain intact. The public-root sibling was inspected:
+its nonlocal flag has no test caller and is not an executed cancellation journey;
+its active missing-remote test deliberately retains missing scope and denial.
+No CI topology or 27-job ceiling change was made.
+
+Focused reruns (uncached, `GOMAXPROCS=2 GOFLAGS=-p=1`):
+
+- `go test ./internal/managergateway -run '^TestContributionDeliveryJointNativeNonlocalCancellation$' -count=1 -timeout=150s -v`
+  PASS, 86.692s package; `.aegis-e2e/411-cancellation-normal.log`.
+- `go test -race ./internal/managergateway -run '^TestContributionDeliveryJointNativeNonlocalCancellation$' -count=1 -timeout=180s -v`
+  PASS, 107.886s package; `.aegis-e2e/411-cancellation-race.log`.
+- `go test -race ./internal/app -run '^(TestContributionReadinessExactRoleDenials|TestContributionReadinessUnmatchedRoleDeniesWithoutEffects|TestContributionRoleCharterRejectsAmbiguityBeforePublication|TestContributionRunProvenanceRetainsExactImageAndDeniesDrift)$' -count=1 -timeout=120s -v`
+  PASS, 17.111s package; `.aegis-e2e/411-role-denials-race.log`.
+
+The added app cases cover missing, foreign-owned and changed exact role references,
+unmatched role selection without Queue/authority allocation, and rejection of
+ambiguous stanzas before canonical charter publication. Provenance retention/drift
+also passes under race. These are focused app-fixture proofs, not newly exercised
+role variants through the entire public-root journey or full-suite race acceptance.
+The test-only repair does not affect the previously reviewed launch surfaces;
+this ledger corrects evidence freshness without changing their product claims.
+Hosted exact-head CI, final candidate freeze and independent acceptance are still
+required before the parent concludes delivery.
 
 ## Remaining qualification
 
