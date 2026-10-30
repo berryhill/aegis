@@ -38,11 +38,11 @@ func TestIsolatedFixtureSlotsAndCleanup(t *testing.T) {
 	var cleanups []func()
 	register := func(f func()) { cleanups = append(cleanups, f) }
 	for i := 0; i < 2; i++ {
-		if err := isolatedFixtureAcquire(slots, time.Now().Add(time.Second), register); err != nil {
+		if err := isolatedFixtureAcquire(slots, time.Now().Add(isolatedFixtureCleanupReserve+time.Second), register); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := isolatedFixtureAcquire(slots, time.Now().Add(10*time.Millisecond), register); err == nil {
+	if err := isolatedFixtureAcquire(slots, time.Now().Add(isolatedFixtureCleanupReserve+10*time.Millisecond), register); err == nil {
 		t.Fatal("third fixture admitted")
 	}
 	if err := isolatedFixtureAcquire(make(chan struct{}, 2), time.Now().Add(-time.Second), register); err == nil {
@@ -76,6 +76,64 @@ func TestIsolatedFixtureSelection(t *testing.T) {
 		child, err := isolatedFixtureMode(tt.root, tt.marker)
 		if child != tt.child || (err != nil) != tt.bad {
 			t.Fatalf("selection %q %q: %v %v", tt.root, tt.marker, child, err)
+		}
+	}
+}
+
+func TestIsolatedFixtureExplicitSelectionStaysInline(t *testing.T) {
+	for _, tc := range []struct {
+		run, skip, cpu, coverage string
+		short                    bool
+		fork                     bool
+	}{
+		{fork: true},
+		{run: "^(TestInstalledUpgradeFullCommand|TestInstalledJourneyProtectedRecovery)$", fork: true},
+		{run: "^TestInstalledUpgradeFullCommand$/cancelled-auth"},
+		{run: "TestInstalledUpgradeFullCommand[/]cancelled-auth"},
+		{skip: "cancelled-auth"},
+		{cpu: "1,2"},
+		{short: true},
+		{coverage: "atomic"},
+	} {
+		if got := isolatedFixtureMayFork(tc.run, tc.skip, tc.cpu, tc.short, tc.coverage); got != tc.fork {
+			t.Fatalf("explicit selection policy changed: %+v got fork=%t", tc, got)
+		}
+	}
+}
+
+func TestIsolatedFixtureTargetedSubtestPreservesGoSelection(t *testing.T) {
+	root := "TestInstalledJourneyProtectedRecovery"
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, skip := range []bool{false, true} {
+		deadline, ok := t.Deadline()
+		if !ok {
+			t.Fatal("selection regression requires a parent deadline")
+		}
+		budget, err := isolatedFixtureRemaining(deadline)
+		if err != nil {
+			t.Fatal(err)
+		}
+		args := []string{"-test.run=^" + root + "$/config-drift", "-test.count=1", "-test.v", "-test.timeout=" + budget.String()}
+		if skip {
+			args = append(args, "-test.skip=^"+root+"$/config-drift")
+		}
+		cmd := exec.Command(executable, args...)
+		env, err := isolatedFixtureEnvironment(os.Environ(), t.TempDir(), "/unused/cache", "/unused/modules", root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range env {
+			if !strings.HasPrefix(entry, isolatedFixtureMarker+"=") {
+				cmd.Env = append(cmd.Env, entry)
+			}
+		}
+		output, runErr := testprocess.CombinedOutput(cmd, budget)
+		selected := strings.Contains(string(output), "=== RUN   "+root+"/config-drift")
+		if runErr != nil || selected == skip || strings.Contains(string(output), "=== RUN   "+root+"/healthy") || strings.Contains(string(output), "=== PAUSE") {
+			t.Fatalf("targeted/skip selection changed (skip=%t, selected=%t, err=%v)", skip, selected, runErr)
 		}
 	}
 }
@@ -130,10 +188,14 @@ func TestIsolatedFixtureResult(t *testing.T) {
 }
 
 func TestIsolatedFixtureRemainingDeadline(t *testing.T) {
-	deadline := time.Now().Add(time.Second)
-	budget, err := isolatedFixtureRemaining(deadline)
-	if err != nil || budget <= 0 || budget > time.Until(deadline)+time.Millisecond {
+	now := time.Now()
+	deadline := now.Add(isolatedFixtureCleanupReserve + time.Second)
+	budget, err := isolatedFixtureBudget(deadline, now)
+	if err != nil || budget != time.Second {
 		t.Fatalf("budget %v %v", budget, err)
+	}
+	if _, err := isolatedFixtureBudget(now.Add(isolatedFixtureCleanupReserve), now); err == nil {
+		t.Fatal("cleanup reserve consumed by helper work")
 	}
 	if _, err := isolatedFixtureRemaining(time.Now().Add(-time.Second)); err == nil {
 		t.Fatal("expired deadline admitted")

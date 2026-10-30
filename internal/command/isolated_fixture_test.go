@@ -2,6 +2,7 @@ package command
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 )
 
 const isolatedFixtureMarker = "AEGIS_COMMAND_FIXTURE_CHILD"
+const isolatedFixtureCleanupReserve = 3 * time.Second
 
 // Only these process-global-environment fixtures may enter the two-slot lane.
 func isolatedFixtureMode(root, marker string) (bool, error) {
@@ -57,14 +59,24 @@ func isolatedFixtureAcquire(slots chan struct{}, deadline time.Time, cleanup fun
 }
 
 func isolatedFixtureRemaining(deadline time.Time) (time.Duration, error) {
+	return isolatedFixtureBudget(deadline, time.Now())
+}
+
+func isolatedFixtureBudget(deadline, now time.Time) (time.Duration, error) {
 	if deadline.IsZero() {
 		return 0, errors.New("fixture requires the parent test deadline")
 	}
-	remaining := time.Until(deadline)
+	remaining := deadline.Sub(now) - isolatedFixtureCleanupReserve
 	if remaining <= 0 {
 		return 0, errors.New("fixture parent deadline expired before launch")
 	}
 	return remaining, nil
+}
+
+// Preserve Go's own subtest, skip, CPU, short and coverage semantics by keeping
+// those explicitly selected runs inline. Only ordinary whole-root runs fork.
+func isolatedFixtureMayFork(run, skip, cpu string, short bool, coverage string) bool {
+	return !strings.Contains(run, "/") && skip == "" && cpu == "" && !short && coverage == ""
 }
 
 func isolatedFixtureEnvironment(parent []string, home, buildCache, moduleCache, root string) ([]string, error) {
@@ -133,6 +145,9 @@ func isolateCommandFixture(t *testing.T) bool {
 	if child {
 		return false
 	}
+	if !isolatedFixtureMayFork(flag.Lookup("test.run").Value.String(), flag.Lookup("test.skip").Value.String(), flag.Lookup("test.cpu").Value.String(), testing.Short(), testing.CoverMode()) {
+		return false
+	}
 	t.Parallel()
 	deadline, ok := t.Deadline()
 	if !ok {
@@ -176,11 +191,8 @@ func isolateCommandFixture(t *testing.T) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Leave bounded helper WaitDelay/cleanup inside, never beyond, parent budget.
-	remaining -= 3 * time.Second
-	if remaining <= 0 {
-		t.Fatal("parent deadline exhausted before fixture launch")
-	}
+	// Every budget calculation, including slot waiting and cache discovery,
+	// already reserves the bounded helper WaitDelay and cleanup headroom.
 	cmd := exec.Command(executable, "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.count=1", "-test.v", "-test.timeout="+remaining.String())
 	cmd.Env = env
 	output, runErr := testprocess.CombinedOutput(cmd, remaining)
