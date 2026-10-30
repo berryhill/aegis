@@ -6,6 +6,15 @@ import (
 	"github.com/berryhill/aegis/internal/registry"
 )
 
+// CheckContributionHostAuthorization observes the same exact-revision native
+// admission used by execution. It neither creates approval nor launches work.
+func (w *QueueWorker) CheckContributionHostAuthorization(r loop.LoopRevision, a registry.AgentRevision) error {
+	if w == nil || r.SchemaVersion != loop.ContributionRevisionSchemaVersion {
+		return errors.New("managed contribution host approval required")
+	}
+	return w.authorizeImplementationRevision(r, a)
+}
+
 func (w *QueueWorker) authorizeImplementationRevision(r loop.LoopRevision, a registry.AgentRevision) error {
 	if r.SchemaVersion != loop.ContributionRevisionSchemaVersion {
 		return w.implementation.authorize(r.Steps, a)

@@ -186,6 +186,9 @@ func validateGrammar(request Request) error {
 	}
 	switch request.Canonical {
 	case "contribute":
+		if (len(args) == 1 || len(args) == 2) && args[0] == "readiness" {
+			return nil
+		}
 		if len(args) == 2 && args[0] == "narrow" && (args[1] == "no-merge" || args[1] == "no-publish" || args[1] == "local-only") {
 			return nil
 		}

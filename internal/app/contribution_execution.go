@@ -18,6 +18,7 @@ import (
 
 // ContributionExecutionResult reports candidate execution, never delivery success.
 type ContributionExecutionResult struct {
+	Provenance      *ContributionRunProvenance        `json:"provenance,omitempty"`
 	Available       bool                              `json:"available"`
 	Reason          string                            `json:"reason"`
 	RequiredRole    string                            `json:"required_role,omitempty"`
@@ -50,6 +51,14 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 		return result, nil
 	}
 	result.Available = true
+	if expected := ContributionExpectedService(ctx); expected != nil && *expected != CurrentContributionServiceIdentity() {
+		result.Reason = "candidate_service_mismatch"
+		return result, nil
+	}
+	result.Provenance, err = s.ReadContributionRunProvenanceAs(ctx, subject, key)
+	if err != nil {
+		return result, err
+	}
 	if s.QueueWorker == nil {
 		result.Reason = "contribution_controller_unavailable"
 		return result, nil
@@ -117,6 +126,32 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 		}
 	}
 	result.RequiredRole, result.RequiredCharter = "", nil
+	readiness, e := s.ReadContributionReadinessAs(ctx, subject, ContributionReadinessInput{Loop: c.Loop, Scope: c.Effect})
+	if e != nil {
+		return result, e
+	}
+	for _, status := range []DoerPrerequisiteStatus{readiness.Profile, readiness.Native, readiness.Remote, readiness.RemoteAuthentication} {
+		if status.State == "blocked" {
+			result.Reason = status.Reason
+			return result, nil
+		}
+	}
+	for _, role := range readiness.Roles {
+		for _, status := range []DoerPrerequisiteStatus{role.Reference, role.Selection, role.Provider} {
+			if status.State == "blocked" {
+				result.RequiredRole = role.Role
+				result.Reason = status.Reason
+				return result, nil
+			}
+		}
+	}
+	if err = s.retainContributionRunProvenance(c); err != nil {
+		return result, err
+	}
+	result.Provenance, err = s.ReadContributionRunProvenanceAs(ctx, subject, key)
+	if err != nil {
+		return result, err
+	}
 	// Persist entry into effectful preparation before a session can be launched.
 	_, preparation, _, prepErr := s.ObserveContributionContinuityAs(ctx, subject, key)
 	if prepErr != nil {
@@ -175,6 +210,10 @@ func (s *Service) ContributionExecutionStatusAs(ctx context.Context, subject cor
 		return ContributionExecutionResult{}, ErrDenied
 	}
 	r := ContributionExecutionResult{Execution: &view, Reason: "intake_only_unqualified_profile"}
+	r.Provenance, err = s.ReadContributionRunProvenanceAs(ctx, subject, key)
+	if err != nil {
+		return r, err
+	}
 	if lv.Revision.Contribution != nil && lv.Revision.Contribution.Managed != nil {
 		r.Available = true
 		r.Reason = "awaiting_execution"

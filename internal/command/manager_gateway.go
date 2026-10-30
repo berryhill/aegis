@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/berryhill/aegis/internal/app"
 	"github.com/berryhill/aegis/internal/config"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
 	"github.com/berryhill/aegis/internal/managergateway"
@@ -143,7 +144,13 @@ func (c *gatewayManagerClient) open(ctx context.Context) (time.Time, error) {
 }
 
 func (c *gatewayManagerClient) execute(ctx context.Context, input string) (slash.Result, error) {
-	request, err := c.request(ctx, http.MethodPost, "/v1/manager/sessions/"+c.sessionID+"/commands", map[string]string{"input": input})
+	payload := map[string]any{"input": input}
+	// Only contribution operations bind candidate expectations. Other manager
+	// commands retain their existing service/CLI compatibility contract.
+	if strings.HasPrefix(strings.TrimSpace(input), "/contribute ") {
+		payload["expected_service"] = app.CurrentContributionServiceIdentity()
+	}
+	request, err := c.request(ctx, http.MethodPost, "/v1/manager/sessions/"+c.sessionID+"/commands", payload)
 	if err != nil {
 		return slash.Result{}, err
 	}
