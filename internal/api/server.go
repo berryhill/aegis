@@ -1006,9 +1006,16 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		if err != nil {
 			return err
 		}
-		readiness, ok := surface.Actions["loop_publish"]
-		if !ok || readiness.State != "ready" {
-			return app.ErrDenied
+		// Preparing a definition is not publishing it. Require readable
+		// collections, not a runtime context absent from this overview check.
+		for _, key := range []string{"registry", "loops"} {
+			readiness := surface.Readiness[key]
+			if !readiness.Authoritative {
+				if readiness.State == "denied" {
+					return app.ErrDenied
+				}
+				return app.ErrFleetUnavailable
+			}
 		}
 		composer := &consoleweb.LoopComposerModel{Publishers: []consoleweb.LoopPublisherModel{}}
 		for _, agent := range surface.Agents {
