@@ -85,5 +85,5 @@ body:has(form[action="/console/loops/doer/preview"]) .content,body:has([aria-lab
 @media(min-width:901px){.credential-workspace[data-pane="list"]{grid-template-columns:minmax(0,1fr);height:auto}.credential-workspace[data-pane="list"]>.detail{display:none}}
 /* Keep authenticated next actions reachable on narrow readiness pages. */
 @media(max-width:600px){#console-header{height:auto;min-height:var(--topbar-h);flex-wrap:wrap;gap:6px;padding:8px}#console-header .ghost{white-space:normal;overflow-wrap:anywhere;min-width:0}.nav-rail{position:static}}
-[aria-labelledby="included-loop-templates"] code,.onboard code{overflow-wrap:anywhere}
+[aria-labelledby="included-loop-templates"] code,.onboard code,.empty-note code,.service-state code{overflow-wrap:anywhere}
 @media(max-width:900px){.credential-workspace{display:block;height:auto}.credential-workspace[data-pane="detail"]>.inventory{display:none}.credential-workspace[data-pane="list"]>.detail{display:none}.credential-workspace>.detail{border-left:0}.credential-workspace>.inventory,.credential-workspace>.detail{max-height:none;overflow:visible}.credential-workspace .detail-head{display:block}.credential-workspace .detail-head .button-row{margin-top:12px}.credential-versions{table-layout:auto}}
