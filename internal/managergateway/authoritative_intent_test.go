@@ -114,7 +114,7 @@ func TestObservedAgentCountTypoReadsRegistryWithoutModel(t *testing.T) {
 	}
 }
 
-func TestExactOperatorTranscriptsBypassConversationalRuntime(t *testing.T) {
+func TestMissingRuntimeOperatorTranscriptsUseSafeFallback(t *testing.T) {
 	now := time.Now().UTC()
 	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
 	service := degradedRoutingService(now, subject, "token")
@@ -174,7 +174,7 @@ func TestQualifiedAgentRegistrationIntentReturnsGuidanceWithoutModel(t *testing.
 	}
 }
 
-func TestRealWorldRegistrationTranscriptsRecommendTypedControlsWithoutMutation(t *testing.T) {
+func TestDegradedRegistrationTranscriptsRecommendTypedControlsWithoutMutation(t *testing.T) {
 	now := time.Now().UTC()
 	subject := core.Subject{ID: "subject", PrincipalID: "principal", ExpiresAt: now.Add(time.Hour)}
 	service := degradedRoutingService(now, subject, "token")

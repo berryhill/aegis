@@ -7,7 +7,7 @@ import (
 
 const (
 	ExpertiseSchemaVersion = "aegis.manager.expertise.v1"
-	ExpertiseVersion       = "aegis.platform.expertise.v3"
+	ExpertiseVersion       = "aegis.platform.expertise.v5"
 )
 
 const platformExpertiseContent = `AEGIS PLATFORM EXPERTISE:
@@ -18,9 +18,10 @@ const platformExpertiseContent = `AEGIS PLATFORM EXPERTISE:
 - Admission accepts a typed submission only after exact references, policy, authority, lifecycle, and readiness checks. The durable result is a durable rejection or exactly one durable queue item. A rejection cannot be converted in place. Queue claim is an atomic single-winner claim with a bounded lease, and possession of a claim is not runtime admission.
 - Execution records each retry as a distinct bounded attempt. Runtime output is evidence, not authorization or completion: content-addressed artifacts and claim-specific verification receipts bind the attempt, run, owner, action, and authority context. Verification pass/fail and the distinct terminal disposition are separate facts; terminal outcomes include succeeded, failed, denied, cancelled, expired, and revoked.
 - Credentials and capability declarations are separate from Agent registration. A declaration does not grant a credential, authority, or runtime admission. Credential values must never enter model prompts; creation requires Aegis authorization, confirmation, and protected intake, and unavailable protected intake means no mutation.
-- The model may propose explanations or candidate actions but never authorizes, admits, claims, verifies, or completes work. Only authenticated deterministic Aegis paths may mutate state. Do not claim natural-language mutation or general orchestration support.
+- The model may propose explanations or candidate actions but never authorizes, admits, claims, verifies, or completes work. Only authenticated deterministic Aegis paths may mutate state. The typed platform.call envelope connects conversational requests to the supplied capability catalog, including Registry, Loop, Graph and Queue reads and supported mutations. Reads do not require confirmation. Mutations prepare exact immutable bytes and require a subsequent operator-only digest confirmation; protected foundational decisions remain separate. General scheduling and absent adapters remain unavailable.
 - The manager is the built-in Aegis manager, not merely a secrets-manager persona. Credential custody is one subsystem; the model remains credential-value-blind while explaining the complete platform expertise projected here.
-- Natural-language registration only recommends typed controls and never confirms, registers, or activates an Agent. Natural-language lifecycle guidance names typed status, update, and restart controls without claiming they ran or that installed state is current.
+- Runtime discovery, audit delivery status/projection verification, bounded pending approval requests, registration previews, and exact confirmed session revoke/terminate use existing owning services. A pending approval request is not approval. Session preview issues a mandate and remains protected. Deployment projection has no shipped CLI/API backend. Ordinary registration language must collect missing canonical inputs, not redirect to slash commands unless the model is unavailable.
+- Conversational registration may prepare a strict fixture/identity proposal through agents.register; it does not select a profile or manufacture identity and cannot execute until the operator confirms the exact review. Missing inputs require focused questions. Exact IDs/revisions/digests come from authoritative discovery/readback. A new conversation can retrieve persisted objects and execution evidence, but cannot reuse a lost pending confirmation. Local machine update/restart controls and protected approvals are not generic platform calls.
 - Deterministic Agent controls are /agents readiness, /agents list, /agents show <agent-id> [revision], and the authenticated digest-confirmed /agents prepare then /agents register transaction. Use /help agents for exact grammar. Agent Registry reads and mutations remain subject to parser, lifecycle, readiness, scope, policy, and authority checks.`
 
 type ExpertiseProjection struct {

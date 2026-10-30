@@ -16,6 +16,7 @@ import (
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/credentials"
 	managerdomain "github.com/berryhill/aegis/internal/manager"
+	"github.com/berryhill/aegis/internal/managerplatform"
 )
 
 type gatewayOperations struct {
@@ -133,9 +134,7 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	if cfg.Inference.Model == "" {
 		return nil, errors.New(managerdomain.ReasonModelAbsent)
 	}
-	if service.CredentialAuthority == nil {
-		return nil, errors.New(managerdomain.ReasonAuthorityUnavailable)
-	}
+
 	if cfg.Hermes.ContextLength < 65536 {
 		return nil, errors.New(managerdomain.ReasonContextUnsupported)
 	}
@@ -221,7 +220,8 @@ func startConversation(startupCtx, lifetimeCtx context.Context, service *app.Ser
 	runtime.session, err = managerdomain.NewSession(runtime.ctx, managerdomain.SessionConfig{
 		SessionID: managerSessionID, SubjectID: subject.ID, PrincipalID: subject.PrincipalID, Route: route, Gateway: armed, GatewaySessionID: gatewaySession,
 		Guard: guard, Operations: gatewayOperations{service: service, subject: subject},
-		Confirm: func(context.Context, string) (bool, error) { return false, nil },
+		Platform: managerplatform.New(service, subject),
+		Confirm:  func(context.Context, string) (bool, error) { return false, nil },
 		Intake: func(context.Context, string) ([]byte, error) {
 			return nil, errors.New("protected intake requires an interactive Aegis-owned terminal boundary")
 		},
@@ -269,21 +269,26 @@ func bindTurnContext(requestCtx, runtimeCtx context.Context) (context.Context, c
 }
 
 func (r *conversation) Turn(ctx context.Context, input string) (string, error) {
+	message, _, err := r.turnWithOrigin(ctx, input)
+	return message, err
+}
+
+func (r *conversation) turnWithOrigin(ctx context.Context, input string) (string, bool, error) {
 	if r == nil || r.session == nil || !r.active.Load() {
-		return "", ErrTurnRuntimeUnavailable
+		return "", false, ErrTurnRuntimeUnavailable
 	}
 	r.turnMu.Lock()
 	defer r.turnMu.Unlock()
 	turnCtx, release := bindTurnContext(ctx, r.ctx)
 	defer release()
 	if err := turnCtx.Err(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	message, err := r.session.Handle(turnCtx, input)
 	if err != nil {
-		return "", normalizeTurnFailure(err)
+		return "", false, normalizeTurnFailure(err)
 	}
-	return message, nil
+	return message, r.session.Authoritative(), nil
 }
 
 func (r *conversation) Close(ctx context.Context, reason string) error {

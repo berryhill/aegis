@@ -1,5 +1,10 @@
 # Aegis
 
+Source candidate: [conversational typed operations](docs/CONVERSATIONAL_OPERATIONS.md)
+connect ordinary manager requests to owning services with exact operator-confirmed
+mutation bytes. Protected approvals remain independent; synthetic proposal tests
+are not real-model or installed acceptance.
+
 Source candidate: `/contribute readiness [scope]` reports exact published profile,
 role/native/repository prerequisites and owning-image provenance before Run.
 [Candidate-bound contribution setup](docs/implementation/issue-411-launch-review.md)

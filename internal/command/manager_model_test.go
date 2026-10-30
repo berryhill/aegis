@@ -108,8 +108,13 @@ func TestManagerModelCommandsDiscoverDeclineAndConfigureWithoutDownload(t *testi
 		t.Fatalf("configured route=%+v", loaded.Manager.Inference)
 	}
 	degraded := run("exit\n", "manager")
-	if !strings.Contains(degraded, managerdomain.ReasonStartupCancelled) && !strings.Contains(degraded, managerdomain.ReasonAuthorityUnavailable) {
-		t.Fatalf("configured model without authority had inexact readiness reason: %s", degraded)
+	// An installed supported Hermes reaches the still-missing certification;
+	// hosts without that runtime report its exact earlier prerequisite instead.
+	if !strings.Contains(degraded, managerdomain.ReasonStartupCancelled) && !strings.Contains(degraded, managerdomain.ReasonRuntimeUnsupported) && !strings.Contains(degraded, managerdomain.ReasonNotCertified) {
+		t.Fatalf("configured model must reach runtime discovery without credential custody: %s", degraded)
+	}
+	if strings.Contains(degraded, "Reason: "+managerdomain.ReasonAuthorityUnavailable) || strings.Contains(degraded, "then run aegis secret initialize") {
+		t.Fatalf("credential-independent startup incorrectly requires secret setup: %s", degraded)
 	}
 }
 

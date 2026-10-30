@@ -570,7 +570,7 @@ func managerResponseFormatFor(expectedKind string, proposalSchemas []any) any {
 }
 
 func managerProposalSchemas() []any {
-	operations := []Operation{StatusShow, AuditVerify, SessionExit, SecretList, AuditQuery, SecretSearch, SecretMetadata, SecretHistory, SecretProposeCreate, SecretProposeRevoke, SecretProposeRotate, SecretProposeBinding}
+	operations := []Operation{StatusShow, AuditVerify, SessionExit, SecretList, SecretSearch, SecretMetadata, SecretHistory, SecretProposeCreate, SecretProposeRevoke, SecretProposeRotate, SecretProposeBinding, PlatformDiscover, PlatformCall}
 	result := make([]any, 0, len(operations))
 	for _, operation := range operations {
 		result = append(result, managerProposalSchemaFor(operation))
@@ -584,9 +584,13 @@ func managerProposalSchemaFor(operation Operation) any {
 	stringArrayProperty := func() any { return map[string]any{"type": "array", "items": map[string]any{"type": "string"}} }
 	page := map[string]any{"limit": integerProperty(), "cursor": stringProperty()}
 	switch operation {
+	case PlatformDiscover:
+		return managerProposalSchema(operation, nil, nil)
+	case PlatformCall:
+		return managerProposalSchema(operation, map[string]any{"operation": stringProperty(), "input": map[string]any{"type": "object"}}, []string{"operation", "input"})
 	case StatusShow, AuditVerify, SessionExit:
 		return managerProposalSchema(operation, nil, nil)
-	case SecretList, AuditQuery:
+	case SecretList:
 		return managerProposalSchema(operation, page, nil)
 	case SecretSearch:
 		return managerProposalSchema(operation, map[string]any{"query": stringProperty(), "limit": integerProperty(), "cursor": stringProperty()}, []string{"query"})

@@ -45,9 +45,12 @@ var allowedInternalImports = map[string][]string{
 	"internal/localinference":    {"internal/core"},
 	"internal/runtime":           {"internal/buildinfo", "internal/core", "internal/credentials", "internal/execution", "internal/localinference", "internal/store"},
 	"internal/app":               {"internal/delivery", "internal/contribution", "internal/config", "internal/continuation", "internal/core", "internal/credentials", "internal/disposition", "internal/evidence", "internal/execution", "internal/graph", "internal/hostapproval", "internal/loop", "internal/orchestration", "internal/persistence/fleet", "internal/queue", "internal/reference", "internal/registry", "internal/runtime", "internal/store"},
-	"internal/managergateway":    {"internal/app", "internal/core", "internal/credentials", "internal/manager", "internal/slash"},
-	"internal/console":           {"internal/core", "internal/principalauth"},
-	"internal/api":               {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway", "internal/principalauth"},
+	// The conversational adapter consumes typed application operations and pure
+	// request/result models; it never owns stores, credentials or runtime launch.
+	"internal/managerplatform": {"internal/app", "internal/core", "internal/graph", "internal/loop", "internal/manager", "internal/orchestration", "internal/queue", "internal/reference", "internal/registry"},
+	"internal/managergateway":  {"internal/app", "internal/core", "internal/credentials", "internal/manager", "internal/managerplatform", "internal/slash"},
+	"internal/console":         {"internal/core", "internal/principalauth"},
+	"internal/api":             {"internal/app", "internal/config", "internal/console", "internal/core", "internal/managergateway", "internal/principalauth"},
 }
 
 // These families are buildable fixture support, never application dependencies.
@@ -57,7 +60,7 @@ var classifiedProductionFamilies = map[string]struct{}{
 	"contribution": {}, "delivery": {},
 	"api": {}, "app": {}, "buildinfo": {}, "command": {}, "config": {}, "console": {}, "continuation": {}, "hostapproval": {},
 	"core": {}, "credentials": {}, "disposition": {}, "doerbinding": {}, "evidence": {}, "execution": {}, "graph": {},
-	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "looprun": {}, "manager": {}, "managergateway": {}, "migration": {},
+	"implementation": {}, "initialize": {}, "layout": {}, "loop": {}, "looprun": {}, "manager": {}, "managergateway": {}, "managerplatform": {}, "migration": {},
 	"onboarding": {}, "orchestration": {}, "persistence": {}, "principalauth": {}, "queue": {}, "reset": {}, "runtime": {},
 	"reference": {}, "registry": {}, "safefs": {}, "skillbundle": {}, "slash": {}, "store": {}, "tui": {}, "update": {},
 	"userservice": {}, "localinference": {},
@@ -418,6 +421,26 @@ func TestEveryProductionPackageFamilyIsClassified(t *testing.T) {
 		if _, ok := classifiedProductionFamilies[entry.Name()]; !ok {
 			t.Errorf("internal/%s is not classified by the architecture contract", entry.Name())
 		}
+	}
+}
+
+func TestConversationalAdapterCannotOwnPersistenceOrRuntime(t *testing.T) {
+	for _, target := range []string{"credentials", "persistence/fleet/badger", "store", "runtime", "command"} {
+		t.Run(target, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "internal", "managerplatform")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			fixture := []byte("package managerplatform\nimport _ \"" + moduleInternal + target + "\"\n")
+			if err := os.WriteFile(filepath.Join(dir, "violation.go"), fixture, 0600); err != nil {
+				t.Fatal(err)
+			}
+			violations, err := inspectProductionImports(root)
+			if err != nil || len(violations) == 0 {
+				t.Fatalf("conversational adapter accepted forbidden dependency %s: %v %v", target, violations, err)
+			}
+		})
 	}
 }
 

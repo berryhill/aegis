@@ -61,6 +61,9 @@ func (e *countingConformanceExecutor) Execute(_ context.Context, test Conformanc
 		for key, value := range test.ExpectedArguments {
 			arguments[key] = value
 		}
+		if len(test.ExpectedInput) > 0 {
+			arguments["input"] = test.ExpectedInput
+		}
 		encodedArguments, _ := json.Marshal(arguments)
 		proposal = `{"operation":"` + string(test.ExpectedOperation) + `","arguments":` + string(encodedArguments) + `}`
 	}
@@ -245,7 +248,7 @@ func TestCertificationSegmentsAdvanceOnlyExactPassedPrefix(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("b", 64)
 	var prior []ConformanceResult
 	var complete bool
-	for _, count := range []int{4, 4, 5} {
+	for _, count := range []int{4, 4, len(ConformanceCorpus()) - 8} {
 		executor := &countingConformanceExecutor{}
 		cert, done, err := RunCertificationSegment(context.Background(), executor, candidate, candidate.OllamaName, digest, "Q4", "0.18.2", "0.32.0", 65536, time.Now(), prior, count)
 		if err != nil {

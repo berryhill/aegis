@@ -34,6 +34,18 @@ Supporting research:
 - `research/2026-07-17-frontier-models-local-inference-hermes-secret-protection-research.md`
 - `research/2026-07-17-embedded-bbolt-credential-authority.md`
 
+## Source candidate: conversational platform adapter (#248)
+
+The source capability, schema, owning-service, authority and verification matrix
+is [CONVERSATIONAL_OPERATIONS.md](../docs/CONVERSATIONAL_OPERATIONS.md). The
+manager MUST accept only closed typed platform proposals, derive authority from
+the authenticated subject and consume an exact operator-only digest confirmation
+before a mutation. Confirmation MUST NOT supply protected charter, provisioning
+or runtime authority. Lost pending state MUST deny confirmation; durable lookup
+and stable request identity, not model narration, recover uncertain outcomes.
+Synthetic proposal integration is not real-model certification or installed proof.
+The bounded two-node chain exists; no general scheduler is implied.
+
 ## 2. Product outcome
 
 After installation, the complete personal workflow MUST be:

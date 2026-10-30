@@ -7,7 +7,7 @@ import (
 
 func TestPlatformExpertiseProjectionIsVersionedDigestBoundAndIdentitySafe(t *testing.T) {
 	projection := PlatformExpertise()
-	if projection.SchemaVersion != "aegis.manager.expertise.v1" || projection.Version != "aegis.platform.expertise.v3" {
+	if projection.SchemaVersion != "aegis.manager.expertise.v1" || projection.Version != "aegis.platform.expertise.v5" {
 		t.Fatalf("unversioned expertise projection: %+v", projection)
 	}
 	if !strings.HasPrefix(projection.Digest, "sha256:") || len(projection.Digest) != 71 {
@@ -55,7 +55,7 @@ func TestManagerPersonaIsAegisManagerWithCredentialCustodyAsOneSubsystem(t *test
 	for _, required := range []string{
 		"credential-value-blind conversational component of the built-in Aegis manager",
 		"Credential custody is one Aegis subsystem",
-		"registration requests never confirm, register, or activate an Agent",
+		"only a subsequent exact operator confirmation can execute it",
 		"lifecycle requests never imply a status check, update, or restart occurred",
 	} {
 		if !strings.Contains(instruction, required) {
@@ -65,7 +65,7 @@ func TestManagerPersonaIsAegisManagerWithCredentialCustodyAsOneSubsystem(t *test
 	if strings.Contains(instruction, "conversational component of the built-in Aegis secrets manager") {
 		t.Fatal("manager persona is still narrowed to the secrets-manager subsystem")
 	}
-	if InstructionVersion != "aegis.manager.instruction.v7" || PolicyVersion != "aegis.manager.policy.v5" {
+	if InstructionVersion != "aegis.manager.instruction.v8" || PolicyVersion != "aegis.manager.policy.v6" {
 		t.Fatalf("persona change did not advance digest semantics: instruction=%q policy=%q", InstructionVersion, PolicyVersion)
 	}
 }

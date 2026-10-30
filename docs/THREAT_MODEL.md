@@ -403,3 +403,16 @@ Installed coordinator acquisition requires Python 3 and a trusted installed Go m
 ## Stopped foreign-unit recovery
 
 Linux `gateway recover` is a separate preview/apply coordinator for a canonical production deployment. It authenticates the enrolled principal, binds confirmation to foreign bytes/device/inode and the deterministic desired unit, preserves owner-only evidence before atomic exchange, refuses running foreign services, and reloads/verifies identity without activation or readiness claims. Normal install/bootstrap ownership checks remain unchanged. A source coordinator explicitly binds an existing inspected release and canonical production configuration; no executable overwrite, reset, authority change, or expiry extension is provided. See [service recovery](SERVICE_RECOVERY.md).
+
+
+## #248 conversational proposal threat boundary
+
+The source manager routes closed `platform.call` proposals through the typed
+capability catalog to existing application services. Exact operator digest
+confirmation consumes immutable mutation bytes; captured principal authority is
+rechecked at execution. Model output, discovery and confirmation grant no
+foundational or runtime authority. Queue bind/process and Agent charter approval
+remain protected separate surfaces. Lost pending confirmation is denied; durable
+readback and stable request identities recover outcomes. See the [operation and
+verification matrix](CONVERSATIONAL_OPERATIONS.md). Synthetic proposal tests are not
+real-model, browser, installed or live-provider qualification.

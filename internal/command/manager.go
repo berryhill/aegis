@@ -435,6 +435,9 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 		}
 		if !createRequested {
 			result, handled, operationErr := managergateway.DispatchDeterministicAegisTurn(sessionCtx, service, subject, line)
+			if !handled && conversation == nil {
+				result, handled = managergateway.RegistrationFallback(line)
+			}
 			if handled {
 				composer.Remember(line)
 				_ = presentation.Emit(tui.Event{Kind: tui.InputAccepted, Origin: tui.UserInput, Message: line})
@@ -514,7 +517,11 @@ func runManagerWithInput(cmd *cobra.Command, build builder, input *terminalInput
 				continue
 			}
 			if message != "" {
-				_ = presentation.Emit(tui.Event{Kind: tui.AssistantCompleted, Origin: tui.ModelUntrusted, Message: message})
+				if conversation.session.Authoritative() {
+					_ = presentation.Emit(tui.Event{Kind: tui.OperationCompleted, Origin: tui.AegisAuthoritative, Message: message})
+				} else {
+					_ = presentation.Emit(tui.Event{Kind: tui.AssistantCompleted, Origin: tui.ModelUntrusted, Message: message})
+				}
 			}
 			_ = presentation.Emit(tui.Event{Kind: tui.TurnCompleted, Origin: tui.AegisAuthoritative, Message: "guarded turn complete"})
 			continue
@@ -848,8 +855,8 @@ func (r *managerReadiness) applyStartupReason(reason string) {
 }
 
 func (r managerReadiness) nextStep(configuredModel string) string {
-	if r.authority != "ready" {
-		return "follow docs/CREDENTIAL_AUTHORITY_SETUP.md, then run aegis secret initialize"
+	if r.hermes == "unsupported" || r.hermes == "supported; gateway unavailable" || r.hermes == "configured context unsupported" {
+		return "aegis runtime; review /status for the exact Hermes runtime or gateway prerequisite"
 	}
 	if r.model == "absent" {
 		return "aegis manager model candidates; then inspect an explicit loopback route with: aegis manager model discover --endpoint http://127.0.0.1:11434"
