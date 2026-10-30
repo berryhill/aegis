@@ -184,7 +184,7 @@ templ Workspace(surface SurfaceModel) {
 				if action.Primary {
 					if surface.Domain == DomainAgents && action.State == "ready" {
 						<a class="primary" href="/console/agents/charter-import" title={ actionTitle(action) }>{ action.Label }</a>
-					} else if surface.Domain == DomainLoops && action.State == "ready" {
+					} else if surface.Domain == DomainLoops && surface.Authoritative {
 						<a class="primary" href="/console/loops/compose" title={ actionTitle(action) }>{ action.Label }</a>
 					} else if surface.Domain == DomainGraphs && surface.Authoritative {
 						<a class="primary" href="/console/graphs/compose" title="Compose a candidate; publication still requires fresh exact authority admission">{ action.Label }</a>
@@ -394,27 +394,25 @@ templ CommandReceiptPage(model OperationReceiptModel) {
 }
 
 templ ActionReadiness(actions []ActionModel) {
-	if hasBlockedAction(actions) {
-		<section class="onboard repair" aria-labelledby="onboard-heading">
-			<div class="onboard-head"><span class="signal" aria-hidden="true"></span><div><strong id="onboard-heading">Action prerequisites</strong> <span class="sub">Records stay inspectable while action prerequisites are outstanding.</span></div></div>
+	if len(actions) > 0 {
+		<section class="onboard" aria-labelledby="onboard-heading">
+			<div class="onboard-head"><span class="signal" aria-hidden="true"></span><div><strong id="onboard-heading">Action readiness</strong> <span class="sub">Action checks are separate from collection reads. Only successfully authorized records are inspectable; see collection status below.</span></div></div>
 			<ul class="onboard-steps">
 				for _, action := range actions {
-					if action.State != "ready" {
-						<li data-state={ action.State }>
-							<span class={ "tag " + actionTag(action.State) }><i></i>{ stateHeading(action.State) }</span>
-							<div class="ob-copy">
-								<strong>{ action.Label }</strong>
-								if action.ReasonCode == "authority_context_required" {
-									<p>Operation-specific authority has not been selected for this action. This does not mean initial setup is incomplete. Preparing an action does not authorize it; submission still requires fresh admission.</p>
+					{{ explanation := explainAction(action) }}
+					<li data-state={ explanation.State } data-admission-state={ action.State }>
+						<span class={ "tag " + actionTag(explanation.State) }><i></i>{ explanation.Heading }</span>
+						<div class="ob-copy"><strong>{ action.Label }</strong><p>{ explanation.Message }</p>
+							if explanation.URL != "" {
+								<a href={ explanation.URL }>{ explanation.LinkLabel }</a>
+							}
+							<details><summary>Technical readiness details</summary><p>Admission result: { action.State } · <code>{ action.ReasonCode }</code></p>
+								if len(action.RepairActions) > 0 {
+									<p>Service guidance (not an approval): <code>{ strings.Join(action.RepairActions, ", ") }</code></p>
 								}
-								<p><code>{ action.ReasonCode }</code>
-									if len(action.RepairActions) > 0 {
-										<span> · Repair: { strings.Join(action.RepairActions, ", ") }</span>
-									}
-								</p>
-							</div>
-						</li>
-					}
+							</details>
+						</div>
+					</li>
 				}
 			</ul>
 		</section>
@@ -945,7 +943,7 @@ func credentialOperationTitle(operation string) string { switch operation { case
 
 templ CredentialWorkspace(surface SurfaceModel) {
 	if !surface.Authoritative {
-		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head"><span class="count">Count unavailable</span></div><div class="panel"><p class="empty-note">The credential authority is unavailable; no count is asserted. { surface.ReasonCode }</p></div></div></section>
+		<section class="workspace" aria-label="Credential workspace"><div class="inventory"><div class="pane-head"><span class="count">Count unavailable</span></div><div class="panel"><p class="empty-note">Credential metadata could not be read; no count is asserted. { stateMessage(surface.State) } <code>{ surface.ReasonCode }</code></p></div></div></section>
 	} else {
 		<section class="workspace credential-workspace" aria-label="Credential workspace" data-pane={ credentialPane(surface) }>
 			<div class="inventory" id="credential-inventory" tabindex="-1" aria-label="Credential inventory">
@@ -1171,7 +1169,7 @@ func agentMark(label string) string {
 func fallbackTitle(title string) string { if title == "" { return "Fleet workspace" }; return title }
 func documentTitle(model PageModel) string { if model.CharterImport && model.Authenticated { return "Agent registration · Aegis Console" }; return "Aegis Console" }
 func currentPage(current bool) string { if current { return "page" }; return "false" }
-func actionTitle(action ActionModel) string { return action.State + ": " + action.ReasonCode }
+func actionTitle(action ActionModel) string { explanation := explainAction(action); return explanation.Heading + ": " + explanation.Message }
 func hasBlockedAction(actions []ActionModel) bool { for _, action := range actions { if action.State != "ready" { return true } }; return false }
 func actionTag(state string) string { if state == "denied" { return "tag-denied" }; if state == "degraded_repair_required" { return "tag-degraded" }; return "tag-locked" }
 func collectionSingular(domain string) string { if domain == DomainGraphs { return "graph" }; return "Loop" }
@@ -1185,6 +1183,8 @@ func stateHeading(state string) string {
 }
 func stateMessage(state string) string {
 	switch state {
+	case "locked": return "Credential custody is locked. Use the existing independent custody workflow outside this Console; other credential-independent collections are evaluated separately."
+	case "unconfigured": return "Credential custody is not configured. Independent initialization is outside this Console and is not required for credential-independent fleet actions."
 	case "empty": return "The authoritative collection is empty."
 	case "denied": return "This collection read was denied. No count is asserted."
 	case "unavailable": return "Fleet control is unavailable. This is not an empty collection."

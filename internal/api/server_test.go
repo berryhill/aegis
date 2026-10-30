@@ -778,7 +778,7 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				t.Fatalf("route %s confused operation prerequisites with initial setup", route.domain)
 			}
 			if route.domain == "loops" || route.domain == "graphs" {
-				for _, want := range []string{"Action prerequisites", "authority_context_required", "does not mean initial setup is incomplete"} {
+				for _, want := range []string{"Action readiness", "authority_context_required", "does not mean initial setup is incomplete", `data-state="context_required"`, `data-admission-state="denied"`} {
 					if !bytes.Contains(body, []byte(want)) {
 						t.Fatalf("route %s missing operation-specific readiness explanation %q", route.domain, want)
 					}
@@ -795,11 +795,8 @@ func TestConsoleSharedShellRendersAllFiveWorkspaceRoutesWithWiredActionReadiness
 				if !bytes.Contains(body, []byte(route.actionLabel)) {
 					t.Fatalf("route %s missing action label %s", route.domain, route.actionLabel)
 				}
-				if route.domain != "queue" && !bytes.Contains(body, []byte(`data-state="ready"`)) && !bytes.Contains(body, []byte(`data-state="denied"`)) && !bytes.Contains(body, []byte(`title="ready: ready"`)) {
-					t.Fatalf("route %s missing wired contextual action state: %s", route.domain, body)
-				}
-				if !bytes.Contains(body, []byte("disabled")) && !bytes.Contains(body, []byte("data-state=\"ready\"")) {
-					t.Fatalf("route %s missing disabled primary action when readiness is not ready: %s", route.domain, body)
+				if route.domain != "queue" && !bytes.Contains(body, []byte(`data-admission-state=`)) {
+					t.Fatalf("route %s missing original service admission diagnostic: %s", route.domain, body)
 				}
 			}
 			if route.domain == "credentials" {

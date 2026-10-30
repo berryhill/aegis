@@ -8,6 +8,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #246: Console readiness distinguishes a missing exact action context from denial,
+  empty collections and unavailable operations, preserves readable Loop preparation,
+  and explains credential custody independently of credential-free fleet records.
+  Existing admission, protected approvals and runtime-effect checks are unchanged.
+
 - Linux contribution process-group observation tolerates wrapped ENOENT/ESRCH
   only for disappearing enumerated PIDs. Recovery reads membership and state from
   one stat snapshot; owned identity, native Wait and quiescence gates remain required.
