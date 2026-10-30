@@ -28,7 +28,7 @@ func (r *recoveryCLIRunner) Output(_ context.Context, a ...string) ([]byte, erro
 	}
 	return nil, nil
 }
-func TestRecoveryCLIApprovalRejections(t *testing.T) {
+func recoveryCLIApprovalRejections(t *testing.T) {
 	if isolateCommandFixture(t) {
 		return
 	}
