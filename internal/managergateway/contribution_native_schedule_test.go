@@ -2,10 +2,10 @@ package managergateway
 
 import "os"
 
-// Independently owned native journeys share a three-journey bound through cleanup.
+// Independently owned native journeys share a two-journey bound through cleanup.
 // Restart children reopen a fixed root and stay serial; their scheduled parent
 // holds the slot. Tagged delivery factories remain outside this opt-in audit.
-var contributionNativeJourneySlots = make(chan struct{}, 3)
+var contributionNativeJourneySlots = make(chan struct{}, 2)
 
 type contributionNativeJourneyTest interface {
 	Helper()

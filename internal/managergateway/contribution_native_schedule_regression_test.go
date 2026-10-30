@@ -29,8 +29,8 @@ func (p *nativeJourneyScheduleProbe) cleanup() {
 }
 
 func TestContributionNativeJourneySchedulingBoundAndCleanup(t *testing.T) {
-	if cap(contributionNativeJourneySlots) != 3 {
-		t.Fatal("native whole-journey concurrency must remain three")
+	if cap(contributionNativeJourneySlots) != 2 {
+		t.Fatal("native whole-journey concurrency must remain two")
 	}
 	slots := make(chan struct{}, 2)
 	first, second := &nativeJourneyScheduleProbe{}, &nativeJourneyScheduleProbe{}
@@ -86,36 +86,6 @@ func TestContributionNativeJourneySchedulingBoundAndCleanup(t *testing.T) {
 	<-thirdCleaned
 	if len(slots) != 0 {
 		t.Fatal("journey slots leaked after cleanup")
-	}
-}
-
-func TestContributionNativeJourneyFourthWaitsForCleanup(t *testing.T) {
-	slots := make(chan struct{}, cap(contributionNativeJourneySlots))
-	owners := make([]*nativeJourneyScheduleProbe, cap(slots))
-	for i := range owners {
-		owners[i] = &nativeJourneyScheduleProbe{}
-		scheduleContributionNativeJourneyWithSlots(owners[i], slots, "", "")
-	}
-	ready, admitted := make(chan struct{}), make(chan struct{})
-	fourth := &nativeJourneyScheduleProbe{parallel: func() { close(ready) }}
-	go func() {
-		scheduleContributionNativeJourneyWithSlots(fourth, slots, "", "")
-		close(admitted)
-	}()
-	<-ready
-	select {
-	case <-admitted:
-		t.Fatal("fourth native fixture exceeded the three-journey bound")
-	default:
-	}
-	owners[0].cleanup()
-	<-admitted
-	for _, owner := range owners[1:] {
-		owner.cleanup()
-	}
-	fourth.cleanup()
-	if len(slots) != 0 {
-		t.Fatal("native journey permits survived cleanup")
 	}
 }
 
