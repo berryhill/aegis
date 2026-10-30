@@ -8,6 +8,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Linux contribution process-group observation tolerates wrapped ENOENT/ESRCH
+  only for disappearing enumerated PIDs. Recovery reads membership and state from
+  one stat snapshot; owned identity, native Wait and quiescence gates remain required.
+
 - Execution lists show the human Loop name from the exact pinned revision, including archived definitions; legacy missing names remain explicit. Loop authoring accepts digest-bound names without changing unnamed historical revisions.
 
 - Add typed historical native recovery assessment and closed missing/invalid
