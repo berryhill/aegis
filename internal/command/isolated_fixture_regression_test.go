@@ -46,6 +46,15 @@ func TestIsolatedFixtureRootRegistrationPrecedesSerialTests(t *testing.T) {
 	}
 }
 
+func TestIsolatedFixtureFailureLocationsWithholdPrivateOutput(t *testing.T) {
+	const canary = "private-fixture-diagnostic-canary"
+	output := []byte("--- FAIL: TestInstalledJourneyProtectedRecovery\n    update_protected_journey_test.go:157: " + canary + "\n")
+	_, err := isolatedFixtureResult("TestInstalledJourneyProtectedRecovery", output, errors.New("exit status 1"))
+	if err == nil || !strings.Contains(err.Error(), "update_protected_journey_test.go:157") || strings.Contains(err.Error(), canary) {
+		t.Fatal("failure location missing or private child diagnostics exposed")
+	}
+}
+
 func TestIsolatedFixtureForeignChildFailsWithoutRecursion(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {

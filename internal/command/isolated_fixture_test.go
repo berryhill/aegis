@@ -79,6 +79,84 @@ func isolatedFixtureMayFork(run, skip, cpu string, short bool, coverage string) 
 	return !strings.Contains(run, "/") && skip == "" && cpu == "" && !short && coverage == ""
 }
 
+func isolatedFixtureForkEnabled() bool {
+	// Failfast may suppress a selected native root entirely. Repeated runs must
+	// not reuse a completed one-shot native phase. Keep both on Go's inline path.
+	return flag.Lookup("test.failfast").Value.String() != "true" && flag.Lookup("test.count").Value.String() == "1" && isolatedFixtureMayFork(flag.Lookup("test.run").Value.String(), flag.Lookup("test.skip").Value.String(), flag.Lookup("test.cpu").Value.String(), testing.Short(), testing.CoverMode())
+}
+
+var isolatedFixtureNativeRoots = []string{
+	"TestPublicRootAuthenticatedContributionJourney",
+	"TestPublicRootAuthenticatedContributionFinalJourney",
+	"TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney",
+	"TestPublicRootContributionDeclaredOperationApprovalHeld",
+	"TestPublicRootContributionMissingHostPreflight",
+	"TestPublicRootContributionMissingRemotePreflight",
+}
+
+// Track selected roots, not registration order: shuffle and native-first runs
+// must retain completed cleanup before any private worker is registered.
+type isolatedFixtureNativePhase struct {
+	mu      sync.Mutex
+	pending map[string]bool
+	done    chan struct{}
+}
+
+func newIsolatedFixtureNativePhase(run string) *isolatedFixtureNativePhase {
+	match := regexp.MustCompile(run) // testing already validated test.run.
+	p := &isolatedFixtureNativePhase{pending: make(map[string]bool), done: make(chan struct{})}
+	for _, root := range isolatedFixtureNativeRoots {
+		if match.MatchString(root) {
+			p.pending[root] = true
+		}
+	}
+	if len(p.pending) == 0 {
+		close(p.done)
+	}
+	return p
+}
+
+var isolatedFixtureNativeOnce sync.Once
+var isolatedFixtureNativeSelected *isolatedFixtureNativePhase
+
+func isolatedFixtureSelectedNativePhase() *isolatedFixtureNativePhase {
+	isolatedFixtureNativeOnce.Do(func() {
+		isolatedFixtureNativeSelected = newIsolatedFixtureNativePhase(flag.Lookup("test.run").Value.String())
+	})
+	return isolatedFixtureNativeSelected
+}
+
+func (p *isolatedFixtureNativePhase) track(root string, cleanup func(func())) {
+	cleanup(func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.pending[root] {
+			delete(p.pending, root)
+			if len(p.pending) == 0 {
+				close(p.done)
+			}
+		}
+	})
+}
+
+func (p *isolatedFixtureNativePhase) wait(deadline time.Time) error {
+	if p == nil {
+		return nil
+	}
+	budget, err := isolatedFixtureRemaining(deadline)
+	if err != nil {
+		return err
+	}
+	timer := time.NewTimer(budget)
+	defer timer.Stop()
+	select {
+	case <-p.done:
+		return nil
+	case <-timer.C:
+		return errors.New("parent deadline expired waiting for selected native fixture cleanup")
+	}
+}
+
 func isolatedFixtureEnvironment(parent []string, home, buildCache, moduleCache, root string) ([]string, error) {
 	env := []string{}
 	for _, entry := range parent {
@@ -111,7 +189,15 @@ func isolatedFixtureEnvironment(parent []string, home, buildCache, moduleCache, 
 
 func isolatedFixtureResult(root string, output []byte, runErr error) (string, error) {
 	if runErr != nil {
-		return "", fmt.Errorf("isolated fixture process: %w", runErr)
+		// Report only source locations, never arbitrary child diagnostics: those
+		// can contain protected fixture inputs. This still identifies the exact
+		// failed assertion when an isolated root fails under whole-lane load.
+		locations := regexp.MustCompile(`(?m)^\s*([A-Za-z0-9_]+\.go:[0-9]+):`).FindAllSubmatch(output, 8)
+		where := make([]string, 0, len(locations))
+		for _, location := range locations {
+			where = append(where, string(location[1]))
+		}
+		return "", fmt.Errorf("isolated fixture process: %w (assertion locations: %s)", runErr, strings.Join(where, ", "))
 	}
 	ran, terminal := false, ""
 	for _, line := range strings.Split(string(output), "\n") {
@@ -145,7 +231,7 @@ func isolateCommandFixture(t *testing.T) bool {
 	if child {
 		return false
 	}
-	if !isolatedFixtureMayFork(flag.Lookup("test.run").Value.String(), flag.Lookup("test.skip").Value.String(), flag.Lookup("test.cpu").Value.String(), testing.Short(), testing.CoverMode()) {
+	if !isolatedFixtureForkEnabled() {
 		return false
 	}
 	deadline, ok := t.Deadline()
@@ -182,7 +268,8 @@ func isolateCommandFixture(t *testing.T) bool {
 		t.Fatal(isolatedFixtureCaches.err)
 	}
 	root := t.Name()
-	done := isolatedFixtureStart(isolatedFixtureSlots, deadline, tempBase, func(home string, remaining time.Duration) isolatedFixtureOutcome {
+	phase := isolatedFixtureSelectedNativePhase()
+	done := isolatedFixtureStartAfter(phase, isolatedFixtureSlots, deadline, tempBase, func(home string, remaining time.Duration) isolatedFixtureOutcome {
 		env, err := isolatedFixtureEnvironment(parentEnv, home, isolatedFixtureCaches.build, isolatedFixtureCaches.modules, root)
 		if err != nil {
 			return isolatedFixtureOutcome{err: err}
@@ -220,9 +307,16 @@ type isolatedFixtureOutcome struct {
 // methods. After CombinedOutput cancels/joins its process tree, remove the
 // private directory, release the admission slot, and only then publish the result.
 func isolatedFixtureStart(slots chan struct{}, deadline time.Time, tempBase string, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
+	return isolatedFixtureStartAfter(nil, slots, deadline, tempBase, run)
+}
+
+func isolatedFixtureStartAfter(phase *isolatedFixtureNativePhase, slots chan struct{}, deadline time.Time, tempBase string, run func(string, time.Duration) isolatedFixtureOutcome) <-chan isolatedFixtureOutcome {
 	done := make(chan isolatedFixtureOutcome, 1)
 	go func() {
 		result := func() (result isolatedFixtureOutcome) {
+			if err := phase.wait(deadline); err != nil {
+				return isolatedFixtureOutcome{err: err}
+			}
 			var release func()
 			if err := isolatedFixtureAcquire(slots, deadline, func(f func()) { release = f }); err != nil {
 				return isolatedFixtureOutcome{err: err}

@@ -69,6 +69,10 @@ func TestPublicRootContributionMissingRemotePreflight(t *testing.T) {
 }
 
 func publicRootAuthenticatedContributionJourney(t *testing.T, final bool, disconnected ...bool) {
+	// Register first: LIFO cleanup releases the phase only after all fixture cleanup.
+	if isolatedFixtureForkEnabled() {
+		isolatedFixtureSelectedNativePhase().track(t.Name(), t.Cleanup)
+	}
 	missingRemote := len(disconnected) > 6 && disconnected[6]
 	approvalHeld := len(disconnected) > 4 && disconnected[4]
 	missingHost := len(disconnected) > 5 && disconnected[5]
