@@ -57,6 +57,12 @@ var finalQualificationFactory func(*testing.T, delivery.Plan) (delivery.Adapter,
 var finalQualificationProtection func() string
 
 func retainedDeliveryNativeComposition(t *testing.T, finalization bool, lateMode ...bool) {
+	// Ordinary fixtures own every service/store/worktree. The tagged HTTP
+	// qualification factories are installed by init, but their remote fixture
+	// implementation is outside this scheduling audit and remains serial.
+	if finalQualificationFactory == nil && finalQualificationProtection == nil {
+		scheduleContributionNativeJourney(t)
+	}
 	ctx := context.Background()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "source")

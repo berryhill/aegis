@@ -404,6 +404,7 @@ class ShardTests(unittest.TestCase):
                 partitions = {shard.partition_package(group) for group in expected} - {None}
                 self.assertEqual(Counter(c[-1] for c in compiled), Counter(partitions))
                 self.assertTrue(all(('-race' in c) == race for c in compiled))
+                self.assertTrue(all('-ldflags=-s -w' in c for c in compiled))
                 listings = [call.args[0] for call in run.call_args_list if '-test.list=.' in call.args[0]]
                 self.assertEqual(len(listings), len(partitions))
                 self.assertTrue(all('-test.paniconexit0' in c for c in listings))
@@ -425,6 +426,34 @@ class ShardTests(unittest.TestCase):
                 if partitions:
                     with mock.patch.object(shard.subprocess, 'run', side_effect=fail_inventory), self.assertRaises(ValueError):
                         shard.main(['--bundle', lane] + (['--race'] if race else []))
+
+    def test_native_default_link_flags_preserve_real_race_detection_and_stacks(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory)
+            (root / 'go.mod').write_text('module race-link-witness\n\ngo 1.26.10\n')
+            (root / 'fixture_race_test.go').write_text('''package witness
+import ("runtime"; "sync"; "testing")
+func TestRaceWitness(t *testing.T) {
+    var value int
+    start := make(chan struct{})
+    var done sync.WaitGroup
+    done.Add(2)
+    go func() { defer done.Done(); <-start; value = 1 }()
+    go func() { defer done.Done(); <-start; value = 2 }()
+    close(start)
+    done.Wait()
+    runtime.KeepAlive(value)
+}
+''')
+            binary = root / 'race.test'
+            subprocess.run(['go', 'test', '-race', '-c', '-ldflags=-s -w', '-o', str(binary), '.'],
+                           cwd=root, check=True)
+            result = subprocess.run([str(binary), '-test.run=^TestRaceWitness$', '-test.count=1',
+                                     '-test.paniconexit0', '-test.timeout=30s'],
+                                    cwd=root, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('DATA RACE', result.stdout + result.stderr)
+            self.assertIn('fixture_race_test.go:', result.stdout + result.stderr)
 
     def test_real_go_fixture_preserves_every_default_leaf_and_testmain(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
@@ -453,7 +482,7 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                 listing = subprocess.run([*base, '-list', '.', pkg], cwd=root, capture_output=True, text=True, check=True)
                 names = shard.test_inventory(listing.stdout, pkg)
                 binary = root / ('race.test' if race else 'normal.test')
-                subprocess.run(['go', 'test', *(['-race'] if race else []), '-c', '-o', str(binary), pkg], cwd=root, check=True)
+                subprocess.run(['go', 'test', *(['-race'] if race else []), '-c', '-ldflags=-s -w', '-o', str(binary), pkg], cwd=root, check=True)
                 native_listing = subprocess.run([str(binary), '-test.list=.', '-test.timeout=8m'], cwd=package, capture_output=True, text=True, check=True)
                 self.assertEqual(shard.default_inventory(native_listing.stdout.splitlines()), names)
                 self.assertCountEqual(names, ['TestOne', 'TestOnePrefix', 'TestFuture', shard.CONTRIBUTION_TEST, shard.IMPLEMENTATION_CONTRIBUTION_TEST, 'Example', 'FuzzSeed'])

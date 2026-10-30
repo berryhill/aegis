@@ -15,8 +15,10 @@ import (
 )
 
 func TestAgentDetailExactAuthorityEvidenceAndReadOnlyBoundary(t *testing.T) {
+	scheduleInstalledAPIJourneyGroup(t)
 	for _, name := range []string{"matched", "no-match", "ambiguous-declaration-rejected-before-storage", "disabled-stanza", "runtime-mismatch", "adapter-mismatch", "runtime-name-mismatch", "digest-mismatch", "charter-id-mismatch", "charter-revision-mismatch", "missing-charter", "disabled", "retired", "historical"} {
 		t.Run(name, func(t *testing.T) {
+			scheduleInstalledAPIJourney(t)
 			svc := apiService(t)
 			configureAPIFleet(t, svc)
 			ctx := context.Background()

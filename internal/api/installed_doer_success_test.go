@@ -34,6 +34,7 @@ import (
 // synthetic fixtures, NOT real-provider execution or authenticated human consent.
 // Fixture preparation stays separate from the unchanged public queue request.
 func TestInstalledOnlineDoerExactBytesSuccess(t *testing.T) {
+	scheduleInstalledAPIJourney(t)
 	installedOnlineDoerExactBytesSuccess(t, false)
 }
 
@@ -42,12 +43,17 @@ func TestInstalledOnlineReusableDoerDirectAdmission(t *testing.T) {
 }
 
 func TestIssue351InstalledControllerParticipantRunResult(t *testing.T) {
+	scheduleInstalledAPIJourney(t)
 	installedOnlineDoerExactBytesSuccess(t, true, "reusable-controller")
 }
 
 func TestIssue351InstalledControllerHistoricalResults(t *testing.T) {
+	scheduleInstalledAPIJourneyGroup(t)
+	// Each leaf owns its fixture and permit; the grouping parent must not
+	// acquire a permit (nor may mutable denial subtests become parallel).
 	for _, mode := range []string{"authority-expiry", "host-expiry", "revoked", "disabled", "retired"} {
 		t.Run(mode, func(t *testing.T) {
+			scheduleInstalledAPIJourney(t)
 			installedOnlineDoerExactBytesSuccess(t, true, "reusable-controller-history-"+mode)
 		})
 	}
@@ -66,7 +72,7 @@ func TestRetainedDoerExactRunParity(t *testing.T) {
 }
 
 func TestRetainedDoerSlowHelperExecutionParity(t *testing.T) {
-	t.Parallel()
+	scheduleInstalledAPIJourney(t)
 	installedOnlineDoerExactBytesSuccess(t, true, "retained-slow")
 }
 

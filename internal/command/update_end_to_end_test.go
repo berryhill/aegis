@@ -18,9 +18,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -162,19 +164,110 @@ func installLegacyUpgradeFixture(t *testing.T, f *upgradeCommandFixture) {
 	upgradeWrite(t, f.runner.plan.UnitPath, []byte(unit), 0600)
 }
 
+func upgradeReleaseBuildArgs(path, version string) []string {
+	flags := "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=" + version + " -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=" + strings.Repeat("a", 40)
+	args := []string{"build"}
+	// Reuse the parent test's instrumented dependency cache rather than compiling
+	// a second, non-race dependency graph inside the package's fixed deadline.
+	if fixtureCLIRace {
+		args = append(args, "-race")
+	}
+	return append(args, "-buildvcs=false", "-ldflags", flags, "-o", path, "./cmd/aegis")
+}
+
+func TestUpgradeReleaseBuildArgs(t *testing.T) {
+	const path = "/private fixture/aegis-0.2.29"
+	want := []string{"build", "-buildvcs=false", "-ldflags", "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=0.2.29 -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "-o", path, "./cmd/aegis"}
+	if fixtureCLIRace {
+		want = append([]string{"build", "-race"}, want[1:]...)
+	}
+	got := upgradeReleaseBuildArgs(path, "0.2.29")
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("release fixture args = %q, want %q", got, want)
+	}
+}
+
 func upgradeReleaseBuild(t *testing.T, dir, version string) string {
 	t.Helper()
 	path := filepath.Join(dir, "aegis-"+version)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	flags := "-s -w -X github.com/berryhill/aegis/internal/buildinfo.Version=" + version + " -X github.com/berryhill/aegis/internal/buildinfo.SourceRevision=" + strings.Repeat("a", 40)
-	cmd := exec.CommandContext(ctx, "go", "build", "-buildvcs=false", "-ldflags", flags, "-o", path, "./cmd/aegis")
+	cmd := exec.CommandContext(ctx, "go", upgradeReleaseBuildArgs(path, version)...)
 	cmd.Dir = filepath.Join("..", "..")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build release fixture: %v\n%s", err, out)
 	}
 	return path
 }
+
+// Only immutable candidate/archive bytes are reusable. Every scenario still
+// constructs its own target, state, authority, transport and real service.
+type upgradeFixtureArchive struct {
+	binaryDigest [sha256.Size]byte
+	data         string
+	checksum     [sha256.Size]byte
+}
+
+type upgradeFixtureArchiveCache struct {
+	sync.Mutex
+	values   map[[sha256.Size]byte]upgradeFixtureArchive
+	retained int
+}
+
+var upgradeFixtureArchives upgradeFixtureArchiveCache
+
+// Bound retained public executable inputs, never authority or preparation
+// results. Inputs beyond four entries or 64MiB are packed normally, not retained.
+func (c *upgradeFixtureArchiveCache) pack(binary []byte) (upgradeFixtureArchive, bool, error) {
+	key := sha256.Sum256(binary)
+	c.Lock()
+	defer c.Unlock()
+	if archive, ok := c.values[key]; ok {
+		return archive, true, nil
+	}
+	archive, err := packUpgradeFixtureArchive(binary)
+	if err != nil {
+		return upgradeFixtureArchive{}, false, err
+	}
+	if len(c.values) < 4 && len(archive.data) <= (64<<20)-c.retained {
+		if c.values == nil {
+			c.values = make(map[[sha256.Size]byte]upgradeFixtureArchive)
+		}
+		c.values[key] = archive
+		c.retained += len(archive.data)
+	}
+	return archive, false, nil
+}
+
+func packUpgradeFixtureArchive(binary []byte) (upgradeFixtureArchive, error) {
+	var archive bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&archive, gzip.BestSpeed)
+	if err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	tw := tar.NewWriter(gz)
+	if err := tw.WriteHeader(&tar.Header{Name: "aegis", Mode: 0755, Size: int64(len(binary))}); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	if _, err := tw.Write(binary); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	if err := tw.Close(); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	if err := gz.Close(); err != nil {
+		return upgradeFixtureArchive{}, err
+	}
+	return upgradeFixtureArchive{binaryDigest: sha256.Sum256(binary), data: archive.String(), checksum: sha256.Sum256(archive.Bytes())}, nil
+}
+
+func (a upgradeFixtureArchive) validate(binary []byte) error {
+	if sha256.Sum256(binary) != a.binaryDigest || sha256.Sum256([]byte(a.data)) != a.checksum {
+		return errors.New("prepared fixture archive identity changed")
+	}
+	return nil
+}
+
 func upgradeWrite(t *testing.T, path string, b []byte, mode os.FileMode) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -184,11 +277,26 @@ func upgradeWrite(t *testing.T, path string, b []byte, mode os.FileMode) {
 		t.Fatal(err)
 	}
 }
-func newUpgradeCommandFixture(t *testing.T, old, candidate string) *upgradeCommandFixture {
-	return newVersionedUpgradeCommandFixture(t, old, candidate, "0.2.29")
+func newUpgradeCommandFixture(t *testing.T, old, candidate string, archive ...upgradeFixtureArchive) *upgradeCommandFixture {
+	return newVersionedUpgradeCommandFixture(t, old, candidate, "0.2.29", archive...)
 }
-func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVersion string) *upgradeCommandFixture {
+func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVersion string, prepared ...upgradeFixtureArchive) *upgradeCommandFixture {
 	t.Helper()
+	if len(prepared) > 1 {
+		t.Fatal("ambiguous prepared fixture archive")
+	}
+	binary := mustCommandRead(t, candidate)
+	var archive upgradeFixtureArchive
+	var archiveErr error
+	if len(prepared) == 1 {
+		archive = prepared[0]
+		archiveErr = archive.validate(binary)
+	} else {
+		archive, _, archiveErr = upgradeFixtureArchives.pack(binary)
+	}
+	if archiveErr != nil {
+		t.Fatal(archiveErr)
+	}
 	path, state := validConfigWithoutOperationalAuthority(t)
 	home := filepath.Dir(path)
 	t.Setenv("HOME", home)
@@ -214,7 +322,7 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 	if _, err = authoritybadger.Initialize(context.Background(), filepath.Join(state, "persistence", "authority-v1")); err != nil {
 		t.Fatal(err)
 	}
-	verifier, err := principalauth.Enroll("principal", []byte("synthetic-recovery-password"))
+	verifier, err := recoveryPrincipalEnrollment()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,27 +350,8 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 		t.Fatal(err)
 	}
 	runner.calls = nil
-	var archive bytes.Buffer
-	gz, err := gzip.NewWriterLevel(&archive, gzip.BestSpeed)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tw := tar.NewWriter(gz)
-	binary := mustCommandRead(t, candidate)
-	if err = tw.WriteHeader(&tar.Header{Name: "aegis", Mode: 0755, Size: int64(len(binary))}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = tw.Write(binary); err != nil {
-		t.Fatal(err)
-	}
-	if err = tw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err = gz.Close(); err != nil {
-		t.Fatal(err)
-	}
 	asset := fmt.Sprintf("aegis_v%s_%s_%s.tar.gz", releaseVersion, runtime.GOOS, runtime.GOARCH)
-	sum := sha256.Sum256(archive.Bytes())
+	sum := archive.checksum
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -271,7 +360,7 @@ func newVersionedUpgradeCommandFixture(t *testing.T, old, candidate, releaseVers
 		case "/download/v" + releaseVersion + "/SHA256SUMS":
 			fmt.Fprintf(w, "%x  %s\n", sum, asset)
 		case "/download/v" + releaseVersion + "/" + asset:
-			_, _ = w.Write(archive.Bytes())
+			_, _ = io.WriteString(w, archive.data)
 		default:
 			http.NotFound(w, r)
 		}
@@ -304,16 +393,23 @@ func (f *upgradeCommandFixture) run(t *testing.T, ctx context.Context, provider 
 }
 
 func TestInstalledUpgradeFullCommand(t *testing.T) {
+	if isolateCommandFixture(t) {
+		return
+	}
 	builds := t.TempDir()
 	old := upgradeReleaseBuild(t, builds, "0.2.28")
 	candidate := upgradeReleaseBuild(t, builds, "0.2.29")
+	archive, err := packUpgradeFixtureArchive(mustCommandRead(t, candidate))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, scenario := range []string{"healthy", "current-cli-stopped", "already-stopped", "interrupted-authority", "legacy-unit", "migration-failure-resume", "cancelled-auth", "unavailable-auth", "startup-failure-resume", "socket-denial", "open-writer-denial", "stale-image", "journal-tamper", "journal-link", "journal-identity"} {
 		t.Run(scenario, func(t *testing.T) {
 			installed := old
 			if scenario == "current-cli-stopped" {
 				installed = candidate
 			}
-			f := newUpgradeCommandFixture(t, installed, candidate)
+			f := newUpgradeCommandFixture(t, installed, candidate, archive)
 			if scenario == "current-cli-stopped" {
 				f.updater.CurrentVersion = "0.2.29"
 			}

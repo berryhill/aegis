@@ -34,19 +34,24 @@ import (
 
 // Deterministic protocol qualification, not real-provider proof.
 func TestContributionManagerApprovedNativeRepair(t *testing.T) {
+	scheduleContributionNativeJourney(t)
 	contributionManagerNativeRepair(t, false, false, false, false, true)
 }
 func TestContributionDeliveryJointNative(t *testing.T) {
+	scheduleContributionNativeJourney(t)
 	contributionManagerNativeRepair(t, false, false, true)
 }
 func TestContributionDeliveryJointNativeNonlocalCancellation(t *testing.T) {
+	scheduleContributionNativeJourney(t)
 	contributionManagerNativeRepair(t, false, false, false, true)
 }
 
 func TestContributionManagerDisconnectKeepsValidAuthorityExecution(t *testing.T) {
+	scheduleContributionNativeJourney(t)
 	contributionManagerNativeRepair(t, true)
 }
 func TestContributionManagerExpiredFrozenCandidateExplicitFreshResume(t *testing.T) {
+	scheduleContributionNativeJourney(t)
 	contributionManagerNativeRepair(t, false, true)
 }
 func contributionManagerNativeRepair(t *testing.T, disconnected ...bool) {
@@ -63,7 +68,7 @@ func contributionManagerNativeRepair(t *testing.T, disconnected ...bool) {
 		}
 	}
 	must(os.Mkdir(repoPath, 0700))
-	files := map[string]string{"go.mod": "module synthetic\n\ngo 1.24\n", "main.go": "package main\nimport (\"fmt\";\"os\")\nfunc main(){if len(os.Args)>1{os.Exit(2)};fmt.Print(Value())}\n", "value.go": "package main\nfunc Value() int{return 0}\n", "offset.go": "package main\nfunc Offset() int{return 0}\n", "main_test.go": `package main
+	files := map[string]string{"go.mod": "module synthetic\n\ngo 1.24\n", "main.go": "package main\nimport (\"os\";\"strconv\")\nfunc main(){if len(os.Args)>1{os.Exit(2)};os.Stdout.WriteString(strconv.Itoa(Value()))}\n", "value.go": "package main\nfunc Value() int{return 0}\n", "offset.go": "package main\nfunc Offset() int{return 0}\n", "main_test.go": `package main
 import("testing";"os";"os/exec")
 func TestBehavior(t *testing.T){if Value()+Offset()!=42{t.Fatal("multi-file defect")}}
 func TestSecurity(t *testing.T){if Offset()<0{t.Fatal("negative")}}
@@ -325,13 +330,22 @@ if [ "$1" = "--version" ]; then echo 'Hermes Agent v0.18.2'; echo 'Install direc
 	runCtx, disconnect := context.WithCancel(ctx)
 	defer disconnect()
 	if len(disconnected) != 0 && disconnected[0] {
+		watchCtx, stopWatch := context.WithCancel(ctx)
+		watchDone := make(chan struct{})
+		defer func() {
+			stopWatch()
+			<-watchDone
+		}()
 		go func() {
+			defer close(watchDone)
 			deadline := time.NewTimer(90 * time.Second)
 			defer deadline.Stop()
 			tick := time.NewTicker(10 * time.Millisecond)
 			defer tick.Stop()
 			for {
 				select {
+				case <-watchCtx.Done():
+					return
 				case <-deadline.C:
 					return
 				case <-tick.C:

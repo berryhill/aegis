@@ -224,6 +224,10 @@ while IFS= read -r rest; do :; done
 		t.Fatal("publication drift")
 	}
 	input := app.QueueLoopInput{Agent: app.RevisionReference(agent.Revision.AgentID, agent.Revision.Revision, agent.Revision.Digest), Loop: app.RevisionReference(revision.LoopID, 1, revision.Digest), IdempotencyKey: "coding-run", Activate: true}
+	// Each new execution stage samples wall time before real peer authentication.
+	// The service clock remains stable during the stage; real claim deadlines do
+	// not inherit fixture setup or earlier completed execution latency.
+	sub = beginCodingRequeueStage(t, s, clock)
 	var first app.QueueLoopResult
 	apiRequest(t, client, http.MethodPost, "/v1/loops/queue", input, &first, http.StatusOK)
 	if first.Execution == nil || first.Execution.Projection.State != queue.StateFailed {
@@ -415,7 +419,10 @@ while IFS= read -r rest; do :; done
 		})
 	}
 	// Actual preparation retires authority; no manual closure or expiry jump.
-	runInterveningReusableTasks(t, client, input.Agent, c.AgentID)
+	runInterveningReusableTasks(t, client, input.Agent, c.AgentID, func() {
+		sub = beginCodingRequeueStage(t, s, clock)
+	})
+	sub = beginCodingRequeueStage(t, s, clock)
 	for _, duplicate := range []bool{false, true} {
 		run := input
 		run.IdempotencyKey = fmt.Sprintf("arbitrary-native-%v", duplicate)
@@ -587,7 +594,19 @@ while IFS= read -r rest; do :; done
 	t.Logf("authenticated Run failed after 1 native pass; authenticated requeue succeeded with 1 remaining pass; cumulative=2; predecessor history=%s successor history=%s", history.Digest, h.Digest)
 }
 
-func runInterveningReusableTasks(t *testing.T, client *http.Client, agent reference.RevisionRef, agentID string) {
+func beginCodingRequeueStage(t *testing.T, s *app.Service, clock *requeueStageClock) core.Subject {
+	t.Helper()
+	if elapsed := time.Since(clock.Now()); elapsed > 0 {
+		clock.Advance(elapsed)
+	}
+	sub, err := s.AuthenticateUnixPeer(context.Background(), uint32(os.Getuid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sub
+}
+
+func runInterveningReusableTasks(t *testing.T, client *http.Client, agent reference.RevisionRef, agentID string, beginStage func()) {
 	t.Helper()
 	reusable, _, err := loop.NewDoerReusableRevision("coding-intervening-reusable", 1, "", loop.DoerReusableContract{MaxAttempts: 2})
 	if err != nil {
@@ -595,6 +614,7 @@ func runInterveningReusableTasks(t *testing.T, client *http.Client, agent refere
 	}
 	apiRequest(t, client, http.MethodPost, "/v1/loops", app.PublishLoopInput{AgentID: agentID, Revision: reusable, IdempotencyKey: "reusable-publish"}, nil, http.StatusCreated)
 	for _, text := range []string{"hello", "world"} {
+		beginStage()
 		run := app.QueueLoopInput{Agent: agent, Loop: app.RevisionReference(reusable.LoopID, 1, reusable.Digest), IdempotencyKey: "intervening-" + text, Activate: true}
 		space := t.TempDir()
 		for _, v := range []struct {

@@ -38,21 +38,10 @@ func newInstalledLoopQueueClient(t *testing.T, svc *app.Service) *installedLoopQ
 	t.Helper()
 	root := t.TempDir()
 	c := &installedLoopQueueClient{binary: filepath.Join(root, "aegis"), config: filepath.Join(root, "owner.json"), target: svc.Config.API.Console.Origin, root: root}
-	// A frozen-candidate acceptance run can supply its already built executable.
-	// Never overwrite it or silently substitute a separately rebuilt candidate.
-	if candidate := os.Getenv("AEGIS_TEST_FROZEN_BINARY"); candidate != "" {
-		info, err := os.Stat(candidate)
-		if !filepath.IsAbs(candidate) || err != nil || !info.Mode().IsRegular() {
-			t.Fatal("invalid frozen test executable")
-		}
-		c.binary = candidate
-	} else {
-		build := exec.Command("go", "build", "-p=1", "-ldflags=-X github.com/berryhill/aegis/internal/buildinfo.Version=0.0.0-loop-queue-fixture", "-o", c.binary, "./cmd/aegis")
-		build.Dir = "../.."
-		build.Env = append(os.Environ(), "GOMAXPROCS=2")
-		if out, err := testprocess.CombinedOutput(build, 2*time.Minute); err != nil {
-			t.Fatalf("build: %v %s", err, out)
-		}
+	var err error
+	c.binary, err = installedLoopQueueBinary(root, os.Getenv("AEGIS_TEST_FROZEN_BINARY"), installedLoopQueueExecutable)
+	if err != nil {
+		t.Fatal(err)
 	}
 	raw, err := json.Marshal(svc.Config)
 	if err != nil {

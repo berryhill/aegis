@@ -29,6 +29,9 @@ func (r *recoveryCLIRunner) Output(_ context.Context, a ...string) ([]byte, erro
 	return nil, nil
 }
 func TestRecoveryCLIApprovalRejections(t *testing.T) {
+	if isolateCommandFixture(t) {
+		return
+	}
 	// Build release metadata locally; approval rejection coverage needs no
 	// downloaded historical release or operator-owned proof artifacts.
 	old := mustCommandRead(t, upgradeReleaseBuild(t, t.TempDir(), "0.2.29"))
@@ -55,7 +58,7 @@ func TestRecoveryCLIApprovalRejections(t *testing.T) {
 			foreign := []byte("foreign recovery CLI fixture")
 			upgradeWrite(t, plan.UnitPath, foreign, 0600)
 			if scenario != "missing-auth" {
-				v, e := principalauth.Enroll("principal", []byte("synthetic-recovery-password"))
+				v, e := recoveryPrincipalEnrollment()
 				if e != nil {
 					t.Fatal(e)
 				}
