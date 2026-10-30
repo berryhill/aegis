@@ -31,6 +31,9 @@ func RecoverInterruptedInstance(ctx context.Context, cfg config.Config, password
 func recoverInterrupted(ctx context.Context, cfg config.Config, password []byte, fleet bool) (authoritybadger.InterruptedRecovery, error) {
 	var empty authoritybadger.InterruptedRecovery
 	defer clear(password)
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return empty, err
 	}
@@ -51,7 +54,7 @@ func recoverInterrupted(ctx context.Context, cfg config.Config, password []byte,
 	if verifier.PrincipalID != cfg.Principal.ID {
 		return empty, principalauth.ErrAuthentication
 	}
-	if err = verifier.Verify(password); err != nil {
+	if err = verifyRecoveryPassword(ctx, password, verifier.Verify); err != nil {
 		return empty, err
 	}
 	// Bound both lock acquisition and verification to fresh authentication.

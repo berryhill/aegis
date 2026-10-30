@@ -44,31 +44,11 @@ func (r *publicRootContributionReader) Read(_ context.Context, _ contribution.Is
 	r.calls++
 	return r.source, nil
 }
-func TestPublicRootAuthenticatedContributionJourney(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, false)
-}
-
-func TestPublicRootAuthenticatedContributionFinalJourney(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, true)
-}
-
-func TestPublicRootAuthenticatedContributionFinalDisconnectResumeJourney(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, true, true)
-}
-
-func TestPublicRootContributionDeclaredOperationApprovalHeld(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, false, false, false, false, false, true)
-}
-
-func TestPublicRootContributionMissingHostPreflight(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, true, false, false, false, false, false, true)
-}
-
-func TestPublicRootContributionMissingRemotePreflight(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, false, false, false, false, false, false, false, true)
-}
-
 func publicRootAuthenticatedContributionJourney(t *testing.T, final bool, disconnected ...bool) {
+	// Register first: LIFO cleanup releases the phase only after all fixture cleanup.
+	if isolatedFixtureForkEnabled() {
+		isolatedFixtureSelectedNativePhase().track(t.Name(), t.Cleanup)
+	}
 	missingRemote := len(disconnected) > 6 && disconnected[6]
 	approvalHeld := len(disconnected) > 4 && disconnected[4]
 	missingHost := len(disconnected) > 5 && disconnected[5]

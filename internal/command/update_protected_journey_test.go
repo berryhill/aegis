@@ -22,7 +22,7 @@ import (
 
 // Exercise the production retained-journey authentication and recovery methods,
 // not a callback that assumes authentication. No terminal emulation is used.
-func TestInstalledJourneyProtectedRecovery(t *testing.T) {
+func installedJourneyProtectedRecovery(t *testing.T) {
 	if isolateCommandFixture(t) {
 		return
 	}
@@ -153,9 +153,13 @@ func TestInstalledJourneyProtectedRecovery(t *testing.T) {
 				outer, cancel := context.WithTimeout(cmd.Context(), 2*time.Second)
 				defer cancel()
 				started := time.Now()
+				originalExpiry, acquisitions := j.expires, provider.acquisitions
+				remaining := time.Until(originalExpiry)
 				err = j.Recover(outer)
-				if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) >= time.Second {
-					t.Fatalf("recovery exceeded retained authentication: elapsed=%s err=%v", time.Since(started), err)
+				elapsed := time.Since(started)
+				t.Logf("recovery_class elapsed_ns=%d deadline_match=%t cancelled_match=%t err_nil=%t original_remaining_ns=%d expires_changed=%t extra_acquisitions=%d outer_deadline=%t outer_cancelled=%t", elapsed.Nanoseconds(), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled), err == nil, remaining.Nanoseconds(), !j.expires.Equal(originalExpiry), provider.acquisitions-acquisitions, errors.Is(outer.Err(), context.DeadlineExceeded), errors.Is(outer.Err(), context.Canceled))
+				if !errors.Is(err, context.DeadlineExceeded) || elapsed >= time.Second {
+					t.Fatal("recovery exceeded retained authentication")
 				}
 				if _, err = os.Stat(filepath.Join(root, "recovery-evidence")); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("expired recovery created evidence: %v", err)

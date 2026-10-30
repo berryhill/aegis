@@ -15,19 +15,21 @@ import (
 )
 
 type recoveryPasswordFixture struct {
-	intent    AuthorityPassphraseIntent
-	cancelled bool
+	intent       AuthorityPassphraseIntent
+	cancelled    bool
+	acquisitions int
 }
 
 func (p *recoveryPasswordFixture) Acquire(_ context.Context, r AuthorityPassphraseRequest) ([]byte, error) {
 	p.intent = r.Intent
+	p.acquisitions++
 	if p.cancelled {
 		return nil, errors.New("cancelled")
 	}
 	return []byte("synthetic-recovery-password"), nil
 }
 
-func TestAuthorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.T) {
+func authorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.T) {
 	if isolateCommandFixture(t) {
 		return
 	}
