@@ -20,7 +20,7 @@ without internal IDs; no reference requires exactly one match, otherwise conflic
 Status exposes sanitized stage/lineage/frozen digest, counters, role epochs and
 stop/decision/native-intent gates, never process credentials or completion proof.
 Use `/contribute resume [reference]` for a retained invocation under fresh
-same-owner authentication. Read the [implementation guide](../../docs/continuity/contribution-continuity.md)
+same-owner authentication. Read the [bundled continuity guide](../aegis/references/contribution-continuity.md)
 for exact canonical readback, protected role-provision review, immutable original
 Queue/claim/attempt, cumulative counters, unknown-outcome custody and native
 quiescence requirements. Login alone is neither approval nor task consent.

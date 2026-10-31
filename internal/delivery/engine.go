@@ -146,6 +146,12 @@ func digest(v any) string {
 	return "sha256:" + hex.EncodeToString(h[:])
 }
 func intentFor(p Plan, op Operation) (Intent, error) {
+	// Apply to direct uploads AND every subsequent operation, not just Publish.
+	// Reject before Reserve or adapter admission so no partial publication can
+	// consume the finite reconstructable history envelope.
+	if len(p.Objects) > maxPublicationObjects && p.Delivery != "local-only" && p.Delivery != "no-publish" {
+		return Intent{}, ErrDenied
+	}
 	if p.FenceEpoch == 0 || !roleDigest.MatchString(p.RoleBinding) || p.Run == "" || p.Contract == "" || p.Candidate == "" || p.Actor == "" || p.RepositoryID == 0 || !repoName.MatchString(p.Repository) || !branchName.MatchString(p.Base) || !branchName.MatchString(p.Branch) || p.Base == p.Branch || !sha.MatchString(p.Head) || !sha.MatchString(p.BaseHead) || p.Policy == "" {
 		return Intent{}, ErrDenied
 	}
