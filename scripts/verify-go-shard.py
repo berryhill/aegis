@@ -88,20 +88,21 @@ BUNDLES = {
         'api-a': ('api-a', 'persistence', 'remainder-b'),
         'api-b': ('api-b', 'cli'),
         # Hosted 41218036692: compile 65s + defaults 444s left too little
-        # of 600s for contribution. Keep that group in a manager lane.
+        # of 600s for contribution. Keep that group in a separate lane.
         'implementation': ('implementation',),
         'orchestration': ('orchestration', 'orchestration-contribution'),
-        # Hosted 41220874653: manager-c used its full budget; manager-d
-        # completed in 402s and already compiles implementation dependencies.
+        # Preserve cancellation with manager-d's existing manager binary.
         'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
         'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
-        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel', 'implementation-contribution'),
+        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
         # Hosted 41220874653: cli-command defaults took 462s plus 106s
         # compilation; support-a completed in 314s and takes disconnect.
         'cli-command': ('cli-command',),
-        'cli': ('cli-contribution-root', 'cli-contribution-final'),
+        # After main's remainder move, hosted 41225087087 completed CLI in
+        # 319s; its already compiled dependencies leave room for contribution.
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'implementation-contribution'),
         'support-a': ('remainder-a', 'cli-contribution-disconnect'),
         'support-b': ('update',),
     },

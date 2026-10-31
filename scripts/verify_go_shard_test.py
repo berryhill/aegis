@@ -351,14 +351,14 @@ class ShardTests(unittest.TestCase):
             shard.bundle_groups('extra', False)
 
     def test_race_manager_deadline_work_is_balanced_without_new_lanes(self):
-        # Reuse manager-d's binary for cancellation and its compiled
-        # dependencies for the displaced implementation contribution.
+        # Reuse manager-d's binary for cancellation; main's remainder move
+        # frees CLI headroom for the displaced implementation contribution.
         self.assertEqual(shard.bundle_groups('manager-a', True), ('manager',))
         self.assertEqual(shard.bundle_groups('manager-c', True),
                          ('manager-contribution-resume', 'manager-contribution-readback'))
         self.assertEqual(shard.bundle_groups('manager-d', True),
                          ('manager-contribution-repair', 'manager-contribution-joint',
-                          'manager-contribution-cancel', 'implementation-contribution'))
+                          'manager-contribution-cancel'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'manager-contribution-cancel'
                              for groups in shard.BUNDLES['race'].values()
@@ -368,7 +368,8 @@ class ShardTests(unittest.TestCase):
         # Exact-head hosted run 41216964277 passed all three CLI contribution
         # selections, then cancelled the unchanged complete remainder group.
         self.assertEqual(shard.bundle_groups('cli', True),
-                         ('cli-contribution-root', 'cli-contribution-final'))
+                         ('cli-contribution-root', 'cli-contribution-final',
+                          'implementation-contribution'))
         self.assertEqual(shard.bundle_groups('api-a', True),
                          ('api-a', 'persistence', 'remainder-b'))
         self.assertEqual(shard.bundle_groups('support-a', True),
@@ -385,7 +386,8 @@ class ShardTests(unittest.TestCase):
         # former companion now uses the existing API lane's measured headroom.
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
         self.assertEqual(shard.bundle_groups('cli', True),
-                         ('cli-contribution-root', 'cli-contribution-final'))
+                         ('cli-contribution-root', 'cli-contribution-final',
+                          'implementation-contribution'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'remainder-b'
                              for groups in shard.BUNDLES['race'].values()
@@ -432,7 +434,7 @@ class ShardTests(unittest.TestCase):
         new_owner = {group: lane for lane, groups in shard.BUNDLES['race'].items() for group in groups}
         self.assertEqual({group: (old_owner[group], lane) for group, lane in new_owner.items()
                           if old_owner[group] != lane}, {
-            'implementation-contribution': ('implementation', 'manager-d'),
+            'implementation-contribution': ('implementation', 'cli'),
             'manager-contribution-cancel': ('manager-c', 'manager-d'),
             'cli-contribution-disconnect': ('cli', 'support-a'),
             'remainder-b': ('cli', 'api-a'),
