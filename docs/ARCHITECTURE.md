@@ -1,5 +1,9 @@
 # Aegis MVP Architecture
 
+The existing Fleet publication family separates immutable contribution history
+from fenced active repository/base custody; no new service or store is added.
+See [#423 custody and recovery](contribution-publication-custody.md).
+
 Contribution readiness observes exact profile/role/native/repository scope and
 running image without granting authority. Candidate mismatch denies Run before
 intake; admitted preparation retains immutable image provenance for historical

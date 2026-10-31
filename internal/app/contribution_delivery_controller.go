@@ -254,6 +254,9 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		if e != nil {
 			return e
 		}
+		if e = s.preparePublicationHandoff(live, subject, p.Binding); e != nil {
+			return e
+		}
 		p.OriginalCommit = &plan.Commit
 		p = p.snapshot()
 		policyRef.Digest = p.Digest()

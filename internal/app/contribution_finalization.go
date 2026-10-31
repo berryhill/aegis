@@ -140,6 +140,14 @@ func (a *ContributionCompletionAdapter) VerifyContributionCompletion(ctx context
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	restored, address, _, found, recoveryErr := a.verifier.reloadOriginalPreclosure(ctx, a.subject, a.key, ref)
+	if found || recoveryErr != nil {
+		if recoveryErr != nil {
+			return "", recoveryErr
+		}
+		a.authorization, a.reference = restored, address
+		return address, nil
+	}
 	proof, _, err := a.verifier.VerifyPreClosureAs(ctx, a.subject, a.key)
 	if err != nil {
 		return "", err
@@ -260,11 +268,21 @@ func (v *ContributionFinalVerifier) finalizeContributionAs(ctx context.Context, 
 		if contribution.Digest(wire) != auth.history || (fullSuccess && issue == "") {
 			return ErrDenied
 		}
-		p, e := v.policies.ResolveContributionDeliveryPolicy(cctx, v.policy)
-		if e != nil || p.Digest() != auth.policy {
+		currentPolicy, e := v.policies.ResolveContributionDeliveryPolicy(cctx, v.policy)
+		if e != nil || currentPolicy.Digest() != v.policy.Digest {
 			return ErrDenied
 		}
-		source := &ContributionDeliverySource{service: s, subject: sub, key: key, policyRef: v.policy, policies: v.policies}
+		historical, e := NewContributionDeliveryPolicyHistory(s)
+		if e != nil {
+			return e
+		}
+		p, e := historical.ResolveContributionDeliveryPolicyDigest(cctx, auth.policy)
+		if e != nil || p.Digest() != auth.policy || !compatibleIssueRecoveryPolicy(p, currentPolicy) {
+			return ErrDenied
+		}
+		originalRef := v.policy
+		originalRef.Digest = auth.policy
+		source := &ContributionDeliverySource{service: s, subject: sub, key: key, policyRef: originalRef, policies: contributionOriginalPolicyResolver{historical}}
 		plan, e := source.project(cctx, p.Binding.Reference, p, candidate)
 		if e != nil {
 			return e
@@ -399,7 +417,7 @@ func (v *ContributionFinalVerifier) finalizeContributionAs(ctx context.Context, 
 				return ErrDenied
 			}
 			latestPolicy, e := v.policies.ResolveContributionDeliveryPolicy(commitCtx, v.policy)
-			if e != nil || latestPolicy.Digest() != p.Digest() {
+			if e != nil || latestPolicy.Digest() != currentPolicy.Digest() {
 				return ErrDenied
 			}
 			latestControl, e := s.ReadContributionControlAs(commitCtx, sub, key)

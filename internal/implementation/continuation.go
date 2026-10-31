@@ -128,8 +128,25 @@ func (e *Executor) recoveryPreimage(r Record, c loop.VerifiedImplementation) (st
 	if len(r.Passes) > 1 {
 		preimage = r.Passes[len(r.Passes)-2].ContextStateDigest
 	} else if r.PredecessorRun != "" {
-		// Do not confuse original immutable model context with a predecessor's candidate.
-		return "", "", reject
+		// A first reservation in a successor starts at the predecessor's exact
+		// candidate, not the original model context. Resolve only immutable,
+		// validated custody; decreasing consumption bounds recursion/cycles.
+		previous, err := e.Read(r.PredecessorRun)
+		if err != nil || previous.ConsumedBefore >= r.ConsumedBefore || r.ConsumedBefore >= uint16(c.MaxPasses) {
+			return "", "", reject
+		}
+		h, err := e.History(r.PredecessorRun, c)
+		if err != nil || h.State != "failed" || h.Digest != r.PredecessorHistory || h.CumulativeConsumed != r.ConsumedBefore || h.ContextDigest != r.ContextDigest || h.ReservedPasses == 0 {
+			return "", "", reject
+		}
+		successor, err := e.DB.Get([]byte("implementation/successor/" + digest([]byte(r.PredecessorRun))))
+		if err != nil || string(successor) != r.RunID {
+			return "", "", reject
+		}
+		preimage, _, err = e.recoveryPreimage(previous, c)
+		if err != nil {
+			return "", "", reject
+		}
 	}
 	if preimage == "" {
 		return "", "", reject

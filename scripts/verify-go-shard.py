@@ -81,25 +81,29 @@ BUNDLES = {
         # Hosted 40952580487 twice exhausted support-a: persistence 268s +
         # remainder-a 323s. Reuse api-a's existing 16m job (observed 479s),
         # without changing its 12m API or persistence's 8m process alarms.
-        # Exact-head 41216964277: CLI compilation + its three passing roots
-        # consumed 462s before remainder-b hit the unchanged 600s job limit.
-        # This existing 16m lane completed in 521s on that same head. Move the
-        # complete existing remainder group, not tests, caps or lane names.
-        'api-a': ('api-a', 'persistence', 'remainder-b'),
-        'api-b': ('api-b', 'cli'),
-        'implementation': ('implementation', 'implementation-contribution'),
+        # Hosted 41229014561 exhausted api-a's 16m job after its passing API
+        # and persistence groups. api-b completed in 563s under the same cap;
+        # remainder-b previously took 186s. Move that complete existing group
+        # to api-b, preserving every partition, alarm, lane and resource bound.
+        'api-a': ('api-a', 'persistence'),
+        'api-b': ('api-b', 'cli', 'remainder-b'),
+        # Hosted 41218036692: compile 65s + defaults 444s left too little
+        # of 600s for contribution. Keep that group in a separate lane.
+        'implementation': ('implementation',),
         'orchestration': ('orchestration', 'orchestration-contribution'),
-        # Hosted 40936752306: compile + manager + cancel exceeded 600s;
-        # manager-c completed in 422s, leaving room for the 88s cancel target.
-        # Reuse the same package binary, partitions, alarms and 13 race lanes.
+        # Preserve cancellation with manager-d's existing manager binary.
         'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
-        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'manager-contribution-cancel'),
-        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
+        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+        # Hosted 41220874653: cli-command defaults took 462s plus 106s
+        # compilation; support-a completed in 314s and takes disconnect.
         'cli-command': ('cli-command',),
-        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect'),
-        'support-a': ('remainder-a',),
+        # After main's remainder move, hosted 41225087087 completed CLI in
+        # 319s; its already compiled dependencies leave room for contribution.
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'implementation-contribution'),
+        'support-a': ('remainder-a', 'cli-contribution-disconnect'),
         'support-b': ('update',),
     },
 }

@@ -580,7 +580,12 @@ func (e *ManagedContribution) native(ctx context.Context, c loop.VerifiedImpleme
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(home)
+	removeHome := true
+	defer func() {
+		if removeHome {
+			_ = os.RemoveAll(home)
+		}
+	}()
 	workspace := filepath.Join(home, "source")
 	if err = source.Materialize(workspace); err != nil {
 		return nil, err
@@ -612,6 +617,10 @@ func (e *ManagedContribution) native(ctx context.Context, c loop.VerifiedImpleme
 	cmd.Stderr = &output
 	if e.Native != nil {
 		err = e.Native(ctx, cmd)
+		// The port can return a persistence or quiescence failure while a
+		// descendant still owns this private tree. Without a typed joined
+		// completion here, retain it on every error; never race its writer.
+		removeHome = err == nil
 	} else {
 		err = cmd.Run()
 	}
@@ -652,10 +661,18 @@ func (e *ManagedContribution) build(ctx context.Context, c loop.VerifiedImplemen
 	}
 	path := f.Name()
 	f.Close()
-	defer os.Remove(path)
+	removeOutput := false
+	defer func() {
+		if removeOutput {
+			_ = os.Remove(path)
+		}
+	}()
 	if _, err = e.native(ctx, c, source, []string{"build", "-mod=readonly", "-o", path, p.BuildPackage}); err != nil {
+		// Like the private source home, an external output may still be owned
+		// by an unknown native writer. Retain on every error without joined proof.
 		return "", err
 	}
+	removeOutput = true
 	b, err := os.ReadFile(path)
 	if err != nil || len(b) == 0 || len(b) > 32<<20 {
 		return "", errors.New("bounded executable artifact required")

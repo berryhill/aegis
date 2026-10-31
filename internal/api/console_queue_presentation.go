@@ -19,11 +19,21 @@ import (
 )
 
 func applyConsoleQueuePresentation(ctx context.Context, svc *app.Service, sub core.Subject, model *consoleweb.SurfaceModel) {
+	selectors := make(map[string]string)
+	for _, records := range [][]consoleweb.RecordModel{model.Records, model.ActiveRecords, model.FailedRecords} {
+		for _, record := range records {
+			selectors[record.Key] = ""
+		}
+	}
+	if model.Inspector != nil {
+		selectors[model.Inspector.Key] = ""
+	}
+	views, batchErr := svc.ConsoleQueuePresentationsAs(ctx, sub, selectors)
 	apply := func(record *consoleweb.RecordModel) {
 		actions := &consoleweb.QueueActionsModel{RequeueReason: "Queue actions unavailable; canonical ownership and eligibility required"}
 		record.QueueActions = actions
-		view, err := svc.ConsoleQueuePresentationAs(ctx, sub, record.Key, "")
-		if err != nil {
+		view, ok := views[record.Key]
+		if batchErr != nil || !ok {
 			return
 		}
 		actions.Digest, actions.Revision = view.Digest, strconv.FormatUint(view.Revision, 10)

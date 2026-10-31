@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/delivery"
+	"github.com/berryhill/aegis/internal/persistence/fleet"
 	fleetbadger "github.com/berryhill/aegis/internal/persistence/fleet/badger"
 	"github.com/berryhill/aegis/internal/reference"
 )
@@ -47,6 +49,10 @@ func InstallContributionDeliveryPublicationOwner(s *Service, policies Contributi
 }
 
 func (o *ContributionDeliveryPublicationOwner) enter(ctx context.Context, sub core.Subject, key string) (func(), error) {
+	// Retry terminal-only safety cleanup before denying fresh delivery effects.
+	if err := o.service.releaseTerminalPublication(ctx, sub, key); err != nil {
+		return nil, err
+	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	// Register before admission, so the cancel join cannot overlook a call which
@@ -55,13 +61,23 @@ func (o *ContributionDeliveryPublicationOwner) enter(ctx context.Context, sub co
 	if err != nil || control.Stop {
 		return nil, delivery.ErrDenied
 	}
+	c, _, err := o.service.ReadContributionAs(ctx, sub, key)
+	if err != nil {
+		return nil, delivery.ErrDenied
+	}
+	if _, err = o.service.FleetRepository.GetDispositionByGraphRun(ctx, c.RunID); !errors.Is(err, fleet.ErrNotFound) {
+		return nil, delivery.ErrDenied
+	}
 	o.active[key]++
 	return func() {
 		o.mu.Lock()
-		defer o.mu.Unlock()
 		o.active[key]--
 		close(o.changed)
 		o.changed = make(chan struct{})
+		o.mu.Unlock()
+		// The final owning call closes exact controller custody after the
+		// native/source callback has returned. Failed cleanup retains the fence.
+		_ = o.service.releaseTerminalPublication(ctx, sub, key)
 	}, nil
 }
 
@@ -84,7 +100,7 @@ func (a contributionColdAuthority) Admit(ctx context.Context, i delivery.Intent,
 		return delivery.ErrDenied
 	}
 	role, ok := state.RoleAuthorities["controller"]
-	if !ok || role.Epoch != i.FenceEpoch || role.Ref().Digest != i.RoleBinding {
+	if !ok || (i.Operation != delivery.ReconcileIssue && (role.Epoch != i.FenceEpoch || role.Ref().Digest != i.RoleBinding)) {
 		return delivery.ErrDenied
 	}
 	_, err = a.service.CheckContributionEffectAs(ctx, a.subject, role.SessionID, a.key, contribution.EffectAdmissionRequest{Contract: reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.QueueItemID, Digest: c.Digest}, RunID: c.RunID, QueueItemID: c.QueueItemID, Scope: c.Effect, Candidate: i.Candidate, CandidateEvidence: state.CandidateEvidence, Role: "controller", RoleAuthority: role.Ref(), Epoch: role.Epoch}, false)
@@ -127,6 +143,19 @@ func (o *ContributionDeliveryPublicationOwner) reconcileAs(ctx context.Context, 
 		// Only immutable metadata is reconstructed. Missing completion/graph artifacts
 		// fail the exact payload comparison instead of weakening it.
 		plan := p.projectPolicy(delivery.Plan{Reference: i.Reference, FenceEpoch: i.FenceEpoch, RoleBinding: i.RoleBinding, Intake: h.Contract, Actor: p.Actor, Repository: h.Contract.Repository, RepositoryID: h.Contract.Source.RepositoryID, Base: p.Binding.Base, Branch: p.Branch, Head: i.Head, BaseHead: p.BaseHead, ExpectedOld: p.ExpectedOld, Policy: i.Policy, Delivery: h.Contract.Effect, PR: i.PR, PRTitle: p.PRTitle, PRBody: p.PRBody, ProtectionPolicy: p.ProtectionPolicy, MergeMethod: p.MergeMethod, Commit: delivery.CommitSpec{Tree: p.Tree}})
+		if i.Operation == delivery.ReconcileIssue {
+			ref := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "retained-delivery-policy", Digest: i.Policy}
+			history, e := NewContributionDeliveryPolicyHistory(o.service)
+			if e != nil {
+				return h, e
+			}
+			verifier := &ContributionFinalVerifier{o.service, ref, contributionOriginalPolicyResolver{history}}
+			_, completion, exact, found, e := verifier.reloadOriginalPreclosure(ctx, sub, key, i.Reference)
+			if e != nil || !found || exact != old {
+				return h, delivery.ErrDenied
+			}
+			plan.Completion = completion
+		}
 		// Exact prior proof may retain a narrowed delivery scope or completion
 		// reference which is not present in policy configuration. It is metadata,
 		// never new completion authority; the full intent payload must still match.

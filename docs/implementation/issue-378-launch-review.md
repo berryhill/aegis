@@ -1,5 +1,13 @@
 # #378 source-candidate launch review
 
+## Bounded #423 follow-up
+
+[Publication custody and issue recovery](../contribution-publication-custody.md)
+documents the current immutable-history/active-fence separation, exact terminal
+release and same-intent issue readback. It updates the changelog and narrow
+security/architecture/delivery pointers; prior qualification evidence below is
+preserved rather than promoted into whole #378/#379 or installed #352 acceptance.
+
 ## Current integration qualification (supersedes historical status below)
 
 The sections below retain earlier version-specific adapter reviews. Their

@@ -31,6 +31,33 @@ func (s *Service) ConsoleQueuePresentationAs(ctx context.Context, subject core.S
 	if err != nil {
 		return ConsoleQueuePresentation{}, err
 	}
+	return s.consoleQueuePresentation(ctx, subject, view, digest)
+}
+
+// ConsoleQueuePresentationsAs reconstructs canonical Queue history once for this
+// read. Selectors carry only exact IDs and optional expected digests, never views
+// or authority. Omitted entries have no controls; canonical read failures fail
+// the entire batch closed. No snapshot survives this call.
+func (s *Service) ConsoleQueuePresentationsAs(ctx context.Context, subject core.Subject, selectors map[string]string) (map[string]ConsoleQueuePresentation, error) {
+	views, err := s.ListQueueAs(ctx, subject)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]ConsoleQueuePresentation, len(selectors))
+	for _, view := range views {
+		digest, requested := selectors[view.Item.ItemID]
+		if !requested {
+			continue
+		}
+		presentation, err := s.consoleQueuePresentation(ctx, subject, view, digest)
+		if err == nil {
+			result[view.Item.ItemID] = presentation
+		}
+	}
+	return result, nil
+}
+
+func (s *Service) consoleQueuePresentation(ctx context.Context, subject core.Subject, view QueueExecutionView, digest string) (ConsoleQueuePresentation, error) {
 	if view.Submission.OwnerID != subject.PrincipalID || (digest != "" && view.Item.Digest != digest) {
 		return ConsoleQueuePresentation{}, ErrDenied
 	}
