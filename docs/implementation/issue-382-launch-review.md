@@ -1,5 +1,40 @@
 # Issue 382 — current Queue outcome source candidate
 
+## Recorded-reason correction continuation
+
+Base integrated by normal fast-forward to `f752790768d35d299d72fc4e1b942ff0743a440c`
+(PR #432); no manager edits belong to this correction. Production
+`internal/orchestration/doer_runtime.go` records `doer_loop_failed` and
+`doer_verified`. The banner now preserves those exact closed root codes, without
+inferring the underlying failure cause. Inspection of `queue_worker.go`,
+`implementation_controller.go`, `queue_worker_raw_chain.go`, `doer_preclaim.go`
+and `queue_lifecycle.go` found the same omission for the exact terminal lifecycle
+codes `operator_cancelled`, `execution_expired`, `authority_revoked`; these three
+are included. `retry_exhausted` was already supported. Retry/lease-reclaim progress,
+free-form adapter reasons, other unqualified codes and unknown/backend strings
+are not newly allowed. There is no prefix matching or generic error rendering.
+
+Five exact-code render/helper regressions failed before the correction; unknown,
+near-match, raw error and nonterminal reason tests retain `unavailable`. Full
+`web/console` ordinary and race tests, Console vendor/security checks passed.
+`go generate ./web/console` regenerated the derived Go; no hand-generated edit.
+The correction changes neither DTOs, JavaScript, runtime/result authorization,
+execution, evidence nor verification decisions. The failed-root detail remains
+unavailable and a success reason alone does not mark selected evidence verified.
+
+Launch ledger for this continuation: CHANGELOG and this ledger updated. README,
+LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, threat model, architecture
+including diagram, QUICKSTART, no-key demo, RECORDING and contributor backlog
+reviewed as unaffected by this five-code read-only presentation correction.
+Their authority, commands, licensing and historical proof scope do not change.
+No new demo, recording, release binary/checksum publication or remote issue was
+created; release and broader historical launch gaps are not qualified by these
+checks. Only a new local source/executable freeze is produced under
+`/home/silas/.hermes/profiles/xander/workspace/aegis-382-reason-candidate`.
+Earlier candidate and current-acceptance evidence remain immutable. Fresh
+independent real-journey acceptance and source publication remain parent-owned.
+No listeners, live state, runtime budgets, grants or configuration were changed.
+
 ## Scope and boundaries
 
 The Console renders a current-outcome summary before topology and refreshes it

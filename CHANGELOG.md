@@ -27,6 +27,26 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   pre-merge CI/conflict failures qualify; UNKNOWN effects, issue mutations and
   retained merges cannot become repair permissions. Productive managed repair
   and repaired-candidate publication progression remain separate integration work.
+- #382 source follow-up: show exact recorded `doer_loop_failed` and `doer_verified`
+  root reasons in the Queue outcome banner, plus terminal lifecycle codes
+  `operator_cancelled`, `execution_expired` and `authority_revoked`. Unknown/backend
+  strings remain unavailable; root reasons do not infer missing underlying causes
+  or establish verification.
+
+- #248 source: replace ordinary full-schema prompts with a compact full-digest-bound
+  operation metadata index and bounded exact-operation `platform.discover` schema
+  collection. Rediscover capabilities each turn; changed/failed-delivery/new-session
+  behavior and existing inference scanning/deadline remain intact. Ordinary and race
+  installed-transport regressions use synthetic inference, not model certification.
+
+- #349 source: inject the qualified Linux native checker lifecycle at the
+  orchestration boundary, preserving kernel dependency direction. Checker return
+  joins owned process-group cleanup before home/workspace release; unknown cleanup
+  quarantines custody, and missing runner ports deny before start. This is not
+  sandboxing, durable contribution receipt creation, or live-provider/installed
+  qualification. See [checker cleanup](docs/VERIFIED_IMPLEMENTATION.md#linux-checker-cleanup-boundary).
+
+
 
 - #423 source: separate immutable contribution publication history from active
   repository/base custody; hand off only after canonical terminal outcome,
@@ -35,6 +55,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   recovers its original intent/preclosure through exact readback without another
   PATCH or budget reset. See [custody and recovery](docs/contribution-publication-custody.md).
   Whole #379 and installed-release #352 qualification remain separate.
+
 
 - #379 source integration: keep one registered contribution invocation through
   native Run/Resume, delivery and canonical disposition after transport loss.

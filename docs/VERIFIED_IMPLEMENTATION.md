@@ -76,6 +76,20 @@ This is a Doer-style mode of the existing v3 `implement` action, not a general i
 
 **Native Go tests are trusted code, not a sandbox.** Tests and imported code execute as the controller's OS user. Writable-path restrictions constrain patch application, not arbitrary effects of native code. Only approve trusted repositories/tests and a suitably isolated host account. This feature does not provide host confinement, automatic scheduling, GitHub merge, deployment or automatic service restart.
 
+### Linux checker cleanup boundary
+
+The controller injects a qualified native-runner port into the implementation
+kernel; missing ports deny before command start (there is no unsafe fallback).
+On Linux it reuses the Hermes pinned-leader, process-group fork barrier and fresh
+quiescence observation, with the sole `Wait` joined before checker return. These
+callbacks track local lifecycle only, not durable contribution receipts. Known
+cleanup permits disposable-home removal and workspace release; unknown cleanup
+retains the checker home and process-lifetime workspace custody, including when
+recording the failure fails. Recovery requires external reconciliation, not blind
+replay. Unsupported platforms deny before start. This is not protection against
+deliberate process-group escape, hostile same-UID writers or a host sandbox, and
+does not establish real-provider or installed qualification.
+
 ## Evidence
 
 `go test ./internal/command -run TestImplementationDraftCLI -count=1` exercises real command construction, typed drafting, file output and refusal paths. `go test ./internal/api -run TestInstalledOnlineLoopPublication -count=1` builds and executes the CLI against a real authenticated Unix service and disposable Badger store, validates and publishes the builder's v3 draft, checks exact inactive readback and idempotency, denies invalid input and verifies no Queue item or duplicate Agent. Its Agent provenance is synthetic; it is not live owner publication or live-model acceptance.
