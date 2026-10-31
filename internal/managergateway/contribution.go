@@ -136,10 +136,9 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			return result, readErr
 		}
 		if args[0] == "status" {
-			continuity, continuityErr := s.app.ReadContributionContinuityViewAs(ctx, entry.subject, key)
-			if continuityErr != nil {
-				return result, continuityErr
-			}
+			// The authenticated read immediately above already supplied this
+			// projection. Repeating the complete immutable history scan here
+			// needlessly contends with the live native owner's admission reads.
 			result.State, result.Reason = "observed", "durable_contribution_readback"
 			result.Data = map[string]any{"contract_digest": contract.Digest, "queue_item_id": contract.QueueItemID, "run_id": contract.RunID, "loop": contract.Loop, "continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
 			// Identity-only navigation may observe the safe retained projection;

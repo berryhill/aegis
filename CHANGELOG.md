@@ -19,7 +19,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 - #379 source integration: keep one registered contribution invocation through
   native Run/Resume, delivery and canonical disposition after transport loss.
   Explicit Stop, original authority expiry, deadlines, budgets and per-effect
-  admission remain enforced. Controlled production-path acceptance is separate
+  admission remain enforced. Continuity reconstruction reads every canonical
+  event once per transaction instead of prefetching and point-reading it again;
+  status reuses its already-authenticated projection without a duplicate scan.
+  Exact key membership, historical bytes, head and replay validation remain.
+  Controlled production-path acceptance is separate
   from real-provider/protected-remote and installed qualification.
 
 - Bounded #352 source repair: admit at most 392 publication objects before any
