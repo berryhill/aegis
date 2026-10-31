@@ -161,18 +161,9 @@ func (s *Service) contribute(ctx context.Context, entry session, request slash.R
 			break
 		}
 		result.Data = map[string]any{"continuity": continuity, "held_reason": continuity.HeldReason, "completed": false}
-		execution, e := s.app.ContributionExecutionStatusAs(ctx, entry.subject, key)
-		if e == nil && execution.Execution != nil && len(execution.Execution.Attempts) > 0 {
-			execution, e = s.app.ResumeContributionAs(ctx, entry.subject, key)
-		}
-		err = e
-		if err == nil {
-			journey, journeyErr := s.app.ExecuteContributionJourneyAs(ctx, entry.subject, key)
-			// Preserve the actual accepted Resume result if the subsequent
-			// journey fails before it can return its own execution projection.
-			if journeyErr == nil || journey.Execution.Candidate != nil {
-				execution = journey.Execution
-			}
+		{
+			journey, journeyErr := s.app.ResumeContributionJourneyAs(ctx, entry.subject, key)
+			execution := journey.Execution
 			// contract is the immutable exact key resolved before Resume. The
 			// terminal getter independently reloads it; no caller-context read or
 			// journey-error return may bypass bounded metadata reconciliation.

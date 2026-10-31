@@ -368,18 +368,45 @@ exec sleep 240
 			case <-tick.C:
 				status, e := gateway.Execute(waitCtx, subject, id, token, "/contribute status "+key)
 				must(e)
+				if status.Data["terminal"] == true {
+					terminal, terminalErr := s.GetFinalContributionResultAs(ctx, subject, key)
+					must(terminalErr)
+					if terminal.Report.Outcome != "narrower-target-completed" || terminal.Report.Key != key {
+						t.Fatalf("disconnect lost original journey: %+v", terminal.Report)
+					}
+					_, continuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
+					must(e)
+					if !contribution.NativeRoleQuiescent(continuity, "builder") || !contribution.NativeRoleQuiescent(continuity, "tester") {
+						t.Fatal("terminal before native role quiescence")
+					}
+					t.Logf("HTTP disconnect retained SAME key=%s counters=%+v; native roles quiescent and final local boundary persisted BEFORE resume", key, continuity.Used)
+					ready = true
+					continue
+				}
 				wire, e := json.Marshal(status.Data["execution"])
 				must(e)
 				var execution app.ContributionExecutionResult
 				must(json.Unmarshal(wire, &execution))
 				if execution.Candidate == nil || execution.Candidate.State != "candidate_accepted" {
+					t.Logf("disconnect observation: reason=%s candidate_present=%t", execution.Reason, execution.Candidate != nil)
 					continue
 				}
 				_, continuity, _, e := s.ObserveContributionContinuityAs(ctx, subject, key)
 				must(e)
 				ready = contribution.NativeRoleQuiescent(continuity, "builder") && contribution.NativeRoleQuiescent(continuity, "tester")
 				if ready {
-					t.Logf("HTTP disconnect retained SAME key=%s accepted candidate=%s counters=%+v; native builder/tester quiescent", key, execution.Candidate.Passes[0].Candidate.Digest, continuity.Used)
+					// Observation must not be an implicit Continue. The original
+					// admitted HTTP invocation owns publication/disposition too.
+					terminal, terminalErr := s.GetFinalContributionResultAs(ctx, subject, key)
+					if app.IsContributionResultNotFound(terminalErr) {
+						ready = false
+						continue
+					}
+					must(terminalErr)
+					if terminal.Report.Outcome != "narrower-target-completed" || terminal.Report.Key != key {
+						t.Fatalf("disconnect lost original journey: %+v", terminal.Report)
+					}
+					t.Logf("HTTP disconnect retained SAME key=%s accepted candidate=%s counters=%+v; native roles quiescent and final local boundary persisted BEFORE resume", key, execution.Candidate.Passes[0].Candidate.Digest, continuity.Used)
 				}
 			}
 		}

@@ -40,7 +40,14 @@ func (s *Service) beginContributionRun(ctx context.Context, c contribution.Contr
 	if control.Stop {
 		return nil, nil, contribution.ErrContinuityFenced
 	}
-	runCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), c.Deadline)
+	// Detach transport cancellation, not the original invocation's lifetime.
+	// Manager entry supplies its immutable session expiry as a deadline; it
+	// cannot be widened to the contribution deadline after the client leaves.
+	deadline := c.Deadline
+	if original, ok := ctx.Deadline(); ok && original.Before(deadline) {
+		deadline = original
+	}
+	runCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), deadline)
 	run := &contributionRunControl{c.Digest, epoch, cancel, make(chan struct{})}
 	s.contributionRuns[c.QueueItemID] = run
 	if s.loopRunWorkers == nil {

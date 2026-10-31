@@ -16,6 +16,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #379 source integration: keep one registered contribution invocation through
+  native Run/Resume, delivery and canonical disposition after transport loss.
+  Explicit Stop, original authority expiry, deadlines, budgets and per-effect
+  admission remain enforced. Controlled production-path acceptance is separate
+  from real-provider/protected-remote and installed qualification.
+
 - Bounded #352 source repair: admit at most 392 publication objects before any
   delivery effect, fitting the existing 400-fact readback and 512-history limits
   with room for all subsequent operation slots. Historical contribution-result retrieval
