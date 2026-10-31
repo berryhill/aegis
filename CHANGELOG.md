@@ -16,6 +16,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #349 source: inject the qualified Linux native checker lifecycle at the
+  orchestration boundary, preserving kernel dependency direction. Checker return
+  joins owned process-group cleanup before home/workspace release; unknown cleanup
+  quarantines custody, and missing runner ports deny before start. This is not
+  sandboxing, durable contribution receipt creation, or live-provider/installed
+  qualification. See [checker cleanup](docs/VERIFIED_IMPLEMENTATION.md#linux-checker-cleanup-boundary).
+
 - #379 source integration: keep one registered contribution invocation through
   native Run/Resume, delivery and canonical disposition after transport loss.
   Explicit Stop, original authority expiry, deadlines, budgets and per-effect

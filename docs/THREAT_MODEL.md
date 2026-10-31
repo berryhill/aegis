@@ -121,6 +121,14 @@ Local model digest rechecks detect drift but do not atomically pin the server mo
 
 ## Verified implementation native-code boundary
 
+The Linux implementation checker requires a controller-injected native lifecycle
+port: pinned leader, group-wide fork barrier, fresh quiescence observation and
+sole joined Wait before return. Missing ports/unsupported platforms deny before
+start. Unknown cleanup retains the disposable home and process-lifetime workspace
+lock even if failure persistence fails; it is not permission to replay. This local
+join mints no durable contribution receipt and does not cover deliberate process-
+group escape or hostile same-UID writers. See [checker cleanup](VERIFIED_IMPLEMENTATION.md#linux-checker-cleanup-boundary).
+
 Native Codex connection reconciliation does not grant native-code authority.
 After independently authorized configuration changes, fresh Unix-principal
 same-selection review permits only an exactly reconstructable initial native
