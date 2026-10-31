@@ -287,19 +287,46 @@ func (r *ContributionDeliveryRepository) publicationOwner(txn *badgerdb.Txn, i d
 		}
 	}
 	if createMissing {
-		// Upgrade a legacy root without discarding its old slots.
-		histories, e := publicationHistories(txn, want)
+		// Surviving slot identity with no history is corruption, not a new
+		// reservation or an ordinary create conflict.
+		if _, exists, e := optional(txn, publicationSlotKey(want, i.ID)); e != nil {
+			return e
+		} else if exists {
+			return fleet.ErrCorrupt
+		}
+		indexKey := key(familyContributionPublication, "indexed", b.OwnerID, b.Key)
+		marker, indexed, e := optional(txn, indexKey)
 		if e != nil {
 			return e
 		}
-		for _, chain := range histories {
-			intent := chain[0].Record.Intent
-			if e := txn.Set(publicationSlotKey(want, intent.ID), deliveryWire(intent)); e != nil {
+		if indexed {
+			if !bytes.Equal(marker, deliveryWire(want)) {
+				return fleet.ErrCorrupt
+			}
+			// Validate complete slot/mirror membership, not every old proof on
+			// every new object. Full observation validation remains in readback
+			// and terminal handoff. The legacy migration runs only once.
+			slots, e := publicationSlots(txn, want)
+			if e != nil {
 				return e
 			}
-		}
-		if e := txn.Set(key(familyContributionPublication, "indexed", b.OwnerID, b.Key), deliveryWire(want)); e != nil {
-			return e
+			if len(slots) == 0 {
+				return fleet.ErrCorrupt
+			}
+		} else {
+			histories, e := publicationHistories(txn, want)
+			if e != nil {
+				return e
+			}
+			for _, chain := range histories {
+				intent := chain[0].Record.Intent
+				if e := create(txn, publicationSlotKey(want, intent.ID), deliveryWire(intent)); e != nil {
+					return e
+				}
+			}
+			if e := create(txn, indexKey, deliveryWire(want)); e != nil {
+				return e
+			}
 		}
 		if e := create(txn, publicationSlotKey(want, i.ID), deliveryWire(i)); e != nil {
 			return e

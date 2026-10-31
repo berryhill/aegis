@@ -80,7 +80,7 @@ func (s *Store) GetContributionPublicationOwner(ctx context.Context, repositoryI
 
 // Legacy roots have no root-local index. Their immutable legacy slots remain
 // readable; new reservations materialize a complete index in the same txn.
-func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]DeliveryObservation, error) {
+func publicationSlots(txn *badgerdb.Txn, root deliveryPublication) ([]delivery.Intent, error) {
 	marker, indexed, err := optional(txn, key(familyContributionPublication, "indexed", root.OwnerID, root.Key))
 	if err != nil || indexed && !bytes.Equal(marker, deliveryWire(root)) {
 		return nil, fleet.ErrCorrupt
@@ -103,7 +103,7 @@ func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]Deli
 	opts.Prefix = prefix
 	it := txn.NewIterator(opts)
 	defer it.Close()
-	var out [][]DeliveryObservation
+	var out []delivery.Intent
 	for it.Rewind(); it.Valid(); it.Next() {
 		wire, e := it.Item().ValueCopy(nil)
 		var i delivery.Intent
@@ -128,18 +128,10 @@ func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]Deli
 				return nil, fleet.ErrCorrupt
 			}
 		}
-		chain, e := loadDeliveryHistory(txn, i.ID)
-		if e != nil || len(chain) == 0 || chain[0].Record.Intent != i || len(out) >= 512 {
+		if len(out) >= 512 {
 			return nil, fleet.ErrCorrupt
 		}
-		for _, entry := range chain {
-			if entry.Record.ProofJSON != "" || entry.Record.ProofDigest != "" {
-				if _, e := delivery.ParseReadback(i, entry.Record.Observation); e != nil {
-					return nil, fleet.ErrCorrupt
-				}
-			}
-		}
-		out = append(out, chain)
+		out = append(out, i)
 	}
 	if indexed {
 		// Both retained indexes must enumerate the same exact membership. Losing
@@ -166,6 +158,58 @@ func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]Deli
 			count++
 		}
 		if count != len(out) {
+			return nil, fleet.ErrCorrupt
+		}
+	}
+	return out, nil
+}
+
+// Full readback/release/handoff validates every immutable observation. A fresh
+// effect checks the strict catalogue without repeatedly re-decoding old proofs.
+func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]DeliveryObservation, error) {
+	slots, err := publicationSlots(txn, root)
+	if err != nil {
+		return nil, err
+	}
+	out := make([][]DeliveryObservation, 0, len(slots))
+	known := make(map[string]delivery.Intent, len(slots))
+	for _, i := range slots {
+		known[i.ID] = i
+		chain, err := loadDeliveryHistory(txn, i.ID)
+		if err != nil || len(chain) == 0 || chain[0].Record.Intent != i {
+			return nil, fleet.ErrCorrupt
+		}
+		for _, entry := range chain {
+			if entry.Record.ProofJSON != "" || entry.Record.ProofDigest != "" {
+				if _, err := delivery.ParseReadback(i, entry.Record.Observation); err != nil {
+					return nil, fleet.ErrCorrupt
+				}
+			}
+		}
+		out = append(out, chain)
+	}
+	// Slot mirrors are indexes, not proof that omitted effects never existed.
+	// Detect surviving same-root history even if BOTH indexes for a slot were
+	// lost. This complete read is required for history and handoff, not repeated
+	// for each new object reservation.
+	opts := badgerdb.DefaultIteratorOptions
+	opts.Prefix = key(familyContributionDelivery)
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Rewind(); it.Valid(); it.Next() {
+		wire, e := it.Item().ValueCopy(nil)
+		var entry DeliveryObservation
+		if e != nil || strictDelivery(wire, &entry) != nil {
+			return nil, fleet.ErrCorrupt
+		}
+		i := entry.Record.Intent
+		if i.Run != root.Run && i.Contract != root.Contract {
+			continue
+		}
+		if original, ok := known[i.ID]; !ok || original != i || delivery.ValidateHistoryEnvelope(entry) != nil {
+			return nil, fleet.ErrCorrupt
+		}
+		if !bytes.Equal(it.Item().Key(), key(familyContributionDelivery, i.ID, "head")) && !bytes.Equal(it.Item().Key(), key(familyContributionDelivery, i.ID, revisionPart(entry.Record.Revision))) {
 			return nil, fleet.ErrCorrupt
 		}
 	}
