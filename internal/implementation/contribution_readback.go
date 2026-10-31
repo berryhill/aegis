@@ -137,7 +137,7 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	if r.Integration != nil {
 		data, _ := json.Marshal(r.Integration)
 		stored, err := e.DB.Get([]byte("contribution/base-integration/" + digest(data)))
-		if err != nil || !bytes.Equal(stored, data) || r.Integration.OriginalBase != r.Base {
+		if err != nil || !bytes.Equal(stored, data) || r.Integration.OriginalBase != r.Base || r.Integration.Context == nil {
 			return bad
 		}
 		linked := false
@@ -167,6 +167,39 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	}
 	if r.Frozen != nil && !checkBase(*r.Frozen) {
 		return bad
+	}
+	if r.Integration != nil {
+		// Derive progress from the immutable integration or the subsequent frozen
+		// candidate, retaining original context identity and exact ordered roles.
+		source := r.Integration.Source
+		for _, repair := range r.DeliveryRepairs {
+			if repair.Candidate == r.Integration.Predecessor && r.Consumed == repair.AfterPass {
+				source = r.Passes[int(repair.AfterPass)-1].Candidate.Source
+			}
+		}
+		if r.Frozen != nil {
+			source = r.Frozen.Source
+		} else if len(r.Passes) > 0 && r.Passes[len(r.Passes)-1].Candidate.CurrentBase != "" {
+			source = r.Passes[len(r.Passes)-1].Candidate.Source
+		}
+		want := cloneContext(r.Integration.Context)
+		for i := range want.Files {
+			found := false
+			for _, f := range source.Files {
+				if f.Path == want.Files[i].Path {
+					want.Files[i].Text, want.Files[i].Digest = string(f.Content), digest(f.Content)
+					found = true
+				}
+			}
+			if !found {
+				return bad
+			}
+		}
+		actual, _ := json.Marshal(r.Expected)
+		wanted, _ := json.Marshal(want)
+		if !bytes.Equal(actual, wanted) {
+			return bad
+		}
 	}
 	for _, pass := range r.Passes {
 		if !checkBase(pass.Candidate) {

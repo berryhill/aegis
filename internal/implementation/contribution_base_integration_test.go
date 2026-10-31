@@ -42,6 +42,10 @@ func TestContributionNativeAdvancingBaseIntegration(t *testing.T) {
 	base := run("rev-parse", "HEAD")
 	run("remote", "add", "origin", "https://github.com/fixture/controlled.git")
 	c := loop.VerifiedImplementation{Workspace: repo, WritableFiles: []string{"value.go"}, RepositoryContext: &loop.RepositoryContext{Files: []loop.RepositoryContextFile{{Path: "trusted_test.go", Role: "trusted_test", Digest: digest([]byte("package fixture\n"))}}}}
+	c.RepositoryContext.TaskDigest = digest([]byte(c.Task))
+	c.RepositoryContext.MaxFiles, c.RepositoryContext.MaxFileBytes, c.RepositoryContext.MaxTotalBytes = 8, 4096, 16384
+	c.RepositoryContext.Files[0].Bytes = int64(len("package fixture\n"))
+	c.RepositoryContext.SourceDigest = RepositorySourceDigest(c.RepositoryContext)
 	p := loop.ContributionExecutionPolicy{RepositoryPath: repo, GitBinary: git}
 	e := &ManagedContribution{StateRoot: t.TempDir(), Repository: "fixture/controlled", Admit: func(context.Context, string) error { return nil }}
 	write("value.go", "package fixture\nconst Value = 42\n")

@@ -83,6 +83,10 @@ func TestSecurity(t *testing.T){if Value()<0{t.Fatal("negative")}}
 func TestLaunch(t *testing.T){if Value()==-1{t.Fatal("launch")}}
 func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 `, "README.md": "Fixture value contract\n", "SECURITY.md": "Fixture denial contract\n"}
+	if advancingBaseJourney {
+		files["offset.go"] = "package main\nfunc Offset() int{return 0}\n"
+		files["main_test.go"] = strings.Replace(files["main_test.go"], "Value()!=42", "Value()+Offset()!=42", 1)
+	}
 	for p, b := range files {
 		must(os.WriteFile(filepath.Join(repoPath, p), []byte(b), 0600))
 	}
@@ -104,6 +108,9 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	c := loop.ImplementationDraft("Repair real value behavior", "Native required tests pass")
 	c.Workspace = filepath.Join(root, "owned")
 	c.WritableFiles = []string{"value.go"}
+	if advancingBaseJourney {
+		c.WritableFiles = append(c.WritableFiles, "offset.go")
+	}
 	c.Policy.Packages = []string{"."}
 	c.Policy.TimeoutSeconds = 60
 	c.Policy.RequiredTests = nil
@@ -122,6 +129,10 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: p, Role: role, Bytes: int64(len(files[p])), Digest: contribution.Digest([]byte(files[p]))})
 	}
 	c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
+	if advancingBaseJourney {
+		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: "offset.go", Role: "source", Bytes: int64(len(files["offset.go"])), Digest: contribution.Digest([]byte(files["offset.go"]))})
+		c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
+	}
 	policy := loop.ContributionExecutionPolicy{Kind: "go-stdlib-behavior.v1", RepositoryPath: repoPath, GitBinary: git, BaseBranch: "main", BuildPackage: "."}
 	for i, k := range []string{"behavior", "security", "launch", "denial"} {
 		policy.Criteria = append(policy.Criteria, loop.ContributionCriterion{ID: k, Kind: k, Test: c.Policy.RequiredTests[i]})
@@ -216,6 +227,9 @@ while read rest; do :; done
 `
 	if repairJourney {
 		successor, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package main\n// CI repair preserves the reviewed behavior.\nfunc Value() int{return 42}\n")}}})
+		if advancingBaseJourney {
+			successor, _ = json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package main\n// Preserve the upstream writable offset.\nfunc Value() int{return 35}\n")}}})
+		}
 		script = strings.Replace(script, "text='", "if [ -f '"+filepath.Join(root, "first-proposal")+"' ]; then text='"+nativeJSON(string(successor))+"'; else touch '"+filepath.Join(root, "first-proposal")+"'; text='", 1)
 		script = strings.Replace(script, "printf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", "fi\nprintf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", 1)
 	}
@@ -238,8 +252,19 @@ while read rest; do :; done
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}
 	must(worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
-	worker.SetContributionFetch(func(context.Context, loop.ContributionExecutionPolicy) error {
-		runGit("fetch", "--no-tags", repoPath, "main")
+	advanceFetches := 0
+	worker.SetContributionFetch(func(_ context.Context, transport loop.ContributionExecutionPolicy) error {
+		if advancingBaseJourney && transport.BaseBranch != "main" {
+			if exec.Command(git, "-C", repoPath, "cat-file", "-e", transport.BaseBranch).Run() == nil {
+				t.Fatal("upstream object already local before exact transport")
+			}
+			advanceFetches++
+			// Controlled transport copies real objects from the private remote;
+			// canonical HTTPS origin and production transport policy stay intact.
+			runGit("fetch", "--no-tags", filepath.Join(root, "controlled-upstream.git"), transport.BaseBranch)
+		} else {
+			runGit("fetch", "--no-tags", repoPath, transport.BaseBranch)
+		}
 		return nil
 	})
 	_, e = s.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: refs[0].ID, Revision: lr, IdempotencyKey: "publish"})
@@ -493,7 +518,8 @@ while read rest; do :; done
 			expectedState, expectedOutcome = "failed", "failed"
 		}
 		if string(terminal.Disposition.State) != expectedState || terminal.Report.Outcome != expectedOutcome || terminal.Report.Scope != scope {
-			t.Fatal("canonical finalization did not produce SUCCEEDED")
+			native, nativeErr := s.ReadContributionExecutionAs(ctx, subject, sealed.Key)
+			t.Fatalf("canonical finalization did not produce SUCCEEDED: report=%+v native_state=%s consumed=%d integration=%t native_error=%v", terminal.Report, native.State, native.Consumed, native.Integration != nil, nativeErr)
 		}
 		if expectedOutcome != "succeeded" {
 			h, e := s.ReadContributionDeliveryHistoryAs(ctx, subject, sealed.Key)
@@ -549,11 +575,11 @@ while read rest; do :; done
 			if advancingBaseJourney {
 				found := false
 				for _, f := range current.Source.Files {
-					if f.Path == "upstream.go" && string(f.Content) == "package main\nconst Upstream = 7\n" {
+					if f.Path == "offset.go" && string(f.Content) == "package main\nfunc Offset() int{return 7}\n" {
 						found = true
 					}
 				}
-				if !found || current.Base != sealed.Base || current.Source.Digest == v.Source.Digest || current.CandidateTree == v.CandidateTree || current.Executable == v.Executable {
+				if advanceFetches != 1 || !found || current.Base != sealed.Base || current.Source.Digest == v.Source.Digest || current.CandidateTree == v.CandidateTree || current.Executable == v.Executable {
 					t.Fatal("advancing base was not independently rebuilt/frozen with original intent")
 				}
 			}

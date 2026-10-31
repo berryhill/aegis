@@ -7,7 +7,7 @@ import (
 
 func TestContributionRepairPolicyReconstructedFromNative(t *testing.T) {
 	p := ContributionDeliveryPolicy{BaseHead: "base", RepairFailure: "caller", ExpectedOld: "caller", PR: 99}
-	c := orchestration.ContributionCandidate{Pass: 2, Digest: "new"}
+	c := orchestration.ContributionCandidate{Pass: 2, Digest: "new", Base: p.BaseHead}
 	r := orchestration.ContributionDeliveryRepair{AfterPass: 1, Failure: "failed", Head: "old", Base: "base", PR: 7, Candidate: "before"}
 	got, err := contributionRepairPolicy(p, c, []orchestration.ContributionDeliveryRepair{r})
 	if err != nil || got.RepairFailure != r.Failure || got.ExpectedOld != r.Head || got.PR != r.PR || got.BaseHead != p.BaseHead {

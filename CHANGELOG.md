@@ -22,11 +22,16 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   or suggestions. Retained verification independently reconstructs each packet;
   a policy PR pin cannot substitute for independently proven PR creation.
 
-- #379 repair prerequisite: keep a successfully forwarded delivery repair
-  nonterminal until its managed owner can reacquire source custody. Only concrete
-  pre-merge CI/conflict failures qualify; UNKNOWN effects, issue mutations and
-  retained merges cannot become repair permissions. Productive managed repair
-  and repaired-candidate publication progression remain separate integration work.
+- #379 source: productive managed CI/conflict repair reacquires the same source
+  custody, consumes the remaining candidate budget, rebuilds and independently
+  tests before updating the same canonical PR. A narrowly verified read-only
+  `base_advanced` observation may acquire the exact missing upstream commit and
+  integrate nonconflicting writable source with immutable updated preimages;
+  sealed contract, trusted inputs and deadlines remain unchanged. Other UNKNOWN
+  effects, issue mutations and retained merges never authorize repair. Existing
+  CI runs ordinary, CI-repair and base-advance controlled finalization regressions.
+  Userland profiles/CLI are unchanged; real v6 provider and protected GitHub
+  qualification remain pending, not established by these synthetic fixtures.
 - #382 source follow-up: show exact recorded `doer_loop_failed` and `doer_verified`
   root reasons in the Queue outcome banner, plus terminal lifecycle codes
   `operator_cancelled`, `execution_expired` and `authority_revoked`. Unknown/backend

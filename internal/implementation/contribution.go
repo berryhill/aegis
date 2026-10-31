@@ -352,6 +352,10 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			}
 			record.State = "running"
 			record.Consumed++ // Persist consumption before runtime or file effects.
+			if record.Integration != nil && len(record.DeliveryRepairs) > 0 && record.DeliveryRepairs[len(record.DeliveryRepairs)-1].AfterPass == record.Consumed-1 {
+				expected = cloneContext(record.Integration.Context)
+				record.Expected = cloneContext(expected)
+			}
 			if err = e.save(record); err != nil {
 				return record, err
 			}
@@ -359,6 +363,7 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 				if err = e.applyBaseIntegration(ctx, c, record.Integration); err != nil {
 					return record, err
 				}
+
 			}
 			if err = e.admit(ctx, "builder"); err != nil {
 				return record, err

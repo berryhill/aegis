@@ -17,11 +17,12 @@ import (
 // permission to change the sealed base. Its source requires a new consumed pass,
 // build, freeze and independently admitted tester before it can be published.
 type ContributionBaseIntegration struct {
-	OriginalBase string          `json:"original_base"`
-	CurrentBase  string          `json:"current_base"`
-	Predecessor  string          `json:"predecessor"`
-	Tree         string          `json:"tree"`
-	Source       SourceInventory `json:"source"`
+	OriginalBase string                      `json:"original_base"`
+	CurrentBase  string                      `json:"current_base"`
+	Predecessor  string                      `json:"predecessor"`
+	Tree         string                      `json:"tree"`
+	Source       SourceInventory             `json:"source"`
+	Context      *CollectedRepositoryContext `json:"context"`
 }
 
 // integrateAdvancingBase performs a conservative native three-tree integration
@@ -48,6 +49,32 @@ func (e *ManagedContribution) integrateAdvancingBase(ctx context.Context, c loop
 	}
 	origin, err := e.git(ctx, p, p.RepositoryPath, "remote", "get-url", "origin")
 	if err != nil || e.Repository == "" || strings.TrimSpace(string(origin)) != "https://github.com/"+e.Repository+".git" {
+		return out, denied
+	}
+	// A canonical advance can name an object absent from initial preparation.
+	// Fetch the exact OID using existing controller transport, not a moved tip.
+	// The temporary transport selector never replaces the admitted policy.
+	if _, err = e.git(ctx, p, c.Workspace, "cat-file", "-e", current); err != nil {
+		transport := p
+		transport.BaseBranch = current
+		if err = e.admit(ctx, "base-integration-fetch"); err != nil {
+			return out, err
+		}
+		if e.Fetch != nil {
+			err = e.Fetch(ctx, transport)
+		} else {
+			_, err = e.git(ctx, transport, p.RepositoryPath, "fetch", "--no-tags", "origin", current)
+		}
+		if err != nil {
+			return out, denied
+		}
+		fetched, fetchErr := e.git(ctx, p, p.RepositoryPath, "rev-parse", "FETCH_HEAD")
+		if fetchErr != nil || strings.TrimSpace(string(fetched)) != current {
+			return out, denied
+		}
+	}
+	kind, err := e.git(ctx, p, c.Workspace, "cat-file", "-t", current)
+	if err != nil || strings.TrimSpace(string(kind)) != "commit" {
 		return out, denied
 	}
 	if _, err = e.git(ctx, p, c.Workspace, "merge-base", "--is-ancestor", prior.Base, current); err != nil {
@@ -164,6 +191,32 @@ func (e *ManagedContribution) integrateAdvancingBase(ctx context.Context, c loop
 	if err != nil {
 		return out, err
 	}
+	// Collect bounded integrated preimages; only writable source may advance.
+	// Preserve the original sealed manifest identity, roles and trusted inputs.
+	next := cloneImplementation(c)
+	next.Workspace = dest
+	for i, f := range next.RepositoryContext.Files {
+		for _, path := range c.WritableFiles {
+			if path == f.Path && f.Role == "source" {
+				for _, file := range inventory.Files {
+					if file.Path == path {
+						next.RepositoryContext.Files[i].Digest = digest(file.Content)
+						next.RepositoryContext.Files[i].Bytes = int64(len(file.Content))
+					}
+				}
+			}
+		}
+	}
+	next.RepositoryContext.SourceDigest = RepositorySourceDigest(next.RepositoryContext)
+	collected, err := CollectRepositoryContext(ctx, next, next.RepositoryContext.SourceDigest)
+	if err != nil {
+		return out, denied
+	}
+	collected.Identity, err = c.RepositoryContext.Digest()
+	if err != nil {
+		return out, denied
+	}
+	collected.SourceDigest = c.RepositoryContext.SourceDigest
 	tree, err = run("write-tree")
 	if err != nil {
 		return out, denied
@@ -172,7 +225,7 @@ func (e *ManagedContribution) integrateAdvancingBase(ctx context.Context, c loop
 	if !oid(merged) {
 		return out, fmt.Errorf("invalid integrated tree")
 	}
-	return ContributionBaseIntegration{OriginalBase: prior.Base, CurrentBase: current, Predecessor: prior.Digest, Tree: merged, Source: inventory}, nil
+	return ContributionBaseIntegration{OriginalBase: prior.Base, CurrentBase: current, Predecessor: prior.Digest, Tree: merged, Source: inventory, Context: collected}, nil
 }
 
 // Called only after the next candidate's consumption is durable, under the
