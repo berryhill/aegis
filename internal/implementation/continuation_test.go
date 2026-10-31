@@ -9,6 +9,7 @@ import (
 
 // Actual Badger custody and offline Go checker; deterministic proposal fixture.
 func TestNativeContinuation(t *testing.T) {
+	t.Parallel()
 	for _, correction := range []bool{true, false} {
 		t.Run(map[bool]string{true: "corrected", false: "failed_acceptance"}[correction], func(t *testing.T) {
 			e, c := addContextFixture(t)

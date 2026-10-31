@@ -1,60 +1,102 @@
 package implementation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/dgraph-io/badger/v4"
 )
 
 func TestNativeSuccessorPreparedNoApplyChain(t *testing.T) {
+	t.Parallel()
+	e, c := addContextFixture(t)
+	c = doerContract(c)
+	c.MaxPasses = 3
+	e.PassLimit = 1
+	e.RequireInputEvidence = true
+	e.Decision = &decisionStub{gate: GateDecision{true, true}, verdict: Judgment{true, true, true, true, true}}
+	e.Diagnosis = diagnosisFunc(func(context.Context, DiagnosisRequest) ([]byte, error) { return nil, nil })
+	changed := "package synthetic\nfunc Add(a,b int) int { return a*b }\n"
+	proposer := func(calls *int, delivered bool) reportProposer {
+		return reportProposer(func(_ context.Context, r Request) (Proposal, error) {
+			(*calls)++
+			wire, _ := json.Marshal(struct {
+				Instruction string  `json:"instruction"`
+				Request     Request `json:"request"`
+			}{"synthetic", r})
+			if err := r.InputObserver(InputObservation{Bytes: wire}); err != nil {
+				return Proposal{}, err
+			}
+			if *calls == 2 && !delivered {
+				return Proposal{}, errors.New("before delivery")
+			}
+			if err := r.InputObserver(InputObservation{Bytes: wire, Completed: true, TurnID: r.PassID, RuntimeSessionID: "fixture"}); err != nil {
+				return Proposal{}, err
+			}
+			if *calls == 2 {
+				if err := r.FailureObserver(ManagedFailure{State: "failed", Code: "doer_proposal_json_invalid"}); err != nil {
+					return Proposal{}, err
+				}
+				return Proposal{}, errors.New("closed rejection")
+			}
+			text := changed
+			if *calls == 3 {
+				text = addRight
+			}
+			return Proposal{Edits: []Edit{{Path: "add.go", Content: []byte(text)}}, Report: "fixture"}, nil
+		})
+	}
+	rootCalls := 0
+	e.Proposer = proposer(&rootCalls, false)
+	first, err := e.Run(context.Background(), "first", c)
+	if err == nil || first.State != "failed" || rootCalls != 1 {
+		t.Fatal(first, err, rootCalls)
+	}
+	if len(first.Passes) != 1 || first.Passes[0].Passed || first.Passes[0].OutputDigest == "" {
+		t.Fatal("predecessor lacks real failed native check", first)
+	}
+	h, err := e.History("first", c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both variants have the identical applied predecessor. Preserve its actual
+	// native check and immutable custody once, then load independent stores. Do
+	// not share successor reservations, mutated records or synthetic check output.
+	var seed bytes.Buffer
+	if _, err := e.DB.(testStore).db.Backup(&seed, 0); err != nil {
+		t.Fatal(err)
+	}
 	for _, delivered := range []bool{false, true} {
 		t.Run(map[bool]string{false: "prepared", true: "rejected"}[delivered], func(t *testing.T) {
-			e, c := addContextFixture(t)
-			c = doerContract(c)
-			c.MaxPasses = 3
-			e.PassLimit = 1
-			e.RequireInputEvidence = true
-			e.Decision = &decisionStub{gate: GateDecision{true, true}, verdict: Judgment{true, true, true, true, true}}
-			e.Diagnosis = diagnosisFunc(func(context.Context, DiagnosisRequest) ([]byte, error) { return nil, nil })
-			calls := 0
-			changed := "package synthetic\nfunc Add(a,b int) int { return a*b }\n"
-			e.Proposer = reportProposer(func(_ context.Context, r Request) (Proposal, error) {
-				calls++
-				wire, _ := json.Marshal(struct {
-					Instruction string  `json:"instruction"`
-					Request     Request `json:"request"`
-				}{"synthetic", r})
-				if err := r.InputObserver(InputObservation{Bytes: wire}); err != nil {
-					return Proposal{}, err
-				}
-				if calls == 2 && !delivered {
-					return Proposal{}, errors.New("before delivery")
-				}
-				if err := r.InputObserver(InputObservation{Bytes: wire, Completed: true, TurnID: r.PassID, RuntimeSessionID: "fixture"}); err != nil {
-					return Proposal{}, err
-				}
-				if calls == 2 {
-					if err := r.FailureObserver(ManagedFailure{State: "failed", Code: "doer_proposal_json_invalid"}); err != nil {
-						return Proposal{}, err
-					}
-					return Proposal{}, errors.New("closed rejection")
-				}
-				text := changed
-				if calls == 3 {
-					text = addRight
-				}
-				return Proposal{Edits: []Edit{{Path: "add.go", Content: []byte(text)}}, Report: "fixture"}, nil
-			})
-			first, err := e.Run(context.Background(), "first", c)
-			if err == nil || first.State != "failed" {
-				t.Fatal(first, err)
-			}
-			h, err := e.History("first", c)
+			db, err := badger.Open(badger.DefaultOptions(t.TempDir()).WithLogger(nil).WithSyncWrites(true))
 			if err != nil {
 				t.Fatal(err)
+			}
+			t.Cleanup(func() { db.Close() })
+			if err := db.Load(bytes.NewReader(seed.Bytes()), 16); err != nil {
+				t.Fatal(err)
+			}
+			branch := *e
+			e := &branch
+			e.DB = testStore{db}
+			calls := rootCalls
+			e.Proposer = proposer(&calls, delivered)
+			if err := os.WriteFile(filepath.Join(c.Workspace, "add.go"), []byte(changed), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if restored, err := e.History("first", c); err != nil || restored.Digest != h.Digest {
+				t.Fatal("predecessor fixture changed", err)
+			}
+			if _, err := e.Read("second"); !errors.Is(err, ErrNotFound) {
+				t.Fatal("successor leaked into independent fixture", err)
+			}
+			if _, err := e.DB.Get([]byte("implementation/successor/" + digest([]byte("first")))); !errors.Is(err, ErrNotFound) {
+				t.Fatal("successor reservation leaked into independent fixture", err)
 			}
 			e.Continuation, err = e.PrepareContinuation("first", h.Digest, "second", 2, c)
 			if err != nil {
