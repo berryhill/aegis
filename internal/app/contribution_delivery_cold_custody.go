@@ -38,7 +38,7 @@ func (c *ContributionDeliveryColdCustody) Use(ctx context.Context, i delivery.In
 		return delivery.ErrDenied
 	}
 	switch i.Operation {
-	case delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge:
+	case delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge, delivery.ReconcileIssue:
 	default:
 		return delivery.ErrDenied
 	}

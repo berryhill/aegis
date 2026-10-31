@@ -1,5 +1,10 @@
 # Delivery readback producer v1 (source-qualified V19 bridge)
 
+For the #423 root-scoped history/active-custody separation and original issue
+intent recovery, see [publication custody](contribution-publication-custody.md).
+The historical implementation notes below are not a permanent custody format or
+qualification verdict. Earlier contributions remain readable after safe handoff.
+
 ## Cold readback and publication stop composition
 
 Trusted controller composition can install

@@ -164,6 +164,40 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 			out.Held = ""
 			return true, nil
 		}
+		if recovery, ok := c.completion.(IssueRecoveryOwner); ok {
+			old, historical, found, x := recovery.RecoverContributionIssue(ctx, ref, p)
+			if x != nil {
+				return x
+			}
+			if found {
+				out.Held, out.Reason = ReconcileIssue, "original_issue_unresolved"
+				out.Completion = historical.Completion
+				var observed Record
+				if reader, ok := recovery.(HistoricalIssueReadOwner); ok && (historical.RoleBinding != p.RoleBinding || historical.FenceEpoch != p.FenceEpoch) {
+					observed, x = reader.ReconcileContributionIssue(ctx, old, historical)
+				} else {
+					observed, x = e.reconcileOriginalIssue(ctx, old, historical)
+				}
+				out.Effects = append(out.Effects, observed)
+				out.PR, out.Head, out.Merge, out.BaseHead = observed.PR, observed.Head, observed.Merge, observed.BaseHead
+				if x != nil {
+					return x
+				}
+				if observed.Outcome != Confirmed {
+					return nil
+				}
+				finalizer, ok := c.completion.(FinalCompletionOwner)
+				if !ok {
+					return ErrDenied
+				}
+				if x := finalizer.FinalizeContributionCompletion(ctx, ref); x != nil {
+					return x
+				}
+				out.Completed = append(out.Completed, ReconcileIssue)
+				out.Held, out.Reason = "", "verified_completion_issue_reconciled"
+				return nil
+			}
+		}
 		if ok, x := run(Commit); !ok || x != nil {
 			if x == nil {
 				return finishBoundary()
@@ -219,6 +253,12 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 		p.Completion, out.Completion = completion, completion
 		if ok, x := run(ReconcileIssue); !ok || x != nil {
 			if x == nil {
+				// A reserved issue mutation must remain recoverable. A boundary
+				// disposition would close the Queue while its effect is UNKNOWN,
+				// preventing a fresh invocation from reconciling the original intent.
+				if len(out.Effects) > 0 && out.Effects[len(out.Effects)-1].Outcome == Unknown {
+					return nil
+				}
 				return finishBoundary()
 			}
 			return x

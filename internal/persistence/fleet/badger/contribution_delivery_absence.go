@@ -28,7 +28,17 @@ func (s *Store) GetContributionPublicationContract(ctx context.Context, owner, i
 // ContributionDeliveryAuthoritativeAbsence checks the canonical intake AND all
 // retained publication/history families in one snapshot. A missing root index
 // alone is never absence. Corruption anywhere inspected fails closed.
-func (s *Store) ContributionDeliveryAuthoritativeAbsence(ctx context.Context, owner, k string) (absent bool, err error) {
+func (s *Store) ContributionDeliveryAuthoritativeAbsence(ctx context.Context, owner, k string) (bool, error) {
+	return s.contributionDeliveryAbsence(ctx, owner, k, true)
+}
+
+// ContributionDeliveryUnstarted is observation only: absence cannot authorize a
+// release, write, new identity or budget. Every surviving slot denies absence.
+func (s *Store) ContributionDeliveryUnstarted(ctx context.Context, owner, k string) (bool, error) {
+	return s.contributionDeliveryAbsence(ctx, owner, k, false)
+}
+
+func (s *Store) contributionDeliveryAbsence(ctx context.Context, owner, k string, requireStop bool) (absent bool, err error) {
 	err = s.view(ctx, func(txn *badgerdb.Txn) error {
 		id, e := get(txn, key(familyContributionRequest, owner, k))
 		if e != nil {
@@ -46,7 +56,7 @@ func (s *Store) ContributionDeliveryAuthoritativeAbsence(ctx context.Context, ow
 		if e != nil {
 			return e
 		}
-		if !control.Stop {
+		if requireStop && !control.Stop {
 			return delivery.ErrDenied
 		}
 		absent = true

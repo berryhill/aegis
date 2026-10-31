@@ -16,6 +16,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #423 source: separate immutable contribution publication history from active
+  repository/base custody; hand off only after canonical terminal outcome,
+  resolved effects and exact native/controller/publication quiescence. Preserve
+  historical readback and deny stale effects. Interrupted issue reconciliation
+  recovers its original intent/preclosure through exact readback without another
+  PATCH or budget reset. See [custody and recovery](docs/contribution-publication-custody.md).
+  Whole #379 and installed-release #352 qualification remain separate.
+
 - Bounded #352 source repair: admit at most 392 publication objects before any
   delivery effect, fitting the existing 400-fact readback and 512-history limits
   with room for all subsequent operation slots. Historical contribution-result retrieval

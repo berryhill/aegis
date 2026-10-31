@@ -1,5 +1,10 @@
 # Contribution delivery adapter candidate (#378)
 
+The bounded #423 [publication custody and issue recovery](contribution-publication-custody.md)
+correction separates retained contribution history from active repository/base
+exclusion and recovers the original issue-close intent. Earlier status notes
+below remain historical evidence, not a claim of whole #378/#379 qualification.
+
 ## Fresh instruction scope at the delivery sink
 
 Both application delivery entrypoints wrap the supplied real authority for canonical reservation/fencing and engine effects. Every fresh write admission reloads the authenticated sealed contract/current controls and uses the existing contribution Reader for exactly the approved profile read action and issue URL. Repository/issue/creator identity, title/body, open state and complete discussion identities/content must still match. Observation time, ETag/wire digest and incidental issue update time are not semantic changes. Changed, incomplete or unreadable instructions hold scope with a fixed typed denial before effects; untrusted edits never grant rights, mint owner cancellation/approval, replace the intent key, or replenish budgets. The actual actor/native authority remains mandatory and is repeated after the read.
