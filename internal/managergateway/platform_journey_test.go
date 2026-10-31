@@ -44,7 +44,7 @@ func (m *platformProposalModel) propose(t *testing.T, name string, input any) {
 	}
 	m.response = data
 }
-func platformRuntime(t *testing.T, a *app.Service, subject core.Subject, id string, model *platformProposalModel) *conversation {
+func platformRuntime(t *testing.T, a *app.Service, subject core.Subject, id string, model managerdomain.Gateway) *conversation {
 	t.Helper()
 	now := a.Now()
 	digest := "sha256:" + strings.Repeat("a", 64)

@@ -358,6 +358,8 @@ func (conformingExecutor) Execute(_ context.Context, test ConformanceCase) ([]by
 		arguments = SearchArguments{Query: "github", PageArguments: PageArguments{Limit: 20}}
 	case SecretList:
 		arguments = PageArguments{Limit: 20}
+	case PlatformDiscover:
+		arguments = PlatformDiscoverArguments{Operation: test.ExpectedArguments["operation"], CatalogDigest: test.ExpectedArguments["catalog_digest"]}
 	case PlatformCall:
 		arguments = map[string]any{"operation": test.ExpectedArguments["operation"], "input": test.ExpectedInput}
 	case StatusShow:

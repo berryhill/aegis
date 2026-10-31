@@ -585,7 +585,10 @@ func managerProposalSchemaFor(operation Operation) any {
 	page := map[string]any{"limit": integerProperty(), "cursor": stringProperty()}
 	switch operation {
 	case PlatformDiscover:
-		return managerProposalSchema(operation, nil, nil)
+		schema := managerProposalSchema(operation, map[string]any{"operation": map[string]any{"type": "string", "minLength": 1, "maxLength": 256}, "catalog_digest": stringProperty()}, nil).(map[string]any)
+		arguments := schema["properties"].(map[string]any)["arguments"].(map[string]any)
+		arguments["oneOf"] = []any{map[string]any{"maxProperties": 0}, map[string]any{"required": []string{"operation", "catalog_digest"}}}
+		return schema
 	case PlatformCall:
 		return managerProposalSchema(operation, map[string]any{"operation": stringProperty(), "input": map[string]any{"type": "object"}}, []string{"operation", "input"})
 	case StatusShow, AuditVerify, SessionExit:

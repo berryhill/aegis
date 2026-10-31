@@ -16,6 +16,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #248 source: replace ordinary full-schema prompts with a compact full-digest-bound
+  operation metadata index and bounded exact-operation `platform.discover` schema
+  collection. Rediscover capabilities each turn; changed/failed-delivery/new-session
+  behavior and existing inference scanning/deadline remain intact. Ordinary and race
+  installed-transport regressions use synthetic inference, not model certification.
+
 - #379 source integration: keep one registered contribution invocation through
   native Run/Resume, delivery and canonical disposition after transport loss.
   Explicit Stop, original authority expiry, deadlines, budgets and per-effect
