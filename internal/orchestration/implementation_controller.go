@@ -110,7 +110,7 @@ func (w *QueueWorker) processImplementation(ctx context.Context, request WorkReq
 		return w.terminal(ctx, request, base, execution.StateFailed, "implementation_custody_unavailable", nil, nil)
 	}
 	turn := hermesruntime.AttemptTurnRequest{Launch: runtime.Launch, Admission: runtime.Admission, ParentAttemptID: base.Attempt.AttemptID, StateRoot: filepath.Join(filepath.Dir(filepath.Dir(c.root)), "runtime", "fleet"), Model: runtime.Launch.AuthorityContext.Authority.Hermes.Model, Provider: runtime.Launch.AuthorityContext.Authority.Hermes.Provider, Bounds: hermesruntime.AttemptBounds{InputBytes: hermesruntime.MaxAttemptInputBytes, OutputBytes: hermesruntime.MaxAttemptOutputBytes, Duration: hermesruntime.MaxAttemptDuration}}
-	kernel := &implementation.Executor{DB: custody.ImplementationStore(), GoBinary: c.config.GoBinary, Proposer: HermesPatchProposer{Adapter: c.adapter, Request: turn}}
+	kernel := &implementation.Executor{DB: custody.ImplementationStore(), GoBinary: c.config.GoBinary, Native: runImplementationCheckerNative, Proposer: HermesPatchProposer{Adapter: c.adapter, Request: turn}}
 	runID := base.Attempt.AttemptID
 	if coding {
 		runID = request.QueueItemID

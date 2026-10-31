@@ -44,7 +44,7 @@ func fixture(t *testing.T) (*Executor, loop.VerifiedImplementation) {
 	c.Workspace = root
 	c.WritableFiles = []string{"value.go"}
 	c.Policy.TimeoutSeconds = 120
-	return &Executor{DB: testStore{db}, GoBinary: goBin, Admit: func(context.Context, string) error { return nil }}, c
+	return &Executor{DB: testStore{db}, GoBinary: goBin, Native: runCheckerNative, Admit: func(context.Context, string) error { return nil }}, c
 }
 func edits(value string) []Edit {
 	return []Edit{{Path: "value.go", Content: []byte("package synthetic\nfunc Value() int { return " + value + " }\n")}}

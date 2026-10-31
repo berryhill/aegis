@@ -453,6 +453,13 @@ The installed `--target` adapter selects an existing console origin, uses only i
 
 The native `internal/implementation` kernel depends on the Loop contract and an opaque custody port. Only `internal/persistence/fleet/badger` implements that port against the existing fleet-v1 writer. Orchestration connects independent native-check reloads to an evidence-owned callback DTO; `internal/evidence` imports neither Loop nor the executor. Terminal completion rechecks the immutable Loop contract, stored test evidence and current workspace, not an in-memory PASS. No second implementation database is opened.
 
+The kernel also owns a typed native-checker lifecycle port and a closed unknown
+quiescence error. Orchestration injects the Linux Hermes pinned-leader/fork-barrier/
+fresh-observation join without adding runtime or execution imports to the kernel.
+No port or unsupported platform means no command start. Local lifecycle callbacks
+mint no contribution receipt; unknown cleanup retains home and workspace custody.
+See [the checker boundary](VERIFIED_IMPLEMENTATION.md#linux-checker-cleanup-boundary).
+
 Installed coordinator acquisition requires Python 3 and a trusted installed Go metadata inspector; see [bootstrap prerequisites](INSTALLED_UPDATE_BOOTSTRAP.md).
 
 ## Stopped foreign-unit recovery

@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/berryhill/aegis/internal/loop"
@@ -71,7 +72,18 @@ type Record struct {
 	Stages             []Stage `json:"stages,omitempty"`
 	ReportError        string  `json:"report_error,omitempty"`
 }
+
+// CheckerNative owns Start, cancellation and the sole Wait, and must join all
+// owned writers before returning. Unknown cleanup MUST return
+// ErrCheckerQuiescenceUnavailable, even when cancellation or process exit failed.
+// This local lifecycle port does not mint durable contribution receipts.
+type CheckerNative func(context.Context, *exec.Cmd) error
+
+var ErrCheckerQuiescenceUnavailable = errors.New("checker quiescence unavailable")
+
 type Executor struct {
+	Native CheckerNative
+
 	RequireInputEvidence bool
 	Continuation         *Continuation
 	PassLimit            uint8 // zero retains the exact contract budget
@@ -97,6 +109,11 @@ type Store interface {
 }
 
 var ErrNotFound = errors.New("implementation record not found")
+
+// Unknown checker quiescence quarantines custody for the process lifetime.
+// Retain the unlock closure itself so its directory descriptor cannot be
+// finalized and silently release the lock. Recovery needs external reconciliation.
+var checkerQuarantine sync.Map
 
 func (e *Executor) save(r Record) error {
 	b, err := json.Marshal(r)
@@ -157,7 +174,7 @@ func (e *Executor) stop(r Record, err error) (Record, error) {
 func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementation) (Record, error) {
 	var r Record
 	c = cloneImplementation(c)
-	if e.DB == nil || e.Proposer == nil || e.Admit == nil || !filepath.IsAbs(e.GoBinary) || id == "" || len(id) > 255 {
+	if e.DB == nil || e.Proposer == nil || e.Admit == nil || e.Native == nil || !filepath.IsAbs(e.GoBinary) || id == "" || len(id) > 255 {
 		return r, errors.New("controller dependencies and exact run identity required")
 	}
 	if err := Preflight(c, e.GoBinary); err != nil {
@@ -180,7 +197,14 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 	if err != nil {
 		return r, err
 	}
-	defer unlock()
+	quiescenceUnknown := false
+	defer func() {
+		if quiescenceUnknown {
+			checkerQuarantine.Store(c.Workspace, unlock)
+			return
+		}
+		unlock()
+	}()
 	var continuedInitial, continuedCurrent *CollectedRepositoryContext
 	if e.Continuation != nil {
 		continuedInitial, continuedCurrent, err = e.continuationContext(id, c)
@@ -363,6 +387,8 @@ func (e *Executor) Run(ctx context.Context, id string, c loop.VerifiedImplementa
 		}
 		output, passed, x := e.checkCandidate(ctx, c, expected)
 		if x != nil {
+			// Preserve custody even if recording the failure itself fails.
+			quiescenceUnknown = errors.Is(x, ErrCheckerQuiescenceUnavailable)
 			return e.stop(r, x)
 		}
 		after, x := contractSnapshot(c)
@@ -657,13 +683,21 @@ func (e *Executor) check(ctx context.Context, c loop.VerifiedImplementation) ([]
 }
 
 func (e *Executor) checkCandidate(ctx context.Context, c loop.VerifiedImplementation, expected *CollectedRepositoryContext) ([]byte, bool, error) {
+	if e.Native == nil {
+		return nil, false, errors.New("qualified native checker port required")
+	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(c.Policy.TimeoutSeconds)*time.Second)
 	defer cancel()
 	home, err := os.MkdirTemp("", "aegis-go-check-")
 	if err != nil {
 		return nil, false, err
 	}
-	defer os.RemoveAll(home)
+	removeHome := true
+	defer func() {
+		if removeHome {
+			_ = os.RemoveAll(home)
+		}
+	}()
 	workspace := c.Workspace
 	if c.RepositoryContext != nil {
 		workspace = filepath.Join(home, "workspace")
@@ -673,18 +707,20 @@ func (e *Executor) checkCandidate(ctx context.Context, c loop.VerifiedImplementa
 	}
 	args := []string{"test", "-json", "-count=1", "-p=1", "-timeout=" + fmt.Sprintf("%ds", c.Policy.TimeoutSeconds)}
 	args = append(args, c.Policy.Packages...)
-	cmd := exec.CommandContext(ctx, e.GoBinary, args...)
-	if err = configureProcess(cmd); err != nil {
-		return nil, false, err
-	}
-	defer killProcessGroup(cmd)
+	// The qualified runner owns cancellation and the sole Wait. CommandContext
+	// would race its pinned-leader cleanup with an independent cancellation kill.
+	cmd := exec.Command(e.GoBinary, args...)
 	cmd.Dir = workspace
 	cmd.Env = []string{"PATH=" + filepath.Dir(e.GoBinary), "HOME=" + home, "GOCACHE=" + filepath.Join(home, "cache"), "GOMODCACHE=" + filepath.Join(home, "modules"), "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOWORK=off", "CGO_ENABLED=0", "GOMAXPROCS=2"}
 	cmd.WaitDelay = time.Second
 	var out boundedOutput
 	cmd.Stdout = &out
 	cmd.Stderr = &out
-	err = cmd.Run()
+	err = e.Native(ctx, cmd)
+	if errors.Is(err, ErrCheckerQuiescenceUnavailable) {
+		removeHome = false
+		return nil, false, err
+	}
 	if c.RepositoryContext != nil {
 		if x := verifyContext(ctx, c, expected); x != nil {
 			return nil, false, x
