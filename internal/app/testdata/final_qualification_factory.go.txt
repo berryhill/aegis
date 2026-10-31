@@ -30,12 +30,17 @@ func (finalQualificationPrivacy) Review(context.Context, Intent, Plan) error { r
 
 type FinalQualificationRemote struct {
 	sync.Mutex
-	Calls                         int
+	plan Plan
+ Head string
+ PRCreates, PRUpdates, IssueCloses int
+ Calls                         int
 	Writes                        int
 	present                       map[string]bool
 	published, pr, merged, closed bool
 }
 
+var FinalQualificationControllerGitHub func(Plan) (*GitHub,error)
+func (f *FinalQualificationRemote) SetPlan(p Plan) { f.Lock(); defer f.Unlock(); f.plan=p }
 func (f *FinalQualificationRemote) Count() int { f.Lock(); defer f.Unlock(); return f.Calls }
 func finalProtection() map[string]any {
 	return map[string]any{
@@ -53,7 +58,7 @@ func FinalQualificationProtection() string { return digest(finalProtection()) }
 // the production constructor, origin, credential policy or transport.
 func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificationRemote) {
 	t.Helper()
-	f := &FinalQualificationRemote{present: map[string]bool{}}
+	f := &FinalQualificationRemote{present: map[string]bool{}, plan:p}
 	objects := map[string]GitObject{}
 	for _, o := range p.Objects {
 		objects[o.OID] = o
@@ -79,7 +84,11 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.Lock()
 		defer f.Unlock()
-		f.Calls++
+		p = f.plan
+ for _, o := range p.Objects {objects[o.OID]=o}
+ mergeSpec = p.Commit; mergeSpec.Message="Controlled squash result\n"
+ mergeObject, _ = authoredObject(mergeSpec); merge=mergeObject.OID
+ f.Calls++
 		if r.Method != "GET" {
 			f.Writes++
 		}
@@ -107,12 +116,17 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 				head = merge
 			}
 			send(map[string]any{"ref": "refs/heads/" + p.Base, "object": map[string]string{"sha": head}})
-		case path == prefix+"/git/ref/heads/"+p.Branch:
+		case path == prefix+"/git/refs/heads/"+p.Branch && r.Method=="PATCH":
+ var req struct {SHA string; Force bool}
+ if json.NewDecoder(r.Body).Decode(&req)!=nil || req.Force || req.SHA!=p.Head || f.Head!=p.ExpectedOld {http.Error(w,"not exact nonforce successor",422);return}
+ f.Head=req.SHA
+ send(map[string]any{"ref":"refs/heads/"+p.Branch,"object":map[string]string{"sha":f.Head}})
+ case path == prefix+"/git/ref/heads/"+p.Branch:
 			if !f.published {
 				http.Error(w, "absent", 404)
 				return
 			}
-			send(map[string]any{"ref": "refs/heads/" + p.Branch, "object": map[string]string{"sha": p.Head}})
+			send(map[string]any{"ref": "refs/heads/" + p.Branch, "object": map[string]string{"sha": f.Head}})
 		case path == prefix+"/git/refs":
 			var req struct{ Ref, SHA string }
 			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Ref != "refs/heads/"+p.Branch || req.SHA != p.Head {
@@ -120,6 +134,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 				return
 			}
 			f.published = true
+ f.Head=p.Head
 			send(map[string]any{"ref": req.Ref, "object": map[string]string{"sha": p.Head}})
 		case path == prefix+"/pulls":
 			if r.Method == "POST" {
@@ -132,6 +147,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 					return
 				}
 				f.pr = true
+ f.PRCreates++; if f.PRCreates!=1 {t.Error("duplicate PR") }
 				send(pull())
 				return
 			}
@@ -141,7 +157,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 				send([]any{})
 			}
 		case path == prefix+"/pulls/7":
-			send(pull())
+ if r.Method=="PATCH" { f.PRUpdates++ }; send(pull())
 		case path == prefix+"/pulls/7/reviews":
 			send([]any{map[string]any{"id": 1, "user": map[string]string{"login": "reviewer"}, "state": "APPROVED", "commit_id": p.Head, "submitted_at": "2026-01-01T00:00:00Z"}})
 		case path == prefix+"/pulls/7/merge":
@@ -159,7 +175,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 			parts := strings.Split(path, "/")
 			head := parts[len(parts)-2]
 			conclusion := "success"
-			if strings.Contains(t.Name(), "FailedChecks") {
+			if strings.Contains(t.Name(), "FailedChecks") || (strings.Contains(t.Name(), "CIRepair") && p.ExpectedOld=="") {
 				conclusion = "failure"
 			}
 			send(map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"id": 123, "app": map[string]any{"id": 55, "slug": "ci"}, "name": "test", "head_sha": head, "status": "completed", "conclusion": conclusion}}})
@@ -178,6 +194,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 					return
 				}
 				f.closed = true
+ f.IssueCloses++; if f.IssueCloses!=1 {t.Error("duplicate issue close")}
 			}
 			state, reason := "open", ""
 			if f.closed {

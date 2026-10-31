@@ -35,7 +35,7 @@ func exactContributionTerminalEvidence(txn *badgerdb.Txn, attempt execution.Atte
 	if e != nil || native.State != "candidate_accepted" || native.Contract != c.Digest || native.QueueAttempt != r.Attempt || len(native.Passes) == 0 || native.Passes[len(native.Passes)-1].Candidate.Digest != r.Candidate || uint32(native.Consumed) != state.Used.Candidates {
 		return false
 	}
-	export := implementation.ContributionAcceptanceEvidence{Schema: implementation.ContributionAcceptanceSchema, RunID: c.RunID, Contract: c.Digest, QueueAttempt: native.QueueAttempt, Consumed: native.Consumed, Policy: native.Policy, Baseline: native.Baseline, Passes: native.Passes}
+	export := implementation.ContributionAcceptanceEvidence{DeliveryRepairs: native.DeliveryRepairs, Schema: implementation.ContributionAcceptanceSchema, RunID: c.RunID, Contract: c.Digest, QueueAttempt: native.QueueAttempt, Consumed: native.Consumed, Policy: native.Policy, Baseline: native.Baseline, Passes: native.Passes}
 	exported, _ := json.Marshal(export)
 	if contribution.Digest(exported) != r.Native {
 		return false

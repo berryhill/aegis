@@ -181,7 +181,7 @@ func validateSemantic(p ReadbackProof) error {
 				repo = f.Target.Repository == i.Repository && f.ID == i.RepositoryID && f.Permissions != nil && f.Permissions.Push
 			case "commit":
 				if f.Target.Repository == i.Repository && f.Target.Head == i.Head && f.SHA == i.Head && f.Tree != nil && len(f.Parents) == 1 && f.Author != nil && f.Committer != nil {
-					commit = f.Tree.SHA == r.Publication.Tree && f.Parents[0].SHA == i.BaseHead && f.MessageDigest == r.Publication.MessageDigest && samePerson(*f.Author, r.Publication.Author) && samePerson(*f.Committer, r.Publication.Committer)
+					commit = f.Tree.SHA == r.Publication.Tree && f.Parents[0].SHA == publicationParent(i.BaseHead, i.ExpectedOld, i.RepairFailure) && f.MessageDigest == r.Publication.MessageDigest && samePerson(*f.Author, r.Publication.Author) && samePerson(*f.Committer, r.Publication.Committer)
 				}
 			}
 		}

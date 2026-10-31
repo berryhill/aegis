@@ -16,8 +16,16 @@ import (
 // must match the full inventory; only changed entries require the reviewed scope.
 func (g *Git) ProjectAccepted(ctx context.Context, c implementation.ContributionCandidate, s CommitSpec, allowed []string) (CommitSpec, []GitObject, error) {
 	deny := func() (CommitSpec, []GitObject, error) { return CommitSpec{}, nil, ErrDenied }
-	if !sha.MatchString(c.CandidateCommit) || !sha.MatchString(c.CandidateTree) || s.Parent != c.Base || c.HeadCommit != c.Base || s.Tree != c.CandidateTree || c.Source.Schema != "aegis.contribution.source.v1" {
+	if !sha.MatchString(c.CandidateCommit) || !sha.MatchString(c.CandidateTree) || !sha.MatchString(s.Parent) || c.HeadCommit != c.Base || s.Tree != c.CandidateTree || c.Source.Schema != "aegis.contribution.source.v1" {
 		return deny()
+	}
+	// A controller-admitted repair publishes a nonforce child of the original
+	// owned head. Pure ancestry checks cannot grant that admission; Source and
+	// canonical Reserve independently validate the immutable failed predecessor.
+	if s.Parent != c.Base {
+		if _, err := g.run(ctx, nil, nil, "merge-base", "--is-ancestor", c.Base, s.Parent); err != nil {
+			return deny()
+		}
 	}
 	parents, e := g.run(ctx, nil, nil, "rev-list", "--parents", "-n", "1", c.CandidateCommit)
 	if e != nil || strings.TrimSpace(string(parents)) != c.CandidateCommit+" "+c.Base {
@@ -108,8 +116,10 @@ func (g *Git) ProjectAccepted(ctx context.Context, c implementation.Contribution
 		return deny()
 	}
 	// Read only the already frozen #376 graph. Its exact tree/blob objects are
-	// retained; only the final synthetic commit is replaced in memory.
-	objects, e := g.ExtractObjects(ctx, c.CandidateCommit, s.Tree, s.Parent)
+	// retained; only the final synthetic commit is replaced in memory. A repair's
+	// publication parent is the preceding owned head, but the frozen native
+	// candidate remains anchored to its original admitted base.
+	objects, e := g.ExtractObjects(ctx, c.CandidateCommit, s.Tree, c.Base)
 	if e != nil || len(objects) == 0 || objects[len(objects)-1].Kind != "commit" || objects[len(objects)-1].OID != c.CandidateCommit {
 		return deny()
 	}

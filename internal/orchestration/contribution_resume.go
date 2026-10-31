@@ -5,6 +5,7 @@ import (
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
 	"github.com/berryhill/aegis/internal/execution"
+	"github.com/berryhill/aegis/internal/implementation"
 	"github.com/berryhill/aegis/internal/queue"
 )
 
@@ -17,6 +18,23 @@ func (w *QueueWorker) SetContributionCurrentAdmission(f ContributionCurrentAdmis
 // ResumeContribution reconstructs the SAME immutable claim/attempt/execution.
 // No ClaimQueueItem, retry, new LoopExecution or runtime binding is created.
 func (w *QueueWorker) ResumeContribution(ctx context.Context, sub core.Subject, queueID string) (WorkResult, error) {
+	return w.resumeContribution(ctx, sub, queueID)
+}
+
+type contributionRepairAdmissionKey struct{}
+type ContributionDeliveryRepair = implementation.ContributionDeliveryRepair
+type ContributionDeliveryRepairAdmission func(context.Context, ContributionRecord) (ContributionDeliveryRepair, error)
+
+// ResumeContributionDeliveryRepair is controller composition, not a transport
+// input. The callback re-admits canonical history under the native source lock.
+func (w *QueueWorker) ResumeContributionDeliveryRepair(ctx context.Context, sub core.Subject, queueID string, admit ContributionDeliveryRepairAdmission) (WorkResult, error) {
+	if admit == nil {
+		return WorkResult{}, ErrWorkerDenied
+	}
+	return w.resumeContribution(context.WithValue(ctx, contributionRepairAdmissionKey{}, admit), sub, queueID)
+}
+
+func (w *QueueWorker) resumeContribution(ctx context.Context, sub core.Subject, queueID string) (WorkResult, error) {
 	deny := ErrWorkerDenied
 	item, err := w.repository.GetQueueItem(ctx, queueID)
 	if err != nil {
@@ -55,7 +73,8 @@ func (w *QueueWorker) ResumeContribution(ctx context.Context, sub core.Subject, 
 		return WorkResult{}, deny
 	}
 	record, err := w.ContributionExecutionReadback(sealed.RunID)
-	if err != nil || record.Contract != sealed.Digest || record.QueueAttempt != attempt.AttemptID || record.State != "phase_boundary" {
+	_, repair := ctx.Value(contributionRepairAdmissionKey{}).(ContributionDeliveryRepairAdmission)
+	if err != nil || record.Contract != sealed.Digest || record.QueueAttempt != attempt.AttemptID || (record.State != "phase_boundary" && !(repair && record.State == "candidate_accepted")) {
 		return WorkResult{}, deny
 	}
 	launch, admission, err := w.contributionCurrent(ctx, sub, sealed, claim)

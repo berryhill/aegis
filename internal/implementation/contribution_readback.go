@@ -131,6 +131,21 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	if r.State == "candidate_accepted" && (len(r.Passes) == 0 || r.Passes[len(r.Passes)-1].Check.Outcome != "passed") {
 		return bad
 	}
+	if err := e.validateDeliveryRepairs(r); err != nil {
+		return err
+	}
+	for i, pass := range r.Passes {
+		if pass.Check.Outcome != "passed" || i == len(r.Passes)-1 {
+			continue
+		}
+		linked := false
+		for _, repair := range r.DeliveryRepairs {
+			linked = linked || int(repair.AfterPass) == i+1
+		}
+		if !linked {
+			return bad
+		}
+	}
 	return nil
 }
 

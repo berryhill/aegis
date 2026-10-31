@@ -59,6 +59,7 @@ type ContributionPass struct {
 	Check     ContributionCheck        `json:"check"`
 }
 type ContributionRecord struct {
+	DeliveryRepairs []ContributionDeliveryRepair     `json:"delivery_repairs,omitempty"`
 	Frozen          *ContributionCandidate           `json:"frozen,omitempty"`
 	FrozenToolchain string                           `json:"frozen_toolchain"`
 	RunID           string                           `json:"run_id"`
@@ -82,6 +83,10 @@ type ContributionRecord struct {
 // Interrupted effects retain their reservation; only explicit quiescent phase
 // boundaries permit exact same-attempt continuation. No authority renewal.
 type ManagedContribution struct {
+	// RepairAdmission is an owning-service callback. It must reload canonical
+	// pre-merge failure history and exact current authority under source custody.
+	// A non-nil callback is not itself admission; its sealed result is retained.
+	RepairAdmission func(context.Context, ContributionRecord) (ContributionDeliveryRepair, error)
 	// Checkpoint is a trusted controller port, never runtime-supplied narration.
 	// It runs before the named effect; errors retain the last durable boundary.
 	Checkpoint        func(context.Context, ContributionCheckpoint) error
@@ -199,6 +204,12 @@ func (e *ManagedContribution) Run(ctx context.Context, run, contract, attempt, b
 		if err != nil {
 			return old, err
 		}
+		if old.State == "candidate_accepted" && e.RepairAdmission != nil {
+			old, err = e.admitDeliveryRepair(ctx, old, c)
+			if err != nil {
+				return old, err
+			}
+		}
 		if err = e.resumeBoundary(ctx, old, run, contract, attempt, base, c, p); err != nil {
 			return old, err
 		}
@@ -308,6 +319,12 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 	previous, err := json.Marshal(criterionObservations(previousBytes(e.DB, record.Baseline.OutputDigest), p.Criteria))
 	if len(record.Passes) > 0 {
 		previous, err = json.Marshal(record.Passes[len(record.Passes)-1].Check.Criteria)
+	}
+	if len(record.DeliveryRepairs) > 0 {
+		last := record.DeliveryRepairs[len(record.DeliveryRepairs)-1]
+		if last.AfterPass == record.Consumed {
+			previous, err = json.Marshal(last)
+		}
 	}
 	if err != nil {
 		return record, err

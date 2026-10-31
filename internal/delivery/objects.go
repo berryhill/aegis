@@ -288,7 +288,7 @@ func validateGraph(p Plan) error {
 			}
 		case "commit":
 			c, e := commitPayload(o)
-			if e != nil || n != len(p.Objects)-1 || o.OID != p.Head || c.Tree != p.Commit.Tree || c.Parents[0] != p.BaseHead || seen[c.Tree] != "tree" {
+			if e != nil || n != len(p.Objects)-1 || o.OID != p.Head || c.Tree != p.Commit.Tree || c.Parents[0] != publicationParent(p.BaseHead, p.ExpectedOld, p.RepairFailure) || seen[c.Tree] != "tree" {
 				return ErrDenied
 			}
 		}

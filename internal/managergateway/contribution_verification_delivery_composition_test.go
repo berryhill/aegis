@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/implementation"
@@ -63,6 +64,7 @@ func retainedDeliveryNativeComposition(t *testing.T, finalization bool, lateMode
 	if finalQualificationFactory == nil && finalQualificationProtection == nil {
 		scheduleContributionNativeJourney(t)
 	}
+	repairJourney := strings.Contains(t.Name(), "CIRepair")
 	ctx := context.Background()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "source")
@@ -128,6 +130,11 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: a.path, Path: a.path, Scope: a.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	s := contributionApp(t)
+	if finalization {
+		s.Config.Credentials.Authority.DeploymentID = "fixture-deployment"
+		s.Config.ContributionDelivery = &config.ContributionDelivery{}
+		s.CredentialAuthority = &credentials.Authority{}
+	}
 	clock := &contributionStageClock{at: time.Now().UTC()}
 	s.Now = clock.Now
 	// Every productive delivery path uses #378's actual request boundary. The
@@ -141,6 +148,12 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: 300}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
 		charter.Stanzas[0].Authentication.Selectors[0].Issuers = []string{subject.Issuer}
+		if finalization && id == "controller" {
+			charter.Stanzas[0].Scopes.Credentials = []string{"github"}
+			for _, op := range []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge, delivery.ReconcileIssue} {
+				charter.Stanzas[0].Grant.Capabilities = append(charter.Stanzas[0].Grant.Capabilities, string(op), app.ContributionDeliveryResourceCapability(op, "fixture/controlled", 7))
+			}
+		}
 		cc, e := core.Canonicalize(charter)
 		must(e)
 		must(s.Store.SaveCharter(cc))
@@ -200,6 +213,11 @@ text='` + nativeJSON(string(proposal)) + `'
 printf '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"%s","payload":{"status":"complete","text":%s}}}\n' "$sid" "$text"
 while read rest; do :; done
 `
+	if repairJourney {
+		successor, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package main\n// CI repair preserves the reviewed behavior.\nfunc Value() int{return 42}\n")}}})
+		script = strings.Replace(script, "text='", "if [ -f '"+filepath.Join(root, "first-proposal")+"' ]; then text='"+nativeJSON(string(successor))+"'; else touch '"+filepath.Join(root, "first-proposal")+"'; text='", 1)
+		script = strings.Replace(script, "printf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", "fi\nprintf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", 1)
+	}
 	must(os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(script), 0700))
 	adapter := hermes.New(executable, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.Hermes = adapter
@@ -360,8 +378,25 @@ while read rest; do :; done
 			must(err)
 			completionOwner = concurrentPreclosure{primary: completion, duplicate: duplicate, t: t}
 		}
+		if !repairJourney && !late && scope == "verified-protected-base-merge" && !concurrent && frameOwner == nil && issueProbe == nil {
+			completionOwner = provenanceNegativeCompletion{CompletionOwner: completionOwner, t: t, s: s, store: repository, verifier: verifier, subject: subject, key: sealed.Key}
+		}
 		conductorStarted := time.Now()
-		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, admission, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		var conducted delivery.DeliveryResult
+		var finalErr error
+		if repairJourney {
+			deny := &jointCancelDeny{}
+			gh := remote.(*delivery.GitHub)
+			_, err = app.InstallContributionDeliveryPublicationOwner(s, deny, gh, s.CurrentContributionDeliverySubject)
+			must(err)
+			server := &app.ContributionDeliveryServerPolicy{Convention: "contribution-publication.v1", Actor: p.Actor, Author: p.Author, Committer: p.Committer, ProtectionPolicy: p.ProtectionPolicy, RequiredChecks: p.RequiredChecks, RequiredReviewers: p.RequiredReviewers, PostMergeChecks: p.PostMergeChecks, MergeMethod: p.MergeMethod,
+				Binding: credentials.CredentialBinding{Key: credentials.CredentialBindingKey{AgentID: "controller", StanzaID: "principal", DeploymentID: s.Config.Credentials.Authority.DeploymentID, Scope: "github"}, SecretRecord: "fixture", VersionPolicy: credentials.VersionPinned, PinnedVersion: 1, Mode: "github", Destinations: []string{"github"}, Enabled: true, BindingRevision: 1}}
+			controller, err := app.InstallContributionDeliveryController(s, server, &credentials.Authority{}, deny)
+			must(err)
+			conducted, finalErr = controller.RunAs(ctx, subject, sealed.Key, p.ControllerSession)
+		} else {
+			conducted, finalErr = delivery.NewConductor(delivery.NewEngine(owned, productive, admission, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		}
 		t.Logf("contribution-stage=delivery-preclosure elapsed=%s held=%s reason=%s error=%v", time.Since(conductorStarted), conducted.Held, conducted.Reason, finalErr)
 		if late {
 			// The owning Source intentionally sanitizes callback errors. Confirm
@@ -466,6 +501,45 @@ while read rest; do :; done
 		}
 		if late && (completionProbe == nil || !completionProbe.genericDenied || terminal.Report.Current == nil) {
 			t.Fatal("dedicated current completion not proven")
+		}
+		if repairJourney {
+			record, err := s.ReadContributionExecutionAs(ctx, subject, sealed.Key)
+			must(err)
+			if record.Consumed != 2 || len(record.Passes) != 2 || len(record.DeliveryRepairs) != 1 || record.QueueAttempt != v.QueueAttempt {
+				t.Fatalf("repair lineage missing: %+v", record)
+			}
+			if record.Passes[0].Tester.RuntimeSessionID == record.Passes[1].Tester.RuntimeSessionID {
+				t.Fatal("tester reused")
+			}
+			// Terminal completion ends live handoff authority. Compare the
+			// independently reloaded immutable candidate with the retained result,
+			// rather than demanding a new source lease after disposition.
+			current := record.Passes[len(record.Passes)-1].Candidate
+			if current.Digest == v.Digest || current.Digest != terminal.Report.Candidate {
+				t.Fatal("retained result does not bind the repaired candidate")
+			}
+			if _, err := s.AcceptedContributionCandidateAs(ctx, subject, sealed.Key); err == nil {
+				t.Fatal("terminal result retained live handoff authority")
+			}
+			history, err := s.ReadContributionDeliveryHistoryAs(ctx, subject, sealed.Key)
+			must(err)
+			counts := map[delivery.Operation]int{}
+			failed := 0
+			for _, chain := range history.Histories {
+				last := chain[len(chain)-1].Record
+				counts[last.Intent.Operation]++
+				if last.Code == "ci_failed" && last.Outcome == delivery.Failed {
+					failed++
+				}
+			}
+			if failed != 1 || counts[delivery.PullRequest] != 1 || counts[delivery.UpdatePullRequest] != 1 || counts[delivery.ReconcileIssue] != 1 {
+				t.Fatalf("same PR history: failed=%d counts=%v", failed, counts)
+			}
+			original, _, err := s.ReadContributionAs(ctx, subject, sealed.Key)
+			must(err)
+			if original.Deadline != sealed.Deadline || original.Worktree != sealed.Worktree || original.RunID != sealed.RunID {
+				t.Fatal("repair reset root")
+			}
 		}
 		beforeReads := countCalls()
 		fresh, freshErr := s.Authenticate(ctx)

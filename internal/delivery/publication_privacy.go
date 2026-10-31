@@ -225,7 +225,7 @@ func inspectPublication(ctx context.Context, p Plan) error {
 		seen[f.Path] = true
 	}
 	authored, e := authoredObject(p.Commit)
-	if e != nil || authored.OID != p.Head || p.Commit.Commit != p.Head || p.Commit.Parent != p.BaseHead || p.Commit.Branch != p.Branch || !bytes.Equal(authored.Raw, p.Objects[len(p.Objects)-1].Raw) {
+	if e != nil || authored.OID != p.Head || p.Commit.Commit != p.Head || p.Commit.Parent != publicationParent(p.BaseHead, p.ExpectedOld, p.RepairFailure) || p.Commit.Branch != p.Branch || !bytes.Equal(authored.Raw, p.Objects[len(p.Objects)-1].Raw) {
 		return ErrPublicationProjection
 	}
 	budget := maxGraphBytes * 4

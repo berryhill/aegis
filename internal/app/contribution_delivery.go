@@ -34,6 +34,7 @@ type ContributionDeliveryCredentialPin struct {
 }
 
 type ContributionDeliveryPolicy struct {
+	RepairFailure string `json:",omitempty"`
 	// OriginalCommit preserves the exact publication payload, including reviewed files.
 	// Nil retains legacy policy digests and denies historical Publish reconstruction.
 	OriginalCommit *delivery.CommitSpec               `json:",omitempty"`
@@ -78,6 +79,7 @@ func (p ContributionDeliveryPolicy) snapshot() ContributionDeliveryPolicy {
 // projectPolicy detaches even a retained callback Plan from the resolved snapshot.
 func (p ContributionDeliveryPolicy) projectPolicy(plan delivery.Plan) delivery.Plan {
 	p = p.snapshot()
+	plan.RepairFailure = p.RepairFailure
 	plan.RequiredChecks = p.RequiredChecks
 	plan.RequiredReviewers = p.RequiredReviewers
 	plan.PostMergeChecks = p.PostMergeChecks
@@ -257,7 +259,19 @@ func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.R
 		}
 	}
 	g := &delivery.Git{Binary: managed.GitBinary, Directory: c.Worktree}
-	commit, objects, e := g.ProjectAccepted(ctx, v, delivery.CommitSpec{Parent: c.Base, Tree: v.CandidateTree, Branch: p.Branch, Author: p.Author, Committer: p.Committer, Timestamp: p.Timestamp, Message: p.Message}, p.AllowedFiles)
+	parent := c.Base
+	record, readErr := s.service.ReadContributionExecutionAs(ctx, s.subject, s.key)
+	if readErr != nil || record.State != "candidate_accepted" {
+		return deny()
+	}
+	reconstructed, repairErr := contributionRepairPolicy(p, v, record.DeliveryRepairs)
+	if repairErr != nil || reconstructed.Digest() != p.Digest() {
+		return deny()
+	}
+	if reconstructed.RepairFailure != "" {
+		parent = reconstructed.ExpectedOld
+	}
+	commit, objects, e := g.ProjectAccepted(ctx, v, delivery.CommitSpec{Parent: parent, Tree: v.CandidateTree, Branch: p.Branch, Author: p.Author, Committer: p.Committer, Timestamp: p.Timestamp, Message: p.Message}, p.AllowedFiles)
 	if e != nil {
 		return deny()
 	}

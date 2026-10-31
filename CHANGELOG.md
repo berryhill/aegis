@@ -16,6 +16,18 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #379 security review: native CI/conflict repair feedback retains the exact
+  policy-selected failing check or pinned PR mergeability, closed expected and
+  observed states and immutable response digest, without remote logs, commands
+  or suggestions. Retained verification independently reconstructs each packet;
+  a policy PR pin cannot substitute for independently proven PR creation.
+
+- #379 repair prerequisite: keep a successfully forwarded delivery repair
+  nonterminal until its managed owner can reacquire source custody. Only concrete
+  pre-merge CI/conflict failures qualify; UNKNOWN effects, issue mutations and
+  retained merges cannot become repair permissions. Productive managed repair
+  and repaired-candidate publication progression remain separate integration work.
+
 - #423 source: separate immutable contribution publication history from active
   repository/base custody; hand off only after canonical terminal outcome,
   resolved effects and exact native/controller/publication quiescence. Preserve

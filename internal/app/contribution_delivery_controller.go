@@ -175,7 +175,31 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 // payload, candidate receipt or PR number can be supplied by the operator.
 // No installed manager hook or remote readiness is implied by this constructor.
 func (d *ContributionDeliveryController) RunAs(ctx context.Context, subject core.Subject, key, session string) (delivery.DeliveryResult, error) {
-	return d.withProductive(ctx, subject, key, session, nil)
+	if d == nil || d.service == nil {
+		return delivery.DeliveryResult{}, delivery.ErrDenied
+	}
+	c, _, err := d.service.ReadContributionAs(ctx, subject, key)
+	if err != nil {
+		return delivery.DeliveryResult{}, err
+	}
+	ctx, cancel := context.WithDeadline(ctx, c.Deadline)
+	defer cancel()
+	for n := uint8(0); n < c.CandidateBudget; n++ {
+		out, err := d.withProductive(ctx, subject, key, session, nil)
+		if err != nil || out.Reason != "repair_requested" {
+			return out, err
+		}
+		// Accepted-source custody and the publication invocation frame have ended.
+		// Repair is synchronous; no detached handoff can race disposition/source.
+		if len(out.Effects) == 0 {
+			return out, delivery.ErrDenied
+		}
+		if err := d.repairDeliveryAs(ctx, subject, key, session, out.Effects[len(out.Effects)-1]); err != nil {
+			out.Reason = "repair_admission_or_execution_held"
+			return out, err
+		}
+	}
+	return delivery.DeliveryResult{}, delivery.ErrDenied
 }
 
 // withProductive keeps authority construction inside the actual private custody
@@ -249,6 +273,15 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 			p.CredentialPin = &ContributionDeliveryCredentialPin{Key: b.Key, BindingRevision: b.BindingRevision, SecretRecord: b.SecretRecord, Version: b.PinnedVersion, Destination: b.Destinations[0], Actor: d.policy.Actor, RepositoryID: c.Source.RepositoryID, Operations: remoteOperations}
 		}
 		policyRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "contribution-publication-v1", Digest: p.Digest()}
+		record, readErr := s.ReadContributionExecutionAs(live, subject, key)
+		if readErr != nil {
+			return readErr
+		}
+		p, readErr = contributionRepairPolicy(p, v, record.DeliveryRepairs)
+		if readErr != nil {
+			return readErr
+		}
+		policyRef.Digest = p.Digest()
 		source := &ContributionDeliverySource{service: s, subject: subject, key: key, policyRef: policyRef, policies: fixedContributionDeliveryPolicy{p}}
 		plan, e := source.project(live, ref, p, v)
 		if e != nil {
@@ -321,7 +354,8 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		}
 		// Legacy profiles remain nonfinal. An enabled final-verification profile
 		// must bind the real completion owner inside this exact live custody frame.
-		out, e = delivery.NewConductor(delivery.NewEngine(owner, held, authority, delivery.ClosedAdapter{Git: &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}, GitHub: gh}), nil, completion, delivery.WithReadiness(d.policy.Readiness, budget)).Run(live, ref)
+		repair := &productiveContributionRepair{controller: d, subject: subject, key: key, session: session}
+		out, e = delivery.NewConductor(delivery.NewEngine(owner, held, authority, delivery.ClosedAdapter{Git: &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}, GitHub: gh}), repair, completion, delivery.WithReadiness(d.policy.Readiness, budget)).Run(live, ref)
 		return e
 	})
 	return out, err

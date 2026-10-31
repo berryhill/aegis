@@ -52,8 +52,9 @@ type Reference struct{ Run, Contract, Candidate string }
 // current control and candidate bytes; it must hold quiescent source custody
 // throughout fn. There is deliberately no caller-controlled passed flag.
 type Plan struct {
-	FenceEpoch  uint64
-	RoleBinding string
+	RepairFailure string `json:",omitempty"`
+	FenceEpoch    uint64
+	RoleBinding   string
 	Reference
 	Intake                                                      contribution.Contract
 	Actor, Repository                                           string
@@ -73,9 +74,10 @@ type Plan struct {
 	Completion string
 }
 type Intent struct {
-	FenceEpoch  uint64
-	RoleBinding string
-	ID          string
+	RepairFailure string `json:",omitempty"`
+	FenceEpoch    uint64
+	RoleBinding   string
+	ID            string
 	Reference
 	Operation                                                  Operation
 	Actor, Repository                                          string
@@ -163,12 +165,18 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 	// The effect slot is stable across candidate/payload repairs. Changing an
 	// immutable payload conflicts with that slot, including after UNKNOWN; it
 	// never manufactures a second write permission. Owners retain the old intent.
-	i := Intent{FenceEpoch: p.FenceEpoch, RoleBinding: p.RoleBinding, Reference: p.Reference, Operation: op, Actor: p.Actor, Repository: p.Repository, RepositoryID: p.RepositoryID, Base: p.Base, Branch: p.Branch, Head: p.Head, BaseHead: p.BaseHead, ExpectedOld: p.ExpectedOld, Policy: p.Policy}
+	i := Intent{RepairFailure: p.RepairFailure, FenceEpoch: p.FenceEpoch, RoleBinding: p.RoleBinding, Reference: p.Reference, Operation: op, Actor: p.Actor, Repository: p.Repository, RepositoryID: p.RepositoryID, Base: p.Base, Branch: p.Branch, Head: p.Head, BaseHead: p.BaseHead, ExpectedOld: p.ExpectedOld, Policy: p.Policy}
 	i.ID = digest(struct {
 		Run, Contract, Repository, Base, Branch string
 		RepositoryID                            uint64
 		Operation                               Operation
 	}{p.Run, p.Contract, p.Repository, p.Base, p.Branch, p.RepositoryID, op})
+	if p.RepairFailure != "" {
+		if !roleDigest.MatchString(p.RepairFailure) || op == PullRequest || !sha.MatchString(p.ExpectedOld) {
+			return Intent{}, ErrDenied
+		}
+		i.ID = digest(struct{ Slot, Repair string }{i.ID, p.RepairFailure})
+	}
 	if op == TransferGraph {
 		if validateGraph(p) != nil {
 			return Intent{}, ErrDenied

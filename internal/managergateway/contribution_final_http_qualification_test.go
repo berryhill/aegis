@@ -4,6 +4,7 @@ package managergateway
 
 import (
 	"github.com/berryhill/aegis/internal/delivery"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +12,10 @@ func init() {
 	finalQualificationProtection = delivery.FinalQualificationProtection
 	finalQualificationFactory = func(t *testing.T, p delivery.Plan) (delivery.Adapter, func() int) {
 		remote, fixture := delivery.FinalQualificationGitHub(t, p)
+		if strings.Contains(t.Name(), "CIRepair") {
+			delivery.FinalQualificationControllerGitHub = func(plan delivery.Plan) (*delivery.GitHub, error) { fixture.SetPlan(plan); return remote, nil }
+			t.Cleanup(func() { delivery.FinalQualificationControllerGitHub = nil })
+		}
 		return remote, fixture.Count
 	}
 }
@@ -44,5 +49,9 @@ func TestCanonicalContributionConcurrentWaiterCancellation(t *testing.T) {
 }
 
 func TestContributionIssueIntentAdmission(t *testing.T) {
+	retainedDeliveryNativeComposition(t, true)
+}
+
+func TestCanonicalContributionCIRepairFinalization(t *testing.T) {
 	retainedDeliveryNativeComposition(t, true)
 }
