@@ -124,6 +124,12 @@ allowed.
 
 ## Progressive disclosure
 
+For retained contribution operations, read the self-contained
+[continuity and operation-compatibility guide](references/contribution-continuity.md).
+The bundle compatibility range is foundation discovery only, not availability of
+every operation in every covered executable; check exact installed help and the
+owning-service adapter, and report missing operations unavailable.
+
 Start with the bundled `references/operation-matrix.v1.json`. It assigns every
 current public constructor-built CLI node and HTTP/console registration to one
 of the fifteen primary skills, with authority, source/test references and explicit

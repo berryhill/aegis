@@ -19,7 +19,7 @@ pinned native companion, fresh password and exact plan review. Login or claimed
 approved status alone is never approval. Reload the exact canonical decision,
 consumed approval and verified matching provisioning receipt; unknown/unavailable
 intents never reprompt unchanged or create execution claims. See the
-[continuity guide](../../docs/continuity/contribution-continuity.md).
+[bundled continuity guide](../aegis/references/contribution-continuity.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow
 [ephemeral preparation policy](../../docs/DOER_LOOP.md#exact-owner-principal-run-preparation-source-candidate).

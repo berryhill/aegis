@@ -70,6 +70,18 @@ The strict `skills/aegis-skills.json` manifest binds the bundle and each skill t
 
 ## Bundled operation ownership and transport inventory
 
+Retained contribution skills link to the archive-owned
+`skills/aegis/references/contribution-continuity.md`, not an absent checkout
+prerequisite. It distinguishes operation-specific manager, CLI, online and
+protected-decision adapters; the broad foundation compatibility range does not
+qualify every operation on older executables. Missing installed help/protocol or
+owning-service adapters remain unavailable, with no local-store fallback. The
+standalone archive regression extracts the actual generated archive and follows
+these continuity links without repository docs. This is packaging/discovery
+proof, not installed-agent behavior, #379 disposition or installed-release #352
+acceptance. The delivered operation matrix and canonical manifest maintenance
+path remain unchanged.
+
 The routing skill includes `references/operation-matrix.v1.json` for all fifteen
 primary skills. `TestDistributedOperationMatrix` compares unique ownership with
 the actual constructor-built Cobra tree and current public Echo registrations,

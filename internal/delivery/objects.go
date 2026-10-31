@@ -20,6 +20,14 @@ const (
 	maxObjectBytes           = 512 << 10
 	maxGraphBytes            = 16 << 20
 	maxObjects               = 2048
+	// History admits 512 intent chains, including eight non-object slots:
+	// Commit, TransferGraph, Publish, PullRequest, UpdatePullRequest,
+	// CheckDelivery, Merge and ReconcileIssue. The tighter existing 400-fact
+	// readback limit must also fit a full graph plus the worst-case eight
+	// identity, absence, parent and final-read facts for UploadCommit.
+	// Enforce the smaller envelope BEFORE uploads; neither limit is widened.
+	// Stable intent slots and the pinned TransferGraph prevent repair growth.
+	maxPublicationObjects = 400 - 8
 )
 
 // GitObject is an operational projection of already accepted local Git bytes.
@@ -249,7 +257,7 @@ func (g *Git) ExtractObjects(ctx context.Context, head, tree, parent string) ([]
 	return out, nil
 }
 func validateGraph(p Plan) error {
-	if len(p.Objects) == 0 || len(p.Objects) > maxObjects {
+	if len(p.Objects) == 0 || len(p.Objects) > maxPublicationObjects {
 		return ErrDenied
 	}
 	seen := map[string]string{}
