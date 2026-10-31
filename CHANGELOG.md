@@ -16,6 +16,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #382 source follow-up: show exact recorded `doer_loop_failed` and `doer_verified`
+  root reasons in the Queue outcome banner, plus terminal lifecycle codes
+  `operator_cancelled`, `execution_expired` and `authority_revoked`. Unknown/backend
+  strings remain unavailable; root reasons do not infer missing underlying causes
+  or establish verification.
+
 - #248 source: replace ordinary full-schema prompts with a compact full-digest-bound
   operation metadata index and bounded exact-operation `platform.discover` schema
   collection. Rediscover capabilities each turn; changed/failed-delivery/new-session
