@@ -5,6 +5,7 @@ package managergateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"io"
 	"log/slog"
@@ -58,6 +59,32 @@ func TestPublicationCustodyInterruptedIssueAfterFinish(t *testing.T) {
 }
 func TestPublicationCustodySequentialMerged(t *testing.T) {
 	publicationCustodySequentialFixture(t)
+}
+func TestPublicationCustodySequentialMergedTerminalReleaseGap(t *testing.T) {
+	publicationCustodySequentialFixture(t)
+}
+
+// Lose the terminal writer's response AFTER the real canonical transaction but
+// BEFORE the owning Source can run release cleanup. No terminal fact is seeded.
+type publicationTerminalFaultStore struct{ *fleetbadger.Store }
+
+func (r publicationTerminalFaultStore) CompleteContributionQueueItem(ctx context.Context, c fleet.Completion, f fleet.AuditFact, b fleet.EvidenceReader) error {
+	if err := r.Store.CompleteContributionQueueItem(ctx, c, f, b); err != nil {
+		return err
+	}
+	return errors.New("controlled terminal response interruption")
+}
+
+type publicationTerminalFaultCompletion struct {
+	*app.ContributionCompletionAdapter
+	service    *app.Service
+	repository *fleetbadger.Store
+}
+
+func (c publicationTerminalFaultCompletion) FinalizeContributionCompletion(ctx context.Context, ref delivery.Reference) error {
+	c.service.FleetRepository = publicationTerminalFaultStore{c.repository}
+	defer func() { c.service.FleetRepository = c.repository }()
+	return c.ContributionCompletionAdapter.FinalizeContributionCompletion(ctx, ref)
 }
 
 // Simulates interruption after canonical Reserve but before remote Apply. The
@@ -387,6 +414,10 @@ while read rest; do :; done
 		must(err)
 		var completionProbe *continuationCompletionProbe
 		var completionOwner delivery.CompletionOwner = completion
+		terminalGap := strings.Contains(t.Name(), "TerminalReleaseGap")
+		if terminalGap {
+			completionOwner = publicationTerminalFaultCompletion{completion, s, repository}
+		}
 		var frameOwner *managerFrameCompletion
 		if strings.Contains(t.Name(), "ManagerTerminal") {
 			frameOwner = &managerFrameCompletion{s: s, subject: subject, key: sealed.Key, policy: pref}
@@ -416,6 +447,16 @@ while read rest; do :; done
 			}
 		}
 		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, admission, effectAdapter), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		if terminalGap {
+			if finalErr == nil {
+				t.Fatal("terminal response interruption was not exercised")
+			}
+			if _, e := s.GetContributionResultAs(ctx, subject, sealed.Key); e != nil {
+				t.Fatal("interrupted real terminal transaction did not commit", e)
+			}
+			// The canonical winner exists; release has deliberately not happened.
+			finalErr = nil
+		}
 		if interrupted != nil {
 			if (finalErr != nil && !interrupted.afterFinish) || (conducted.Held != delivery.ReconcileIssue && !interrupted.afterFinish) || interrupted.writes != 1 {
 				t.Fatalf("interruption not reached: result=%+v err=%v writes=%d", conducted, finalErr, interrupted.writes)
@@ -674,6 +715,27 @@ while read rest; do :; done
 		}{intentB.Run, intentB.Contract, intentB.Repository, intentB.Base, intentB.Branch, intentB.RepositoryID, intentB.Operation})
 		intentB.ID = contribution.Digest(preimage)
 		_, freshB, err := ownerB.Reserve(ctx, intentB)
+		if terminalGap {
+			if err == nil || freshB {
+				t.Fatal("terminal metadata alone released the live controller")
+			}
+			history, e := app.NewContributionDeliveryPolicyHistory(s)
+			must(e)
+			github, ok := remote.(*delivery.GitHub)
+			if !ok {
+				t.Fatal("missing exact historical remote")
+			}
+			_, e = app.InstallContributionDeliveryPublicationOwner(s, history, github, func(context.Context) (core.Subject, error) { return subject, nil })
+			must(e)
+			calls := countCalls()
+			// Fresh invocation performs terminal-only cleanup, then denies any
+			// new delivery. The original completed contribution is not reopened.
+			_, e = s.RunContributionDeliveryAs(ctx, subject, sealed.Key, p.Binding.Reference, pref, policies, admission, pipeline, nil, completion)
+			if e == nil || countCalls() != calls {
+				t.Fatal("terminal cleanup admitted new remote delivery")
+			}
+			_, freshB, err = ownerB.Reserve(ctx, intentB)
+		}
 		if err != nil || !freshB {
 			t.Fatalf("A canonical terminal outcome=%s; B same repository/base reservation fresh=%t error=%v", terminal.Report.Outcome, freshB, err)
 		}
