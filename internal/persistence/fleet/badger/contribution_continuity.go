@@ -96,12 +96,27 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string, caches ...*contrib
 	opts.Prefix = key(familyContributionContinuity, id)
 	it := txn.NewIterator(opts)
 	defer it.Close()
-	var count uint64
+	// Retain the exact current-transaction bytes while enumerating membership.
+	// Counting with value prefetch and then point-reading every row did the same
+	// Badger work twice on every native admission/checkpoint. A single scan still
+	// re-reads ALL canonical bytes before considering the validated replay cache.
+	rows := make(map[string][]byte)
+	headKey := key(familyContributionContinuity, id, "head")
 	for it.Rewind(); it.Valid(); it.Next() {
-		if !bytes.Equal(it.Item().Key(), key(familyContributionContinuity, id, "head")) {
-			count++
+		item := it.Item()
+		if bytes.Equal(item.Key(), headKey) {
+			continue
 		}
+		if len(rows) >= contributionContinuityMax {
+			return state, nil, fleet.ErrCorrupt
+		}
+		b, e := item.ValueCopy(nil)
+		if e != nil {
+			return state, nil, fleet.ErrCorrupt
+		}
+		rows[string(item.Key())] = b
 	}
+	count := uint64(len(rows))
 	if !found {
 		if count != 0 {
 			return state, nil, fleet.ErrCorrupt
@@ -113,8 +128,8 @@ func loadContributionContinuity(txn *badgerdb.Txn, id string, caches ...*contrib
 	}
 	wire := make([][]byte, count)
 	for seq := uint64(1); seq <= count; seq++ {
-		b, e := get(txn, key(familyContributionContinuity, id, fmt.Sprint(seq)))
-		if e != nil {
+		b, exists := rows[string(key(familyContributionContinuity, id, fmt.Sprint(seq)))]
+		if !exists {
 			return state, nil, fleet.ErrCorrupt
 		}
 		wire[seq-1] = b

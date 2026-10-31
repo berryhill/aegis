@@ -57,17 +57,41 @@ type ContributionJourneyResult struct {
 	Result            *ContributionResult         `json:"result,omitempty"`
 }
 
-// ExecuteContributionJourneyAs retains native execution ownership in the actual
-// Execute method. Accepted replays reuse canonical candidate/effect history, not
-// another builder, role admission, task or identity. RunAs owns the publication
-// enter/sticky-stop fence across the post-build cancellation gap.
-func (s *Service) ExecuteContributionJourneyAs(ctx context.Context, subject core.Subject, key string) (out ContributionJourneyResult, err error) {
+// ExecuteContributionJourneyAs retains one registered service-owned invocation
+// through native execution, publication and disposition. A transport disconnect
+// neither cancels that invocation nor renews its original authority. Accepted
+// replays reuse canonical candidate/effect history, not another builder or task.
+func (s *Service) ExecuteContributionJourneyAs(ctx context.Context, subject core.Subject, key string) (ContributionJourneyResult, error) {
+	return s.runContributionJourneyAs(ctx, subject, key, false)
+}
+
+// ResumeContributionJourneyAs keeps the same registered owner across retained
+// native continuation and delivery. It neither renews authority nor task consent.
+func (s *Service) ResumeContributionJourneyAs(ctx context.Context, subject core.Subject, key string) (ContributionJourneyResult, error) {
+	return s.runContributionJourneyAs(ctx, subject, key, true)
+}
+
+func (s *Service) runContributionJourneyAs(ctx context.Context, subject core.Subject, key string, resume bool) (out ContributionJourneyResult, err error) {
 	// A retained terminal result is read-only navigation, never a new native or
 	// remote effect. Only canonical not-found may fall through to execution.
 	if found, readErr := s.readContributionJourneyResult(ctx, subject, key, &out); found || readErr != nil {
 		return out, readErr
 	}
-	out.Execution, err = s.ExecuteContributionAs(ctx, subject, key)
+	c, view, err := s.ReadContributionAs(ctx, subject, key)
+	if err != nil {
+		return out, err
+	}
+	runCtx, finish, err := s.beginContributionRun(ctx, c)
+	if err != nil {
+		return out, err
+	}
+	defer finish()
+	ctx = runCtx
+	if resume {
+		out.Execution, err = s.resumeContributionInRun(ctx, subject, key)
+	} else {
+		out.Execution, err = s.executeContributionInRun(ctx, subject, key, c, view)
+	}
 	if err != nil {
 		return out, err
 	}

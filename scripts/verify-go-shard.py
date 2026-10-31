@@ -81,7 +81,11 @@ BUNDLES = {
         # Hosted 40952580487 twice exhausted support-a: persistence 268s +
         # remainder-a 323s. Reuse api-a's existing 16m job (observed 479s),
         # without changing its 12m API or persistence's 8m process alarms.
-        'api-a': ('api-a', 'persistence'),
+        # Exact-head 41216964277: CLI compilation + its three passing roots
+        # consumed 462s before remainder-b hit the unchanged 600s job limit.
+        # This existing 16m lane completed in 521s on that same head. Move the
+        # complete existing remainder group, not tests, caps or lane names.
+        'api-a': ('api-a', 'persistence', 'remainder-b'),
         'api-b': ('api-b', 'cli'),
         # Hosted 41218036692: compile 65s + defaults 444s left too little
         # of 600s for contribution. Keep that group in a manager lane.
@@ -97,7 +101,7 @@ BUNDLES = {
         # Hosted 41220874653: cli-command defaults took 462s plus 106s
         # compilation; support-a completed in 314s and takes disconnect.
         'cli-command': ('cli-command',),
-        'cli': ('cli-contribution-root', 'cli-contribution-final', 'remainder-b'),
+        'cli': ('cli-contribution-root', 'cli-contribution-final'),
         'support-a': ('remainder-a', 'cli-contribution-disconnect'),
         'support-b': ('update',),
     },

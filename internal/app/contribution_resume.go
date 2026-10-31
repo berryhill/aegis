@@ -14,6 +14,21 @@ import (
 // ResumeContributionAs is explicit same-owner admission, never a login side
 // effect. Preparation holds and independently issued mandates retain normal gates.
 func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, key string) (ContributionExecutionResult, error) {
+	c, _, err := s.ReadContributionAs(ctx, sub, key)
+	if err != nil {
+		return ContributionExecutionResult{}, err
+	}
+	runCtx, finish, err := s.beginContributionRun(ctx, c)
+	if err != nil {
+		return ContributionExecutionResult{}, err
+	}
+	defer finish()
+	return s.resumeContributionInRun(runCtx, sub, key)
+}
+
+// The retained journey calls this under its existing registered invocation so
+// Resume does not release cancellation ownership before delivery/disposition.
+func (s *Service) resumeContributionInRun(ctx context.Context, sub core.Subject, key string) (ContributionExecutionResult, error) {
 	result := ContributionExecutionResult{Available: true}
 	if err := s.requireFleetPrincipal(sub); err != nil {
 		return result, err
@@ -23,7 +38,7 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 		return result, err
 	}
 	if len(view.Attempts) == 0 && (view.Projection.State.IsPreparation() || view.Projection.State == queue.StateQueued) {
-		return s.ExecuteContributionAs(ctx, sub, key)
+		return s.executeContributionInRun(ctx, sub, key, c, view)
 	}
 	c, state, _, err := s.ObserveContributionContinuityAs(ctx, sub, key)
 	if err != nil {
@@ -35,12 +50,6 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 	if err = s.retainContributionRunProvenance(c); err != nil {
 		return result, err
 	}
-	runCtx, finish, err := s.beginContributionRun(ctx, c)
-	if err != nil {
-		return result, err
-	}
-	defer finish()
-	ctx = runCtx
 	control, err := s.ReadContributionControlAs(ctx, sub, key)
 	if err != nil || control.Stop || state.CancelRequested || !s.Now().Before(c.Deadline) {
 		return result, ErrDenied
@@ -81,11 +90,11 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 			return result, contribution.ErrNativeQuiescenceUnavailable
 		}
 	}
-	session, err := s.ResumeContributionRoleAs(runCtx, sub, key, "controller", ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
+	session, err := s.ResumeContributionRoleAs(ctx, sub, key, "controller", ContributionContinuityInput{ContractDigest: c.Digest, ExpectedSequence: state.Sequence, ExpectedDigest: state.Digest})
 	if err != nil {
 		return result, err
 	}
-	_, state, _, err = s.ObserveContributionContinuityAs(runCtx, sub, key)
+	_, state, _, err = s.ObserveContributionContinuityAs(ctx, sub, key)
 	if err != nil {
 		return result, err
 	}
@@ -99,17 +108,17 @@ func (s *Service) ResumeContributionAs(ctx context.Context, sub core.Subject, ke
 	if err != nil {
 		return result, err
 	}
-	if _, err = s.FleetRepository.(fleet.ContributionContinuityRepository).AppendContributionContinuity(runCtx, event); err != nil {
+	if _, err = s.FleetRepository.(fleet.ContributionContinuityRepository).AppendContributionContinuity(ctx, event); err != nil {
 		return result, err
 	}
 	if record.State == "candidate_accepted" {
-		return s.ContributionExecutionStatusAs(runCtx, sub, key)
+		return s.ContributionExecutionStatusAs(ctx, sub, key)
 	}
-	_, err = s.QueueWorker.ResumeContribution(runCtx, sub, c.QueueItemID)
+	_, err = s.QueueWorker.ResumeContribution(ctx, sub, c.QueueItemID)
 	if errors.Is(err, orchestration.ErrContributionCandidatePending) {
 		err = nil
 	}
-	observed, readErr := s.ContributionExecutionStatusAs(runCtx, sub, key)
+	observed, readErr := s.ContributionExecutionStatusAs(ctx, sub, key)
 	return observed, errors.Join(err, readErr)
 }
 
