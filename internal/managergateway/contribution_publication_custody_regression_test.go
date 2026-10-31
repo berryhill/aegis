@@ -3,6 +3,7 @@
 package managergateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -67,6 +68,27 @@ func TestPublicationCustodySequentialMergedTerminalReleaseGap(t *testing.T) {
 // Lose the terminal writer's response AFTER the real canonical transaction but
 // BEFORE the owning Source can run release cleanup. No terminal fact is seeded.
 type publicationTerminalFaultStore struct{ *fleetbadger.Store }
+
+// Preparing a loopback server needs expected inputs, not another owning native
+// custody/revalidation run. The actual effect callback must independently match
+// every projected field under the real Source's full pre/post admission.
+type publicationExpectedSource struct {
+	actual   delivery.Source
+	expected delivery.Plan
+	t        *testing.T
+}
+
+func (s publicationExpectedSource) WithAccepted(ctx context.Context, ref delivery.Reference, fn func(context.Context, delivery.Plan) error) error {
+	return s.actual.WithAccepted(ctx, ref, func(private context.Context, p delivery.Plan) error {
+		want, _ := json.Marshal(s.expected)
+		got, _ := json.Marshal(p)
+		if !bytes.Equal(want, got) {
+			s.t.Error("actual owning Source plan differs from loopback fixture inputs")
+			return delivery.ErrDenied
+		}
+		return fn(private, p)
+	})
+}
 
 func (r publicationTerminalFaultStore) CompleteContributionQueueItem(ctx context.Context, c fleet.Completion, f fleet.AuditFact, b fleet.EvidenceReader) error {
 	if err := r.Store.CompleteContributionQueueItem(ctx, c, f, b); err != nil {
@@ -397,8 +419,13 @@ while read rest; do :; done
 		}
 		owned, err := repository.ContributionDelivery(ctx, p.Binding, admission)
 		must(err)
-		var projected delivery.Plan
-		must(productive.WithAccepted(ctx, p.Binding.Reference, func(_ context.Context, plan delivery.Plan) error { projected = plan; return nil }))
+		// Pure projection from the actual accepted candidate only initializes the
+		// remote protocol fixture. It grants no authority or acceptance; the
+		// conductor below still enters the real Source and compares the full Plan.
+		spec, objects, projectionErr := (&delivery.Git{Binary: git, Directory: sealed.Worktree}).ProjectAccepted(ctx, v, delivery.CommitSpec{Parent: sealed.Base, Tree: v.CandidateTree, Branch: p.Branch, Author: p.Author, Committer: p.Committer, Timestamp: p.Timestamp, Message: p.Message}, p.AllowedFiles)
+		must(projectionErr)
+		projected := delivery.Plan{Reference: p.Binding.Reference, FenceEpoch: p.Binding.FenceEpoch, RoleBinding: p.Binding.RoleBinding, Intake: sealed, Actor: p.Actor, Repository: sealed.Repository, RepositoryID: sealed.Source.RepositoryID, Base: p.Binding.Base, Branch: p.Branch, Head: spec.Commit, BaseHead: sealed.Base, ExpectedOld: p.ExpectedOld, Policy: pref.Digest, Delivery: scope, Commit: spec, Objects: objects, ProtectionPolicy: p.ProtectionPolicy, RequiredChecks: p.RequiredChecks, RequiredReviewers: p.RequiredReviewers, PostMergeChecks: p.PostMergeChecks, MergeMethod: p.MergeMethod, PR: p.PR, PRTitle: p.PRTitle, PRBody: p.PRBody}
+		conductingSource := publicationExpectedSource{productive, projected, t}
 		if finalQualificationFactory == nil && scope != "local-only" && scope != "no-publish" {
 			t.Fatal("missing test-only HTTP factory")
 		}
@@ -446,7 +473,7 @@ while read rest; do :; done
 				completionOwner = pauseFinalContribution{completion}
 			}
 		}
-		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, admission, effectAdapter), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, conductingSource, admission, effectAdapter), nil, completionOwner).Run(ctx, p.Binding.Reference)
 		if terminalGap {
 			if finalErr == nil {
 				t.Fatal("terminal response interruption was not exercised")
