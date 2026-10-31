@@ -65,7 +65,7 @@ func TestManagerPersonaIsAegisManagerWithCredentialCustodyAsOneSubsystem(t *test
 	if strings.Contains(instruction, "conversational component of the built-in Aegis secrets manager") {
 		t.Fatal("manager persona is still narrowed to the secrets-manager subsystem")
 	}
-	if InstructionVersion != "aegis.manager.instruction.v8" || PolicyVersion != "aegis.manager.policy.v6" {
+	if InstructionVersion != "aegis.manager.instruction.v9" || PolicyVersion != "aegis.manager.policy.v6" {
 		t.Fatalf("persona change did not advance digest semantics: instruction=%q policy=%q", InstructionVersion, PolicyVersion)
 	}
 }
