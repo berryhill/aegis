@@ -62,18 +62,19 @@ type SessionConfig struct {
 }
 
 type Session struct {
-	config          SessionConfig
-	ctx             context.Context
-	cancel          context.CancelFunc
-	mu              sync.Mutex
-	turnMu          sync.Mutex
-	closing         bool
-	closed          bool
-	finalized       bool
-	receipt         SessionReceipt
-	platformPending *pendingPlatform
-	platformContext string
-	authoritative   bool
+	config                SessionConfig
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	mu                    sync.Mutex
+	turnMu                sync.Mutex
+	closing               bool
+	closed                bool
+	finalized             bool
+	receipt               SessionReceipt
+	platformPending       *pendingPlatform
+	platformContext       string
+	platformCatalogDigest string
+	authoritative         bool
 }
 
 func NewSession(parent context.Context, config SessionConfig) (*Session, error) {
@@ -211,7 +212,7 @@ func (s *Session) HandleStream(ctx context.Context, text string, emit func(strin
 		return "", false, errors.New(finding.Reason)
 	}
 	preview := newMessagePreview(s.config.MaximumResponseBytes)
-	text, err = s.platformModelInput(ctx, text)
+	text, catalogDigest, err := s.platformModelInput(ctx, text)
 	if err != nil {
 		return "", false, err
 	}
@@ -226,6 +227,11 @@ func (s *Session) HandleStream(ctx context.Context, text string, emit func(strin
 	if err != nil {
 		return "", preview.Released(), fmt.Errorf("%s: %w", ReasonGatewayProtocol, err)
 	}
+	// Only a successful turn establishes that Hermes retained this catalog in
+	// its conversation. Failed delivery must not suppress it on a later turn.
+	s.mu.Lock()
+	s.platformCatalogDigest = catalogDigest
+	s.mu.Unlock()
 	response, arguments, err := DecodeResponse(responseBytes, s.config.MaximumResponseBytes)
 	if err != nil {
 		return "", preview.Released(), fmt.Errorf("%s: %w", ReasonResponseInvalid, err)

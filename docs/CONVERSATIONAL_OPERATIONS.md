@@ -1,11 +1,33 @@
 # Conversational operations (#248 source candidate)
 
 The manager model proposes a closed `platform.call` envelope with arguments
-`{"operation":"agents.list","input":{}}`; `platform.discover` returns the
-current sorted catalog. This is a general typed dispatcher, not a phrase scanner
-or a shell/tool bridge. Discovery includes concrete reflected JSON input schemas,
-owning service names, mutation flags and unavailable reasons. Schemas aid input
-collection; strict decoding and owning service validators remain authoritative.
+`{"operation":"agents.list","input":{}}`. This is a general typed dispatcher,
+not a phrase scanner or shell/tool bridge. Ordinary first/changed prompts supply a
+compact operation index with lossless positional metadata rows
+`[operation,mutation,service,availability,reason]`, and a `catalog_digest` binding
+the entire canonical catalog, including schemas. An unchanged delivered index is
+referenced by digest; failed delivery and new sessions do not inherit that claim.
+Capabilities and principal admission are still fetched every turn.
+
+The existing `platform.discover` has one closed additive extension:
+`{"operation":"loops.show","catalog_digest":"sha256:…"}` requests exactly one
+complete capability, including its reflected typed `input_schema` and every
+metadata field. Both nonempty string fields must be present together. Unknown or
+ambiguous exact names and changed digests fail without preparing/executing an
+effect. The response binds `catalog_digest` and `capability`; it is retained as
+untrusted result data for the next model turn so required inputs can be collected.
+The complete compact JSON response is bounded to 24 KiB; oversize returns an
+explicit error, never a partial/truncated schema. Every current catalog capability
+fits this bound (regressed). Strict owning-service validators remain authoritative.
+
+Legacy empty discovery `{}` retains full-catalog semantics and its existing
+64 KiB result-rendering bound (the current full corpus exceeds that bound and
+returns an oversize error). The adapter's full `Capabilities` API is unchanged;
+ordinary model schema collection should use scoped discovery, not empty discovery.
+No schema corpus is silently cut down to satisfy a size limit. History and all
+existing user/model/result inference scanning remain intact, at the unchanged
+production 250ms deadline.
+
 Unknown fields, duplicate keys and trailing JSON are rejected. Root authority,
 publisher, workspace, subject, principal, approval, mandate and stanza fields are
 not accepted from the model. `agent_id` is a selector, not authenticated identity.
@@ -110,7 +132,7 @@ Discovery includes the full current-fleet fixture (registry.CurrentFleetFixture,
 
 Normal registration language reaches the general model proposal/input-collection path in gateway and terminal. Only missing-runtime/degraded mode returns safe typed-command guidance. Explicit slash controls are unchanged. Legacy direct audit.query is no longer advertised or decoded; use platform.call audit.query, which calls AuditEventsAs.
 
-Conformance v10 adds platform discovery, natural-language fleet read, typed integer budget and missing-registration-input cases; numeric string budgets fail evaluation. Synthetic executors do not certify a real model.
+Instruction v9 / conformance v11 adds digest-bound operation schema discovery to the existing platform discovery, natural-language fleet read, typed integer budget and missing-registration-input cases; numeric string budgets fail evaluation. Synthetic executors do not certify a real model.
 
 ## Verification tier and gaps
 

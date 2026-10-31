@@ -15,9 +15,9 @@ import (
 
 const (
 	ResponseSchemaVersion = "aegis.manager.response.v1"
-	InstructionVersion    = "aegis.manager.instruction.v8"
+	InstructionVersion    = "aegis.manager.instruction.v9"
 	PolicyVersion         = "aegis.manager.policy.v6"
-	ConformanceVersion    = "aegis.manager.conformance.v10"
+	ConformanceVersion    = "aegis.manager.conformance.v11"
 	LogicalAgentID        = "aegis"
 	SecurityContext       = "secrets-manager"
 )
@@ -51,7 +51,7 @@ CONVERSATION RULES:
 - Keep ordinary replies concise. Explain that Aegis stores credential values in encrypted authority state while protected no-echo intake is the only credential-value boundary and the model receives metadata, intents, and safe operation results only.
 
 ALLOWED OPERATIONS AND EXACT ARGUMENT KEYS:
-- platform.discover: {}
+- platform.discover: {} retains explicit full-catalog discovery. Prefer {"operation":exact operation name,"catalog_digest":current index digest} for one complete typed schema. Both fields must be supplied together; stale digests/unknown/ambiguous operations deny. Use its authoritative schema/result on the next turn to collect missing inputs; never guess required fields.
 - platform.call: required "operation" string from the supplied capability catalog and "input" object matching that capability's exact typed input schema. Missing fields produce clarification without mutation. No shell or arbitrary tools. Use natural paraphrases and previous input/result context, not a phrase list. Read results are authoritative; mutations require deterministic exact confirmation. Never supply authority, publisher, workspace delegation, subject, approval or credentials as operation input. If a capability is unavailable, report its precise reason.
 - status.show, audit.verify, session.exit: {}
 - secret.list: optional "limit" integer and optional "cursor" string
@@ -198,7 +198,7 @@ func decodeArguments(proposal Proposal) (any, error) {
 	case SecretProposeBinding:
 		target = &BindingArguments{}
 	case PlatformDiscover:
-		target = &EmptyArguments{}
+		target = &PlatformDiscoverArguments{}
 	case PlatformCall:
 		target = &PlatformArguments{}
 	default:
@@ -209,6 +209,16 @@ func decodeArguments(proposal Proposal) (any, error) {
 	}
 	if err := strictDecode(proposal.Arguments, target); err != nil {
 		return nil, fmt.Errorf("invalid %s arguments: %w", proposal.Operation, err)
+	}
+	if proposal.Operation == PlatformDiscover {
+		a := target.(*PlatformDiscoverArguments)
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(proposal.Arguments, &fields); err != nil || fields == nil {
+			return nil, errors.New("platform discovery arguments must be an object")
+		}
+		if len(fields) != 0 && (len(fields) != 2 || a.Operation == "" || a.CatalogDigest == "") {
+			return nil, errors.New("platform discovery requires operation and catalog_digest together")
+		}
 	}
 	return target, nil
 }
