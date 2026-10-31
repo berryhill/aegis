@@ -41,6 +41,21 @@ func publicationHasRetainedRoot(txn *badgerdb.Txn, repositoryID uint64, base str
 			return true, nil
 		}
 	}
+	// Losing every publication index still must not hide surviving canonical
+	// effect history. Missing exclusion state is never proof of fresh custody.
+	opts.Prefix = key(familyContributionDelivery)
+	history := txn.NewIterator(opts)
+	defer history.Close()
+	for history.Rewind(); history.Valid(); history.Next() {
+		wire, err := history.Item().ValueCopy(nil)
+		var entry DeliveryObservation
+		if err != nil || strictDelivery(wire, &entry) != nil || delivery.ValidateHistoryEnvelope(entry) != nil {
+			return false, fleet.ErrCorrupt
+		}
+		if entry.Record.Intent.RepositoryID == repositoryID && entry.Record.Intent.Base == base {
+			return true, nil
+		}
+	}
 	return false, nil
 }
 
