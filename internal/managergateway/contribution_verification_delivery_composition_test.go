@@ -480,6 +480,9 @@ while read rest; do :; done
 		if countCalls() != beforeReads {
 			t.Fatal("result retrieval repeated remote effects")
 		}
+		if strings.Contains(t.Name(), "PublicResultHistoricalPolicy") {
+			publicHistoricalPolicyReadback(t, s, subject, sealed)
+		}
 		t.Logf("canonical result disposition=%s artifact=%s receipt=%s", terminal.Disposition.DispositionID, terminal.Artifact.ID, terminal.Receipts[0].ID)
 		if strings.Contains(t.Name(), "ManagerTerminal") {
 			if frameOwner.actual == nil {

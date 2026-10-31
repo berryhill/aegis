@@ -16,6 +16,15 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- Bounded #352 source repair: admit at most 392 publication objects before any
+  delivery effect, fitting the existing 400-fact readback and 512-history limits
+  with room for all subsequent operation slots. Historical contribution-result retrieval
+  reloads its exact canonical retained policy and rejects missing, corrupt or
+  mismatched joins rather than using current configuration. Standalone skill
+  archives include continuity discovery and operation-specific adapter caveats;
+  the delivered #348 operation matrix is preserved. Final #379 disposition,
+  real-provider and installed-release #352 acceptance remain separate.
+
 - #246: Console readiness distinguishes a missing exact action context from denial,
   empty collections and unavailable operations, preserves readable Loop preparation,
   and explains credential custody independently of credential-free fleet records.
