@@ -26,6 +26,24 @@ func publicationRootValid(root deliveryPublication) bool {
 	return deliveryDigest.MatchString(seal) && seal == contribution.Digest(deliveryWire(root))
 }
 
+func publicationHasRetainedRoot(txn *badgerdb.Txn, repositoryID uint64, base string) (bool, error) {
+	opts := badgerdb.DefaultIteratorOptions
+	opts.Prefix = key(familyContributionPublication, "root")
+	it := txn.NewIterator(opts)
+	defer it.Close()
+	for it.Rewind(); it.Valid(); it.Next() {
+		wire, err := it.Item().ValueCopy(nil)
+		var root deliveryPublication
+		if err != nil || strictDelivery(wire, &root) != nil || !publicationRootValid(root) || !bytes.Equal(it.Item().Key(), key(familyContributionPublication, "root", root.OwnerID, root.Key)) {
+			return false, fleet.ErrCorrupt
+		}
+		if root.RepositoryID == repositoryID && root.Base == base {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // GetContributionPublicationOwner reads exact active metadata, not authority.
 func (s *Store) GetContributionPublicationOwner(ctx context.Context, repositoryID uint64, base string) (out delivery.PublicationRoot, err error) {
 	err = s.view(ctx, func(txn *badgerdb.Txn) error {

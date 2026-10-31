@@ -261,7 +261,8 @@ func (r *ContributionDeliveryRepository) publicationOwner(txn *badgerdb.Txn, i d
 		hasSlots := it.ValidForPrefix(prefix)
 		it.Close()
 		_, hasRoot, rootErr := optional(txn, key(familyContributionPublication, "root", b.OwnerID, b.Key))
-		if hasSlots || hasRoot || rootErr != nil {
+		retainedRoot, retainedErr := publicationHasRetainedRoot(txn, i.RepositoryID, i.Base)
+		if hasSlots || hasRoot || rootErr != nil || retainedRoot || retainedErr != nil {
 			return fleet.ErrCorrupt
 		}
 		if e := create(txn, k, deliveryWire(want)); e != nil {
