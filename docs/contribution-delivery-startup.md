@@ -1,5 +1,9 @@
 # Contribution startup composition: bounded local implementation
 
+Publication lifetime cleanup and terminal/restart custody handoff use the same
+owning service; see [#423 custody and recovery](contribution-publication-custody.md).
+No additional setup, credential, grant or service is introduced.
+
 `internal/config/contribution_delivery.go` defines an explicit typed trusted policy:
 actor, separate Git author/committer, required CI/review/post-merge checks, merge
 method and protection-policy identity. The optional credential reference contains

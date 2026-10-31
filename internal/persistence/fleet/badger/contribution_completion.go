@@ -2,7 +2,6 @@ package badger
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/evidence"
@@ -88,24 +87,9 @@ func exactContributionTerminalEvidence(txn *badgerdb.Txn, attempt execution.Atte
 		return false
 	}
 	h := delivery.HistorySnapshot{Contract: c, ContractBytes: contractWire, RootRun: c.RunID, Root: root, RootBytes: rootWire}
-	opts := badgerdb.DefaultIteratorOptions
-	opts.Prefix = key(familyContributionPublication, fmt.Sprint(root.RepositoryID), root.Base, "slot")
-	it := txn.NewIterator(opts)
-	defer it.Close()
-	for it.Rewind(); it.Valid(); it.Next() {
-		b, e := it.Item().ValueCopy(nil)
-		if e != nil {
-			return false
-		}
-		var intent delivery.Intent
-		if strictDelivery(b, &intent) != nil {
-			return false
-		}
-		chain, e := loadDeliveryHistory(txn, intent.ID)
-		if e != nil {
-			return false
-		}
-		h.Histories = append(h.Histories, chain)
+	h.Histories, e = publicationHistories(txn, root)
+	if e != nil || !publicationRootValid(root) {
+		return false
 	}
 	if delivery.ValidateHistorySnapshot(h) != nil {
 		return false

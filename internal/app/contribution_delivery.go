@@ -197,6 +197,9 @@ func (s *ContributionDeliverySource) WithAccepted(ctx context.Context, ref deliv
 		if x != nil {
 			return delivery.ErrDenied
 		}
+		if x = s.service.preparePublicationHandoff(cctx, s.subject, policy.Binding); x != nil {
+			return x
+		}
 		if x = s.service.retainContributionDeliveryPolicy(cctx, policy); x != nil {
 			return delivery.ErrDenied
 		}
@@ -217,7 +220,7 @@ func (s *ContributionDeliverySource) WithAccepted(ctx context.Context, ref deliv
 	if e != nil {
 		return delivery.ErrDenied
 	}
-	return nil
+	return s.service.releaseTerminalPublication(ctx, s.subject, s.key)
 }
 func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.Reference, p ContributionDeliveryPolicy, v orchestration.ContributionCandidate) (delivery.Plan, error) {
 	deny := func() (delivery.Plan, error) { return delivery.Plan{}, delivery.ErrDenied }

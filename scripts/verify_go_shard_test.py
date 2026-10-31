@@ -332,7 +332,7 @@ class ShardTests(unittest.TestCase):
             },
             'race': {
                 'orchestration': ('orchestration', 'orchestration-contribution'),
-                'api-b': ('api-b', 'cli'),
+                'api-b': ('api-b', 'cli', 'remainder-b'),
                 'manager-b': ('manager-contribution-restart',),
                 'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
             },
@@ -371,7 +371,9 @@ class ShardTests(unittest.TestCase):
                          ('cli-contribution-root', 'cli-contribution-final',
                           'implementation-contribution'))
         self.assertEqual(shard.bundle_groups('api-a', True),
-                         ('api-a', 'persistence', 'remainder-b'))
+                         ('api-a', 'persistence'))
+        self.assertEqual(shard.bundle_groups('api-b', True),
+                         ('api-b', 'cli', 'remainder-b'))
         self.assertEqual(shard.bundle_groups('support-a', True),
                          ('remainder-a', 'cli-contribution-disconnect'))
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
@@ -437,7 +439,7 @@ class ShardTests(unittest.TestCase):
             'implementation-contribution': ('implementation', 'cli'),
             'manager-contribution-cancel': ('manager-c', 'manager-d'),
             'cli-contribution-disconnect': ('cli', 'support-a'),
-            'remainder-b': ('cli', 'api-a'),
+            'remainder-b': ('cli', 'api-b'),
         })
         self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
 
@@ -447,7 +449,7 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('support-a', True),
                          ('remainder-a', 'cli-contribution-disconnect'))
         self.assertEqual(shard.bundle_groups('api-a', True),
-                         ('api-a', 'persistence', 'remainder-b'))
+                         ('api-a', 'persistence'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'persistence'
                              for groups in shard.BUNDLES['race'].values()

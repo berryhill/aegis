@@ -1,5 +1,9 @@
 # Aegis MVP Threat Model
 
+Retained publication history does not grant active repository/base custody.
+See [#423 custody and original-intent recovery](contribution-publication-custody.md)
+for exact terminal/quiescence release and UNKNOWN-effect takeover denial.
+
 Contribution readiness observes exact profile/role/native/repository scope and
 running image without granting authority. Candidate mismatch denies Run before
 intake; admitted preparation retains immutable image provenance for historical

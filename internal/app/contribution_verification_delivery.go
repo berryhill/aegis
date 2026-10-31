@@ -40,6 +40,10 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 	if err != nil {
 		return out, ErrDenied
 	}
+	if delivery.ValidateHistorySnapshot(h) != nil {
+		return out, ErrDenied
+	}
+	h = contributionPreIssueView(ctx, h)
 	// Retain irreversible history even when later checks, native readback or policy
 	// fail. Only independently valid same-root sealed envelopes supply these refs.
 	for _, chain := range h.Histories {
@@ -137,6 +141,7 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 		return fail("policy_changed")
 	}
 	after, err := s.ReadContributionDeliveryHistoryAs(ctx, subject, key)
+	after = contributionPreIssueView(ctx, after)
 	afterWire, _ := json.Marshal(after)
 	if err != nil || !bytes.Equal(historyWire, afterWire) {
 		return fail("history_changed")

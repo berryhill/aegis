@@ -202,6 +202,12 @@ func strictDelivery(b []byte, v any) error {
 	return nil
 }
 func (r *ContributionDeliveryRepository) owner(txn *badgerdb.Txn, i delivery.Intent, createMissing bool) error {
+	return r.publicationOwner(txn, i, createMissing, true)
+}
+func (r *ContributionDeliveryRepository) historicalOwner(txn *badgerdb.Txn, i delivery.Intent) error {
+	return r.publicationOwner(txn, i, false, false)
+}
+func (r *ContributionDeliveryRepository) publicationOwner(txn *badgerdb.Txn, i delivery.Intent, createMissing, active bool) error {
 	k := key(familyContributionPublication, fmt.Sprint(i.RepositoryID), i.Base)
 	wire, found, e := optional(txn, k)
 	if e != nil {
@@ -221,11 +227,42 @@ func (r *ContributionDeliveryRepository) owner(txn *badgerdb.Txn, i delivery.Int
 			return fleet.ErrCorrupt
 		}
 		stored.Digest = digest
-		if stored != want {
-			return delivery.ErrConflict
+		if active && stored == want {
+			if _, released, err := optional(txn, key(familyContributionPublication, "released", b.OwnerID, b.Key)); err != nil {
+				return err
+			} else if released {
+				return delivery.ErrConflict
+			}
+		}
+		if stored != want && active {
+			if !createMissing {
+				return delivery.ErrConflict
+			}
+			// Do not resurrect an already historical root as the active owner.
+			if _, exists, e := optional(txn, key(familyContributionPublication, "root", b.OwnerID, b.Key)); e != nil || exists {
+				return delivery.ErrConflict
+			}
+			if e := publicationHandoffReady(txn, stored); e != nil {
+				return e
+			}
+			if e := txn.Set(k, deliveryWire(want)); e != nil {
+				return e
+			}
 		}
 	} else {
 		if !createMissing {
+			return fleet.ErrCorrupt
+		}
+		// Missing exclusion state is not a free slot when any previous
+		// reservation/root survives. Do not infer quiescence from its absence.
+		prefix := key(familyContributionPublication, fmt.Sprint(i.RepositoryID), i.Base, "slot")
+		it := txn.NewIterator(badgerdb.DefaultIteratorOptions)
+		it.Seek(prefix)
+		hasSlots := it.ValidForPrefix(prefix)
+		it.Close()
+		_, hasRoot, rootErr := optional(txn, key(familyContributionPublication, "root", b.OwnerID, b.Key))
+		retainedRoot, retainedErr := publicationHasRetainedRoot(txn, i.RepositoryID, i.Base)
+		if hasSlots || hasRoot || rootErr != nil || retainedRoot || retainedErr != nil {
 			return fleet.ErrCorrupt
 		}
 		if e := create(txn, k, deliveryWire(want)); e != nil {
@@ -247,6 +284,52 @@ func (r *ContributionDeliveryRepository) owner(txn *badgerdb.Txn, i delivery.Int
 		}
 		if err = create(txn, rootKey, deliveryWire(want)); err != nil {
 			return err
+		}
+	}
+	if createMissing {
+		// Surviving slot identity with no history is corruption, not a new
+		// reservation or an ordinary create conflict.
+		if _, exists, e := optional(txn, publicationSlotKey(want, i.ID)); e != nil {
+			return e
+		} else if exists {
+			return fleet.ErrCorrupt
+		}
+		indexKey := key(familyContributionPublication, "indexed", b.OwnerID, b.Key)
+		marker, indexed, e := optional(txn, indexKey)
+		if e != nil {
+			return e
+		}
+		if indexed {
+			if !bytes.Equal(marker, deliveryWire(want)) {
+				return fleet.ErrCorrupt
+			}
+			// Validate complete slot/mirror membership, not every old proof on
+			// every new object. Full observation validation remains in readback
+			// and terminal handoff. The legacy migration runs only once.
+			slots, e := publicationSlots(txn, want)
+			if e != nil {
+				return e
+			}
+			if len(slots) == 0 {
+				return fleet.ErrCorrupt
+			}
+		} else {
+			histories, e := publicationHistories(txn, want)
+			if e != nil {
+				return e
+			}
+			for _, chain := range histories {
+				intent := chain[0].Record.Intent
+				if e := create(txn, publicationSlotKey(want, intent.ID), deliveryWire(intent)); e != nil {
+					return e
+				}
+			}
+			if e := create(txn, indexKey, deliveryWire(want)); e != nil {
+				return e
+			}
+		}
+		if e := create(txn, publicationSlotKey(want, i.ID), deliveryWire(i)); e != nil {
+			return e
 		}
 	}
 	// Retain the exact slot separately from its observations: deleting an entire
@@ -374,7 +457,7 @@ func (r *ContributionDeliveryRepository) Reserve(ctx context.Context, i delivery
 			if out.Intent != i {
 				return delivery.ErrConflict
 			}
-			return r.owner(txn, i, false)
+			return r.historicalOwner(txn, i)
 		}
 		return nil
 	})
@@ -397,7 +480,7 @@ func (r *ContributionDeliveryRepository) Reserve(ctx context.Context, i delivery
 			if out.Intent != i {
 				return delivery.ErrConflict
 			}
-			return r.owner(txn, i, false)
+			return r.historicalOwner(txn, i)
 		}
 		if e = r.owner(txn, i, true); e != nil {
 			return e
@@ -486,7 +569,7 @@ func (r *ContributionDeliveryRepository) History(ctx context.Context, i delivery
 		if out[0].Record.Intent != i {
 			return delivery.ErrConflict
 		}
-		return r.owner(txn, i, false)
+		return r.historicalOwner(txn, i)
 	})
 	return
 }

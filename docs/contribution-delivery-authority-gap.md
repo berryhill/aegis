@@ -1,5 +1,9 @@
 # Contribution delivery composition and remaining gates
 
+The bounded [#423 custody/recovery correction](contribution-publication-custody.md)
+adds proof-gated sequential handoff and original issue-intent continuation. It does
+not supply the independent authority or broader qualification described below.
+
 ## Implemented private-source composition
 
 `InstallContributionDeliveryController(service, exactServerPolicy,
