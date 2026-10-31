@@ -88,6 +88,10 @@ func queueOutcomeMessage(state string) string {
 // Closed public vocabulary: backend strings must never become a generic error banner.
 func SafeQueueOutcomeReason(reason string) string {
  switch reason {
+ // Exact root Doer dispositions; these do not infer an underlying failure cause.
+ case "doer_loop_failed", "doer_verified": return reason
+ // Exact terminal lifecycle reasons, not retry/lease-reclaim progress reasons.
+ case "operator_cancelled", "execution_expired", "authority_revoked": return reason
  case "implementation_failed", "implementation_verified", "verification_failed", "evidence_satisfied", "evidence_failed", "evidence_policy_missing", "evidence_verification_failed", "retry_exhausted", "cancelled", "expired", "revoked", "denied": return reason
  default: return "unavailable"
  }
