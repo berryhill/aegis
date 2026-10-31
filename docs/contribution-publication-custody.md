@@ -104,11 +104,12 @@ of this correction.
 
 ## Launch-asset impact
 
-Changed: this engineering guide, the delivery/readback guide pointers and the
-Unreleased changelog. No CLI syntax, public UI, installation command, runtime
+Changed: this engineering guide, the delivery/readback/startup/launch-review and
+security/threat-model/architecture pointers, and the Unreleased changelog.
+No CLI syntax, public UI, installation command, runtime
 provider, configuration schema, release archive, trust grant or network exposure
-changes. Root README, LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, threat
-model, architecture, quickstart, no-key demo and recording retain their separate
+changes. Root README, LICENSE, CONTRIBUTING, CODE_OF_CONDUCT,
+quickstart, no-key demo and recording retain their separate
 scopes; none is promoted into contribution qualification. Existing release
 binaries/checksums are unchanged. #423 owns this source correction; broader
 #378/#379/#352 acceptance stays open.

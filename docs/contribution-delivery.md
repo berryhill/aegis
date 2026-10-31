@@ -396,7 +396,8 @@ this adapter does not bypass it.
 Builder regressions use actual clean Badger close/reopen and concurrent adapters,
 with explicitly synthetic sealed intake and authority fixtures. UNKNOWN remains
 read-only, semantic/epoch substitutions conflict, terminal facts and merge/tree
-identities cannot be erased, and cancellation never releases publication custody.
+identities cannot be erased, and cancellation alone never releases publication
+custody; exact terminal/quiescence release follows the #423 boundary above.
 No live Loop, remote effect or production conductor wiring is claimed.
 
 Builder normal/race/vet and architecture logs plus source/executable/toolchain

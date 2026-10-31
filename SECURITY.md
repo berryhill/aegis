@@ -1,5 +1,10 @@
 # Security Policy
 
+Contribution publication history is distinct from active repository/base custody.
+Proof-gated release and original issue-intent read-only recovery are described in
+[the #423 boundary](docs/contribution-publication-custody.md); expiry or process
+absence never substitutes for exact quiescence or reconciled effects.
+
 Contribution readiness observes exact profile/role/native/repository scope and
 running image without granting authority. Candidate mismatch denies Run before
 intake; admitted preparation retains immutable image provenance for historical
