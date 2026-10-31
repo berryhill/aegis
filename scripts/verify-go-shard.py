@@ -83,20 +83,22 @@ BUNDLES = {
         # without changing its 12m API or persistence's 8m process alarms.
         'api-a': ('api-a', 'persistence'),
         'api-b': ('api-b', 'cli'),
-        'implementation': ('implementation', 'implementation-contribution'),
+        # Hosted 41218036692: compile 65s + defaults 444s left too little
+        # of 600s for contribution. Move only that group to manager-c.
+        'implementation': ('implementation',),
         'orchestration': ('orchestration', 'orchestration-contribution'),
-        # Hosted 40936752306: compile + manager + cancel exceeded 600s;
-        # manager-c completed in 422s, leaving room for the 88s cancel target.
-        # Reuse the same package binary, partitions, alarms and 13 race lanes.
+        # Prior hosted manager-c 412s included 88s cancellation; manager-d
+        # 405s can reuse its manager binary for that target. Freed manager-c
+        # headroom takes contribution plus its separate implementation link.
         'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
-        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'manager-contribution-cancel'),
-        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'implementation-contribution'),
+        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
-        'cli-command': ('cli-command',),
-        # Hosted 40948579082: update 442s + remainder-b 146s exhausted
-        # support-b; cli finished in 361s under the same unchanged 600s cap.
-        'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect', 'remainder-b'),
+        # Hosted 41218036692: cli exhausted 600s after a 113s disconnect.
+        # Reuse cli-command's existing command binary and measured headroom.
+        'cli-command': ('cli-command', 'cli-contribution-disconnect'),
+        'cli': ('cli-contribution-root', 'cli-contribution-final', 'remainder-b'),
         'support-a': ('remainder-a',),
         'support-b': ('update',),
     },

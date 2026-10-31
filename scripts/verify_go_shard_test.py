@@ -341,7 +341,8 @@ class ShardTests(unittest.TestCase):
             for lane, groups in lanes.items():
                 self.assertEqual(shard.BUNDLES[mode][lane], groups)
         self.assertEqual(len(shard.GROUPS), 25)
-        self.assertEqual(shard.BUNDLES['race']['cli-command'], ('cli-command',))
+        self.assertEqual(shard.BUNDLES['race']['cli-command'],
+                         ('cli-command', 'cli-contribution-disconnect'))
         self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):
             with self.assertRaises(ValueError):
@@ -350,11 +351,14 @@ class ShardTests(unittest.TestCase):
             shard.bundle_groups('extra', False)
 
     def test_race_manager_deadline_work_is_balanced_without_new_lanes(self):
-        # The manager remainder plus cancellation exhausted the hosted 600s
-        # job. Resume/readback has measured headroom for the existing target.
+        # Reuse manager-d's binary for cancellation; manager-c takes the
+        # measured implementation contribution displaced from its 600s lane.
         self.assertEqual(shard.bundle_groups('manager-a', True), ('manager',))
         self.assertEqual(shard.bundle_groups('manager-c', True),
                          ('manager-contribution-resume', 'manager-contribution-readback',
+                          'implementation-contribution'))
+        self.assertEqual(shard.bundle_groups('manager-d', True),
+                         ('manager-contribution-repair', 'manager-contribution-joint',
                           'manager-contribution-cancel'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'manager-contribution-cancel'
@@ -367,11 +371,58 @@ class ShardTests(unittest.TestCase):
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
         self.assertEqual(shard.bundle_groups('cli', True),
                          ('cli-contribution-root', 'cli-contribution-final',
-                          'cli-contribution-disconnect', 'remainder-b'))
+                          'remainder-b'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'remainder-b'
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
+
+    def test_repacked_modes_preserve_exact_once_group_union_and_only_three_moves(self):
+        # Freeze the pre-repack maps: no new lanes/partitions, no normal-mode
+        # changes, and no accidental movement of an unrelated race group.
+        before = {
+            'normal': {
+                'api-a': ('api-a', 'remainder-b'),
+                'api-b': ('api-b', 'cli', 'persistence'),
+                'implementation': ('implementation', 'implementation-contribution'),
+                'orchestration': ('orchestration', 'orchestration-contribution', 'remainder-a'),
+                'manager-a': ('manager', 'manager-contribution-restart', 'manager-contribution-final', 'manager-contribution-readback'),
+                'manager-b': ('manager-contribution-repair', 'manager-contribution-disconnect', 'manager-contribution-resume', 'manager-contribution-joint', 'manager-contribution-cancel'),
+                'cli': ('cli-command', *shard.CLI_CONTRIBUTION_TESTS, 'update'),
+            },
+            'race': {
+                'api-a': ('api-a', 'persistence'),
+                'api-b': ('api-b', 'cli'),
+                'implementation': ('implementation', 'implementation-contribution'),
+                'orchestration': ('orchestration', 'orchestration-contribution'),
+                'manager-a': ('manager',),
+                'manager-b': ('manager-contribution-restart',),
+                'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'manager-contribution-cancel'),
+                'manager-d': ('manager-contribution-repair', 'manager-contribution-joint'),
+                'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
+                'cli-command': ('cli-command',),
+                'cli': ('cli-contribution-root', 'cli-contribution-final', 'cli-contribution-disconnect', 'remainder-b'),
+                'support-a': ('remainder-a',),
+                'support-b': ('update',),
+            },
+        }
+        self.assertEqual(shard.BUNDLES['normal'], before['normal'])
+        for mode, lanes in before.items():
+            self.assertEqual(set(shard.BUNDLES[mode]), set(lanes))
+            old_union = Counter(group for groups in lanes.values() for group in groups)
+            new_union = Counter(group for lane in lanes
+                                for group in shard.bundle_groups(lane, mode == 'race'))
+            self.assertEqual(old_union, Counter(shard.GROUPS.keys()))
+            self.assertEqual(new_union, old_union)
+        old_owner = {group: lane for lane, groups in before['race'].items() for group in groups}
+        new_owner = {group: lane for lane, groups in shard.BUNDLES['race'].items() for group in groups}
+        self.assertEqual({group: (old_owner[group], lane) for group, lane in new_owner.items()
+                          if old_owner[group] != lane}, {
+            'implementation-contribution': ('implementation', 'manager-c'),
+            'manager-contribution-cancel': ('manager-c', 'manager-d'),
+            'cli-contribution-disconnect': ('cli', 'cli-command'),
+        })
+        self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
 
     def test_race_persistence_uses_existing_api_a_lane_budget(self):
         # Two hosted attempts exhausted support-a with both complete groups.
