@@ -22,6 +22,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   behavior and existing inference scanning/deadline remain intact. Ordinary and race
   installed-transport regressions use synthetic inference, not model certification.
 
+- #349 source: inject the qualified Linux native checker lifecycle at the
+  orchestration boundary, preserving kernel dependency direction. Checker return
+  joins owned process-group cleanup before home/workspace release; unknown cleanup
+  quarantines custody, and missing runner ports deny before start. This is not
+  sandboxing, durable contribution receipt creation, or live-provider/installed
+  qualification. See [checker cleanup](docs/VERIFIED_IMPLEMENTATION.md#linux-checker-cleanup-boundary).
+
+
 - #423 source: separate immutable contribution publication history from active
   repository/base custody; hand off only after canonical terminal outcome,
   resolved effects and exact native/controller/publication quiescence. Preserve
