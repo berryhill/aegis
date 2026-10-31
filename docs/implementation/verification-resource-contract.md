@@ -1,5 +1,21 @@
 # Release verification resource and termination contract
 
+## Contribution CLI existing-lane deadline recovery (#379)
+
+Exact-head run `41216964277` passed all three CLI contribution race selections,
+but their compilation/inventory/execution consumed 462 seconds before the
+existing complete `remainder-b` group began. The unchanged ten-minute CLI job
+then cancelled that group. This was aggregate exhaustion, not a failing test
+assertion or a race-detector finding in those passed selections.
+
+Move only the complete existing `remainder-b` group to the existing race
+`api-a` lane, which completed in 521 seconds on that same head under its already
+existing sixteen-minute job limit. Preserve all 27 jobs, 7 normal/13 race lanes,
+all 25 groups, dynamic exact-once package/default-test coverage, compiler reuse,
+eight-/twelve-minute package alarms, job limits and cgroup limits. No workflow
+matrix or required check name changes. Exact-head hosted success remains required;
+measured headroom and local planner checks are not CI acceptance.
+
 ## Contribution CLI cumulative race alarm (#378)
 
 Local acceptance observed the original three-package CLI race command hit its

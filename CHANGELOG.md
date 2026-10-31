@@ -25,6 +25,9 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   Exact key membership, historical bytes, head and replay validation remain.
   Controlled production-path acceptance is separate
   from real-provider/protected-remote and installed qualification.
+  Recover measured CLI race job exhaustion by moving its complete existing
+  remainder group to the existing API lane; no new jobs/shards, removed coverage
+  or widened package/job/resource limits.
 
 - Bounded #352 source repair: admit at most 392 publication objects before any
   delivery effect, fitting the existing 400-fact readback and 512-history limits
