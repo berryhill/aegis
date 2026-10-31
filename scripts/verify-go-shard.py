@@ -84,22 +84,21 @@ BUNDLES = {
         'api-a': ('api-a', 'persistence'),
         'api-b': ('api-b', 'cli'),
         # Hosted 41218036692: compile 65s + defaults 444s left too little
-        # of 600s for contribution. Move only that group to manager-c.
+        # of 600s for contribution. Keep that group in a manager lane.
         'implementation': ('implementation',),
         'orchestration': ('orchestration', 'orchestration-contribution'),
-        # Prior hosted manager-c 412s included 88s cancellation; manager-d
-        # 405s can reuse its manager binary for that target. Freed manager-c
-        # headroom takes contribution plus its separate implementation link.
+        # Hosted 41220874653: manager-c used its full budget; manager-d
+        # completed in 402s and already compiles implementation dependencies.
         'manager-a': ('manager',),
         'manager-b': ('manager-contribution-restart',),
-        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback', 'implementation-contribution'),
-        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel'),
+        'manager-c': ('manager-contribution-resume', 'manager-contribution-readback'),
+        'manager-d': ('manager-contribution-repair', 'manager-contribution-joint', 'manager-contribution-cancel', 'implementation-contribution'),
         'manager-e': ('manager-contribution-disconnect', 'cli-contribution-approval', 'manager-contribution-final'),
-        # Hosted 41218036692: cli exhausted 600s after a 113s disconnect.
-        # Reuse cli-command's existing command binary and measured headroom.
-        'cli-command': ('cli-command', 'cli-contribution-disconnect'),
+        # Hosted 41220874653: cli-command defaults took 462s plus 106s
+        # compilation; support-a completed in 314s and takes disconnect.
+        'cli-command': ('cli-command',),
         'cli': ('cli-contribution-root', 'cli-contribution-final', 'remainder-b'),
-        'support-a': ('remainder-a',),
+        'support-a': ('remainder-a', 'cli-contribution-disconnect'),
         'support-b': ('update',),
     },
 }

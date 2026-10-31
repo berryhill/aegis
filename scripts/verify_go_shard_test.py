@@ -342,7 +342,7 @@ class ShardTests(unittest.TestCase):
                 self.assertEqual(shard.BUNDLES[mode][lane], groups)
         self.assertEqual(len(shard.GROUPS), 25)
         self.assertEqual(shard.BUNDLES['race']['cli-command'],
-                         ('cli-command', 'cli-contribution-disconnect'))
+                         ('cli-command',))
         self.assertNotIn('support', shard.BUNDLES['normal'])
         for race in (False, True):
             with self.assertRaises(ValueError):
@@ -351,15 +351,14 @@ class ShardTests(unittest.TestCase):
             shard.bundle_groups('extra', False)
 
     def test_race_manager_deadline_work_is_balanced_without_new_lanes(self):
-        # Reuse manager-d's binary for cancellation; manager-c takes the
-        # measured implementation contribution displaced from its 600s lane.
+        # Reuse manager-d's binary for cancellation and its compiled
+        # dependencies for the displaced implementation contribution.
         self.assertEqual(shard.bundle_groups('manager-a', True), ('manager',))
         self.assertEqual(shard.bundle_groups('manager-c', True),
-                         ('manager-contribution-resume', 'manager-contribution-readback',
-                          'implementation-contribution'))
+                         ('manager-contribution-resume', 'manager-contribution-readback'))
         self.assertEqual(shard.bundle_groups('manager-d', True),
                          ('manager-contribution-repair', 'manager-contribution-joint',
-                          'manager-contribution-cancel'))
+                          'manager-contribution-cancel', 'implementation-contribution'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'manager-contribution-cancel'
                              for groups in shard.BUNDLES['race'].values()
@@ -418,16 +417,17 @@ class ShardTests(unittest.TestCase):
         new_owner = {group: lane for lane, groups in shard.BUNDLES['race'].items() for group in groups}
         self.assertEqual({group: (old_owner[group], lane) for group, lane in new_owner.items()
                           if old_owner[group] != lane}, {
-            'implementation-contribution': ('implementation', 'manager-c'),
+            'implementation-contribution': ('implementation', 'manager-d'),
             'manager-contribution-cancel': ('manager-c', 'manager-d'),
-            'cli-contribution-disconnect': ('cli', 'cli-command'),
+            'cli-contribution-disconnect': ('cli', 'support-a'),
         })
         self.assertEqual(shard.bundle_groups('implementation', True), ('implementation',))
 
     def test_race_persistence_uses_existing_api_a_lane_budget(self):
         # Two hosted attempts exhausted support-a with both complete groups.
         # Reuse api-a's existing job budget; package alarms stay unchanged.
-        self.assertEqual(shard.bundle_groups('support-a', True), ('remainder-a',))
+        self.assertEqual(shard.bundle_groups('support-a', True),
+                         ('remainder-a', 'cli-contribution-disconnect'))
         self.assertEqual(shard.bundle_groups('api-a', True), ('api-a', 'persistence'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'persistence'
