@@ -21,7 +21,10 @@ func TestPublicRootContributionDeclaredOperationApprovalHeld(t *testing.T) {
 }
 
 func TestPublicRootContributionMissingHostPreflight(t *testing.T) {
-	publicRootAuthenticatedContributionJourney(t, true, false, false, false, false, false, true)
+	// Deny before effects, supply only the isolated host prerequisite, then
+	// disconnect the SAME retained Resume while its builder is in flight.
+	// The admitted journey must finish without another Continue/Resume.
+	publicRootAuthenticatedContributionJourney(t, true, true, false, false, false, false, true)
 }
 
 func TestPublicRootContributionMissingRemotePreflight(t *testing.T) {

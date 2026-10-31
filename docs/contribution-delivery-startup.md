@@ -31,6 +31,17 @@ fields and invalid policy. These source changes are not installed-target proof.
 
 The request reader revalidates password subjects against the owning live Console.
 It does not treat a manager session inserted by `Open` as authentication.
+
+Run and retained Resume now keep one registered service-owned invocation through
+native candidate execution, delivery and canonical disposition. A dropped HTTP
+response does not cancel that admitted invocation or require another Continue.
+The standalone candidate execution API retains its candidate-only boundary;
+manager Resume uses the joined journey instead of releasing ownership between
+native continuation and delivery. Explicit Stop still cancels and joins the same
+registered owner; transport detachment does not refresh the original subject,
+mandate, role, deadline or cumulative budget. Per-effect admission remains live.
+Terminal navigation retrieves existing verified results without dispatching work.
+
 The protected Unix middleware now retains the existing SO_PEERCRED authentication
 in a private service-bound request context. Delivery entry points validate this
 proof against the original manager subject without renewing its timestamps or

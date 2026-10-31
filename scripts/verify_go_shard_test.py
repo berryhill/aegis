@@ -361,13 +361,29 @@ class ShardTests(unittest.TestCase):
                              for groups in shard.BUNDLES['race'].values()
                              for group in groups), 1)
 
-    def test_race_support_deadline_work_uses_existing_cli_headroom(self):
-        # Hosted update + remainder-b passed but exhausted support-b's 600s
-        # job. Keep both complete groups and the existing 10m lane limits.
+    def test_race_cli_deadline_reuses_existing_api_lane_without_new_partitions(self):
+        # Exact-head hosted run 41216964277 passed all three CLI contribution
+        # selections, then cancelled the unchanged complete remainder group.
+        self.assertEqual(shard.bundle_groups('cli', True),
+                         ('cli-contribution-root', 'cli-contribution-final',
+                          'cli-contribution-disconnect'))
+        self.assertEqual(shard.bundle_groups('api-a', True),
+                         ('api-a', 'persistence', 'remainder-b'))
+        self.assertEqual(shard.bundle_groups('support-a', True), ('remainder-a',))
+        self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
+        self.assertEqual({mode: len(lanes) for mode, lanes in shard.BUNDLES.items()},
+                         {'normal': 7, 'race': 13})
+        for mode, lanes in shard.BUNDLES.items():
+            self.assertEqual(Counter(group for lane in lanes.values() for group in lane),
+                             Counter(shard.GROUPS.keys()))
+
+    def test_race_support_deadline_work_keeps_update_separate(self):
+        # Retain update's existing complete group and 10m lane limit; its
+        # former companion now uses the existing API lane's measured headroom.
         self.assertEqual(shard.bundle_groups('support-b', True), ('update',))
         self.assertEqual(shard.bundle_groups('cli', True),
                          ('cli-contribution-root', 'cli-contribution-final',
-                          'cli-contribution-disconnect', 'remainder-b'))
+                          'cli-contribution-disconnect'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'remainder-b'
                              for groups in shard.BUNDLES['race'].values()
@@ -377,7 +393,8 @@ class ShardTests(unittest.TestCase):
         # Two hosted attempts exhausted support-a with both complete groups.
         # Reuse api-a's existing job budget; package alarms stay unchanged.
         self.assertEqual(shard.bundle_groups('support-a', True), ('remainder-a',))
-        self.assertEqual(shard.bundle_groups('api-a', True), ('api-a', 'persistence'))
+        self.assertEqual(shard.bundle_groups('api-a', True),
+                         ('api-a', 'persistence', 'remainder-b'))
         self.assertEqual(len(shard.BUNDLES['race']), 13)
         self.assertEqual(sum(group == 'persistence'
                              for groups in shard.BUNDLES['race'].values()

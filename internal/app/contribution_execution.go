@@ -30,7 +30,6 @@ type ContributionExecutionResult struct {
 // ExecuteContributionAs owns preparation, exact binding and processing for the
 // already sealed intake. It does not publish a Graph or acquire new approvals.
 func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subject, key string) (result ContributionExecutionResult, err error) {
-	var work *orchestration.WorkRequest
 	c, view, err := s.ReadContributionAs(ctx, subject, key)
 	if err != nil {
 		return result, err
@@ -40,7 +39,14 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 		return result, registerErr
 	}
 	defer finish()
-	ctx = runCtx
+	return s.executeContributionInRun(runCtx, subject, key, c, view)
+}
+
+// executeContributionInRun executes only inside an already registered owner.
+// The journey keeps that same owner through publication and final disposition;
+// the standalone candidate API retains its original candidate-only lifetime.
+func (s *Service) executeContributionInRun(ctx context.Context, subject core.Subject, key string, c contribution.Contract, view QueueExecutionView) (result ContributionExecutionResult, err error) {
+	var work *orchestration.WorkRequest
 	result.Execution = &view
 	lv, err := s.GetLoopViewAs(ctx, subject, c.Loop.ID, c.Loop.Revision)
 	if err != nil || lv.Revision.Digest != c.Loop.Digest {
@@ -178,8 +184,7 @@ func (s *Service) ExecuteContributionAs(ctx context.Context, subject core.Subjec
 		return result, nil
 	}
 	// The registered service context owns this run, not the HTTP caller.
-	_, err = s.ProcessQueueItemAs(runCtx, subject, *work)
-	ctx = runCtx
+	_, err = s.ProcessQueueItemAs(ctx, subject, *work)
 	if errors.Is(err, orchestration.ErrContributionCandidatePending) {
 		err = nil
 	}
