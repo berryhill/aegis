@@ -76,7 +76,8 @@ func (r *productiveContributionRepair) admit(ctx context.Context, f delivery.Rep
 		last := chain[len(chain)-1].Record
 		// Every effect must be known before another candidate may write. A merge or
 		// issue intent is irreversible/possibly irreversible even if later denied.
-		if last.Outcome == delivery.Unknown || last.Merge != "" || last.Intent.Operation == delivery.ReconcileIssue {
+		_, advanceErr := delivery.VerifiedBaseAdvance(last)
+		if (last.Outcome == delivery.Unknown && advanceErr != nil) || last.Merge != "" || last.Intent.Operation == delivery.ReconcileIssue {
 			return out, state, bad
 		}
 		if last.Intent.ID == f.Intent {
@@ -84,16 +85,18 @@ func (r *productiveContributionRepair) admit(ctx context.Context, f delivery.Rep
 		}
 	}
 	wire, _ := json.Marshal(failed)
-	if failed.Intent.Reference != f.Reference || failed.Revision < 2 || failed.Outcome != delivery.Failed || failed.Observation.Outcome != delivery.Failed || failed.Merge != "" ||
-		(failed.Intent.Operation != delivery.CheckDelivery && failed.Intent.Operation != delivery.Merge) || (failed.Code != "ci_failed" && failed.Code != "merge_conflict") ||
+	currentBase, advanceErr := delivery.VerifiedBaseAdvance(failed)
+	knownAdvance := advanceErr == nil
+	if failed.Intent.Reference != f.Reference || failed.Revision < 2 || (!knownAdvance && (failed.Outcome != delivery.Failed || failed.Observation.Outcome != delivery.Failed)) || failed.Merge != "" ||
+		(failed.Intent.Operation != delivery.CheckDelivery && failed.Intent.Operation != delivery.Merge) || (!knownAdvance && failed.Code != "ci_failed" && failed.Code != "merge_conflict") ||
 		failed.Code != f.Class || f.Criterion != f.Class || contribution.Digest(wire) != f.Evidence || failed.Intent.Head != f.Head || failed.Intent.BaseHead != f.Base || failed.Intent.PR == 0 {
 		return out, state, bad
 	}
 	feedback, feedbackErr := delivery.ConcreteRepairFeedback(failed, r.controller.policy.RequiredChecks)
-	if feedbackErr != nil {
+	if feedbackErr != nil && !knownAdvance {
 		return out, state, bad
 	}
-	out = orchestration.ContributionDeliveryRepair{Feedback: feedback, Failure: f.Intent, Evidence: f.Evidence, Candidate: f.Candidate, Class: f.Class, Head: f.Head, Base: f.Base, PR: failed.Intent.PR, AfterPass: record.Consumed}
+	out = orchestration.ContributionDeliveryRepair{CurrentBase: currentBase, Feedback: feedback, Failure: f.Intent, Evidence: f.Evidence, Candidate: f.Candidate, Class: f.Class, Head: f.Head, Base: f.Base, PR: failed.Intent.PR, AfterPass: record.Consumed}
 	return out, state, nil
 }
 

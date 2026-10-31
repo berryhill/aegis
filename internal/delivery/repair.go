@@ -2,6 +2,14 @@ package delivery
 
 import "context"
 
+func publicationParents(base, previous, repair, original string) []string {
+	parents := []string{publicationParent(base, previous, repair)}
+	if original != "" {
+		parents = append(parents, base)
+	}
+	return parents
+}
+
 // publicationParent keeps the admitted base distinct from a repaired branch's
 // previous owned head. This is structural validation, never repair admission.
 func publicationParent(base, previous, repair string) string {
@@ -30,6 +38,9 @@ func ForwardRepair(ctx context.Context, owner RepairOwner, r Record) error {
 // admitting managed repair. A failure label on another operation cannot turn an
 // unresolved publication or issue mutation into a new builder permission.
 func repairableFailure(r Record) bool {
+	if _, err := VerifiedBaseAdvance(r); err == nil {
+		return true
+	}
 	return r.Intent.ID != "" && r.Revision >= 2 && r.Outcome == Failed && r.Observation.Outcome == Failed && r.Merge == "" &&
 		(r.Intent.Operation == CheckDelivery || r.Intent.Operation == Merge) &&
 		(r.Code == "ci_failed" || r.Code == "merge_conflict")

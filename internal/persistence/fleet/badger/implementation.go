@@ -15,7 +15,7 @@ func (s *Store) ImplementationStore() implementation.Store { return implementati
 type implementationStore struct{ owner *Store }
 
 func implementationKey(k []byte) bool {
-	for _, prefix := range []string{"contribution/execution/", "contribution/workspace/", "contribution/baseline/", "contribution/candidate/", "contribution/acceptance/", "contribution/review/", "contribution/delivery-repair/"} {
+	for _, prefix := range []string{"contribution/execution/", "contribution/workspace/", "contribution/baseline/", "contribution/candidate/", "contribution/acceptance/", "contribution/review/", "contribution/delivery-repair/", "contribution/base-integration/"} {
 		if bytes.HasPrefix(k, []byte(prefix)) {
 			return true
 		}

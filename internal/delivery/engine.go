@@ -52,6 +52,7 @@ type Reference struct{ Run, Contract, Candidate string }
 // current control and candidate bytes; it must hold quiescent source custody
 // throughout fn. There is deliberately no caller-controlled passed flag.
 type Plan struct {
+	OriginalBase  string `json:",omitempty"`
 	RepairFailure string `json:",omitempty"`
 	FenceEpoch    uint64
 	RoleBinding   string
@@ -74,6 +75,7 @@ type Plan struct {
 	Completion string
 }
 type Intent struct {
+	OriginalBase  string `json:",omitempty"`
 	RepairFailure string `json:",omitempty"`
 	FenceEpoch    uint64
 	RoleBinding   string
@@ -154,7 +156,7 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 	if len(p.Objects) > maxPublicationObjects && p.Delivery != "local-only" && p.Delivery != "no-publish" {
 		return Intent{}, ErrDenied
 	}
-	if p.FenceEpoch == 0 || !roleDigest.MatchString(p.RoleBinding) || p.Run == "" || p.Contract == "" || p.Candidate == "" || p.Actor == "" || p.RepositoryID == 0 || !repoName.MatchString(p.Repository) || !branchName.MatchString(p.Base) || !branchName.MatchString(p.Branch) || p.Base == p.Branch || !sha.MatchString(p.Head) || !sha.MatchString(p.BaseHead) || p.Policy == "" {
+	if (p.OriginalBase != "" && (!sha.MatchString(p.OriginalBase) || p.OriginalBase == p.BaseHead || p.RepairFailure == "")) || p.FenceEpoch == 0 || !roleDigest.MatchString(p.RoleBinding) || p.Run == "" || p.Contract == "" || p.Candidate == "" || p.Actor == "" || p.RepositoryID == 0 || !repoName.MatchString(p.Repository) || !branchName.MatchString(p.Base) || !branchName.MatchString(p.Branch) || p.Base == p.Branch || !sha.MatchString(p.Head) || !sha.MatchString(p.BaseHead) || p.Policy == "" {
 		return Intent{}, ErrDenied
 	}
 	switch op {
@@ -165,7 +167,7 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 	// The effect slot is stable across candidate/payload repairs. Changing an
 	// immutable payload conflicts with that slot, including after UNKNOWN; it
 	// never manufactures a second write permission. Owners retain the old intent.
-	i := Intent{RepairFailure: p.RepairFailure, FenceEpoch: p.FenceEpoch, RoleBinding: p.RoleBinding, Reference: p.Reference, Operation: op, Actor: p.Actor, Repository: p.Repository, RepositoryID: p.RepositoryID, Base: p.Base, Branch: p.Branch, Head: p.Head, BaseHead: p.BaseHead, ExpectedOld: p.ExpectedOld, Policy: p.Policy}
+	i := Intent{OriginalBase: p.OriginalBase, RepairFailure: p.RepairFailure, FenceEpoch: p.FenceEpoch, RoleBinding: p.RoleBinding, Reference: p.Reference, Operation: op, Actor: p.Actor, Repository: p.Repository, RepositoryID: p.RepositoryID, Base: p.Base, Branch: p.Branch, Head: p.Head, BaseHead: p.BaseHead, ExpectedOld: p.ExpectedOld, Policy: p.Policy}
 	i.ID = digest(struct {
 		Run, Contract, Repository, Base, Branch string
 		RepositoryID                            uint64
@@ -210,13 +212,14 @@ func intentFor(p Plan, op Operation) (Intent, error) {
 	}
 	// Positive operation schemas, not whole-Plan hashing with exclusions.
 	type common struct {
-		FenceEpoch  uint64
-		RoleBinding string
+		OriginalBase string `json:",omitempty"`
+		FenceEpoch   uint64
+		RoleBinding  string
 		Reference
 		Actor, Repository, Base, Branch, Head, BaseHead, ExpectedOld, Policy, Delivery, Worktree string
 		RepositoryID                                                                             uint64
 	}
-	c := common{p.FenceEpoch, p.RoleBinding, p.Reference, p.Actor, p.Repository, p.Base, p.Branch, p.Head, p.BaseHead, p.ExpectedOld, p.Policy, p.Delivery, p.Intake.Worktree, p.RepositoryID}
+	c := common{p.OriginalBase, p.FenceEpoch, p.RoleBinding, p.Reference, p.Actor, p.Repository, p.Base, p.Branch, p.Head, p.BaseHead, p.ExpectedOld, p.Policy, p.Delivery, p.Intake.Worktree, p.RepositoryID}
 	switch op {
 	case Commit:
 		i.Payload = digest(struct {

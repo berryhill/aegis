@@ -28,6 +28,7 @@ type ContributionRoleIdentity struct {
 	TurnID           string `json:"turn_id"`
 }
 type ContributionCandidate struct {
+	CurrentBase  string `json:"current_base,omitempty"`
 	Contract     string `json:"contract"`
 	QueueAttempt string `json:"queue_attempt"`
 	Pass         uint8  `json:"pass"`
@@ -59,6 +60,7 @@ type ContributionPass struct {
 	Check     ContributionCheck        `json:"check"`
 }
 type ContributionRecord struct {
+	Integration     *ContributionBaseIntegration     `json:"integration,omitempty"`
 	DeliveryRepairs []ContributionDeliveryRepair     `json:"delivery_repairs,omitempty"`
 	Frozen          *ContributionCandidate           `json:"frozen,omitempty"`
 	FrozenToolchain string                           `json:"frozen_toolchain"`
@@ -353,6 +355,11 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			if err = e.save(record); err != nil {
 				return record, err
 			}
+			if record.Integration != nil && len(record.DeliveryRepairs) > 0 && record.DeliveryRepairs[len(record.DeliveryRepairs)-1].AfterPass == record.Consumed-1 {
+				if err = e.applyBaseIntegration(ctx, c, record.Integration); err != nil {
+					return record, err
+				}
+			}
 			if err = e.admit(ctx, "builder"); err != nil {
 				return record, err
 			}
@@ -411,6 +418,9 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 				return record, err
 			}
 			candidate = ContributionCandidate{CandidateCommit: candidateCommit, CandidateTree: candidateTree, Contract: contract, QueueAttempt: attempt, Pass: record.Consumed, Base: base, HeadCommit: strings.TrimSpace(string(commit)), HeadTree: strings.TrimSpace(string(tree)), Index: digest(index), Source: frozen, Executable: executable, Toolchain: e.toolchainDigest, Policy: contributionPolicyDigest(p), Builder: builder}
+			if record.Integration != nil {
+				candidate.CurrentBase = record.Integration.CurrentBase
+			}
 			wire, _ := json.Marshal(candidate)
 			candidate.Digest = digest(wire)
 			// Persist complete frozen identity before a fresh tester can start.

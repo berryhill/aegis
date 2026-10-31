@@ -14,15 +14,16 @@ import (
 // failure to the accepted native pass it invalidated. It grants no remote rights.
 // Failure and Evidence are canonical intent/envelope digests, not remote prose.
 type ContributionDeliveryRepair struct {
-	Failure   string                      `json:"failure"`
-	Evidence  string                      `json:"evidence"`
-	Candidate string                      `json:"candidate"`
-	Class     string                      `json:"class"`
-	Head      string                      `json:"head"`
-	Base      string                      `json:"base"`
-	PR        uint64                      `json:"pr"`
-	AfterPass uint8                       `json:"after_pass"`
-	Feedback  ContributionFailureFeedback `json:"feedback"`
+	CurrentBase string                      `json:"current_base,omitempty"`
+	Failure     string                      `json:"failure"`
+	Evidence    string                      `json:"evidence"`
+	Candidate   string                      `json:"candidate"`
+	Class       string                      `json:"class"`
+	Head        string                      `json:"head"`
+	Base        string                      `json:"base"`
+	PR          uint64                      `json:"pr"`
+	AfterPass   uint8                       `json:"after_pass"`
+	Feedback    ContributionFailureFeedback `json:"feedback"`
 }
 
 func deliveryRepairKey(run string, after uint8) []byte {
@@ -30,10 +31,10 @@ func deliveryRepairKey(run string, after uint8) []byte {
 }
 
 func validDeliveryRepair(r ContributionDeliveryRepair, pass ContributionPass) bool {
-	return r.Feedback.Valid(r.Class) && r.AfterPass == pass.Candidate.Pass && r.Candidate == pass.Candidate.Digest &&
+	return ((r.Class == "base_advanced" && len(r.CurrentBase) == 40 && r.CurrentBase != r.Base && r.Base == pass.Candidate.Base) || r.Feedback.Valid(r.Class)) && r.AfterPass == pass.Candidate.Pass && r.Candidate == pass.Candidate.Digest &&
 		pass.Check.Outcome == "passed" && sha256Digest(r.Failure) && sha256Digest(r.Evidence) &&
 		len(r.Head) == 40 && len(r.Base) == 40 && r.PR != 0 &&
-		(r.Class == "ci_failed" || r.Class == "merge_conflict")
+		(r.Class == "ci_failed" || r.Class == "merge_conflict" || r.Class == "base_advanced")
 }
 
 func sha256Digest(s string) bool {
@@ -79,6 +80,24 @@ func (e *ManagedContribution) admitDeliveryRepair(ctx context.Context, r Contrib
 	}
 	if err = e.admit(ctx, "delivery-repair"); err != nil {
 		return r, err
+	}
+	if repair.Class == "base_advanced" {
+		integration, err := e.integrateAdvancingBase(ctx, c, r.Policy, pass.Candidate, repair.CurrentBase)
+		if err != nil {
+			return r, err
+		}
+		data, _ := json.Marshal(integration)
+		integrationKey := []byte("contribution/base-integration/" + digest(data))
+		if stored, err := e.DB.Get(integrationKey); err == nil {
+			if !bytes.Equal(stored, data) {
+				return r, bad
+			}
+		} else if !errors.Is(err, ErrNotFound) {
+			return r, err
+		} else if err = e.DB.Create(integrationKey, data); err != nil {
+			return r, err
+		}
+		r.Integration = &integration
 	}
 	wire, _ := json.Marshal(repair)
 	key := deliveryRepairKey(r.RunID, repair.AfterPass)

@@ -91,8 +91,20 @@ func TestGitHubCurrentBaseAdvanceHeldWithoutRebinding(t *testing.T) {
 				t.Fatalf("readback: %v", err)
 			}
 			r := Record{Intent: i, Revision: 2, Outcome: o.Outcome, Observation: o}
-			if repairableFailure(r) {
-				t.Fatal("unadmitted integration forwarded as concrete repair")
+			if repairableFailure(r) != (kind == "advance") {
+				t.Fatal("only a positively verified read-only base prerequisite may be forwarded")
+			}
+			r.Code = o.Code
+			got, advanceErr := VerifiedBaseAdvance(r)
+			if (advanceErr == nil) != (kind == "advance") || (advanceErr == nil && got != current) {
+				t.Fatalf("positive prerequisite mismatch: base=%s error=%v", got, advanceErr)
+			}
+			for _, op := range []Operation{Publish, Merge, ReconcileIssue} {
+				mutation := r
+				mutation.Intent.Operation = op
+				if _, err := VerifiedBaseAdvance(mutation); err == nil {
+					t.Fatal("unknown mutation acknowledged as base advance", op)
+				}
 			}
 		})
 	}

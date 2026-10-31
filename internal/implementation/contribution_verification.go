@@ -16,6 +16,7 @@ const ContributionAcceptanceSchema = "aegis.contribution.native-acceptance.v1"
 // success. It deliberately contains the actual typed candidate and policy.
 // Source bytes/test output must never be published to GitHub or model broadcasts.
 type ContributionAcceptanceEvidence struct {
+	Integration     *ContributionBaseIntegration     `json:"integration,omitempty"`
 	DeliveryRepairs []ContributionDeliveryRepair     `json:"delivery_repairs,omitempty"`
 	Schema          string                           `json:"schema"`
 	RunID           string                           `json:"run_id"`
@@ -67,7 +68,7 @@ func (e *ManagedContribution) ReloadAcceptedEvidence(ctx context.Context, run, c
 	if err = e.revalidate(ctx, loop.VerifiedImplementation{Workspace: r.Workspace}, policy, last.Candidate); err != nil {
 		return nil, err
 	}
-	out, err := json.Marshal(ContributionAcceptanceEvidence{DeliveryRepairs: r.DeliveryRepairs, Schema: ContributionAcceptanceSchema, RunID: run, Contract: contract, QueueAttempt: attempt, Consumed: r.Consumed, Policy: r.Policy, Baseline: r.Baseline, Passes: r.Passes})
+	out, err := json.Marshal(ContributionAcceptanceEvidence{Integration: r.Integration, DeliveryRepairs: r.DeliveryRepairs, Schema: ContributionAcceptanceSchema, RunID: run, Contract: contract, QueueAttempt: attempt, Consumed: r.Consumed, Policy: r.Policy, Baseline: r.Baseline, Passes: r.Passes})
 	if err != nil {
 		return nil, err
 	}

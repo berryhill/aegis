@@ -73,6 +73,23 @@ func (g *Git) ProjectAccepted(ctx context.Context, c implementation.Contribution
 	if e != nil {
 		return deny()
 	}
+	// CurrentBase is usable only after the native owner has independently linked
+	// it to immutable integration/readback evidence. Git still independently
+	// proves ancestry and exact upstream bytes here; this never widens builder
+	// scope. A nonwritable entry must equal the current base, including deletion.
+	upstream := base
+	if c.CurrentBase != "" {
+		if !sha.MatchString(c.CurrentBase) || c.CurrentBase == c.Base {
+			return deny()
+		}
+		if _, err := g.run(ctx, nil, nil, "merge-base", "--is-ancestor", c.Base, c.CurrentBase); err != nil {
+			return deny()
+		}
+		upstream, e = read(c.CurrentBase)
+		if e != nil {
+			return deny()
+		}
+	}
 	scope := map[string]bool{}
 	for _, p := range allowed {
 		if !safePath(p) || privatePath(p) || scope[p] {
@@ -92,16 +109,23 @@ func (g *Git) ProjectAccepted(ctx context.Context, c implementation.Contribution
 			return deny()
 		}
 		seen[f.Path] = true
-		if b, ok := base[f.Path]; !ok || b != a {
-			if !scope[f.Path] {
+		if !scope[f.Path] {
+			if u, ok := upstream[f.Path]; !ok || u != a {
 				return deny()
 			}
+		}
+		if b, ok := base[f.Path]; !ok || b != a {
 			s.Files = append(s.Files, File{f.Path, mode, append([]byte(nil), f.Content...)})
+		}
+	}
+	for p := range upstream {
+		if !seen[p] && !scope[p] {
+			return deny()
 		}
 	}
 	for p := range base {
 		if !seen[p] {
-			if !scope[p] {
+			if _, exists := upstream[p]; exists && !scope[p] {
 				return deny()
 			}
 			s.Files = append(s.Files, File{Path: p, Mode: "000000"})
@@ -110,6 +134,15 @@ func (g *Git) ProjectAccepted(ctx context.Context, c implementation.Contribution
 	slices.SortFunc(s.Files, func(a, b File) int { return strings.Compare(a.Path, b.Path) })
 	if g.files(s) != nil {
 		return deny()
+	}
+	if s.IntegrationParent != "" && s.IntegrationParent != c.CurrentBase {
+		return deny()
+	}
+	if c.CurrentBase != "" {
+		if s.Parent == c.Base || s.Parent == c.CurrentBase {
+			return deny()
+		}
+		s.IntegrationParent = c.CurrentBase
 	}
 	authored, e := authoredObject(s)
 	if e != nil || authored.OID == c.CandidateCommit {

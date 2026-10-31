@@ -114,7 +114,8 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 				} else {
 					r, x = e.executeAccepted(ctx, p, op, caller)
 				}
-				if x != nil || r.Outcome != Unknown || !(op == CheckDelivery || op == Merge && r.Merge != "") {
+				_, baseAdvance := VerifiedBaseAdvance(r)
+				if baseAdvance == nil || x != nil || r.Outcome != Unknown || !(op == CheckDelivery || op == Merge && r.Merge != "") {
 					break
 				}
 				// Retain each observed merge fact even if a later reservation holds.

@@ -64,7 +64,8 @@ func retainedDeliveryNativeComposition(t *testing.T, finalization bool, lateMode
 	if finalQualificationFactory == nil && finalQualificationProtection == nil {
 		scheduleContributionNativeJourney(t)
 	}
-	repairJourney := strings.Contains(t.Name(), "CIRepair")
+	advancingBaseJourney := strings.Contains(t.Name(), "AdvancingBase")
+	repairJourney := strings.Contains(t.Name(), "CIRepair") || advancingBaseJourney
 	ctx := context.Background()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "source")
@@ -467,6 +468,11 @@ while read rest; do :; done
 		}
 		terminal, resultErr := s.GetContributionResultAs(ctx, subject, sealed.Key)
 		if finalErr != nil || resultErr != nil {
+			native, nativeErr := s.ReadContributionExecutionAs(ctx, subject, sealed.Key)
+			t.Logf("native repair readback: error=%v state=%s consumed=%d passes=%d repairs=%d integration=%t", nativeErr, native.State, native.Consumed, len(native.Passes), len(native.DeliveryRepairs), native.Integration != nil)
+			for _, pass := range native.Passes {
+				t.Logf("native pass=%d check=%s original_base=%s current_base=%s", pass.Candidate.Pass, pass.Check.Outcome, pass.Candidate.Base, pass.Candidate.CurrentBase)
+			}
 			_, diagnostic, diagnosisErr := verifier.VerifyPreClosureAs(ctx, subject, sealed.Key)
 			history, historyErr := s.ReadContributionDeliveryHistoryAs(ctx, subject, sealed.Key)
 			operations := []delivery.Operation{}
@@ -528,7 +534,7 @@ while read rest; do :; done
 			for _, chain := range history.Histories {
 				last := chain[len(chain)-1].Record
 				counts[last.Intent.Operation]++
-				if last.Code == "ci_failed" && last.Outcome == delivery.Failed {
+				if last.Code == "ci_failed" && last.Outcome == delivery.Failed && !advancingBaseJourney || advancingBaseJourney && last.Code == "base_advanced" && last.Outcome == delivery.Unknown {
 					failed++
 				}
 			}
@@ -537,8 +543,19 @@ while read rest; do :; done
 			}
 			original, _, err := s.ReadContributionAs(ctx, subject, sealed.Key)
 			must(err)
-			if original.Deadline != sealed.Deadline || original.Worktree != sealed.Worktree || original.RunID != sealed.RunID {
+			if original.Deadline != sealed.Deadline || original.Worktree != sealed.Worktree || original.RunID != sealed.RunID || original.Base != sealed.Base || original.CandidateBudget != sealed.CandidateBudget {
 				t.Fatal("repair reset root")
+			}
+			if advancingBaseJourney {
+				found := false
+				for _, f := range current.Source.Files {
+					if f.Path == "upstream.go" && string(f.Content) == "package main\nconst Upstream = 7\n" {
+						found = true
+					}
+				}
+				if !found || current.Base != sealed.Base || current.Source.Digest == v.Source.Digest || current.CandidateTree == v.CandidateTree || current.Executable == v.Executable {
+					t.Fatal("advancing base was not independently rebuilt/frozen with original intent")
+				}
 			}
 		}
 		beforeReads := countCalls()

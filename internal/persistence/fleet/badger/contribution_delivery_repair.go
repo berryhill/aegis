@@ -16,7 +16,7 @@ func (r *ContributionDeliveryRepository) RepairPullRequest(ctx context.Context, 
 			return delivery.ErrDenied
 		}
 		old := chain[len(chain)-1].Record
-		i := delivery.Intent{Reference: p.Reference, RepairFailure: p.RepairFailure, Operation: delivery.UpdatePullRequest, Repository: p.Repository, RepositoryID: p.RepositoryID, Base: p.Base, Branch: p.Branch, ExpectedOld: p.ExpectedOld, PR: old.Intent.PR}
+		i := delivery.Intent{BaseHead: p.BaseHead, OriginalBase: p.OriginalBase, Reference: p.Reference, RepairFailure: p.RepairFailure, Operation: delivery.UpdatePullRequest, Repository: p.Repository, RepositoryID: p.RepositoryID, Base: p.Base, Branch: p.Branch, ExpectedOld: p.ExpectedOld, PR: old.Intent.PR}
 		if e = r.validateRepairSuccessor(txn, i); e != nil {
 			return e
 		}
@@ -35,10 +35,15 @@ func (r *ContributionDeliveryRepository) validateRepairSuccessor(txn *badgerdb.T
 		return delivery.ErrDenied
 	}
 	old := failure[len(failure)-1].Record
-	if old.Outcome != delivery.Failed || old.Observation.Outcome != delivery.Failed || old.Merge != "" ||
+	currentBase, advanceErr := delivery.VerifiedBaseAdvance(old)
+	knownAdvance := advanceErr == nil
+	if (!knownAdvance && (old.Outcome != delivery.Failed || old.Observation.Outcome != delivery.Failed)) || old.Merge != "" ||
 		(old.Intent.Operation != delivery.CheckDelivery && old.Intent.Operation != delivery.Merge) ||
-		(old.Code != "ci_failed" && old.Code != "merge_conflict") || old.Intent.Run != i.Run || old.Intent.Contract != i.Contract || old.Intent.Candidate == i.Candidate ||
+		(!knownAdvance && old.Code != "ci_failed" && old.Code != "merge_conflict") || old.Intent.Run != i.Run || old.Intent.Contract != i.Contract || old.Intent.Candidate == i.Candidate ||
 		old.Intent.RepositoryID != i.RepositoryID || old.Intent.Repository != i.Repository || old.Intent.Base != i.Base || old.Intent.Branch != i.Branch || old.Intent.Head != i.ExpectedOld || old.Intent.PR == 0 {
+		return delivery.ErrDenied
+	}
+	if knownAdvance && i.BaseHead != "" && (i.BaseHead != currentBase || i.OriginalBase != old.Intent.BaseHead) {
 		return delivery.ErrDenied
 	}
 	wire, err := get(txn, key(familyContributionPublication, "root", r.binding.OwnerID, r.binding.Key))
@@ -59,7 +64,8 @@ func (r *ContributionDeliveryRepository) validateRepairSuccessor(txn *badgerdb.T
 		if last.Intent.Candidate == i.Candidate {
 			continue
 		}
-		if last.Outcome == delivery.Unknown || last.Merge != "" || last.Intent.Operation == delivery.ReconcileIssue {
+		_, advanceErr := delivery.VerifiedBaseAdvance(last)
+		if (last.Outcome == delivery.Unknown && advanceErr != nil) || last.Merge != "" || last.Intent.Operation == delivery.ReconcileIssue {
 			return delivery.ErrDenied
 		}
 		if last.Intent.Operation == delivery.PullRequest && last.Outcome == delivery.Confirmed && last.PR == old.Intent.PR {

@@ -21,6 +21,7 @@ type File struct {
 	Bytes      []byte
 }
 type CommitSpec struct {
+	IntegrationParent            string `json:",omitempty"`
 	Parent, Tree, Commit, Branch string
 	Author, Committer            Identity
 	Timestamp, Message           string
@@ -156,7 +157,11 @@ func (g *Git) prepare(ctx context.Context, s CommitSpec) (string, string, error)
 		return "", "", e
 	}
 	env = append(env, "GIT_AUTHOR_NAME="+s.Author.Name, "GIT_AUTHOR_EMAIL="+s.Author.Email, "GIT_COMMITTER_NAME="+s.Committer.Name, "GIT_COMMITTER_EMAIL="+s.Committer.Email, "GIT_AUTHOR_DATE="+s.Timestamp, "GIT_COMMITTER_DATE="+s.Timestamp)
-	commit, e := g.run(ctx, env, []byte(s.Message), "-c", "i18n.commitEncoding=UTF-8", "commit-tree", strings.TrimSpace(string(tree)), "-p", s.Parent)
+	args := []string{"-c", "i18n.commitEncoding=UTF-8", "commit-tree", strings.TrimSpace(string(tree)), "-p", s.Parent}
+	if s.IntegrationParent != "" {
+		args = append(args, "-p", s.IntegrationParent)
+	}
+	commit, e := g.run(ctx, env, []byte(s.Message), args...)
 	return strings.TrimSpace(string(tree)), strings.TrimSpace(string(commit)), e
 }
 func (g *Git) Commit(ctx context.Context, s CommitSpec, guard Guard) Observation {
@@ -208,7 +213,11 @@ func (g *Git) detachedTarget(ctx context.Context, branch string) error {
 
 func (g *Git) Reconcile(ctx context.Context, s CommitSpec) Observation {
 	parents, pe := g.run(ctx, nil, nil, "rev-list", "--parents", "-n", "1", s.Commit)
-	if pe != nil || strings.TrimSpace(string(parents)) != s.Commit+" "+s.Parent {
+	wantParents := s.Commit + " " + s.Parent
+	if s.IntegrationParent != "" {
+		wantParents += " " + s.IntegrationParent
+	}
+	if pe != nil || strings.TrimSpace(string(parents)) != wantParents {
 		return Observation{Outcome: Unknown, Code: "parent_mismatch"}
 	}
 	head, e := g.run(ctx, nil, nil, "rev-parse", "--verify", "refs/heads/"+s.Branch)

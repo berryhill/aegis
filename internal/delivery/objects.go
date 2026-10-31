@@ -6,6 +6,7 @@ import (
 	"crypto/sha1" // Git's canonical SHA-1 object identity, not an authority digest.
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -161,6 +162,14 @@ func commitPayload(o GitObject) (gitCommitPayload, error) {
 	lines := strings.Split(string(split[0]), "\n")
 	// Positive four-header profile: explicitly reject merge, signatures, encoding,
 	// extensions and multiline headers, rather than publishing a different commit.
+	second := ""
+	if len(lines) == 5 && strings.HasPrefix(lines[2], "parent ") {
+		second = strings.TrimPrefix(lines[2], "parent ")
+		if !sha.MatchString(second) || second == strings.TrimPrefix(lines[1], "parent ") {
+			return p, ErrDenied
+		}
+		lines = append(lines[:2:2], lines[3:]...)
+	}
 	if len(lines) != 4 || !strings.HasPrefix(lines[0], "tree ") || !strings.HasPrefix(lines[1], "parent ") || !strings.HasPrefix(lines[2], "author ") || !strings.HasPrefix(lines[3], "committer ") {
 		return p, ErrDenied
 	}
@@ -170,6 +179,9 @@ func commitPayload(o GitObject) (gitCommitPayload, error) {
 		return p, ErrDenied
 	}
 	p.Parents = []string{parent}
+	if second != "" {
+		p.Parents = append(p.Parents, second)
+	}
 	var e error
 	p.Author, e = person(strings.TrimPrefix(lines[2], "author "))
 	if e != nil {
@@ -288,7 +300,7 @@ func validateGraph(p Plan) error {
 			}
 		case "commit":
 			c, e := commitPayload(o)
-			if e != nil || n != len(p.Objects)-1 || o.OID != p.Head || c.Tree != p.Commit.Tree || c.Parents[0] != publicationParent(p.BaseHead, p.ExpectedOld, p.RepairFailure) || seen[c.Tree] != "tree" {
+			if e != nil || n != len(p.Objects)-1 || o.OID != p.Head || c.Tree != p.Commit.Tree || !slices.Equal(c.Parents, publicationParents(p.BaseHead, p.ExpectedOld, p.RepairFailure, p.OriginalBase)) || seen[c.Tree] != "tree" {
 				return ErrDenied
 			}
 		}

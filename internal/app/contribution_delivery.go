@@ -34,6 +34,7 @@ type ContributionDeliveryCredentialPin struct {
 }
 
 type ContributionDeliveryPolicy struct {
+	OriginalBase  string `json:",omitempty"`
 	RepairFailure string `json:",omitempty"`
 	// OriginalCommit preserves the exact publication payload, including reviewed files.
 	// Nil retains legacy policy digests and denies historical Publish reconstruction.
@@ -79,6 +80,7 @@ func (p ContributionDeliveryPolicy) snapshot() ContributionDeliveryPolicy {
 // projectPolicy detaches even a retained callback Plan from the resolved snapshot.
 func (p ContributionDeliveryPolicy) projectPolicy(plan delivery.Plan) delivery.Plan {
 	p = p.snapshot()
+	plan.OriginalBase = p.OriginalBase
 	plan.RepairFailure = p.RepairFailure
 	plan.RequiredChecks = p.RequiredChecks
 	plan.RequiredReviewers = p.RequiredReviewers
@@ -236,7 +238,7 @@ func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.R
 		return deny()
 	}
 	b := p.Binding
-	if b.Reference != ref || b.OwnerID != s.subject.PrincipalID || b.Key != s.key || b.QueueItemID != c.QueueItemID || b.Run != c.RunID || b.Contract != c.Digest || v.Contract != c.Digest || v.QueueAttempt != p.QueueAttempt || p.QueueAttempt == "" || v.Digest != ref.Candidate || p.Loop != c.Loop || p.Workspace != c.Worktree || p.BaseHead != c.Base || v.Base != c.Base || v.CandidateTree != p.Tree || v.Source.Digest != p.Source || v.Policy != p.CandidatePolicy || v.Toolchain != p.Toolchain || v.Builder.AgentDigest != c.Builder.Digest || v.Builder.CharterDigest != c.Roles[1].Charter.Digest || b.FenceEpoch == 0 || b.RoleBinding == "" {
+	if b.Reference != ref || b.OwnerID != s.subject.PrincipalID || b.Key != s.key || b.QueueItemID != c.QueueItemID || b.Run != c.RunID || b.Contract != c.Digest || v.Contract != c.Digest || v.QueueAttempt != p.QueueAttempt || p.QueueAttempt == "" || v.Digest != ref.Candidate || p.Loop != c.Loop || p.Workspace != c.Worktree || (p.BaseHead != c.Base && (p.OriginalBase != c.Base || p.BaseHead != v.CurrentBase)) || v.Base != c.Base || v.CandidateTree != p.Tree || v.Source.Digest != p.Source || v.Policy != p.CandidatePolicy || v.Toolchain != p.Toolchain || v.Builder.AgentDigest != c.Builder.Digest || v.Builder.CharterDigest != c.Roles[1].Charter.Digest || b.FenceEpoch == 0 || b.RoleBinding == "" {
 		return deny()
 	}
 	revision, e := s.service.FleetRepository.GetLoopRevision(ctx, c.Loop.ID, c.Loop.Revision)
@@ -275,7 +277,7 @@ func (s *ContributionDeliverySource) project(ctx context.Context, ref delivery.R
 	if e != nil {
 		return deny()
 	}
-	return p.projectPolicy(delivery.Plan{Reference: ref, FenceEpoch: b.FenceEpoch, RoleBinding: b.RoleBinding, Intake: c, Actor: p.Actor, Repository: c.Repository, RepositoryID: c.Source.RepositoryID, Base: b.Base, Branch: p.Branch, Head: commit.Commit, BaseHead: c.Base, ExpectedOld: p.ExpectedOld, Policy: s.policyRef.Digest, Delivery: target, Commit: commit, Objects: objects, ProtectionPolicy: p.ProtectionPolicy, RequiredChecks: p.RequiredChecks, RequiredReviewers: p.RequiredReviewers, PostMergeChecks: p.PostMergeChecks, MergeMethod: p.MergeMethod, PR: p.PR, PRTitle: p.PRTitle, PRBody: p.PRBody}), nil
+	return p.projectPolicy(delivery.Plan{Reference: ref, FenceEpoch: b.FenceEpoch, RoleBinding: b.RoleBinding, Intake: c, Actor: p.Actor, Repository: c.Repository, RepositoryID: c.Source.RepositoryID, Base: b.Base, Branch: p.Branch, Head: commit.Commit, BaseHead: p.BaseHead, ExpectedOld: p.ExpectedOld, Policy: s.policyRef.Digest, Delivery: target, Commit: commit, Objects: objects, ProtectionPolicy: p.ProtectionPolicy, RequiredChecks: p.RequiredChecks, RequiredReviewers: p.RequiredReviewers, PostMergeChecks: p.PostMergeChecks, MergeMethod: p.MergeMethod, PR: p.PR, PRTitle: p.PRTitle, PRBody: p.PRBody}), nil
 }
 
 // RunContributionDeliveryAs conducts the bounded ordered sequence using existing

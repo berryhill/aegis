@@ -72,7 +72,7 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 			return fail("control_invalid")
 		}
 	}
-	if delivery.ValidateHistorySnapshot(h) != nil || p.Binding.OwnerID != subject.PrincipalID || p.Binding.Key != key || p.Binding.QueueItemID != c.QueueItemID || p.Binding.Run != c.RunID || p.Binding.Contract != c.Digest || p.Loop != c.Loop || h.Contract.Digest != c.Digest || h.Root.Base != p.Binding.Base || h.Root.Branch != p.Branch || p.Workspace != c.Worktree || p.BaseHead != c.Base || p.Binding.FenceEpoch == 0 || p.Binding.RoleBinding == "" {
+	if delivery.ValidateHistorySnapshot(h) != nil || p.Binding.OwnerID != subject.PrincipalID || p.Binding.Key != key || p.Binding.QueueItemID != c.QueueItemID || p.Binding.Run != c.RunID || p.Binding.Contract != c.Digest || p.Loop != c.Loop || h.Contract.Digest != c.Digest || h.Root.Base != p.Binding.Base || h.Root.Branch != p.Branch || p.Workspace != c.Worktree || (p.BaseHead != c.Base && p.OriginalBase != c.Base) || p.Binding.FenceEpoch == 0 || p.Binding.RoleBinding == "" {
 		return fail("binding_invalid")
 	}
 	n, err := s.ReadContributionCandidateEvidenceAs(ctx, subject, key)
@@ -130,7 +130,9 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 				failed := chain[len(chain)-1].Record
 				wire, _ := json.Marshal(failed)
 				feedback, feedbackErr := delivery.ConcreteRepairFeedback(failed, p.RequiredChecks)
-				if feedbackErr == nil && feedback == repair.Feedback && failed.Intent.ID == repair.Failure && contribution.Digest(wire) == repair.Evidence && failed.Intent.Candidate == repair.Candidate && failed.Code == repair.Class && failed.Outcome == delivery.Failed && failed.Intent.Head == repair.Head && failed.Intent.BaseHead == repair.Base && failed.Intent.PR == repair.PR {
+				current, advanceErr := delivery.VerifiedBaseAdvance(failed)
+				validFailure := (feedbackErr == nil && feedback == repair.Feedback && failed.Outcome == delivery.Failed) || (advanceErr == nil && repair.Class == "base_advanced" && repair.CurrentBase == current && candidate.CurrentBase == current)
+				if validFailure && failed.Intent.ID == repair.Failure && contribution.Digest(wire) == repair.Evidence && failed.Intent.Candidate == repair.Candidate && failed.Code == repair.Class && failed.Intent.Head == repair.Head && failed.Intent.BaseHead == repair.Base && failed.Intent.PR == repair.PR {
 					matched = true
 				}
 			}

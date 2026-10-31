@@ -118,7 +118,7 @@ func (r *ContributionDeliveryRepository) validate(txn *badgerdb.Txn, i delivery.
 		return e
 	}
 	b := r.binding
-	if i.Reference != b.Reference || i.FenceEpoch != b.FenceEpoch || i.RoleBinding != b.RoleBinding || i.Actor == "" || i.Repository != c.Repository || i.RepositoryID != c.Source.RepositoryID || i.Base != b.Base || (c.Base != i.Base && c.Base != i.BaseHead) || !deliveryBranch.MatchString(i.Branch) || i.Branch == i.Base || !deliverySHA.MatchString(i.Head) || !deliverySHA.MatchString(i.BaseHead) || !deliveryDigest.MatchString(i.ID) || !deliveryDigest.MatchString(i.Payload) || i.Policy == "" || !deliveryOperation(i.Operation) {
+	if i.Reference != b.Reference || i.FenceEpoch != b.FenceEpoch || i.RoleBinding != b.RoleBinding || i.Actor == "" || i.Repository != c.Repository || i.RepositoryID != c.Source.RepositoryID || i.Base != b.Base || (c.Base != i.Base && c.Base != i.BaseHead && (c.Base != i.OriginalBase || i.RepairFailure == "")) || !deliveryBranch.MatchString(i.Branch) || i.Branch == i.Base || !deliverySHA.MatchString(i.Head) || !deliverySHA.MatchString(i.BaseHead) || !deliveryDigest.MatchString(i.ID) || !deliveryDigest.MatchString(i.Payload) || i.Policy == "" || !deliveryOperation(i.Operation) {
 		return delivery.ErrDenied
 	}
 	if len(i.Actor) > 256 || len(i.Policy) > 1024 || (i.ExpectedOld != "" && !deliverySHA.MatchString(i.ExpectedOld)) {

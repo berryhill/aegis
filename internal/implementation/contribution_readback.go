@@ -134,6 +134,45 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	if err := e.validateDeliveryRepairs(r); err != nil {
 		return err
 	}
+	if r.Integration != nil {
+		data, _ := json.Marshal(r.Integration)
+		stored, err := e.DB.Get([]byte("contribution/base-integration/" + digest(data)))
+		if err != nil || !bytes.Equal(stored, data) || r.Integration.OriginalBase != r.Base {
+			return bad
+		}
+		linked := false
+		for _, repair := range r.DeliveryRepairs {
+			if repair.Class == "base_advanced" && repair.CurrentBase == r.Integration.CurrentBase && repair.Candidate == r.Integration.Predecessor {
+				linked = true
+			}
+		}
+		if !linked {
+			return bad
+		}
+	}
+	// The current-base pin is derived from the immutable admitted integration,
+	// never trusted as a standalone candidate string. Earlier passes keep the
+	// original base and cannot claim the successor integration.
+	checkBase := func(v ContributionCandidate) bool {
+		expected := ""
+		for _, repair := range r.DeliveryRepairs {
+			if repair.Class == "base_advanced" && repair.AfterPass < v.Pass {
+				if r.Integration == nil || repair.Candidate != r.Integration.Predecessor || repair.CurrentBase != r.Integration.CurrentBase || r.Integration.OriginalBase != v.Base {
+					return false
+				}
+				expected = repair.CurrentBase
+			}
+		}
+		return v.CurrentBase == expected
+	}
+	if r.Frozen != nil && !checkBase(*r.Frozen) {
+		return bad
+	}
+	for _, pass := range r.Passes {
+		if !checkBase(pass.Candidate) {
+			return bad
+		}
+	}
 	for i, pass := range r.Passes {
 		if pass.Check.Outcome != "passed" || i == len(r.Passes)-1 {
 			continue

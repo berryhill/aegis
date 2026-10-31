@@ -29,8 +29,10 @@ func retainedRepairPRAncestor(h delivery.HistorySnapshot, p ContributionDelivery
 				failed, found = last, true
 			}
 		}
-		if !found || failed.Outcome != delivery.Failed || failed.Observation.Outcome != delivery.Failed || failed.Merge != "" ||
-			(failed.Code != "ci_failed" && failed.Code != "merge_conflict") ||
+		_, advanceErr := delivery.VerifiedBaseAdvance(failed)
+		knownAdvance := advanceErr == nil
+		if !found || (!knownAdvance && (failed.Outcome != delivery.Failed || failed.Observation.Outcome != delivery.Failed)) || failed.Merge != "" ||
+			(!knownAdvance && failed.Code != "ci_failed" && failed.Code != "merge_conflict") ||
 			(failed.Intent.Operation != delivery.CheckDelivery && failed.Intent.Operation != delivery.Merge) ||
 			failed.Intent.Run != p.Binding.Run || failed.Intent.Contract != p.Binding.Contract ||
 			failed.Intent.PR != p.PR || failed.Intent.Head != head || failed.Intent.Branch != p.Branch || failed.Intent.Base != p.Binding.Base ||
