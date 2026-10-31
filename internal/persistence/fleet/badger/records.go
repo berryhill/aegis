@@ -1146,14 +1146,19 @@ func appendAudit(txn *badgerdb.Txn, fact fleet.AuditFact) error {
 	var sequence uint64
 	var previous string
 	prefix := key(familyAudit)
-	iterator := txn.NewIterator(badgerdb.IteratorOptions{PrefetchValues: true, Reverse: true})
+	iterator := txn.NewIterator(badgerdb.IteratorOptions{PrefetchValues: false, Reverse: true})
 	defer iterator.Close()
-	iterator.Rewind()
-	for ; iterator.Valid(); iterator.Next() {
+	// Start immediately above this family, rather than prefetching every
+	// higher-family native/publication record just to locate the audit tail.
+	// Keep the boundary key itself excluded if a bare foreign-family key exists.
+	upper := append([]byte(nil), prefix...)
+	upper[len(upper)-1]++
+	iterator.Seek(upper)
+	if iterator.Valid() && bytes.Equal(iterator.Item().Key(), upper) {
+		iterator.Next()
+	}
+	for ; iterator.ValidForPrefix(prefix); iterator.Next() {
 		item := iterator.Item()
-		if !bytes.HasPrefix(item.Key(), prefix) {
-			continue
-		}
 		value, e := item.ValueCopy(nil)
 		if e != nil {
 			return e

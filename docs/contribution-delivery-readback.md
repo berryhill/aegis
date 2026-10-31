@@ -1,5 +1,10 @@
 # Delivery readback producer v1 (source-qualified V19 bridge)
 
+For the #423 root-scoped history/active-custody separation and original issue
+intent recovery, see [publication custody](contribution-publication-custody.md).
+The historical implementation notes below are not a permanent custody format or
+qualification verdict. Earlier contributions remain readable after safe handoff.
+
 ## Cold readback and publication stop composition
 
 Trusted controller composition can install
@@ -23,7 +28,8 @@ Run/Execute calls, then reloads canonical effects. Empty tracking after restart
 never proves absence. The Badger absence check inspects canonical intake, indexes,
 Queue/run joins and retained publication/history families in one snapshot. Unknown
 mutations hold cancellation pending; Check and TransferGraph status do not count
-as remote mutations. A retained irreversible merge remains merged-but-unresolved,
+as remote mutations. This cancellation classification is not handoff permission:
+every UNKNOWN slot still prevents release. A retained irreversible merge remains merged-but-unresolved,
 not permission to repeat the merge or claim whole-contribution completion.
 
 Focused tests cover loopback lost-merge cold readback and exact-payload denial
@@ -71,7 +77,7 @@ response bytes or an independently reproducible signature.
 ## Owning read APIs
 
 - `Store.GetContributionDeliveryHistory(ctx, ownerID, key)` resolves canonical
-  intake/root index, verifies publication custody and Queue/run coherence, then
+  intake/root index, verifies immutable history membership and Queue/run coherence, then
   reloads actual slot histories in one existing Badger snapshot.
 - `Service.ReadContributionDeliveryHistoryAs(ctx, subject, key)` repeats existing
   same-principal read admission. It grants no runtime effects, renewal or epoch

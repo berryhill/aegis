@@ -152,6 +152,7 @@ func (v *ContributionFinalVerifier) verifyContributionAuthorization(ctx context.
 		if e != nil {
 			return e
 		}
+		history = contributionPreIssueView(cctx, history)
 		wire, _ := json.Marshal(history)
 		if contribution.Digest(wire) != assessment.HistoryRef {
 			return ErrDenied
