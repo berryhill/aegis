@@ -98,6 +98,16 @@ replay. Unsupported platforms deny before start. This is not protection against
 deliberate process-group escape, hostile same-UID writers or a host sandbox, and
 does not establish real-provider or installed qualification.
 
+Linux can emit a complete terminal-task stat snapshot with process group `-1`
+after the task loses its signal handler. Native census recognizes only literal
+`-1`, state `X`, the expected PID prefix, all 52 well-formed kernel stat fields,
+and a valid start identity from that same single read. It grants no ownership,
+whole-process death claim or signal permission. A terminal pidfd recheck must
+still match the original start identity, close successfully without signaling,
+and retain the nonempty observation so another fresh scan is required. Live,
+malformed, unreadable and changed-identity records remain denials. The shared
+role-stop identity parser stays strict and rejects this unassigned-group record.
+
 ## Evidence
 
 `go test ./internal/command -run TestImplementationDraftCLI -count=1` exercises real command construction, typed drafting, file output and refusal paths. `go test ./internal/api -run TestInstalledOnlineLoopPublication -count=1` builds and executes the CLI against a real authenticated Unix service and disposable Badger store, validates and publishes the builder's v3 draft, checks exact inactive readback and idempotency, denies invalid input and verifies no Queue item or duplicate Agent. Its Agent provenance is synthetic; it is not live owner publication or live-model acceptance.

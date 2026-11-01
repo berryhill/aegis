@@ -5,7 +5,6 @@ package hermes
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -76,12 +75,6 @@ func runContributionNativeWithBarrier(ctx context.Context, b execution.NativeBin
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	var cause error
-	var first *nativeFailureStage
-	record := func(stage string, err error) {
-		if first == nil {
-			first = nativeStage(stage, err)
-		}
-	}
 waitLeader:
 	for {
 		var info unix.Siginfo
@@ -90,7 +83,6 @@ waitLeader:
 			continue
 		}
 		if err != nil {
-			record("wait_leader", err)
 			cause = execution.ErrNativeQuiescenceUnavailable
 			break
 		}
@@ -105,7 +97,6 @@ waitLeader:
 		}
 	}
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-	cleanupStarted := time.Now()
 	defer cancel()
 	quiescent := false
 	// A waitid failure cannot establish that we still own the group number. Do
@@ -116,14 +107,12 @@ waitLeader:
 		// A later observation error still denies proof and retains custody even
 		// though the admitted owned group may already have been killed.
 		if err := barrier(cleanup, group); err != nil {
-			record("barrier_waitid", err)
 			cause = execution.ErrNativeQuiescenceUnavailable
 			goto joined
 		}
 		for {
 			empty, err := observe(cleanup, group)
 			if err != nil {
-				record("observe_stat", err)
 				cause = execution.ErrNativeQuiescenceUnavailable
 				break
 			}
@@ -133,7 +122,6 @@ waitLeader:
 			}
 			select {
 			case <-cleanup.Done():
-				record("observe_nonempty_deadline", cleanup.Err())
 				cause = execution.ErrNativeQuiescenceUnavailable
 				goto joined
 			case <-tick.C:
@@ -146,7 +134,6 @@ joined:
 		// Do not leave a still-running leader behind a bounded unknown result.
 		_ = cmd.Process.Kill()
 	}
-	joinExpired := false
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
@@ -155,17 +142,11 @@ joined:
 			cause = err
 		}
 	case <-cleanup.Done():
-		joinExpired = true
-		record("cmd_wait_deadline", cleanup.Err())
 		quiescent = false
 		cause = execution.ErrNativeQuiescenceUnavailable
 	}
 	if err := ctx.Err(); err != nil && cause == nil {
 		cause = err
-	}
-	// Decorate only after exact-sentinel control flow; finish errors still win.
-	if cause == execution.ErrNativeQuiescenceUnavailable && first != nil {
-		cause = &nativeFailureDiagnostic{first: *first, joinExpired: joinExpired, elapsed: time.Since(cleanupStarted)}
 	}
 	return complete(NativeCompletion{binding: b, joined: quiescent}, cause)
 }
@@ -181,11 +162,11 @@ joined:
 // ESRCH means no signalable member, NOT quiescence; fresh scans remain required.
 func killPinnedContributionGroup(ctx context.Context, group int, waitid func(int, int, *unix.Siginfo, int, *unix.Rusage) error, kill func(int, unix.Signal) error) error {
 	if group <= 1 {
-		return nativeStage("barrier_waitid", execution.ErrNativeQuiescenceUnavailable)
+		return execution.ErrNativeQuiescenceUnavailable
 	}
 	for {
 		if err := ctx.Err(); err != nil {
-			return nativeStage("barrier_waitid", err)
+			return err
 		}
 		var info unix.Siginfo
 		err := waitid(unix.P_PID, group, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil)
@@ -193,15 +174,15 @@ func killPinnedContributionGroup(ctx context.Context, group int, waitid func(int
 			continue
 		}
 		if err != nil {
-			return nativeStage("barrier_waitid", err)
+			return err
 		}
 		break
 	}
 	if err := ctx.Err(); err != nil {
-		return nativeStage("barrier_signal", err)
+		return err
 	}
 	if err := kill(-group, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
-		return nativeStage("barrier_signal", err)
+		return err
 	}
 	return nil
 }
@@ -218,23 +199,23 @@ func terminateContributionGroup(ctx context.Context, group int) (bool, error) {
 func terminateContributionGroupFrom(ctx context.Context, group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error), open func(int, int) (int, error), signal func(int, unix.Signal, *unix.Siginfo, int) error, closeFD func(int) error) (bool, error) {
 	entries, err := readDir("/proc")
 	if err != nil {
-		return false, nativeStage("observe_readdir", err)
+		return false, err
 	}
 	empty := true
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return false, nativeStage("observe_context", err)
+			return false, err
 		}
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil {
 			continue
 		}
-		start, pg, state, err := nativeProcessStatFrom(pid, readFile, false)
+		start, pg, state, err := nativeCensusStatFrom(pid, readFile)
 		if contributionProcDisappeared(err) {
 			continue
 		}
 		if err != nil {
-			return false, nativeStage("observe_stat", err)
+			return false, err
 		}
 		if pg != group || state == "Z" || state == "X" || state == "x" {
 			continue
@@ -245,157 +226,82 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 			continue
 		}
 		if err != nil {
-			return false, nativeStage("observe_pidfd_open", err)
+			return false, err
 		}
-		current, currentGroup, _, readErr := nativeProcessStatFrom(pid, readFile, true)
+		current, currentGroup, currentState, readErr := nativeCensusStatFrom(pid, readFile)
 		if contributionProcDisappeared(readErr) {
 			if err := closeFD(fd); err != nil {
-				return false, nativeStage("observe_close", err)
+				return false, err
+			}
+			continue
+		}
+		// A matching terminal snapshot cannot authorize a signal. The initial
+		// live observation keeps empty=false, requiring another complete scan.
+		if readErr == nil && current == start && currentGroup == -1 && nativeTerminalState(currentState) {
+			if err := closeFD(fd); err != nil {
+				return false, err
 			}
 			continue
 		}
 		if readErr != nil || current != start || currentGroup != group {
 			closeFD(fd)
-			if readErr != nil {
-				return false, nativeStage("observe_recheck_read", errors.Join(execution.ErrNativeQuiescenceUnavailable, readErr))
-			}
-			return false, nativeStage("observe_recheck_identity", execution.ErrNativeQuiescenceUnavailable)
+			return false, execution.ErrNativeQuiescenceUnavailable
 		}
 		if err := ctx.Err(); err != nil {
 			closeFD(fd)
-			return false, nativeStage("observe_context", err)
+			return false, err
 		}
 		err = signal(fd, unix.SIGKILL, nil, 0)
 		closeErr := closeFD(fd)
 		if closeErr != nil {
-			return false, nativeStage("observe_close", closeErr)
+			return false, closeErr
 		}
 		if err != nil && !errors.Is(err, unix.ESRCH) {
-			return false, nativeStage("observe_signal", err)
+			return false, err
 		}
 	}
 	return empty, nil
 }
 
-// nativeProcessStatFrom observes the shared parser without changing its admission.
-// Capture only its single read, and inspect the same bytes only after rejection.
-// Raw bytes and read errors never enter the external diagnostic.
-func nativeProcessStatFrom(pid int, readFile func(string) ([]byte, error), recheck bool) (start string, group int, state string, err error) {
+// Linux do_task_stat can emit pgrp=-1 after an exiting task loses sighand.
+// A complete terminal snapshot is census evidence only, never owned identity.
+// Keep the shared role-stop parser strict and inspect this SAME single read.
+func nativeCensusStatFrom(pid int, readFile func(string) ([]byte, error)) (start string, group int, state string, err error) {
 	var raw []byte
 	var readErr error
 	start, group, state, err = contributionProcessStatFrom(pid, func(path string) ([]byte, error) {
 		raw, readErr = readFile(path)
 		return raw, readErr
 	})
-	if err == nil {
+	if readErr != nil || !errors.Is(err, ErrContributionStopUnavailable) {
 		return
 	}
-	prefix := "observe_stat_"
-	if recheck {
-		prefix = "observe_recheck_"
+	text := string(raw)
+	prefix := strconv.Itoa(pid) + " ("
+	end := strings.LastIndexByte(text, ')')
+	if !strings.HasPrefix(text, prefix) || end < len(prefix) || end+1 >= len(text) || text[end+1] != ' ' {
+		return
 	}
-	reason := "unknown"
-	if readErr != nil {
-		reason = "read"
-		if recheck {
-			reason = "read_errno"
-		}
-	} else if errors.Is(err, ErrContributionStopUnavailable) {
-		// Diagnostic-only mirror, ordered exactly like the unchanged shared parser.
-		end := strings.LastIndexByte(string(raw), ')')
-		if end < 0 {
-			reason = "parenthesis"
-		} else {
-			fields := strings.Fields(string(raw[end+1:]))
-			if len(fields) <= 19 {
-				reason = "fields"
-			} else {
-				pg, groupErr := strconv.Atoi(fields[2])
-				switch {
-				case groupErr != nil || pg < 0:
-					reason = "group"
-				case len(fields[0]) != 1 || !strings.Contains("RSDZTtXxKWPI", fields[0]):
-					reason = "state"
-				default:
-					if _, startErr := strconv.ParseUint(fields[19], 10, 64); startErr != nil {
-						reason = "start"
-					}
-				}
+	fields := strings.Fields(text[end+1:])
+	// Linux versions supporting our pidfd boundary emit all 52 stat fields
+	// (50 after comm). Do not turn a truncated identity prefix into evidence.
+	// Future trailing fields do not change validation of this kernel shape.
+	if len(fields) < 50 || fields[2] != "-1" || !nativeTerminalState(fields[0]) {
+		return
+	}
+	for _, field := range fields[1:50] {
+		if _, signedErr := strconv.ParseInt(field, 10, 64); signedErr != nil {
+			if _, unsignedErr := strconv.ParseUint(field, 10, 64); unsignedErr != nil {
+				return
 			}
 		}
 	}
-	err = nativeStage(prefix+reason, err)
-	return
+	if _, parseErr := strconv.ParseUint(fields[19], 10, 64); parseErr != nil {
+		return
+	}
+	return fields[19], -1, fields[0], nil
 }
 
-// TEMPORARY hosted-failure diagnostics. This private vocabulary is not authority,
-// a logging surface, or a replacement for the original cleanup decisions.
-type nativeFailureStage struct {
-	stage string
-	err   error
-}
-
-func (e *nativeFailureStage) Error() string {
-	return closedNativeStage(e.stage) + ":" + nativeFailureClass(e.err)
-}
-func (e *nativeFailureStage) Unwrap() error { return e.err }
-func nativeStage(stage string, err error) *nativeFailureStage {
-	var tagged *nativeFailureStage
-	if errors.As(err, &tagged) {
-		return &nativeFailureStage{stage: tagged.stage, err: err}
-	}
-	return &nativeFailureStage{stage: stage, err: err}
-}
-func closedNativeStage(stage string) string {
-	switch stage {
-	case "wait_leader", "barrier_waitid", "barrier_signal", "observe_readdir", "observe_context", "observe_stat", "observe_pidfd_open", "observe_recheck_read", "observe_recheck_identity", "observe_signal", "observe_close", "observe_nonempty_deadline", "cmd_wait_deadline":
-		return stage
-	case "observe_stat_read", "observe_stat_parenthesis", "observe_stat_fields", "observe_stat_group", "observe_stat_state", "observe_stat_start", "observe_stat_unknown",
-		"observe_recheck_read_errno", "observe_recheck_parenthesis", "observe_recheck_fields", "observe_recheck_group", "observe_recheck_state", "observe_recheck_start", "observe_recheck_unknown":
-		return stage
-	default:
-		return "unknown"
-	}
-}
-func nativeFailureClass(err error) string {
-	// A recheck joins the native sentinel for policy, not as the read cause.
-	// Classify the already tagged observer cause before that enclosing sentinel.
-	var tagged *nativeFailureStage
-	if errors.As(err, &tagged) {
-		return nativeFailureClass(tagged.err)
-	}
-	for _, c := range []struct {
-		err  error
-		name string
-	}{
-		{context.DeadlineExceeded, "deadline"}, {context.Canceled, "cancelled"},
-		{unix.EACCES, "access"}, {unix.EPERM, "permission"}, {unix.ECHILD, "child_lost"},
-		{unix.ESRCH, "process_gone"}, {unix.ENOENT, "not_found"}, {unix.EINVAL, "invalid"},
-		{unix.EIO, "io"}, {unix.EMFILE, "process_fd_limit"}, {unix.ENFILE, "system_fd_limit"}, {unix.ENOMEM, "memory"}, {unix.EINTR, "interrupted"},
-		{ErrContributionStopUnavailable, "stat_unavailable"},
-		{execution.ErrNativeQuiescenceUnavailable, "identity_or_stat_invalid"},
-	} {
-		if errors.Is(err, c.err) {
-			return c.name
-		}
-	}
-	return "other"
-}
-
-type nativeFailureDiagnostic struct {
-	first       nativeFailureStage
-	joinExpired bool
-	elapsed     time.Duration
-}
-
-func (e *nativeFailureDiagnostic) Unwrap() error { return execution.ErrNativeQuiescenceUnavailable }
-func (e *nativeFailureDiagnostic) Error() string {
-	ms := e.elapsed.Milliseconds()
-	if ms < 0 {
-		ms = 0
-	}
-	if ms > 1000 {
-		ms = 1000
-	}
-	return fmt.Sprintf("native quiescence unavailable: first=%s class=%s cmd_wait_deadline=%t cleanup_ms=%d", closedNativeStage(e.first.stage), nativeFailureClass(e.first.err), e.joinExpired, ms)
+func nativeTerminalState(state string) bool {
+	return state == "X"
 }

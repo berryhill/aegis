@@ -2,6 +2,25 @@
 
 ## Scoped contract
 
+Current follow-up: diagnostic head `5272eded6e86cac0701e2006b269204291d29f91`
+passed all hosted jobs in run `41277059097`, but that pass did not explain earlier
+native failures. A bounded real-kernel probe subsequently captured a complete
+owned exiting-task snapshot with state `X` and group `-1`; replay against the
+strict native census reproduced rejection. Linux `do_task_stat` initializes
+the group to `-1` and can retain it when an exiting task loses its signal handler.
+This proves a concrete rejected kernel-record class, not the exact contents of
+an unretained historical CI snapshot. Earlier failing runs remain evidence.
+
+The delivery correction classifies that narrowly validated terminal record only
+inside native census, never ownership or signaling. The shared role-stop parser
+is unchanged. Initial terminal records open/signal nothing; a matching-start
+terminal recheck closes its fd without signaling and still requires another
+fresh scan. Live/changed/malformed/read/close errors deny. The unchanged 20×64
+checker and native guard tests passed fresh normal/race runs. Temporary stage
+diagnostics and diagnostic-only tests were archived recoverably outside source;
+their commits and logs are retained. Full affected bundles, new freeze and fresh
+independent acceptance remain pending for this final diagnostic-free candidate.
+
 Baseline `3eb51a7d584a45ebf402f090ea1e7d28d98bbca9`, branch
 `fix/352-compiled-toolchain-env`. One source-owning engineering builder under the
 attended parent; this is not Aegis-managed Loop execution or a product receipt.
