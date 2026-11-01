@@ -81,7 +81,15 @@ This is a Doer-style mode of the existing v3 `implement` action, not a general i
 The controller injects a qualified native-runner port into the implementation
 kernel; missing ports deny before command start (there is no unsafe fallback).
 On Linux it reuses the Hermes pinned-leader, process-group fork barrier and fresh
-quiescence observation, with the sole `Wait` joined before checker return. These
+quiescence observation, with the sole `Wait` joined before checker return. After
+qualified command/digest admission, durable reservation and private `Setpgid`
+start, the exact unreaped child and repeated `WNOWAIT`/cleanup-context checks
+permit group `SIGKILL` BEFORE proc observation. The same one-second cleanup
+budget starts before that barrier; a fresh complete scan remains mandatory after
+it. Signal success or `ESRCH` is never quiescence proof. A later proc error can
+therefore follow an already killed owned group, but still denies Joined and
+retains custody, never success or permission to replay. RoleStop remains a
+separate pidfd-only boundary and cannot borrow this group proof. These
 callbacks track local lifecycle only, not durable contribution receipts. Known
 cleanup permits disposable-home removal and workspace release; unknown cleanup
 retains the checker home and process-lifetime workspace custody, including when
@@ -89,6 +97,16 @@ recording the failure fails. Recovery requires external reconciliation, not blin
 replay. Unsupported platforms deny before start. This is not protection against
 deliberate process-group escape, hostile same-UID writers or a host sandbox, and
 does not establish real-provider or installed qualification.
+
+Linux can emit a complete terminal-task stat snapshot with process group `-1`
+after the task loses its signal handler. Native census recognizes only literal
+`-1`, state `X`, the expected PID prefix, all 52 well-formed kernel stat fields,
+and a valid start identity from that same single read. It grants no ownership,
+whole-process death claim or signal permission. A terminal pidfd recheck must
+still match the original start identity, close successfully without signaling,
+and retain the nonempty observation so another fresh scan is required. Live,
+malformed, unreadable and changed-identity records remain denials. The shared
+role-stop identity parser stays strict and rejects this unassigned-group record.
 
 ## Evidence
 

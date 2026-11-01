@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -34,7 +35,15 @@ func RunContributionNative(ctx context.Context, b execution.NativeBinding, cmd *
 }
 
 func runContributionNative(ctx context.Context, b execution.NativeBinding, cmd *exec.Cmd, reserve func(context.Context) error, finish func(context.Context, NativeCompletion) error, observe func(context.Context, int) (bool, error)) error {
-	if cmd == nil || cmd.Process != nil || cmd.SysProcAttr != nil || b.CommandDigest != NativeCommandDigest(cmd) || reserve == nil || finish == nil {
+	return runContributionNativeWithBarrier(ctx, b, cmd, reserve, finish, observe, func(ctx context.Context, group int) error {
+		return killPinnedContributionGroup(ctx, group, unix.Waitid, unix.Kill)
+	})
+}
+
+// runContributionNativeWithBarrier is an unexported fixture seam. Production
+// always supplies the real WNOWAIT-owned kernel barrier above, never a selector.
+func runContributionNativeWithBarrier(ctx context.Context, b execution.NativeBinding, cmd *exec.Cmd, reserve func(context.Context) error, finish func(context.Context, NativeCompletion) error, observe func(context.Context, int) (bool, error), barrier func(context.Context, int) error) error {
+	if cmd == nil || cmd.Process != nil || cmd.SysProcAttr != nil || b.CommandDigest != NativeCommandDigest(cmd) || reserve == nil || finish == nil || observe == nil || barrier == nil {
 		return execution.ErrInvalidNativeCommand
 	}
 	if err := ctx.Err(); err != nil {
@@ -93,14 +102,11 @@ waitLeader:
 	// A waitid failure cannot establish that we still own the group number. Do
 	// not scan/signal that group; kill only the pinned os.Process and deny proof.
 	if cause != execution.ErrNativeQuiescenceUnavailable {
-		// An inventory is not a fork barrier, even when it appears empty. Keep
-		// its fail-closed observation checks, then kill the whole pinned group
-		// and require a NEW quiescence observation after that kernel barrier.
-		_, err := observe(cleanup, group)
-		if err == nil {
-			err = killPinnedContributionGroup(cleanup, group, unix.Waitid, unix.Kill)
-		}
-		if err != nil {
+		// Exact unreaped-child ownership, not a proc inventory, authorizes this
+		// barrier. Stop owned fork publication before the complete fresh scan.
+		// A later observation error still denies proof and retains custody even
+		// though the admitted owned group may already have been killed.
+		if err := barrier(cleanup, group); err != nil {
 			cause = execution.ErrNativeQuiescenceUnavailable
 			goto joined
 		}
@@ -204,7 +210,7 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		if err != nil {
 			continue
 		}
-		start, pg, state, err := contributionProcessStatFrom(pid, readFile)
+		start, pg, state, err := nativeCensusStatFrom(pid, readFile)
 		if contributionProcDisappeared(err) {
 			continue
 		}
@@ -222,8 +228,16 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		if err != nil {
 			return false, err
 		}
-		current, currentGroup, _, readErr := contributionProcessStatFrom(pid, readFile)
+		current, currentGroup, currentState, readErr := nativeCensusStatFrom(pid, readFile)
 		if contributionProcDisappeared(readErr) {
+			if err := closeFD(fd); err != nil {
+				return false, err
+			}
+			continue
+		}
+		// A matching terminal snapshot cannot authorize a signal. The initial
+		// live observation keeps empty=false, requiring another complete scan.
+		if readErr == nil && current == start && currentGroup == -1 && nativeTerminalState(currentState) {
 			if err := closeFD(fd); err != nil {
 				return false, err
 			}
@@ -247,4 +261,47 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		}
 	}
 	return empty, nil
+}
+
+// Linux do_task_stat can emit pgrp=-1 after an exiting task loses sighand.
+// A complete terminal snapshot is census evidence only, never owned identity.
+// Keep the shared role-stop parser strict and inspect this SAME single read.
+func nativeCensusStatFrom(pid int, readFile func(string) ([]byte, error)) (start string, group int, state string, err error) {
+	var raw []byte
+	var readErr error
+	start, group, state, err = contributionProcessStatFrom(pid, func(path string) ([]byte, error) {
+		raw, readErr = readFile(path)
+		return raw, readErr
+	})
+	if readErr != nil || !errors.Is(err, ErrContributionStopUnavailable) {
+		return
+	}
+	text := string(raw)
+	prefix := strconv.Itoa(pid) + " ("
+	end := strings.LastIndexByte(text, ')')
+	if !strings.HasPrefix(text, prefix) || end < len(prefix) || end+1 >= len(text) || text[end+1] != ' ' {
+		return
+	}
+	fields := strings.Fields(text[end+1:])
+	// Linux versions supporting our pidfd boundary emit all 52 stat fields
+	// (50 after comm). Do not turn a truncated identity prefix into evidence.
+	// Future trailing fields do not change validation of this kernel shape.
+	if len(fields) < 50 || fields[2] != "-1" || !nativeTerminalState(fields[0]) {
+		return
+	}
+	for _, field := range fields[1:50] {
+		if _, signedErr := strconv.ParseInt(field, 10, 64); signedErr != nil {
+			if _, unsignedErr := strconv.ParseUint(field, 10, 64); unsignedErr != nil {
+				return
+			}
+		}
+	}
+	if _, parseErr := strconv.ParseUint(fields[19], 10, 64); parseErr != nil {
+		return
+	}
+	return fields[19], -1, fields[0], nil
+}
+
+func nativeTerminalState(state string) bool {
+	return state == "X"
 }

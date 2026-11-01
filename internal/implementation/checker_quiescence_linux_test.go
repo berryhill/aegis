@@ -47,7 +47,7 @@ func TestCheckCandidateReturnQuiescence(t *testing.T) {
 				t.Fatal(err)
 			}
 			stat, err := os.ReadFile("/proc/" + pid + "/stat")
-			if os.IsNotExist(err) {
+			if checkerProcDisappeared(err) {
 				continue
 			}
 			if err != nil {

@@ -127,7 +127,16 @@ Local model digest rechecks detect drift but do not atomically pin the server mo
 
 The Linux implementation checker requires a controller-injected native lifecycle
 port: pinned leader, group-wide fork barrier, fresh quiescence observation and
-sole joined Wait before return. Missing ports/unsupported platforms deny before
+sole joined Wait before return. Qualified command/digest/reservation and private
+Setpgid precede start. Exact unreaped-child ownership, repeated WNOWAIT and a
+fresh cleanup-context check authorize the group barrier before proc observation,
+within the unchanged one-second cleanup budget. Wait denial/lost child or
+cancelled cleanup context denies group signaling. An admitted owned group may
+already have been killed when a later complete proc scan fails; that error still
+denies Joined and grants no success, receipt or replay. Neither signal success
+nor ESRCH replaces a fresh complete post-barrier scan and sole Wait. RoleStop is
+unchanged pidfd-only cleanup, not this native group-ownership proof.
+Missing ports/unsupported platforms deny before
 start. Unknown cleanup retains the disposable home and process-lifetime workspace
 lock even if failure persistence fails; it is not permission to replay. This local
 join mints no durable contribution receipt and does not cover deliberate process-
