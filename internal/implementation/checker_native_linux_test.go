@@ -20,7 +20,10 @@ func runCheckerNative(ctx context.Context, cmd *exec.Cmd) error {
 			joined = completion.Joined()
 			return nil
 		})
-	if errors.Is(err, execution.ErrNativeQuiescenceUnavailable) || (cmd.Process != nil && !joined) {
+	if errors.Is(err, execution.ErrNativeQuiescenceUnavailable) {
+		return errors.Join(ErrCheckerQuiescenceUnavailable, err)
+	}
+	if cmd.Process != nil && !joined {
 		return ErrCheckerQuiescenceUnavailable
 	}
 	return err

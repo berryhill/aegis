@@ -5,6 +5,7 @@ package hermes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
@@ -74,6 +75,12 @@ func runContributionNativeWithBarrier(ctx context.Context, b execution.NativeBin
 	tick := time.NewTicker(10 * time.Millisecond)
 	defer tick.Stop()
 	var cause error
+	var first *nativeFailureStage
+	record := func(stage string, err error) {
+		if first == nil {
+			first = nativeStage(stage, err)
+		}
+	}
 waitLeader:
 	for {
 		var info unix.Siginfo
@@ -82,6 +89,7 @@ waitLeader:
 			continue
 		}
 		if err != nil {
+			record("wait_leader", err)
 			cause = execution.ErrNativeQuiescenceUnavailable
 			break
 		}
@@ -96,6 +104,7 @@ waitLeader:
 		}
 	}
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	cleanupStarted := time.Now()
 	defer cancel()
 	quiescent := false
 	// A waitid failure cannot establish that we still own the group number. Do
@@ -106,12 +115,14 @@ waitLeader:
 		// A later observation error still denies proof and retains custody even
 		// though the admitted owned group may already have been killed.
 		if err := barrier(cleanup, group); err != nil {
+			record("barrier_waitid", err)
 			cause = execution.ErrNativeQuiescenceUnavailable
 			goto joined
 		}
 		for {
 			empty, err := observe(cleanup, group)
 			if err != nil {
+				record("observe_stat", err)
 				cause = execution.ErrNativeQuiescenceUnavailable
 				break
 			}
@@ -121,6 +132,7 @@ waitLeader:
 			}
 			select {
 			case <-cleanup.Done():
+				record("observe_nonempty_deadline", cleanup.Err())
 				cause = execution.ErrNativeQuiescenceUnavailable
 				goto joined
 			case <-tick.C:
@@ -133,6 +145,7 @@ joined:
 		// Do not leave a still-running leader behind a bounded unknown result.
 		_ = cmd.Process.Kill()
 	}
+	joinExpired := false
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	select {
@@ -141,11 +154,17 @@ joined:
 			cause = err
 		}
 	case <-cleanup.Done():
+		joinExpired = true
+		record("cmd_wait_deadline", cleanup.Err())
 		quiescent = false
 		cause = execution.ErrNativeQuiescenceUnavailable
 	}
 	if err := ctx.Err(); err != nil && cause == nil {
 		cause = err
+	}
+	// Decorate only after exact-sentinel control flow; finish errors still win.
+	if cause == execution.ErrNativeQuiescenceUnavailable && first != nil {
+		cause = &nativeFailureDiagnostic{first: *first, joinExpired: joinExpired, elapsed: time.Since(cleanupStarted)}
 	}
 	return complete(NativeCompletion{binding: b, joined: quiescent}, cause)
 }
@@ -161,11 +180,11 @@ joined:
 // ESRCH means no signalable member, NOT quiescence; fresh scans remain required.
 func killPinnedContributionGroup(ctx context.Context, group int, waitid func(int, int, *unix.Siginfo, int, *unix.Rusage) error, kill func(int, unix.Signal) error) error {
 	if group <= 1 {
-		return execution.ErrNativeQuiescenceUnavailable
+		return nativeStage("barrier_waitid", execution.ErrNativeQuiescenceUnavailable)
 	}
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nativeStage("barrier_waitid", err)
 		}
 		var info unix.Siginfo
 		err := waitid(unix.P_PID, group, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil)
@@ -173,15 +192,15 @@ func killPinnedContributionGroup(ctx context.Context, group int, waitid func(int
 			continue
 		}
 		if err != nil {
-			return err
+			return nativeStage("barrier_waitid", err)
 		}
 		break
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return nativeStage("barrier_signal", err)
 	}
 	if err := kill(-group, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
-		return err
+		return nativeStage("barrier_signal", err)
 	}
 	return nil
 }
@@ -198,12 +217,12 @@ func terminateContributionGroup(ctx context.Context, group int) (bool, error) {
 func terminateContributionGroupFrom(ctx context.Context, group int, readDir func(string) ([]os.DirEntry, error), readFile func(string) ([]byte, error), open func(int, int) (int, error), signal func(int, unix.Signal, *unix.Siginfo, int) error, closeFD func(int) error) (bool, error) {
 	entries, err := readDir("/proc")
 	if err != nil {
-		return false, err
+		return false, nativeStage("observe_readdir", err)
 	}
 	empty := true
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return false, err
+			return false, nativeStage("observe_context", err)
 		}
 		pid, err := strconv.Atoi(entry.Name())
 		if err != nil {
@@ -214,7 +233,7 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 			continue
 		}
 		if err != nil {
-			return false, err
+			return false, nativeStage("observe_stat", err)
 		}
 		if pg != group || state == "Z" || state == "X" || state == "x" {
 			continue
@@ -225,31 +244,95 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 			continue
 		}
 		if err != nil {
-			return false, err
+			return false, nativeStage("observe_pidfd_open", err)
 		}
 		current, currentGroup, _, readErr := contributionProcessStatFrom(pid, readFile)
 		if contributionProcDisappeared(readErr) {
 			if err := closeFD(fd); err != nil {
-				return false, err
+				return false, nativeStage("observe_close", err)
 			}
 			continue
 		}
 		if readErr != nil || current != start || currentGroup != group {
 			closeFD(fd)
-			return false, execution.ErrNativeQuiescenceUnavailable
+			if readErr != nil {
+				return false, nativeStage("observe_recheck_read", errors.Join(execution.ErrNativeQuiescenceUnavailable, readErr))
+			}
+			return false, nativeStage("observe_recheck_identity", execution.ErrNativeQuiescenceUnavailable)
 		}
 		if err := ctx.Err(); err != nil {
 			closeFD(fd)
-			return false, err
+			return false, nativeStage("observe_context", err)
 		}
 		err = signal(fd, unix.SIGKILL, nil, 0)
 		closeErr := closeFD(fd)
 		if closeErr != nil {
-			return false, closeErr
+			return false, nativeStage("observe_close", closeErr)
 		}
 		if err != nil && !errors.Is(err, unix.ESRCH) {
-			return false, err
+			return false, nativeStage("observe_signal", err)
 		}
 	}
 	return empty, nil
+}
+
+// TEMPORARY hosted-failure diagnostics. This private vocabulary is not authority,
+// a logging surface, or a replacement for the original cleanup decisions.
+type nativeFailureStage struct {
+	stage string
+	err   error
+}
+
+func (e *nativeFailureStage) Error() string {
+	return closedNativeStage(e.stage) + ":" + nativeFailureClass(e.err)
+}
+func (e *nativeFailureStage) Unwrap() error { return e.err }
+func nativeStage(stage string, err error) *nativeFailureStage {
+	var tagged *nativeFailureStage
+	if errors.As(err, &tagged) {
+		return tagged
+	}
+	return &nativeFailureStage{stage: stage, err: err}
+}
+func closedNativeStage(stage string) string {
+	switch stage {
+	case "wait_leader", "barrier_waitid", "barrier_signal", "observe_readdir", "observe_context", "observe_stat", "observe_pidfd_open", "observe_recheck_read", "observe_recheck_identity", "observe_signal", "observe_close", "observe_nonempty_deadline", "cmd_wait_deadline":
+		return stage
+	default:
+		return "observe_stat"
+	}
+}
+func nativeFailureClass(err error) string {
+	for _, c := range []struct {
+		err  error
+		name string
+	}{
+		{context.DeadlineExceeded, "deadline"}, {context.Canceled, "cancelled"},
+		{unix.EACCES, "access"}, {unix.EPERM, "permission"}, {unix.ECHILD, "child_lost"},
+		{unix.ESRCH, "process_gone"}, {unix.ENOENT, "not_found"}, {unix.EINVAL, "invalid"},
+		{execution.ErrNativeQuiescenceUnavailable, "identity_or_stat_invalid"},
+	} {
+		if errors.Is(err, c.err) {
+			return c.name
+		}
+	}
+	return "other"
+}
+
+type nativeFailureDiagnostic struct {
+	first       nativeFailureStage
+	joinExpired bool
+	elapsed     time.Duration
+}
+
+func (e *nativeFailureDiagnostic) Unwrap() error { return execution.ErrNativeQuiescenceUnavailable }
+func (e *nativeFailureDiagnostic) Error() string {
+	ms := e.elapsed.Milliseconds()
+	if ms < 0 {
+		ms = 0
+	}
+	if ms > 1000 {
+		ms = 1000
+	}
+	return fmt.Sprintf("native quiescence unavailable: first=%s class=%s cmd_wait_deadline=%t cleanup_ms=%d", closedNativeStage(e.first.stage), nativeFailureClass(e.first.err), e.joinExpired, ms)
 }
