@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -228,7 +229,7 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		if err != nil {
 			continue
 		}
-		start, pg, state, err := contributionProcessStatFrom(pid, readFile)
+		start, pg, state, err := nativeProcessStatFrom(pid, readFile, false)
 		if contributionProcDisappeared(err) {
 			continue
 		}
@@ -246,7 +247,7 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 		if err != nil {
 			return false, nativeStage("observe_pidfd_open", err)
 		}
-		current, currentGroup, _, readErr := contributionProcessStatFrom(pid, readFile)
+		current, currentGroup, _, readErr := nativeProcessStatFrom(pid, readFile, true)
 		if contributionProcDisappeared(readErr) {
 			if err := closeFD(fd); err != nil {
 				return false, nativeStage("observe_close", err)
@@ -276,6 +277,57 @@ func terminateContributionGroupFrom(ctx context.Context, group int, readDir func
 	return empty, nil
 }
 
+// nativeProcessStatFrom observes the shared parser without changing its admission.
+// Capture only its single read, and inspect the same bytes only after rejection.
+// Raw bytes and read errors never enter the external diagnostic.
+func nativeProcessStatFrom(pid int, readFile func(string) ([]byte, error), recheck bool) (start string, group int, state string, err error) {
+	var raw []byte
+	var readErr error
+	start, group, state, err = contributionProcessStatFrom(pid, func(path string) ([]byte, error) {
+		raw, readErr = readFile(path)
+		return raw, readErr
+	})
+	if err == nil {
+		return
+	}
+	prefix := "observe_stat_"
+	if recheck {
+		prefix = "observe_recheck_"
+	}
+	reason := "unknown"
+	if readErr != nil {
+		reason = "read"
+		if recheck {
+			reason = "read_errno"
+		}
+	} else if errors.Is(err, ErrContributionStopUnavailable) {
+		// Diagnostic-only mirror, ordered exactly like the unchanged shared parser.
+		end := strings.LastIndexByte(string(raw), ')')
+		if end < 0 {
+			reason = "parenthesis"
+		} else {
+			fields := strings.Fields(string(raw[end+1:]))
+			if len(fields) <= 19 {
+				reason = "fields"
+			} else {
+				pg, groupErr := strconv.Atoi(fields[2])
+				switch {
+				case groupErr != nil || pg < 0:
+					reason = "group"
+				case len(fields[0]) != 1 || !strings.Contains("RSDZTtXxKWPI", fields[0]):
+					reason = "state"
+				default:
+					if _, startErr := strconv.ParseUint(fields[19], 10, 64); startErr != nil {
+						reason = "start"
+					}
+				}
+			}
+		}
+	}
+	err = nativeStage(prefix+reason, err)
+	return
+}
+
 // TEMPORARY hosted-failure diagnostics. This private vocabulary is not authority,
 // a logging surface, or a replacement for the original cleanup decisions.
 type nativeFailureStage struct {
@@ -290,7 +342,7 @@ func (e *nativeFailureStage) Unwrap() error { return e.err }
 func nativeStage(stage string, err error) *nativeFailureStage {
 	var tagged *nativeFailureStage
 	if errors.As(err, &tagged) {
-		return tagged
+		return &nativeFailureStage{stage: tagged.stage, err: err}
 	}
 	return &nativeFailureStage{stage: stage, err: err}
 }
@@ -298,11 +350,20 @@ func closedNativeStage(stage string) string {
 	switch stage {
 	case "wait_leader", "barrier_waitid", "barrier_signal", "observe_readdir", "observe_context", "observe_stat", "observe_pidfd_open", "observe_recheck_read", "observe_recheck_identity", "observe_signal", "observe_close", "observe_nonempty_deadline", "cmd_wait_deadline":
 		return stage
+	case "observe_stat_read", "observe_stat_parenthesis", "observe_stat_fields", "observe_stat_group", "observe_stat_state", "observe_stat_start", "observe_stat_unknown",
+		"observe_recheck_read_errno", "observe_recheck_parenthesis", "observe_recheck_fields", "observe_recheck_group", "observe_recheck_state", "observe_recheck_start", "observe_recheck_unknown":
+		return stage
 	default:
-		return "observe_stat"
+		return "unknown"
 	}
 }
 func nativeFailureClass(err error) string {
+	// A recheck joins the native sentinel for policy, not as the read cause.
+	// Classify the already tagged observer cause before that enclosing sentinel.
+	var tagged *nativeFailureStage
+	if errors.As(err, &tagged) {
+		return nativeFailureClass(tagged.err)
+	}
 	for _, c := range []struct {
 		err  error
 		name string
@@ -310,6 +371,8 @@ func nativeFailureClass(err error) string {
 		{context.DeadlineExceeded, "deadline"}, {context.Canceled, "cancelled"},
 		{unix.EACCES, "access"}, {unix.EPERM, "permission"}, {unix.ECHILD, "child_lost"},
 		{unix.ESRCH, "process_gone"}, {unix.ENOENT, "not_found"}, {unix.EINVAL, "invalid"},
+		{unix.EIO, "io"}, {unix.EMFILE, "process_fd_limit"}, {unix.ENFILE, "system_fd_limit"}, {unix.ENOMEM, "memory"}, {unix.EINTR, "interrupted"},
+		{ErrContributionStopUnavailable, "stat_unavailable"},
 		{execution.ErrNativeQuiescenceUnavailable, "identity_or_stat_invalid"},
 	} {
 		if errors.Is(err, c.err) {
