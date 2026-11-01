@@ -230,6 +230,47 @@ now describe barrier-first effects and unchanged proof/custody. Other launch
 assets remain unaffected; no CLI, authority, API/DTO, model/config, installation,
 provider, release binary/checksum or historical demo change is requested.
 
+## Hosted checker proc-disappearance classification (bounded follow-up)
+
+Diagnostic CI `41273878365`, normal implementation job `124751992803`, failed
+`TestCheckCandidateReturnQuiescence` after 3.71s at the immediate proc read:
+`checker_quiescence_linux_test.go:54: read /proc/5202/stat: no such process`.
+This is a fixture ESRCH classification defect, NOT evidence identifying the
+initial native failure in CI `41271948143`. That initial cause remains UNKNOWN;
+temporary native diagnostics and the PR #436 merge hold remain required.
+
+The fixture now uses one test-only predicate: `os.IsNotExist(err) ||
+errors.Is(err, unix.ESRCH)`. Kernel-typed ESRCH means the recorded process is gone,
+not a live writer. This narrow adaptation preserves immediate NoLive: all twenty
+attempts and sixty-four busy children, one immediate observation per recorded
+PID, original Z/X/x-only successful-read assertion and fatal handling of other
+errors remain unchanged. No retry, sleep, poll, timer, production parser, native
+policy/custody, PATH bytes, resource limit, CI job or shard changed.
+
+Evidence is frozen outside source under
+`/home/silas/.hermes/profiles/xander/workspace/352-native-barrier-repair/hosted-recovery/proc-disappearance-repair`.
+The actual helper used by the original fixture has a deterministic table covering
+raw/path-wrapped ENOENT and ESRCH, nested ESRCH, nil, EPERM/EACCES/EIO, parse and
+unknown errors, and an ESRCH-looking untyped string. Causal RED with the old
+predicate fails the three ESRCH cases; the corrected predicate passes normal and
+race alongside the original immediate 20x64 checker. Native guard/diagnostic roots
+also pass once each normal/race under the unchanged shipped supervisor and 8m
+Go alarm. These are focused local proofs, not independent or full-source/hosted
+qualification, initial-native-cause repair, publication or merge acceptance.
+
+Source evidence: existing `contributionProcDisappeared` already recognizes typed
+ESRCH for enumerated PIDs. Linux v6.17 `fs/proc/base.c:proc_single_show` returns
+`-ESRCH` when `get_pid_task` finds no task; stat uses that single-file reader.
+Go 1.26.10 `os/error.go:IsNotExist` delegates to the syscall errno matcher, whose
+`ErrNotExist` case accepts ENOENT only (`syscall/syscall_unix.go:120–131`).
+`syscall/zerrors_linux_amd64.go` binds ESRCH to errno 3, "no such process".
+No raw error-string parsing is used in the fixture.
+
+Launch impact: only this existing ledger needs an update for a test-only errno
+classification correction; public behavior, CLI/API, authority, security policy,
+installation, quickstart/demo/recording, license/conduct and release artifacts
+are unaffected. No release or installed qualification is claimed.
+
 ## Security and launch impact (earlier scheduling/PATH review)
 
 The new root query is a fixed argv invocation of supported `go env`; newline,
