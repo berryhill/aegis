@@ -36,21 +36,6 @@ jobs:
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
       - run: make verify-repository
-      - name: Verify compiled canonical contribution finalization and repair
-        run: |
-          python3 -m unittest scripts/test_contribution_finalization_test.py
-          python3 - "$RUNNER_TEMP" <<'PY'
-          from pathlib import Path
-          import sys
-          pool = Path(sys.argv[1]) / 'aegis-contribution-ports'
-          pool.mkdir(mode=0o700)
-          for port in range(8450, 8470):
-              lock = pool / f'{port}.lock'
-              with lock.open('x'):
-                  pass
-              lock.chmod(0o600)
-          PY
-          python3 scripts/verify-budget.py python3 scripts/acceptance_port.py --pool "$RUNNER_TEMP/aegis-contribution-ports" -- python3 scripts/test-contribution-finalization.py
       - name: Classify changelog without changing source
         run: python3 scripts/verify-budget.py python3 scripts/release-readiness-mode.py . auto "999.0.${{ github.run_number }}" ""
       - name: Source metadata unchanged
@@ -167,6 +152,21 @@ jobs:
           sudo systemctl start "user@$(id -u).service"
           printf "XDG_RUNTIME_DIR=/run/user/%s\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%s/bus\n" "$(id -u)" "$(id -u)" >> "$GITHUB_ENV"
       - run: python3 scripts/verify-budget.py go vet ./...
+      - name: Verify compiled canonical contribution finalization and repair
+        run: |
+          python3 -m unittest scripts/test_contribution_finalization_test.py
+          python3 - "$RUNNER_TEMP" <<'PY'
+          from pathlib import Path
+          import sys
+          pool = Path(sys.argv[1]) / 'aegis-contribution-ports'
+          pool.mkdir(mode=0o700)
+          for port in range(8450, 8470):
+              lock = pool / f'{port}.lock'
+              with lock.open('x'):
+                  pass
+              lock.chmod(0o600)
+          PY
+          python3 scripts/verify-budget.py python3 scripts/acceptance_port.py --pool "$RUNNER_TEMP/aegis-contribution-ports" -- python3 scripts/test-contribution-finalization.py
       - name: Source metadata unchanged
         run: |
           git diff --exit-code

@@ -178,6 +178,17 @@ func (d *ContributionDeliveryController) RunAs(ctx context.Context, subject core
 	if d == nil || d.service == nil {
 		return delivery.DeliveryResult{}, delivery.ErrDenied
 	}
+	// Resolve live request authentication before reading contribution state or
+	// reporting owner availability. Asserted transport subjects never acquire
+	// admission merely because the publication owner is not installed.
+	ctx, err := d.service.bindContributionRequestSubject(ctx, subject)
+	if err != nil {
+		return delivery.DeliveryResult{}, err
+	}
+	owner, ok := d.service.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner)
+	if !ok || owner.service != d.service {
+		return delivery.DeliveryResult{}, ErrContributionDeliveryUnavailable
+	}
 	c, _, err := d.service.ReadContributionAs(ctx, subject, key)
 	if err != nil {
 		return delivery.DeliveryResult{}, err

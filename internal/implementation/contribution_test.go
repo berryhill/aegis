@@ -98,6 +98,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	e := &ManagedContribution{DB: kernel.DB, GoBinary: kernel.GoBinary, StateRoot: t.TempDir(), Repository: "fixture/controlled", Admit: kernel.Admit}
+	e.Native = stdlibSeededNative(t, e.GoBinary)
 	e.Fetch = func(context.Context, loop.ContributionExecutionPolicy) error {
 		runGit("fetch", "--no-tags", repo, "main")
 		return nil

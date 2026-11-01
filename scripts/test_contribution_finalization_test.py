@@ -12,6 +12,11 @@ spec.loader.exec_module(runner)
 
 class FinalizationSelectionTest(unittest.TestCase):
     def test_default_resolves_all_three_exact_roots(self):
+        self.assertEqual(runner.CASES, (
+            'TestCanonicalContributionFinalization',
+            'TestCanonicalContributionCIRepairFinalization',
+            'TestCanonicalContributionAdvancingBaseFinalization',
+        ))
         output = '\n'.join(runner.CASES) + '\nok fixture 0.01s\n'
         self.assertEqual(runner.selected_cases(output, runner.DEFAULT_RUN, runner.CASES), list(runner.CASES))
         for name in runner.CASES:
@@ -31,11 +36,22 @@ class FinalizationSelectionTest(unittest.TestCase):
     def test_existing_job_registers_runner_without_budget_expansion(self):
         workflow = PATH.parents[1].joinpath('.github/workflows/ci.yml').read_text()
         repository_job = workflow.split('  repository-checks:', 1)[1].split('\n  go-shards:', 1)[0]
-        self.assertIn('timeout-minutes: 10', repository_job)
-        self.assertIn('python3 scripts/verify-budget.py python3 scripts/acceptance_port.py --pool', repository_job)
-        self.assertIn('-- python3 scripts/test-contribution-finalization.py', repository_job)
-        self.assertIn('range(8450, 8470)', repository_job)
-        self.assertIn('scripts/test_contribution_finalization_test.py', repository_job)
+        vet_job = workflow.split('\n  vet:', 1)[1].split('\n  authority-denial-matrix:', 1)[0]
+        self.assertNotIn('test-contribution-finalization.py', repository_job)
+        self.assertIn('timeout-minutes: 10', vet_job)
+        self.assertIn('python3 scripts/verify-budget.py go vet ./...', vet_job)
+        self.assertIn('python3 scripts/verify-budget.py python3 scripts/acceptance_port.py --pool', vet_job)
+        self.assertIn('-- python3 scripts/test-contribution-finalization.py\n', vet_job)
+        self.assertIn('range(8450, 8470)', vet_job)
+        self.assertIn('scripts/test_contribution_finalization_test.py', vet_job)
+        self.assertEqual(workflow.count('-- python3 scripts/test-contribution-finalization.py'), 1)
+        # The CI invocation has no -run override: it must compile/list and then
+        # execute the same fail-closed three-root default under the existing alarm.
+        source = PATH.read_text()
+        self.assertIn("parser.add_argument('-run', default=DEFAULT_RUN)", source)
+        self.assertIn("'-list', args.run", source)
+        self.assertIn('CASES if args.run == DEFAULT_RUN else ()', source)
+        self.assertIn("'-run', args.run, '-count=1', '-timeout=8m'", source)
 
 
 if __name__ == '__main__':
