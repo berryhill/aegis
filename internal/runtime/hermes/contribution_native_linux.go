@@ -34,7 +34,15 @@ func RunContributionNative(ctx context.Context, b execution.NativeBinding, cmd *
 }
 
 func runContributionNative(ctx context.Context, b execution.NativeBinding, cmd *exec.Cmd, reserve func(context.Context) error, finish func(context.Context, NativeCompletion) error, observe func(context.Context, int) (bool, error)) error {
-	if cmd == nil || cmd.Process != nil || cmd.SysProcAttr != nil || b.CommandDigest != NativeCommandDigest(cmd) || reserve == nil || finish == nil {
+	return runContributionNativeWithBarrier(ctx, b, cmd, reserve, finish, observe, func(ctx context.Context, group int) error {
+		return killPinnedContributionGroup(ctx, group, unix.Waitid, unix.Kill)
+	})
+}
+
+// runContributionNativeWithBarrier is an unexported fixture seam. Production
+// always supplies the real WNOWAIT-owned kernel barrier above, never a selector.
+func runContributionNativeWithBarrier(ctx context.Context, b execution.NativeBinding, cmd *exec.Cmd, reserve func(context.Context) error, finish func(context.Context, NativeCompletion) error, observe func(context.Context, int) (bool, error), barrier func(context.Context, int) error) error {
+	if cmd == nil || cmd.Process != nil || cmd.SysProcAttr != nil || b.CommandDigest != NativeCommandDigest(cmd) || reserve == nil || finish == nil || observe == nil || barrier == nil {
 		return execution.ErrInvalidNativeCommand
 	}
 	if err := ctx.Err(); err != nil {
@@ -93,14 +101,11 @@ waitLeader:
 	// A waitid failure cannot establish that we still own the group number. Do
 	// not scan/signal that group; kill only the pinned os.Process and deny proof.
 	if cause != execution.ErrNativeQuiescenceUnavailable {
-		// An inventory is not a fork barrier, even when it appears empty. Keep
-		// its fail-closed observation checks, then kill the whole pinned group
-		// and require a NEW quiescence observation after that kernel barrier.
-		_, err := observe(cleanup, group)
-		if err == nil {
-			err = killPinnedContributionGroup(cleanup, group, unix.Waitid, unix.Kill)
-		}
-		if err != nil {
+		// Exact unreaped-child ownership, not a proc inventory, authorizes this
+		// barrier. Stop owned fork publication before the complete fresh scan.
+		// A later observation error still denies proof and retains custody even
+		// though the admitted owned group may already have been killed.
+		if err := barrier(cleanup, group); err != nil {
 			cause = execution.ErrNativeQuiescenceUnavailable
 			goto joined
 		}

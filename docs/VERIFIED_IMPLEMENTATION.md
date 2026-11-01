@@ -81,7 +81,15 @@ This is a Doer-style mode of the existing v3 `implement` action, not a general i
 The controller injects a qualified native-runner port into the implementation
 kernel; missing ports deny before command start (there is no unsafe fallback).
 On Linux it reuses the Hermes pinned-leader, process-group fork barrier and fresh
-quiescence observation, with the sole `Wait` joined before checker return. These
+quiescence observation, with the sole `Wait` joined before checker return. After
+qualified command/digest admission, durable reservation and private `Setpgid`
+start, the exact unreaped child and repeated `WNOWAIT`/cleanup-context checks
+permit group `SIGKILL` BEFORE proc observation. The same one-second cleanup
+budget starts before that barrier; a fresh complete scan remains mandatory after
+it. Signal success or `ESRCH` is never quiescence proof. A later proc error can
+therefore follow an already killed owned group, but still denies Joined and
+retains custody, never success or permission to replay. RoleStop remains a
+separate pidfd-only boundary and cannot borrow this group proof. These
 callbacks track local lifecycle only, not durable contribution receipts. Known
 cleanup permits disposable-home removal and workspace release; unknown cleanup
 retains the checker home and process-lifetime workspace custody, including when

@@ -16,6 +16,21 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #352 source qualification: compiled Go bundle inventory and test processes now
+  prefix the selected toolchain's `GOROOT/bin` to the preserved ambient `PATH`,
+  matching `go test` when a bootstrap Go selects a newer compiler. Existing
+  coverage, native security guards, resource limits and test alarms are unchanged.
+  Linux native cleanup now establishes the exact unreaped-child/WNOWAIT-owned
+  kernel fork barrier before the unchanged full proc observer, replacing failed
+  unpublished inventory-priority heuristics. Digest/reservation/start admission,
+  private group ownership, one-second cleanup, fresh complete post-scan, sole Wait
+  and unknown-custody denial remain required. An owned group can now be killed
+  before a later proc error; the error still denies Joined, success and replay.
+  A late-fork fixture preserves the stale-empty counterexample and hard writer
+  checks, with an actual unsafe inventory-only negative control. Full bundle and
+  independent acceptance evidence remain separate (see
+  [the bounded ledger](docs/implementation/issue-352-toolchain-parity.md)).
+
 - #382 source follow-up: show exact recorded `doer_loop_failed` and `doer_verified`
   root reasons in the Queue outcome banner, plus terminal lifecycle codes
   `operator_cancelled`, `execution_expired` and `authority_revoked`. Unknown/backend

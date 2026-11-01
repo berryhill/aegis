@@ -17,6 +17,76 @@ spec.loader.exec_module(shard)
 
 
 class ShardTests(unittest.TestCase):
+    def test_compiled_environment_uses_selected_not_bootstrap_go(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'selected toolchain'
+            (root / 'bin').mkdir(parents=True)
+            driver = root / 'bin/go'
+            driver.touch(mode=0o755)
+            ambient = {'PATH': '/bootstrap/bin:/usr/bin:/bin', 'GOTOOLCHAIN': 'go1.26.10',
+                       'NATIVE_HELPER': 'preserved'}
+            with mock.patch.dict(os.environ, ambient, clear=True), \
+                 mock.patch.object(shard.subprocess, 'run', return_value=mock.Mock(stdout=str(root) + '\n')) as run:
+                environment = shard.compiled_test_environment()
+                run.assert_called_once_with(['go', 'env', 'GOROOT'], text=True,
+                                            stdout=subprocess.PIPE, check=True)
+                self.assertEqual(environment, {**ambient, 'PATH': str(root / 'bin') + os.pathsep + ambient['PATH']})
+                self.assertEqual(dict(os.environ), ambient)
+            for path in ('', None):
+                with mock.patch.dict(os.environ, {}, clear=True), \
+                     mock.patch.object(shard.subprocess, 'run', return_value=mock.Mock(stdout=str(root) + '\n')):
+                    if path is not None:
+                        os.environ['PATH'] = path
+                    self.assertEqual(shard.compiled_test_environment()['PATH'], str(root / 'bin'))
+
+    def test_compiled_environment_denies_invalid_or_missing_driver(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for value in ('', 'relative/root', '/missing/toolchain', directory,
+                          directory + os.pathsep + '/injected', directory + '\n/injected'):
+                with self.subTest(root=value), \
+                     mock.patch.object(shard.subprocess, 'run', return_value=mock.Mock(stdout=value + '\n')):
+                    with self.assertRaises(ValueError):
+                        shard.compiled_test_environment()
+            with mock.patch.object(shard.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, ['go', 'env', 'GOROOT'])):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    shard.compiled_test_environment()
+            (Path(directory) / 'bin').mkdir()
+            (Path(directory) / 'bin/go').touch(mode=0o644)
+            with mock.patch.object(shard.subprocess, 'run', return_value=mock.Mock(stdout=directory + '\n')):
+                with self.assertRaises(ValueError):
+                    shard.compiled_test_environment()
+
+    def test_bundle_invalid_toolchain_denies_before_compilation_or_tests(self):
+        with mock.patch.object(shard.subprocess, 'run', return_value=mock.Mock(stdout='\n'.join(self.packages()))) as run, \
+             mock.patch.object(shard, 'compiled_test_environment', side_effect=ValueError('invalid root')):
+            with self.assertRaises(ValueError):
+                shard.run_bundle('implementation', False, False)
+        run.assert_called_once_with(['go', 'list', './...'], text=True,
+                                    stdout=subprocess.PIPE, check=True)
+
+    def test_bundle_inventory_and_execution_share_selected_environment(self):
+        environment = {**os.environ, 'PATH': '/selected/bin:/bootstrap/bin:/usr/bin:/bin'}
+        for race in (False, True):
+            for list_only in (False, True):
+                def respond(command, **kwargs):
+                    if command[:2] == ['go', 'list']:
+                        return mock.Mock(stdout='\n'.join(self.packages()))
+                    if '-test.list=.' in command:
+                        self.assertEqual(kwargs['env'], environment)
+                        return mock.Mock(stdout=self.all_listing(shard.IMPLEMENTATION).split('\nok\t')[0] + '\n')
+                    if command[0] != 'go':
+                        self.assertEqual(kwargs['env'], environment)
+                    else:
+                        self.assertNotIn('env', kwargs)
+                    return mock.Mock()
+                with mock.patch.object(shard, 'compiled_test_environment', return_value=environment) as resolve, \
+                     mock.patch.object(shard.subprocess, 'run', side_effect=respond) as run, \
+                     mock.patch('builtins.print'):
+                    shard.run_bundle('implementation', race, list_only)
+                resolve.assert_called_once_with()
+                executed = [c for c in run.call_args_list if c.args[0][0] != 'go' and '-test.list=.' not in c.args[0]]
+                self.assertEqual(len(executed), 0 if list_only else (1 if race else 2))
+
     def packages(self):
         return sorted({shard.ROOT + p for paths in shard.GROUPS.values() for p in paths}) + [shard.ROOT + 'new', shard.ROOT + 'empty']
 
@@ -468,7 +538,8 @@ class ShardTests(unittest.TestCase):
                         package = shard.ROOT + str(kwargs['cwd'])
                         return mock.Mock(stdout=self.all_listing(package).split('\nok\t')[0] + '\n')
                     return mock.Mock()
-                with mock.patch.object(shard.subprocess, 'run', side_effect=respond) as run, mock.patch('builtins.print') as output:
+                with mock.patch.object(shard, 'compiled_test_environment', return_value=dict(os.environ)), \
+                     mock.patch.object(shard.subprocess, 'run', side_effect=respond) as run, mock.patch('builtins.print') as output:
                     self.assertEqual(shard.main(['--bundle', lane] + (['--race'] if race else [])), 0)
                 plans = [json.loads(call.args[0]) for call in output.call_args_list]
                 self.assertEqual([p['group'] for p in plans], list(expected))
@@ -496,7 +567,8 @@ class ShardTests(unittest.TestCase):
                     self.assertTrue(command[:2] == ['go', 'list'] or '-c' in command)
                     return respond(command, **kwargs)
                 if partitions:
-                    with mock.patch.object(shard.subprocess, 'run', side_effect=fail_inventory), self.assertRaises(ValueError):
+                    with mock.patch.object(shard, 'compiled_test_environment', return_value=dict(os.environ)), \
+                         mock.patch.object(shard.subprocess, 'run', side_effect=fail_inventory), self.assertRaises(ValueError):
                         shard.main(['--bundle', lane] + (['--race'] if race else []))
 
     def test_native_default_link_flags_preserve_real_race_detection_and_stacks(self):
@@ -534,9 +606,17 @@ func TestRaceWitness(t *testing.T) {
             package = root / 'fixture'
             package.mkdir()
             (package / 'fixture_test.go').write_text('''package fixture
-import ("testing"; "fmt"; "os")
+import ("testing"; "fmt"; "os"; "os/exec"; "path/filepath"; "runtime")
 var mainReady bool
-func TestMain(m *testing.M) { mainReady = true; os.Exit(m.Run()) }
+func TestMain(m *testing.M) {
+    if os.Getenv("AEGIS_CHECK_SELECTED_GO") == "1" {
+        driver, err := exec.LookPath("go")
+        if err != nil || driver != filepath.Join(runtime.GOROOT(), "bin", "go") {
+            fmt.Fprintf(os.Stderr, "selected go mismatch: %s %v", driver, err); os.Exit(1)
+        }
+    }
+    mainReady = true; os.Exit(m.Run())
+}
 func ready(t *testing.T) { if !mainReady { t.Fatal("TestMain did not run") } }
 func TestOne(t *testing.T) { ready(t); t.Run("child", func(t *testing.T) { ready(t) }) }
 func TestOnePrefix(t *testing.T) { ready(t) }
@@ -583,6 +663,7 @@ func BenchmarkUnused(b *testing.B) { b.Fatal("benchmarks are not default tests")
                      mock.patch.object(shard, 'partition_package', return_value=pkg), \
                      mock.patch.object(shard, 'bundle_groups', return_value=('api-a', 'api-b')), \
                      mock.patch.object(shard.subprocess, 'run', side_effect=run_fixture), \
+                     mock.patch.dict(os.environ, {'AEGIS_CHECK_SELECTED_GO': '1'}), \
                      mock.patch('builtins.print'):
                     self.assertEqual(shard.run_bundle('api-a', race, False), 0)
                     with mock.patch.dict(os.environ, {'AEGIS_FIXTURE_EXIT_ZERO': '1'}):
