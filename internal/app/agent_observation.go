@@ -78,22 +78,13 @@ func (s *Service) ObserveAgentPreconditionsAs(ctx context.Context, subject core.
 		valid := true
 		provisioned := filepath.Join(s.Store.Root(), "provisioned")
 		expectedTarget := filepath.Join(provisioned, c.Charter.AgentID, strconv.FormatUint(c.Charter.Revision, 10), "hermes-config.json")
-		root, e := os.OpenRoot(provisioned)
-		if e != nil {
-			continue
-		}
 		for i, effect := range p.Effects {
 			artifact := r.Artifacts[i]
 			if effect.Kind != core.EffectCreateFile || effect.Target != expectedTarget || effect.Digest != expected || artifact.Path != effect.Target || artifact.Action != effect.Kind || !artifact.Verified || artifact.Digest != expected {
 				valid = false
 				break
 			}
-			relative, e := filepath.Rel(provisioned, effect.Target)
-			if e != nil {
-				valid = false
-				break
-			}
-			f, e := root.OpenFile(relative, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+			f, e := openAgentProvisionedArtifact(s.Store.Root(), c.Charter.AgentID, c.Charter.Revision)
 			if e != nil {
 				valid = false
 				break
@@ -112,11 +103,34 @@ func (s *Service) ObserveAgentPreconditionsAs(ctx context.Context, subject core.
 				break
 			}
 		}
-		root.Close()
 		if valid {
 			out.Provisioning = "verified-current"
 			break
 		}
 	}
 	return out, nil
+}
+
+// Pin every directory before traversing the next component. In particular,
+// OpenRoot(provisioned) would follow a replaced provisioning root before its
+// containment boundary existed. No check/open race or symlink traversal is used.
+func openAgentProvisionedArtifact(root, agent string, revision uint64) (*os.File, error) {
+	fd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	for _, component := range []string{"provisioned", agent, strconv.FormatUint(revision, 10)} {
+		next, openErr := unix.Openat(fd, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+		unix.Close(fd)
+		if openErr != nil {
+			return nil, openErr
+		}
+		fd = next
+	}
+	file, err := unix.Openat(fd, "hermes-config.json", unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	unix.Close(fd)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(file), "hermes-config.json"), nil
 }

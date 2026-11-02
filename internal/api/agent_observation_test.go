@@ -62,7 +62,7 @@ func provisionAgentObservation(t *testing.T, svc *app.Service, subject core.Subj
 
 func TestAgentObservedReadinessRequiresCurrentApprovedArtifacts(t *testing.T) {
 	scheduleInstalledAPIJourneyGroup(t)
-	for _, name := range []string{"missing", "receipt-only", "current", "tampered", "removed", "artifact-escape", "runtime-unavailable", "runtime-incompatible", "wrong-plan", "wrong-approval"} {
+	for _, name := range []string{"missing", "receipt-only", "current", "tampered", "removed", "artifact-escape", "root-symlink", "agent-symlink", "revision-symlink", "artifact-symlink", "runtime-unavailable", "runtime-incompatible", "wrong-plan", "wrong-approval"} {
 		t.Run(name, func(t *testing.T) {
 			scheduleInstalledAPIJourney(t)
 			svc := apiService(t)
@@ -83,6 +83,20 @@ func TestAgentObservedReadinessRequiresCurrentApprovedArtifacts(t *testing.T) {
 			default:
 				receipt := provisionAgentObservation(t, svc, subject, cc)
 				switch name {
+				case "root-symlink", "agent-symlink", "revision-symlink", "artifact-symlink":
+					base := svc.Store.Root() + "/provisioned"
+					if name != "root-symlink" {
+						base += "/observed"
+					}
+					if name == "revision-symlink" || name == "artifact-symlink" {
+						base += "/1"
+					}
+					if name == "artifact-symlink" {
+						base += "/hermes-config.json"
+					}
+					if err = os.Rename(base, base+"-relocated"); err == nil {
+						err = os.Symlink(base+"-relocated", base)
+					}
 				case "current":
 					want = "verified-current"
 				case "tampered":

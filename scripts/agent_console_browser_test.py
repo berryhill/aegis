@@ -60,7 +60,7 @@ def main():
                     (root/(label+'.txt')).write_text(text)
                     browser.evaluate('scrollTo(0,0)')
                     size = browser.command('Page.getLayoutMetrics')['cssContentSize']
-                    shot = browser.command('Page.captureScreenshot', {'format':'png','captureBeyondViewport':True,'clip':{'x':0,'y':0,'width':size['width'],'height':size['height'],'scale':1}})
+                    shot = browser.command('Page.captureScreenshot', {'format':'png','captureBeyondViewport':True,'clip':{'x':0,'y':0,'width':width,'height':size['height'],'scale':1}})
                     (root/(label+'.png')).write_bytes(base64.b64decode(shot['data']))
                     geometry = browser.evaluate('''(() => {let d=document.querySelector('#agent-inline-detail'),r=document.querySelector('#surface-list');return {width:innerWidth,documentWidth:document.documentElement.scrollWidth,inline:!!d,roster:!!r,detailTop:d?.getBoundingClientRect().top,rosterBottom:r?.getBoundingClientRect().bottom,authority:document.querySelector('[data-authority-state]')?.dataset.authorityState};})()''')
                     driver.require(geometry['documentWidth'] <= width+1, 'horizontal overflow: '+label)
@@ -77,16 +77,27 @@ def main():
                     browser.command('Emulation.setDeviceMetricsOverride',{'width':width,'height':900,'deviceScaleFactor':1,'mobile':False})
                     visit('/console/agents?record_key=office')
                     text=capture('office-'+str(width),width)
-                    for expected in ('Verified charter runtime version constraint','>=0.18.0','Provisioning receipt recorded','session-office-recorded','no session-detail browser route is available','Execution ·','All trust stanza declarations'):
+                    for expected in ('Verified charter runtime version constraint','>=0.18.0','Provisioning receipt recorded','session-office-recorded','Exact session links','Execution ·','All trust stanza declarations'):
                         driver.require(expected.casefold() in text.casefold(),'missing exact evidence: '+expected)
                     driver.require(browser.evaluate("document.querySelector('[data-authority-state]').dataset.authorityState")=='denied', 'password subject inherited local-os grant')
                     driver.require(browser.evaluate("!!document.querySelector('a[href*=\"record_key=agent-history-item\"]')"),'missing exact Queue link')
                     driver.require('verified-current' in text and 'compatible' in text,'missing independent current precondition observation')
+                    card=browser.evaluate("document.querySelector('#record-office .rc-facts').innerText")
+                    driver.require('DECLARED STANZAS' in card and '2 of 2 on' in card and 'EFFECTIVE AUTHORITY' in card and 'None · denied' in card and 'Receipt recorded' in card,'roster evidence diverges from exact charter/authenticated evaluation')
                     for summary in ('#agent-inline-detail details:nth-of-type(1)>summary','#agent-inline-detail details:nth-of-type(2)>summary'):
                         driver.click(browser,summary)
                     expanded=browser.evaluate("document.querySelector('#agent-inline-detail').innerText")
                     driver.require('Authentication and identity selectors'.casefold() in expanded.casefold() and 'Information flow'.casefold() in expanded.casefold(),'incomplete declared stanza disclosure')
                     capture('office-expanded-'+str(width),width)
+
+                browser.command('Emulation.setEmulatedMedia',{'features':[{'name':'prefers-reduced-motion','value':'reduce'}]})
+                visit('/console/agents')
+                driver.tap(browser,'#record-office')
+                driver.wait_for(browser,"!!document.querySelector('#agent-inline-detail')",'native narrow touch selection')
+                proof=driver.touch_proof(browser)
+                driver.require(isinstance(proof,dict) and all(any(e['type']==kind and e['trusted'] for e in proof['events']) for kind in ('touchstart','touchend','click')),'untrusted/incomplete touch delivery')
+                results.append({'case':'narrow-touch-reduced-motion','result':'PASS'})
+                driver.set_touch_emulation(browser,False)
 
                 # Fragment-only direct entry resolves an exact server read. Refresh
                 # retains the selected revision, without making the fragment authority.
@@ -96,6 +107,19 @@ def main():
                 browser.command('Page.reload')
                 driver.wait_for(browser,"document.readyState==='complete' && !!document.querySelector('#agent-inline-detail')",'Agent detail refresh')
                 results.append({'case':'direct-and-refresh','result':'PASS'})
+
+                driver.click(browser,'#agent-inline-detail a[href*="session_id=session-office-recorded"]')
+                driver.wait_for(browser,"!!document.querySelector('#agent-session-evidence')",'exact recorded session link')
+                driver.require(browser.evaluate("document.querySelector('#agent-session-evidence').innerText.includes('session-office-recorded') && document.querySelector('#agent-session-evidence').innerText.includes('ended')"),'session destination mismatched recorded identity/state')
+                results.append({'case':'exact-session-navigation','result':'PASS'})
+                driver.click(browser,'#agent-inline-detail a[href*="record_key=agent-history-item"]')
+                driver.wait_for(browser,"location.pathname==='/console/queue' && !!document.querySelector('#queue-detail')",'exact Queue destination')
+                driver.require(browser.evaluate("document.body.innerText.includes('agent-history-item')"),'Queue destination lost exact identity')
+                results.append({'case':'exact-queue-navigation','result':'PASS'})
+                visit('/console/agents?record_key=office&session_id=session-unrelated')
+                driver.require(not browser.evaluate("!!document.querySelector('#agent-session-evidence')"),'unrelated session disclosed')
+                (root/'unrelated-session-denied.png').write_bytes(base64.b64decode(browser.command('Page.captureScreenshot',{'format':'png'})['data']))
+                results.append({'case':'unrelated-session-denied','result':'PASS'})
 
                 browser.command('Emulation.setDeviceMetricsOverride',{'width':1280,'height':600,'deviceScaleFactor':1,'mobile':False})
                 for record,revision,expected in [('missing',1,'No provisioning receipt'),('disabled',2,'Disabled: execution denied'),('retired',2,'Retired: terminal Registry lifecycle'),('history',2,'Historical revision (disabled)')]:
@@ -166,7 +190,8 @@ def main():
                 driver.require(browser.evaluate("!!document.querySelector('#password') && !document.querySelector('#agent-inline-detail')"),'auth-loss leaked detail')
                 violations=[e for e in browser.events if e.get('method')=='Audits.issueAdded' and e.get('params',{}).get('issue',{}).get('code')=='ContentSecurityPolicyIssue']
                 driver.require(not violations,'CSP violation')
-                results.extend([{'case':'auth-loss','result':'PASS'},{'case':'CSP','result':'PASS'}, {'case':'browser-ready-and-ambiguous','result':'UNAVAILABLE','reason':'Canonical accepted policies permit only local-os methods and reject overlapping enabled selectors. Password browser identity must not inherit that grant.'}, {'case':'session-browser-route','result':'UNAVAILABLE','reason':'No supported session-detail browser route; exact session evidence and exact joined Queue link retained.'}])
+                driver.require(not any(e.get('method')=='Runtime.exceptionThrown' for e in browser.events),'uncaught browser exception')
+                results.extend([{'case':'auth-loss','result':'PASS'},{'case':'CSP','result':'PASS'}, {'case':'browser-ready-and-ambiguous','result':'UNAVAILABLE','reason':'Canonical accepted policies permit only local-os methods and reject overlapping enabled selectors. Password browser identity must not inherit that grant.'}])
             finally:
                 if browser:
                     try: browser.command('Browser.close')
@@ -182,6 +207,6 @@ def main():
         log.close()
     driver.require(hashlib.sha256(binary.read_bytes()).hexdigest()==identity,'candidate drift')
     (root/'browser-results.json').write_text(json.dumps({'binary_sha256':identity,'results':results},indent=2)+'\n')
-    print('PASS: actual frozen Serve, password Console, inline retained roster, desktop/narrow evidence, lifecycle/history, selection/scroll/focus/filter Back, no-script/auth-loss/CSP. Ready/ambiguous browser and session route explicitly UNAVAILABLE.')
+    print('PASS: actual frozen Serve, password Console, inline retained roster/evaluated summaries, desktop/narrow evidence, exact session/Queue navigation, lifecycle/history, selection/scroll/focus/filter Back, no-script/auth-loss/CSP. Ready/ambiguous password-browser scenarios explicitly UNAVAILABLE.')
 
 if __name__=='__main__': main()

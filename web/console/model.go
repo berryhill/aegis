@@ -187,6 +187,7 @@ type RecordModel struct {
 // immutable Registry revision. DeclaredAuthority is not an effective stanza,
 // mandate, or permission grant.
 type AgentDetailModel struct {
+	DeclaredStanzaSummary, EffectiveAuthoritySummary, ReceiptSummary                string
 	StableID, FleetID, SourceKind, SourceID, OwnerID, AccountabilityID              string
 	RuntimeAdapter, Runtime, RuntimeTarget, RuntimeVersionConstraint                string
 	CharterID, CharterDigest, RevisionDigest                                        string
@@ -200,6 +201,15 @@ type AgentDetailModel struct {
 	CharterHistory                                                                  []FieldModel
 	History, Executions                                                             []LinkModel
 	Stanzas                                                                         []AgentStanzaModel
+	SessionLinks                                                                    []LinkModel
+	SessionRecords                                                                  []AgentSessionModel
+	SelectedSession                                                                 *AgentSessionModel
+}
+
+// AgentSessionModel contains only exact-bound public evidence, never runtime
+// homes, private process metadata, credentials, or a claim of fresh admission.
+type AgentSessionModel struct {
+	ID, Status, StanzaID, MandateID string
 }
 
 // AgentStanzaModel contains declarations only, never an authorization grant.

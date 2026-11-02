@@ -9,6 +9,12 @@ available. None of that presentation state enters authority evaluation.
 
 ## Evidence hierarchy
 
+Roster cards retain the accepted three summaries: declared enabled/total stanzas
+from the exact verified charter, effective authority from the authenticated
+server evaluation, and recorded receipt evidence. Receipt presence is not current
+provisioning integrity. Missing charter/evaluation/evidence reads stay unavailable;
+Registry capability declarations are not substituted for effective authority.
+
 The detail presents header/actions, readiness, exact charter/runtime constraint,
 provisioning receipts, charter and Registry revision history, effective authority,
 all trust-stanza declarations, and exact-bound session/execution evidence.
@@ -39,8 +45,10 @@ no approval, mandate, runtime session, Queue item or provisioning artifact.
 
 Recorded sessions join only the exact charter digest/revision/runtime/target.
 Their records do not encode Registry revision ownership or establish fresh
-admission. There is no supported session-detail browser route; this is explicitly
-unavailable rather than replaced with a fabricated link. Exact Queue links require
+admission. Native links retain the exact Agent revision and select an exact-bound
+`session_id` on the same authenticated Agent detail. Unknown or unrelated session
+records deny; the selected evidence excludes runtime homes and private process
+diagnostics and never claims a live process. Exact Queue links require
 the selected immutable Agent participant reference and matching accepted snapshot
 and Queue item. An absent link never implies activity.
 
@@ -63,8 +71,8 @@ existing shared lifetime-lock pool. Follow `.hermes/acceptance-port-isolation.md
 never use 8448/8098 or retained gateway state.
 
 The fixture distinguishes actual browser denial from positive local-OS service
-observation. Neither the unavailable browser-positive/ambiguous fixture nor the
-unavailable session-detail route is counted as PASS. Desktop/narrow DOM and
+observation. The unavailable browser-positive/ambiguous fixture is not counted as
+PASS. Desktop/narrow DOM and
 screenshots must be independently compared with the accepted artifact. A passing
 fixture, source merge or CI result is not a release or workstation deployment.
 

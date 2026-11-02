@@ -89,14 +89,20 @@ func consoleAgentDetail(ctx context.Context, svc *app.Service, subject core.Subj
 		}
 	}
 	if sessions, err := svc.ListSessions(); err == nil {
-		detail.SessionEvidence = "No session record for this exact charter and runtime binding. Session history does not establish current admission; no session-detail browser route is available."
+		detail.SessionEvidence = "No session record for this exact charter and runtime binding. Session history does not establish current admission."
 		for _, session := range sessions {
 			mandate := session.Mandate
 			if mandate.AgentID != revision.Charter.ID || mandate.CharterRevision != revision.Charter.Revision || mandate.CharterDigest != revision.Charter.Digest || mandate.Target != revision.Runtime.Target || mandate.Runtime.Runtime != revision.Runtime.Runtime {
 				continue
 			}
-			detail.SessionEvidence = "Recorded sessions for the exact charter, runtime and target binding. Registry revision ownership is not encoded in these session records; they are not proof of current admission, and no session-detail browser route is available."
+			detail.SessionEvidence = "Recorded sessions for the exact charter, runtime and target binding. Registry revision ownership is not encoded in these session records; they are not proof of current admission. Exact session links open only the matching recorded evidence."
 			detail.SessionFields = append(detail.SessionFields, consoleweb.FieldModel{Label: session.ID, Value: session.Status + " · stanza " + mandate.StanzaID + " · mandate " + mandate.ID + " · recorded session, not fresh admission"})
+			detail.SessionRecords = append(detail.SessionRecords, consoleweb.AgentSessionModel{ID: session.ID, Status: session.Status, StanzaID: mandate.StanzaID, MandateID: mandate.ID})
+			target, _ := url.Parse(consoleAgentRevisionURL(revision.AgentID, revision.Revision))
+			query := target.Query()
+			query.Set("session_id", session.ID)
+			target.RawQuery = query.Encode()
+			detail.SessionLinks = append(detail.SessionLinks, consoleweb.LinkModel{Label: "Recorded session · " + session.ID, Detail: session.Status + " · historical evidence, not fresh admission", URL: target.String()})
 		}
 	}
 	for _, accepted := range surface.Submissions.Accepted {
@@ -149,19 +155,21 @@ func preserveAgentHistoryContext(detail *consoleweb.AgentDetailModel, collection
 	if err != nil || detail == nil {
 		return
 	}
-	for index := range detail.History {
-		target, err := url.Parse(detail.History[index].URL)
-		if err != nil {
-			continue
-		}
-		query := target.Query()
-		for _, key := range []string{"q", "lifecycle", "page", "limit"} {
-			if value := base.Query().Get(key); value != "" {
-				query.Set(key, value)
+	for _, links := range [][]consoleweb.LinkModel{detail.History, detail.SessionLinks} {
+		for index := range links {
+			target, err := url.Parse(links[index].URL)
+			if err != nil {
+				continue
 			}
+			query := target.Query()
+			for _, key := range []string{"q", "lifecycle", "page", "limit"} {
+				if value := base.Query().Get(key); value != "" {
+					query.Set(key, value)
+				}
+			}
+			target.RawQuery = query.Encode()
+			links[index].URL = target.String()
 		}
-		target.RawQuery = query.Encode()
-		detail.History[index].URL = target.String()
 	}
 }
 

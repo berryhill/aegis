@@ -27,7 +27,7 @@ func TestRegistryAcceptedFactsLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"Execution readiness", "Authority", "Provisioning"} {
+	for _, label := range []string{"Declared stanzas", "Effective authority", "Provisioning"} {
 		if !strings.Contains(string(markup), label) {
 			t.Errorf("server-derived Registry fact label must remain: %s", label)
 		}

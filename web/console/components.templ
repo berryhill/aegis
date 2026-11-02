@@ -494,7 +494,7 @@ templ AgentCard(surface SurfaceModel, record RecordModel) {
 			}
 		</span>
 		<span class="rc-chain"><span>{ record.Source }</span><i aria-hidden="true">→</i><span>{ record.Owner }</span></span>
-		<dl class="rc-facts"><div><dt>Execution readiness</dt><dd title={ record.Readiness }>{ registryCardReadiness(record.Readiness) }</dd></div><div><dt>Declared authority</dt><dd>{ strings.TrimSuffix(record.Authority, " declared") }</dd></div><div><dt>Provisioning</dt><dd title={ record.Provisioning }>{ registryCardProvisioning(record.Provisioning) }</dd></div></dl>
+		<dl class="rc-facts"><div><dt>Declared stanzas</dt><dd>{ registryCardFact(record, "stanzas") }</dd></div><div><dt>Effective authority</dt><dd>{ registryCardFact(record, "authority") }</dd></div><div><dt>Provisioning</dt><dd title="Recorded receipt evidence is not current readiness or runtime admission">{ registryCardFact(record, "receipt") }</dd></div></dl>
 	</a>
 }
 
@@ -576,6 +576,10 @@ templ AgentInlineDetail(surface SurfaceModel, record *RecordModel) {
 					}
 					<p>{ record.Agent.SessionEvidence }</p>
 					@FieldList(record.Agent.SessionFields, "No exact-bound session evidence available")
+					@RelatedRecords(record.Agent.SessionLinks)
+					if record.Agent.SelectedSession != nil {
+						<section id="agent-session-evidence" aria-label="Exact recorded session"><h3>Exact recorded session</h3><dl class="spec"><dt>Session ID</dt><dd>{ record.Agent.SelectedSession.ID }</dd><dt>Recorded status</dt><dd>{ record.Agent.SelectedSession.Status }</dd><dt>Recorded stanza</dt><dd>{ record.Agent.SelectedSession.StanzaID }</dd><dt>Recorded mandate</dt><dd>{ record.Agent.SelectedSession.MandateID }</dd></dl><p>This exact-bound record is historical evidence, not proof of a current live process, Registry revision ownership or fresh authority admission.</p></section>
+					}
 					@RelatedRecords(record.Agent.Executions)
 				</section>
 				<details><summary>Registry provenance and related definitions</summary><dl class="spec"><dt>Fleet source</dt><dd>{ record.Agent.FleetID + " / " + record.Agent.SourceKind + " / " + record.Agent.SourceID }</dd><dt>Owner</dt><dd>{ record.Agent.OwnerID }</dd><dt>Accountability</dt><dd>{ record.Agent.AccountabilityID }</dd><dt>Declared capabilities</dt><dd>{ strings.Join(record.Agent.Capabilities, ", ") }</dd><dt>Declared policies</dt><dd>{ strings.Join(record.Agent.Policies, "\n") }</dd></dl>@RelatedRecords(record.Links)</details>

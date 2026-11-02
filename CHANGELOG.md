@@ -27,8 +27,10 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   runtime compatibility without issuing authority; retain historical lifecycle
   truth, expose the verified runtime constraint and restore Agent selection,
   focus and nonzero scroll on Back. Exact-record link labels no longer collide.
-  Password login never borrows a local-OS stanza; unsupported session navigation
-  and unreachable accepted-policy fixtures remain explicitly unavailable.
+  Roster summaries now distinguish declared stanzas, evaluated authority and
+  exact receipt evidence; native exact session links remain inside the
+  authenticated Agent detail. Password login never borrows a local-OS stanza;
+  unreachable accepted-policy fixtures remain explicitly unavailable.
   See [Agent detail](docs/AGENT_DETAIL.md).
 
 - #379 recovery prerequisite (source): explicit principal-authenticated orphan
