@@ -71,6 +71,7 @@ func TestCanonicalContributionCIRepairFinalization(t *testing.T) {
 // Actual canonical same-PR controller journey with a real nonconflicting Git
 // upstream addition. HTTP and runtime are controlled; no live remote is claimed.
 func TestCanonicalContributionAdvancingBaseFinalization(t *testing.T) {
-	t.Parallel()
+	// Run alone before Go releases the other two paused roots: CPU contention
+	// must not consume this journey's unchanged contribution deadline.
 	retainedDeliveryNativeComposition(t, true)
 }
