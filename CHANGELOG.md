@@ -8,6 +8,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- #352 source: packaged `aegis skills install|inventory|update|rollback` thin
+  adapters reuse the exact-artifact installer with explicit destination and JSON
+  inventory. No configuration, profile, lifecycle or controller stores are used;
+  ambiguous root flags deny. Standalone developer tooling remains compatible.
+  Filesystem distribution grants no authority or runtime adoption; full #352
+  installed/package acceptance and #379 proof remain separate.
+
 - #248 source: general typed manager capability discovery and dispatch across
   existing services; immutable digest confirmation, authoritative result origin,
   stable Graph submission identities and durable readback. Protected runtime and

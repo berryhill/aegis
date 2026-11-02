@@ -127,6 +127,29 @@ tar -xzf "$native_archive" -C "$install"
 provenance=$($install/aegis version --provenance)
 PROVENANCE=$provenance VERSION=$version REVISION=$expected_revision python3 -c 'import json,os,sys; value=json.loads(os.environ["PROVENANCE"]); sys.exit(0 if value == {"version":os.environ["VERSION"],"source_revision":os.environ["REVISION"]} else 1)' || deny_provenance 'installed binary provenance does not exactly match release version and source revision'
 
+# Consume the distributed archive with the extracted product CLI, not a
+# separately source-built installer. This explicit home has no product state.
+skill_home=$proof/skills-home
+mkdir -m 0700 "$skill_home"
+skill_archive=$dist/aegis-skills_v${version}.tar.gz
+skill_digest=sha256:$(sha256sum "$skill_archive" | cut -d' ' -f1)
+HOME=$home "$install/aegis" skills install "$skill_archive" "$skill_digest" "$expected_revision" "$skill_home" >"$proof/skills-install.json"
+HOME=$home "$install/aegis" skills inventory "$skill_home" >"$proof/skills-inventory.json"
+python3 - "$proof/skills-install.json" "$proof/skills-inventory.json" "$version" "$expected_revision" "$skill_digest" <<'PY'
+import json
+import pathlib
+import sys
+installed, observed, version, revision, digest = sys.argv[1:]
+a = json.loads(pathlib.Path(installed).read_text())
+b = json.loads(pathlib.Path(observed).read_text())
+assert a == b, "packaged skills inventory differs from installation"
+assert a["version"] == version and a["source_revision"] == revision
+assert a["archive_digest"] == digest and len(a["skills"]) == 15
+assert a["authority_granted"] is False
+assert a["evidence_class"] == "installed_inventory_verification"
+PY
+[ ! -e "$home/.aegis" ] || deny_provenance 'packaged skills utility opened default product state'
+
 set +e
 printf 'non-interactive installed proof\n' | HOME=$home "$install/aegis" >"$proof/first-run.out" 2>&1
 status=$?
@@ -159,4 +182,4 @@ python3 "$repo/scripts/verify-installed-fleet-vertical.py" "$install/aegis" "$pr
 AEGIS_CANDIDATE_ARCHIVE_EXTRACTED=1 \
   "$repo/scripts/verify-installed-console.sh" "$install/aegis" "$proof/console"
 
-printf 'installed MVI verified: version=%s source_revision=%s targets=4 skill_bundle=validated_evaluated_reproducible checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_native_forms retained_asset_direct=true retained_asset_loaded=false real_chrome=true\n' "$version" "$expected_revision"
+printf 'installed MVI verified: version=%s source_revision=%s targets=4 skill_bundle=validated_evaluated_reproducible packaged_skills_install_inventory=true checksums=valid first_run=fail_closed_no_mutation fleet_vertical=registry_loop_graph_queue_evidence_disposition console=authenticated_native_forms retained_asset_direct=true retained_asset_loaded=false real_chrome=true\n' "$version" "$expected_revision"

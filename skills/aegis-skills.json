@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:f766710e61762961ae616040df6ed724615141c27deb107b353bfdae411a6944",
+    "content_digest": "sha256:75cc0cbe705b3ac023558b2aba3786946e71a891ff11d03d533bad53d39e8fa7",
     "source_revision": "repository"
   },
   "operations": [
@@ -105,12 +105,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:e8613a930c0cbfd5cede3637538cb4556b6f353fa066bf2b6d17b2f0a623f6b9",
+      "content_digest": "sha256:17d4fe500beb2871afe20a98854eff9e2b6805baee602ad449323b4cbecf89c5",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:d29dd371f90b6723b26b1ac3c151d621804c9d9e11147a04fb100c1e9fc9d9b9",
-          "size": 12325
+          "sha256": "sha256:1996f1d0bf2ac2d1e773e9dfdbecfcbc6c51b2bd8ce979005f80702771f292d5",
+          "size": 12767
         },
         {
           "path": "references/contribution-continuity.md",
@@ -119,8 +119,8 @@
         },
         {
           "path": "references/operation-matrix.v1.json",
-          "sha256": "sha256:7a866adc63218bda2139bb9446564040219ab4804ec968793564e1d198ec488e",
-          "size": 33875
+          "sha256": "sha256:a8bf385fcac83eb60fff3996c4c2e7a4f90b879b4ee4e70ce74bee5ac30d33e0",
+          "size": 34642
         }
       ]
     },
@@ -548,12 +548,12 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:e282ae357f3eb262954ec80e98582041e0988a7a70c71cb7f878065b03a2829c",
+      "content_digest": "sha256:6438678a6de09df0efb3f2e0bbc2a25ffe755db349d79fea14e7870947189bcf",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:ccfe007989c86d1cc699514fdd93a1eb2194d4a7f143a8b4acc63db98cb2f77f",
-          "size": 25815
+          "sha256": "sha256:e736d5031deb84434caf72fd5dfe194e15f38f43ae4e616d248954128f96b064",
+          "size": 28040
         },
         {
           "path": "references/lifecycle-fixtures.json",

@@ -43,6 +43,7 @@ Use this skill to identify the relevant Aegis product domain and point the user 
 
 ## Route by domain
 
+- Exact-artifact skills filesystem installation, inventory, update and rollback: use `aegis-operator-lifecycle-diagnostics` and `aegis skills install|inventory|update|rollback`. Confirm installed help. These explicit-destination filesystem utilities need no checkout, helper, configuration or controller stores; they grant no Aegis authority and do not select a remote target. They are separate from executable update and runtime activation.
 - Agent identity, immutable registration, exact history, and lifecycle: use `aegis-agent-registry` and only its shipped `aegis agents`, `/v1/agents`, and fleet-readiness surfaces.
 - Versioned workflow definitions and reversible logical-Loop discovery: use `aegis-loop-authoring` through `aegis loops` or `/v1/loops`. `loops list` hides archived Loops; `loops inventory` includes all revisions. Archive/restore is not activation, retirement or runtime stop and preserves pinned Graph/Queue/execution/evidence history. MCP Loop adapter is UNAVAILABLE; CLI/HTTP coverage is not MCP integration.
 - Exact Agent and Loop revision composition: Graphs through `aegis graphs` or `/v1/graphs`.

@@ -1,5 +1,10 @@
 # Aegis
 
+Exact-artifact skills distribution is available through
+`aegis skills install|inventory|update|rollback` with an explicit absolute home.
+These filesystem-only utilities need no checkout/helper or controller stores and
+grant no authority. See [managed inventory](docs/HERMES_SKILLS.md#managed-exact-artifact-inventory-explicit-opt-in).
+
 Source candidate: [conversational typed operations](docs/CONVERSATIONAL_OPERATIONS.md)
 connect ordinary manager requests to owning services with exact operator-confirmed
 mutation bytes. Protected approvals remain independent; synthetic proposal tests

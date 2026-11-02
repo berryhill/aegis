@@ -133,10 +133,12 @@
     {
       "skill": "aegis-operator-lifecycle-diagnostics",
       "classification": "shipped",
-      "authority": "Version/health are diagnostic only. Gateway installation, migration and reset retain their command-specific typed configuration, authentication and confirmation controls. Direct executable update has no separate principal-authentication or apply-confirmation boundary; it requires explicit operator intent and release verification, not inferred chat authorization. Health is not task completion or authority evidence.",
+      "authority": "Version/health are diagnostic only. Gateway installation, migration and reset retain their command-specific typed configuration, authentication and confirmation controls. Direct executable update has no separate principal-authentication or apply-confirmation boundary; it requires explicit operator intent and release verification, not inferred chat authorization. Health is not task completion or authority evidence. Skills install/inventory/update/rollback are explicit-destination exact-artifact filesystem utilities, not controller operations: no config/profile/lifecycle or controller stores, no remote/local fallback and no authority grant. Explicit persistent root selection/action flags deny, including empty values; help remains available. Skills rollback is not executable or authority rollback.",
       "sources": [
         "internal/command/root.go",
         "internal/command/userservice.go",
+        "internal/command/skills.go",
+        "internal/skillbundle/install.go",
         "internal/command/authority_recovery.go",
         "internal/command/reset.go",
         "internal/command/migrate_layout.go",
@@ -144,12 +146,20 @@
       ],
       "tests": [
         "internal/command/userservice_action_test.go",
+        "internal/command/skills_test.go",
+        "internal/command/skills_inventory_test.go",
+        "internal/skillbundle/install_test.go",
         "internal/command/authority_recovery_test.go",
         "internal/command/reset_test.go",
         "internal/command/migrate_layout_test.go"
       ],
       "cli": [
         "aegis version",
+        "aegis skills",
+        "aegis skills install",
+        "aegis skills inventory",
+        "aegis skills update",
+        "aegis skills rollback",
         "aegis authority",
         "aegis authority recover-interrupted",
         "aegis runtime",

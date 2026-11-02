@@ -68,6 +68,44 @@ Check `aegis --help` and subcommand help. For the supported release, use only:
 
 The gateway alias `aegis service` is accepted, but report canonical `aegis gateway` commands. There is no shipped general `aegis health`, `doctor`, `repair`, executable rollback, or arbitrary backup-restore command. There is no shipped update rollback command. A generation-managed authority store may internally retain verified generations, but this skill must not offer rollback unless the installed typed surface returns an exact eligible verified artifact and authorization workflow. If a command is absent, say unavailable.
 
+## Exact-artifact skills inventory (filesystem utility)
+
+Confirm `aegis skills --help` and the selected command's help first. Older
+executables without this group are unavailable; do not simulate an adapter.
+No source checkout or separate helper is required at operation time:
+
+```text
+aegis skills install ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis skills inventory ABSOLUTE_HOME
+aegis skills update ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis skills rollback RETAINED_ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+```
+
+Use only an explicitly authorized, existing canonical absolute destination,
+not group/world writable and not an unmanaged populated skills home. Never
+infer it from HOME/HERMES_HOME. Installation/update/rollback verify the exact
+`sha256:HEX` archive digest, exact 40-hex source revision and complete inventory.
+Update and rollback select exact caller-supplied archives, never latest.
+Local edits or extra/missing bytes deny and remain preserved for review.
+After mutation read `inventory` at the same explicit home: JSON reports exact
+version/digests/slugs, `evidence_class=installed_inventory_verification` and
+`authority_granted=false`. An interrupted post-publication error is uncertain;
+read inventory before deciding whether to repeat the same artifact.
+
+These commands bypass configuration/profile/lifecycle classification and never
+construct controller stores, including while a gateway owns state. Explicit
+`--target` (even empty), `--config`, `--state-dir`, `--runtime`,
+`--hermes-executable`, `--pinentry-executable`, `--update` and `--version` flags
+deny; help remains available. No remote/local fallback exists. This exception
+is only for skills filesystem operations, not ordinary lifecycle commands.
+No packaged developer validate/evaluate/build commands are exposed. The existing
+standalone source-built skillbundle tool remains developer-compatible.
+
+Keep the destination quiescent: atomic inventory switching does not reload or
+attest an already-running session. This is filesystem distribution, not principal
+approval, provisioning, executable rollback, runtime activation, fresh-session
+adoption or behavioral qualification. It grants no authority.
+
 ## Diagnostic sequence
 
 1. Establish scope: explanation, read-only diagnosis, or an exact requested mutation. Do not expand it.
