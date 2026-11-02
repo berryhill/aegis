@@ -16,6 +16,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #379 source: publication-history census reuses only exact canonical records
+  already fully validated in the same immutable transaction. Every new read still
+  validates all proofs and predecessors and scans for orphan/aliased records;
+  this is not a cross-read cache or a relaxation of fresh authority admission.
+
 - #379 security review: native CI/conflict repair feedback retains the exact
   policy-selected failing check or pinned PR mergeability, closed expected and
   observed states and immutable response digest, without remote logs, commands
