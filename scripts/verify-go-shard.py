@@ -7,6 +7,7 @@ examples and default fuzz seeds remain covered; TestMain runs in each process.
 """
 import argparse
 import json
+import os
 import re
 from collections import Counter
 import subprocess
@@ -215,12 +216,31 @@ def timed_run(phase, command, **kwargs):
                                      'seconds': round(time.monotonic() - start, 3)}) + '\n')
 
 
+def compiled_test_environment():
+    # cmd/go/internal/test uses base.AppendPATH: tests must find the selected
+    # compiler, not a bootstrap go that auto-selected a different toolchain.
+    result = subprocess.run(['go', 'env', 'GOROOT'], text=True,
+                            stdout=subprocess.PIPE, check=True)
+    root = result.stdout.removesuffix('\n')
+    if not root or not Path(root).is_absolute() or any(c in root for c in ('\n', '\r', os.pathsep)):
+        raise ValueError('invalid selected Go toolchain root')
+    directory = Path(root) / 'bin'
+    driver = directory / ('go.exe' if os.name == 'nt' else 'go')
+    if not driver.is_file() or not os.access(driver, os.X_OK):
+        raise ValueError('missing executable in selected Go toolchain root')
+    environment = os.environ.copy()
+    path = environment.get('PATH', '')
+    environment['PATH'] = str(directory) + (os.pathsep + path if path else '')
+    return environment
+
+
 def run_bundle(name, race, list_only):
     selected_groups = bundle_groups(name, race)
     listing = subprocess.run(['go', 'list', './...'], text=True, stdout=subprocess.PIPE, check=True)
     packages = inventory(listing.stdout)
     grouped = groups(packages)
     mode = ['-race'] if race else []
+    test_environment = compiled_test_environment()
     # Native Go test binaries preserve TestMain/default seeds and individual
     # process alarms. Link/list once per package/mode in this job, never launch
     # parallel children or combine partition alarms into a larger timeout.
@@ -241,7 +261,8 @@ def run_bundle(name, race, list_only):
                     # fixtures repeatedly inspect/hash their executing image.
                     timed_run('compile:' + package, ['go', 'test', *mode, '-c', '-ldflags=-s -w', '-o', binary, package], check=True)
                     result = timed_run('inventory:' + package, [binary, '-test.paniconexit0', '-test.list=.', '-test.timeout=' + timeout],
-                                            cwd=Path(package[len(ROOT):]), text=True, stdout=subprocess.PIPE, check=True)
+                                            cwd=Path(package[len(ROOT):]), env=test_environment,
+                                            text=True, stdout=subprocess.PIPE, check=True)
                     inventories[package] = default_inventory(result.stdout.splitlines())
                     binaries[package] = binary
                 # Match go test's unexpected os.Exit(0) guard without rejecting
@@ -258,7 +279,8 @@ def run_bundle(name, race, list_only):
                               'total_packages': len(packages), 'selected_packages': len(selected),
                               'command': command}), flush=True)
             if not list_only:
-                timed_run('execute:' + group, command, cwd=cwd, check=True)
+                timed_run('execute:' + group, command, cwd=cwd,
+                          **({'env': test_environment} if cwd is not None else {}), check=True)
     return 0
 
 
