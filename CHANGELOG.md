@@ -23,6 +23,13 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #352 qualification: the same three complete controlled finalization cases
+  use the existing two-way test concurrency after exact-root callback and HTTP
+  fixture isolation. One lifetime-claimed listener dispatches separate fixture
+  handlers and waits for their own requests before cleanup. Native commands,
+  endpoint assertions, evidence joins, eight-minute alarm, resource limits and
+  CI job inventory are unchanged. This is not live-provider qualification.
+
 - #379 recovery prerequisite (source): explicit principal-authenticated orphan
   transport quarantine retains the reviewed socket inode and kernel unbound proof,
   rejects replacement/disappearance, and shares one cancellable password check
