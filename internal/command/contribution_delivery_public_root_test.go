@@ -269,7 +269,7 @@ exec sleep 240
 	// Freeze only the Console login sample, after native adapters captured the
 	// live clock. Native authority/worker checks must share real elapsed time.
 	consoleClock.Store(liveClock().UnixNano())
-	gateway := startContributionHTTPFixture(t, s)
+	gateway := startContributionHTTPFixture(t, s, fixtureCommand.Context())
 	assertContributionHTTPDenials(t, gateway)
 	assertLivePasswordNativeDenial(t, gateway, s)
 	consoleClock.Store(0)
@@ -642,7 +642,7 @@ exec sleep 240
 	must(closeService())
 	s, e = build(fixtureCommand)
 	must(e)
-	gateway = startContributionHTTPFixture(t, s)
+	gateway = startContributionHTTPFixture(t, s, fixtureCommand.Context())
 	if _, err = gateway.Execute(context.Background(), subject, id, token, "/contribute status"); err == nil {
 		t.Fatal("pre-restart manager token survived")
 	}

@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -18,13 +20,21 @@ type recoveryPasswordFixture struct {
 	intent       AuthorityPassphraseIntent
 	cancelled    bool
 	acquisitions int
+	before       func()
+	password     []byte
 }
 
 func (p *recoveryPasswordFixture) Acquire(_ context.Context, r AuthorityPassphraseRequest) ([]byte, error) {
 	p.intent = r.Intent
 	p.acquisitions++
+	if p.before != nil {
+		p.before()
+	}
 	if p.cancelled {
 		return nil, errors.New("cancelled")
+	}
+	if p.password != nil {
+		return append([]byte(nil), p.password...), nil
 	}
 	return []byte("synthetic-recovery-password"), nil
 }
@@ -33,8 +43,12 @@ func authorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.
 	if isolateCommandFixture(t) {
 		return
 	}
-	for _, cancelled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "success", true: "cancelled"}[cancelled], func(t *testing.T) {
+	for _, scenario := range []string{"success", "cancelled", "orphan"} {
+		t.Run(scenario, func(t *testing.T) {
+			cancelled := scenario == "cancelled"
+			if scenario == "orphan" && runtime.GOOS != "linux" {
+				t.Skip("kernel-proven orphan quarantine is Linux-only")
+			}
 			configPath, state := validConfigWithoutOperationalAuthority(t)
 			path := filepath.Join(state, "persistence", "authority-v1")
 			g, err := authoritybadger.Initialize(context.Background(), path)
@@ -54,8 +68,59 @@ func authorityRecoveryCLIUsesProtectedPrincipalAuthenticationOffline(t *testing.
 			provider := &recoveryPasswordFixture{cancelled: cancelled}
 			var output bytes.Buffer
 			root := NewRoot(Dependencies{In: strings.NewReader("yes must not authenticate\n"), Out: &output, Err: io.Discard, Passphrases: provider})
-			root.SetArgs([]string{"--config", configPath, "authority", "recover-interrupted"})
+			args := []string{"--config", configPath, "authority", "recover-interrupted"}
+			var orphan os.FileInfo
+			var socket string
+			if scenario == "orphan" {
+				dir, e := os.MkdirTemp("", "ar-")
+				if e != nil {
+					t.Fatal(e)
+				}
+				t.Cleanup(func() { os.RemoveAll(dir) })
+				socket = filepath.Join(dir, "s")
+				listener, e := net.Listen("unix", socket)
+				if e != nil {
+					t.Fatal(e)
+				}
+				listener.(*net.UnixListener).SetUnlinkOnClose(false)
+				if e = os.Chmod(socket, 0600); e != nil {
+					t.Fatal(e)
+				}
+				if e = listener.Close(); e != nil {
+					t.Fatal(e)
+				}
+				orphan, e = os.Lstat(socket)
+				if e != nil {
+					t.Fatal(e)
+				}
+				data, e := os.ReadFile(configPath)
+				if e != nil {
+					t.Fatal(e)
+				}
+				data = append(data, []byte("api:\n  unix_socket: "+socket+"\n")...)
+				if e = os.WriteFile(configPath, data, 0600); e != nil {
+					t.Fatal(e)
+				}
+				args = append(args, "--quarantine-orphan-transport")
+			}
+			root.SetArgs(args)
 			err = root.Execute()
+			if scenario == "orphan" {
+				if err != nil {
+					t.Fatalf("authenticated orphan recovery refused: %v", err)
+				}
+				if _, e := os.Lstat(socket); !os.IsNotExist(e) {
+					t.Fatalf("transport remains: %v", e)
+				}
+				matches, e := filepath.Glob(socket + ".upgrade-orphan-*")
+				if e != nil || len(matches) != 1 {
+					t.Fatalf("missing retained transport: %v %v", matches, e)
+				}
+				retained, e := os.Lstat(matches[0])
+				if e != nil || !os.SameFile(orphan, retained) {
+					t.Fatalf("original socket not preserved: %v", e)
+				}
+			}
 			if provider.intent != PrincipalPasswordAuthenticate {
 				t.Fatal("wrong authentication intent")
 			}

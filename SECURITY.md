@@ -110,6 +110,15 @@ See [the exact procedure](docs/DOER_LOOP.md#explicit-native-hermes-connection-li
 
 ## Interrupted operational authority
 
+The source-only explicit `authority recover-interrupted --quarantine-orphan-transport`
+adapter requires fresh enrolled-principal authentication, complete kernel VFS
+unbound proof and exact reviewed socket custody before no-replace quarantine.
+Replacement or disappearance refuses. The same startup lock is acquired by
+production `serve` before store construction and held through store cleanup;
+recovery shares one cancellable single-flight password check and fixed deadline
+across transport and both stores. This is not a same-UID/root or cross-network-
+namespace sandbox, service-stop authority, grant renewal or live acceptance.
+
 Offline `aegis authority recover-interrupted` authenticates the enrolled operator and recovers only an exact interrupted generation on Linux. It preserves physical evidence, independently proves pinned Badger WAL framing/checksums/complete transactions, removes only proven zero padding in a working copy, validates all canonical records before and after replay, and publishes through atomic directory exchange. Strict private operation receipts support exact pre/post-exchange retries and retain immutable per-operation history. Ambiguity and damaged/torn logs refuse; Darwin recovery fails closed before mutation. See [the procedure and limits](docs/AUTHORITY_RECOVERY.md).
 
 ## Retained Doer protected setup (source candidate)

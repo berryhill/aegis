@@ -64,7 +64,7 @@ func TestPublicRootHTTPAuthenticationDenials(t *testing.T) {
 	verifier, err := principalauth.Enroll(cfg.Principal.ID, []byte("isolated-denial-password"))
 	must(err)
 	must(principalauth.Publish(filepath.Join(cfg.StateDir, "auth", principalauth.FileName), verifier))
-	h := startContributionHTTPFixture(t, s)
+	h := startContributionHTTPFixture(t, s, command.Context())
 	assertContributionHTTPDenials(t, h)
 	original, err := h.Open(ctx, core.Subject{})
 	must(err)
@@ -83,7 +83,7 @@ func TestPublicRootHTTPAuthenticationDenials(t *testing.T) {
 	must(closeService())
 	s, err = build(command)
 	must(err)
-	h = startContributionHTTPFixture(t, s)
+	h = startContributionHTTPFixture(t, s, command.Context())
 	if _, err = h.Execute(ctx, core.Subject{}, fresh.ID, fresh.Token, "/contribute run https://github.com/fixture/controlled/issues/1"); err == nil {
 		t.Fatal("old manager survived exact-store restart")
 	}

@@ -18,6 +18,10 @@ import (
 // authority; this helper grants no reset authority. Orphans are retained, never
 // deleted. The startup lock remains held until validate returns.
 func WithOfflineTransport(ctx context.Context, socket string, admit func() error, validate func() error) error {
+	return withOfflineTransport(ctx, socket, admit, validate, nil)
+}
+
+func withOfflineTransport(ctx context.Context, socket string, admit func() error, validate func() error, review *OfflineTransportReview) error {
 	if !filepath.IsAbs(socket) || filepath.Clean(socket) != socket || admit == nil || validate == nil {
 		return errors.New("exact offline transport and admission required")
 	}
@@ -76,6 +80,11 @@ func WithOfflineTransport(ctx context.Context, socket string, admit func() error
 	}
 	defer unlock()
 	pinned := fmt.Sprintf("/proc/self/fd/%d/%s", fd, name)
+	if review != nil {
+		if err := review.revalidate(ctx, pinned); err != nil {
+			return err
+		}
+	}
 	if err := admit(); err != nil {
 		return err
 	}
@@ -97,6 +106,9 @@ func WithOfflineTransport(ctx context.Context, socket string, admit func() error
 		if fresh.identity != artifact.identity {
 			return errors.New("transport changed before quarantine")
 		}
+		if review != nil && (review.identity == nil || fresh.identity != *review.identity) {
+			return errors.New("transport changed after offline review")
+		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -115,6 +127,8 @@ func WithOfflineTransport(ctx context.Context, socket string, admit func() error
 		if err != nil || id.Device != artifact.identity.Device || id.Inode != artifact.identity.Inode {
 			return errors.New("quarantine identity mismatch")
 		}
+	} else if review != nil && review.identity != nil {
+		return errors.New("reviewed transport disappeared before quarantine")
 	}
 	if _, err := os.Lstat(pinned); !errors.Is(err, os.ErrNotExist) {
 		return errors.New("offline transport absence unverified")

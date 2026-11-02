@@ -16,7 +16,7 @@ aegis --config /absolute/path/to/aegis.yaml authority recover-interrupted
 Recovery requires the existing enrolled principal password through the protected
 secret provider, not the credential-vault passphrase, command arguments, environment
 variables, or confirmation flags. Missing enrollment, cancelled authentication,
-wrong principal, or a present protected Unix socket refuses. The command opens no
+wrong principal, or a present protected Unix socket refuses by default. The command opens no
 full service, fleet store, credential vault, runtime or listener. Authentication
 freshness is bounded by configured TTL, capped at two minutes, and checked before
 publication boundaries. A retry requires fresh authentication.
@@ -30,6 +30,30 @@ aegis --config /absolute/path/to/aegis.yaml gateway status
 
 Fresh authenticated product readback and gateway/fleet readiness are separate
 acceptance gates. Recovery neither renews authority nor repairs fleet-v1.
+
+## Explicit orphan transport review (Linux source candidate)
+
+When the exact configured transport is an orphan, the explicit
+`authority recover-interrupted --quarantine-orphan-transport` adapter first
+reviews its identity without mutation. It is not permission to stop a service,
+remove a socket manually, reset state, or bypass protected principal input.
+A complete kernel UNIX-socket VFS device/inode inventory must prove the socket
+unbound; connection refusal alone is insufficient. A bound non-listening socket
+also refuses. Missing kernel proof fails closed.
+
+After fresh enrolled-principal authentication, the adapter revalidates the exact
+configuration, principal, verifier and reviewed socket identity. It holds the
+same lock used by API startup through no-replace quarantine and authority/fleet
+recovery. The original inode remains at the reported `quarantined_transport`;
+no automatic deletion occurs. Configuration/verifier/socket drift, unsafe path
+custody, lock contention, cancellation or expired authentication refuses. The
+configured authentication budget (capped at two minutes) covers the whole
+operation, not a fresh budget for each store. Recovery failure after quarantine
+can leave transport evidence; that path is custody evidence, not success.
+
+This adapter is source qualification only until independently reviewed and
+incorporated into a verified candidate. It does not establish live recovery,
+provider admission, renewed authority, or whole-contribution acceptance.
 
 ## Exact admissible state and engine proof
 
