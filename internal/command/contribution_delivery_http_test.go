@@ -31,9 +31,9 @@ type contributionHTTPFixture struct {
 	origin string
 }
 
-func startContributionHTTPFixture(t *testing.T, s *app.Service) *contributionHTTPFixture {
+func startContributionHTTPFixture(t *testing.T, s *app.Service, startupContext context.Context) *contributionHTTPFixture {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(startupContext)
 	done := make(chan error, 1)
 	go func() { done <- api.Serve(ctx, s) }()
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
