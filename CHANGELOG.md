@@ -31,6 +31,22 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   reservation. Real public intake/restart and controlled executor regressions
   remain distinct from live #379 acceptance. See `docs/contribution-intake.md`.
 
+- #352 qualification: the same three complete controlled finalization cases
+  run base-advance serially before releasing ordinary and CI-repair together
+  at Go's two-way parallel-test barrier, retaining exact-root callback and HTTP
+  fixture isolation. Test-only immutable standard-library seeds are shared only
+  across freshly qualified identical toolchains and compiler environments;
+  every native invocation retains a fresh private writable cache. One
+  lifetime-claimed listener dispatches separate fixture
+  handlers and waits for their own requests before cleanup. Native commands,
+  endpoint assertions, evidence joins, eight-minute alarm, resource limits and
+  CI job inventory are unchanged. This is not live-provider qualification.
+
+- Control-plane shutdown: owned cancellation during regular session reconciliation
+  still reaches the existing bounded shutdown pass. Canonical terminal state and
+  authority revocation remain required; unrelated and shutdown errors are not
+  suppressed.
+
 - #379 recovery prerequisite (source): explicit principal-authenticated orphan
   transport quarantine retains the reviewed socket inode and kernel unbound proof,
   rejects replacement/disappearance, and shares one cancellable password check
