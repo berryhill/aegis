@@ -43,6 +43,9 @@ func freezeToolchain(ctx context.Context, driver string) (toolchainManifest, []b
 	}
 	defer root.Close()
 	var total int64
+	// One call-local scratch allocation, never shared with another validation.
+	// Each file is fully reread and hashed before the next read overwrites it.
+	var scratch []byte
 	err = filepath.WalkDir(m.Root, func(p string, d fs.DirEntry, e error) error {
 		if e != nil {
 			return e
@@ -73,10 +76,11 @@ func freezeToolchain(ctx context.Context, driver string) (toolchainManifest, []b
 		if total > 1<<30 {
 			return bad
 		}
-		b, e := readRepositoryContextFile(root, relPath, info.Size())
+		b, e := readRepositoryContextFileBuffer(root, relPath, info.Size(), scratch)
 		if e != nil {
 			return e
 		}
+		scratch = b
 		rel, e := filepath.Rel(m.Root, p)
 		if e != nil {
 			return e
