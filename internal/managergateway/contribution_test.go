@@ -80,6 +80,12 @@ func contributionFixture(t *testing.T, managed ...bool) (*app.Service, *fleetbad
 		git, _ := exec.LookPath("git")
 		git, _ = filepath.EvalSymlinks(git)
 		policy := loop.ContributionExecutionPolicy{Kind: "go-stdlib-behavior.v1", RepositoryPath: t.TempDir(), GitBinary: git, BaseBranch: "main", BuildPackage: "."}
+		// Intake validates the pinned source before reserving work. Supply only
+		// that real preimage; leave the owned worktree and all independent role
+		// approvals absent so the original protected-prerequisite oracle holds.
+		if err := os.WriteFile(filepath.Join(policy.RepositoryPath, "value.go"), content, 0600); err != nil {
+			t.Fatal(err)
+		}
 		for i, k := range []string{"behavior", "security", "launch", "denial"} {
 			policy.Criteria = append(policy.Criteria, loop.ContributionCriterion{ID: k, Kind: k, Test: c.Policy.RequiredTests[i]})
 		}

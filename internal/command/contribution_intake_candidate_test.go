@@ -3,6 +3,7 @@ package command
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -106,12 +107,25 @@ func TestContributionIntakeCandidatePublicSource(t *testing.T) {
 	draft.Workspace = filepath.Join(root, "uncreated-worktree")
 	draft.WritableFiles = []string{"value.go"}
 	draft.Policy.RequiredTests = []loop.RequiredGoTest{{Package: "fixture", Name: "TestValue"}}
-	revision, _, err := loop.NewContributionRevision("public-intake", 1, "", draft, loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "berryhill/aegis", RepositoryID: source.RepositoryID, Base: strings.Repeat("b", 40), ReadAction: contribution.ReadIssueAction, Effect: "verified-protected-base-merge", DeadlineSeconds: 300, Invariants: []string{"no authority from issue prose"}, Exclusions: []string{"no managed execution in this intake qualification"}})
+	profile := loop.ContributionProfile{Controller: refs[0], Builder: refs[1], Tester: refs[2], Repository: "berryhill/aegis", RepositoryID: source.RepositoryID, Base: strings.Repeat("b", 40), ReadAction: contribution.ReadIssueAction, Effect: "verified-protected-base-merge", DeadlineSeconds: 300, Invariants: []string{"no authority from issue prose"}, Exclusions: []string{"no managed execution in this intake qualification"}}
+	revision, _, err := loop.NewContributionRevision("public-intake", 1, "", draft, profile)
 	must(err)
 	_, err = service.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: refs[0].ID, Revision: revision, IdempotencyKey: "candidate-intake-publication"})
 	must(err)
 	ref := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: revision.LoopID, Revision: 1, Digest: revision.Digest}
 	_, err = service.SetLoopLifecycleAs(ctx, subject, ref.ID, app.SetLoopLifecycleInput{AgentID: refs[0].ID, Loop: ref, State: loop.LifecycleActive, EventID: "candidate-intake-activation"})
+	must(err)
+	// Same real issue, supported immutable profile, admitted field bounds:
+	// its complete encoded context must be rejected by the actual public route.
+	oversizedDraft := draft
+	oversizedDraft.Task = strings.Repeat("x", 16384)
+	oversizedDraft.Acceptance = strings.Repeat("y", 16384)
+	oversized, _, err := loop.NewContributionRevision("public-intake-oversized", 1, "", oversizedDraft, profile)
+	must(err)
+	_, err = service.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: refs[0].ID, Revision: oversized, IdempotencyKey: "oversized-profile"})
+	must(err)
+	oversizedRef := reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: oversized.LoopID, Revision: 1, Digest: oversized.Digest}
+	_, err = service.SetLoopLifecycleAs(ctx, subject, oversizedRef.ID, app.SetLoopLifecycleInput{AgentID: refs[0].ID, Loop: oversizedRef, State: loop.LifecycleActive, EventID: "oversized-activation"})
 	must(err)
 	must(closeService())
 	closed = true
@@ -184,6 +198,33 @@ func TestContributionIntakeCandidatePublicSource(t *testing.T) {
 			t.Fatalf("non-invocation admitted %q", input)
 		}
 	}
+	execute("/contribute select " + oversizedRef.ID)
+	for range 2 {
+		_, err = gateway.Execute(ctx, core.Subject{}, opened.ID, opened.Token, "/contribute run "+issue.URL+" no-merge")
+		if err == nil || !strings.Contains(err.Error(), "status=413") || !strings.Contains(err.Error(), `"code":"contribution_input_bound"`) || strings.Contains(err.Error(), strings.Repeat("x", 64)) || strings.Contains(err.Error(), strings.Repeat("y", 64)) {
+			t.Fatalf("public encoded bound missing safe413: %v", err)
+		}
+	}
+	gateway.stop()
+	service, err = build(seed)
+	must(err)
+	closed = false
+	items, err := service.FleetRepository.ListQueueItems(ctx)
+	must(err)
+	custody := service.FleetRepository.(fleet.ContributionRepository)
+	_, err = custody.GetContribution(ctx, subject.PrincipalID, app.ContributionIntentKey(oversizedRef, issue.URL, "no-merge"))
+	if len(items) != 0 || !errors.Is(err, fleet.ErrNotFound) {
+		t.Fatal("public rejected/replayed input allocated contribution or Queue", len(items), err)
+	}
+	if _, err = os.Lstat(draft.Workspace); !os.IsNotExist(err) {
+		t.Fatal("public rejection created worktree", err)
+	}
+	t.Log("public encoded overflow: safe HTTP413 on same-key retry; durable readback has zero contributions/Queue/worktree effects")
+	must(closeService())
+	closed = true
+	gateway = start()
+	opened, err = gateway.Open(ctx, core.Subject{})
+	must(err)
 	execute("/contribute select " + ref.ID)
 	for _, input := range []string{"/contribute run https://github.com/foreign/repo/issues/1", "/contribute run " + issue.URL + " no-merge session=spoof"} {
 		if _, e := gateway.Execute(ctx, core.Subject{}, opened.ID, opened.Token, input); e == nil {
@@ -270,5 +311,18 @@ func TestContributionIntakeCandidatePublicSource(t *testing.T) {
 	if _, err = os.Lstat(draft.Workspace); !os.IsNotExist(err) {
 		t.Fatal("intake-only profile created worktree")
 	}
-	t.Logf("candidate=%s loop=%s contract=%s run=%s owner controls retained across real process restart; no provider or GitHub writes", binary, ref.Digest, sealed.Digest, sealed.RunID)
+	gateway.stop()
+	service, err = build(seed)
+	must(err)
+	closed = false
+	items, err = service.FleetRepository.ListQueueItems(ctx)
+	must(err)
+	stored, err := service.FleetRepository.(fleet.ContributionRepository).GetContribution(ctx, sealed.OwnerID, sealed.Key)
+	must(err)
+	if len(items) != 1 || items[0].ItemID != sealed.QueueItemID || !reflect.DeepEqual(stored, sealed) {
+		t.Fatal("rejection/replay/restart duplicated or altered retained contribution")
+	}
+	must(closeService())
+	closed = true
+	t.Logf("candidate=%s loop=%s contract=%s run=%s owner controls retained across real process restart; exactly one contribution/Queue; no provider or GitHub writes", binary, ref.Digest, sealed.Digest, sealed.RunID)
 }

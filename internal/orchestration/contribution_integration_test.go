@@ -38,11 +38,11 @@ func TestContributionQueueNativeRepairIntegration(t *testing.T) {
 		t.Run(fmt.Sprintf("tester_close_failure_%t", failClose), func(t *testing.T) { contributionQueueNativeRepairIntegration(t, failClose) })
 	}
 }
-func TestContributionQueueLongInputIntegration(t *testing.T) {
-	contributionQueueNativeRepairInput(t, false, true)
-}
 func contributionQueueNativeRepairIntegration(t *testing.T, failClose bool) {
-	contributionQueueNativeRepairInput(t, failClose, false)
+	// Strengthen the existing successful two-pass case with complete long issue
+	// context; retain every original custody/denial assertion without another
+	// expensive native campaign or any CI-selection/budget change.
+	contributionQueueNativeRepairInput(t, failClose, !failClose)
 }
 func contributionQueueNativeRepairInput(t *testing.T, failClose, longInput bool) {
 	ctx := context.Background()
@@ -323,26 +323,6 @@ while read rest; do :; done
 				t.Fatal("actual executor lost complete sealed issue/instructions")
 			}
 		}
-		// Reopen the actual durable store; altered/missing content-addressed
-		// input cannot be laundered into candidate evidence after restart.
-		must(repository.Close())
-		reopened, err := fleetbadger.Open(ctx, filepath.Join(root, "fleet-v1"))
-		must(err)
-		defer reopened.Close()
-		engine := &implementation.ManagedContribution{DB: reopened.ImplementationStore()}
-		_, err = engine.Read(sealed.RunID)
-		must(err)
-		key := []byte("implementation/blob/" + record.Passes[0].Candidate.Builder.InputDigest)
-		wire, err := reopened.ImplementationStore().Get(key)
-		must(err)
-		must(reopened.ImplementationStore().Put(key, []byte("altered")))
-		if _, err = engine.Read(sealed.RunID); err == nil {
-			t.Fatal("altered retained input accepted after restart")
-		}
-		must(reopened.ImplementationStore().Put(key, wire))
-		_, err = engine.Read(sealed.RunID)
-		must(err)
-		return
 	}
 	t.Run("independently_reloaded_native_evidence", func(t *testing.T) {
 		readback, err := worker.ReloadContributionCandidateEvidence(ctx, subject, "queue", lr)
@@ -678,6 +658,27 @@ while read rest; do :; done
 	must(os.WriteFile(filepath.Join(record.Workspace, "post-review-drift"), []byte("drift"), 0600))
 	if _, e = worker.AcceptedContributionCandidate(ctx, subject, "queue", lr); e == nil {
 		t.Fatal("source drift exported")
+	}
+	if longInput {
+		// Reopen the actual durable store; altered/missing content-addressed
+		// input cannot be laundered into candidate evidence after restart.
+		must(repository.Close())
+		reopened, err := fleetbadger.Open(ctx, filepath.Join(root, "fleet-v1"))
+		must(err)
+		defer reopened.Close()
+		engine := &implementation.ManagedContribution{DB: reopened.ImplementationStore()}
+		_, err = engine.Read(sealed.RunID)
+		must(err)
+		key := []byte("implementation/blob/" + record.Passes[0].Candidate.Builder.InputDigest)
+		wire, err := reopened.ImplementationStore().Get(key)
+		must(err)
+		must(reopened.ImplementationStore().Put(key, []byte("altered")))
+		if _, err = engine.Read(sealed.RunID); err == nil {
+			t.Fatal("altered retained input accepted after restart")
+		}
+		must(reopened.ImplementationStore().Put(key, wire))
+		_, err = engine.Read(sealed.RunID)
+		must(err)
 	}
 	t.Log("synthetic runtime protocol qualification; native multi-file repair and executable checks passed; not real-provider success")
 }
