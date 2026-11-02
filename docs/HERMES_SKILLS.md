@@ -198,24 +198,30 @@ installed skill or actual-agent behavioral qualification.
 
 ## Managed exact-artifact inventory (explicit opt-in)
 
-A separate source-built `aegis-skillbundle` tool now implements `install`,
-`inventory`, `update`, and `rollback`. It is not the `aegis update` executable
-updater and is not yet a separately published release binary. Build it once:
-
-```sh
-go build -o .aegis-skill-proof/aegis-skillbundle ./internal/skillbundle/cmd
-```
-
-The compiled tool needs no checkout at operation time. Supply a downloaded or
+The packaged CLI exposes `aegis skills install|inventory|update|rollback`.
+These explicit filesystem utilities need no checkout, helper executable, valid
+Aegis configuration, profile, principal authentication or controller stores at
+operation time, even while a gateway owns those stores. They are not the
+`aegis update` executable updater. Supply a downloaded or
 locally prepared archive, the independently selected exact `sha256:HEX` archive
 digest, its exact 40-hex source revision, and an explicit absolute destination:
 
 ```text
-aegis-skillbundle install ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
-aegis-skillbundle inventory ABSOLUTE_HOME
-aegis-skillbundle update ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
-aegis-skillbundle rollback RETAINED_ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis skills install ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis skills inventory ABSOLUTE_HOME
+aegis skills update ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
+aegis skills rollback RETAINED_ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME
 ```
+
+All four commands emit JSON through the normal CLI output. Explicit root
+`--target` (including empty), `--config`, `--state-dir`, `--runtime`,
+`--hermes-executable`, `--pinentry-executable`, `--update` and `--version` flags
+are rejected; use `--help` for discovery. There is no remote/local fallback.
+The packaged group exposes no developer `validate`, `evaluate` or `build` action.
+Standalone developer compatibility remains: build `./internal/skillbundle/cmd`
+with `go build -o .aegis-skill-proof/aegis-skillbundle ./internal/skillbundle/cmd`
+and use the same four actions without the `skills` prefix. That developer tool
+also retains source validation, evaluation, packaging and archive verification.
 
 The destination must already be a canonical, non-symlink directory that is not
 group/world writable. Use a new mode-0700 repository-local proof home for tests.

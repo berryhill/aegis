@@ -180,6 +180,9 @@ func newRoot(deps Dependencies, observe rootServiceObserver) *cobra.Command {
 		return closeOpened()
 	}
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if isSkillsCommand(cmd) {
+			return skillsPreflight(cmd) // No config, profile, lifecycle or application stores.
+		}
 		cmd.SetContext(context.WithValue(cmd.Context(), authorityPassphraseContextKey{}, passphrases))
 		if cmd.Name() == "update" && cmd.Parent() == root {
 			installed, _ := cmd.Flags().GetBool("installed")
@@ -406,6 +409,7 @@ func newRoot(deps Dependencies, observe rootServiceObserver) *cobra.Command {
 		return activateManager(cmd, true, userservice.GatewayObservation{State: userservice.GatewayStopped})
 	}), resetCmdWithRunner(deps.Resetter, deps.UserService, deps.IsTerminal, o, deps.Profile), migrateLayoutCmd(deps.Migrator, deps.IsTerminal, o, deps.Profile), versionCmd(deps.Version, deps.SourceRevision), runtimeCmd(build, o), configCmd(build), charterCmd(build), designCmd(build), planCmd(build), approvalCmd(build), provisionCmd(build), sessionCmd(build), fleetAgentsCmd(build), fleetLoopsCmd(build), fleetGraphsCmd(build), fleetQueueCmd(build), secretCmd(build), auditCmd(build), serveCmd(build), userServiceCmd(deps.UserService, deps.IsTerminal, o), consoleCmd(o), updateCmd(deps.Updater, deps.UserService, deps.GatewayImageObserver, o), credentialBridgeCmd())
 	root.AddCommand(controllerCodexCmd())
+	root.AddCommand(skillsCmd())
 	root.AddCommand(authorityRecoveryCmd(o, deps.Profile))
 	addGatewayRecovery(root, deps, o)
 	root.AddCommand(NewDoerApprovalCompanionCommand(func() string { return o.configFile }))
