@@ -23,6 +23,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #375 source: complete reader-valid issue/discussion context no longer has to
+  fit inside Task. Historical inline bindings remain byte-identical; larger
+  bindings use exact controller-resolved sealed contract references with complete
+  builder delivery and private input evidence. Task/runtime/source limits stay
+  unchanged; encoded oversized initial inputs reject before contribution/Queue
+  reservation. Real public intake/restart and controlled executor regressions
+  remain distinct from live #379 acceptance. See `docs/contribution-intake.md`.
+
 - #379 recovery prerequisite (source): explicit principal-authenticated orphan
   transport quarantine retains the reviewed socket inode and kernel unbound proof,
   rejects replacement/disappearance, and shares one cancellable password check

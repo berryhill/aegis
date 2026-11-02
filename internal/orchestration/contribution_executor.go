@@ -175,6 +175,26 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		}
 	}
 	engine.Build = func(c context.Context, input implementation.Request) ([]implementation.Edit, implementation.ContributionRoleIdentity, error) {
+		// Re-resolve from authorized durable Queue custody before role/runtime
+		// effects. Never follow a model-supplied URL or arbitrary blob address.
+		bound, current, err := w.contributionContract(c, request.QueueItemID, runtime.LoopRevision)
+		if err != nil {
+			return nil, implementation.ContributionRoleIdentity{}, err
+		}
+		want, _ := bound.Digest()
+		got, _ := input.Contract.Digest()
+		if want != got || current.Digest != sealed.Digest {
+			return nil, implementation.ContributionRoleIdentity{}, ErrWorkerDenied
+		}
+		if bound.Contribution != nil {
+			input.Contribution, err = contribution.Marshal(current)
+			if err != nil {
+				return nil, implementation.ContributionRoleIdentity{}, err
+			}
+		}
+		if _, err := implementationInput(input, patchResponseInstruction(false)); err != nil {
+			return nil, implementation.ContributionRoleIdentity{}, err
+		}
 		if builder == nil {
 			builder, err = resolve(c, 1)
 			if err != nil {
@@ -183,9 +203,23 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		}
 		active = builder
 		var identity implementation.ContributionRoleIdentity
+		var prepared string
 		input.InputObserver = func(observation implementation.InputObservation) error {
+			if input.Contribution != nil {
+				if !observation.Completed {
+					var err error
+					prepared, err = engine.RetainContributionInput(observation.Bytes)
+					return err
+				}
+				if prepared == "" || contribution.Digest(observation.Bytes) != prepared || observation.TurnID != input.PassID {
+					return errors.New("contribution input delivery mismatch")
+				}
+			}
 			if observation.Completed {
 				identity = contributionIdentity(*builder, observation.RuntimeSessionID, observation.TurnID)
+				if input.Contribution != nil {
+					identity.InputDigest, identity.InputBytes = prepared, len(observation.Bytes)
+				}
 			}
 			return nil
 		}

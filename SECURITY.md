@@ -1,5 +1,10 @@
 # Security Policy
 
+Contribution issue data remains untrusted and byte-bounded. Oversized Task context
+uses exact existing-contract custody and controller resolution, not runtime tools
+or credential access; complete encoded-input rejection precedes intake effects.
+See [intake limits and private delivery evidence](docs/contribution-intake.md#bounded-issue-data-and-executor-delivery).
+
 Contribution publication history is distinct from active repository/base custody.
 Proof-gated release and original issue-intent read-only recovery are described in
 [the #423 boundary](docs/contribution-publication-custody.md); expiry or process

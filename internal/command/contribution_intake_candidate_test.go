@@ -201,6 +201,25 @@ func TestContributionIntakeCandidatePublicSource(t *testing.T) {
 		return c
 	}
 	sealed := decode(status)
+	expectedSource := source
+	expectedSource.ObservedAt = sealed.Source.ObservedAt
+	if !reflect.DeepEqual(sealed.Source, expectedSource) {
+		t.Fatal("public intake lost issue/discussion bytes or provenance")
+	}
+	bound, err := contribution.BindLoop(revision, sealed)
+	must(err)
+	if len(source.Body)+func() int {
+		n := 0
+		for _, c := range source.Discussion {
+			n += len(c.Body)
+		}
+		return n
+	}() > 32768 && (bound.Contribution == nil || contribution.ValidateImplementationContext(bound, &sealed) != nil) {
+		t.Fatal("large public source lacks resolvable exact binding")
+	}
+	sourceWire, err := json.Marshal(sealed.Source)
+	must(err)
+	t.Logf("complete source JSON bytes=%d; Task bytes=%d; reference-backed=%t", len(sourceWire), len(bound.Task), bound.Contribution != nil)
 	if sealed.Source.IssueID != source.IssueID || sealed.Source.RepositoryID != source.RepositoryID || sealed.Loop != ref || sealed.OwnerID != cfg.Principal.ID || sealed.SessionID != opened.ID || sealed.Acceptance != draft.Acceptance || sealed.Effect != "no-merge" {
 		t.Fatal("lost canonical intake bindings")
 	}

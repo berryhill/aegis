@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/implementation"
 	hermesruntime "github.com/berryhill/aegis/internal/runtime/hermes"
 	"io"
@@ -42,15 +43,15 @@ func (p HermesPatchProposer) propose(ctx context.Context, request implementation
 	if reported {
 		instruction = patchResponseInstruction(true)
 	}
-	wire, err := json.Marshal(struct {
-		Instruction string                 `json:"instruction"`
-		Request     implementation.Request `json:"request"`
-	}{instruction, request})
+	wire, err := implementationInput(request, instruction)
 	if err != nil {
 		return implementation.Proposal{}, err
 	}
 	turn := p.Request
 	if len(wire) > hermesruntime.MaxAttemptInputBytes || (turn.Bounds.InputBytes > 0 && len(wire) > turn.Bounds.InputBytes) {
+		if request.Contract.Contribution != nil {
+			return implementation.Proposal{}, contribution.ErrInputBound
+		}
 		return implementation.Proposal{}, errors.New("serialized implementation input exceeds budget")
 	}
 	turn.AttemptID = request.PassID

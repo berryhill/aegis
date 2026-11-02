@@ -73,8 +73,11 @@ func (r Reader) get(ctx context.Context, path string, target any) (string, []byt
 		return "", nil, errors.New("contribution source HTTP status denied")
 	}
 	wire, err := io.ReadAll(io.LimitReader(response.Body, (256<<10)+1))
-	if err != nil || len(wire) > 256<<10 {
-		return "", nil, errors.New("contribution source exceeds bound")
+	if err != nil {
+		return "", nil, errors.New("contribution source read failed")
+	}
+	if len(wire) > 256<<10 {
+		return "", nil, ErrSourceResponseBound
 	}
 	// GitHub responses are an open upstream schema. Project only explicitly
 	// selected fields; these bytes never pass as an internal authority contract.
@@ -116,7 +119,13 @@ func (r Reader) Read(ctx context.Context, issue IssueURL) (Source, error) {
 	if err != nil {
 		return Source{}, err
 	}
-	if remote.ID == 0 || remote.Number != issue.Number || remote.URL != issue.URL || len(remote.PullRequest) != 0 || remote.UpdatedAt.IsZero() || len(remote.Body) > 65536 || len(remote.Title) > 1024 {
+	if len(remote.Body) > 65536 || len(remote.Title) > 1024 {
+		return Source{}, ErrSourceIssueBound
+	}
+	if remote.Comments > MaxDiscussion {
+		return Source{}, ErrSourceDiscussionBound
+	}
+	if remote.ID == 0 || remote.Number != issue.Number || remote.URL != issue.URL || len(remote.PullRequest) != 0 || remote.UpdatedAt.IsZero() {
 		return Source{}, errors.New("issue object identity or bounds denied")
 	}
 	if remote.Author.ID == 0 || remote.Author.Login == "" || remote.CreatedAt.IsZero() || remote.State != "open" || remote.Comments > MaxDiscussion {
@@ -133,9 +142,12 @@ func (r Reader) Read(ctx context.Context, issue IssueURL) (Source, error) {
 			return Source{}, err
 		}
 		if len(comments) > MaxDiscussion || uint64(len(comments)) != remote.Comments {
-			return Source{}, errors.New("discussion bound exceeded")
+			return Source{}, ErrSourceDiscussionBound
 		}
 		for _, c := range comments {
+			if len(c.Body) > 32768 {
+				return Source{}, ErrSourceDiscussionBound
+			}
 			if c.ID == 0 || c.Author.ID == 0 || c.Author.Login == "" || c.CreatedAt.IsZero() || c.UpdatedAt.IsZero() || len(c.Body) > 32768 {
 				return Source{}, errors.New("discussion malformed")
 			}

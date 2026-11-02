@@ -15,7 +15,7 @@ import (
 )
 
 func roleIdentity(s string) ContributionRoleIdentity {
-	return ContributionRoleIdentity{s, s, s, s, s, s, s, s}
+	return ContributionRoleIdentity{AgentDigest: s, CharterDigest: s, AuthorityID: s, AuthorityDigest: s, SessionID: s, MandateID: s, RuntimeSessionID: s, TurnID: s}
 }
 
 // Real native compilation, executable invocation, immutable tests and Git linked

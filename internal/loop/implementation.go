@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/berryhill/aegis/internal/reference"
 )
 
 // VerifiedImplementation is an additive action contract, not a shell program.
@@ -34,6 +36,9 @@ type VerifiedImplementation struct {
 	MaxPasses         uint8              `json:"max_passes"`
 	DecisionMode      string             `json:"decision_mode,omitempty"`
 	RepositoryContext *RepositoryContext `json:"repository_context,omitempty"`
+	// Contribution is resolved only by the owning contribution controller. It
+	// grants no retrieval or execution authority to the tool-free runtime.
+	Contribution *reference.DigestRef `json:"contribution,omitempty"`
 }
 
 // ImplementationDraft explicitly leaves workspace unresolved. It cannot execute
@@ -45,6 +50,9 @@ func ImplementationDraft(task, acceptance string) VerifiedImplementation {
 var goPackagePath = regexp.MustCompile(`^\./[A-Za-z0-9_./-]*$`)
 
 func (v VerifiedImplementation) Validate() error {
+	if v.Contribution != nil && v.Contribution.Validate() != nil {
+		return errors.New("exact contribution context reference required")
+	}
 	if v.RepositoryContext != nil {
 		if err := v.RepositoryContext.Validate(v.Task, v.WritableFiles); err != nil {
 			return err
