@@ -17,6 +17,7 @@ import (
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/contribution"
 	"github.com/berryhill/aegis/internal/core"
+	"github.com/berryhill/aegis/internal/credentials"
 	"github.com/berryhill/aegis/internal/delivery"
 	"github.com/berryhill/aegis/internal/evidence"
 	"github.com/berryhill/aegis/internal/implementation"
@@ -63,6 +64,8 @@ func retainedDeliveryNativeComposition(t *testing.T, finalization bool, lateMode
 	if finalQualificationFactory == nil && finalQualificationProtection == nil {
 		scheduleContributionNativeJourney(t)
 	}
+	advancingBaseJourney := strings.Contains(t.Name(), "AdvancingBase")
+	repairJourney := strings.Contains(t.Name(), "CIRepair") || advancingBaseJourney
 	ctx := context.Background()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "source")
@@ -80,6 +83,10 @@ func TestSecurity(t *testing.T){if Value()<0{t.Fatal("negative")}}
 func TestLaunch(t *testing.T){if Value()==-1{t.Fatal("launch")}}
 func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 `, "README.md": "Fixture value contract\n", "SECURITY.md": "Fixture denial contract\n"}
+	if advancingBaseJourney {
+		files["offset.go"] = "package main\nfunc Offset() int{return 0}\n"
+		files["main_test.go"] = strings.Replace(files["main_test.go"], "Value()!=42", "Value()+Offset()!=42", 1)
+	}
 	for p, b := range files {
 		must(os.WriteFile(filepath.Join(repoPath, p), []byte(b), 0600))
 	}
@@ -101,6 +108,9 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	c := loop.ImplementationDraft("Repair real value behavior", "Native required tests pass")
 	c.Workspace = filepath.Join(root, "owned")
 	c.WritableFiles = []string{"value.go"}
+	if advancingBaseJourney {
+		c.WritableFiles = append(c.WritableFiles, "offset.go")
+	}
 	c.Policy.Packages = []string{"."}
 	c.Policy.TimeoutSeconds = 60
 	c.Policy.RequiredTests = nil
@@ -119,6 +129,10 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: p, Role: role, Bytes: int64(len(files[p])), Digest: contribution.Digest([]byte(files[p]))})
 	}
 	c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
+	if advancingBaseJourney {
+		c.RepositoryContext.Files = append(c.RepositoryContext.Files, loop.RepositoryContextFile{Path: "offset.go", Role: "source", Bytes: int64(len(files["offset.go"])), Digest: contribution.Digest([]byte(files["offset.go"]))})
+		c.RepositoryContext.SourceDigest = implementation.RepositorySourceDigest(c.RepositoryContext)
+	}
 	policy := loop.ContributionExecutionPolicy{Kind: "go-stdlib-behavior.v1", RepositoryPath: repoPath, GitBinary: git, BaseBranch: "main", BuildPackage: "."}
 	for i, k := range []string{"behavior", "security", "launch", "denial"} {
 		policy.Criteria = append(policy.Criteria, loop.ContributionCriterion{ID: k, Kind: k, Test: c.Policy.RequiredTests[i]})
@@ -128,6 +142,11 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: a.path, Path: a.path, Scope: a.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	s := contributionApp(t)
+	if finalization {
+		s.Config.Credentials.Authority.DeploymentID = "fixture-deployment"
+		s.Config.ContributionDelivery = &config.ContributionDelivery{}
+		s.CredentialAuthority = &credentials.Authority{}
+	}
 	clock := &contributionStageClock{at: time.Now().UTC()}
 	s.Now = clock.Now
 	// Every productive delivery path uses #378's actual request boundary. The
@@ -141,6 +160,12 @@ func TestDenial(t *testing.T){if Value()==-2{t.Fatal("denial")}}
 	for _, id := range []string{"controller", "builder", "tester"} {
 		charter := core.Charter{SchemaVersion: core.SchemaVersion, AgentID: id, Name: id, Revision: 1, Runtime: core.RuntimeConstraint{Adapter: "hermes", Runtime: "hermes-agent", VersionConstraint: ">=0.18.0", Target: "aegis-owned-ephemeral"}, CreatedBy: subject.PrincipalID, CreatedAt: s.Now(), Stanzas: []core.TrustStanza{{ID: "principal", Name: "principal", Enabled: true, Authentication: core.AuthenticationPolicy{Methods: []string{"local-os"}, Selectors: []core.IdentitySelector{{SubjectIDs: []string{subject.ID}, PrincipalIDs: []string{subject.PrincipalID}, Issuers: []string{"local-os"}, Environments: []string{"local"}}}}, Session: core.SessionPolicy{MaximumLifetimeSec: 300}, Approval: core.ApprovalPolicy{MaximumLifetimeSec: 300, SingleUse: true}, InformationFlow: core.InformationFlowPolicy{CrossStanza: "deny"}, Hermes: core.HermesConfig{Model: "synthetic-protocol", Provider: "none"}}}}
 		charter.Stanzas[0].Authentication.Selectors[0].Issuers = []string{subject.Issuer}
+		if finalization && id == "controller" {
+			charter.Stanzas[0].Scopes.Credentials = []string{"github"}
+			for _, op := range []delivery.Operation{delivery.UploadBlob, delivery.UploadTree, delivery.UploadCommit, delivery.Publish, delivery.PullRequest, delivery.UpdatePullRequest, delivery.CheckDelivery, delivery.Merge, delivery.ReconcileIssue} {
+				charter.Stanzas[0].Grant.Capabilities = append(charter.Stanzas[0].Grant.Capabilities, string(op), app.ContributionDeliveryResourceCapability(op, "fixture/controlled", 7))
+			}
+		}
 		cc, e := core.Canonicalize(charter)
 		must(e)
 		must(s.Store.SaveCharter(cc))
@@ -200,6 +225,14 @@ text='` + nativeJSON(string(proposal)) + `'
 printf '{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"%s","payload":{"status":"complete","text":%s}}}\n' "$sid" "$text"
 while read rest; do :; done
 `
+	if repairJourney {
+		successor, _ := json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package main\n// CI repair preserves the reviewed behavior.\nfunc Value() int{return 42}\n")}}})
+		if advancingBaseJourney {
+			successor, _ = json.Marshal(map[string]any{"edits": []implementation.Edit{{Path: "value.go", Content: []byte("package main\n// Preserve the upstream writable offset.\nfunc Value() int{return 35}\n")}}})
+		}
+		script = strings.Replace(script, "text='", "if [ -f '"+filepath.Join(root, "first-proposal")+"' ]; then text='"+nativeJSON(string(successor))+"'; else touch '"+filepath.Join(root, "first-proposal")+"'; text='", 1)
+		script = strings.Replace(script, "printf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", "fi\nprintf '{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"message.complete", 1)
+	}
 	must(os.WriteFile(filepath.Join(installation, "venv", "bin", "python"), []byte(script), 0700))
 	adapter := hermes.New(executable, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.Hermes = adapter
@@ -219,8 +252,19 @@ while read rest; do :; done
 	goBin, _ = filepath.EvalSymlinks(goBin)
 	s.Config.Implementation = config.Implementation{GoBinary: goBin, AuthorizedContracts: []string{lr.Digest}}
 	must(worker.ConfigureImplementation(s.Config.Implementation, s.Config.StateDir, adapter))
-	worker.SetContributionFetch(func(context.Context, loop.ContributionExecutionPolicy) error {
-		runGit("fetch", "--no-tags", repoPath, "main")
+	advanceFetches := 0
+	worker.SetContributionFetch(func(_ context.Context, transport loop.ContributionExecutionPolicy) error {
+		if advancingBaseJourney && transport.BaseBranch != "main" {
+			if exec.Command(git, "-C", repoPath, "cat-file", "-e", transport.BaseBranch).Run() == nil {
+				t.Fatal("upstream object already local before exact transport")
+			}
+			advanceFetches++
+			// Controlled transport copies real objects from the private remote;
+			// canonical HTTPS origin and production transport policy stay intact.
+			runGit("fetch", "--no-tags", filepath.Join(root, "controlled-upstream.git"), transport.BaseBranch)
+		} else {
+			runGit("fetch", "--no-tags", repoPath, transport.BaseBranch)
+		}
 		return nil
 	})
 	_, e = s.PublishLoopAs(ctx, subject, app.PublishLoopInput{AgentID: refs[0].ID, Revision: lr, IdempotencyKey: "publish"})
@@ -360,8 +404,25 @@ while read rest; do :; done
 			must(err)
 			completionOwner = concurrentPreclosure{primary: completion, duplicate: duplicate, t: t}
 		}
+		if !repairJourney && !late && scope == "verified-protected-base-merge" && !concurrent && frameOwner == nil && issueProbe == nil {
+			completionOwner = provenanceNegativeCompletion{CompletionOwner: completionOwner, t: t, s: s, store: repository, verifier: verifier, subject: subject, key: sealed.Key}
+		}
 		conductorStarted := time.Now()
-		conducted, finalErr := delivery.NewConductor(delivery.NewEngine(owned, productive, admission, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		var conducted delivery.DeliveryResult
+		var finalErr error
+		if repairJourney {
+			deny := &jointCancelDeny{}
+			gh := remote.(*delivery.GitHub)
+			_, err = app.InstallContributionDeliveryPublicationOwner(s, deny, gh, s.CurrentContributionDeliverySubject)
+			must(err)
+			server := &app.ContributionDeliveryServerPolicy{Convention: "contribution-publication.v1", Actor: p.Actor, Author: p.Author, Committer: p.Committer, ProtectionPolicy: p.ProtectionPolicy, RequiredChecks: p.RequiredChecks, RequiredReviewers: p.RequiredReviewers, PostMergeChecks: p.PostMergeChecks, MergeMethod: p.MergeMethod,
+				Binding: credentials.CredentialBinding{Key: credentials.CredentialBindingKey{AgentID: "controller", StanzaID: "principal", DeploymentID: s.Config.Credentials.Authority.DeploymentID, Scope: "github"}, SecretRecord: "fixture", VersionPolicy: credentials.VersionPinned, PinnedVersion: 1, Mode: "github", Destinations: []string{"github"}, Enabled: true, BindingRevision: 1}}
+			controller, err := app.InstallContributionDeliveryController(s, server, &credentials.Authority{}, deny)
+			must(err)
+			conducted, finalErr = controller.RunAs(ctx, subject, sealed.Key, p.ControllerSession)
+		} else {
+			conducted, finalErr = delivery.NewConductor(delivery.NewEngine(owned, productive, admission, pipeline), nil, completionOwner).Run(ctx, p.Binding.Reference)
+		}
 		t.Logf("contribution-stage=delivery-preclosure elapsed=%s held=%s reason=%s error=%v", time.Since(conductorStarted), conducted.Held, conducted.Reason, finalErr)
 		if late {
 			// The owning Source intentionally sanitizes callback errors. Confirm
@@ -432,6 +493,11 @@ while read rest; do :; done
 		}
 		terminal, resultErr := s.GetContributionResultAs(ctx, subject, sealed.Key)
 		if finalErr != nil || resultErr != nil {
+			native, nativeErr := s.ReadContributionExecutionAs(ctx, subject, sealed.Key)
+			t.Logf("native repair readback: error=%v state=%s consumed=%d passes=%d repairs=%d integration=%t", nativeErr, native.State, native.Consumed, len(native.Passes), len(native.DeliveryRepairs), native.Integration != nil)
+			for _, pass := range native.Passes {
+				t.Logf("native pass=%d check=%s original_base=%s current_base=%s", pass.Candidate.Pass, pass.Check.Outcome, pass.Candidate.Base, pass.Candidate.CurrentBase)
+			}
 			_, diagnostic, diagnosisErr := verifier.VerifyPreClosureAs(ctx, subject, sealed.Key)
 			history, historyErr := s.ReadContributionDeliveryHistoryAs(ctx, subject, sealed.Key)
 			operations := []delivery.Operation{}
@@ -452,7 +518,8 @@ while read rest; do :; done
 			expectedState, expectedOutcome = "failed", "failed"
 		}
 		if string(terminal.Disposition.State) != expectedState || terminal.Report.Outcome != expectedOutcome || terminal.Report.Scope != scope {
-			t.Fatal("canonical finalization did not produce SUCCEEDED")
+			native, nativeErr := s.ReadContributionExecutionAs(ctx, subject, sealed.Key)
+			t.Fatalf("canonical finalization did not produce SUCCEEDED: report=%+v native_state=%s consumed=%d integration=%t native_error=%v", terminal.Report, native.State, native.Consumed, native.Integration != nil, nativeErr)
 		}
 		if expectedOutcome != "succeeded" {
 			h, e := s.ReadContributionDeliveryHistoryAs(ctx, subject, sealed.Key)
@@ -466,6 +533,56 @@ while read rest; do :; done
 		}
 		if late && (completionProbe == nil || !completionProbe.genericDenied || terminal.Report.Current == nil) {
 			t.Fatal("dedicated current completion not proven")
+		}
+		if repairJourney {
+			record, err := s.ReadContributionExecutionAs(ctx, subject, sealed.Key)
+			must(err)
+			if record.Consumed != 2 || len(record.Passes) != 2 || len(record.DeliveryRepairs) != 1 || record.QueueAttempt != v.QueueAttempt {
+				t.Fatalf("repair lineage missing: %+v", record)
+			}
+			if record.Passes[0].Tester.RuntimeSessionID == record.Passes[1].Tester.RuntimeSessionID {
+				t.Fatal("tester reused")
+			}
+			// Terminal completion ends live handoff authority. Compare the
+			// independently reloaded immutable candidate with the retained result,
+			// rather than demanding a new source lease after disposition.
+			current := record.Passes[len(record.Passes)-1].Candidate
+			if current.Digest == v.Digest || current.Digest != terminal.Report.Candidate {
+				t.Fatal("retained result does not bind the repaired candidate")
+			}
+			if _, err := s.AcceptedContributionCandidateAs(ctx, subject, sealed.Key); err == nil {
+				t.Fatal("terminal result retained live handoff authority")
+			}
+			history, err := s.ReadContributionDeliveryHistoryAs(ctx, subject, sealed.Key)
+			must(err)
+			counts := map[delivery.Operation]int{}
+			failed := 0
+			for _, chain := range history.Histories {
+				last := chain[len(chain)-1].Record
+				counts[last.Intent.Operation]++
+				if last.Code == "ci_failed" && last.Outcome == delivery.Failed && !advancingBaseJourney || advancingBaseJourney && last.Code == "base_advanced" && last.Outcome == delivery.Unknown {
+					failed++
+				}
+			}
+			if failed != 1 || counts[delivery.PullRequest] != 1 || counts[delivery.UpdatePullRequest] != 1 || counts[delivery.ReconcileIssue] != 1 {
+				t.Fatalf("same PR history: failed=%d counts=%v", failed, counts)
+			}
+			original, _, err := s.ReadContributionAs(ctx, subject, sealed.Key)
+			must(err)
+			if original.Deadline != sealed.Deadline || original.Worktree != sealed.Worktree || original.RunID != sealed.RunID || original.Base != sealed.Base || original.CandidateBudget != sealed.CandidateBudget {
+				t.Fatal("repair reset root")
+			}
+			if advancingBaseJourney {
+				found := false
+				for _, f := range current.Source.Files {
+					if f.Path == "offset.go" && string(f.Content) == "package main\nfunc Offset() int{return 7}\n" {
+						found = true
+					}
+				}
+				if advanceFetches != 1 || !found || current.Base != sealed.Base || current.Source.Digest == v.Source.Digest || current.CandidateTree == v.CandidateTree || current.Executable == v.Executable {
+					t.Fatal("advancing base was not independently rebuilt/frozen with original intent")
+				}
+			}
 		}
 		beforeReads := countCalls()
 		fresh, freshErr := s.Authenticate(ctx)

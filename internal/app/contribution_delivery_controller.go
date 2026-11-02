@@ -175,7 +175,42 @@ func (a *productiveContributionAuthority) Admit(ctx context.Context, i delivery.
 // payload, candidate receipt or PR number can be supplied by the operator.
 // No installed manager hook or remote readiness is implied by this constructor.
 func (d *ContributionDeliveryController) RunAs(ctx context.Context, subject core.Subject, key, session string) (delivery.DeliveryResult, error) {
-	return d.withProductive(ctx, subject, key, session, nil)
+	if d == nil || d.service == nil {
+		return delivery.DeliveryResult{}, delivery.ErrDenied
+	}
+	// Resolve live request authentication before reading contribution state or
+	// reporting owner availability. Asserted transport subjects never acquire
+	// admission merely because the publication owner is not installed.
+	ctx, err := d.service.bindContributionRequestSubject(ctx, subject)
+	if err != nil {
+		return delivery.DeliveryResult{}, err
+	}
+	owner, ok := d.service.ContributionPublicationQuiescer.(*ContributionDeliveryPublicationOwner)
+	if !ok || owner.service != d.service {
+		return delivery.DeliveryResult{}, ErrContributionDeliveryUnavailable
+	}
+	c, _, err := d.service.ReadContributionAs(ctx, subject, key)
+	if err != nil {
+		return delivery.DeliveryResult{}, err
+	}
+	ctx, cancel := context.WithDeadline(ctx, c.Deadline)
+	defer cancel()
+	for n := uint8(0); n < c.CandidateBudget; n++ {
+		out, err := d.withProductive(ctx, subject, key, session, nil)
+		if err != nil || out.Reason != "repair_requested" {
+			return out, err
+		}
+		// Accepted-source custody and the publication invocation frame have ended.
+		// Repair is synchronous; no detached handoff can race disposition/source.
+		if len(out.Effects) == 0 {
+			return out, delivery.ErrDenied
+		}
+		if err := d.repairDeliveryAs(ctx, subject, key, session, out.Effects[len(out.Effects)-1]); err != nil {
+			out.Reason = "repair_admission_or_execution_held"
+			return out, err
+		}
+	}
+	return delivery.DeliveryResult{}, delivery.ErrDenied
 }
 
 // withProductive keeps authority construction inside the actual private custody
@@ -184,6 +219,12 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 	if d == nil || d.service == nil || ctx == nil || ctx.Err() != nil || session == "" {
 		return out, delivery.ErrDenied
 	}
+	stage := "subject"
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("publication %s: %w", stage, err)
+		}
+	}()
 	s := d.service
 	ctx, err = s.bindContributionRequestSubject(ctx, subject)
 	if err != nil {
@@ -227,7 +268,9 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		return out, delivery.ErrDenied
 	}
 	ref := delivery.Reference{Run: c.RunID, Contract: c.Digest, Candidate: state.CandidateEvidence.Digest}
+	stage = "candidate-custody"
 	err = s.WithContributionContinuityCandidateAs(ctx, subject, session, key, func(live context.Context, v orchestration.ContributionCandidate) error {
+		stage = "policy-derivation"
 		var remoteOperations []delivery.Operation
 		p := ContributionDeliveryPolicy{ControllerSession: session, Binding: fleetbadger.ContributionDeliveryBinding{QueueItemID: c.QueueItemID, OwnerID: c.OwnerID, Key: key, Reference: ref, FenceEpoch: role.Epoch, RoleBinding: role.Ref().Digest, Base: revision.Contribution.Managed.BaseBranch}, Loop: c.Loop, Workspace: c.Worktree, Source: v.Source.Digest, Tree: v.CandidateTree, BaseHead: c.Base, CandidatePolicy: v.Policy, Toolchain: v.Toolchain, QueueAttempt: v.QueueAttempt, Actor: d.policy.Actor, Branch: "contribution/v1/" + strings.TrimPrefix(c.Digest, "sha256:"), Timestamp: c.AdmittedAt.UTC().Format(time.RFC3339), Message: fmt.Sprintf("Contribution for issue %d\n", c.Source.URL.Number), Author: d.policy.Author, Committer: d.policy.Committer, AllowedFiles: files, ProtectionPolicy: d.policy.ProtectionPolicy, RequiredChecks: d.policy.RequiredChecks, RequiredReviewers: d.policy.RequiredReviewers, PostMergeChecks: d.policy.PostMergeChecks, MergeMethod: d.policy.MergeMethod, PRTitle: fmt.Sprintf("Contribution for issue %d", c.Source.URL.Number), PRBody: "Controller-owned contribution (contribution-publication.v1)."}
 		if c.Effect != "local-only" && c.Effect != "no-publish" {
@@ -249,10 +292,19 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 			p.CredentialPin = &ContributionDeliveryCredentialPin{Key: b.Key, BindingRevision: b.BindingRevision, SecretRecord: b.SecretRecord, Version: b.PinnedVersion, Destination: b.Destinations[0], Actor: d.policy.Actor, RepositoryID: c.Source.RepositoryID, Operations: remoteOperations}
 		}
 		policyRef := reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: "contribution-publication-v1", Digest: p.Digest()}
+		record, readErr := s.ReadContributionExecutionAs(live, subject, key)
+		if readErr != nil {
+			return readErr
+		}
+		p, readErr = contributionRepairPolicy(p, v, record.DeliveryRepairs)
+		if readErr != nil {
+			return readErr
+		}
+		policyRef.Digest = p.Digest()
 		source := &ContributionDeliverySource{service: s, subject: subject, key: key, policyRef: policyRef, policies: fixedContributionDeliveryPolicy{p}}
 		plan, e := source.project(live, ref, p, v)
 		if e != nil {
-			return e
+			return fmt.Errorf("publication projection: %w", e)
 		}
 		if e = s.preparePublicationHandoff(live, subject, p.Binding); e != nil {
 			return e
@@ -261,6 +313,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		p = p.snapshot()
 		policyRef.Digest = p.Digest()
 		plan.Policy = policyRef.Digest
+		stage = "policy-retention"
 		if e = s.retainContributionDeliveryPolicy(live, p); e != nil {
 			return e
 		}
@@ -275,7 +328,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		authority := &contributionInstructionAuthority{service: s, subject: subject, key: key, ref: ref, base: a}
 		owner, e := store.ContributionDelivery(live, p.Binding, authority)
 		if e != nil {
-			return e
+			return fmt.Errorf("publication repository: %w", e)
 		}
 		ac, authorityErr := s.authorityContextForSession(live, session)
 		if authorityErr != nil {
@@ -303,6 +356,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 			if e != nil {
 				return e
 			}
+			stage = "remote-adapter"
 			gh, e = delivery.NewGitHub("https://api.github.com", custody, d.privacy)
 			if e != nil {
 				return e
@@ -312,6 +366,7 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		held := &heldContributionDeliverySource{plan: plan}
 		budget := &contributionDeliveryReadiness{live: live, productive: a, instructions: authority}
 		var completion delivery.CompletionOwner
+		stage = "completion-adapter"
 		adapter, completionErr := s.NewContributionCompletionInFrame(live, subject, key, policyRef)
 		if completionErr == nil {
 			completion = adapter
@@ -321,7 +376,9 @@ func (d *ContributionDeliveryController) withProductive(ctx context.Context, sub
 		}
 		// Legacy profiles remain nonfinal. An enabled final-verification profile
 		// must bind the real completion owner inside this exact live custody frame.
-		out, e = delivery.NewConductor(delivery.NewEngine(owner, held, authority, delivery.ClosedAdapter{Git: &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}, GitHub: gh}), nil, completion, delivery.WithReadiness(d.policy.Readiness, budget)).Run(live, ref)
+		repair := &productiveContributionRepair{controller: d, subject: subject, key: key, session: session}
+		stage = "conductor"
+		out, e = delivery.NewConductor(delivery.NewEngine(owner, held, authority, delivery.ClosedAdapter{Git: &delivery.Git{Binary: revision.Contribution.Managed.GitBinary, Directory: c.Worktree}, GitHub: gh}), repair, completion, delivery.WithReadiness(d.policy.Readiness, budget)).Run(live, ref)
 		return e
 	})
 	return out, err

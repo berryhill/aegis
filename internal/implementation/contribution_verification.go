@@ -16,14 +16,16 @@ const ContributionAcceptanceSchema = "aegis.contribution.native-acceptance.v1"
 // success. It deliberately contains the actual typed candidate and policy.
 // Source bytes/test output must never be published to GitHub or model broadcasts.
 type ContributionAcceptanceEvidence struct {
-	Schema       string                           `json:"schema"`
-	RunID        string                           `json:"run_id"`
-	Contract     string                           `json:"contract"`
-	QueueAttempt string                           `json:"queue_attempt"`
-	Consumed     uint8                            `json:"consumed"`
-	Policy       loop.ContributionExecutionPolicy `json:"policy"`
-	Baseline     ContributionCheck                `json:"baseline"`
-	Passes       []ContributionPass               `json:"passes"`
+	Integration     *ContributionBaseIntegration     `json:"integration,omitempty"`
+	DeliveryRepairs []ContributionDeliveryRepair     `json:"delivery_repairs,omitempty"`
+	Schema          string                           `json:"schema"`
+	RunID           string                           `json:"run_id"`
+	Contract        string                           `json:"contract"`
+	QueueAttempt    string                           `json:"queue_attempt"`
+	Consumed        uint8                            `json:"consumed"`
+	Policy          loop.ContributionExecutionPolicy `json:"policy"`
+	Baseline        ContributionCheck                `json:"baseline"`
+	Passes          []ContributionPass               `json:"passes"`
 }
 
 // ReloadAcceptedEvidence independently reconstructs native evidence from the
@@ -66,7 +68,7 @@ func (e *ManagedContribution) ReloadAcceptedEvidence(ctx context.Context, run, c
 	if err = e.revalidate(ctx, loop.VerifiedImplementation{Workspace: r.Workspace}, policy, last.Candidate); err != nil {
 		return nil, err
 	}
-	out, err := json.Marshal(ContributionAcceptanceEvidence{ContributionAcceptanceSchema, run, contract, attempt, r.Consumed, r.Policy, r.Baseline, r.Passes})
+	out, err := json.Marshal(ContributionAcceptanceEvidence{Integration: r.Integration, DeliveryRepairs: r.DeliveryRepairs, Schema: ContributionAcceptanceSchema, RunID: run, Contract: contract, QueueAttempt: attempt, Consumed: r.Consumed, Policy: r.Policy, Baseline: r.Baseline, Passes: r.Passes})
 	if err != nil {
 		return nil, err
 	}

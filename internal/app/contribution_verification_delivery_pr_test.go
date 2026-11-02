@@ -41,9 +41,24 @@ func retainedUpdateFixture(t *testing.T, reviewed, canonical, update uint64) (de
 	commit := delivery.Record{Intent: delivery.Intent{Operation: delivery.Commit, Reference: p.Binding.Reference, Head: spec.Commit}, Outcome: delivery.Confirmed, Observation: delivery.Observation{Outcome: delivery.Confirmed, Head: spec.Commit, Tree: spec.Tree}}
 	h := delivery.HistorySnapshot{Histories: [][]delivery.HistoryEnvelope{{{Record: commit}}}}
 	if canonical != 0 {
-		create := delivery.Record{Intent: delivery.Intent{Operation: delivery.PullRequest, Reference: p.Binding.Reference}, Outcome: delivery.Confirmed, Observation: delivery.Observation{Outcome: delivery.Confirmed, PR: canonical}}
-		// The PR's creation proof is not the subject of this minimal helper
-		// fixture. Only target resolution below inspects this known reference.
+		createIntent := i
+		createIntent.Operation, createIntent.PR = delivery.PullRequest, 0
+		createResult := delivery.Observation{Outcome: delivery.Confirmed, Head: spec.Commit, PR: canonical}
+		createProof := proof
+		createProof.Intent, createProof.Result, createProof.ObservedResult = createIntent, createResult, createResult
+		createProof.Facts = append([]delivery.ReadbackFact(nil), proof.Facts...)
+		createProof.Facts[2].Number = canonical
+		createProof.Facts[2].Target.PR = canonical
+		createProof.Facts[2].HTMLURL = fmt.Sprintf("https://github.com/fixture/controlled/pull/%d", canonical)
+		createWire, err := json.Marshal(createProof)
+		if err != nil {
+			t.Fatal(err)
+		}
+		createResult.ProofJSON, createResult.ProofDigest = string(createWire), contribution.Digest(createWire)
+		if _, err := delivery.ParseReadback(createIntent, createResult); err != nil {
+			t.Fatal("valid creation proof prerequisite", err)
+		}
+		create := delivery.Record{Intent: createIntent, Outcome: delivery.Confirmed, Observation: createResult}
 		h.Histories = append(h.Histories, []delivery.HistoryEnvelope{{Record: create}})
 	}
 	h.Histories = append(h.Histories, []delivery.HistoryEnvelope{{Record: delivery.Record{Intent: i, Outcome: delivery.Confirmed, Observation: o}}})
@@ -52,9 +67,8 @@ func retainedUpdateFixture(t *testing.T, reviewed, canonical, update uint64) (de
 
 func TestRetainedOptionalUpdateRejectsForeignReviewedPR(t *testing.T) {
 	h, p, spec := retainedUpdateFixture(t, 7, 0, 99)
-	control := p
-	control.PR = 99
-	if got := assessRetainedPublication(h, control, "no-merge", spec, nil); got != "publication_assessed" {
+	controlHistory, control, controlSpec := retainedUpdateFixture(t, 99, 99, 99)
+	if got := assessRetainedPublication(controlHistory, control, "no-merge", controlSpec, nil); got != "publication_assessed" {
 		t.Fatal("matching control", got)
 	}
 	if got := assessRetainedPublication(h, p, "no-merge", spec, nil); got == "publication_assessed" {
@@ -73,6 +87,7 @@ func TestRetainedCanonicalPRResolution(t *testing.T) {
 		{"foreign-without-pin", 0, 7, 99, false},
 		{"contradicting-reviewed-and-canonical", 99, 7, 99, false},
 		{"no-independent-PR", 0, 0, 99, false},
+		{"pin-without-independent-creation", 99, 0, 99, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h, p, _ := retainedUpdateFixture(t, tc.reviewed, tc.canonical, tc.update)

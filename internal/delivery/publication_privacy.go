@@ -158,7 +158,7 @@ func (PublicationPrivacy) Review(ctx context.Context, i Intent, p Plan) error {
 	// The authenticated seal must name this exact GitHub repository and explicitly
 	// permit publication. Public-reader source provenance alone grants no rights.
 	c := p.Intake
-	if _, e := contribution.Marshal(c); e != nil || c.Digest != p.Contract || c.RunID != p.Run || c.Repository != p.Repository || c.Source.RepositoryID != p.RepositoryID || c.Base != p.BaseHead || !permits(c.Effect, i.Operation) || !permits(p.Delivery, i.Operation) || !contribution.DeliveryNarrows(c.Effect, p.Delivery) || c.Source.ObservedAt.IsZero() {
+	if _, e := contribution.Marshal(c); e != nil || c.Digest != p.Contract || c.RunID != p.Run || c.Repository != p.Repository || c.Source.RepositoryID != p.RepositoryID || (c.Base != p.BaseHead && (c.Base != p.OriginalBase || p.RepairFailure == "")) || !permits(c.Effect, i.Operation) || !permits(p.Delivery, i.Operation) || !contribution.DeliveryNarrows(c.Effect, p.Delivery) || c.Source.ObservedAt.IsZero() {
 		return ErrPublicationAudience
 	}
 	// The existing authenticated seal selects the publication target. This guard
@@ -225,7 +225,7 @@ func inspectPublication(ctx context.Context, p Plan) error {
 		seen[f.Path] = true
 	}
 	authored, e := authoredObject(p.Commit)
-	if e != nil || authored.OID != p.Head || p.Commit.Commit != p.Head || p.Commit.Parent != p.BaseHead || p.Commit.Branch != p.Branch || !bytes.Equal(authored.Raw, p.Objects[len(p.Objects)-1].Raw) {
+	if e != nil || authored.OID != p.Head || p.Commit.Commit != p.Head || p.Commit.Parent != publicationParent(p.BaseHead, p.ExpectedOld, p.RepairFailure) || p.Commit.Branch != p.Branch || !bytes.Equal(authored.Raw, p.Objects[len(p.Objects)-1].Raw) {
 		return ErrPublicationProjection
 	}
 	budget := maxGraphBytes * 4

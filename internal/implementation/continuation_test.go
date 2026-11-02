@@ -13,6 +13,7 @@ func TestNativeContinuation(t *testing.T) {
 	for _, correction := range []bool{true, false} {
 		t.Run(map[bool]string{true: "corrected", false: "failed_acceptance"}[correction], func(t *testing.T) {
 			e, c := addContextFixture(t)
+			e.Native = stdlibSeededNative(t, e.GoBinary)
 			c.MaxPasses = 2
 			e.PassLimit = 1
 			e.Proposer = proposerFunc(func(context.Context, Request) ([]Edit, error) {

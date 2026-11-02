@@ -31,7 +31,7 @@ func (s *Service) reloadContributionResultEvidence(ctx context.Context, c contri
 	if r.Policy != "" {
 		b, err := read(r.Policy)
 		p, decodeErr := decodeContributionDeliveryPolicy(b, r.Policy)
-		if err != nil || decodeErr != nil || p.Binding.OwnerID != c.OwnerID || p.Binding.OwnerID != r.Owner || p.Binding.Key != c.Key || p.Binding.Key != r.Key || p.Binding.Run != c.RunID || p.Binding.Run != r.Run || p.Binding.Contract != c.Digest || p.Binding.Contract != r.Contract || p.Binding.Candidate != r.Candidate || p.Binding.QueueItemID != c.QueueItemID || p.Loop != c.Loop || p.Workspace != c.Worktree || p.BaseHead != c.Base || p.QueueAttempt != r.Attempt {
+		if err != nil || decodeErr != nil || p.Binding.OwnerID != c.OwnerID || p.Binding.OwnerID != r.Owner || p.Binding.Key != c.Key || p.Binding.Key != r.Key || p.Binding.Run != c.RunID || p.Binding.Run != r.Run || p.Binding.Contract != c.Digest || p.Binding.Contract != r.Contract || p.Binding.Candidate != r.Candidate || p.Binding.QueueItemID != c.QueueItemID || p.Loop != c.Loop || p.Workspace != c.Worktree || (p.BaseHead != c.Base && p.OriginalBase != c.Base) || p.QueueAttempt != r.Attempt || (p.OriginalBase != "" && r.Native == "") {
 			return ErrDenied
 		}
 		policy = &p
@@ -51,8 +51,23 @@ func (s *Service) reloadContributionResultEvidence(ctx context.Context, c contri
 		if json.Unmarshal(passes[len(passes)-1]["candidate"], &candidate) != nil || candidate.Digest != r.Candidate {
 			return ErrDenied
 		}
-		if policy != nil && (candidate.QueueAttempt != policy.QueueAttempt || candidate.Contract != policy.Binding.Contract || candidate.Base != policy.BaseHead || candidate.CandidateTree != policy.Tree || candidate.Source.Digest != policy.Source || candidate.Policy != policy.CandidatePolicy || candidate.Toolchain != policy.Toolchain) {
+		if policy != nil && (candidate.QueueAttempt != policy.QueueAttempt || candidate.Contract != policy.Binding.Contract || candidate.Base != c.Base || candidate.CandidateTree != policy.Tree || candidate.Source.Digest != policy.Source || candidate.Policy != policy.CandidatePolicy || candidate.Toolchain != policy.Toolchain) {
 			return ErrDenied
+		}
+		if policy != nil {
+			if policy.OriginalBase == "" && candidate.CurrentBase != "" {
+				return ErrDenied
+			}
+			if policy.OriginalBase != "" {
+				var repairs []orchestration.ContributionDeliveryRepair
+				if policy.OriginalBase != c.Base || candidate.CurrentBase != policy.BaseHead || json.Unmarshal(native["delivery_repairs"], &repairs) != nil {
+					return ErrDenied
+				}
+				reconstructed, err := contributionRepairPolicy(*policy, candidate, repairs)
+				if err != nil || reconstructed.Digest() != policy.Digest() {
+					return ErrDenied
+				}
+			}
 		}
 	}
 	if r.History != "" {

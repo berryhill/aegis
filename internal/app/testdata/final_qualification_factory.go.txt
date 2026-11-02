@@ -7,10 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -30,13 +32,19 @@ func (finalQualificationPrivacy) Review(context.Context, Intent, Plan) error { r
 
 type FinalQualificationRemote struct {
 	sync.Mutex
-	Calls                         int
-	Writes                        int
-	present                       map[string]bool
-	published, pr, merged, closed bool
+	plan                              Plan
+	Head                              string
+	PRCreates, PRUpdates, IssueCloses int
+	Calls                             int
+	Writes                            int
+	present                           map[string]bool
+	published, pr, merged, closed     bool
 }
 
-func (f *FinalQualificationRemote) Count() int { f.Lock(); defer f.Unlock(); return f.Calls }
+var FinalQualificationControllerGitHub func(Plan) (*GitHub, error)
+
+func (f *FinalQualificationRemote) SetPlan(p Plan) { f.Lock(); defer f.Unlock(); f.plan = p }
+func (f *FinalQualificationRemote) Count() int     { f.Lock(); defer f.Unlock(); return f.Calls }
 func finalProtection() map[string]any {
 	return map[string]any{
 		"enforce_admins":         map[string]bool{"enabled": true},
@@ -53,7 +61,61 @@ func FinalQualificationProtection() string { return digest(finalProtection()) }
 // the production constructor, origin, credential policy or transport.
 func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificationRemote) {
 	t.Helper()
-	f := &FinalQualificationRemote{present: map[string]bool{}}
+	f := &FinalQualificationRemote{present: map[string]bool{}, plan: p}
+	// Remote advancement is a real unreachable Git commit made in a private index:
+	// no worktree/index/ref moves and no synthetic compare result. It becomes the
+	// live remote base only after the original PR was created.
+	currentBase := ""
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	objectRepository := p.Intake.Worktree
+	if strings.Contains(t.Name(), "AdvancingBase") {
+		objectRepository = filepath.Join(filepath.Dir(p.Intake.Worktree), "controlled-upstream.git")
+		if b, e := exec.Command(git, "-c", "core.hooksPath=/dev/null", "clone", "--bare", "--no-local", p.Intake.Worktree, objectRepository).CombinedOutput(); e != nil {
+			t.Fatalf("controlled remote: %s %v", b, e)
+		}
+	}
+	fixtureGit := func(input []byte, args ...string) (string, error) {
+		cmd := exec.Command(git, append([]string{"-C", objectRepository, "-c", "core.hooksPath=/dev/null"}, args...)...)
+		cmd.Env = []string{"PATH=" + filepath.Dir(git), "HOME=" + t.TempDir(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_INDEX_FILE=" + filepath.Join(t.TempDir(), "index"), "GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid", "GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid", "GIT_AUTHOR_DATE=2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE=2000-01-01T00:00:00Z"}
+		cmd.Stdin = strings.NewReader(string(input))
+		b, e := cmd.CombinedOutput()
+		return strings.TrimSpace(string(b)), e
+	}
+	if strings.Contains(t.Name(), "AdvancingBase") {
+		// mktree input comes from the exact original tree, not the accepted edit.
+		entries, e := fixtureGit(nil, "ls-tree", p.BaseHead)
+		if e != nil {
+			t.Fatal(e)
+		}
+		blob, e := fixtureGit([]byte("package main\nfunc Offset() int{return 7}\n"), "hash-object", "-w", "--stdin")
+		if e != nil {
+			t.Fatal(e)
+		}
+		lines := strings.Split(entries, "\n")
+		for i, line := range lines {
+			if strings.HasSuffix(line, "	offset.go") {
+				lines[i] = "100644 blob " + blob + "	offset.go"
+			}
+		}
+		tree, e := fixtureGit([]byte(strings.Join(lines, "\n")+"\n"), "mktree")
+		if e != nil {
+			t.Fatal(e)
+		}
+		currentBase, e = fixtureGit([]byte("Controlled upstream addition\n"), "commit-tree", tree, "-p", p.BaseHead)
+		if e != nil {
+			t.Fatal(e)
+		}
+	}
+	baseAdvanced := false
+	liveBase := func() string {
+		if currentBase != "" && baseAdvanced {
+			return currentBase
+		}
+		return p.BaseHead
+	}
 	objects := map[string]GitObject{}
 	for _, o := range p.Objects {
 		objects[o.OID] = o
@@ -74,11 +136,20 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 		if f.merged {
 			state, sha = "closed", merge
 		}
-		return map[string]any{"html_url": fmt.Sprintf("https://github.com/%s/pull/7", p.Repository), "user": map[string]string{"login": p.Actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": sha, "mergeable": true, "mergeable_state": "clean", "title": p.PRTitle, "body": p.PRBody, "head": map[string]any{"sha": p.Head, "ref": p.Branch, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}, "base": map[string]any{"sha": p.BaseHead, "ref": p.Base, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}}
+		return map[string]any{"html_url": fmt.Sprintf("https://github.com/%s/pull/7", p.Repository), "user": map[string]string{"login": p.Actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": sha, "mergeable": true, "mergeable_state": "clean", "title": p.PRTitle, "body": p.PRBody, "head": map[string]any{"sha": p.Head, "ref": p.Branch, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}, "base": map[string]any{"sha": liveBase(), "ref": p.Base, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}}
 	}
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.Lock()
 		defer f.Unlock()
+		p = f.plan
+		for _, o := range p.Objects {
+			objects[o.OID] = o
+		}
+		mergeSpec = p.Commit
+		mergeSpec.Parent, mergeSpec.IntegrationParent = liveBase(), ""
+		mergeSpec.Message = "Controlled squash result\n"
+		mergeObject, _ = authoredObject(mergeSpec)
+		merge = mergeObject.OID
 		f.Calls++
 		if r.Method != "GET" {
 			f.Writes++
@@ -102,17 +173,28 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 		case path == prefix+"/collaborators/"+p.Actor+"/permission":
 			send(map[string]string{"permission": "write", "role_name": "write"})
 		case path == prefix+"/git/ref/heads/"+p.Base:
-			head := p.BaseHead
+			head := liveBase()
 			if f.merged {
 				head = merge
 			}
 			send(map[string]any{"ref": "refs/heads/" + p.Base, "object": map[string]string{"sha": head}})
+		case path == prefix+"/git/refs/heads/"+p.Branch && r.Method == "PATCH":
+			var req struct {
+				SHA   string
+				Force bool
+			}
+			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Force || req.SHA != p.Head || f.Head != p.ExpectedOld {
+				http.Error(w, "not exact nonforce successor", 422)
+				return
+			}
+			f.Head = req.SHA
+			send(map[string]any{"ref": "refs/heads/" + p.Branch, "object": map[string]string{"sha": f.Head}})
 		case path == prefix+"/git/ref/heads/"+p.Branch:
 			if !f.published {
 				http.Error(w, "absent", 404)
 				return
 			}
-			send(map[string]any{"ref": "refs/heads/" + p.Branch, "object": map[string]string{"sha": p.Head}})
+			send(map[string]any{"ref": "refs/heads/" + p.Branch, "object": map[string]string{"sha": f.Head}})
 		case path == prefix+"/git/refs":
 			var req struct{ Ref, SHA string }
 			if json.NewDecoder(r.Body).Decode(&req) != nil || req.Ref != "refs/heads/"+p.Branch || req.SHA != p.Head {
@@ -120,6 +202,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 				return
 			}
 			f.published = true
+			f.Head = p.Head
 			send(map[string]any{"ref": req.Ref, "object": map[string]string{"sha": p.Head}})
 		case path == prefix+"/pulls":
 			if r.Method == "POST" {
@@ -132,6 +215,10 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 					return
 				}
 				f.pr = true
+				f.PRCreates++
+				if f.PRCreates != 1 {
+					t.Error("duplicate PR")
+				}
 				send(pull())
 				return
 			}
@@ -141,6 +228,12 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 				send([]any{})
 			}
 		case path == prefix+"/pulls/7":
+			if currentBase != "" && r.Method == "GET" {
+				baseAdvanced = true
+			}
+			if r.Method == "PATCH" {
+				f.PRUpdates++
+			}
 			send(pull())
 		case path == prefix+"/pulls/7/reviews":
 			send([]any{map[string]any{"id": 1, "user": map[string]string{"login": "reviewer"}, "state": "APPROVED", "commit_id": p.Head, "submitted_at": "2026-01-01T00:00:00Z"}})
@@ -159,13 +252,32 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 			parts := strings.Split(path, "/")
 			head := parts[len(parts)-2]
 			conclusion := "success"
-			if strings.Contains(t.Name(), "FailedChecks") {
+			if strings.Contains(t.Name(), "FailedChecks") || (strings.Contains(t.Name(), "CIRepair") && p.ExpectedOld == "") {
 				conclusion = "failure"
 			}
 			send(map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"id": 123, "app": map[string]any{"id": 55, "slug": "ci"}, "name": "test", "head_sha": head, "status": "completed", "conclusion": conclusion}}})
 		case strings.HasSuffix(path, "/status"):
 			send(map[string]any{"total_count": 0, "statuses": []any{}})
 		case strings.HasPrefix(path, prefix+"/compare/"):
+			if currentBase != "" {
+				pair := strings.Split(strings.TrimPrefix(path, prefix+"/compare/"), "...")
+				if len(pair) != 2 || !sha.MatchString(pair[0]) || !sha.MatchString(pair[1]) {
+					http.Error(w, "bad comparison", 422)
+					return
+				}
+				status := "diverged"
+				if pair[0] == pair[1] {
+					status = "identical"
+				} else if _, e := fixtureGit(nil, "merge-base", "--is-ancestor", pair[0], pair[1]); e == nil {
+					status = "ahead"
+				}
+				behind := 0
+				if status == "diverged" {
+					behind = 1
+				}
+				send(map[string]any{"status": status, "behind_by": behind})
+				return
+			}
 			send(map[string]any{"status": "identical", "behind_by": 0})
 		case path == prefix+"/issues/"+strconv.FormatUint(p.Intake.Source.URL.Number, 10):
 			if r.Method == "PATCH" {
@@ -178,6 +290,10 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 					return
 				}
 				f.closed = true
+				f.IssueCloses++
+				if f.IssueCloses != 1 {
+					t.Error("duplicate issue close")
+				}
 			}
 			state, reason := "open", ""
 			if f.closed {
@@ -238,6 +354,13 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 					return
 				}
 				f.present[found.OID] = true
+				if currentBase != "" {
+					actual, err := fixtureGit(found.Raw, "hash-object", "-t", found.Kind, "-w", "--stdin")
+					if err != nil || actual != found.OID {
+						http.Error(w, "object persistence failed", 422)
+						return
+					}
+				}
 				send(map[string]string{"sha": found.OID})
 				return
 			}
@@ -273,7 +396,9 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 				if e != nil {
 					t.Error(e)
 				}
-				send(map[string]any{"sha": id, "message": payload.Message, "tree": map[string]string{"sha": payload.Tree}, "parents": []any{map[string]string{"sha": payload.Parents[0]}}, "author": payload.Author, "committer": payload.Committer})
+				parents := []any{}
+				for _, parent := range payload.Parents { parents = append(parents, map[string]string{"sha": parent}) }
+				send(map[string]any{"sha": id, "message": payload.Message, "tree": map[string]string{"sha": payload.Tree}, "parents": parents, "author": payload.Author, "committer": payload.Committer})
 			default:
 				http.Error(w, "unsupported kind", 404)
 			}
@@ -290,7 +415,9 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 		t.Fatal("final qualification requires shared acceptance_port.py lifetime custody")
 	}
 	listener, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if listenErr != nil { t.Fatal(listenErr) }
+	if listenErr != nil {
+		t.Fatal(listenErr)
+	}
 	srv.Listener = listener
 	srv.Start()
 	t.Cleanup(srv.Close)

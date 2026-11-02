@@ -23,6 +23,12 @@ func VerifyRecoveryRecord(db Store, k, b []byte) error {
 	}
 	s := string(k)
 	switch {
+	case strings.HasPrefix(s, "contribution/base-integration/"):
+		var v ContributionBaseIntegration
+		if canonical(&v) != nil || s != "contribution/base-integration/"+digest(b) {
+			return bad
+		}
+		return nil
 	case strings.HasPrefix(s, "implementation/blob/"):
 		if s != "implementation/blob/"+digest(b) {
 			return bad
