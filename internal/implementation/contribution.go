@@ -28,6 +28,7 @@ type ContributionRoleIdentity struct {
 	TurnID           string `json:"turn_id"`
 }
 type ContributionCandidate struct {
+	CurrentBase  string `json:"current_base,omitempty"`
 	Contract     string `json:"contract"`
 	QueueAttempt string `json:"queue_attempt"`
 	Pass         uint8  `json:"pass"`
@@ -59,6 +60,8 @@ type ContributionPass struct {
 	Check     ContributionCheck        `json:"check"`
 }
 type ContributionRecord struct {
+	Integration     *ContributionBaseIntegration     `json:"integration,omitempty"`
+	DeliveryRepairs []ContributionDeliveryRepair     `json:"delivery_repairs,omitempty"`
 	Frozen          *ContributionCandidate           `json:"frozen,omitempty"`
 	FrozenToolchain string                           `json:"frozen_toolchain"`
 	RunID           string                           `json:"run_id"`
@@ -82,6 +85,10 @@ type ContributionRecord struct {
 // Interrupted effects retain their reservation; only explicit quiescent phase
 // boundaries permit exact same-attempt continuation. No authority renewal.
 type ManagedContribution struct {
+	// RepairAdmission is an owning-service callback. It must reload canonical
+	// pre-merge failure history and exact current authority under source custody.
+	// A non-nil callback is not itself admission; its sealed result is retained.
+	RepairAdmission func(context.Context, ContributionRecord) (ContributionDeliveryRepair, error)
 	// Checkpoint is a trusted controller port, never runtime-supplied narration.
 	// It runs before the named effect; errors retain the last durable boundary.
 	Checkpoint        func(context.Context, ContributionCheckpoint) error
@@ -199,6 +206,12 @@ func (e *ManagedContribution) Run(ctx context.Context, run, contract, attempt, b
 		if err != nil {
 			return old, err
 		}
+		if old.State == "candidate_accepted" && e.RepairAdmission != nil {
+			old, err = e.admitDeliveryRepair(ctx, old, c)
+			if err != nil {
+				return old, err
+			}
+		}
 		if err = e.resumeBoundary(ctx, old, run, contract, attempt, base, c, p); err != nil {
 			return old, err
 		}
@@ -309,6 +322,12 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 	if len(record.Passes) > 0 {
 		previous, err = json.Marshal(record.Passes[len(record.Passes)-1].Check.Criteria)
 	}
+	if len(record.DeliveryRepairs) > 0 {
+		last := record.DeliveryRepairs[len(record.DeliveryRepairs)-1]
+		if last.AfterPass == record.Consumed {
+			previous, err = json.Marshal(last)
+		}
+	}
 	if err != nil {
 		return record, err
 	}
@@ -333,8 +352,18 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			}
 			record.State = "running"
 			record.Consumed++ // Persist consumption before runtime or file effects.
+			if record.Integration != nil && len(record.DeliveryRepairs) > 0 && record.DeliveryRepairs[len(record.DeliveryRepairs)-1].AfterPass == record.Consumed-1 {
+				expected = cloneContext(record.Integration.Context)
+				record.Expected = cloneContext(expected)
+			}
 			if err = e.save(record); err != nil {
 				return record, err
+			}
+			if record.Integration != nil && len(record.DeliveryRepairs) > 0 && record.DeliveryRepairs[len(record.DeliveryRepairs)-1].AfterPass == record.Consumed-1 {
+				if err = e.applyBaseIntegration(ctx, c, record.Integration); err != nil {
+					return record, err
+				}
+
 			}
 			if err = e.admit(ctx, "builder"); err != nil {
 				return record, err
@@ -394,6 +423,9 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 				return record, err
 			}
 			candidate = ContributionCandidate{CandidateCommit: candidateCommit, CandidateTree: candidateTree, Contract: contract, QueueAttempt: attempt, Pass: record.Consumed, Base: base, HeadCommit: strings.TrimSpace(string(commit)), HeadTree: strings.TrimSpace(string(tree)), Index: digest(index), Source: frozen, Executable: executable, Toolchain: e.toolchainDigest, Policy: contributionPolicyDigest(p), Builder: builder}
+			if record.Integration != nil {
+				candidate.CurrentBase = record.Integration.CurrentBase
+			}
 			wire, _ := json.Marshal(candidate)
 			candidate.Digest = digest(wire)
 			// Persist complete frozen identity before a fresh tester can start.

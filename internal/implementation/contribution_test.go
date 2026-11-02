@@ -21,6 +21,14 @@ func roleIdentity(s string) ContributionRoleIdentity {
 // Real native compilation, executable invocation, immutable tests and Git linked
 // worktree; deterministic role proposals/transport only, NOT real-provider proof.
 func TestManagedContributionRepairAndCustody(t *testing.T) {
+	testManagedContributionRepairAndCustody(t, false)
+}
+
+func TestManagedContributionProductiveDeliveryRepair(t *testing.T) {
+	testManagedContributionRepairAndCustody(t, true)
+}
+
+func testManagedContributionRepairAndCustody(t *testing.T, productive bool) {
 	ctx := context.Background()
 	kernel, c := fixture(t)
 	repo := c.Workspace
@@ -90,6 +98,7 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		policy.ReviewAssets = append(policy.ReviewAssets, loop.ContributionReviewAsset{ID: asset.path, Path: asset.path, Scope: asset.scope, BaselineDigest: d, ApprovedDigest: d})
 	}
 	e := &ManagedContribution{DB: kernel.DB, GoBinary: kernel.GoBinary, StateRoot: t.TempDir(), Repository: "fixture/controlled", Admit: kernel.Admit}
+	e.Native = stdlibSeededNative(t, e.GoBinary)
 	e.Fetch = func(context.Context, loop.ContributionExecutionPolicy) error {
 		runGit("fetch", "--no-tags", repo, "main")
 		return nil
@@ -106,8 +115,15 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 			}
 		}
 		n := 1
-		if calls == 2 {
+		if calls == 2 || productive {
 			n = 2
+		}
+		if productive && calls == 2 {
+			var feedback ContributionDeliveryRepair
+			if json.Unmarshal(r.PreviousCheck, &feedback) != nil || feedback.Feedback.Check != "required-native" || feedback.Feedback.Observed != "completed_failure" {
+				t.Fatal("missing concrete authoritative CI feedback")
+			}
+			return []Edit{{Path: "offset.go", Content: []byte("package main\nfunc Offset() int{return 2+0}\n")}}, roleIdentity("builder"), nil
 		}
 		return []Edit{{Path: "value.go", Content: []byte("package main\nfunc Value() int{return 40}\n")}, {Path: "offset.go", Content: []byte(fmt.Sprintf("package main\nfunc Offset() int{return %d}\n", n))}}, roleIdentity("builder"), nil
 	}
@@ -120,6 +136,46 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 		return identity, execute(checkCtx, identity)
 	}
 	r, err := e.Run(ctx, "run", "contract", "attempt", base, c, policy)
+	if productive {
+		if err != nil || r.State != "candidate_accepted" || calls != 1 {
+			t.Fatalf("initial acceptance: %+v %v", r, err)
+		}
+		first := r.Passes[0].Candidate
+		repair := ContributionDeliveryRepair{Feedback: ContributionFailureFeedback{Kind: "check_run", Check: "required-native", Expected: "success", Observed: "completed_failure", ResponseDigest: digest([]byte("response"))}, Failure: digest([]byte("immutable-ci-intent")), Evidence: digest([]byte("immutable-ci-failure")), Candidate: first.Digest, Class: "ci_failed", Head: first.CandidateCommit, Base: base, PR: 17, AfterPass: 1}
+		e.RepairAdmission = func(context.Context, ContributionRecord) (ContributionDeliveryRepair, error) { return repair, nil }
+		r, err = e.Run(ctx, "run", "contract", "attempt", base, c, policy)
+		if err != nil || r.State != "candidate_accepted" || calls != 2 || testers != 2 || len(r.DeliveryRepairs) != 1 || r.Consumed != 2 {
+			t.Fatalf("productive repair: state=%s calls=%d testers=%d repairs=%d err=%v", r.State, calls, testers, len(r.DeliveryRepairs), err)
+		}
+		last := r.Passes[1].Candidate
+		if last.Digest == first.Digest || r.QueueAttempt != "attempt" || r.Base != base || r.DeliveryRepairs[0].PR != 17 {
+			t.Fatal("repair rotated lineage")
+		}
+		if _, err = e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", last.Digest, policy); err != nil {
+			t.Fatalf("final native verification: %v", err)
+		}
+		t.Run("tampered-feedback-denied", func(t *testing.T) {
+			key := contributionKey("run")
+			original, _ := e.DB.Get(key)
+			defer e.DB.Put(key, original)
+			var changed ContributionRecord
+			if json.Unmarshal(original, &changed) != nil {
+				t.Fatal("record")
+			}
+			changed.DeliveryRepairs[0].Feedback.Check = "substituted"
+			wire, _ := json.Marshal(changed)
+			if err := e.DB.Put(key, wire); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := e.ReloadAcceptedEvidence(ctx, "run", "contract", "attempt", last.Digest, policy); err == nil {
+				t.Fatal("tampered feedback accepted")
+			}
+		})
+		if _, err = e.Run(ctx, "run", "contract", "attempt", base, c, policy); err == nil || calls != 2 {
+			t.Fatal("exhausted budget admitted")
+		}
+		return
+	}
 	if err != nil || r.State != "candidate_accepted" || calls != 2 || testers != 2 {
 		t.Fatalf("state=%s calls=%d testers=%d err=%v", r.State, calls, testers, err)
 	}

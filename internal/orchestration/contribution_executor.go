@@ -152,6 +152,9 @@ func (w *QueueWorker) processContribution(ctx context.Context, request WorkReque
 		}()
 	}
 	engine := &implementation.ManagedContribution{DB: custody.ImplementationStore(), GoBinary: w.implementation.config.GoBinary, StateRoot: filepath.Join(w.implementation.root, "contribution-evidence"), Repository: sealed.Repository, Admit: admit, Fetch: w.contributionFetch}
+	if repair, ok := ctx.Value(contributionRepairAdmissionKey{}).(ContributionDeliveryRepairAdmission); ok {
+		engine.RepairAdmission = repair
+	}
 	if observer != nil {
 		engine.Checkpoint = func(ctx context.Context, cp implementation.ContributionCheckpoint) error {
 			if err := observer.Checkpoint(ctx, cp); err != nil {

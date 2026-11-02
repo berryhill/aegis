@@ -88,6 +88,12 @@ func CollectRepositoryContext(ctx context.Context, c loop.VerifiedImplementation
 }
 
 func readRepositoryContextFile(root *os.Root, name string, expected int64) ([]byte, error) {
+	return readRepositoryContextFileBuffer(root, name, expected, nil)
+}
+
+// buffer is private to one synchronous caller. Its bytes are overwritten by a
+// fresh full read; it never carries an integrity decision across observations.
+func readRepositoryContextFileBuffer(root *os.Root, name string, expected int64, buffer []byte) ([]byte, error) {
 	reject := errors.New("repository context rejected")
 	parent := root
 	var owned []*os.Root
@@ -135,7 +141,12 @@ func readRepositoryContextFile(root *os.Root, name string, expected int64) ([]by
 	if expected < 0 || uint64(expected) > uint64(^uint(0)>>1) {
 		return nil, reject
 	}
-	b := make([]byte, int(expected))
+	var b []byte
+	if expected <= int64(cap(buffer)) {
+		b = buffer[:int(expected)]
+	} else {
+		b = make([]byte, int(expected))
+	}
 	if _, err = io.ReadFull(f, b); err != nil {
 		return nil, reject
 	}

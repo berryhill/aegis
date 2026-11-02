@@ -454,16 +454,36 @@ func (g *GitHub) perform(ctx context.Context, i Intent, p Plan, guard Guard, wri
 			if i.PR == 0 {
 				return ErrDenied
 			}
-			pr, err := g.readPull(ctx, s, i)
-			if err != nil {
+			// Read the live base without rebinding this immutable intent. A changed
+			// base is a distinct held integration prerequisite, never a CI failure
+			// or permission to rebuild from unadmitted upstream source.
+			var pr pull
+			if err := g.request(ctx, s, "GET", fmt.Sprintf("/repos/%s/pulls/%d", i.Repository, i.PR), nil, &pr); err != nil {
 				return err
 			}
 			o = Observation{Outcome: Unknown, Code: "base_gate", Head: i.Head, PR: i.PR}
-			if pr.Merged {
+			live := i
+			live.BaseHead = pr.Base.SHA
+			if !sha.MatchString(live.BaseHead) || validatePull(pr, live, false) != nil {
 				return ErrDenied
 			}
 			base, err := g.ref(ctx, s, i, i.Base)
-			if err != nil || base != i.BaseHead {
+			if err != nil || base != live.BaseHead {
+				return ErrDenied
+			}
+			if base != i.BaseHead {
+				var advance struct {
+					Status string
+					Behind int `json:"behind_by"`
+				}
+				if g.request(ctx, s, "GET", prefix+"/compare/"+i.BaseHead+"..."+base, nil, &advance) != nil || advance.Status != "ahead" || advance.Behind != 0 {
+					return ErrDenied
+				}
+				head, err := g.ref(ctx, s, i, i.Branch)
+				if err != nil || head != i.Head {
+					return ErrDenied
+				}
+				o.Code = "base_advanced"
 				return ErrDenied
 			}
 			head, err := g.ref(ctx, s, i, i.Branch)
@@ -805,7 +825,8 @@ type ClosedAdapter struct {
 
 func (a ClosedAdapter) localTarget(ctx context.Context, i Intent, p Plan) bool {
 	expected, e := intentFor(p, Commit)
-	if e != nil || expected != i || a.Git == nil || p.Commit.Branch != p.Branch || p.Commit.Commit != p.Head || p.Commit.Parent != p.BaseHead || !sha.MatchString(p.Commit.Tree) || p.Commit.Branch == p.Base || p.Intake.Worktree != a.Git.Directory {
+	parent := publicationParent(p.BaseHead, p.ExpectedOld, p.RepairFailure)
+	if e != nil || expected != i || a.Git == nil || p.Commit.Branch != p.Branch || p.Commit.Commit != p.Head || p.Commit.Parent != parent || !sha.MatchString(parent) || !sha.MatchString(p.Commit.Tree) || p.Commit.Branch == p.Base || p.Intake.Worktree != a.Git.Directory {
 		return false
 	}
 	root, e := a.Git.run(ctx, nil, nil, "rev-parse", "--show-toplevel")

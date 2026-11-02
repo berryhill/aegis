@@ -14,7 +14,11 @@ import (
 // This is read-only diagnostic projection bracketed by native owner reloads. It
 // grants no live source custody or permission to execute the returned plan.
 func projectRetainedPublication(ctx context.Context, git *delivery.Git, candidate orchestration.ContributionCandidate, p ContributionDeliveryPolicy) (delivery.CommitSpec, []delivery.GitObject, error) {
-	spec, objects, err := git.ProjectAccepted(ctx, candidate, delivery.CommitSpec{Parent: p.BaseHead, Tree: p.Tree, Branch: p.Branch, Author: p.Author, Committer: p.Committer, Timestamp: p.Timestamp, Message: p.Message}, p.AllowedFiles)
+	parent := p.BaseHead
+	if p.RepairFailure != "" {
+		parent = p.ExpectedOld
+	}
+	spec, objects, err := git.ProjectAccepted(ctx, candidate, delivery.CommitSpec{Parent: parent, Tree: p.Tree, Branch: p.Branch, Author: p.Author, Committer: p.Committer, Timestamp: p.Timestamp, Message: p.Message}, p.AllowedFiles)
 	if err != nil {
 		return spec, nil, delivery.ErrDenied
 	}
@@ -132,8 +136,8 @@ func assessRetainedPublication(h delivery.HistorySnapshot, p ContributionDeliver
 }
 
 // Resolve the existing owned creation, never an optional update's own target.
-// A reviewed nonzero pin is useful to individual proof helpers; the complete
-// history verifier separately requires the actual creation effect to exist.
+// A reviewed nonzero pin is only a constraint; it cannot substitute for an
+// independently matched canonical creation effect.
 func retainedContributionPR(h delivery.HistorySnapshot, p ContributionDeliveryPolicy) (uint64, error) {
 	pr, found := p.PR, false
 	for _, chain := range h.Histories {
@@ -141,7 +145,7 @@ func retainedContributionPR(h delivery.HistorySnapshot, p ContributionDeliveryPo
 			return 0, delivery.ErrDenied
 		}
 		r := chain[len(chain)-1].Record
-		if r.Intent.Reference != p.Binding.Reference || r.Intent.Operation != delivery.PullRequest || r.Outcome != delivery.Confirmed {
+		if (r.Intent.Reference != p.Binding.Reference && !retainedRepairPRAncestor(h, p, r)) || r.Intent.Operation != delivery.PullRequest || r.Outcome != delivery.Confirmed {
 			continue
 		}
 		if found || r.PR == 0 || (pr != 0 && r.PR != pr) {
@@ -149,7 +153,7 @@ func retainedContributionPR(h delivery.HistorySnapshot, p ContributionDeliveryPo
 		}
 		pr, found = r.PR, true
 	}
-	if pr == 0 {
+	if pr == 0 || !found {
 		return 0, delivery.ErrDenied
 	}
 	return pr, nil

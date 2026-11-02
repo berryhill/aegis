@@ -15,6 +15,7 @@ import (
 func TestNativeSuccessorPreparedNoApplyChain(t *testing.T) {
 	t.Parallel()
 	e, c := addContextFixture(t)
+	e.Native = stdlibSeededNative(t, e.GoBinary)
 	c = doerContract(c)
 	c.MaxPasses = 3
 	e.PassLimit = 1

@@ -67,8 +67,13 @@ func (g *GitHub) readObject(ctx context.Context, s []byte, i Intent, o GitObject
 			return e
 		}
 		p, e := commitPayload(o)
-		if e != nil || r.SHA != o.OID || r.Message != p.Message || r.Tree.SHA != p.Tree || len(r.Parents) != 1 || r.Parents[0].SHA != p.Parents[0] || r.Verification.Signature != nil || !samePerson(r.Author, p.Author) || !samePerson(r.Committer, p.Committer) {
+		if e != nil || r.SHA != o.OID || r.Message != p.Message || r.Tree.SHA != p.Tree || len(r.Parents) != len(p.Parents) || r.Verification.Signature != nil || !samePerson(r.Author, p.Author) || !samePerson(r.Committer, p.Committer) {
 			return ErrDenied
+		}
+		for n, parent := range r.Parents {
+			if parent.SHA != p.Parents[n] {
+				return ErrDenied
+			}
 		}
 	default:
 		return ErrDenied

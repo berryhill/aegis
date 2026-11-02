@@ -72,7 +72,7 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 			return fail("control_invalid")
 		}
 	}
-	if delivery.ValidateHistorySnapshot(h) != nil || p.Binding.OwnerID != subject.PrincipalID || p.Binding.Key != key || p.Binding.QueueItemID != c.QueueItemID || p.Binding.Run != c.RunID || p.Binding.Contract != c.Digest || p.Loop != c.Loop || h.Contract.Digest != c.Digest || h.Root.Base != p.Binding.Base || h.Root.Branch != p.Branch || p.Workspace != c.Worktree || p.BaseHead != c.Base || p.Binding.FenceEpoch == 0 || p.Binding.RoleBinding == "" {
+	if delivery.ValidateHistorySnapshot(h) != nil || p.Binding.OwnerID != subject.PrincipalID || p.Binding.Key != key || p.Binding.QueueItemID != c.QueueItemID || p.Binding.Run != c.RunID || p.Binding.Contract != c.Digest || p.Loop != c.Loop || h.Contract.Digest != c.Digest || h.Root.Base != p.Binding.Base || h.Root.Branch != p.Branch || p.Workspace != c.Worktree || (p.BaseHead != c.Base && p.OriginalBase != c.Base) || p.Binding.FenceEpoch == 0 || p.Binding.RoleBinding == "" {
 		return fail("binding_invalid")
 	}
 	n, err := s.ReadContributionCandidateEvidenceAs(ctx, subject, key)
@@ -105,6 +105,41 @@ func (s *Service) AssessContributionRetainedDeliveryAs(ctx context.Context, subj
 	expectedPolicy, _ := json.Marshal(revision.Contribution.Managed)
 	if !bytes.Equal(policyWire, expectedPolicy) || candidate.Digest != n.Candidate || candidate.Source.Digest != p.Source || candidate.CandidateTree != p.Tree || candidate.Toolchain != p.Toolchain || candidate.Policy != p.CandidatePolicy || candidate.Base != c.Base || candidate.Builder.AgentDigest != c.Builder.Digest || len(c.Roles) < 2 || candidate.Builder.CharterDigest != c.Roles[1].Charter.Digest || revision.Contribution.Managed.BaseBranch != p.Binding.Base {
 		return fail("candidate_invalid")
+	}
+	var repairs []orchestration.ContributionDeliveryRepair
+	if raw, exists := native["delivery_repairs"]; exists && json.Unmarshal(raw, &repairs) != nil {
+		return fail("repair_lineage_invalid")
+	}
+	reconstructed, repairErr := contributionRepairPolicy(p, candidate, repairs)
+	if repairErr != nil || reconstructed.Digest() != p.Digest() {
+		return fail("repair_lineage_invalid")
+	}
+	if len(repairs) == 0 {
+		if p.RepairFailure != "" || p.ExpectedOld != "" {
+			return fail("repair_lineage_invalid")
+		}
+	} else {
+		repair := repairs[len(repairs)-1]
+		if repair.AfterPass >= candidate.Pass || repair.Failure != p.RepairFailure || repair.Head != p.ExpectedOld || repair.PR != p.PR {
+			return fail("repair_lineage_invalid")
+		}
+		for _, retainedRepair := range repairs {
+			repair := retainedRepair
+			matched := false
+			for _, chain := range h.Histories {
+				failed := chain[len(chain)-1].Record
+				wire, _ := json.Marshal(failed)
+				feedback, feedbackErr := delivery.ConcreteRepairFeedback(failed, p.RequiredChecks)
+				current, advanceErr := delivery.VerifiedBaseAdvance(failed)
+				validFailure := (feedbackErr == nil && feedback == repair.Feedback && failed.Outcome == delivery.Failed) || (advanceErr == nil && repair.Class == "base_advanced" && repair.CurrentBase == current && candidate.CurrentBase == current)
+				if validFailure && failed.Intent.ID == repair.Failure && contribution.Digest(wire) == repair.Evidence && failed.Intent.Candidate == repair.Candidate && failed.Code == repair.Class && failed.Intent.Head == repair.Head && failed.Intent.BaseHead == repair.Base && failed.Intent.PR == repair.PR {
+					matched = true
+				}
+			}
+			if !matched {
+				return fail("repair_lineage_invalid")
+			}
+		}
 	}
 	code := assessRetainedDeliveryHistory(h, p, target)
 	// Reuse the actual owning Source's pure projection. This does not enter its
@@ -231,11 +266,24 @@ func assessRetainedDeliveryHistory(h delivery.HistorySnapshot, p ContributionDel
 				return "tree_invalid"
 			}
 		}
+		if i.Operation == delivery.UpdatePullRequest && p.RepairFailure != "" {
+			if _, duplicate := current[delivery.PullRequest]; duplicate {
+				return "duplicate_effect"
+			}
+			current[delivery.PullRequest] = r
+			pr = r.PR
+		}
 		if i.Operation == delivery.PullRequest {
 			pr = r.PR
 			if pr == 0 {
 				return "pr_invalid"
 			}
+		}
+	}
+	if p.RepairFailure != "" {
+		owned, err := retainedContributionPR(h, p)
+		if err != nil || owned != pr {
+			return "pr_invalid"
 		}
 	}
 	for _, op := range required {

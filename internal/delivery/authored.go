@@ -50,7 +50,14 @@ func authoredObject(s CommitSpec) (GitObject, error) {
 	// absent final newline; do not use -m/-F's line-completing semantics.
 	message := s.Message
 	date := fmt.Sprintf("%d %s", stamp.Unix(), stamp.Format("-0700"))
-	raw := []byte(fmt.Sprintf("tree %s\nparent %s\nauthor %s <%s> %s\ncommitter %s <%s> %s\n\n%s", s.Tree, s.Parent, s.Author.Name, s.Author.Email, date, s.Committer.Name, s.Committer.Email, date, message))
+	parents := "parent " + s.Parent + "\n"
+	if s.IntegrationParent != "" {
+		if !sha.MatchString(s.IntegrationParent) || s.IntegrationParent == s.Parent {
+			return deny()
+		}
+		parents += "parent " + s.IntegrationParent + "\n"
+	}
+	raw := []byte(fmt.Sprintf("tree %s\n%sauthor %s <%s> %s\ncommitter %s <%s> %s\n\n%s", s.Tree, parents, s.Author.Name, s.Author.Email, date, s.Committer.Name, s.Committer.Email, date, message))
 	o := GitObject{Kind: "commit", OID: objectOID("commit", raw), Raw: raw}
 	if _, e = commitPayload(o); e != nil || !objectValid(o) {
 		return deny()

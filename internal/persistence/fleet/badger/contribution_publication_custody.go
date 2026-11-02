@@ -172,20 +172,19 @@ func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]Deli
 		return nil, err
 	}
 	out := make([][]DeliveryObservation, 0, len(slots))
-	known := make(map[string]delivery.Intent, len(slots))
+	// This catalogue is local to this immutable transaction, never a cache across
+	// reads or authority admissions. loadDeliveryHistory has already validated
+	// every canonical byte, envelope, proof and predecessor, including the head.
+	known := make(map[string]DeliveryObservation)
 	for _, i := range slots {
-		known[i.ID] = i
 		chain, err := loadDeliveryHistory(txn, i.ID)
 		if err != nil || len(chain) == 0 || chain[0].Record.Intent != i {
 			return nil, fleet.ErrCorrupt
 		}
 		for _, entry := range chain {
-			if entry.Record.ProofJSON != "" || entry.Record.ProofDigest != "" {
-				if _, err := delivery.ParseReadback(i, entry.Record.Observation); err != nil {
-					return nil, fleet.ErrCorrupt
-				}
-			}
+			known[string(key(familyContributionDelivery, i.ID, revisionPart(entry.Record.Revision)))] = entry
 		}
+		known[string(key(familyContributionDelivery, i.ID, "head"))] = chain[len(chain)-1]
 		out = append(out, chain)
 	}
 	// Slot mirrors are indexes, not proof that omitted effects never existed.
@@ -198,20 +197,28 @@ func publicationHistories(txn *badgerdb.Txn, root deliveryPublication) ([][]Deli
 	defer it.Close()
 	for it.Rewind(); it.Valid(); it.Next() {
 		wire, e := it.Item().ValueCopy(nil)
+		if e != nil {
+			return nil, fleet.ErrCorrupt
+		}
+		if validated, ok := known[string(it.Item().Key())]; ok {
+			// Exact key AND canonical bytes must match the fully validated chain
+			// in this same transaction. No proof is skipped on a fresh read.
+			if !bytes.Equal(wire, deliveryWire(validated)) {
+				return nil, fleet.ErrCorrupt
+			}
+			continue
+		}
 		var entry DeliveryObservation
-		if e != nil || strictDelivery(wire, &entry) != nil {
+		if strictDelivery(wire, &entry) != nil {
 			return nil, fleet.ErrCorrupt
 		}
 		i := entry.Record.Intent
 		if i.Run != root.Run && i.Contract != root.Contract {
 			continue
 		}
-		if original, ok := known[i.ID]; !ok || original != i || delivery.ValidateHistoryEnvelope(entry) != nil {
-			return nil, fleet.ErrCorrupt
-		}
-		if !bytes.Equal(it.Item().Key(), key(familyContributionDelivery, i.ID, "head")) && !bytes.Equal(it.Item().Key(), key(familyContributionDelivery, i.ID, revisionPart(entry.Record.Revision))) {
-			return nil, fleet.ErrCorrupt
-		}
+		// Any same-root key absent from the validated catalogue is an orphan
+		// or an alias, even when its envelope happens to be otherwise valid.
+		return nil, fleet.ErrCorrupt
 	}
 	return out, nil
 }

@@ -16,6 +16,27 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #379 source: publication-history census reuses only exact canonical records
+  already fully validated in the same immutable transaction. Every new read still
+  validates all proofs and predecessors and scans for orphan/aliased records;
+  this is not a cross-read cache or a relaxation of fresh authority admission.
+
+- #379 security review: native CI/conflict repair feedback retains the exact
+  policy-selected failing check or pinned PR mergeability, closed expected and
+  observed states and immutable response digest, without remote logs, commands
+  or suggestions. Retained verification independently reconstructs each packet;
+  a policy PR pin cannot substitute for independently proven PR creation.
+
+- #379 source: productive managed CI/conflict repair reacquires the same source
+  custody, consumes the remaining candidate budget, rebuilds and independently
+  tests before updating the same canonical PR. A narrowly verified read-only
+  `base_advanced` observation may acquire the exact missing upstream commit and
+  integrate nonconflicting writable source with immutable updated preimages;
+  sealed contract, trusted inputs and deadlines remain unchanged. Other UNKNOWN
+  effects, issue mutations and retained merges never authorize repair. Existing
+  CI runs ordinary, CI-repair and base-advance controlled finalization regressions.
+  Userland profiles/CLI are unchanged; real v6 provider and protected GitHub
+  qualification remain pending, not established by these synthetic fixtures.
 - #352 source qualification: compiled Go bundle inventory and test processes now
   prefix the selected toolchain's `GOROOT/bin` to the preserved ambient `PATH`,
   matching `go test` when a bootstrap Go selects a newer compiler. Existing
@@ -49,6 +70,7 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   quarantines custody, and missing runner ports deny before start. This is not
   sandboxing, durable contribution receipt creation, or live-provider/installed
   qualification. See [checker cleanup](docs/VERIFIED_IMPLEMENTATION.md#linux-checker-cleanup-boundary).
+
 
 
 - #423 source: separate immutable contribution publication history from active

@@ -17,7 +17,7 @@ import (
 )
 
 func TestContributionResultReloadsExactHistoricalPolicy(t *testing.T) {
-	for _, mode := range []string{"exact", "missing", "corrupt", "noncanonical", "owner", "key", "run", "contract", "candidate", "queue", "loop", "workspace", "base", "attempt", "tree", "source", "candidate-policy", "toolchain"} {
+	for _, mode := range []string{"exact", "missing", "corrupt", "noncanonical", "owner", "key", "run", "contract", "candidate", "queue", "loop", "workspace", "base", "attempt", "tree", "source", "candidate-policy", "toolchain", "integrated-exact", "integrated-original", "integrated-candidate-current", "integrated-repair-current", "integrated-missing-repair", "integrated-missing-native"} {
 		t.Run(mode, func(t *testing.T) {
 			blobs, err := store.Open(filepath.Join(t.TempDir(), "canonical"))
 			if err != nil {
@@ -35,9 +35,29 @@ func TestContributionResultReloadsExactHistoricalPolicy(t *testing.T) {
 			r := evidence.ContributionTerminalReport{Owner: c.OwnerID, Key: c.Key, Run: c.RunID, Contract: c.Digest, Candidate: p.Binding.Candidate, Attempt: p.QueueAttempt}
 			candidate := orchestration.ContributionCandidate{Digest: r.Candidate, Contract: c.Digest, Base: p.BaseHead, QueueAttempt: p.QueueAttempt, CandidateTree: p.Tree, Policy: p.CandidatePolicy, Toolchain: p.Toolchain}
 			candidate.Source.Digest = p.Source
-			native, _ := json.Marshal(map[string]any{"schema": "aegis.contribution.native-acceptance.v1", "run_id": c.RunID, "contract": c.Digest, "queue_attempt": r.Attempt, "passes": []any{map[string]any{"candidate": candidate}}})
+			var repairs []orchestration.ContributionDeliveryRepair
+			if strings.HasPrefix(mode, "integrated-") {
+				p.OriginalBase, p.BaseHead = c.Base, "current-base"
+				p.RepairFailure, p.ExpectedOld, p.PR = "failure", "owned-head", 7
+				candidate.CurrentBase, candidate.Pass = p.BaseHead, 2
+				repairs = []orchestration.ContributionDeliveryRepair{{Failure: p.RepairFailure, Candidate: "predecessor", Head: p.ExpectedOld, Base: c.Base, CurrentBase: p.BaseHead, Class: "base_advanced", PR: p.PR, AfterPass: 1}}
+				switch mode {
+				case "integrated-original":
+					p.OriginalBase = "foreign"
+				case "integrated-candidate-current":
+					candidate.CurrentBase = "foreign"
+				case "integrated-repair-current":
+					repairs[0].CurrentBase = "foreign"
+				case "integrated-missing-repair":
+					repairs = nil
+				}
+			}
+			native, _ := json.Marshal(map[string]any{"schema": "aegis.contribution.native-acceptance.v1", "run_id": c.RunID, "contract": c.Digest, "queue_attempt": r.Attempt, "delivery_repairs": repairs, "passes": []any{map[string]any{"candidate": candidate}}})
 			if r.Native, err = blobs.PutBlob(native); err != nil {
 				t.Fatal(err)
+			}
+			if mode == "integrated-missing-native" {
+				r.Native = ""
 			}
 			switch mode {
 			case "owner":
@@ -102,7 +122,7 @@ func TestContributionResultReloadsExactHistoricalPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			err = s.reloadContributionResultEvidence(context.Background(), c, r)
-			if (err == nil) != (mode == "exact") {
+			if (err == nil) != (mode == "exact" || mode == "integrated-exact") {
 				t.Fatalf("mode=%s err=%v", mode, err)
 			}
 		})

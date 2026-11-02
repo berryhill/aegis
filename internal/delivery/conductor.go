@@ -35,6 +35,10 @@ type BoundaryCompletionOwner interface {
 	FinalizeContributionBoundary(context.Context, Reference) error
 }
 
+type RepairPullRequestOwner interface {
+	RepairPullRequest(context.Context, Plan) (uint64, error)
+}
+
 type Conductor struct {
 	engine     *Engine
 	repair     RepairOwner
@@ -73,7 +77,25 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 		// Ignore all caller/policy PR and completion receipts. Only our own canonical
 		// PR result and the trusted full-scope owner can supply these references.
 		p.PR, p.Completion = 0, ""
+		if p.RepairFailure != "" {
+			owner, ok := e.owner.(RepairPullRequestOwner)
+			if !ok {
+				return ErrDenied
+			}
+			pr, err := owner.RepairPullRequest(ctx, p)
+			if err != nil || pr == 0 {
+				return ErrDenied
+			}
+			p.PR, out.PR = pr, pr
+		}
 		finishBoundary := func() error {
+			// A repair handoff is intermediate, not a terminal contribution
+			// boundary. The managed owner must leave this accepted-source frame
+			// before taking builder custody; terminalizing here would make its
+			// same claimed Queue attempt impossible to continue.
+			if out.Reason == "repair_requested" {
+				return nil
+			}
 			if owner, ok := c.completion.(BoundaryCompletionOwner); ok {
 				return owner.FinalizeContributionBoundary(ctx, ref)
 			}
@@ -92,7 +114,8 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 				} else {
 					r, x = e.executeAccepted(ctx, p, op, caller)
 				}
-				if x != nil || r.Outcome != Unknown || !(op == CheckDelivery || op == Merge && r.Merge != "") {
+				_, baseAdvance := VerifiedBaseAdvance(r)
+				if baseAdvance == nil || x != nil || r.Outcome != Unknown || !(op == CheckDelivery || op == Merge && r.Merge != "") {
 					break
 				}
 				// Retain each observed merge fact even if a later reservation holds.
@@ -148,7 +171,7 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 				if out.Merge != "" {
 					out.Reason = "merged_unresolved"
 				}
-				if r.Outcome == Failed && (r.Code == "ci_failed" || r.Code == "merge_conflict") {
+				if out.Merge == "" && repairableFailure(r) {
 					out.Reason = "repair_owner_unavailable"
 					if c.repair != nil {
 						if ForwardRepair(ctx, c.repair, r) == nil {
@@ -214,7 +237,11 @@ func (c *Conductor) Run(caller context.Context, ref Reference) (out DeliveryResu
 			}
 			return x
 		}
-		if ok, x := run(PullRequest); !ok || x != nil {
+		prOperation := PullRequest
+		if p.RepairFailure != "" {
+			prOperation = UpdatePullRequest
+		}
+		if ok, x := run(prOperation); !ok || x != nil {
 			if x == nil {
 				return finishBoundary()
 			}

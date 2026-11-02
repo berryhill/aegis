@@ -118,7 +118,7 @@ func (r *ContributionDeliveryRepository) validate(txn *badgerdb.Txn, i delivery.
 		return e
 	}
 	b := r.binding
-	if i.Reference != b.Reference || i.FenceEpoch != b.FenceEpoch || i.RoleBinding != b.RoleBinding || i.Actor == "" || i.Repository != c.Repository || i.RepositoryID != c.Source.RepositoryID || i.Base != b.Base || (c.Base != i.Base && c.Base != i.BaseHead) || !deliveryBranch.MatchString(i.Branch) || i.Branch == i.Base || !deliverySHA.MatchString(i.Head) || !deliverySHA.MatchString(i.BaseHead) || !deliveryDigest.MatchString(i.ID) || !deliveryDigest.MatchString(i.Payload) || i.Policy == "" || !deliveryOperation(i.Operation) {
+	if i.Reference != b.Reference || i.FenceEpoch != b.FenceEpoch || i.RoleBinding != b.RoleBinding || i.Actor == "" || i.Repository != c.Repository || i.RepositoryID != c.Source.RepositoryID || i.Base != b.Base || (c.Base != i.Base && c.Base != i.BaseHead && (c.Base != i.OriginalBase || i.RepairFailure == "")) || !deliveryBranch.MatchString(i.Branch) || i.Branch == i.Base || !deliverySHA.MatchString(i.Head) || !deliverySHA.MatchString(i.BaseHead) || !deliveryDigest.MatchString(i.ID) || !deliveryDigest.MatchString(i.Payload) || i.Policy == "" || !deliveryOperation(i.Operation) {
 		return delivery.ErrDenied
 	}
 	if len(i.Actor) > 256 || len(i.Policy) > 1024 || (i.ExpectedOld != "" && !deliverySHA.MatchString(i.ExpectedOld)) {
@@ -133,7 +133,14 @@ func (r *ContributionDeliveryRepository) validate(txn *badgerdb.Txn, i delivery.
 			Operation                               delivery.Operation
 		}{i.Run, i.Contract, i.Repository, i.Base, i.Branch, i.RepositoryID, i.Operation}
 		wire, _ := json.Marshal(v)
-		if contribution.Digest(wire) != i.ID {
+		want := contribution.Digest(wire)
+		if i.RepairFailure != "" {
+			if !deliveryDigest.MatchString(i.RepairFailure) || i.Operation == delivery.PullRequest || !deliverySHA.MatchString(i.ExpectedOld) {
+				return delivery.ErrDenied
+			}
+			want = contribution.Digest(deliveryWire(struct{ Slot, Repair string }{want, i.RepairFailure}))
+		}
+		if want != i.ID {
 			return delivery.ErrConflict
 		}
 	}
@@ -481,6 +488,11 @@ func (r *ContributionDeliveryRepository) Reserve(ctx context.Context, i delivery
 				return delivery.ErrConflict
 			}
 			return r.historicalOwner(txn, i)
+		}
+		if i.RepairFailure != "" {
+			if e = r.validateRepairSuccessor(txn, i); e != nil {
+				return e
+			}
 		}
 		if e = r.owner(txn, i, true); e != nil {
 			return e
