@@ -2642,14 +2642,16 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 		if err := ensureSocketDirectory(filepath.Dir(svc.Config.API.UnixSocket)); err != nil {
 			return err
 		}
-		singleton, err = acquireSingleton(svc.Config.API.UnixSocket + ".lock")
-		if err != nil {
-			return err
+		if !startupLockHeld(ctx, svc.Config.API.UnixSocket) {
+			singleton, err = acquireSingleton(svc.Config.API.UnixSocket + ".lock")
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = syscall.Flock(int(singleton.Fd()), syscall.LOCK_UN)
+				_ = singleton.Close()
+			}()
 		}
-		defer func() {
-			_ = syscall.Flock(int(singleton.Fd()), syscall.LOCK_UN)
-			_ = singleton.Close()
-		}()
 		if info, err := os.Lstat(svc.Config.API.UnixSocket); err == nil {
 			stat, owned := info.Sys().(*syscall.Stat_t)
 			if info.Mode()&os.ModeSocket == 0 || !owned || int(stat.Uid) != os.Geteuid() {

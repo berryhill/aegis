@@ -16,6 +16,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #379 recovery prerequisite (source): explicit principal-authenticated orphan
+  transport quarantine retains the reviewed socket inode and kernel unbound proof,
+  rejects replacement/disappearance, and shares one cancellable password check
+  and fixed deadline across transport and authority/fleet recovery. Gateway startup
+  acquires transport exclusion before opening stores. Default recovery still
+  refuses present transport; no grants, reset, installed recovery or managed-provider
+  acceptance are implied. See `docs/AUTHORITY_RECOVERY.md`.
+
 - #379 source: publication-history census reuses only exact canonical records
   already fully validated in the same immutable transaction. Every new read still
   validates all proofs and predecessors and scans for orphan/aliased records;

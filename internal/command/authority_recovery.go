@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"github.com/berryhill/aegis/internal/config"
 	"github.com/berryhill/aegis/internal/initialize"
+	authoritybadger "github.com/berryhill/aegis/internal/persistence/authority/badger"
 	"github.com/spf13/cobra"
 )
 
 func authorityRecoveryCmd(o *rootOptions, profile ExecutionProfile) *cobra.Command {
+	var quarantineOrphan bool
 	group := &cobra.Command{Use: "authority", Short: "Offline operational authority maintenance"}
-	group.AddCommand(&cobra.Command{Use: "recover-interrupted", Short: "Authenticate and verify interrupted authority and fleet state; preserve evidence", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	recoverCommand := &cobra.Command{Use: "recover-interrupted", Short: "Authenticate and verify interrupted authority and fleet state; preserve evidence", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if o.target != "" {
 			return errors.New("interrupted authority recovery is offline only")
 		}
@@ -24,6 +26,13 @@ func authorityRecoveryCmd(o *rootOptions, profile ExecutionProfile) *cobra.Comma
 		if err = validateConfiguredPathsProfile(profile, map[string]string{"state": cfg.StateDir}); err != nil {
 			return err
 		}
+		var transport *recoveryTransport
+		if quarantineOrphan {
+			transport, err = prepareRecoveryTransport(cmd.Context(), o.configFile, cfg)
+			if err != nil {
+				return err
+			}
+		}
 		provider, err := passphraseProvider(cmd)
 		if err != nil {
 			return err
@@ -36,14 +45,32 @@ func authorityRecoveryCmd(o *rootOptions, profile ExecutionProfile) *cobra.Comma
 			return err
 		}
 		defer clear(password)
-		result, err := initialize.RecoverInterruptedInstance(cmd.Context(), cfg, password)
+		var result authoritybadger.InterruptedRecovery
+		if transport == nil {
+			result, err = initialize.RecoverInterruptedInstance(cmd.Context(), cfg, password)
+		} else {
+			result, err = transport.recover(cmd.Context(), password)
+		}
+		quarantined := ""
+		if transport != nil {
+			quarantined = transport.review.EvidencePath()
+		}
 		// Emit retained evidence custody even when verification refuses recovery.
-		if result.EvidencePath != "" {
-			if outErr := output(cmd, result); outErr != nil {
+		if result.EvidencePath != "" || quarantined != "" {
+			var value any = result
+			if transport != nil {
+				value = struct {
+					authoritybadger.InterruptedRecovery
+					QuarantinedTransport string `json:"quarantined_transport,omitempty"`
+				}{result, quarantined}
+			}
+			if outErr := output(cmd, value); outErr != nil {
 				return errors.Join(err, outErr)
 			}
 		}
 		return err
-	}})
+	}}
+	recoverCommand.Flags().BoolVar(&quarantineOrphan, "quarantine-orphan-transport", false, "After principal authentication, preserve a kernel-proven unbound orphan socket while holding startup exclusion through recovery")
+	group.AddCommand(recoverCommand)
 	return group
 }

@@ -1174,6 +1174,7 @@ func newRootServiceFactory(deps Dependencies, o *rootOptions) (func(*cobra.Comma
 	var openedConfig config.Config
 	var openedCredentialRepo *credentialbolt.Store
 	var openedCredentialCustodian *credentials.FileCustodian
+	var releaseStartup func()
 	closeOpened := func() error {
 		var closeErr error
 		if openedFleet != nil {
@@ -1193,6 +1194,10 @@ func newRootServiceFactory(deps Dependencies, o *rootOptions) (func(*cobra.Comma
 			openedAuthority = nil
 		}
 		openedService = nil
+		if releaseStartup != nil {
+			releaseStartup()
+			releaseStartup = nil
+		}
 		return closeErr
 	}
 	build := func(cmd *cobra.Command) (*app.Service, error) {
@@ -1233,6 +1238,14 @@ func newRootServiceFactory(deps Dependencies, o *rootOptions) (func(*cobra.Comma
 		}
 		if err = closeOpened(); err != nil {
 			return nil, err
+		}
+		if cmd.Name() == "serve" {
+			locked, release, err := api.AcquireStartupLock(cmd.Context(), cfg.API.UnixSocket)
+			if err != nil {
+				return nil, err
+			}
+			releaseStartup = release
+			cmd.SetContext(locked)
 		}
 		authorityPath := filepath.Join(cfg.StateDir, "persistence", "authority-v1")
 		authorityInspection := authoritybadger.Inspect(cmd.Context(), authorityPath)
