@@ -16,9 +16,9 @@ func skillsCmd() *cobra.Command {
 	}
 	for _, verb := range []string{"install", "update", "rollback"} {
 		c.AddCommand(&cobra.Command{
-			Use: verb + " ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME",
+			Use:   verb + " ARCHIVE SHA256_DIGEST SOURCE_REVISION ABSOLUTE_HOME",
 			Short: "Apply an exact verified archive to an explicit filesystem destination",
-			Args: cobra.ExactArgs(4),
+			Args:  cobra.ExactArgs(4),
 			RunE: func(cmd *cobra.Command, args []string) error {
 				result, err := skillbundle.InstallArchive(cmd.Context(), args[0], args[1], args[2], args[3])
 				if err != nil {
