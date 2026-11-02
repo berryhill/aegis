@@ -1666,18 +1666,26 @@ func (s *Service) TerminateSessionAs(ctx context.Context, sub core.Subject, id, 
 func (s *Service) Supervise(ctx context.Context) error {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
+supervising:
 	for {
 		if err := s.reconcileSessions(ctx, false); err != nil {
+			// Owned cancellation can interrupt an in-flight terminal transition.
+			// It must still reach the fresh bounded shutdown pass. Preserve all
+			// other errors, including wrapped/joined cleanup failures.
+			if ctx.Err() != nil && err == ctx.Err() {
+				break supervising
+			}
 			return err
 		}
 		select {
 		case <-ctx.Done():
-			shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			return s.reconcileSessions(shutdown, true)
+			break supervising
 		case <-ticker.C:
 		}
 	}
+	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.reconcileSessions(shutdown, true)
 }
 
 func (s *Service) reconcileSessions(ctx context.Context, shutdown bool) error {
