@@ -544,8 +544,9 @@ templ AgentInlineDetail(surface SurfaceModel, record *RecordModel) {
 			<div class="panel-body">
 				<div class="section-label">Readiness</div>
 				<div class="inline-notice">{ record.Readiness }</div>
+				@FieldList(record.Agent.ReadinessFields, "Current precondition observation unavailable; no readiness is asserted")
 				<div class="section-label">Charter revision</div>
-				<dl class="spec"><dt>Agent ID</dt><dd>{ record.Agent.StableID }</dd><dt>Charter revision</dt><dd>{ fmt.Sprintf("%s r%d", record.Agent.CharterID, record.Agent.CharterRevision) }</dd><dt>Charter digest</dt><dd>{ record.Agent.CharterDigest }</dd><dt>Runtime target</dt><dd>{ record.Agent.RuntimeAdapter + " / " + record.Agent.Runtime + " / " + record.Agent.RuntimeTarget }</dd><dt>Registry revision</dt><dd>{ fmt.Sprintf("r%d @ %s", record.Agent.Revision, record.Agent.RevisionDigest) }</dd></dl>
+				<dl class="spec"><dt>Agent ID</dt><dd>{ record.Agent.StableID }</dd><dt>Charter revision</dt><dd>{ fmt.Sprintf("%s r%d", record.Agent.CharterID, record.Agent.CharterRevision) }</dd><dt>Charter digest</dt><dd>{ record.Agent.CharterDigest }</dd><dt>Runtime target</dt><dd>{ record.Agent.RuntimeAdapter + " / " + record.Agent.Runtime + " / " + record.Agent.RuntimeTarget }</dd><dt>Verified charter runtime version constraint</dt><dd>{ record.Agent.RuntimeVersionConstraint }</dd><dt>Registry revision</dt><dd>{ fmt.Sprintf("r%d @ %s", record.Agent.Revision, record.Agent.RevisionDigest) }</dd></dl>
 				<p class="charter-evidence-note">{ record.Agent.CharterEvidence }</p>
 				<section class="agent-evidence-card" aria-label="Provisioning evidence">
 					<div class="section-label">Provisioning evidence</div>

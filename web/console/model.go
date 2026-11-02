@@ -188,14 +188,14 @@ type RecordModel struct {
 // mandate, or permission grant.
 type AgentDetailModel struct {
 	StableID, FleetID, SourceKind, SourceID, OwnerID, AccountabilityID              string
-	RuntimeAdapter, Runtime, RuntimeTarget                                          string
+	RuntimeAdapter, Runtime, RuntimeTarget, RuntimeVersionConstraint                string
 	CharterID, CharterDigest, RevisionDigest                                        string
 	CharterRevision, Revision                                                       uint64
 	Capabilities, Policies                                                          []string
 	DeclaredAuthority, EffectiveAuthority, ProvisioningEvidence                     string
 	AuthorityState, EvaluatedFor, CharterEvidence, HistoryEvidence, SessionEvidence string
 	Historical, LifecycleEligible                                                   bool
-	AuthorityFields, ReceiptFields, SessionFields                                   []FieldModel
+	AuthorityFields, ReceiptFields, SessionFields, ReadinessFields                  []FieldModel
 	CharterHistoryEvidence                                                          string
 	CharterHistory                                                                  []FieldModel
 	History, Executions                                                             []LinkModel

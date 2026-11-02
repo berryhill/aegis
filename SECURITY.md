@@ -1,5 +1,10 @@
 # Security Policy
 
+Agent-detail [precondition observations](docs/AGENT_DETAIL.md) verify current
+bounded provisioning bytes against the exact plan/consumed approval/receipt and
+charter, separately from authenticated operator authority. They issue no mandate
+and never turn a password browser subject into a local-OS stanza identity.
+
 Contribution publication history is distinct from active repository/base custody.
 Proof-gated release and original issue-intent read-only recovery are described in
 [the #423 boundary](docs/contribution-publication-custody.md); expiry or process

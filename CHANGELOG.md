@@ -23,6 +23,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #232 Agent detail: observe exact current provisioning artifact integrity and
+  runtime compatibility without issuing authority; retain historical lifecycle
+  truth, expose the verified runtime constraint and restore Agent selection,
+  focus and nonzero scroll on Back. Exact-record link labels no longer collide.
+  Password login never borrows a local-OS stanza; unsupported session navigation
+  and unreachable accepted-policy fixtures remain explicitly unavailable.
+  See [Agent detail](docs/AGENT_DETAIL.md).
+
 - #379 recovery prerequisite (source): explicit principal-authenticated orphan
   transport quarantine retains the reviewed socket inode and kernel unbound proof,
   rejects replacement/disappearance, and shares one cancellable password check
