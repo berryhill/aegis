@@ -54,6 +54,13 @@ Task and acceptance are nonempty and bounded to 32768 bytes each. The default mo
 
 Online validation resolves the named latest enabled registered Agent under authenticated owner authority. Match the exact revision digest on readback and require lifecycle `draft` with no lifecycle history. Publication is inactive and creates no Queue item. Activation and Queue execution require separate authenticated operations and runtime authorization; neither follows from publication. Do not stop a daemon or fall back to opening its stores.
 
+The optional `contribution` digest reference is controller-derived for an oversized
+sealed v6 issue context, not an authoring shortcut or a runtime retrieval grant.
+The contribution consumer must resolve and validate the complete canonical
+contract, then fit it with all other data inside the existing 64 KiB encoded
+runtime-input bound. A missing/foreign/altered context rejects before model send.
+See [contribution intake](contribution-intake.md#bounded-issue-data-and-executor-delivery).
+
 ## Separate controller authorization and execution
 
 Publication grants no host authority. The controller defaults to no implementation execution. After separate explicit operator approval of a configuration change, `implementation.go_binary` must name an absolute trusted Go executable and `implementation.authorized_contracts` must contain the exact contract digest returned by the draft builder. That digest binds workspace, writable files, task, acceptance, bounds and test policy. It is not the Loop revision digest. Never add it automatically, change owner configuration, restart a service, provision an Agent or execute work as part of authoring/publication.

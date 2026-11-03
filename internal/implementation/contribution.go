@@ -18,6 +18,8 @@ import (
 // ContributionRoleIdentity is emitted by the controller's separately admitted
 // runtime, not parsed from model output. The tester receives no edit port.
 type ContributionRoleIdentity struct {
+	InputDigest      string `json:"input_digest,omitempty"`
+	InputBytes       int    `json:"input_bytes,omitempty"`
 	AgentDigest      string `json:"agent_digest"`
 	CharterDigest    string `json:"charter_digest"`
 	AuthorityID      string `json:"authority_id"`
@@ -375,6 +377,9 @@ func (e *ManagedContribution) runPrepared(ctx context.Context, record Contributi
 			edits, identity, err := e.Build(ctx, Request{Contract: c, RepositoryContext: cloneContext(expected), PassID: fmt.Sprintf("%s-builder-%d", run, record.Consumed), PreviousCheck: previous})
 			if err != nil {
 				return record, err
+			}
+			if c.Contribution != nil && (identity.InputDigest == "" || identity.InputBytes == 0) {
+				return record, errors.New("resolved contribution input evidence required")
 			}
 			changed := builder.AuthorityID != "" && (identity.AgentDigest != builder.AgentDigest || identity.AuthorityID != builder.AuthorityID || identity.SessionID != builder.SessionID || identity.MandateID != builder.MandateID)
 			if !validContributionRole(identity) || (changed && (e.ContinueBuilder == nil || e.ContinueBuilder(ctx, builder, identity) != nil)) {

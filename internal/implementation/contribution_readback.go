@@ -48,6 +48,9 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 	}
 	if r.Frozen != nil {
 		v := *r.Frozen
+		if e.validateBuilderInput(r, v) != nil {
+			return bad
+		}
 		wire, err := e.DB.Get([]byte("contribution/candidate/" + v.Digest))
 		expected, _ := json.Marshal(v)
 		if err != nil || !bytes.Equal(wire, expected) || v.Toolchain != r.FrozenToolchain || v.Contract != r.Contract || v.QueueAttempt != r.QueueAttempt || v.Pass != r.Consumed || int(r.Consumed) != len(r.Passes)+1 || v.Policy != contributionPolicyDigest(r.Policy) || !validContributionRole(v.Builder) || previousBytes(e.DB, v.Executable) == nil || previousBytes(e.DB, v.Toolchain) == nil {
@@ -75,6 +78,9 @@ func (e *ManagedContribution) validateRecord(id string, r ContributionRecord) er
 			return bad
 		}
 		v := p.Candidate
+		if e.validateBuilderInput(r, v) != nil {
+			return bad
+		}
 		if v.Toolchain != r.FrozenToolchain {
 			return bad
 		}

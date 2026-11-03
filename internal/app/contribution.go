@@ -56,6 +56,17 @@ type ContributionSourceReader interface {
 	Read(context.Context, contribution.IssueURL) (contribution.Source, error)
 }
 
+var ErrContributionInputBound = contribution.ErrInputBound
+
+func ContributionSourceBoundMessage(err error) string {
+	for _, bound := range []error{contribution.ErrSourceResponseBound, contribution.ErrSourceIssueBound, contribution.ErrSourceDiscussionBound} {
+		if errors.Is(err, bound) {
+			return bound.Error()
+		}
+	}
+	return ""
+}
+
 type contributionReader = ContributionSourceReader
 
 func (s *Service) ReadContributionAs(ctx context.Context, subject core.Subject, key string) (contribution.Contract, QueueExecutionView, error) {
@@ -179,7 +190,11 @@ func (s *Service) admitContributionAs(ctx context.Context, subject core.Subject,
 	if err != nil {
 		return contribution.Contract{}, err
 	}
-	if _, err = contribution.BindLoop(r, c); err != nil {
+	bound, err := contribution.BindLoop(r, c)
+	if err != nil {
+		return contribution.Contract{}, err
+	}
+	if err = orchestration.ValidateContributionIntakeInput(ctx, bound, c, r.Contribution.Managed); err != nil {
 		return contribution.Contract{}, err
 	}
 	request := orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{Contribution: &c, Inputs: []graph.NormalizedInput{}, SubmissionID: c.SubmissionID, IdempotencyKey: "contribution-" + id, SnapshotID: "contribution-snapshot-" + id, QueueItemID: c.QueueItemID, GraphRunID: c.RunID, TransitionID: "contribution-transition-" + id, RejectionID: "contribution-reject-" + id, MaxAttempts: 1}, Participant: p.Controller, Loop: selected, NodeID: "contribution"}

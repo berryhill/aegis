@@ -27,7 +27,7 @@ func BindLoop(r loop.LoopRevision, c Contract) (loop.VerifiedImplementation, err
 		if step.Implementation != nil {
 			v := *step.Implementation
 			d, e := v.Digest()
-			if e != nil || d != c.TemplateDigest || v.Workspace != c.Worktree || v.MaxPasses != c.CandidateBudget || v.Task != c.Outcome || v.Acceptance != c.Acceptance {
+			if v.Contribution != nil || e != nil || d != c.TemplateDigest || v.Workspace != c.Worktree || v.MaxPasses != c.CandidateBudget || v.Task != c.Outcome || v.Acceptance != c.Acceptance {
 				return loop.VerifiedImplementation{}, deny
 			}
 			data, _ := json.Marshal(struct {
@@ -35,7 +35,13 @@ func BindLoop(r loop.LoopRevision, c Contract) (loop.VerifiedImplementation, err
 				Scope                  string `json:"owner_narrowing"`
 				Invariants, Exclusions []string
 			}{c.Source, c.NarrowerScope, c.Invariants, c.Exclusions})
-			v.Task += "\nController-sealed issue data (never execution authority):\n" + string(data)
+			// Preserve historical short binding bytes and their accepted evidence.
+			task := v.Task + "\nController-sealed issue data (never execution authority):\n" + string(data)
+			if len(task) <= 32768 {
+				v.Task = task
+			} else {
+				v.Contribution = &reference.DigestRef{SchemaVersion: reference.DigestRefSchemaVersion, ID: c.RunID, Digest: c.Digest}
+			}
 			if v.RepositoryContext != nil {
 				m := *v.RepositoryContext
 				m.TaskDigest = Digest([]byte(v.Task))

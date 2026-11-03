@@ -39,6 +39,12 @@ func TestContributionQueueNativeRepairIntegration(t *testing.T) {
 	}
 }
 func contributionQueueNativeRepairIntegration(t *testing.T, failClose bool) {
+	// Strengthen the existing successful two-pass case with complete long issue
+	// context; retain every original custody/denial assertion without another
+	// expensive native campaign or any CI-selection/budget change.
+	contributionQueueNativeRepairInput(t, failClose, !failClose)
+}
+func contributionQueueNativeRepairInput(t *testing.T, failClose, longInput bool) {
 	ctx := context.Background()
 	root := t.TempDir()
 	repoPath := filepath.Join(root, "source")
@@ -162,6 +168,12 @@ func TestLaunch(t *testing.T){p:=os.Getenv("AEGIS_CONTRIBUTION_CANDIDATE");if p=
 	td, _ := c.Digest()
 	sealed, e := contribution.Seal(contribution.Contract{SchemaVersion: contribution.Schema, OwnerID: subject.PrincipalID, SessionID: "intake-session", Key: "integration", PayloadDigest: contribution.Payload(lrRef, issue.URL, ""), QueueItemID: "queue", SubmissionID: "submission", RunID: "run", Loop: lrRef, Controller: refs[0], Builder: refs[1], Tester: refs[2], Source: contribution.Source{URL: issue, RepositoryID: 7, IssueID: 9, Author: contribution.Author{ID: 1, Login: "fixture"}, State: "open", CreatedAt: now, UpdatedAt: now, ObservedAt: now, ContentDigest: contribution.Digest([]byte("synthetic issue")), Discussion: []contribution.Comment{}}, Outcome: c.Task, Acceptance: c.Acceptance, Invariants: []string{"preserve trusted tests"}, Exclusions: []string{"no GitHub effects"}, Repository: "fixture/controlled", Base: base, Worktree: c.Workspace, Effect: "local-only", Roles: roles, TemplateDigest: td, CandidateBudget: c.MaxPasses, AdmittedAt: now, Deadline: now.Add(300 * time.Second)})
 	must(e)
+	if longInput {
+		sealed.Source.Body = strings.Repeat("é", 18000)
+		sealed.Source.Discussion = []contribution.Comment{{Author: contribution.Author{ID: 1, Login: "fixture"}, ID: 2, CreatedAt: now, UpdatedAt: now, Body: "LATEST OWNER: preserve exact scope; no publication", ContentDigest: contribution.Digest([]byte("latest-owner"))}}
+		sealed, e = contribution.Seal(sealed)
+		must(e)
+	}
 	workspace := workspaceFor(t, subject.PrincipalID, agents[0])
 	decision, e := service.PrepareLoopRun(ctx, SubmitLoopRequest{SubmitGraphRequest: SubmitGraphRequest{Subject: subject, Workspace: &workspace, Authority: workspace.Ref(), Contribution: &sealed, SubmissionID: "submission", IdempotencyKey: "submit", SnapshotID: "snapshot", QueueItemID: "queue", GraphRunID: "run", TransitionID: "queued", RejectionID: "rejected", MaxAttempts: 1}, Participant: refs[0], Loop: lrRef, NodeID: "contribution"})
 	must(e)
@@ -295,6 +307,22 @@ while read rest; do :; done
 	must(e)
 	if candidate.Digest != record.Passes[1].Candidate.Digest {
 		t.Fatal("handoff drift")
+	}
+	if longInput {
+		for _, pass := range record.Passes {
+			identity := pass.Candidate.Builder
+			wire, err := repository.ImplementationStore().Get([]byte("implementation/blob/" + identity.InputDigest))
+			must(err)
+			var input struct {
+				Request implementation.Request `json:"request"`
+			}
+			must(json.Unmarshal(wire, &input))
+			resolved, err := contribution.Unmarshal(input.Request.Contribution)
+			must(err)
+			if len(wire) != identity.InputBytes || contribution.Digest(wire) != identity.InputDigest || input.Request.Contribution == nil || !reflect.DeepEqual(resolved, sealed) || input.Request.Contract.Contribution == nil || input.Request.Contract.Task != c.Task {
+				t.Fatal("actual executor lost complete sealed issue/instructions")
+			}
+		}
 	}
 	t.Run("independently_reloaded_native_evidence", func(t *testing.T) {
 		readback, err := worker.ReloadContributionCandidateEvidence(ctx, subject, "queue", lr)
@@ -630,6 +658,27 @@ while read rest; do :; done
 	must(os.WriteFile(filepath.Join(record.Workspace, "post-review-drift"), []byte("drift"), 0600))
 	if _, e = worker.AcceptedContributionCandidate(ctx, subject, "queue", lr); e == nil {
 		t.Fatal("source drift exported")
+	}
+	if longInput {
+		// Reopen the actual durable store; altered/missing content-addressed
+		// input cannot be laundered into candidate evidence after restart.
+		must(repository.Close())
+		reopened, err := fleetbadger.Open(ctx, filepath.Join(root, "fleet-v1"))
+		must(err)
+		defer reopened.Close()
+		engine := &implementation.ManagedContribution{DB: reopened.ImplementationStore()}
+		_, err = engine.Read(sealed.RunID)
+		must(err)
+		key := []byte("implementation/blob/" + record.Passes[0].Candidate.Builder.InputDigest)
+		wire, err := reopened.ImplementationStore().Get(key)
+		must(err)
+		must(reopened.ImplementationStore().Put(key, []byte("altered")))
+		if _, err = engine.Read(sealed.RunID); err == nil {
+			t.Fatal("altered retained input accepted after restart")
+		}
+		must(reopened.ImplementationStore().Put(key, wire))
+		_, err = engine.Read(sealed.RunID)
+		must(err)
 	}
 	t.Log("synthetic runtime protocol qualification; native multi-file repair and executable checks passed; not real-provider success")
 }

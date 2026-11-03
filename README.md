@@ -1,5 +1,10 @@
 # Aegis
 
+Source correction: [bounded contribution intake](docs/contribution-intake.md#bounded-issue-data-and-executor-delivery)
+preserves complete issue/discussion context beyond the Task bound through exact
+controller-resolved contract references. The full runtime input remains bounded;
+intake is not managed-provider execution or whole-contribution completion.
+
 Exact-artifact skills distribution is available through
 `aegis skills install|inventory|update|rollback` with an explicit absolute home.
 These filesystem-only utilities need no checkout/helper or controller stores and
