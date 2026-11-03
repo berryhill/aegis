@@ -4,9 +4,11 @@ package delivery
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type finalQualificationCustody struct{}
@@ -138,7 +141,7 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 		}
 		return map[string]any{"html_url": fmt.Sprintf("https://github.com/%s/pull/7", p.Repository), "user": map[string]string{"login": p.Actor}, "number": 7, "state": state, "draft": false, "merged": f.merged, "merge_commit_sha": sha, "mergeable": true, "mergeable_state": "clean", "title": p.PRTitle, "body": p.PRBody, "head": map[string]any{"sha": p.Head, "ref": p.Branch, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}, "base": map[string]any{"sha": liveBase(), "ref": p.Base, "repo": map[string]any{"id": p.RepositoryID, "full_name": p.Repository}}}
 	}
-	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.Lock()
 		defer f.Unlock()
 		p = f.plan
@@ -406,24 +409,360 @@ func FinalQualificationGitHub(t *testing.T, p Plan) (*GitHub, *FinalQualificatio
 			t.Errorf("unhandled fixture endpoint %s %s", r.Method, path)
 			http.Error(w, "unsupported fixture", 404)
 		}
-	}))
-	// The engineering helper retains the shared lifetime lock. Never silently
-	// bind an ephemeral/out-of-pool port when it was not used.
-	_ = srv.Listener.Close()
-	port, portErr := strconv.Atoi(os.Getenv("AEGIS_ACCEPTANCE_PORT"))
-	if portErr != nil || port < 8450 || port > 8469 {
-		t.Fatal("final qualification requires shared acceptance_port.py lifetime custody")
-	}
-	listener, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if listenErr != nil {
-		t.Fatal(listenErr)
-	}
-	srv.Listener = listener
-	srv.Start()
-	t.Cleanup(srv.Close)
-	remote, e := newGitHub(srv.URL, finalQualificationCustody{}, finalQualificationPrivacy{})
+	})
+	origin, scope, detach, e := finalQualificationHTTP.attach(p, handler)
 	if e != nil {
 		t.Fatal(e)
 	}
+	t.Cleanup(detach)
+	remote, e := newGitHub(origin, finalQualificationCustody{}, finalQualificationPrivacy{})
+	if e != nil {
+		t.Fatal(e)
+	}
+	// Wrap the actual constructor's transport; preserve its proxy, redirect,
+	// timeout, origin/path, authorization and request-body behavior.
+	remote.client.Transport = finalQualificationScopeTransport{remote.client.Transport, scope}
 	return remote, f
+}
+
+const finalQualificationScopeHeader = "X-Aegis-Final-Qualification-Scope"
+
+type finalQualificationScopeTransport struct {
+	base  http.RoundTripper
+	scope string
+}
+
+func (tr finalQualificationScopeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	clone := r.Clone(r.Context())
+	clone.Header.Set(finalQualificationScopeHeader, tr.scope)
+	return tr.base.RoundTrip(clone)
+}
+
+type finalQualificationHTTPEntry struct {
+	handler http.Handler
+	active  sync.WaitGroup
+}
+
+type finalQualificationHTTPRegistry struct {
+	mu      sync.Mutex
+	server  *httptest.Server
+	closing chan struct{}
+	entries map[string]*finalQualificationHTTPEntry
+	// Includes detached entries until their own active handlers finish.
+	live int
+}
+
+var finalQualificationHTTP finalQualificationHTTPRegistry
+
+// Invoked by a finalqualification-only regression root with the actual overlay.
+// No production package or ordinary test refers to these overlay-only helpers.
+func FinalQualificationListenerRegression(t *testing.T) {
+	var registry finalQualificationHTTPRegistry
+	attach := func(p Plan, h http.Handler) (string, string, func()) {
+		t.Helper()
+		u, key, cleanup, err := registry.attach(p, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(cleanup)
+		return u, key, cleanup
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: nil, DisableKeepAlives: true}, Timeout: 3 * time.Second}
+	t.Cleanup(client.CloseIdleConnections)
+	request := func(origin string, keys []string) (int, string, error) {
+		req, err := http.NewRequest("GET", origin+"/exact/path?query=unchanged", nil)
+		if err != nil {
+			return 0, "", err
+		}
+		for _, key := range keys {
+			req.Header.Add(finalQualificationScopeHeader, key)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return 0, "", err
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b), err
+	}
+	check := func(u string, keys []string, status int, body string) {
+		t.Helper()
+		got, b, err := request(u, keys)
+		if err != nil || got != status || (body != "" && b != body) {
+			t.Fatalf("controlled request: status=%d body=%q error=%v want %d %q", got, b, err, status, body)
+		}
+	}
+	handler := func(body string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.RequestURI() != "/exact/path?query=unchanged" {
+				t.Error("route changed original URL")
+			}
+			_, _ = io.WriteString(w, body)
+		})
+	}
+	plan := func(run, contract string) Plan { return Plan{Reference: Reference{Run: run, Contract: contract}} }
+	root := plan("listener-regression", "one")
+	for _, p := range []Plan{{}, plan(root.Run, ""), plan("", root.Contract)} {
+		if _, _, _, err := registry.attach(p, handler("bad")); err == nil {
+			t.Fatal("accepted missing root")
+		}
+	}
+	u, a, closeA := attach(root, handler("one"))
+	u2, b, closeB := attach(plan(root.Run, "two"), handler("two"))
+	if u != u2 || a == b {
+		t.Fatal("not one listener with exact independent roots")
+	}
+	if _, _, _, err := registry.attach(root, handler("duplicate")); err == nil {
+		t.Fatal("accepted duplicate root")
+	}
+	check(u, nil, 404, "")
+	check(u, []string{"foreign"}, 404, "")
+	check(u, []string{a, a}, 404, "")
+	check(u, []string{a, b}, 404, "")
+	check(u, []string{a + "," + b}, 404, "")
+	var requests sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		for key, want := range map[string]string{a: "one", b: "two"} {
+			requests.Add(1)
+			go func(key, want string) {
+				defer requests.Done()
+				status, body, err := request(u, []string{key})
+				if err != nil || status != 200 || body != want {
+					t.Errorf("cross-fixture request: %d %q %v", status, body, err)
+				}
+			}(key, want)
+		}
+	}
+	requests.Wait()
+	closeA()
+	check(u, []string{a}, 404, "")
+	check(u, []string{b}, 200, "two")
+	_, replacement, closeReplacement := attach(root, handler("replacement"))
+	closeA() // stale cleanup cannot delete the replacement.
+	check(u, []string{replacement}, 200, "replacement")
+	closeReplacement()
+	closeB()
+	registry.mu.Lock()
+	closed := registry.server == nil && registry.live == 0 && registry.closing == nil
+	registry.mu.Unlock()
+	if !closed {
+		t.Fatal("last cleanup retained server")
+	}
+	if conn, err := net.DialTimeout("tcp", strings.TrimPrefix(u, "http://"), time.Second); err == nil {
+		conn.Close()
+		t.Fatal("last listener still open")
+	}
+
+	// Deletion waits for its own active request, while another fixture's
+	// cleanup and a replacement attach can proceed without the global lock.
+	entered, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	u, a, closeA = attach(root, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		close(entered)
+		<-release
+		_, _ = io.WriteString(w, "drained")
+	}))
+	_, b, closeB = attach(plan(root.Run, "other"), handler("other"))
+	response := make(chan error, 1)
+	go func() {
+		status, body, err := request(u, []string{a})
+		if err == nil && (status != 200 || body != "drained") {
+			err = fmt.Errorf("active response %d %q", status, body)
+		}
+		response <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("handler never entered")
+	}
+	detached := make(chan struct{})
+	go func() { closeA(); close(detached) }()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		registry.mu.Lock()
+		removed := registry.entries[a] == nil
+		registry.mu.Unlock()
+		if removed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("detach held global lock")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-detached:
+		t.Fatal("cleanup did not wait for active handler")
+	default:
+	}
+	check(u, []string{a}, 404, "")
+	closeB()
+	// Even with no attached entries, the detached active handler retains the listener.
+	check(u, []string{b}, 404, "")
+	_, replacement, closeReplacement = attach(root, handler("successor"))
+	check(u, []string{replacement}, 200, "successor")
+	unblock()
+	select {
+	case err := <-response:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("active response stuck")
+	}
+	select {
+	case <-detached:
+	case <-time.After(3 * time.Second):
+		t.Fatal("cleanup stuck")
+	}
+	closeA()
+	check(u, []string{replacement}, 200, "successor")
+	closeReplacement()
+
+	// Repeatedly race the last close against a new attach on the same claim.
+	// Either it joins the old listener or waits for Close before rebinding.
+	for i := 0; i < 30; i++ {
+		_, _, oldClose := attach(root, handler("old"))
+		done := make(chan struct{})
+		go func() { oldClose(); close(done) }()
+		nextURL, nextKey, nextClose := attach(plan(root.Run, fmt.Sprint(i)), handler("next"))
+		check(nextURL, []string{nextKey}, 200, "next")
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Fatal("last close/attach deadlock")
+		}
+		oldClose()
+		check(nextURL, []string{nextKey}, 200, "next")
+		nextClose()
+	}
+
+	// The scoped client wraps the ORIGINAL constructor transport, clones the
+	// request, and changes only the private routing header.
+	u, a, finish := attach(root, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, _ := io.ReadAll(req.Body)
+		if req.Method != "POST" || req.URL.RequestURI() != "/original?query=1" || string(body) != "original-body" || req.Header.Get("Authorization") != "Bearer synthetic-fixture-only" {
+			t.Error("transport changed original protocol")
+		}
+		if req.Header.Get(finalQualificationScopeHeader) != a { t.Error("client did not fix its registered route") }
+		w.Header().Set("Location", "/must-not-follow")
+		w.WriteHeader(302)
+	}))
+	gh, err := newGitHub(u, finalQualificationCustody{}, finalQualificationPrivacy{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := gh.client.Transport
+	tr, ok := original.(*http.Transport)
+	if !ok || tr.Proxy != nil || gh.client.CheckRedirect == nil {
+		t.Fatal("constructor guard changed")
+	}
+	defer tr.CloseIdleConnections()
+	gh.client.Transport = finalQualificationScopeTransport{original, a}
+	req, _ := http.NewRequest("POST", u+"/original?query=1", strings.NewReader("original-body"))
+	req.Header.Set("Authorization", "Bearer synthetic-fixture-only")
+	req.Header.Set(finalQualificationScopeHeader, "unregistered-conflict")
+	resp, err := gh.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 302 || req.Header.Get(finalQualificationScopeHeader) != "unregistered-conflict" || req.URL.String() != u+"/original?query=1" {
+		t.Fatal("redirect denial or request cloning changed")
+	}
+	finish()
+}
+
+func (r *finalQualificationHTTPRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	values := req.Header.Values(finalQualificationScopeHeader)
+	r.mu.Lock()
+	var entry *finalQualificationHTTPEntry
+	if len(values) == 1 && values[0] != "" {
+		entry = r.entries[values[0]]
+	}
+	if entry != nil {
+		entry.active.Add(1)
+	}
+	r.mu.Unlock()
+	if entry == nil {
+		http.Error(w, "unknown controlled fixture scope", http.StatusNotFound)
+		return
+	}
+	defer entry.active.Done()
+	entry.handler.ServeHTTP(w, req)
+}
+
+func (r *finalQualificationHTTPRegistry) attach(p Plan, handler http.Handler) (string, string, func(), error) {
+	if p.Run == "" || p.Contract == "" || handler == nil {
+		return "", "", nil, fmt.Errorf("missing controlled fixture root or handler")
+	}
+	// JSON length-delimits both immutable fields; Candidate may legitimately change.
+	root, _ := json.Marshal([2]string{p.Run, p.Contract})
+	scope := fmt.Sprintf("%x", sha256.Sum256(root))
+	port, err := strconv.Atoi(os.Getenv("AEGIS_ACCEPTANCE_PORT"))
+	if err != nil || port < 8450 || port > 8469 {
+		return "", "", nil, fmt.Errorf("final qualification requires shared acceptance_port.py lifetime custody")
+	}
+	for {
+		r.mu.Lock()
+		if closing := r.closing; closing != nil {
+			r.mu.Unlock()
+			<-closing
+			continue
+		}
+		if r.entries[scope] != nil {
+			r.mu.Unlock()
+			return "", "", nil, fmt.Errorf("duplicate controlled fixture root")
+		}
+		if r.server == nil {
+			// The outer helper owns the ONE claimed listener's whole process group.
+			// Literal construction avoids even a transient ephemeral listener.
+			listener, listenErr := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+			if listenErr != nil {
+				r.mu.Unlock()
+				return "", "", nil, listenErr
+			}
+			r.server = &httptest.Server{Listener: listener, Config: &http.Server{Handler: r}}
+			r.server.Start()
+			r.entries = make(map[string]*finalQualificationHTTPEntry)
+		}
+		entry := &finalQualificationHTTPEntry{handler: handler}
+		r.entries[scope] = entry
+		r.live++
+		origin := r.server.URL
+		r.mu.Unlock()
+		var once sync.Once
+		detach := func() {
+			once.Do(func() {
+				r.mu.Lock()
+				if r.entries[scope] == entry {
+					delete(r.entries, scope)
+				}
+				r.mu.Unlock()
+				// No additions can follow deletion. Wait only for this fixture and
+				// never hold the registry lock across handlers, waits or Close.
+				entry.active.Wait()
+				r.mu.Lock()
+				r.live--
+				if r.live != 0 {
+					r.mu.Unlock()
+					return
+				}
+				server := r.server
+				r.server = nil
+				closing := make(chan struct{})
+				r.closing = closing
+				r.mu.Unlock()
+				server.Close()
+				r.mu.Lock()
+				r.closing = nil
+				close(closing)
+				r.mu.Unlock()
+			})
+		}
+		return origin, scope, detach, nil
+	}
 }
