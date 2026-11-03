@@ -29,9 +29,11 @@ type Edit struct {
 	Content []byte `json:"content"`
 }
 type Request struct {
-	FailureObserver   func(ManagedFailure) error   `json:"-"`
-	InputObserver     func(InputObservation) error `json:"-"`
-	Contract          loop.VerifiedImplementation
+	FailureObserver func(ManagedFailure) error   `json:"-"`
+	InputObserver   func(InputObservation) error `json:"-"`
+	Contract        loop.VerifiedImplementation
+	// Complete controller-resolved untrusted context; a reference alone is not model access.
+	Contribution      json.RawMessage             `json:",omitempty"`
 	RepositoryContext *CollectedRepositoryContext `json:",omitempty"`
 	PassID            string
 	PreviousCheck     []byte

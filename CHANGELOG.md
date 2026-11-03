@@ -23,6 +23,14 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #375 source: complete reader-valid issue/discussion context no longer has to
+  fit inside Task. Historical inline bindings remain byte-identical; larger
+  bindings use exact controller-resolved sealed contract references with complete
+  builder delivery and private input evidence. Task/runtime/source limits stay
+  unchanged; encoded oversized initial inputs reject before contribution/Queue
+  reservation. Real public intake/restart and controlled executor regressions
+  remain distinct from live #379 acceptance. See `docs/contribution-intake.md`.
+
 - #352 qualification: the same three complete controlled finalization cases
   run base-advance serially before releasing ordinary and CI-repair together
   at Go's two-way parallel-test barrier, retaining exact-root callback and HTTP
@@ -33,6 +41,11 @@ This project follows a Keep a Changelog-style structure. Development builds repo
   handlers and waits for their own requests before cleanup. Native commands,
   endpoint assertions, evidence joins, eight-minute alarm, resource limits and
   CI job inventory are unchanged. This is not live-provider qualification.
+
+- Control-plane shutdown: owned cancellation during regular session reconciliation
+  still reaches the existing bounded shutdown pass. Canonical terminal state and
+  authority revocation remain required; unrelated and shutdown errors are not
+  suppressed.
 
 - #379 recovery prerequisite (source): explicit principal-authenticated orphan
   transport quarantine retains the reviewed socket inode and kernel unbound proof,

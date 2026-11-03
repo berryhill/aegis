@@ -115,6 +115,10 @@ func classifyError(err error) (int, string, string) {
 	var turnError *managerTurnHTTPError
 	var commandError *managerCommandHTTPError
 	switch {
+	case errors.Is(err, app.ErrContributionInputBound):
+		return http.StatusRequestEntityTooLarge, "contribution_input_bound", app.ErrContributionInputBound.Error()
+	case app.ContributionSourceBoundMessage(err) != "":
+		return http.StatusRequestEntityTooLarge, "contribution_source_bound", app.ContributionSourceBoundMessage(err)
 	case errors.Is(err, console.ErrCommandUnknown):
 		return http.StatusNotFound, "invalid_request", "console command is not registered"
 	case errors.As(err, &operationError):

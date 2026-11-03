@@ -16,6 +16,56 @@ The public GitHub reader denies redirects, pull requests, missing author provena
 
 Status reads the original contract and current append-only control target/sequence. Controls use current authenticated manager-session provenance. Every control read reconstructs the immutable sequence, validates canonical digests and previous links, contract/owner/Queue identity, narrowing and sticky stop, and compares the head with history. Missing, malformed or rolled-back heads deny. Control writes use the store lifetime transaction helper and append an authoritative audit event atomically.
 
+## Bounded issue data and executor delivery
+
+The source correction for the retained public #375 failure keeps the existing
+32,768-byte Task/Acceptance limits. Previously `BindLoop` appended the complete
+JSON-encoded issue/discussion to Task: a reader-valid public issue therefore
+failed with HTTP 500 before admission. This is a representation mismatch, not
+permission to enlarge Task or discard discussion.
+
+Historical bindings whose complete inline Task is at most 32,768 UTF-8 bytes
+retain exactly their original bytes/digests. Larger bindings retain the approved
+Task and an exact contribution run/sealing-digest reference. The controller
+resolves that reference only from the current authorized Queue's existing sealed
+contract, verifies template/profile/control/role bindings, and delivers the entire
+canonical contract as untrusted data alongside the Task in the actual builder
+request. The tool-free runtime receives the bytes; it is not expected to fetch a
+URL, local file or arbitrary blob. The sealing digest is not a blob address.
+
+The complete JSON-encoded runtime envelope must still fit 65,536 bytes, including
+escaping, contract, repository preimages and feedback. Intake checks the complete
+source plus pinned source-repository preimages and the maximum ordinary closed
+criterion feedback before contribution/Queue reservation. Each builder turn
+rechecks the actual envelope before role/runtime dispatch; later repair/context
+changes do not waive that bound. Oversized initial input returns HTTP 413 with
+`contribution_input_bound`, never a partial success. Reader response/issue/discussion
+bound rejections return HTTP 413 with `contribution_source_bound` and the fixed
+applicable limit, without reflecting source bytes. Inputs that cannot fit the
+one-shot consumer are unsupported: no truncation, summary, hidden chunking,
+expanded limit or fallback executor is used.
+
+Ingress bounds remain: title 1,024 bytes, body 65,536 bytes, at most 20 complete
+comments each 32,768 bytes, each HTTP response 256 KiB, narrower scope 4,096 bytes.
+These are byte limits, not Unicode rune counts. The full discussion and GitHub
+numeric author provenance are retained, including latest owner instructions in
+the observed snapshot; association/prose never grants authority. Same-key replay
+returns the original snapshot, not a claim of a fresh upstream instruction read.
+
+Reference-backed builder delivery retains the exact private serialized-input
+blob digest/length with candidate role evidence. Durable readback verifies those
+bytes, sealing reference and implementation/run binding. Public diagnostics carry
+closed reasons, not source, credentials or raw model inputs.
+
+Controlled coverage includes the 32,768/32,769 representation boundary and
+65,536/65,537 runtime boundary, multibyte/escaped input, missing/foreign/altered
+context, pre-admission rejection without a reservation, replay/reopen, complete
+builder input and native repair/candidate evidence. The opt-in built-public test
+uses the real issue #375 through authenticated Unix manager HTTP, then verifies
+same-run replay, full retained content, controls and real process restart. This
+is source/controlled public-intake qualification, not managed-provider success,
+installed adoption, live principal recovery or whole #379 acceptance.
+
 ## Canonical acceptance
 
 Consume the [canonical contribution happy path](../.hermes/contribution-happy-path-contract.md)
@@ -25,11 +75,22 @@ fixtures do not qualify downstream builder, tester, delivery or installed behavi
 
 ## Capability boundary
 
-This change implements #375 intake, not the parent #373 or siblings #376–379. Non-local contribution delivery execution is unavailable. `no-merge` and `no-publish` are not aliases for successful local-only execution. The selected-file executor cannot attest whole-contribution delivery; a Queue terminal state alone never means the contribution is complete. Status reports `completed: false` and does not claim a builder/tester/delivery journey ran.
+This correction implements the #375 intake seam, not completion of parent #373 or siblings #376–379. Intake alone does not execute non-local contribution delivery. `no-merge` and `no-publish` are not aliases for successful local-only execution. The selected-file executor cannot attest whole-contribution delivery; a Queue terminal state alone never means the contribution is complete. Status reports `completed: false` and does not claim a builder/tester/delivery journey ran.
 
 ## Launch-asset review
 
-Affected: README, CHANGELOG, session-operations and loop-authoring discovery, and this limitation/security-boundary document. Existing no-key demonstration and five-minute quickstart remain independent of contribution intake. LICENSE, SECURITY, CONTRIBUTING, CODE_OF_CONDUCT, existing threat model and architecture diagram retain their existing authority boundaries; this change creates no new credential or approval authority. No recording, release binary/checksum publication or contributor issue is created by this source-only change. Release/installed/live-provider acceptance remains separate and unverified.
+Correction assets changed: README, CHANGELOG, SECURITY, architecture data-flow
+notes, verified-implementation schema guidance and this intake document. Reviewed
+unaffected: LICENSE, CONTRIBUTING's canonical lifecycle, CODE_OF_CONDUCT, existing
+threat-model authority/no-sandbox boundaries, architecture diagrams, five-minute
+quickstart and no-key demonstration/recording (which do not invoke contribution
+intake), focused contributor issues and release archive/checksum format. Existing
+skills still use the same explicit commands and route to canonical contracts;
+no installer/operation matrix/schema or CLI syntax change is needed. Builder2
+must refresh revision-matched executable/package provenance and affected intake/
+executor proof after canonical delivery. No release, checksum publication,
+recording replacement, workstation update or installed adoption is performed by
+this source correction. Real #379 acceptance remains separate.
 
 ## Local evidence boundary
 

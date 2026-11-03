@@ -1,5 +1,11 @@
 # Aegis MVP Architecture
 
+Contribution intake retains complete issue context in the existing sealed Fleet
+contract. Oversized inline Tasks bind its exact run/digest; the authorized Queue
+controller resolves and transports the complete contract to the tool-free builder
+under the unchanged runtime input ceiling. No new store/service or runtime lookup
+capability. See [data flow and bounds](contribution-intake.md#bounded-issue-data-and-executor-delivery).
+
 The existing Fleet publication family separates immutable contribution history
 from fenced active repository/base custody; no new service or store is added.
 See [#423 custody and recovery](contribution-publication-custody.md).
