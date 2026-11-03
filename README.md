@@ -148,6 +148,9 @@ The serving control plane includes an embedded accessible shell rooted at `/cons
 
 ## Registered-Agent workspace self-service
 
+For inline Registry detail, exact readiness observations, authenticated-authority
+boundaries and focused browser qualification, see [Agent detail](docs/AGENT_DETAIL.md).
+
 A freshly authenticated principal can delegate a fixed, credential-free control-plane workspace to one exact latest enabled Agent revision. That Agent may define and manage only its own Loops and Graphs, submit or queue work only as an exact Graph participant, manage its own Queue records, and read/reference/use fleet-wide shared definitions. Stable ownership—not visibility—controls definition mutation.
 
 This path needs neither a provisioning receipt nor a running session. Processing and runtime effects still require a fresh controller-issued runtime-authority binding and admission, and only Aegis administers or applies credentials. It is not native agent transport, autonomous scheduling, or automatic execution.

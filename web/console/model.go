@@ -187,19 +187,29 @@ type RecordModel struct {
 // immutable Registry revision. DeclaredAuthority is not an effective stanza,
 // mandate, or permission grant.
 type AgentDetailModel struct {
+	DeclaredStanzaSummary, EffectiveAuthoritySummary, ReceiptSummary                string
 	StableID, FleetID, SourceKind, SourceID, OwnerID, AccountabilityID              string
-	RuntimeAdapter, Runtime, RuntimeTarget                                          string
+	RuntimeAdapter, Runtime, RuntimeTarget, RuntimeVersionConstraint                string
 	CharterID, CharterDigest, RevisionDigest                                        string
 	CharterRevision, Revision                                                       uint64
 	Capabilities, Policies                                                          []string
 	DeclaredAuthority, EffectiveAuthority, ProvisioningEvidence                     string
 	AuthorityState, EvaluatedFor, CharterEvidence, HistoryEvidence, SessionEvidence string
 	Historical, LifecycleEligible                                                   bool
-	AuthorityFields, ReceiptFields, SessionFields                                   []FieldModel
+	AuthorityFields, ReceiptFields, SessionFields, ReadinessFields                  []FieldModel
 	CharterHistoryEvidence                                                          string
 	CharterHistory                                                                  []FieldModel
 	History, Executions                                                             []LinkModel
 	Stanzas                                                                         []AgentStanzaModel
+	SessionLinks                                                                    []LinkModel
+	SessionRecords                                                                  []AgentSessionModel
+	SelectedSession                                                                 *AgentSessionModel
+}
+
+// AgentSessionModel contains only exact-bound public evidence, never runtime
+// homes, private process metadata, credentials, or a claim of fresh admission.
+type AgentSessionModel struct {
+	ID, Status, StanzaID, MandateID string
 }
 
 // AgentStanzaModel contains declarations only, never an authorization grant.

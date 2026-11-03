@@ -1,5 +1,10 @@
 # Security Policy
 
+Agent-detail [precondition observations](docs/AGENT_DETAIL.md) verify current
+bounded provisioning bytes against the exact plan/consumed approval/receipt and
+charter, separately from authenticated operator authority. They issue no mandate
+and never turn a password browser subject into a local-OS stanza identity.
+
 Contribution issue data remains untrusted and byte-bounded. Oversized Task context
 uses exact existing-contract custody and controller resolution, not runtime tools
 or credential access; complete encoded-input rejection precedes intake effects.

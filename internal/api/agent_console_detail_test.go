@@ -16,7 +16,7 @@ import (
 
 func TestAgentDetailExactAuthorityEvidenceAndReadOnlyBoundary(t *testing.T) {
 	scheduleInstalledAPIJourneyGroup(t)
-	for _, name := range []string{"matched", "no-match", "ambiguous-declaration-rejected-before-storage", "disabled-stanza", "runtime-mismatch", "adapter-mismatch", "runtime-name-mismatch", "digest-mismatch", "charter-id-mismatch", "charter-revision-mismatch", "missing-charter", "disabled", "retired", "historical"} {
+	for _, name := range []string{"matched", "no-match", "ambiguous-declaration-rejected-before-storage", "disabled-stanza", "runtime-mismatch", "adapter-mismatch", "runtime-name-mismatch", "digest-mismatch", "charter-id-mismatch", "charter-revision-mismatch", "missing-charter", "disabled", "retired", "historical", "historical-disabled", "historical-retired"} {
 		t.Run(name, func(t *testing.T) {
 			scheduleInstalledAPIJourney(t)
 			svc := apiService(t)
@@ -77,14 +77,14 @@ func TestAgentDetailExactAuthorityEvidenceAndReadOnlyBoundary(t *testing.T) {
 			if name == "runtime-name-mismatch" {
 				selected.Revision.Runtime.Runtime = "different-runtime"
 			}
-			if name == "disabled" {
+			if name == "disabled" || name == "historical-disabled" {
 				selected.Revision.Lifecycle = registry.LifecycleDisabled
 			}
-			if name == "retired" {
+			if name == "retired" || name == "historical-retired" {
 				selected.Revision.Lifecycle = registry.LifecycleRetired
 			}
 			latest := selected
-			if name == "historical" {
+			if strings.HasPrefix(name, "historical") {
 				latest.Revision.Revision = 2
 				latest.Revision.Digest = "sha256:" + strings.Repeat("c", 64)
 			}
@@ -148,10 +148,12 @@ func TestAgentDetailExactAuthorityEvidenceAndReadOnlyBoundary(t *testing.T) {
 			}
 			wantReadiness := "Current readiness unavailable: runtime compatibility, provisioning state and fresh execution admission are not established by this read."
 			switch name {
+			case "matched":
+				wantReadiness = "Observed preconditions: runtime compatible; provisioning missing. Not execution admission; fresh authority and runtime admission remain required."
 			case "no-match", "disabled-stanza":
 				wantReadiness = "Blocked: authenticated operator authority denied. Fresh execution admission remains required."
-			case "historical":
-				wantReadiness = "Historical revision: not eligible for lifecycle changes or current execution through this detail."
+			case "historical", "historical-disabled", "historical-retired":
+				wantReadiness = "Historical revision (" + string(selected.Revision.Lifecycle) + "): not eligible for lifecycle changes or current execution through this detail."
 			case "disabled":
 				wantReadiness = "Disabled: execution denied until a new enabled revision."
 			case "retired":
