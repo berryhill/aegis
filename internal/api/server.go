@@ -561,6 +561,9 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			return consoleweb.PageModel{}, err
 		}
 		if domain == consoleAgents {
+			if c.QueryParam("session_id") != "" && c.QueryParam("record_key") == "" {
+				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "exact Agent required for session selection")
+			}
 			if err = filterConsoleAgents(&model, c.QueryParam("q"), c.QueryParam("lifecycle")); err != nil {
 				return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent Registry filter")
 			}
@@ -596,6 +599,11 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 			}
 
 		}
+		if domain == consoleAgents {
+			if err := enrichConsoleAgentCards(c.Request().Context(), svc, subject, &model); err != nil {
+				return consoleweb.PageModel{}, err
+			}
+		}
 		// Resolve the filtered, paginated selection before joining evidence. Keep
 		// the latest roster independent from an exact historical detail, and do
 		// not let individual render handlers overwrite this authenticated join.
@@ -618,6 +626,9 @@ func serveWithComposition(ctx context.Context, svc *app.Service, telemetry Telem
 					return consoleweb.PageModel{}, detailErr
 				}
 				model.Inspector = &detail
+				if err := selectConsoleAgentSession(detail.Agent, c.QueryParam("session_id")); err != nil {
+					return consoleweb.PageModel{}, echo.NewHTTPError(http.StatusBadRequest, "invalid Agent session selection")
+				}
 				break
 			}
 		}

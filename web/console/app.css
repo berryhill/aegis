@@ -16,6 +16,7 @@ form.list-bar[action="/console/agents"] button,.agent-inline-detail .lifecycle-f
 .agent-inline-detail .agent-evidence-card{margin-top:var(--s4);padding:12px 14px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);background:var(--surface2);max-width:1000px}
 .agent-inline-detail .evidence-status{display:inline-flex;padding:2px 8px;border:1px solid var(--border);border-radius:99px;font:11px/16px var(--mono);color:var(--text)}
 .agent-inline-detail .authority-result{max-width:1000px}
+.agent-inline-detail .related-records a>span:first-child{display:grid;gap:4px;min-width:0}.agent-inline-detail .related-records strong,.agent-inline-detail .related-records small{overflow-wrap:anywhere}
 .agent-inline-detail .authority-result strong{color:var(--text);text-transform:uppercase;font-size:11px}
 .agent-inline-detail .spec{max-width:1000px;border-top:1px solid var(--border-subtle)}
 .agent-inline-detail .spec dt{min-width:0;overflow-wrap:anywhere;text-transform:uppercase;letter-spacing:.7px;font:11px/17px var(--mono);padding:9px 18px 9px 0}

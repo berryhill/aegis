@@ -1,5 +1,23 @@
 package consoleweb
 
+func registryCardFact(record RecordModel, kind string) string {
+	value := ""
+	if record.Agent != nil {
+		switch kind {
+		case "stanzas":
+			value = record.Agent.DeclaredStanzaSummary
+		case "authority":
+			value = record.Agent.EffectiveAuthoritySummary
+		case "receipt":
+			value = record.Agent.ReceiptSummary
+		}
+	}
+	if value == "" {
+		return "Unavailable"
+	}
+	return value
+}
+
 // Registry cards summarize evidence; they never turn lifecycle eligibility into
 // runtime authority. Full source statements remain in the detail and title text.
 func registryCardReadiness(value string) string {

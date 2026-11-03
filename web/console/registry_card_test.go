@@ -18,15 +18,15 @@ func TestRegistryCardSummariesRetainAdmissionBoundary(t *testing.T) {
 			t.Errorf("summary %q = %q; want %q", tc.full, got, tc.short)
 		}
 	}
-	record := RecordModel{Key: "office", Label: "office", Lifecycle: "enabled", Readiness: "Lifecycle eligible; fresh authority admission required", Authority: "2 capabilities · 0 policies declared", Provisioning: "Not asserted by Registry record"}
+	record := RecordModel{Key: "office", Label: "office", Lifecycle: "enabled", Agent: &AgentDetailModel{DeclaredStanzaSummary: "2 of 2 on", EffectiveAuthoritySummary: "None · denied", ReceiptSummary: "Receipt recorded"}}
 	var rendered bytes.Buffer
 	if err := AgentCard(SurfaceModel{}, record).Render(context.Background(), &rendered); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`title="Lifecycle eligible; fresh authority admission required">Fresh admission required</dd>`,
-		`<dt>Declared authority</dt>`,
-		`title="Not asserted by Registry record">Not asserted</dd>`,
+		`<dt>Declared stanzas</dt><dd>2 of 2 on</dd>`,
+		`<dt>Effective authority</dt><dd>None · denied</dd>`,
+		`title="Recorded receipt evidence is not current readiness or runtime admission">Receipt recorded</dd>`,
 	} {
 		if !strings.Contains(rendered.String(), want) {
 			t.Errorf("missing compact non-authorizing card evidence: %s", want)

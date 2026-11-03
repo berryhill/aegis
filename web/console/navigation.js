@@ -159,9 +159,10 @@
       if (detailOpen) return;
       const x = boundedCoordinate(Number(context.x));
       const y = boundedCoordinate(Number(context.y));
-      if (credentials && selected) {
+      if ((credentials || location.pathname === "/console/agents") && selected) {
         for (const link of document.querySelectorAll("a[data-record-key]")) {
-          link.closest("tr").dataset.selected = String(link === selected);
+          const row = link.closest("tr");
+          if (row) row.dataset.selected = String(link === selected);
           link.setAttribute("aria-current", String(link === selected));
         }
       }

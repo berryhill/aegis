@@ -28,6 +28,7 @@ func consoleAgentDetail(ctx context.Context, svc *app.Service, subject core.Subj
 	detail.AuthorityState = "unavailable"
 	detail.EffectiveAuthority = "Unavailable: exact charter evidence could not be verified. No authority is asserted."
 	detail.CharterEvidence = "Unavailable: exact charter evidence could not be verified."
+	detail.RuntimeVersionConstraint = "Unavailable: exact charter evidence could not be verified."
 	detail.ProvisioningEvidence = "Unavailable: provisioning evidence could not be read."
 	detail.HistoryEvidence = "Unavailable: revision history could not be read."
 	detail.SessionEvidence = "Unavailable: session records could not be read."
@@ -48,6 +49,7 @@ func consoleAgentDetail(ctx context.Context, svc *app.Service, subject core.Subj
 	charter, charterErr := svc.GetCharter(revision.Charter.ID, revision.Charter.Revision)
 	if charterErr == nil && charter.Digest == revision.Charter.Digest && charter.Charter.AgentID == revision.Charter.ID && charter.Charter.Revision == revision.Charter.Revision && charter.Charter.Runtime.Adapter == revision.Runtime.Adapter && charter.Charter.Runtime.Runtime == revision.Runtime.Runtime && charter.Charter.Runtime.Target == revision.Runtime.Target {
 		detail.CharterEvidence = "Exact stored charter revision and digest verified. Declarations are not effective authority."
+		detail.RuntimeVersionConstraint = charter.Charter.Runtime.VersionConstraint
 		for _, stanza := range charter.Charter.Stanzas {
 			detail.Stanzas = append(detail.Stanzas, consoleweb.AgentStanzaModel{ID: stanza.ID, Name: stanza.Name, Enabled: stanza.Enabled, Fields: []consoleweb.FieldModel{
 				{Label: "Authentication and identity selectors", Value: agentPolicyJSON(stanza.Authentication)},
@@ -87,14 +89,20 @@ func consoleAgentDetail(ctx context.Context, svc *app.Service, subject core.Subj
 		}
 	}
 	if sessions, err := svc.ListSessions(); err == nil {
-		detail.SessionEvidence = "No session record for this exact charter and runtime binding. Session history does not establish current admission; no session-detail browser route is available."
+		detail.SessionEvidence = "No session record for this exact charter and runtime binding. Session history does not establish current admission."
 		for _, session := range sessions {
 			mandate := session.Mandate
 			if mandate.AgentID != revision.Charter.ID || mandate.CharterRevision != revision.Charter.Revision || mandate.CharterDigest != revision.Charter.Digest || mandate.Target != revision.Runtime.Target || mandate.Runtime.Runtime != revision.Runtime.Runtime {
 				continue
 			}
-			detail.SessionEvidence = "Recorded sessions for the exact charter, runtime and target binding. Registry revision ownership is not encoded in these session records; they are not proof of current admission, and no session-detail browser route is available."
+			detail.SessionEvidence = "Recorded sessions for the exact charter, runtime and target binding. Registry revision ownership is not encoded in these session records; they are not proof of current admission. Exact session links open only the matching recorded evidence."
 			detail.SessionFields = append(detail.SessionFields, consoleweb.FieldModel{Label: session.ID, Value: session.Status + " · stanza " + mandate.StanzaID + " · mandate " + mandate.ID + " · recorded session, not fresh admission"})
+			detail.SessionRecords = append(detail.SessionRecords, consoleweb.AgentSessionModel{ID: session.ID, Status: session.Status, StanzaID: mandate.StanzaID, MandateID: mandate.ID})
+			target, _ := url.Parse(consoleAgentRevisionURL(revision.AgentID, revision.Revision))
+			query := target.Query()
+			query.Set("session_id", session.ID)
+			target.RawQuery = query.Encode()
+			detail.SessionLinks = append(detail.SessionLinks, consoleweb.LinkModel{Label: "Recorded session · " + session.ID, Detail: session.Status + " · historical evidence, not fresh admission", URL: target.String()})
 		}
 	}
 	for _, accepted := range surface.Submissions.Accepted {
@@ -111,17 +119,31 @@ func consoleAgentDetail(ctx context.Context, svc *app.Service, subject core.Subj
 		}
 	}
 	record.Readiness = "Current readiness unavailable: runtime compatibility, provisioning state and fresh execution admission are not established by this read."
+	if detail.AuthorityState != "unavailable" {
+		observation, err := svc.ObserveAgentPreconditionsAs(ctx, subject, revision)
+		if err != nil {
+			return consoleweb.RecordModel{}, err
+		}
+		record.Readiness = "Observed preconditions: runtime " + observation.Runtime + "; provisioning " + observation.Provisioning + ". Not execution admission; fresh authority and runtime admission remain required."
+		if observation.Runtime == "compatible" && observation.Provisioning == "verified-current" {
+			record.Readiness = "Observed preconditions satisfied: exact charter, compatible runtime and current approved artifact integrity verified. Not execution admission; fresh authority and runtime admission remain required."
+		}
+		detail.ReadinessFields = []consoleweb.FieldModel{
+			{Label: "Observed runtime compatibility", Value: observation.Runtime},
+			{Label: "Observed current provisioning integrity", Value: observation.Provisioning},
+		}
+	}
 	if detail.AuthorityState == "denied" {
 		record.Readiness = "Blocked: authenticated operator authority denied. Fresh execution admission remains required."
-	}
-	if detail.Historical {
-		record.Readiness = "Historical revision: not eligible for lifecycle changes or current execution through this detail."
 	}
 	if revision.Lifecycle == "disabled" {
 		record.Readiness = "Disabled: execution denied until a new enabled revision."
 	}
 	if revision.Lifecycle == "retired" {
 		record.Readiness = "Retired: terminal Registry lifecycle; execution denied."
+	}
+	if detail.Historical {
+		record.Readiness = "Historical revision (" + string(revision.Lifecycle) + "): not eligible for lifecycle changes or current execution through this detail."
 	}
 	record.Authority = detail.EffectiveAuthority
 	record.Provisioning = detail.ProvisioningEvidence
@@ -133,19 +155,21 @@ func preserveAgentHistoryContext(detail *consoleweb.AgentDetailModel, collection
 	if err != nil || detail == nil {
 		return
 	}
-	for index := range detail.History {
-		target, err := url.Parse(detail.History[index].URL)
-		if err != nil {
-			continue
-		}
-		query := target.Query()
-		for _, key := range []string{"q", "lifecycle", "page", "limit"} {
-			if value := base.Query().Get(key); value != "" {
-				query.Set(key, value)
+	for _, links := range [][]consoleweb.LinkModel{detail.History, detail.SessionLinks} {
+		for index := range links {
+			target, err := url.Parse(links[index].URL)
+			if err != nil {
+				continue
 			}
+			query := target.Query()
+			for _, key := range []string{"q", "lifecycle", "page", "limit"} {
+				if value := base.Query().Get(key); value != "" {
+					query.Set(key, value)
+				}
+			}
+			target.RawQuery = query.Encode()
+			links[index].URL = target.String()
 		}
-		target.RawQuery = query.Encode()
-		detail.History[index].URL = target.String()
 	}
 }
 
