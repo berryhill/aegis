@@ -13,6 +13,7 @@ import os
 import pathlib
 
 from playwright.sync_api import sync_playwright
+from graph_workspace_assertions import assert_graph_geometry, assert_graph_zoom_floor, assert_graph_full_fit
 
 BASE = os.environ["AEGIS_CONSOLE_BASE"]
 PASSWORD = os.environ["AEGIS_CONSOLE_PASSWORD"]
@@ -98,13 +99,16 @@ def desktop(page):
     assert not page.locator("#graph-context").is_visible(), "escape did not close inspector"
     page.locator("[data-graph-definition]").first.click()
     assert page.locator("[data-graph-definition-panel]").is_visible(), "definition restore failed"
+    assert_graph_geometry(page)
     for _ in range(30):
         page.locator('[data-graph-zoom="in"]').click()
     assert page.locator("[data-graph-scale]").inner_text() == "200%", "zoom upper bound failed"
+    assert_graph_geometry(page)
     for _ in range(30):
         page.locator('[data-graph-zoom="out"]').click()
-    assert page.locator("[data-graph-scale]").inner_text() == "30%", "zoom lower bound failed"
+    assert_graph_zoom_floor(page)
     page.locator("[data-graph-fit]").click()
+    assert_graph_full_fit(page)
     viewport = page.locator("[data-graph-viewport]")
     viewport.focus()
     page.keyboard.press("ArrowRight")

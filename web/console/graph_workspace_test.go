@@ -18,7 +18,7 @@ func TestGraphTopologyConnectedLayoutAndDisconnectedNodes(t *testing.T) {
 	if a.GridColumn >= b.GridColumn || len(a.Outgoing) != 1 || len(b.Incoming) != 1 {
 		t.Fatal("layout or adjacency lost")
 	}
-	if !strings.HasPrefix(topology.Edges[0].Path, fmt.Sprintf("M %d.%d", 32+(a.GridColumn-1)*292+212, 0)) {
+	if !strings.HasPrefix(topology.Edges[0].Path, fmt.Sprintf("M %d.%d", graphStagePadding+(a.GridColumn-1)*(graphNodeWidth+graphColumnGap)+graphNodeWidth, 0)) {
 		t.Fatalf("edge not anchored to exact nodes: %s", topology.Edges[0].Path)
 	}
 	if topology.Nodes[2].GridColumn == a.GridColumn && topology.Nodes[2].GridRow == a.GridRow {
