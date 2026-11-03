@@ -60,13 +60,19 @@ func TestConsoleDoerRunAffordanceOnlyOnV4(t *testing.T) {
 			t.Errorf("missing %s", want)
 		}
 	}
+	// The V5 negative matcher must detect the actual V4 action, including
+	// its query string, so an accidentally rendered Run form cannot pass.
+	const runAction = `action="/console/loops/run?loop_id=`
+	if !strings.Contains(string(body), runAction) {
+		t.Fatal("V5 negative matcher misses the rendered V4 Run action")
+	}
 	record.Loop.DoerV4 = false
 	record.Loop.DoerV5 = true
 	body, err = renderConsole(context.Background(), consoleweb.LoopWorkspace(consoleweb.SurfaceModel{Domain: "loops", CSRF: "csrf-token"}, &record, consoleweb.LoopTopology{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(body), `/run"`) {
+	if strings.Contains(string(body), runAction) {
 		t.Fatal("v5 exposed run action")
 	}
 }

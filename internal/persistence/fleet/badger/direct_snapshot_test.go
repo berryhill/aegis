@@ -82,6 +82,17 @@ func TestDirectSnapshotAtomicDurableWithoutGraph(t *testing.T) {
 		t.Fatalf("accept %v %v", created, err)
 	}
 	original, _ := graph.MarshalRunSnapshot(snapshot)
+	// Later definition publication must not retarget accepted direct work.
+	later := lr
+	later.Revision, later.PreviousDigest, later.Digest = 2, lr.Digest, ""
+	later.Name = "Later definition"
+	later, validation, err := loop.NewRevision(later)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: later, Validation: validation, Provenance: loopPublicationProvenance(t, later, validation), ExpectedPreviousDigest: lr.Digest, IdempotencyKey: "direct-loop-later"}, audit("loop.published", later.LoopID)); err != nil {
+		t.Fatal(err)
+	}
 	if err = store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +108,9 @@ func TestDirectSnapshotAtomicDurableWithoutGraph(t *testing.T) {
 	wire, err := graph.MarshalRunSnapshot(got)
 	if err != nil || !bytes.Equal(wire, original) {
 		t.Fatalf("durable bytes: %v", err)
+	}
+	if got.Execution == nil || got.Execution.SourceKind != graph.SourceDirectLoop || len(got.Execution.Topology.Nodes) != 1 || got.Execution.Topology.Nodes[0].Loop != node.Loop {
+		t.Fatalf("later definition retargeted direct snapshot: %+v", got.Execution)
 	}
 	if _, err = graph.ResolveRunTopology(got, nil, &node); err != nil {
 		t.Fatal(err)
@@ -123,7 +137,7 @@ func TestDirectSnapshotAtomicDurableWithoutGraph(t *testing.T) {
 	if _, err = store.CreateGraphRunSnapshot(ctx, envelope, audit("snapshot.created", "wrong-interface")); !errors.Is(err, fleet.ErrConflict) {
 		t.Fatalf("interface substitution %v", err)
 	}
-	assertSnapshotFailureAtomic(t, store, "wrong-interface", 3)
+	assertSnapshotFailureAtomic(t, store, "wrong-interface", 4)
 	for _, kind := range []string{"participant", "loop"} {
 		wrong := node
 		if kind == "participant" {
@@ -142,7 +156,7 @@ func TestDirectSnapshotAtomicDurableWithoutGraph(t *testing.T) {
 		if _, err = store.CreateGraphRunSnapshot(ctx, envelope, audit("snapshot.created", envelope.SnapshotID)); !errors.Is(err, fleet.ErrConflict) {
 			t.Fatalf("%s substitution: %v", kind, err)
 		}
-		assertSnapshotFailureAtomic(t, store, envelope.SnapshotID, 3)
+		assertSnapshotFailureAtomic(t, store, envelope.SnapshotID, 4)
 	}
 	// Actual persisted-byte corruption is detected at readback, not reclassified.
 	setRawRecord(t, store, key(familySnapshot, snapshot.SnapshotID), bytes.Replace(original, []byte(`"hello"`), []byte(`"tamper"`), 1))

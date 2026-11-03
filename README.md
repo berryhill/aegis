@@ -71,6 +71,11 @@ Queue Requeue preserves failed direct Doer pins, inputs and the remaining cumula
 
 Direct Loop Queue requests now retain an immutable `direct_loop` snapshot without publishing a Graph. Queue readback includes `source_kind`, the exact `source` revision, and normalized `inputs`. Historical Graph-backed runs remain unchanged; workspace submission is not runtime authority.
 
+Source correction: Queue detail displays normalized snapshot values without
+inferring caller/default origin; the explicit v4 distinct-Run action redirects
+to a clean exact-revision URL retaining the new request cookie. See
+[scope and unexercised acceptance](docs/implementation/issue-326-launch-review.md).
+
 Partial #346 source correction: Queue list/detail show exact per-node pinned participants separately from submission ownership and the runtime product. Missing exact facts remain unavailable; this does not capture runtime sessions or complete #346. [Scope and launch review](docs/implementation/issue-346-participant-provenance.md).
 
 The zero-authority owner-principal selected-file v4 Run has a narrow
