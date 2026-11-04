@@ -8,6 +8,21 @@ authority and release rules. The [Loop hard acceptance](loop-happy-path-hard-acc
 is an additional non-regression requirement, not a substitute for this contract.
 Neither document nor issue creation grants execution or publication authority.
 
+## Engineering implementation completion versus product execution proof
+
+For owner-directed engineering implementation, verified task-owned PR merge and
+canonical-main containment complete the implementation. Close/reconcile its
+implementation issue under the delivery contract; do not retain merged source on
+unfinished-work lists solely for separate live-provider, installed, release or
+deployment qualification. Preserve all evidence limitations without claiming
+those tiers passed. Broader unrelated umbrella scope remains distinct.
+
+The product contribution disposition below still requires its actual joined
+execution evidence: engineering issue closure does not manufacture a successful
+Aegis-managed contribution. Mandatory pre-merge checks, independent review,
+protected approval and repository/security gates remain intact. Explicit owner
+requests for live execution, installation or release retain those exact targets.
+
 ## Invocation and execution boundary
 
 One explicit authenticated session invocation of one selected immutable
