@@ -143,6 +143,41 @@ class DevTools:
             if opcode == 0x1:
                 return json.loads(payload)
 
+    def pace_fixture_requests(self, origin: str) -> None:
+        """Opt this fixture into request-stage pacing for every origin resource."""
+        parsed = urllib.parse.urlsplit(origin)
+        require(parsed.scheme in ("http", "https") and bool(parsed.netloc)
+                and parsed.username is None and parsed.password is None
+                and not parsed.path and not parsed.query and not parsed.fragment,
+                "Invalid browser fixture origin")
+        self.fixture_origin = (parsed.scheme, parsed.netloc)
+        self.fixture_next_release = time.monotonic()
+        self.command("Fetch.enable", {"patterns": [
+            {"urlPattern": origin + "/*", "requestStage": "Request"},
+        ]})
+
+    def _continue_fixture_request(self, params: dict[str, Any]) -> int:
+        parsed = urllib.parse.urlsplit(params.get("request", {}).get("url", ""))
+        if (parsed.scheme, parsed.netloc) == self.fixture_origin:
+            delay = self.fixture_next_release - time.monotonic()
+            if delay > 0:
+                # Pacing shares the command's original absolute budget.
+                self._remaining()
+                time.sleep(min(delay, max(0, self.deadline - time.monotonic())))
+            self._remaining()
+        identifier = self.next_id
+        self.next_id += 1
+        # Continue the exact interception; never reconstruct request data or call
+        # command recursively (which would consume the outer command's reply).
+        message = {"id": identifier, "method": "Fetch.continueRequest",
+                   "params": {"requestId": params["requestId"]}}
+        self._remaining()
+        self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
+        if (parsed.scheme, parsed.netloc) == self.fixture_origin:
+            # Anchor to actual release, not a stale schedule: no idle catch-up.
+            self.fixture_next_release = time.monotonic() + 0.25
+        return identifier
+
     def command(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.deadline = time.monotonic() + CDP_TIMEOUT
         self._remaining()
@@ -152,15 +187,25 @@ class DevTools:
         if params is not None:
             message["params"] = params
         self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
-        while True:
+        response: dict[str, Any] | None = None
+        continuations: set[int] = set()
+        while response is None or continuations:
             self._remaining()
             received = self.receive()
+            self._remaining()
             if received.get("id") == identifier:
                 require("error" not in received, f"DevTools command {method} failed")
-                return received.get("result", {})
+                response = received
+                continue
             self.event_bytes += len(json.dumps(received).encode("utf-8"))
             require(len(self.events) < MAX_EVENTS and self.event_bytes <= MAX_EVENT_BYTES, "DevTools event budget exceeded")
             self.events.append(received)
+            if received.get("id") in continuations:
+                require("error" not in received, "DevTools command Fetch.continueRequest failed")
+                continuations.remove(received["id"])
+            elif received.get("method") == "Fetch.requestPaused" and getattr(self, "fixture_origin", None) is not None:
+                continuations.add(self._continue_fixture_request(received["params"]))
+        return response.get("result", {})
 
     def evaluate(self, expression: str) -> Any:
         result = self.command("Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True})
@@ -693,6 +738,45 @@ def validate_reusable_run_copy(copy: str | None, has_browser_run_form: bool) -> 
     require(not has_browser_run_form, "reusable v5 detail added a human launch form")
 
 
+def validate_browser_events(events: list[dict[str, Any]], missing_record_event_start: int,
+                            missing_record_event_end: int) -> None:
+    failures: list[str] = []
+    for event_index, event in enumerate(events):
+        method = event.get("method", "")
+        params = event.get("params", {})
+        if method == "Runtime.exceptionThrown":
+            failures.append("JavaScript exception")
+        elif method == "Log.entryAdded":
+            entry = params.get("entry", {})
+            text = str(entry.get("text", ""))
+            if missing_record_event_start <= event_index < missing_record_event_end and text == "Failed to load resource: the server responded with a status of 400 (Bad Request)":
+                continue
+            if entry.get("level") == "error" or "Content Security Policy" in text or "Refused to" in text:
+                failures.append("console/CSP error: " + text[:160])
+        elif method == "Network.loadingFailed" and not params.get("canceled", False):
+            if params.get("blockedReason") == "inspector" or params.get("errorText") == "net::ERR_BLOCKED_BY_CLIENT":
+                continue
+            failures.append("request failure")
+        elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) == 429:
+            failures.append(rate_limit_diagnostic(params))
+        elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) >= 500:
+            response = params.get("response", {})
+            failures.append(f"unexpected HTTP {int(response.get('status', 0))}: {response.get('url', '')}")
+        elif method == "Audits.issueAdded" and params.get("issue", {}).get("code") == "ContentSecurityPolicyIssue":
+            failures.append("CSP violation")
+    require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
+
+
+def rate_limit_diagnostic(params: dict[str, Any]) -> str:
+    """Only public routing metadata; never query, credentials or response data."""
+    response = params.get("response", {})
+    parsed = urllib.parse.urlsplit(response.get("url", ""))
+    return "unexpected HTTP 429: " + json.dumps({
+        "scheme": parsed.scheme, "host": parsed.hostname, "path": parsed.path,
+        "status": 429, "type": params.get("type", ""),
+    }, sort_keys=True)
+
+
 def main() -> int:
     if len(sys.argv) not in (4, 5, 7):
         raise RuntimeError("usage: console_browser_test.py ORIGIN PASSWORD_FILE WORKSPACE [registration-readback | register CHARTER_JSON CURRENT_FLEET_JSON]")
@@ -723,7 +807,7 @@ def main() -> int:
             "--remote-debugging-port=0",
             "--remote-allow-origins=http://localhost",
             f"--user-data-dir={chrome_home}",
-            origin + "/console",
+            "about:blank",
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -744,6 +828,7 @@ def main() -> int:
         for domain in ("Page", "Runtime", "Log", "Network", "Audits"):
             devtools.command(domain + ".enable")
 
+        devtools.pace_fixture_requests(origin)
         navigate(devtools, origin + "/console")
         wait_for(devtools, "document.readyState === 'complete' && !!document.querySelector('#session-form')", "password login page")
         insert_text(devtools, "#password", initial_password)
@@ -1198,29 +1283,7 @@ def main() -> int:
             "retained Datastar asset was loaded by the console document",
         )
 
-        failures: list[str] = []
-        for event_index, event in enumerate(devtools.events):
-            method = event.get("method", "")
-            params = event.get("params", {})
-            if method == "Runtime.exceptionThrown":
-                failures.append("JavaScript exception")
-            elif method == "Log.entryAdded":
-                entry = params.get("entry", {})
-                text = str(entry.get("text", ""))
-                if missing_record_event_start <= event_index < missing_record_event_end and text == "Failed to load resource: the server responded with a status of 400 (Bad Request)":
-                    continue
-                if entry.get("level") == "error" or "Content Security Policy" in text or "Refused to" in text:
-                    failures.append("console/CSP error: " + text[:160])
-            elif method == "Network.loadingFailed" and not params.get("canceled", False):
-                if params.get("blockedReason") == "inspector" or params.get("errorText") == "net::ERR_BLOCKED_BY_CLIENT":
-                    continue
-                failures.append("request failure")
-            elif method == "Network.responseReceived" and params.get("response", {}).get("status", 0) >= 500:
-                response = params.get("response", {})
-                failures.append(f"unexpected HTTP {int(response.get('status', 0))}: {response.get('url', '')}")
-            elif method == "Audits.issueAdded" and params.get("issue", {}).get("code") == "ContentSecurityPolicyIssue":
-                failures.append("CSP violation")
-        require(not failures, "real Chrome proof observed: " + ", ".join(sorted(set(failures))))
+        validate_browser_events(devtools.events, missing_record_event_start, missing_record_event_end)
         print(json.dumps({
             "browser": "Google Chrome",
             "default_six_hour_cookie_and_nonrenewing_navigation": "pass",

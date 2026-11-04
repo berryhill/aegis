@@ -96,6 +96,220 @@ class ResourceTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'deadline'):
             client._recv_exact(2)
 
+    def paced_client(self):
+        client = self.client()
+        client._frame = lambda payload: payload
+        client.receive = mock.Mock(return_value={'id': 1, 'result': {}})
+        client.pace_fixture_requests('http://fixture:8450')
+        self.assertEqual(json.loads(client.sock.sendall.call_args.args[0]), {
+            'id': 1, 'method': 'Fetch.enable', 'params': {'patterns': [
+                {'urlPattern': 'http://fixture:8450/*', 'requestStage': 'Request'}]}})
+        client.sock.sendall.reset_mock()
+        return client
+
+    def paused(self, identifier='intercept', resource='Document', method='GET',
+               url='http://fixture:8450/console?private=yes'):
+        return {'method': 'Fetch.requestPaused', 'params': {
+            'requestId': identifier, 'resourceType': resource,
+            'request': {'url': url, 'method': method, 'postData': 'private body',
+                        'headers': {'Cookie': 'private cookie'}}}}
+
+    def test_all_resource_pacing_preserves_requests_and_interleaved_replies(self):
+        for outer_first in (False, True):
+            with self.subTest(outer_first=outer_first):
+                now = [0.0]
+                releases = []
+                def sleep(delay):
+                    now[0] += delay
+                with (mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]),
+                      mock.patch.object(browser.time, 'sleep', side_effect=sleep)):
+                    client = self.paced_client()
+                    pauses = [self.paused(str(i), kind, verb) for i, (kind, verb) in enumerate([
+                        ('Document', 'GET'), ('Stylesheet', 'GET'), ('Script', 'GET'),
+                        ('XHR', 'GET'), ('XHR', 'POST')])]
+                    original = json.dumps(pauses)
+                    # All continuations remain outstanding as the outer reply
+                    # arrives; both reply orderings must retain its exact result.
+                    outer = {'id': 2, 'result': {'outer': 'preserved'}}
+                    replies = [{'id': i, 'result': {}} for i in range(3, 8)]
+                    sequence = pauses + ([outer] + replies if outer_first else replies + [outer])
+                    client.receive = mock.Mock(side_effect=sequence)
+                    client.sock.sendall.side_effect = lambda payload: releases.append(
+                        (now[0], json.loads(payload)))
+                    self.assertEqual(client.command('Runtime.evaluate', {'expression': 'original'}),
+                                     {'outer': 'preserved'})
+                    self.assertEqual(json.dumps(pauses), original)
+                    self.assertEqual(releases[0][1], {'id': 2, 'method': 'Runtime.evaluate',
+                                                     'params': {'expression': 'original'}})
+                    self.assertEqual([t for t, _ in releases[1:]], [0, .25, .5, .75, 1])
+                    self.assertEqual([m for _, m in releases[1:]], [
+                        {'id': i + 3, 'method': 'Fetch.continueRequest',
+                         'params': {'requestId': str(i)}} for i in range(5)])
+                    self.assertEqual(client.next_id, 8)
+                    self.assertEqual(client.receive.call_count, len(sequence))
+
+    def test_pacing_has_no_idle_catchup_and_only_exact_origin(self):
+        now = [0.0]
+        sent = []
+        with (mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]),
+              mock.patch.object(browser.time, 'sleep', side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
+            client = self.paced_client()
+            now[0] = 10.0
+            client.sock.sendall.side_effect = lambda payload: sent.append((now[0], json.loads(payload)))
+            client.receive = mock.Mock(side_effect=[
+                self.paused('a'), {'id': 3, 'result': {}},
+                self.paused('external', url='http://fixture:84501/console'), {'id': 4, 'result': {}},
+                self.paused('b'), {'id': 5, 'result': {}}, {'id': 2, 'result': {}}])
+            client.command('test')
+        self.assertEqual([t for t, m in sent if m['method'] == 'Fetch.continueRequest'],
+                         [10.0, 10.0, 10.25])
+
+    def test_release_schedule_persists_across_commands_and_idle(self):
+        now = [0.0]
+        sent = []
+        with (mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]),
+              mock.patch.object(browser.time, 'sleep', side_effect=lambda delay: now.__setitem__(0, now[0] + delay))):
+            client = self.paced_client()
+            client.sock.sendall.side_effect = lambda payload: sent.append((now[0], json.loads(payload)))
+            for index in range(4):
+                if index == 2:
+                    now[0] = 10.0
+                outer = client.next_id
+                client.receive = mock.Mock(side_effect=[self.paused(str(index)),
+                    {'id': outer, 'result': {'index': index}}, {'id': outer + 1, 'result': {}}])
+                self.assertEqual(client.command('test'), {'index': index})
+        self.assertEqual([t for t, m in sent if m['method'] == 'Fetch.continueRequest'],
+                         [0.0, .25, 10.0, 10.25])
+        self.assertEqual([m['id'] for _, m in sent], list(range(2, 10)))
+
+    def test_pending_continuation_retains_deadline_after_outer_response(self):
+        now = [0.0]
+        with (mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]),
+              mock.patch.object(browser, 'CDP_TIMEOUT', .1)):
+            client = self.paced_client()
+            messages = iter([self.paused(), {'id': 2, 'result': {'outer': True}},
+                             {'id': 3, 'result': {}}])
+            def receive():
+                message = next(messages)
+                if message.get('id') == 3:
+                    now[0] = .11
+                return message
+            client.receive = mock.Mock(side_effect=receive)
+            with self.assertRaisesRegex(RuntimeError, 'absolute deadline'):
+                client.command('test')
+            self.assertEqual(client.deadline, .1)
+
+    def test_fetch_enable_error_is_not_ignored(self):
+        client = self.client()
+        client.receive = mock.Mock(return_value={'id': 1, 'error': {'message': 'denied'}})
+        with self.assertRaisesRegex(RuntimeError, 'Fetch.enable failed'):
+            client.pace_fixture_requests('http://fixture:8450')
+
+    def test_unpaced_client_leaves_fetch_events_unchanged(self):
+        client = self.client()
+        client.receive = mock.Mock(side_effect=[self.paused(), {'id': 1, 'result': {}}])
+        with mock.patch.object(browser.time, 'sleep') as sleep:
+            self.assertEqual(client.command('test'), {})
+        self.assertEqual(client.sock.sendall.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(client.events, [self.paused()])
+
+    def test_continuation_errors_fail_closed_in_both_reply_orders(self):
+        for outer_first in (False, True):
+            with self.subTest(outer_first=outer_first):
+                client = self.paced_client()
+                replies = [{'id': 2, 'result': {'saved': True}},
+                           {'id': 3, 'error': {'message': 'private error'}}]
+                if not outer_first:
+                    replies.reverse()
+                client.receive = mock.Mock(side_effect=[self.paused()] + replies)
+                with self.assertRaisesRegex(RuntimeError, 'Fetch.continueRequest failed') as failure:
+                    client.command('test')
+                self.assertNotIn('private error', str(failure.exception))
+
+    def test_outer_completion_does_not_wait_for_future_pauses(self):
+        client = self.paced_client()
+        client.receive = mock.Mock(side_effect=[{'id': 2, 'result': {}}, self.paused()])
+        self.assertEqual(client.command('test'), {})
+        self.assertEqual(client.receive.call_count, 1)
+        self.assertEqual(client.sock.sendall.call_count, 1)
+
+    def test_pacing_does_not_extend_absolute_deadline(self):
+        now = [0.0]
+        with (mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]),
+              mock.patch.object(browser.time, 'sleep', side_effect=lambda delay: now.__setitem__(0, now[0] + delay)),
+              mock.patch.object(browser, 'CDP_TIMEOUT', .1)):
+            client = self.paced_client()
+            client.receive = mock.Mock(side_effect=[self.paused('a'), {'id': 3, 'result': {}},
+                                                   self.paused('b')])
+            with self.assertRaisesRegex(RuntimeError, 'absolute deadline'):
+                client.command('test')
+            self.assertEqual(client.deadline, .1)
+            self.assertEqual(now[0], .1)
+            self.assertEqual(client.sock.sendall.call_count, 2)
+
+    def test_paced_events_and_continuation_replies_keep_resource_budgets(self):
+        for limit, value in (('MAX_EVENTS', 0), ('MAX_EVENT_BYTES', 1), ('MAX_EVENTS', 1)):
+            with self.subTest(limit=limit, value=value):
+                client = self.paced_client()
+                client.receive = mock.Mock(side_effect=[self.paused(), {'id': 3, 'result': {}},
+                                                       {'id': 2, 'result': {}}])
+                with mock.patch.object(browser, limit, value):
+                    with self.assertRaisesRegex(RuntimeError, 'event budget'):
+                        client.command('test')
+
+    def test_continuation_still_uses_frame_budget(self):
+        client = self.paced_client()
+        del client._frame
+        client.receive = mock.Mock(side_effect=[self.paused('x' * (MAX_FRAME_BYTES + 1))])
+        with self.assertRaisesRegex(RuntimeError, 'output exceeds'):
+            client.command('test')
+
+    def test_fixture_instrumentation_precedes_first_origin_navigation(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory)
+            passwords = root / 'passwords.json'
+            passwords.write_text(json.dumps({'initial': 'initial-fixture-only',
+                                            'replacement': 'replacement-fixture-only'}))
+            client = mock.Mock()
+            order = mock.Mock()
+            order.attach_mock(client.pace_fixture_requests, 'pace')
+            navigate = mock.Mock(side_effect=RuntimeError('stop before journey'))
+            order.attach_mock(navigate, 'navigate')
+            with (mock.patch.object(browser.sys, 'argv', ['browser', 'http://fixture:8450', str(passwords), str(root)]),
+                  mock.patch.object(browser.subprocess, 'Popen') as popen,
+                  mock.patch.object(browser, 'wait_for_active_port', return_value=123),
+                  mock.patch.object(browser, 'page_websocket', return_value='ws://fixture'),
+                  mock.patch.object(browser, 'DevTools', return_value=client),
+                  mock.patch.object(browser, 'navigate', navigate),
+                  mock.patch.object(browser, 'stop_chrome')):
+                with self.assertRaisesRegex(RuntimeError, 'stop before journey'):
+                    browser.main()
+            self.assertEqual(popen.call_args.args[0][-1], 'about:blank')
+            self.assertEqual(order.mock_calls, [mock.call.pace('http://fixture:8450'),
+                                               mock.call.navigate(client, 'http://fixture:8450/console')])
+            self.assertEqual([call.args[0] for call in client.command.call_args_list],
+                             ['Page.enable', 'Runtime.enable', 'Log.enable', 'Network.enable', 'Audits.enable'])
+
+    def test_429_is_sanitized_and_still_fails_without_console_log(self):
+        params = {'type': 'Stylesheet', 'response': {'status': 429,
+                  'url': 'https://user:private-pass@fixture:8450/assets/style.css?private-query#private-fragment',
+                  'headers': {'Cookie': 'private-cookie'}, 'body': 'private-body'}}
+        with self.assertRaisesRegex(RuntimeError, 'unexpected HTTP 429') as failure:
+            browser.validate_browser_events([{'method': 'Network.responseReceived', 'params': params}], -1, -1)
+        message = str(failure.exception)
+        for forbidden in ('user', 'private-', 'headers', 'body', '?', '#'):
+            self.assertNotIn(forbidden, message)
+        self.assertIn('"host": "fixture"', message)
+        self.assertIn('"scheme": "https"', message)
+        self.assertIn('"path": "/assets/style.css"', message)
+        self.assertIn('"type": "Stylesheet"', message)
+        for event in ({'method': 'Log.entryAdded', 'params': {'entry': {'level': 'error', 'text': 'error'}}},
+                      {'method': 'Audits.issueAdded', 'params': {'issue': {'code': 'ContentSecurityPolicyIssue'}}},
+                      {'method': 'Runtime.exceptionThrown'}):
+            with self.subTest(event=event), self.assertRaises(RuntimeError):
+                browser.validate_browser_events([event], -1, -1)
+
     def test_child_output_bounded(self):
         with self.assertRaisesRegex(RuntimeError, 'output exceeds'):
             run_owned([sys.executable, '-c', 'print("x"*100000)'], timeout=3, max_output=100)
