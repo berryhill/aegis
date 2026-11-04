@@ -189,6 +189,15 @@ func TestUpgradeReleaseBuildArgs(t *testing.T) {
 
 func upgradeReleaseBuild(t *testing.T, dir, version string) string {
 	t.Helper()
+	phase := ""
+	switch version {
+	case "0.2.28":
+		phase = "build_old"
+	case "0.2.29":
+		phase = "build_candidate"
+	}
+	finishTiming := isolatedFixtureBeginPhase(t, phase)
+	defer finishTiming()
 	path := filepath.Join(dir, "aegis-"+version)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -399,12 +408,15 @@ func installedUpgradeFullCommand(t *testing.T) {
 	builds := t.TempDir()
 	old := upgradeReleaseBuild(t, builds, "0.2.28")
 	candidate := upgradeReleaseBuild(t, builds, "0.2.29")
+	finishArchiveTiming := isolatedFixtureBeginPhase(t, "archive")
 	archive, err := packUpgradeFixtureArchive(mustCommandRead(t, candidate))
+	finishArchiveTiming()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, scenario := range []string{"healthy", "current-cli-stopped", "already-stopped", "interrupted-authority", "legacy-unit", "migration-failure-resume", "cancelled-auth", "unavailable-auth", "startup-failure-resume", "socket-denial", "open-writer-denial", "stale-image", "journal-tamper", "journal-link", "journal-identity"} {
 		t.Run(scenario, func(t *testing.T) {
+			isolatedFixtureTrackPhase(t, scenario)
 			installed := old
 			if scenario == "current-cli-stopped" {
 				installed = candidate

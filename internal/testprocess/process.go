@@ -14,6 +14,42 @@ import (
 
 const MaxOutput = 4 << 20
 
+// OwnedContextState is the helper-owned context state observed when Run returns.
+// It does not prove exclusive causation of a process failure (for example, a
+// deadline may race with an unrelated OS kill).
+type OwnedContextState uint8
+
+const (
+	OwnedContextUnobserved OwnedContextState = iota
+	OwnedContextLive
+	OwnedContextDeadlineExceeded
+	OwnedContextCanceled
+)
+
+// ObservedResult retains the private output and unchanged run error separately
+// from closed, non-sensitive context metadata. Output and Err are not public
+// diagnostics; callers must continue to withhold/sanitize them.
+type ObservedResult struct {
+	Output       []byte
+	Err          error
+	OwnedContext OwnedContextState
+}
+
+func observedResult(ctx context.Context, output []byte, err error) ObservedResult {
+	result := ObservedResult{Output: output, Err: err}
+	if ctx != nil {
+		switch ctx.Err() {
+		case nil:
+			result.OwnedContext = OwnedContextLive
+		case context.DeadlineExceeded:
+			result.OwnedContext = OwnedContextDeadlineExceeded
+		case context.Canceled:
+			result.OwnedContext = OwnedContextCanceled
+		}
+	}
+	return result
+}
+
 func conservativeEnv(environment []string) []string {
 	if environment == nil {
 		environment = os.Environ()
@@ -69,15 +105,23 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 // supported and are rejected rather than silently discarded. The caller's Cmd
 // is a specification only: its Process/ProcessState are not populated.
 func CombinedOutput(command *exec.Cmd, timeout time.Duration) ([]byte, error) {
+	result := CombinedOutputObserved(command, timeout)
+	return result.Output, result.Err
+}
+
+// CombinedOutputObserved runs with the same contract as CombinedOutput and also
+// snapshots the helper-owned context immediately after Run, before cancellation
+// or cleanup. Cleanup still completes before the result is returned.
+func CombinedOutputObserved(command *exec.Cmd, timeout time.Duration) ObservedResult {
 	if command == nil || len(command.Args) == 0 || timeout <= 0 {
-		return nil, errors.New("test process requires a command and positive timeout")
+		return observedResult(nil, nil, errors.New("test process requires a command and positive timeout"))
 	}
 	if command.Err != nil {
-		return nil, command.Err
+		return observedResult(nil, nil, command.Err)
 	}
 	if command.Process != nil || command.ProcessState != nil || command.Cancel != nil ||
 		command.SysProcAttr != nil || command.Stdout != nil || command.Stderr != nil || command.WaitDelay != 0 {
-		return nil, errors.New("test process unsupported command settings: use an unstarted exec.Command without context, process attributes, output writers or WaitDelay")
+		return observedResult(nil, nil, errors.New("test process unsupported command settings: use an unstarted exec.Command without context, process attributes, output writers or WaitDelay"))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -91,6 +135,7 @@ func CombinedOutput(command *exec.Cmd, timeout time.Duration) ([]byte, error) {
 	var output boundedOutput
 	bounded.Stdout, bounded.Stderr = &output, &output
 	err := bounded.Run()
+	result := observedResult(ctx, output.data.Bytes(), err)
 	cleanup(bounded)
-	return output.data.Bytes(), err
+	return result
 }
