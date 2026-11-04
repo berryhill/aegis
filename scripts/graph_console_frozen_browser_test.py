@@ -70,7 +70,20 @@ def main():
                 def visit(key, fragment=False):
                     time.sleep(1.2)  # preserve the real source limiter, assets included
                     path = '/console/graphs'+('#/graphs/'+key if fragment else '?record_key='+key)
-                    navigate_ready(browser,origin+path)
+                    if fragment:
+                        previous = browser.evaluate('performance.timeOrigin')
+                        driver.navigate(browser,origin+path)
+                        # The product resolves the fragment through a second
+                        # authenticated document with a canonical record_key.
+                        driver.wait_for(browser,
+                            'performance.timeOrigin !== '+json.dumps(previous)+
+                            ' && document.readyState === "complete"'+
+                            ' && location.pathname === "/console/graphs"'+
+                            ' && new URL(location.href).searchParams.get("record_key") === '+json.dumps(key)+
+                            ' && location.hash === '+json.dumps('#/graphs/'+key),
+                            'canonical server-resolved Graph fragment')
+                    else:
+                        navigate_ready(browser,origin+path)
                     driver.wait_for(browser,"!!document.querySelector('[data-graph-workspace]') && !document.querySelector('[data-graph-workspace]').hidden",'authenticated exact Graph workspace')
 
                 def capture(label):
