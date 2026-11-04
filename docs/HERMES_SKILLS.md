@@ -173,6 +173,24 @@ These live GitHub commands prove published-repository discovery and are intentio
 
 ## Queue historical readback
 
+The Queue skill v0.3.0 includes a portable
+[`references/evaluation-ledger.v1.md`](../skills/aegis-execution-queue/references/evaluation-ledger.v1.md)
+mapping structural fixtures to existing executable service/persistence tests.
+`validate` and `evaluate` remain structural validation, not model adherence.
+The compiled-CLI `TestInstalledOnlineLifecycle` executes the bundled bind/reclaim
+examples with fixture-only references through Serve, Unix authentication and
+isolated Badger. It checks exact `direct_loop` source and normalized inputs,
+workspace cancellation, expired-lease reclaim, backoff, unchanged history on
+denial and unsupported online expire/exhaust. Ordinary retry has no durable stop
+acknowledgment and remains unavailable, even after expiry; exhaustion is `failed`
+with reason `retry_exhausted`, not an `exhausted` state. The one-node retry contract
+does not broaden raw-v2/managed-v7 two-node execution beyond `max_attempts: 1`.
+`TestPackagedQueueSkillInstall` separately accepts a supplied exact archive and
+binary, runs delivered install/inventory outside the checkout and compares the
+portable Queue files. Missing artifacts are SKIPPED. Fresh supported-Hermes
+`skills_list`/`skill_view`, model behavior, real-provider qualification and public
+release/install acceptance remain independent gates, not fixture PASS claims.
+
 The real-store `TestDQHandoff` regression exercises workspace acceptance,
 controller runtime binding through the application service, first claim,
 live-lease denial, expiry-backed HTTP reclaim and

@@ -8,6 +8,12 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Added
 
+- #186 Queue advisory skill v0.3.0: exact direct-source/input readback, distinct
+  exhaustion reason, supported reclaim and unsupported online adapter guidance,
+  plus a portable evaluation ledger. Executable CLI/Serve/Badger regressions and
+  opt-in exact-artifact install/inventory are separate from unchanged structural
+  evaluation; fresh Hermes discovery and provider acceptance are not implied.
+
 - #352 source: packaged `aegis skills install|inventory|update|rollback` thin
   adapters reuse the exact-artifact installer with explicit destination and JSON
   inventory. No configuration, profile, lifecycle or controller stores are used;
