@@ -329,6 +329,19 @@ Consult `specs/CANONICAL_DOMAINS.md`, `specs/IDENTITY_AND_AUTHORIZATION.md`, `sp
 
 ## Single authenticated Loop execution request
 
+For the published selected-file v4 Console journey, preserve the server-issued
+Run key across uncertain responses and use same-key readback/resume. The explicit
+Start a distinct run action rotates the cookie once for that action and redirects
+with HTTP 303 to the clean exact-revision URL; subsequent clean reload/reopen
+retains that new identity. Repeating the action requests another distinct run,
+not recovery. Authentication, exact pins and Run origin/CSRF checks still apply.
+This is not a v5 browser launcher; use typed normalized inputs for v5 Run.
+
+Authenticated Queue inputs show the normalized run snapshot's JSON values for
+direct Loop and Graph sources. They do not establish caller/default provenance;
+absent declared Graph inputs are missing, not invented defaults. This reads only
+the existing authenticated execution view, not private source or credentials.
+
 ## Exact owner-principal Run preparation (source candidate)
 
 For a published selected-file v4 Loop, one fresh authenticated owner-principal

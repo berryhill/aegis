@@ -27,6 +27,15 @@ This project follows a Keep a Changelog-style structure. Development builds repo
 
 ### Fixed
 
+- #326 local source corrections: render authoritative normalized JSON inputs in
+  Queue detail for direct Loop and Graph runs without inventing caller/default
+  provenance; mark absent declared Graph inputs missing. Canonicalize the explicit
+  v4 distinct-Run action with an exact-revision redirect retaining the new cookie.
+  Add empty/invalid UTF-8 exact-byte negatives and durable direct snapshot coverage
+  after later Loop publication. Existing direct execution is reused; current
+  provider/browser/installed acceptance and issue closure remain pending. See
+  [launch review](docs/implementation/issue-326-launch-review.md).
+
 - #232 Agent detail: observe exact current provisioning artifact integrity and
   runtime compatibility without issuing authority; retain historical lifecycle
   truth, expose the verified runtime constraint and restore Agent selection,

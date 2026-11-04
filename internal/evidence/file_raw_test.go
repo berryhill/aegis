@@ -8,7 +8,7 @@ import (
 )
 
 func TestSelectedFileExactRawBytesRejectsWhitespace(t *testing.T) {
-	for _, value := range []string{"hello", "hello\n", " hello", "hello ", "hello\r\n", "HELLO"} {
+	for _, value := range []string{"hello", "hello\n", " hello", "hello ", "hello\r\n", "HELLO", "", "hello\xff"} {
 		t.Run(value, func(t *testing.T) {
 			root := t.TempDir()
 			if err := os.WriteFile(filepath.Join(root, "result.txt"), []byte(value), 0600); err != nil {

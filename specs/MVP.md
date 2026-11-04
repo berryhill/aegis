@@ -6,6 +6,12 @@ The first Aegis release must prove one coherent fleet-control vertical slice:
 
 > Register one existing fleet agent, let that authenticated participant publish immutable Loop and Graph revisions, and operate one typed Graph submission through a durable, authority-bound Execution Queue to evidence-gated disposition.
 
+This original Graph-composition vertical remains a distinct acceptance case.
+Current execution also supports direct exact Loop submission without publishing
+a reusable Graph. Both paths use immutable run snapshots and the shared Queue
+and evidence substrate; intentional Graph composition additionally pins the
+exact Graph revision and its participant topology.
+
 The design-to-launch workflow, charters, trust stanzas, mandates, clean Hermes runtime boundary, audit, and evidence remain required enabling controls. Encrypted credential custody and the existing typed `github.get_repository.v1` broker are reusable supporting infrastructure, not release-defining gates. Credential-independent Registry, Loop, Graph, and Queue actions MUST NOT require credential setup.
 
 ## 0. Fleet-control product contract
@@ -17,7 +23,7 @@ The MVI has four separate product domains:
 - **Graphs** own immutable validated coordination revisions, exact participant and Loop-revision bindings, typed dependency mappings, and admission constraints. A Graph never absorbs authority or queue state.
 - **Execution Queue** owns durable submission admission, idempotency, claim/lease, attempt, retry, cancellation/expiry, and evidence-gated terminal lifecycle.
 
-Every runtime-ready submission captures one immutable snapshot of the exact Agent, Graph, Loop, mandate, authority-context, runtime, and normalized-input IDs/digests. A registered-Agent workspace submission first captures exact workspace/owner provenance and remains `preparation-pending` until a fresh runtime binding supplies the mandate, authority context, and runtime. Definitions are never resolved from mutable `latest` state after admission. Missing, unknown, disabled, expired, revoked, substituted, ambiguous, or partially persisted control input denies. Permissions from different stanzas are never unioned.
+Every runtime-ready submission captures an immutable snapshot of exact Agent and Loop references and normalized inputs, bound to exact mandate, authority-context and runtime references. Graph submissions additionally pin the exact Graph revision; direct Loop submissions do not require a reusable Graph. A registered-Agent workspace submission first captures exact workspace/owner provenance and remains `preparation-pending` until a fresh runtime binding supplies the mandate, authority context, and runtime. Definitions are never resolved from mutable `latest` state after admission. Missing, unknown, disabled, expired, revoked, substituted, ambiguous, or partially persisted control input denies. Permissions from different stanzas are never unioned.
 
 Application services compose these domains by immutable references. No universal mutable participant/workflow/run aggregate may duplicate their authority or mutation semantics.
 
@@ -25,7 +31,7 @@ Application services compose these domains by immutable references. No universal
 
 A freshly authenticated principal MAY delegate one sealed `aegis.workspace-authority.v1` workspace to one exact latest enabled registered Agent revision. Its exact capabilities are `fleet.loops.define`, `fleet.loops.manage-own`, `fleet.graphs.define`, `fleet.graphs.submit-participant`, `fleet.queue.manage-own`, and `fleet.definitions.read-shared`. Principal, Agent revision/digest, stable owner, capability ordering, and workspace digest are immutable inputs; mismatch, stale revision, disabled Agent, ownership drift, or expired authentication denies.
 
-The workspace MAY publish and lifecycle-manage only definitions owned by that stable Agent owner, submit only a Graph containing that exact Agent revision as a participant, manage only Queue work carrying matching owner provenance, and read/reference/use definitions across the fleet. Definition reads are shared; later publication and lifecycle mutation remain owner-only. Definition authoring and submission do not require a provisioning receipt, mandate, authority context, or running session.
+The workspace MAY publish and lifecycle-manage only definitions owned by that stable Agent owner, submit direct exact Loop work for that Agent or a Graph containing that exact Agent revision as a participant, manage only Queue work carrying matching owner provenance, and read/reference/use definitions across the fleet. Definition reads are shared; later publication and lifecycle mutation remain owner-only. Definition authoring and submission do not require a provisioning receipt, mandate, authority context, or running session. Direct submission does not relax Graph-specific participant or composition checks when a Graph is selected.
 
 Workspace authority MUST NOT authorize provisioning, Queue claim, processing, runtime effects, sessions, mandates, or credentials. Before processing, the Aegis controller MUST attach a fresh runtime-authority binding and repeat normal runtime admission. Ordinary workspaces have no credential capabilities or bindings; only controller authority may administer or apply credentials. This feature supplies no native agent transport, autonomous scheduler, or automatic execution.
 
