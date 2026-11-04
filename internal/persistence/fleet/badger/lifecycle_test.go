@@ -990,9 +990,9 @@ func assertClaimDeniedAtomically(t *testing.T, ctx context.Context, store *Store
 	}
 }
 
-func completionFixture(t *testing.T, ctx context.Context, root string) (*Store, fleet.Completion, *recordstore.Store) {
+func completionFixture(t *testing.T, ctx context.Context, root string, additionalClaims ...string) (*Store, fleet.Completion, *recordstore.Store) {
 	t.Helper()
-	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-completion-boundary")
+	store, accepted := lifecycleFixture(t, ctx, root, "submit-key-completion-boundary", additionalClaims...)
 	if _, err := store.AcceptSubmission(ctx, accepted, audit("submission.accepted", accepted.Submission.SubmissionID)); err != nil {
 		t.Fatal(err)
 	}
@@ -1085,7 +1085,7 @@ func completionAudit(completion fleet.Completion) fleet.AuditFact {
 	}}
 }
 
-func lifecycleFixture(t *testing.T, ctx context.Context, root, idempotencyKey string) (*Store, fleet.AcceptedSubmission) {
+func lifecycleFixture(t *testing.T, ctx context.Context, root, idempotencyKey string, additionalClaims ...string) (*Store, fleet.AcceptedSubmission) {
 	t.Helper()
 	store, err := Open(ctx, root)
 	if err != nil {
@@ -1096,6 +1096,25 @@ func lifecycleFixture(t *testing.T, ctx context.Context, root, idempotencyKey st
 		t.Fatal(err)
 	}
 	loopRevision, loopValidation := loopFixture(t)
+	// Publish every required claim before the Graph snapshot and claim exist.
+	for _, name := range additionalClaims {
+		for i := range loopRevision.Steps {
+			if loopRevision.Steps[i].ID != "echo" {
+				continue
+			}
+			claim := loopRevision.Steps[i].EvidenceClaims[0]
+			claim.Claim = name
+			loopRevision.Steps[i].EvidenceClaims = append(loopRevision.Steps[i].EvidenceClaims, claim)
+		}
+		loopRevision.RequiredEvidence = append(loopRevision.RequiredEvidence, loop.EvidenceRequirement{Claim: name, ProducerStepID: "echo"})
+	}
+	if len(additionalClaims) > 0 {
+		loopRevision.Digest = ""
+		loopRevision, loopValidation, err = loop.NewRevision(loopRevision)
+		if err != nil || len(loopValidation.Issues) != 0 {
+			t.Fatalf("multi-claim Loop: %v %+v", err, loopValidation)
+		}
+	}
 	if _, err = store.PublishLoop(ctx, loop.PublishRequest{Revision: loopRevision, Validation: loopValidation, Provenance: loopPublicationProvenance(t, loopRevision, loopValidation), IdempotencyKey: "loop-lifecycle"}, audit("loop.published", loopRevision.LoopID)); err != nil {
 		t.Fatal(err)
 	}

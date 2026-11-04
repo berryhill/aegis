@@ -1,7 +1,7 @@
 ---
 name: aegis-execution-queue
 description: Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.
-version: 0.2.0
+version: 0.3.0
 metadata:
   hermes:
     tags:
@@ -95,7 +95,7 @@ bindings; workspace authority or Run consent cannot supply or renew them.
 Definition mutation remains separately stable-owner-gated. Current effect
 admission is unchanged; historical result inspection cannot issue fresh authority.
 
-Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` for exact historical readback. Keep these records distinct:
+Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` for exact historical readback. The current QueueExecutionView exposes `source_kind`, exact revision `source`, and normalized `inputs`. Read these authoritative fields first: a direct Loop source is not a published Graph even when internal `graph_run` naming remains. Do not infer source type from a run ID or synthesize a Graph. Keep these records distinct:
 
 - The immutable Queue item binds one accepted submission, snapshot, run identity, authority reference, enqueue time, dependency IDs, and fixed maximum-attempt budget. New direct Loop snapshots pin the exact Loop and participant without a published Graph; historical Graph snapshots retain their exact Graph/Agent/Loop pins and replay path. Internal Graph-run identity does not imply a published Graph is required. Workspace-originated authority is control-plane ownership, not runtime authority: read `preparation-pending` and its later immutable runtime binding separately, and never infer one from the other. Workspace preparation is nonexecutable, not claimable `queued` work. The item is not rewritten by lifecycle changes.
 - The Queue projection is rebuildable current state derived from canonical lifecycle records. It reports state, attempt count, availability, active claim, and transition head, but cannot grant authority.
@@ -104,7 +104,7 @@ Use `aegis queue list` for authenticated inventory and `aegis queue show ITEM` f
 - A claim binds one attempt, worker, exact authority, claim time, and lease expiry. A live lease excludes reclaim; lease expiry makes reclaim eligible but does not itself authorize it.
 - Dependencies gate claim eligibility. A listed item is not claimable until every exact dependency has the required successful terminal evidence; never bypass or reinterpret a dependency from prose.
 - Runtime artifacts are content-addressed outputs. Verification receipts bind exact evidence claims, artifact digests, verifier identity, and policy. A disposition is the evidence-gated terminal decision. Process exit and runtime narration satisfy none of these records.
-- Claims, retries, terminal requests, transitions, artifacts, receipts, dispositions, and authoritative audit facts are append-only history. Cancelled, expired, exhausted, revoked, denied, failed, and succeeded remain distinct outcomes.
+- Claims, retries, terminal requests, transitions, artifacts, receipts, dispositions, and authoritative audit facts are append-only history. Cancellation, expiry, revocation, denial, failure, success and retry exhaustion remain distinguishable. Exhaustion is `failed` with reason `retry_exhausted`; there is no `exhausted` state enum. A generic failed state alone does not prove exhaustion.
 
 Report immutable item and snapshot bindings separately from the current projection. Then report Graph-run and Loop-execution causality; ordered attempts and claims; lease and budget eligibility; dependencies; runtime route; transitions and lifecycle requests; artifact and receipt verification; disposition; and any unavailable or corrupt readback.
 
@@ -114,6 +114,8 @@ Read `references/queue-contract.v1.md` before preparing requests. Complete synth
 wire examples are `references/bind-runtime.v1.json` and `references/reclaim.v1.json`.
 They are strict-decoder examples, not authenticated executable facts. In JSON,
 retry `backoff` is an integer nanosecond count, not a string such as `"1s"`.
+Read [the evaluation ledger](references/evaluation-ledger.v1.md) for exact
+structural, service, persistence and portable-install coverage and remaining gates.
 
 ## Bind workspace work to runtime authority
 
@@ -138,7 +140,7 @@ The response is `{ "binding": ..., "created": ... }`. Preserve the binding and t
 Retry is a controller decision that returns one claimed item to queued availability. It does not execute the next attempt.
 
 1. Read the exact active claim, lease expiry, attempt count, maximum budget, and transition head. Require remaining budget and a claimed nonterminal item.
-2. Ordinary retry with `reclaimed: false` is unavailable: Aegis has no authoritative durable runtime-stop acknowledgment and persistence rejects it. Process absence, a stopped-runtime claim, or operator prose cannot release the lease.
+2. Ordinary retry with `reclaimed: false` is unavailable, even after lease expiry: Aegis has no authoritative durable runtime-stop acknowledgment and persistence rejects it. Process absence, a stopped-runtime claim, or operator prose cannot release the lease.
 3. For an expired lease, prepare a strict request with exact current `authority` and `queue_item_id`, fresh `retry_id` and `transition_id`, bounded `backoff`, `reclaimed: true`, and `reason_code: "lease_reclaimed"`; use `aegis queue retry FILE`. Reclaim before exact lease expiry denies. Do not infer expiry from a stale clock, process absence, or operator prose.
 4. Backoff must remain nonnegative and no greater than 24 hours. Live-lease retry, attempt-budget exhaustion, wrong reason/reclaim pairing, stale authority, terminal state, duplicate-ID conflict, and unavailable canonical history deny.
 5. Read back the exact retry and transition. Require the same Queue item, Graph run, and Loop execution, queued projection state, cleared active claim, unchanged consumed-attempt count, and exact `available_at`. A later process operation receives a fresh claim and next numbered attempt.
@@ -149,8 +151,10 @@ Retry is a controller decision that returns one claimed item to queued availabil
 
 - Cancel represents an authenticated operator cancellation of queued or claimed work.
 - Expire records an exact claimed lease that has reached expiry through the shipped explicit primitive; queued work and a live lease deny, and no automated expiry scheduler exists.
-- Exhaust records terminal retry-budget exhaustion; do not substitute it for a retry denial while budget remains.
+- Exhaust records terminal retry-budget exhaustion as `failed` with reason `retry_exhausted`; do not substitute it for a retry denial while budget remains.
 - Revoke records authority revocation for this work; it is distinct from cancellation and denial.
+
+The workspace lifecycle branch is distinct: matching registered-Agent workspace ownership may cancel/revoke nonexecuted preparations and its own supported Queue work, but cannot supply runtime admission, claim, expire or exhaust authority. Do not blanket-label workspace lifecycle unavailable. Conversely, online expire/exhaust remain unsupported CLI adapters even though offline commands and protected HTTP primitives exist; report `online_operation_unsupported`, never a direct-store fallback.
 
 After mutation, read back the exact cancellation record, transition, projection, Graph and Loop execution states, and disposition where present. Terminal replay, mismatched reason, stale authority, incompatible state, or conflicting operation identity denies. Terminal history remains reconstructable and must not be deleted, relabeled, or retried.
 
@@ -269,7 +273,7 @@ introduced. Confirm installed help: source additions are not installed adoption.
 
 The source worker additionally supports one exact two-node producer/consumer chain:
 paired raw v2 nodes or paired managed selected-file v7 nodes, one outer Queue
-attempt, and no general scheduler. v7 pins one initially absent selected output
+attempt (`max_attempts: 1`), no generic retry/reclaim, and no general scheduler. v7 pins one initially absent selected output
 per separate non-nested workspace, exact UTF-8 verification and 1–2 implementation
 passes per node. The consumer receives independently reloaded producer artifact
 bytes and exact causal lineage, never a workspace path or the expected assertion.
