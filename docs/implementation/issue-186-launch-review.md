@@ -77,3 +77,37 @@ Local controlled build: `scripts/build-source.sh ./aegis`, Go 1.26.10,
 SHA-256: `38452fe8edbd149edf5bc105914595c9709b822e52ee6e1b74c41e9bd5358db2`.
 This truthful dirty build is not a releaseSourceRevision/provenance acceptance
 claim or a frozen final archive. No commits, pushes or deployment performed.
+
+## Targeted acceptance-gap coverage addition (post-independent review)
+
+The additional source fixtures close previously unmapped obligations without
+changing production code or rewriting retained predecessor/independent reports:
+
+- `TestQueueWorkerExhaustFinalClaimBadgerDurable` calls the shared worker's actual
+  `Exhaust` with isolated real Badger: premature queued/first-claim requests deny;
+  canonical reclaim and a second/final claim consume the pinned budget. Final
+  `failed`/`retry_exhausted` disposition, transition, cancellation record, attempts
+  and audit survive reopen; terminal replay denies. No TCP listener is used.
+- `TestCompletionAllPinnedClaimsReloadedAtomically` extends existing completion
+  fixtures with two distinct claims published before snapshot/claim creation.
+  Missing either claim, duplicate claim and wrong policy deny with every Badger
+  key unchanged through reopen. Both complete receipt orders pass, after actual
+  content-addressed decoding/reload and fresh completion provenance; success and
+  both receipts persist through reopen.
+- `TestCompletionResealedForeignLineageDeniedAtomically` changes artifact/receipt
+  run or attempt together, repersists evidence and reseals provenance with the
+  correct audit. Exact pinned-policy qualification still passes, isolating the
+  canonical lineage rejection. Every store key remains unchanged after denial
+  and reopen; the same claim then accepts exact-lineage positive control.
+
+These are coverage additions for existing correct guards, not backend defect
+repairs. The first ordinary attempt found a fixture-construction panic from
+assuming canonical step order; action selection now uses exact step ID `echo`.
+This is not a production RED. Retained logs are in `scratch186-gap-repair/`.
+Final ordinary new-only packages passed (orchestration 0.372s, Badger 3.183s);
+final race new-only packages passed (1.547s and 5.285s), with
+`GOMAXPROCS=2 GOFLAGS=-p=1 GOMEMLIMIT=512MiB`, `-count=1 -timeout=8m`.
+The portable ledger maps these source boundaries; its canonical manifest is
+refreshed through `TestRefreshManifest`, not a replacement generator. Parent
+still owns commit, rebuild/package/refreeze, fresh affected independent proof
+and CI; no new installed-artifact or real-provider PASS is claimed here.

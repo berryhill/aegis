@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:50ccc55c025159c5700dec44a0d20dc151cb9d69413963f3883a7a680cf6261f",
+    "content_digest": "sha256:5218761c8c79c4b77cfc6043581f833ac86e1a2487614d420d131504cb9abe68",
     "source_revision": "repository"
   },
   "operations": [
@@ -396,7 +396,7 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:913937bc86f11872b8b44007ae9635fc1b3587a2f2e8099740d32c9651bd3f36",
+      "content_digest": "sha256:1b33c1906550367563d07c9813197a12a92f5218763b07a844f8bbe7f5eefaf7",
       "files": [
         {
           "path": "SKILL.md",
@@ -410,8 +410,8 @@
         },
         {
           "path": "references/evaluation-ledger.v1.md",
-          "sha256": "sha256:227c3eeaf77b5f55200ddeb91fc0ab5b7fe4ba58dc590171870cf59d98259cb6",
-          "size": 8483
+          "sha256": "sha256:b33578f28e2295f5d2b74ec7d785aee55471d8bc31c0a5f322e8e2370ad47a16",
+          "size": 9947
         },
         {
           "path": "references/queue-contract.v1.md",
