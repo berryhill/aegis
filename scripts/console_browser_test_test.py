@@ -636,6 +636,96 @@ class NativeTouchTest(unittest.TestCase):
         )
 
 
+class PacerCancellationChromeTest(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get('AEGIS_ACCEPTANCE_PORT'),
+                         'HTTP Chrome fixture requires lifetime acceptance_port.py claim')
+    def test_superseded_native_navigation_requires_exact_cancelled_ack(self):
+        import http.server
+        import threading
+        from scripts import console_browser_test as driver
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, format, *args):
+                pass
+
+            def do_GET(self):
+                body = b'<a id="pending" href="/pending">Pending</a><a id="next" href="/next">Next</a>'
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', int(os.environ['AEGIS_ACCEPTANCE_PORT'])), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 3)
+        self.addCleanup(server.shutdown)
+        origin = 'http://127.0.0.1:' + os.environ['AEGIS_ACCEPTANCE_PORT']
+        with tempfile.TemporaryDirectory(prefix='pacer-chrome-', dir=pathlib.Path.cwd()) as home:
+            process = subprocess.Popen([
+                '/usr/bin/google-chrome', '--headless=new', '--incognito', '--disable-gpu',
+                '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0',
+                '--remote-allow-origins=http://localhost', '--user-data-dir=' + home, 'about:blank',
+            ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True, env=driver.chrome_environment())
+            devtools = None
+            try:
+                port = driver.wait_for_active_port(pathlib.Path(home) / 'DevToolsActivePort', time.monotonic() + 15, process)
+                devtools = driver.DevTools(driver.page_websocket(port, time.monotonic() + 8, process))
+                for domain in ('Page', 'Network', 'Runtime'):
+                    devtools.command(domain + '.enable')
+                driver.navigate(devtools, origin)
+                driver.wait_for(devtools, "document.readyState === 'complete'", 'pacer fixture')
+                devtools.command('Fetch.enable', {'patterns': [{'urlPattern': origin + '/pending*', 'requestStage': 'Request'}]})
+                # Independent requests provide causal negative and repaired controls.
+                for repaired in (False, True):
+                    devtools.fixture_origin = None
+                    points = devtools.evaluate("['pending','next'].map(id=>{const e=document.getElementById(id),r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e}})")
+                    self.assertTrue(all(point['hit'] for point in points))
+                    def native_click(point):
+                        for kind in ('mousePressed', 'mouseReleased'):
+                            devtools.command('Input.dispatchMouseEvent', {'type': kind, 'x': point['x'], 'y': point['y'], 'button': 'left', 'clickCount': 1})
+                    start = len(devtools.events)
+                    native_click(points[0])
+                    # Runtime evaluation can block behind paused document navigation.
+                    # Drain with the same command receive deadline and event budgets.
+                    while not any(e.get('method') == 'Fetch.requestPaused' for e in devtools.events[start:]):
+                        devtools._remaining()
+                        event = devtools.receive()
+                        devtools._remaining()
+                        devtools.event_bytes += len(driver.json.dumps(event).encode())
+                        driver.require(len(devtools.events) < driver.MAX_EVENTS and devtools.event_bytes <= driver.MAX_EVENT_BYTES, 'DevTools event budget exceeded')
+                        devtools.events.append(event)
+                    paused = next(e for e in devtools.events[start:] if e.get('method') == 'Fetch.requestPaused')
+                    native_click(points[1])
+                    driver.wait_for(devtools, "location.pathname === '/next' && document.readyState === 'complete'", 'superseding native navigation')
+                    self.assertTrue(devtools._fixture_request_cancelled(paused['params']))
+                    original_receive = devtools.receive
+                    queued = [paused]
+                    errors = []
+                    def receive():
+                        event = queued.pop() if queued else original_receive()
+                        if 'error' in event:
+                            errors.append(event['error'])
+                        return event
+                    devtools.receive = receive
+                    devtools.fixture_origin = ('http', '127.0.0.1:' + os.environ['AEGIS_ACCEPTANCE_PORT'])
+                    devtools.fixture_next_release = time.monotonic()
+                    try:
+                        if repaired:
+                            self.assertEqual(devtools.evaluate('42'), 42)
+                        else:
+                            with mock.patch.object(devtools, '_fixture_request_cancelled', return_value=False):
+                                with self.assertRaisesRegex(RuntimeError, 'code=-32602; classification=invalid_interception_id'):
+                                    devtools.evaluate('42')
+                        self.assertEqual(errors, [{'code': -32602, 'message': 'Invalid InterceptionId.'}])
+                    finally:
+                        devtools.receive = original_receive
+            finally:
+                driver.stop_chrome(process, devtools)
+
+
 class NavigateTest(unittest.TestCase):
     def test_explicitly_navigates_selected_target(self):
         devtools = mock.MagicMock()

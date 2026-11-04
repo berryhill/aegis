@@ -227,6 +227,57 @@ class ResourceTests(unittest.TestCase):
                     client.command('test')
                 self.assertNotIn('private error', str(failure.exception))
 
+    def test_exact_cancelled_continuation_ack_preserves_outer_reply(self):
+        for outer_first in (False, True):
+            with self.subTest(outer_first=outer_first):
+                client = self.paced_client()
+                paused = self.paused()
+                paused['params'].update(networkId='network', frameId='frame')
+                start = {'method': 'Network.requestWillBeSent', 'params': {
+                    'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader'}}
+                cancel = {'method': 'Network.loadingFailed', 'params': {
+                    'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
+                outer = {'id': 2, 'result': {'preserved': True}}
+                ack = {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}}
+                client.receive = mock.Mock(side_effect=[start, paused, cancel] +
+                    ([outer, ack] if outer_first else [ack, outer]))
+                self.assertEqual(client.command('test'), {'preserved': True})
+                self.assertEqual(client.sock.sendall.call_count, 2)  # No retry.
+
+    def test_invalid_interception_without_exact_cancellation_fails_closed(self):
+        for mutation in ('network', 'frame', 'loader', 'canceled', 'reason', 'code',
+                         'message', 'missing-network', 'finished', 'redirect-reuse', 'replaced-loader'):
+            with self.subTest(mutation=mutation):
+                client = self.paced_client()
+                paused = self.paused()
+                paused['params'].update(networkId='network', frameId='frame')
+                start = {'method': 'Network.requestWillBeSent', 'params': {
+                    'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader'}}
+                cancel = {'method': 'Network.loadingFailed', 'params': {
+                    'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
+                error = {'code': -32602, 'message': 'Invalid InterceptionId.'}
+                extra = []
+                if mutation == 'network': cancel['params']['requestId'] = 'other'
+                if mutation == 'frame': start['params']['frameId'] = 'other'
+                if mutation == 'loader': start['params']['loaderId'] = ''
+                if mutation == 'canceled': cancel['params']['canceled'] = False
+                if mutation == 'reason': cancel['params']['errorText'] = 'private error'
+                if mutation == 'code': error['code'] = -32000
+                if mutation == 'message': error['message'] = 'private error'
+                if mutation == 'missing-network': paused['params'].pop('networkId')
+                if mutation == 'finished': extra = [{'method': 'Network.loadingFinished', 'params': {'requestId': 'network'}}]
+                if mutation == 'redirect-reuse': extra = [start]
+                if mutation == 'replaced-loader':
+                    extra = [{'method': 'Network.requestWillBeSent', 'params': {
+                        'requestId': 'network', 'frameId': 'frame', 'loaderId': 'new-loader'}}, cancel]
+                client.receive = mock.Mock(side_effect=[start, paused, cancel] + extra + [
+                    {'id': 2, 'result': {}}, {'id': 3, 'error': error}])
+                with self.assertRaisesRegex(RuntimeError, 'Fetch.continueRequest failed') as failure:
+                    client.command('test')
+                self.assertNotIn('private', str(failure.exception))
+                self.assertIn('code=', str(failure.exception))
+                self.assertEqual(client.sock.sendall.call_count, 2)
+
     def test_outer_completion_does_not_wait_for_future_pauses(self):
         client = self.paced_client()
         client.receive = mock.Mock(side_effect=[{'id': 2, 'result': {}}, self.paused()])

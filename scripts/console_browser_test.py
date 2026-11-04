@@ -178,6 +178,43 @@ class DevTools:
             self.fixture_next_release = time.monotonic() + 0.25
         return identifier
 
+    def _fixture_request_cancelled(self, paused: dict[str, Any]) -> bool:
+        """Require Chrome's exact terminal cancellation in this request context.
+
+        The retained event ledger already has hard count/byte bounds. Do not
+        infer cancellation merely from navigation, an invalid ID, or another
+        request's failure. Request IDs can span redirects: use the latest start.
+        """
+        network_id, frame_id = paused.get("networkId"), paused.get("frameId")
+        if not network_id or not frame_id:
+            return False
+        start: dict[str, Any] | None = None
+        terminal: dict[str, Any] | None = None
+        pause_start: dict[str, Any] | None = None
+        for event in self.events:
+            params = event.get("params", {})
+            if (event.get("method") == "Fetch.requestPaused"
+                    and params.get("requestId") == paused.get("requestId") and pause_start is None):
+                pause_start = start
+            if params.get("requestId") != network_id:
+                continue
+            if event.get("method") == "Network.requestWillBeSent":
+                start, terminal = params, None
+            elif event.get("method") in ("Network.loadingFailed", "Network.loadingFinished"):
+                terminal = event
+        return bool(start and start is pause_start and start.get("loaderId") and start.get("frameId") == frame_id
+                    and terminal and terminal.get("method") == "Network.loadingFailed"
+                    and terminal["params"].get("canceled") is True
+                    and terminal["params"].get("errorText") == "net::ERR_ABORTED")
+
+    @staticmethod
+    def _continuation_error(error: dict[str, Any]) -> str:
+        code = error.get("code")
+        code = code if type(code) is int else "unknown"
+        classification = ("invalid_interception_id" if error.get("message") == "Invalid InterceptionId."
+                          else "unknown")
+        return f"DevTools command Fetch.continueRequest failed; code={code}; classification={classification}"
+
     def command(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.deadline = time.monotonic() + CDP_TIMEOUT
         self._remaining()
@@ -188,7 +225,7 @@ class DevTools:
             message["params"] = params
         self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
         response: dict[str, Any] | None = None
-        continuations: set[int] = set()
+        continuations: dict[int, dict[str, Any]] = {}
         while response is None or continuations:
             self._remaining()
             received = self.receive()
@@ -201,10 +238,17 @@ class DevTools:
             require(len(self.events) < MAX_EVENTS and self.event_bytes <= MAX_EVENT_BYTES, "DevTools event budget exceeded")
             self.events.append(received)
             if received.get("id") in continuations:
-                require("error" not in received, "DevTools command Fetch.continueRequest failed")
-                continuations.remove(received["id"])
+                error = received.get("error")
+                if error is not None:
+                    cancelled = (error.get("code") == -32602
+                                 and error.get("message") == "Invalid InterceptionId."
+                                 and self._fixture_request_cancelled(continuations[received["id"]]))
+                    require(cancelled, self._continuation_error(error))
+                del continuations[received["id"]]
             elif received.get("method") == "Fetch.requestPaused" and getattr(self, "fixture_origin", None) is not None:
-                continuations.add(self._continue_fixture_request(received["params"]))
+                paused = received["params"]
+                continuation = self._continue_fixture_request(paused)
+                continuations[continuation] = {key: paused.get(key) for key in ("requestId", "networkId", "frameId")}
         return response.get("result", {})
 
     def evaluate(self, expression: str) -> Any:
