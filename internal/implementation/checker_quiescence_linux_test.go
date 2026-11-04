@@ -36,7 +36,7 @@ func TestCheckCandidateReturnQuiescence(t *testing.T) {
 		e := &Executor{GoBinary: checker, Native: runCheckerNative}
 		_, _, err := e.checkCandidate(context.Background(), c, nil)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("attempt %d: %v", attempt, err)
 		}
 		raw, err := os.ReadFile(pidfile)
 		if err != nil {
