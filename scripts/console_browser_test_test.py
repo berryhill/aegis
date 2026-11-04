@@ -224,6 +224,16 @@ class DevToolsActivePortReadinessTest(unittest.TestCase):
 
 
 class PageWebsocketTest(unittest.TestCase):
+    def test_charter_registration_waits_for_complete_document_before_native_back(self):
+        source = pathlib.Path(console_browser_test.__file__).read_text()
+        start = source.index('click(devtools, \'a[href="/console/agents/charter-import"]\')')
+        end = source.index('click(devtools, "#charter-import-back")', start)
+        readiness = source[start:end]
+        self.assertIn("document.readyState === 'complete'", readiness)
+        self.assertIn("location.pathname === '/console/agents/charter-import'", readiness)
+        self.assertIn("document.querySelector('#charter-import-title')", readiness)
+        self.assertIn("document.querySelector('#charter-import-review')", readiness)
+
     def test_queue_evidence_requires_real_inspector_navigation(self):
         source = pathlib.Path(console_browser_test.__file__).read_text()
         start = source.index('canvas-first Queue with collapsed definition inspector and route focus')
