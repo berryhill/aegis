@@ -679,7 +679,7 @@ class PacerCancellationChromeTest(unittest.TestCase):
                 driver.wait_for(devtools, "document.readyState === 'complete'", 'pacer fixture')
                 devtools.command('Fetch.enable', {'patterns': [{'urlPattern': origin + '/pending*', 'requestStage': 'Request'}]})
                 # Independent requests provide causal negative and repaired controls.
-                for repaired in (False, True):
+                for repaired, deferred in ((False, False), (True, False), (True, True)):
                     devtools.fixture_origin = None
                     points = devtools.evaluate("['pending','next'].map(id=>{const e=document.getElementById(id),r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,hit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===e}})")
                     self.assertTrue(all(point['hit'] for point in points))
@@ -703,11 +703,22 @@ class PacerCancellationChromeTest(unittest.TestCase):
                     self.assertTrue(devtools._fixture_request_cancelled(paused['params']))
                     original_receive = devtools.receive
                     queued = [paused]
+                    # Controlled delivery of REAL Chrome cancellation and ack,
+                    # not a claim that Chrome naturally emitted them in this order.
+                    withheld = [e for e in devtools.events if deferred
+                                and e.get('method') == 'Network.loadingFailed'
+                                and e.get('params', {}).get('requestId') == paused['params']['networkId']]
+                    if deferred:
+                        self.assertEqual(len(withheld), 1)
+                        devtools.events = [e for e in devtools.events if e not in withheld]
+                        self.assertFalse(devtools._fixture_request_cancelled(paused['params']))
                     errors = []
                     def receive():
-                        event = queued.pop() if queued else original_receive()
+                        event = queued.pop(0) if queued else original_receive()
                         if 'error' in event:
                             errors.append(event['error'])
+                            if deferred:
+                                queued.extend(withheld)
                         return event
                     devtools.receive = receive
                     devtools.fixture_origin = ('http', '127.0.0.1:' + os.environ['AEGIS_ACCEPTANCE_PORT'])

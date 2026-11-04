@@ -229,20 +229,23 @@ class ResourceTests(unittest.TestCase):
 
     def test_exact_cancelled_continuation_ack_preserves_outer_reply(self):
         for outer_first in (False, True):
-            with self.subTest(outer_first=outer_first):
-                client = self.paced_client()
-                paused = self.paused()
-                paused['params'].update(networkId='network', frameId='frame')
-                start = {'method': 'Network.requestWillBeSent', 'params': {
-                    'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader'}}
-                cancel = {'method': 'Network.loadingFailed', 'params': {
-                    'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
-                outer = {'id': 2, 'result': {'preserved': True}}
-                ack = {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}}
-                client.receive = mock.Mock(side_effect=[start, paused, cancel] +
-                    ([outer, ack] if outer_first else [ack, outer]))
-                self.assertEqual(client.command('test'), {'preserved': True})
-                self.assertEqual(client.sock.sendall.call_count, 2)  # No retry.
+            for cancel_first in (False, True):
+                with self.subTest(outer_first=outer_first, cancel_first=cancel_first):
+                    client = self.paced_client()
+                    paused = self.paused()
+                    paused['params'].update(networkId='network', frameId='frame')
+                    start = {'method': 'Network.requestWillBeSent', 'params': {
+                        'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader'}}
+                    cancel = {'method': 'Network.loadingFailed', 'params': {
+                        'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
+                    outer = {'id': 2, 'result': {'preserved': True}}
+                    ack = {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}}
+                    pair = [cancel, ack] if cancel_first else [ack, cancel]
+                    sequence = [start, paused] + ([outer] + pair if outer_first else pair + [outer])
+                    client.receive = mock.Mock(side_effect=sequence)
+                    self.assertEqual(client.command('test'), {'preserved': True})
+                    self.assertEqual(client.sock.sendall.call_count, 2)  # No retry/second ack.
+                    self.assertEqual(client.receive.call_count, len(sequence))
 
     def test_invalid_interception_without_exact_cancellation_fails_closed(self):
         for mutation in ('network', 'frame', 'loader', 'canceled', 'reason', 'code',
@@ -270,13 +273,114 @@ class ResourceTests(unittest.TestCase):
                 if mutation == 'replaced-loader':
                     extra = [{'method': 'Network.requestWillBeSent', 'params': {
                         'requestId': 'network', 'frameId': 'frame', 'loaderId': 'new-loader'}}, cancel]
-                client.receive = mock.Mock(side_effect=[start, paused, cancel] + extra + [
-                    {'id': 2, 'result': {}}, {'id': 3, 'error': error}])
-                with self.assertRaisesRegex(RuntimeError, 'Fetch.continueRequest failed') as failure:
-                    client.command('test')
+                sequence = [start, paused, cancel] + extra + [
+                    {'id': 2, 'result': {}}, {'id': 3, 'error': error}]
+                now = [0.0]
+                client.fixture_next_release = 0.0
+                messages = iter(sequence)
+                def receive():
+                    message = next(messages, None)
+                    if message is None:
+                        now[0] = browser.CDP_TIMEOUT
+                        raise TimeoutError()
+                    return message
+                client.receive = mock.Mock(side_effect=receive)
+                with mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]):
+                    with self.assertRaisesRegex(RuntimeError, 'Fetch.continueRequest failed') as failure:
+                        client.command('test')
                 self.assertNotIn('private', str(failure.exception))
                 self.assertIn('code=', str(failure.exception))
                 self.assertEqual(client.sock.sendall.call_count, 2)
+
+    def test_deferred_ack_keeps_original_deadline_and_safe_context(self):
+        for late_cancel in (False, True):
+            with self.subTest(late_cancel=late_cancel):
+                now = [0.0]
+                client = self.paced_client()
+                paused = self.paused(url='https://user:private-pass@fixture:8450/console?private-query#private-fragment')
+                paused['params'].update(networkId='private-network', frameId='private-frame')
+                sequence = iter([
+                    {'method': 'Network.requestWillBeSent', 'params': {
+                        'requestId': 'private-network', 'frameId': 'private-frame', 'loaderId': 'private-loader'}},
+                    paused, {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}},
+                    {'id': 2, 'result': {'preserved': True}},
+                ])
+                def receive():
+                    event = next(sequence, None)
+                    if event is None:
+                        now[0] = .1
+                        if late_cancel:
+                            return {'method': 'Network.loadingFailed', 'params': {
+                                'requestId': 'private-network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
+                        raise TimeoutError()
+                    return event
+                client.receive = mock.Mock(side_effect=receive)
+                with (mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]),
+                      mock.patch.object(browser, 'CDP_TIMEOUT', .1)):
+                    with self.assertRaisesRegex(RuntimeError, 'cancellation_unverified') as failure:
+                        client.command('test')
+                self.assertEqual(client.deadline, .1)
+                self.assertEqual(client.sock.sendall.call_count, 2)
+                message = str(failure.exception)
+                for forbidden in ('private', 'user', 'headers', 'body', '?', '#'):
+                    self.assertNotIn(forbidden, message)
+                self.assertIn('"path": "/console"', message)
+                self.assertIn('"start_seen": true', message)
+                self.assertIn('"exact_cancelled": false', message)
+
+    def test_delayed_cancellation_context_denials_in_both_reply_orders(self):
+        for outer_first in (False, True):
+            for mutation in ('network', 'frame', 'loader', 'finished', 'missing-frame', 'missing-start'):
+                with self.subTest(outer_first=outer_first, mutation=mutation):
+                    now = [0.0]
+                    with mock.patch.object(browser.time, 'monotonic', side_effect=lambda: now[0]):
+                        client = self.paced_client()
+                        paused = self.paused()
+                        paused['params'].update(networkId='network', frameId='frame')
+                        start = {'method': 'Network.requestWillBeSent', 'params': {
+                            'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader'}}
+                        cancel = {'method': 'Network.loadingFailed', 'params': {
+                            'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}
+                        if mutation == 'network': cancel['params']['requestId'] = 'other'
+                        if mutation == 'frame': start['params']['frameId'] = 'other'
+                        if mutation == 'loader': start['params']['loaderId'] = ''
+                        if mutation == 'finished': cancel['method'] = 'Network.loadingFinished'
+                        if mutation == 'missing-frame': paused['params'].pop('frameId')
+                        outer = {'id': 2, 'result': {}}
+                        ack = {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}}
+                        sequence = iter(([] if mutation == 'missing-start' else [start]) + [paused]
+                                        + ([outer, ack, cancel] if outer_first else [ack, cancel, outer]))
+                        def receive():
+                            message = next(sequence, None)
+                            if message is None:
+                                now[0] = browser.CDP_TIMEOUT
+                                raise TimeoutError()
+                            return message
+                        client.receive = mock.Mock(side_effect=receive)
+                        with self.assertRaisesRegex(RuntimeError, 'cancellation_unverified'):
+                            client.command('test')
+                        self.assertEqual(client.deadline, browser.CDP_TIMEOUT)
+                        self.assertEqual(client.sock.sendall.call_count, 2)
+
+    def test_deferred_ack_still_consumes_original_event_budget(self):
+        client = self.paced_client()
+        client.receive = mock.Mock(side_effect=[self.paused(),
+            {'id': 3, 'error': {'code': -32602, 'message': 'Invalid InterceptionId.'}},
+            {'id': 2, 'result': {}}, {'method': 'noise'}])
+        with mock.patch.object(browser, 'MAX_EVENTS', 2):
+            with self.assertRaisesRegex(RuntimeError, 'event budget'):
+                client.command('test')
+
+    def test_pause_before_network_start_is_not_loader_proof(self):
+        client = self.paced_client()
+        paused = self.paused()
+        paused['params'].update(networkId='network', frameId='frame')
+        client.events = [paused,
+            {'method': 'Network.requestWillBeSent', 'params': {
+                'requestId': 'network', 'frameId': 'frame', 'loaderId': 'loader'}},
+            {'method': 'Network.loadingFailed', 'params': {
+                'requestId': 'network', 'canceled': True, 'errorText': 'net::ERR_ABORTED'}}]
+        self.assertFalse(client._fixture_request_cancelled(paused['params']))
 
     def test_outer_completion_does_not_wait_for_future_pauses(self):
         client = self.paced_client()

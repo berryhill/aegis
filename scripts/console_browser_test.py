@@ -215,6 +215,37 @@ class DevTools:
                           else "unknown")
         return f"DevTools command Fetch.continueRequest failed; code={code}; classification={classification}"
 
+    def _cancellation_diagnostic(self, paused: dict[str, Any]) -> str:
+        """Closed context flags and public routing only; never raw CDP errors/IDs."""
+        network_id = paused.get("networkId")
+        starts = [event.get("params", {}) for event in self.events
+                  if event.get("method") == "Network.requestWillBeSent"
+                  and network_id and event.get("params", {}).get("requestId") == network_id]
+        start = starts[-1] if starts else {}
+        terminal = [event for event in self.events
+                    if event.get("method") in ("Network.loadingFailed", "Network.loadingFinished")
+                    and network_id and event.get("params", {}).get("requestId") == network_id]
+        try:
+            parsed = urllib.parse.urlsplit(paused.get("request", {}).get("url", ""))
+            route = {"scheme": parsed.scheme if parsed.scheme in ("http", "https") else "unknown",
+                     "host": parsed.hostname, "path": parsed.path}
+        except ValueError:
+            route = {"scheme": "unknown", "host": None, "path": ""}
+        pause_index = next((index for index, event in enumerate(self.events)
+                            if event.get("method") == "Fetch.requestPaused"
+                            and event.get("params", {}).get("requestId") == paused.get("requestId")), None)
+        start_before_pause = bool(start and pause_index is not None and any(
+            event.get("method") == "Network.requestWillBeSent" and event.get("params") is start
+            for event in self.events[:pause_index]))
+        return json.dumps({
+            "pause_seen": pause_index is not None, "start_before_pause": start_before_pause,
+            "network_present": bool(network_id), "frame_present": bool(paused.get("frameId")),
+            "start_seen": bool(starts), "loader_present": bool(start.get("loaderId")),
+            "frame_matches": bool(start and start.get("frameId") == paused.get("frameId")),
+            "terminal": terminal[-1]["method"] if terminal else "none",
+            "exact_cancelled": self._fixture_request_cancelled(paused), "route": route,
+        }, sort_keys=True)
+
     def command(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.deadline = time.monotonic() + CDP_TIMEOUT
         self._remaining()
@@ -226,10 +257,20 @@ class DevTools:
         self.sock.sendall(self._frame(json.dumps(message, separators=(",", ":")).encode("utf-8")))
         response: dict[str, Any] | None = None
         continuations: dict[int, dict[str, Any]] = {}
-        while response is None or continuations:
-            self._remaining()
-            received = self.receive()
-            self._remaining()
+        invalid_acks: dict[int, dict[str, Any]] = {}
+        while response is None or continuations or invalid_acks:
+            try:
+                self._remaining()
+                received = self.receive()
+                self._remaining()
+            except (RuntimeError, TimeoutError) as failure:
+                if invalid_acks:
+                    paused = next(iter(invalid_acks.values()))
+                    raise RuntimeError(self._continuation_error({
+                        "code": -32602, "message": "Invalid InterceptionId."})
+                        + "; cancellation_unverified; context="
+                        + self._cancellation_diagnostic(paused)) from None
+                raise failure
             if received.get("id") == identifier:
                 require("error" not in received, f"DevTools command {method} failed")
                 response = received
@@ -238,17 +279,25 @@ class DevTools:
             require(len(self.events) < MAX_EVENTS and self.event_bytes <= MAX_EVENT_BYTES, "DevTools event budget exceeded")
             self.events.append(received)
             if received.get("id") in continuations:
+                # Each continuation gets exactly one acknowledgement. Invalid-ID
+                # evidence may follow that ack, so move it out of the ack ledger
+                # and keep draining actual events under the ORIGINAL deadline.
+                paused = continuations.pop(received["id"])
                 error = received.get("error")
                 if error is not None:
-                    cancelled = (error.get("code") == -32602
-                                 and error.get("message") == "Invalid InterceptionId."
-                                 and self._fixture_request_cancelled(continuations[received["id"]]))
-                    require(cancelled, self._continuation_error(error))
-                del continuations[received["id"]]
+                    require(error.get("code") == -32602
+                            and error.get("message") == "Invalid InterceptionId.",
+                            self._continuation_error(error) + "; context="
+                            + self._cancellation_diagnostic(paused))
+                    invalid_acks[received["id"]] = paused
             elif received.get("method") == "Fetch.requestPaused" and getattr(self, "fixture_origin", None) is not None:
                 paused = received["params"]
                 continuation = self._continue_fixture_request(paused)
                 continuations[continuation] = {key: paused.get(key) for key in ("requestId", "networkId", "frameId")}
+                continuations[continuation]["request"] = {"url": paused.get("request", {}).get("url", "")}
+            for ack, paused in list(invalid_acks.items()):
+                if self._fixture_request_cancelled(paused):
+                    del invalid_acks[ack]
         return response.get("result", {})
 
     def evaluate(self, expression: str) -> Any:
