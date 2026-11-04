@@ -36,8 +36,20 @@ import (
 // application -> isolated Badger. apiService supplies a synthetic runtime; this
 // is lifecycle qualification, NOT managed-provider or workstation acceptance.
 func TestInstalledOnlineLifecycle(t *testing.T) {
-	t.Parallel()
+	// A parent-owned acceptance_port.py claim covers this entire sequential
+	// fixture. Normal CI retains its existing ephemeral-listener behavior.
+	if os.Getenv("AEGIS_ACCEPTANCE_PORT") == "" {
+		t.Parallel()
+	}
 	svc := apiService(t)
+	address, err := queueSkillAcceptanceAddress(os.Getenv("AEGIS_ACCEPTANCE_PORT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Config.API.Listen = address
+	if os.Getenv("AEGIS_ACCEPTANCE_PORT") != "" {
+		svc.Config.API.Console.Origin = "http://" + address
+	}
 	clock := newRequeueStageClock(time.Now().UTC())
 	svc.Now = clock.Now
 	store := configureAPIFleet(t, svc)
@@ -356,13 +368,49 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 		}
 		return v
 	}
+	// Advisory evaluations execute actual CLI/service routing, not sentinels.
+	{
+		id := "skill-direct-source"
+		inputs := []graph.NormalizedInput{{PortID: "value", Type: graph.TypeString, Value: json.RawMessage(`"skill fixture"`)}}
+		accepted, err := svc.SubmitLoopAs(ctx, subject, orchestration.SubmitLoopRequest{SubmitGraphRequest: orchestration.SubmitGraphRequest{
+			SubmissionID: id + "-submission", IdempotencyKey: id, SnapshotID: id + "-snapshot", QueueItemID: id,
+			GraphRunID: id + "-run", TransitionID: id + "-accepted", RejectionID: id + "-rejected", MaxAttempts: 1, Inputs: inputs,
+		}, Participant: lifecycleInput(current).Expected, Loop: lr, NodeID: "direct"})
+		if err != nil || accepted.Accepted == nil {
+			t.Fatalf("direct submission: %v %+v", err, accepted)
+		}
+		view := readQueue(id)
+		if view.SourceKind != graph.SourceDirectLoop || view.Source != lr || !reflect.DeepEqual(view.Inputs, inputs) || view.Projection.State != queue.StatePreparationPending || len(view.Claims) != 0 {
+			t.Fatalf("direct source readback lost exact identity/inputs: %+v", view)
+		}
+		before := ok("queue", "show", id)
+		for _, verb := range []string{"expire", "exhaust"} {
+			deny("online_operation_unsupported", "queue", verb, save("unsupported.json", app.TerminalQueueItemInput{QueueItemID: id}))
+		}
+		if after := ok("queue", "show", id); !bytes.Equal(before, after) {
+			t.Fatal("unsupported online lifecycle changed canonical Queue")
+		}
+		ok("queue", "cancel", save("direct-cancel.json", app.TerminalQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, CancellationID: id + "-cancel", TransitionID: id + "-cancelled"}))
+		cancelled := readQueue(id)
+		if cancelled.Projection.State != queue.StateCancelled || !reflect.DeepEqual(cancelled.Item, view.Item) || cancelled.Source != lr || len(cancelled.Claims) != 0 {
+			t.Fatal("workspace cancellation drifted immutable direct source")
+		}
+	}
 	id := "lifecycle-reclaim"
 	submission := app.SubmitGraphInput{WorkspaceAgentID: "builder", Graph: reference.RevisionRef{SchemaVersion: reference.RevisionRefSchemaVersion, ID: gr.Revision.GraphID, Revision: gr.Revision.Revision, Digest: gr.Revision.Digest}, Inputs: []graph.NormalizedInput{{PortID: "value", Type: graph.TypeString, Value: json.RawMessage(`"reclaim"`)}}, SubmissionID: id + "-submission", IdempotencyKey: id, SnapshotID: id + "-snapshot", QueueItemID: id, GraphRunID: id + "-run", TransitionID: id + "-accepted", RejectionID: id + "-rejected", MaxAttempts: 2}
 	var admitted orchestration.SubmissionDecision
 	if err := json.Unmarshal(ok("graphs", "submit", save("reclaim-submit.json", submission)), &admitted); err != nil || admitted.Accepted == nil {
 		t.Fatalf("submission %v %+v", err, admitted)
 	}
-	binding := app.BindQueueRuntimeInput{AgentID: "builder", Authority: authority.Authority, QueueItemID: id, BindingID: id + "-binding", TransitionID: id + "-bound"}
+	var binding app.BindQueueRuntimeInput
+	bindingWire, err := os.ReadFile(filepath.Join(repo, "skills/aegis-execution-queue/references/bind-runtime.v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(bindingWire, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding.AgentID, binding.Authority, binding.QueueItemID, binding.BindingID, binding.TransitionID = "builder", authority.Authority, id, id+"-binding", id+"-bound"
 	ok("queue", "bind-runtime", save("binding.json", binding))
 	// Canonical abandoned-claim fixture through the sole already-open fixture store;
 	// never a second writer or a fallback for a failed CLI operation (same as TestDQHandoff).
@@ -395,7 +443,15 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 	}
 	seedClaim(1)
 	before := readQueue(id)
-	retry := app.RetryQueueItemInput{WorkspaceAgentID: "builder", QueueItemID: id, RetryID: id + "-retry", TransitionID: id + "-retried", Reclaimed: true}
+	var retry app.RetryQueueItemInput
+	retryWire, err := os.ReadFile(filepath.Join(repo, "skills/aegis-execution-queue/references/reclaim.v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(retryWire, &retry); err != nil {
+		t.Fatal(err)
+	}
+	retry.WorkspaceAgentID, retry.Authority, retry.QueueItemID, retry.RetryID, retry.TransitionID = "builder", reference.DigestRef{}, id, id+"-retry", id+"-retried"
 	denyUnchanged := func(diagnostic string, input app.RetryQueueItemInput) {
 		t.Helper()
 		projection := readQueue(id)
@@ -408,6 +464,7 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 	denyUnchanged("HTTP 403", retry) // live lease
 	ordinary := retry
 	ordinary.Reclaimed = false
+	ordinary.ReasonCode = orchestration.ReasonRuntimeRetry
 	denyUnchanged("HTTP 409", ordinary) // no stop acknowledgement exists; ordinary retry unavailable
 	wrongAuthority := retry
 	wrongAuthority.WorkspaceAgentID = ""
@@ -425,10 +482,14 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := readQueue(id)
+	if !after.Projection.AvailableAt.Equal(reclaimed.OccurredAt.Add(retry.Backoff)) || after.Projection.ActiveClaimID != "" {
+		t.Fatal("bundled reclaim availability/claim drift")
+	}
 	if !reclaimed.Reclaimed || reclaimed.AttemptNumber != 1 || reclaimed.ClaimID != before.Claims[0].ClaimID || reclaimed.OccurredAt.Before(before.Claims[0].ExpiresAt) || after.Projection.State != queue.StateQueued || after.Projection.Attempts != 1 || after.Item.Digest != before.Item.Digest || after.Item.MaxAttempts != 2 || !reflect.DeepEqual(after.GraphRun, before.GraphRun) || !reflect.DeepEqual(after.LoopExecutions, before.LoopExecutions) || !reflect.DeepEqual(after.Attempts, before.Attempts) || len(after.Retries) != 1 {
 		t.Fatalf("reclaim identity/budget drift: before=%+v after=%+v", before, after)
 	}
 	denyUnchanged("HTTP 403", retry) // stale replay cannot release a second claim
+	clock.Advance(retry.Backoff)
 	seedClaim(2)
 	clock.Advance(2 * time.Second)
 	retry.RetryID += "-exhausted"
@@ -537,6 +598,19 @@ func TestInstalledOnlineLifecycle(t *testing.T) {
 		t.Fatal("retired denial mutated Agent")
 	}
 	t.Log("PASS: compiled CLI, real Serve/Unix peer+bearer, Badger Agent replay/lifecycle/stale/digest/retired denial; Queue cancel/revoke durable dispositions and terminal denial; strict decode, auth, target/config no-second-store")
+}
+
+// Test-only config override, applied before Serve captures listener/origin.
+// This does not acquire custody; the foreground helper must hold the shared lock.
+func queueSkillAcceptanceAddress(port string) (string, error) {
+	if port == "" {
+		return "127.0.0.1:0", nil
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 8450 || n > 8469 || strconv.Itoa(n) != port {
+		return "", fmt.Errorf("invalid acceptance port")
+	}
+	return "127.0.0.1:" + port, nil
 }
 
 // lifecycleResponseLossProxy never reads request/authentication bytes. It buffers

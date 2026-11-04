@@ -5,7 +5,7 @@
     "version": "0.2.18",
     "aegis_compatibility": "\u003e=0.2.2,\u003c1.0.0",
     "hermes_compatibility": "\u003e=0.18.0",
-    "content_digest": "sha256:32933be8022f4c95c8745d004cee048521af27bc51c70edc8c42fd94a62be2d6",
+    "content_digest": "sha256:b3e94097a84a4470b8c85f21917c3215fd830e4c5836f1724ab29fce271252ff",
     "source_revision": "repository"
   },
   "operations": [
@@ -380,7 +380,7 @@
     },
     {
       "slug": "aegis-execution-queue",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "path": "skills/aegis-execution-queue",
       "description": "Inspect and operate the durable Aegis Execution Queue lifecycle through shipped typed services while preserving exact authority, lease, attempt, evidence, and disposition boundaries.",
       "dependencies": [
@@ -396,17 +396,22 @@
       "sensitivity": [],
       "network": "none",
       "filesystem": "none",
-      "content_digest": "sha256:babd69c4abd877fab052e01d885a7ca7ffed0b62de40763dd72e96fd63684531",
+      "content_digest": "sha256:1b33c1906550367563d07c9813197a12a92f5218763b07a844f8bbe7f5eefaf7",
       "files": [
         {
           "path": "SKILL.md",
-          "sha256": "sha256:3e99fff1fdd16065bf2ff4e6718cdac1710fad5f04850de8aae35fcb0e378811",
-          "size": 27992
+          "sha256": "sha256:3e56f28600b66980a7a02e62cc0b1dfcc317a96f9d8ca6bc86410b0d61a2d099",
+          "size": 29213
         },
         {
           "path": "references/bind-runtime.v1.json",
           "sha256": "sha256:dcfc68dea11ae58765faced32387e68c6c1d33834564f69db2487d92219f8cb9",
           "size": 377
+        },
+        {
+          "path": "references/evaluation-ledger.v1.md",
+          "sha256": "sha256:b33578f28e2295f5d2b74ec7d785aee55471d8bc31c0a5f322e8e2370ad47a16",
+          "size": 9947
         },
         {
           "path": "references/queue-contract.v1.md",

@@ -931,7 +931,7 @@ func TestExecutionQueueSkill(t *testing.T) {
 		"A claim is a bounded single-winner lease, not runtime admission",
 		"Dependencies gate claim eligibility",
 		"Process exit and runtime narration satisfy none of these records",
-		"Cancelled, expired, exhausted, revoked, denied, failed, and succeeded remain distinct outcomes",
+		"Exhaustion is `failed` with reason `retry_exhausted`",
 	} {
 		if !strings.Contains(skillText, required) {
 			t.Errorf("SKILL.md missing Execution Queue contract %q", required)
