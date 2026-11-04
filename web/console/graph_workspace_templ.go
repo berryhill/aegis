@@ -196,14 +196,14 @@ func GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTop
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\">Prepare execution request</a><button class=\"secondary\" type=\"button\" data-graph-definition aria-controls=\"graph-context\" aria-expanded=\"true\">Definition details</button></div></div><section class=\"graph-admission\" aria-label=\"Validation and submittability\"><p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\">Prepare execution request</a><button class=\"secondary\" type=\"button\" data-graph-definition aria-controls=\"graph-context\" aria-expanded=\"true\">Definition details</button></div><section class=\"graph-admission\" aria-label=\"Validation and submittability\"><p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(record.Readiness)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/graph_workspace.templ`, Line: 16, Col: 24}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/graph_workspace.templ`, Line: 15, Col: 24}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -216,7 +216,7 @@ func GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTop
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(record.Graph.CurrentValidation)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/graph_workspace.templ`, Line: 17, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `web/console/graph_workspace.templ`, Line: 16, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -238,7 +238,7 @@ func GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTop
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</section><div class=\"detail-split graph-workspace\"><section class=\"gw-pane gw-canvas\" aria-labelledby=\"graph-canvas-title\"><div class=\"canvas-bar\"><h3 class=\"canvas-title\" id=\"graph-canvas-title\">Graph canvas · Topology</h3><div class=\"canvas-tools\" role=\"group\" aria-label=\"Topology controls\"><button type=\"button\" class=\"ghost\" data-graph-zoom=\"out\" aria-label=\"Zoom out\">−</button><button type=\"button\" class=\"ghost\" data-graph-fit>Fit</button><button type=\"button\" class=\"ghost\" data-graph-zoom=\"in\" aria-label=\"Zoom in\">+</button><output data-graph-scale aria-live=\"polite\">100%</output></div></div><p class=\"canvas-hint\" id=\"graph-canvas-help\">Read-only. Select a node to inspect. Scroll or drag to pan; use arrow keys on the canvas. Tab to nodes, Enter to select. Textual equivalent below.</p><div class=\"graph-viewport\" data-graph-viewport tabindex=\"0\" role=\"region\" aria-label=\"Directed Graph topology\" aria-describedby=\"graph-canvas-help\"><div class=\"graph-pan-space\" data-graph-pan-space><div class=\"graph-stage\" data-graph-stage=\"true\" data-columns=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</section></div><div class=\"detail-split graph-workspace\"><section class=\"gw-pane gw-canvas\" aria-labelledby=\"graph-canvas-title\"><div class=\"canvas-bar\"><h3 class=\"canvas-title\" id=\"graph-canvas-title\">Graph canvas · Topology</h3><div class=\"canvas-tools\" role=\"group\" aria-label=\"Topology controls\"><button type=\"button\" class=\"ghost\" data-graph-zoom=\"out\" aria-label=\"Zoom out\">−</button><button type=\"button\" class=\"ghost\" data-graph-fit>Fit</button><button type=\"button\" class=\"ghost\" data-graph-zoom=\"in\" aria-label=\"Zoom in\">+</button><output data-graph-scale aria-live=\"polite\">100%</output></div></div><p class=\"canvas-hint\" id=\"graph-canvas-help\">Read-only. Select a node to inspect. Scroll or drag to pan; use arrow keys on the canvas. Tab to nodes, Enter to select. Textual equivalent below.</p><div class=\"graph-viewport\" data-graph-viewport tabindex=\"0\" role=\"region\" aria-label=\"Directed Graph topology\" aria-describedby=\"graph-canvas-help\"><div class=\"graph-pan-space\" data-graph-pan-space><div class=\"graph-stage\" data-graph-stage=\"true\" data-columns=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

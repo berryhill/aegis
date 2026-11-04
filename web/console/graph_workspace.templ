@@ -11,7 +11,6 @@ templ GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTo
     <dl class="meta-strip"><div><dt>Nodes</dt><dd>{ fmt.Sprint(len(record.Graph.Nodes)) }</dd></div><div><dt>Transitions</dt><dd>{ fmt.Sprint(len(record.Graph.Edges)) }</dd></div><div><dt>Loops referenced</dt><dd>{ fmt.Sprint(topology.LoopCount) }</dd></div><div><dt>Latest version</dt><dd>{ record.Graph.LatestVersion }</dd></div></dl>
    </div>
    <div class="graph-record-actions"><a class="primary" href={ graphRunURL(record) }>Prepare execution request</a><button class="secondary" type="button" data-graph-definition aria-controls="graph-context" aria-expanded="true">Definition details</button></div>
-  </div>
   <section class="graph-admission" aria-label="Validation and submittability">
    <p>{ record.Readiness }</p><p>Preparation is not submission. Fresh authority admission, exact references and typed inputs are checked again before any consequential submission.</p>
    <p>Current structural validation · { record.Graph.CurrentValidation }. This does not establish current runtime or referenced-record eligibility.</p>
@@ -19,6 +18,7 @@ templ GraphWorkspace(surface SurfaceModel, record *RecordModel, topology GraphTo
    @GraphIssues(record.Graph.SubmissionIssues)
    @GraphIssues(topology.Issues)
   </section>
+  </div>
   <div class="detail-split graph-workspace">
    <section class="gw-pane gw-canvas" aria-labelledby="graph-canvas-title">
     <div class="canvas-bar"><h3 class="canvas-title" id="graph-canvas-title">Graph canvas · Topology</h3><div class="canvas-tools" role="group" aria-label="Topology controls"><button type="button" class="ghost" data-graph-zoom="out" aria-label="Zoom out">−</button><button type="button" class="ghost" data-graph-fit>Fit</button><button type="button" class="ghost" data-graph-zoom="in" aria-label="Zoom in">+</button><output data-graph-scale aria-live="polite">100%</output></div></div>

@@ -91,6 +91,19 @@ def main():
                     (root/(label+'.png')).write_bytes(base64.b64decode(browser.command('Page.captureScreenshot',{'format':'png','captureBeyondViewport':True})['data']))
                     metrics=browser.evaluate("""(() => {const r=x=>{const b=x.getBoundingClientRect();return {x:b.x,y:b.y,width:b.width,height:b.height}};const c=document.querySelector('.gw-canvas'),i=document.querySelector('#graph-context');return {width:innerWidth,documentWidth:document.documentElement.scrollWidth,canvas:r(c),inspector:r(i),inspectorHidden:i.hidden,nodeCount:document.querySelectorAll('[data-graph-node]').length,edgeCount:document.querySelectorAll('.graph-edge-path').length,tokens:{gap:getComputedStyle(document.querySelector('.graph-workspace')).gap,nodeWidth:getComputedStyle(document.querySelector('[data-graph-node]')).width}}})()""")
                     driver.require(metrics['documentWidth']<=metrics['width']+1,'page horizontal overflow')
+                    layout=browser.evaluate("""(() => {
+                      const rect=x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};
+                      return {rail:rect(document.querySelector('.nav-rail')),iconVisible:[...document.querySelectorAll('.nav-rail .nav-icon')].some(x=>getComputedStyle(x).display!=='none'),actions:[...document.querySelector('.graph-record-actions').children].map(rect),controls:[...document.querySelectorAll('.canvas-tools button')].map(rect),fields:[...document.querySelectorAll('[data-graph-node-panel]:not([hidden]) .spec dd')].map(rect),bodyWidth:document.querySelector('.gw-body').clientWidth};
+                    })()""")
+                    if 600<metrics['width']<=1080:
+                        driver.require(abs(layout['rail']['width']-60)<=1 and layout['iconVisible'],'tablet Graph detail lost icon rail')
+                    if metrics['width']<=600:
+                        driver.require(abs(layout['actions'][0]['y']-layout['actions'][1]['y'])<=1,'mobile Graph actions stacked')
+                        controls=layout['controls']
+                        driver.require(max(x['y'] for x in controls)-min(x['y'] for x in controls)<=1 and min(x['width'] for x in controls)>80,'mobile canvas controls are not a broad single row')
+                    for field in layout['fields']:
+                        driver.require(field['width']>=layout['bodyWidth']-32,'inspector value column collapsed')
+                    metrics['readability']=layout
                     if not metrics['inspectorHidden']:
                         c,i=metrics['canvas'],metrics['inspector']
                         if metrics['width']<=1080:

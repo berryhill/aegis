@@ -66,14 +66,24 @@ missing references, and canonical refusal of malformed/duplicate/over-bound
 publication. Browser assertions cover four widths, all edge endpoints, full Fit,
 keyboard pan/selection, exact Agent/Loop destinations, raw durable pins,
 no-mutation interaction, no-script fallback, open-page cookie loss and strict CSP.
-The fixture has **not been compiled or executed** in this continuation because
-root capacity is below the mandatory 8 GiB pre-heavy reserve. It is not frozen
-or independently accepted. Touch/actual mouse-drag, real expiry/server-side
-revocation, missing-record/back reconstruction, and negative form-tamper/CSRF
-journeys still require completion/verification; do not infer their PASS from
-unit coverage or cookie removal. Pixel/token comparison remains parent and
-independent tester work against the supplied accepted artifact.
+The harness exercises actual mouse drag and trusted touch selection, canonical
+fragment resolution and refresh, exact-pin tamper and repeated invalid-CSRF
+denials with authenticated empty-Queue readback. Invalid-CSRF replay is not
+valid-token idempotency qualification. Cookie removal proves the open-page
+authentication-loss boundary, not independent real-TTL expiry or server-side
+revocation. Canonical publication refuses malformed, duplicate and over-bound
+definitions; defensive display fallback coverage does not claim those refused
+records became valid stored Graphs or were rendered by the real Console.
 
-No local demo, recording, release build, installed gateway, provider or runtime
-execution campaign was launched. Capacity, actual candidate browser execution,
-independent acceptance and parent-owned delivery remain explicit gates.
+Desktop inspector values use full-width label-over-value rows. Graph-only tablet
+navigation retains the compact icon rail; mobile actions share a row and canvas
+controls expand into three columns. Browser regressions measure these layouts
+with actual long immutable references, not substituted prototype content.
+
+Acceptance evidence belongs to the exact frozen source/executable and isolated
+fixture, outside source inventory. Cache/temp can use private task-local paths
+through standard Go environment variables without weakening the existing
+resource supervisor, provenance or authenticated-home executable guards.
+Source-tier proof is not installed-gateway, live-provider, successful submission,
+runtime execution, release, or publication proof. Independent visual acceptance,
+required regressions and parent-owned exact-head delivery remain distinct stages.
