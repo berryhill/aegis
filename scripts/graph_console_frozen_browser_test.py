@@ -111,7 +111,9 @@ def main():
                         capture(key.replace(':','-')+'-'+str(width)+'-fit')
                         # Restore zoom with keyboard, then prove actual bounded pan.
                         browser.evaluate("document.querySelector('[data-graph-viewport]').focus()")
-                        for _ in range(10): driver.key(browser,'+')
+                        for _ in range(10):
+                            for event_type in ('rawKeyDown','keyUp'):
+                                browser.command('Input.dispatchKeyEvent',{'type':event_type,'key':'+','code':'Equal','modifiers':8,'windowsVirtualKeyCode':187,'nativeVirtualKeyCode':187})
                         driver.key(browser,'ArrowRight')
                         pan=browser.evaluate("(() => {const v=document.querySelector('[data-graph-viewport]');return {x:v.scrollLeft,max:v.scrollWidth-v.clientWidth}})()")
                         driver.require(0<=pan['x']<=pan['max']+1,'pan escaped bounds')
