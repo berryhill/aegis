@@ -14,6 +14,8 @@
 .graph-workspace .gw-body .spec{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}
 .graph-workspace .gw-body .spec dt{padding:0;border:0;min-width:0}
 .graph-workspace .gw-body .spec dd{padding:0;margin:0 0 12px;min-width:0}
+.graph-workspace .related-records a{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;min-width:0}
+.graph-workspace .related-records a span,.graph-workspace .related-records strong,.graph-workspace .related-records small{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .graph-record-head .graph-admission{grid-column:1/-1}
 .graph-workspace .gw-head,.graph-workspace .canvas-bar{display:flex;gap:8px;align-items:center;padding:8px 11px;border-bottom:1px solid var(--border);background:var(--surface2);flex:none;flex-wrap:wrap}
 .graph-workspace .gw-title,.graph-workspace .canvas-title{margin:0;font-size:13px}.graph-workspace .gw-head button{margin-left:auto}

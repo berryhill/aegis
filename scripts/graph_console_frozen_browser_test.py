@@ -103,6 +103,10 @@ def main():
                         driver.require(max(x['y'] for x in controls)-min(x['y'] for x in controls)<=1 and min(x['width'] for x in controls)>80,'mobile canvas controls are not a broad single row')
                     for field in layout['fields']:
                         driver.require(field['width']>=layout['bodyWidth']-32,'inspector value column collapsed')
+                    related=browser.evaluate("""[...document.querySelectorAll('[data-graph-node-panel]:not([hidden]) .related-records a, [data-graph-node-panel]:not([hidden]) .related-records a span, [data-graph-node-panel]:not([hidden]) .related-records strong, [data-graph-node-panel]:not([hidden]) .related-records small')].map(x=>({text:x.textContent,width:x.clientWidth,scrollWidth:x.scrollWidth,height:x.clientHeight,scrollHeight:x.scrollHeight,whiteSpace:getComputedStyle(x).whiteSpace}))""")
+                    for row in related:
+                        driver.require(row['scrollWidth']<=row['width']+1 and row['scrollHeight']<=row['height']+1 and row['whiteSpace']!='nowrap','related exact reference clipped')
+                    metrics['relatedRecords']=related
                     metrics['readability']=layout
                     if not metrics['inspectorHidden']:
                         c,i=metrics['canvas'],metrics['inspector']
