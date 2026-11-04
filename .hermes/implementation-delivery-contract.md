@@ -17,7 +17,11 @@ delivery rules; it is not an alternate contribution procedure.
 - **Discuss / review / research / plan:** return that requested analysis or artifact; do not infer implementation or activation permission.
 - **Narrower explicit scope wins:** local-only, source-only, no-queue, no-publish, no-release, timebox and named-path restrictions override defaults. Later corrections constrain the current objective; do not revive stale work from history.
 
-Plain implementation includes verified merge, not an unsolicited release or live activation. If the current task explicitly includes release or activation, complete those already-authorized stages without asking for duplicate permission. Product-level standing direction does not supply missing credentials, exact deployment targets or independent approvals.
+Plain implementation ends at verified merge: once the task-owned PR is MERGED and its merge commit is contained on canonical main, the implementation is DONE. Reconcile its implementation issue as completed and remove it from unfinished-work lists. Applicable source-delivery checks and post-merge validation remain required; a concrete failing check is a linked repair, not permission to replay the merge.
+
+Do not keep merged implementation issues open solely for separate managed-provider, installed-workstation, release or deployment qualification. Preserve prior evidence and explicitly record unexercised qualification without claiming it passed. Owner-directed closure of those implementation issues does not fabricate product execution or close unrelated umbrella scope. Require a live/install/release target only when the current owner request explicitly includes it.
+
+This completion boundary does not bypass mandatory pre-merge tests, independent reviews, protected edits, authentication, tool approvals or repository protections. A product workflow requirement is distinct from an independent security gate. If the current task explicitly includes release or activation, complete those already-authorized stages without asking for duplicate permission. Product-level standing direction does not supply missing credentials, exact deployment targets or independent approvals.
 
 ## Working behavior and acceptance
 
